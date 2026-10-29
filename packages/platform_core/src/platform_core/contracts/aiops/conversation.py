@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
-from .investigation import DiagnosticSampling, DiagnosticObservationSchedule, DiagnosticPagination
+from .investigation import DiagnosticSampling, DiagnosticObservationSchedule, DiagnosticPagination, EvidenceSourceStrategy
 
 from .types import (
     AIOpsContract,
@@ -419,10 +419,7 @@ class TurnTaskFrameView(AIOpsContract):
         default="GENERAL",
         pattern=r"^(GENERAL|SINGLE_SQL_PERFORMANCE|SQL_COMPARISON)$",
     )
-    evidence_source_strategy: str = Field(
-        default="DATABASE_FIRST",
-        pattern=r"^(MONITORING_FIRST|DATABASE_FIRST|COMBINED)$",
-    )
+    evidence_source_strategy: EvidenceSourceStrategy = EvidenceSourceStrategy.ADAPTIVE
     subject_ref: dict = Field(default_factory=dict)
     requires_change: bool = False
 

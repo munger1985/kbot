@@ -156,3 +156,22 @@ def test_deadline_prior_requires_current_source_revalidation_and_stays_historica
     assert result.evidence[0].source_id == "prior_turn.sql_observation"
     assert result.evidence[0].captured_at == fact.captured_at
     assert "历史观测" in str(result.evidence[0].warnings)
+
+def test_deadline_keeps_raw_tool_failure_in_body_and_evidence_gaps():
+    raw = _tool_artifact(semantics="CUMULATIVE_SINCE_LOAD")
+    source = DbaToolResult.model_validate(raw["payload"])
+    from aiops_agent.contracts.tool_execution import ToolOutcome
+    from aiops_agent.contracts.artifacts.database import EvidenceGap
+    failed = ToolOutcome(step_id="details", tool_id="db.sql.cursor_details", tool_version="1.0.0", status="GAP",
+        gap=EvidenceGap(code="QUERY_COLUMN_AMBIGUOUS", tool_id="db.sql.cursor_details", detail="查询列名存在歧义"))
+    source = source.model_copy(update={"source_id": "db.sql.cursor_details", "status": "PARTIAL",
+                                      "tool_outcomes": (*source.tool_outcomes, failed)})
+    artifact = SimpleNamespace(artifact_id=uuid7(), schema_version="DBA_TOOL_RESULT.v1",
+        payload_json=source.model_dump(mode="json"), trust_level="SOURCE_VERIFIED")
+    result = deadline_result(artifacts=[artifact], task_frame={"diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+        "subject_ref": {"subject_type": "ORACLE_SQL_ID", "sql_id": "abc123"}}, database_type="ORACLE",
+        projected_ids={str(artifact.artifact_id)})
+    assert result.status == "PARTIAL"
+    assert {gap.code for gap in result.evidence_gaps} == {"QUERY_COLUMN_AMBIGUOUS", "RUN_DEADLINE_EXCEEDED"}
+    assert "QUERY_COLUMN_AMBIGUOUS" in result.blocks[0].payload["markdown"]
+    assert "这不表示该 SQL 不存在" in result.blocks[0].payload["markdown"]

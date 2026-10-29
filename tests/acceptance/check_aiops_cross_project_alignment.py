@@ -13,6 +13,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("tests/unit/aiops_agent/test_aiops_sql_terminal_recovery.py"),
     Path("services/aiops_agent/src/aiops_agent/application/investigation/selected_sql.py"),
     Path("services/aiops_agent/src/aiops_agent/domain/operations/model_budget.py"),
     Path("services/aiops_agent/src/aiops_agent/application/diagnosis/deadline_result.py"),

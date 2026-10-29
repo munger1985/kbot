@@ -1690,10 +1690,11 @@ class DbaAnswerComposeHandler:
                 )
                 receipt = generated.receipt.model_dump(mode="json")
             except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
-                logger.warning("SQL 诊断降级为证据摘要：task_id={} error_type={}", context.task_id, type(exc).__name__)
+                logger.warning("SQL 诊断降级为证据摘要：task_id={} error_type={} code={}", context.task_id, type(exc).__name__, getattr(exc, "code", "EVIDENCE_VALIDATION_FAILED"))
                 draft = None
                 record = None
-                fallback_reason = "诊断生成未通过证据校验或服务不可用；本次仅提供已核验画像，原因与方案尚未完成。"
+                cause = f"诊断生成未完成（{exc.code}）" if isinstance(exc, AIOpsModelError) else "诊断生成未通过证据校验"
+                fallback_reason = cause + "；本次仅提供已核验画像，原因与方案尚未完成。"
         else:
             fallback_reason = "诊断模型未配置；本次仅提供已核验画像，不能视为已完成根因分析。"
         if draft is not None:
@@ -1702,6 +1703,7 @@ class DbaAnswerComposeHandler:
             record = None
             answer = build_sql_evidence_answer(
                 task_frame=task_frame, database_type=self._database_type(context), evidence=assessment.evidence,
+                gaps=assessment.gaps, fallback_reason=fallback_reason,
             )
             if answer is None:
                 return None

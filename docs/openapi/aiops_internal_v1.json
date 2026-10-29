@@ -5974,6 +5974,17 @@
         "title": "EventReceipt",
         "type": "object"
       },
+      "EvidenceSourceStrategy": {
+        "description": "来源选择偏好，不构成数据库或监控的执行门禁。",
+        "enum": [
+          "ADAPTIVE",
+          "MONITORING_FIRST",
+          "DATABASE_FIRST",
+          "COMBINED"
+        ],
+        "title": "EvidenceSourceStrategy",
+        "type": "string"
+      },
       "ExecutionBudgetV1": {
         "additionalProperties": false,
         "properties": {
@@ -19814,10 +19825,8 @@
             "type": "string"
           },
           "evidence_source_strategy": {
-            "default": "DATABASE_FIRST",
-            "pattern": "^(MONITORING_FIRST|DATABASE_FIRST|COMBINED)$",
-            "title": "Evidence Source Strategy",
-            "type": "string"
+            "$ref": "#/components/schemas/EvidenceSourceStrategy",
+            "default": "ADAPTIVE"
           },
           "forecast_horizon_seconds": {
             "anyOf": [

@@ -8,6 +8,7 @@ from typing import Protocol
 
 from loguru import logger
 
+from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     is_schema_or_integrity_error,
@@ -111,6 +112,12 @@ class AIOpsDomainOutboxSink:
         ):
             try:
                 await self._turn_planning_service.execute_replan(payload)
+            except AIOpsModelError as exc:
+                if exc.retryable:
+                    raise
+                await self._turn_planning_service.fall_back_from_replan(
+                    payload, error_code=exc.code,
+                )
             except (
                 InvestigationPlanValidationError,
                 InvestigationCatalogChangedError,

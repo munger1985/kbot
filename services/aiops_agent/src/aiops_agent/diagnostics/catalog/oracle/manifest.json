@@ -841,7 +841,7 @@
         }
       ],
       "template_ref": "sql/sql_cursor_details.sql",
-      "template_sha256": "84a0532c2f7315d05b1f1642d60a062c36f90241218348d89e087923938fedde",
+      "template_sha256": "eeabe85550012ea1a9ba72f997258919c8051ed40b338f9697e5c250ecdf425f",
       "timeout_seconds": 20,
       "max_rows": 100,
       "max_bytes": 2097152,

@@ -25,6 +25,7 @@ class AIOpsModelError(RuntimeError):
         super().__init__(detail or code)
         self.code = code
         self.detail = detail
+        self.retryable = code != "MODEL_DEADLINE_EXCEEDED"
 
 
 def _canonical_hash(value: Any) -> str:
@@ -161,7 +162,12 @@ class AIOpsStructuredModelClient:
                     envelope = await response.json()
             except AIOpsModelError:
                 raise
-            except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            except TimeoutError as exc:
+                code = "MODEL_DEADLINE_EXCEEDED" if deadline is not None and (
+                    deadline.astimezone(UTC) - datetime.now(UTC)
+                ).total_seconds() <= 1 else "MODEL_SERVICE_UNAVAILABLE"
+                raise AIOpsModelError(code) from exc
+            except (aiohttp.ClientError, ValueError) as exc:
                 raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE") from exc
             usage = envelope.get("usage") or {}
             prompt_tokens += int(usage.get("prompt_tokens", 0))
@@ -321,7 +327,12 @@ class AIOpsStructuredModelClient:
                         yield content
         except AIOpsModelError:
             raise
-        except (aiohttp.ClientError, TimeoutError, UnicodeDecodeError) as exc:
+        except TimeoutError as exc:
+            code = "MODEL_DEADLINE_EXCEEDED" if deadline is not None and (
+                deadline.astimezone(UTC) - datetime.now(UTC)
+            ).total_seconds() <= 1 else "MODEL_SERVICE_UNAVAILABLE"
+            raise AIOpsModelError(code) from exc
+        except (aiohttp.ClientError, UnicodeDecodeError) as exc:
             raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE") from exc
 
     @staticmethod

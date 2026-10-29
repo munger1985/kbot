@@ -843,7 +843,7 @@
       "tool_id": "db.sql.cursor_details",
       "tool_version": "1.0.0",
       "variant": "oracle_19_plus_gv_sql",
-      "template_sha256": "84a0532c2f7315d05b1f1642d60a062c36f90241218348d89e087923938fedde",
+      "template_sha256": "eeabe85550012ea1a9ba72f997258919c8051ed40b338f9697e5c250ecdf425f",
       "profile": "oracle_cursor",
       "output_columns": [["dbid","INTEGER"],["inst_id","INTEGER"],["container_id","INTEGER"],["sql_id","STRING"],["child_number","INTEGER"],["plan_hash_value","INTEGER"],["parsing_schema_name","STRING"],["module","STRING"],["action","STRING"],["executions","INTEGER"],["elapsed_seconds","DECIMAL"],["cpu_seconds","DECIMAL"],["buffer_gets","INTEGER"],["disk_reads","INTEGER"],["direct_writes","INTEGER"],["rows_processed","INTEGER"],["fetches","INTEGER"],["sorts","INTEGER"],["loads","INTEGER"],["invalidations","INTEGER"],["is_bind_sensitive","STRING"],["is_bind_aware","STRING"],["sql_profile","STRING"],["sql_plan_baseline","STRING"],["first_load_time","STRING"],["last_load_time","STRING"],["last_active_time","DATETIME"],["sql_text","STRING"]]
     }

@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+from aiops_agent.contracts.turn_answer import TurnEvidenceFact, TurnEvidenceGap
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +140,7 @@ def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict,
 
 def build_sql_evidence_answer(
     *, task_frame: dict[str, Any], database_type: str, evidence: tuple[TurnEvidenceFact, ...],
+    gaps: tuple[TurnEvidenceGap, ...] = (), fallback_reason: str | None = None,
 ) -> SqlEvidenceAnswer | None:
     """只处理结构化单 SQL 任务；不同账号、数据库及游标不合并。"""
     if task_frame.get("diagnostic_profile") == "SQL_COMPARISON":
@@ -148,7 +149,7 @@ def build_sql_evidence_answer(
             return None
         answers = [(subject, build_sql_evidence_answer(
             task_frame={**task_frame, "diagnostic_profile": "SINGLE_SQL_PERFORMANCE", "subject_ref": subject},
-            database_type=database_type, evidence=evidence,
+            database_type=database_type, evidence=evidence, gaps=gaps, fallback_reason=fallback_reason,
         )) for subject, _ in matches]
         return SqlEvidenceAnswer(
             analysis="\n\n".join("SQL " + str(subject[next(key for key in ("query_id", "digest", "sql_id") if key in subject)]) + "：\n\n" + answer.analysis
@@ -170,36 +171,45 @@ def build_sql_evidence_answer(
     candidates = [
         fact for fact in evidence
         if (fact.tool_id == tool_id or database_type == "POSTGRESQL" and fact.tool_id == "db.postgresql.statement.subjects"
+            or fact.tool_id == "workload.sql.top_window"
             or (fact.source_id == "prior_turn.sql_observation" and fact.tool_id == prior_tools[database_type]))
         and fact.trust_level == "SOURCE_VERIFIED"
-        and str(fact.measurement_semantics) == "CUMULATIVE_SINCE_LOAD"
+        and (str(fact.measurement_semantics) == "CUMULATIVE_SINCE_LOAD"
+             or fact.tool_id == "workload.sql.top_window" and str(fact.measurement_semantics) == "SNAPSHOT_DELTA")
     ]
     metrics = {
         "POSTGRESQL": (("execution_count", "执行次数", 1), ("total_exec_time_ms", "总耗时（毫秒）", 1), ("mean_exec_time_ms", "平均耗时（毫秒）", 1), ("max_exec_time_ms", "累计最大耗时（毫秒）", 1), ("rows_processed", "处理行数", 1), ("shared_blks_hit", "共享块命中", 1), ("shared_blks_read", "共享块读取", 1), ("temp_blks_read", "临时块读取", 1), ("temp_blks_written", "临时块写入", 1), ("wal_bytes", "WAL 字节", 1), ("plan_count", "计划统计次数", 1)),
         "MYSQL": (("execution_count", "执行次数", 1), ("total_latency_picoseconds", "总耗时（毫秒）", 1_000_000_000), ("average_latency_picoseconds", "平均耗时（毫秒）", 1_000_000_000), ("maximum_latency_picoseconds", "累计最大耗时（毫秒）", 1_000_000_000), ("rows_examined", "扫描行数", 1), ("rows_sent", "返回行数", 1), ("temp_disk_tables", "磁盘临时表数", 1)),
         "ORACLE": (("executions", "执行次数", 1), ("elapsed_seconds", "总耗时（秒）", 1), ("cpu_seconds", "CPU 耗时（秒）", 1), ("buffer_gets", "逻辑读", 1), ("disk_reads", "物理读", 1)),
     }[database_type]
+    window_metrics = (("execution_count", "执行次数", 1), ("total_duration_seconds", "总耗时（秒）", 1),
+                      ("mean_duration_seconds", "平均耗时（秒）", 1))
+    def metrics_for(fact):
+        return window_metrics if str(fact.measurement_semantics) == "SNAPSHOT_DELTA" else metrics
+
     candidates.sort(key=lambda fact: (fact.source_id != "prior_turn.sql_observation", _captured_at(fact)), reverse=True)
     chosen = next(
         ((fact, rows) for fact in candidates
          if (rows := [row for row in _row_dicts(fact) if _matches(row, subject, identity)])
-         and any(_number(row.get(key), divisor) is not None for row in rows for key, _, divisor in metrics)),
+         and any(_number(row.get(key), divisor) is not None for row in rows for key, _, divisor in metrics_for(fact))),
         None,
     )
     if chosen is None:
-        analysis = "未取得与指定 SQL 及数据库身份匹配的累计统计；目前不能判断其性能或资源消耗。"
+        analysis = "本次未取得可用于指定 SQL 分析的匹配统计，诊断尚未完成，目前不能判断其性能或资源消耗。这不表示该 SQL 不存在或没有负载。"
         refs: tuple[str, ...] = ()
     else:
         fact, rows = chosen
+        is_window = str(fact.measurement_semantics) == "SNAPSHOT_DELTA"
         descriptions = []
         for index, row in enumerate(rows[:10], start=1):
-            values = [f"{label} {_number(row.get(key), divisor)}" for key, label, divisor in metrics if _number(row.get(key), divisor) is not None]
+            values = [f"{label} {_number(row.get(key), divisor)}" for key, label, divisor in metrics_for(fact) if _number(row.get(key), divisor) is not None]
             if values:
                 dimensions = [f"{key}={row[key]}" for key in ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value") if row.get(key) is not None]
                 scope = f"（{'，'.join(dimensions)}）" if dimensions else ""
                 descriptions.append(f"记录 {index}{scope}：" + "，".join(values) + "。")
         origin = "后台观察" if fact.followup_run_id is not None else "历史观测" if fact.source_id == "prior_turn.sql_observation" else "本轮观测"
-        analysis = f"已取得与指定 SQL 匹配的累计统计（{origin}，采集时间 {fact.captured_at}）。" + "\n\n" + "\n\n".join(descriptions)
+        basis = "窗口增量统计" if is_window else "累计统计"
+        analysis = f"已取得与指定 SQL 匹配的{basis}（{origin}，采集时间 {fact.captured_at}）。" + "\n\n" + "\n\n".join(descriptions)
         if fact.source_id == "prior_turn.sql_observation":
             analysis += "\n\n历史数据来自同一逻辑 Target，不能单凭此确认实际实例未切换。"
         statement = next((str(rows[0].get(key) or "").strip() for key in ("normalized_statement", "digest_text", "sql_text") if rows[0].get(key)), "")
@@ -211,7 +221,12 @@ def build_sql_evidence_answer(
             analysis += "\n\n以上记录对应不同的统计维度或游标，未合并计算。"
         if fact.truncated or len(rows) > 10:
             analysis += "\n\n记录未全部展示，详情见原始证据。"
-        analysis += "\n\n这些是累计值，不代表指定时间窗口；缺少业务基线时不能判断耗时是否异常。"
+        if is_window:
+            analysis += "\n\n以上仅适用于证据实际覆盖的窗口和候选集合，不能外推至未覆盖时段或全库排名。"
+            if fact.warnings:
+                analysis += "\n\n" + "\n".join(fact.warnings)
+        else:
+            analysis += "\n\n这些是累计值，不代表指定时间窗口；缺少业务基线时不能判断耗时是否异常。"
         analysis += "共享块命中或对象级扫描统计不能单独证明该 SQL 的扫描方式或根因。"
         if database_type == "POSTGRESQL" and any(row.get("statement_stats_reset") for row in rows):
             analysis += "语句统计全局重置时间见原始证据；单条语句仍可能被单独重置或淘汰，不能将该时间当作其确定起点。"
@@ -219,8 +234,15 @@ def build_sql_evidence_answer(
         if fact.source_id != "prior_turn.sql_observation":
             prior = next((item for item in candidates if item.source_id == "prior_turn.sql_observation" and any(_matches(row, subject, identity) for row in _row_dicts(item))), None)
             if prior is not None:
-                analysis += f"\n\n同一授权会话及逻辑 Target 存在相同标识的历史统计（采集时间 {prior.captured_at}）；统计维度见证据，不能直接当作窗口增量，也不能单凭此确认实际实例未切换。"
+                analysis += f"\n\n同一授权会话及逻辑 Target 存在相同标识的历史统计（采集时间 {prior.captured_at}）；口径和覆盖区间以原始证据为准，不能跨时段或跨口径直接合并，也不能单凭此确认实际实例未切换。"
                 refs = (*refs, prior.evidence_ref)
+    relevant_gaps = tuple(gap for gap in gaps if gap.source_id.startswith(("db.", "workload.sql.")))
+    if relevant_gaps:
+        analysis += "\n\n取证未完成项：" + "；".join(
+            f"{gap.source_id}：{gap.detail}（{gap.code}）" for gap in relevant_gaps[:5]
+        ) + "。这些是取证缺口，不能解释为 SQL 无负载或身份不匹配。"
+    if fallback_reason:
+        analysis += "\n\n" + fallback_reason
     solution = (
         "先核对统计身份及覆盖区间；仅在快照可比较且未发生可识别的重置或淘汰时计算执行次数、总耗时及平均耗时增量。"
         "累计最大耗时不能通过两次快照相减得到窗口最大值；需要逐次执行记录或专门采样。\n\n"
@@ -228,5 +250,12 @@ def build_sql_evidence_answer(
         "不要将对象级统计单独作为该 SQL 的根因。生产环境采集实际计划应先评估执行风险和权限。"
         "任何索引、参数或查询变更均需审批，并以可比窗口验证及准备回滚。"
     )
+    if any(gap.source_id == tool_id for gap in relevant_gaps):
+        solution = (
+            f"先由平台维护者修复上述 {tool_id} 取证故障，再在同一 Target 上重跑指定 SQL 详情查询。"
+            "已有历史或窗口数据可作为带时间边界的背景，不能替代本轮失败的取证。"
+            "详情恢复后，继续取得匹配的执行计划和等待/资源证据，才能给出有依据的优化措施；"
+            "目前不建议仅凭取证失败修改业务 SQL、索引或数据库参数。"
+        )
     return SqlEvidenceAnswer(analysis=analysis, solution=solution, evidence_refs=refs, has_statistics=chosen is not None,
                              historical_only=chosen is not None and chosen[0].source_id == "prior_turn.sql_observation")

@@ -901,6 +901,7 @@ class ExecuteReplanContinuationTest(unittest.IsolatedAsyncioTestCase):
         service = object.__new__(TurnPlanningService)
         context = SimpleNamespace(
             workflow_kind="CHAT_TURN",
+            deadline=None,
             agent_id=uuid7(),
             domain_id=7,
             trace_id="trace-awr",

@@ -32,6 +32,78 @@ def fact(tool_id, columns, rows, *, semantics="CUMULATIVE_SINCE_LOAD", captured=
 def frame(subject):
     return {"diagnostic_profile": "SINGLE_SQL_PERFORMANCE", "subject_ref": subject, "objectives": ["DIAGNOSE"]}
 
+@pytest.mark.parametrize("db_type,subject,identity,scope", [
+    ("ORACLE", {"subject_type": "ORACLE_SQL_ID", "sql_id": "abc123", "plan_hash_value": 7}, "sql_id", {"plan_hash_value": 7}),
+    ("MYSQL", {"subject_type": "MYSQL_DIGEST", "digest": "ABC", "schema_name": "orders"}, "digest", {"schema_name": "orders"}),
+    ("POSTGRESQL", {"subject_type": "POSTGRESQL_QUERY_ID", "query_id": "42", "database_oid": 1, "user_oid": 2, "top_level": True},
+     "query_id", {"database_oid": 1, "user_oid": 2, "top_level": True}),
+])
+def test_window_history_survives_details_failure_without_becoming_cumulative(db_type, subject, identity, scope):
+    from aiops_agent.contracts.turn_answer import TurnEvidenceGap
+    tool = "db.postgresql.statement.details" if db_type == "POSTGRESQL" else "db.sql.cursor_details"
+    columns = (identity, *scope, "normalized_statement", "execution_count", "total_duration_seconds", "mean_duration_seconds")
+    entry = fact("workload.sql.top_window", columns, ((subject[identity], *scope.values(), "SELECT business_data", 20, "1.5", "0.075"),),
+                 semantics="SNAPSHOT_DELTA").model_copy(update={"warnings": ("请求窗口：10:00 至 10:15", "实际覆盖区间：10:10 至 10:15", "数据缺口：未覆盖完整窗口")})
+    rebound = rebind_prior_sql_facts(payload={"facts": [entry.model_dump(mode="json")]}, artifact_id=str(uuid7()),
+                                    task_frame=frame(subject), database_type=db_type)
+    gap = TurnEvidenceGap(source_id=tool, step_id="a1", code="QUERY_COLUMN_AMBIGUOUS", detail="查询列名存在歧义，取证未成功")
+    result = build_sql_evidence_answer(task_frame=frame(subject), database_type=db_type, evidence=rebound,
+        gaps=(gap,), fallback_reason="诊断生成超时；原因与方案尚未完成。")
+    assert result.has_statistics and result.historical_only
+    assert result.evidence_refs == (rebound[0].evidence_ref,)
+    assert "窗口增量统计" in result.analysis and "历史观测" in result.analysis
+    assert "总耗时（秒） 1.5" in result.analysis and "执行次数 20" in result.analysis
+    assert "10:10 至 10:15" in result.analysis and "未覆盖完整窗口" in result.analysis
+    assert "累计统计" not in result.analysis
+    assert "QUERY_COLUMN_AMBIGUOUS" in result.analysis and "原因与方案尚未完成" in result.analysis
+    assert tool in result.solution and "平台维护者" in result.solution
+    # 窗口没有请求的额外身份维度时仍不能借用该行。
+    extra = {"dbid": 999} if db_type == "ORACLE" else {"user_oid": 999} if db_type == "MYSQL" else {"database_oid": 999}
+    rejected = build_sql_evidence_answer(task_frame=frame({**subject, **extra}), database_type=db_type, evidence=rebound)
+    assert not rejected.has_statistics and not rejected.evidence_refs
+
+
+def test_missing_statistics_explains_query_failure_and_does_not_invent_absence():
+    from aiops_agent.contracts.turn_answer import TurnEvidenceGap
+    gap = TurnEvidenceGap(source_id="db.sql.cursor_details", step_id="a1", code="QUERY_COLUMN_AMBIGUOUS", detail="查询列名存在歧义")
+    result = build_sql_evidence_answer(task_frame=frame({"subject_type": "ORACLE_SQL_ID", "sql_id": "abc123"}),
+        database_type="ORACLE", evidence=(), gaps=(gap,), fallback_reason="本次仅提供已核验画像，诊断尚未完成。")
+    assert not result.has_statistics
+    assert "QUERY_COLUMN_AMBIGUOUS" in result.analysis
+    assert "这不表示该 SQL 不存在" in result.analysis
+    assert "未取得与指定 SQL 及数据库身份匹配的累计统计" not in result.analysis
+    assert "先由平台维护者修复" in result.solution
+
+
+def test_stream_and_nonstream_show_failure_and_incomplete_diagnosis_in_the_body():
+    from aiops_agent.adapters.model_serving import AIOpsModelError
+    from aiops_agent.contracts.turn_answer import TurnEvidenceGap
+    subject = {"subject_type": "ORACLE_SQL_ID", "sql_id": "abc123"}
+    entry = fact("db.sql.top_current", ("sql_id", "executions", "elapsed_seconds"), (("abc123", 10, 1),))
+    prior = rebind_prior_sql_facts(payload={"facts": [entry.model_dump(mode="json")]}, artifact_id=str(uuid7()), task_frame=frame(subject))
+    gap = TurnEvidenceGap(source_id="db.sql.cursor_details", step_id="a1", code="QUERY_COLUMN_AMBIGUOUS", detail="查询列名存在歧义")
+    assessment = DbaSufficiencyAssessment(status="PARTIAL", evidence=prior, gaps=(gap,))
+    ctx = TaskExecutionContext(
+        run_id=uuid7(), task_id=uuid7(), task_key="answer", target_id=uuid7(), agent_id=uuid7(), actor_id=uuid7(),
+        trigger_type="MANUAL", trace_id="test", attempt=1, deadline_at=None, policy_snapshot={},
+        plan_snapshot={"capability_snapshot": {"database_type": "ORACLE"}, "answer_context": {"task_frame": frame(subject)}},
+        input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1", "payload": assessment.model_dump(mode="json")},),
+    )
+    model = SimpleNamespace(generate_structured=AsyncMock(side_effect=AIOpsModelError("MODEL_DEADLINE_EXCEEDED")))
+    prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(ref=lambda: {}, content="按证据回答")))
+    handler = DbaAnswerComposeHandler(model_client=model, prompts=prompts)
+    result = asyncio.run(handler.execute(ctx))
+    async def collect():
+        return [item async for item in handler.execute_stream(ctx)]
+    streamed = asyncio.run(collect())
+    assert result.status == streamed[-1].status == "PARTIAL"
+    assert result.blocks == streamed[-1].blocks
+    text = "".join(item.payload["delta"] for item in streamed[:-1])
+    assert "历史观测" in text and "执行次数 10" in text
+    assert "QUERY_COLUMN_AMBIGUOUS" in text and "原因与方案尚未完成" in text
+    assert "MODEL_DEADLINE_EXCEEDED" in text
+
+
 
 @pytest.mark.parametrize("db_type,subject,tool_id,columns,row,expected", [
     ("POSTGRESQL", {"subject_type": "POSTGRESQL_QUERY_ID", "query_id": "42", "database_oid": 1, "user_oid": 2, "top_level": True},

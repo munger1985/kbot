@@ -11,6 +11,7 @@ from uuid import UUID
 
 from loguru import logger
 
+from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.application.conversation_inputs import ConversationInputResolver
 from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL, freeze_top_sql_window
 from aiops_agent.application.diagnosis import freeze_automatic_entry_intent
@@ -2247,6 +2248,22 @@ class TurnPlanningService:
         if revision_no < 2:
             raise state_conflict("重规划版本号必须大于首轮")
         context = await self._prepare(payload, revision_no=revision_no)
+        deadline = self._work_deadline(context)
+        if deadline is not None and (deadline - datetime.now(UTC)).total_seconds() <= 1:
+            return await self.fall_back_from_replan(
+                payload, error_code="MODEL_DEADLINE_EXCEEDED",
+            )
+        try:
+            return await self._execute_replan_once(payload, context=context, revision_no=revision_no)
+        except AIOpsModelError:
+            if deadline is None or (deadline - datetime.now(UTC)).total_seconds() > 1:
+                raise
+            return await self.fall_back_from_replan(
+                payload, error_code="MODEL_DEADLINE_EXCEEDED",
+            )
+
+    async def _execute_replan_once(self, payload: dict, *, context: TurnPlanningContext, revision_no: int) -> dict:
+        """工作期限内执行一次补充规划，所有模型阶段共享同一截止时间。"""
         if context.workflow_kind == "INSPECTION":
             return await self.fall_back_from_replan(
                 payload,
