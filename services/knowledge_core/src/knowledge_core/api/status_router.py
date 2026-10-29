@@ -5,6 +5,9 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from platform_core.contracts.knowledge_withdrawal import (
+    KnowledgeWithdrawalRequest, KnowledgeWithdrawalReceipt,
+)
 
 from platform_core.contracts import INTERNAL_API_V1
 from platform_core.security import get_actor_id, require_domain_match
@@ -123,6 +126,25 @@ async def get_reindex_discovery_status(
             detail={"code": "REINDEX_OPERATION_NOT_FOUND", "message": str(exc)},
         ) from exc
     return asdict(result)
+
+
+@router.post("/{bundle_id}/revisions/{bundle_revision_id}/withdrawal",
+    response_model=KnowledgeWithdrawalReceipt)
+async def withdraw_revision(
+    domain_id: int, bundle_id: UUID, bundle_revision_id: UUID,
+    payload: KnowledgeWithdrawalRequest, request: Request,
+):
+    """撤回精确版本，保留正文及审计，不假定任何外部缓存已清除。"""
+    require_domain_match(request, domain_id)
+    try:
+        return await request.app.state.kc_status_service.withdraw_revision(
+            domain_id=domain_id, bundle_id=bundle_id,
+            bundle_revision_id=bundle_revision_id, request_id=payload.request_id,
+        )
+    except KnowledgeObjectNotFoundError as exc:
+        raise HTTPException(404, detail={
+            "code": "REVISION_NOT_FOUND", "message": str(exc),
+        }) from exc
 
 
 @router.get("/{bundle_id}")

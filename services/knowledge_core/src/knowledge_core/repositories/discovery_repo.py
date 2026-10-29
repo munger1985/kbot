@@ -126,6 +126,7 @@ class DiscoveryRepository:
                 KcDiscoveryObjectEntity.object_type.in_(("BUNDLE", "DOCUMENT")),
                 KcDiscoveryObjectEntity.security_level <= max_security_level,
                 KcBundleEntity.current_revision_id == KcDiscoveryObjectEntity.bundle_revision_id,
+                KcBundleRevisionEntity.withdrawn_at.is_(None),
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
                 func.contains(
                     KcDiscoveryObjectEntity.profile_text,
@@ -208,6 +209,7 @@ class DiscoveryRepository:
                 <= max_security_level,
                 KcBundleEntity.current_revision_id
                 == KcEvidenceEntity.bundle_revision_id,
+                KcBundleRevisionEntity.withdrawn_at.is_(None),
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
                 func.contains(
                     KcEvidenceEntity.retrieval_text,
@@ -282,6 +284,7 @@ class DiscoveryRepository:
                 KcCollectionEntity.status == "ACTIVE",
                 KcDiscoveryObjectEntity.discovery_status == "ACTIVE",
                 KcBundleEntity.current_revision_id == KcDiscoveryObjectEntity.bundle_revision_id,
+                KcBundleRevisionEntity.withdrawn_at.is_(None),
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
                 KcDiscoveryObjectEntity.embedding.is_not(None),
                 KcDiscoveryObjectEntity.security_level <= max_security_level,

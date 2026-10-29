@@ -243,6 +243,33 @@ class OutboxRepository(AIOpsRepository):
         result = await self._session.execute(statement)
         return result.rowcount == 1
 
+    async def rearm_case_withdrawal(self, *, before: datetime, now: datetime) -> bool:
+        """临时不可用的撤回慢速恢复，保留累计尝试次数和永久失败。"""
+        self._check_active()
+        predicates = (
+            OutboxEntity.event_type == "OPS_CASE_WITHDRAWAL_REQUESTED",
+            OutboxEntity.status == "FAILED",
+            OutboxEntity.error_code.in_(("OUTBOX_PUBLISH_FAILED", "OUTBOX_LEASE_EXPIRED")),
+            OutboxEntity.updated_at <= before,
+        )
+        candidate = (await self._session.execute(
+            select(OutboxEntity.outbox_id).where(*predicates)
+            .order_by(OutboxEntity.updated_at, OutboxEntity.outbox_id).limit(1)
+        )).scalar_one_or_none()
+        if candidate is None:
+            return False
+        entity = (await self._session.execute(
+            select(OutboxEntity).where(OutboxEntity.outbox_id == candidate, *predicates)
+            .with_for_update(skip_locked=True)
+        )).scalar_one_or_none()
+        if entity is None:
+            return False
+        entity.status = "RETRY_WAIT"
+        entity.max_attempts = int(entity.attempt_count) + 12
+        entity.available_at = now
+        entity.updated_at = now
+        return True
+
     async def recover_expired(
         self,
         *,

@@ -17,6 +17,7 @@ from aiops_agent.domain.operations.budget import (
 from aiops_agent.application.sql_plan_execution import WORKFLOW as PLAN_CAPTURE_WORKFLOW, validate_capture_completion
 
 from aiops_agent.application.changes.effect_followup import schedule_effect_followup
+from aiops_agent.application.knowledge_withdrawal import queue_case_withdrawals
 from aiops_agent.application.investigation.future_observation import (
     FOLLOWUP_WORKFLOW, followup_access_error, future_observation_payload, preserve_future_observation, schedule_future_observation,
 )
@@ -7667,10 +7668,12 @@ class AIOpsRuntimeService:
             )
             knowledge_repository = getattr(uow, "operations_knowledge", None)
             if knowledge_repository is not None:
-                await knowledge_repository.mark_cases_for_report_review(
+                affected_cases = await knowledge_repository.mark_cases_for_report_review(
                     report_id=report.report_id,
                     reviewer_id=actor_id,
                 )
+                for case_asset, case_version in affected_cases:
+                    await queue_case_withdrawals(uow=uow, asset=case_asset, version=case_version)
             await uow.commit()
             return self._report_view(saved, report_artifact)
 

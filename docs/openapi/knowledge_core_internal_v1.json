@@ -1079,6 +1079,72 @@
         "title": "IntakeReviewRequest",
         "type": "object"
       },
+      "KnowledgeWithdrawalReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "bundle_id": {
+            "format": "uuid",
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "bundle_revision_id": {
+            "format": "uuid",
+            "title": "Bundle Revision Id",
+            "type": "string"
+          },
+          "collection_id": {
+            "format": "uuid",
+            "title": "Collection Id",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "WITHDRAWN",
+            "title": "Status",
+            "type": "string"
+          },
+          "withdrawal_id": {
+            "format": "uuid",
+            "title": "Withdrawal Id",
+            "type": "string"
+          },
+          "withdrawn_at": {
+            "format": "date-time",
+            "title": "Withdrawn At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "withdrawal_id",
+          "collection_id",
+          "bundle_id",
+          "bundle_revision_id",
+          "status",
+          "withdrawn_at"
+        ],
+        "title": "KnowledgeWithdrawalReceipt",
+        "type": "object"
+      },
+      "KnowledgeWithdrawalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "title": "KnowledgeWithdrawalRequest",
+        "type": "object"
+      },
       "LeaseRequest": {
         "properties": {
           "input_fingerprint": {
@@ -2306,6 +2372,79 @@
           }
         },
         "summary": "Reprocess Revision",
+        "tags": [
+          "Knowledge Core Status"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/withdrawal": {
+      "post": {
+        "description": "撤回精确版本，保留正文及审计，不假定任何外部缓存已清除。",
+        "operationId": "withdraw_revision_internal_v1_knowledge_domains__domain_id__bundles__bundle_id__revisions__bundle_revision_id__withdrawal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeWithdrawalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeWithdrawalReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Revision",
         "tags": [
           "Knowledge Core Status"
         ]

@@ -109,6 +109,7 @@ class BundleRevisionRepository:
                 == KcBundleRevisionEntity.collection_id,
                 KcBundleEntity.current_revision_id
                 == KcBundleRevisionEntity.bundle_revision_id,
+                KcBundleRevisionEntity.withdrawn_at.is_(None),
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
             )
             .order_by(KcBundleRevisionEntity.bundle_revision_id)
@@ -133,6 +134,7 @@ class BundleRevisionRepository:
                 == KcBundleRevisionEntity.collection_id,
                 KcBundleEntity.current_revision_id
                 == KcBundleRevisionEntity.bundle_revision_id,
+                KcBundleRevisionEntity.withdrawn_at.is_(None),
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
             )
         )
@@ -816,6 +818,7 @@ class EvidenceRepository:
                 KcCollectionEntity.status == "ACTIVE",
                 KcBundleEntity.current_revision_id
                 == KcEvidenceEntity.bundle_revision_id,
+                KcBundleRevisionEntity.withdrawn_at.is_(None),
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
                 KcDocumentVersionEntity.security_level <= max_security_level,
                 KcBundleRevisionEntity.security_level <= max_security_level,
@@ -899,6 +902,7 @@ class EvidenceRepository:
                 KcDocumentVersionEntity.security_level <= max_security_level,
                 KcBundleRevisionEntity.security_level <= max_security_level,
                 KcBundleEntity.current_revision_id == scope.bundle_revision_id,
+                KcBundleRevisionEntity.withdrawn_at.is_(None),
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
                 func.contains(
                     KcEvidenceEntity.retrieval_text,
@@ -962,6 +966,7 @@ class EvidenceRepository:
                 KcDocumentVersionEntity.security_level <= max_security_level,
                 KcBundleRevisionEntity.security_level <= max_security_level,
                 KcBundleEntity.current_revision_id == scope.bundle_revision_id,
+                KcBundleRevisionEntity.withdrawn_at.is_(None),
                 KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
             )
             .order_by(distance, KcEvidenceEntity.evidence_id)

@@ -337,6 +337,19 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def withdraw_revision(
+        self, *, domain_id: int, bundle_id: UUID,
+        bundle_revision_id: UUID, request_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        """请求永久撤回精确知识版本，调用方须复核持久化回执。"""
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+            f"/bundles/{bundle_id}/revisions/{bundle_revision_id}/withdrawal",
+            payload={"request_id": str(request_id)}, auth_context=auth_context,
+        )
+
     async def get_revision_status(
         self,
         *,

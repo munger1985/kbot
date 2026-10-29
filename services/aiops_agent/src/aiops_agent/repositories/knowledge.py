@@ -348,7 +348,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
 
     async def mark_cases_for_report_review(
         self, *, report_id: UUID, reviewer_id: str
-    ) -> int:
+    ) -> list[tuple[OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity]]:
         """来源报告被更正后，让关联案例立即退出新的候选集合。"""
         self._check_active()
         rows = list((await self._session.execute(
@@ -374,10 +374,12 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             .with_for_update()
         )).all())
         affected: set[UUID] = set()
+        marked = []
         for asset, version in rows:
             if version.asset_version_id in affected:
                 continue
             affected.add(version.asset_version_id)
+            marked.append((asset, version))
             version.status = "REVIEW_REQUIRED"
             asset.status = "REVIEW_REQUIRED"
             if asset.current_version_id == version.asset_version_id:
@@ -392,7 +394,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 after_status="REVIEW_REQUIRED",
             ))
         await self._session.flush()
-        return len(affected)
+        return marked
 
     async def list_assets(
         self,

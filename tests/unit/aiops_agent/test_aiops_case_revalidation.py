@@ -17,16 +17,18 @@ def test_background_source_validation_withdraws_only_invalid_case(monkeypatch, v
     version_id, asset_id, actor, domain, tenant, run_id = (uuid7() for _ in range(6))
     version = SimpleNamespace(asset_version_id=version_id, asset_id=asset_id,
         status="PUBLISHED", profile_json={})
-    asset = SimpleNamespace(asset_id=asset_id, current_version_id=version_id, tenant_id=tenant,
+    asset = SimpleNamespace(asset_id=asset_id, asset_kind="DIAGNOSIS_CASE", current_version_id=version_id, tenant_id=tenant,
         domain_id=domain, created_by=actor, status="PUBLISHED")
-    index = SimpleNamespace(asset_version_id=version_id, last_checked_at=None)
+    index = SimpleNamespace(asset_version_id=version_id, last_checked_at=None,
+        index_ref_id=uuid7(), collection_id=uuid7(), bundle_id=uuid7(), bundle_revision_id=uuid7())
     repo = SimpleNamespace(
         next_case_index_for_validation=AsyncMock(return_value=(index, domain)),
         get_version=AsyncMock(return_value=version), get_asset=AsyncMock(return_value=asset),
         add_review=AsyncMock(), get_version_relations=AsyncMock(return_value={
-            "sources": [SimpleNamespace(source_run_id=run_id)]}),
+            "sources": [SimpleNamespace(source_run_id=run_id)], "indexes": [index]}),
     )
     uow = SimpleNamespace(operations_knowledge=repo, commit=AsyncMock(),
+        outbox=SimpleNamespace(get_by_idempotency=AsyncMock(return_value=None), add=AsyncMock()),
         runs=SimpleNamespace(get_run_scoped=AsyncMock(return_value=SimpleNamespace(ops_run_id=run_id))),
         platform_notifications=SimpleNamespace(emit_case_review_required=AsyncMock()))
     class Uow:
@@ -41,6 +43,7 @@ def test_background_source_validation_withdraws_only_invalid_case(monkeypatch, v
     if valid:
         assert version.status == asset.status == "PUBLISHED"
         repo.add_review.assert_not_awaited()
+        uow.outbox.add.assert_not_awaited()
         uow.platform_notifications.emit_case_review_required.assert_not_awaited()
     else:
         assert version.status == asset.status == "REVIEW_REQUIRED"
@@ -49,6 +52,9 @@ def test_background_source_validation_withdraws_only_invalid_case(monkeypatch, v
         assert review.decision == "SOURCE_INVALIDATED"
         assert review.before_status == "PUBLISHED"
         uow.platform_notifications.emit_case_review_required.assert_awaited_once()
+        message = uow.outbox.add.await_args.args[0]
+        assert message.payload_json["bundle_revision_id"] == str(index.bundle_revision_id)
+        assert message.event_type == "OPS_CASE_WITHDRAWAL_REQUESTED"
     uow.commit.assert_awaited_once()
 
 

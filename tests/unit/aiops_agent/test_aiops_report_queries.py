@@ -201,9 +201,15 @@ class ReportQueryTest(unittest.TestCase):
             add_artifact=AsyncMock(return_value=saved_artifact),
             append_event=AsyncMock(),
         )
+        from tests.unit.aiops_agent.test_aiops_case_withdrawal import fixture
+        withdrawal = fixture()
+        withdrawal.repo.mark_cases_for_report_review = AsyncMock(
+            return_value=[(withdrawal.asset, withdrawal.version)],
+        )
         uow = SimpleNamespace(
             inspections=inspections, runs=runs,
-            outbox=SimpleNamespace(add=AsyncMock()), commit=AsyncMock(),
+            operations_knowledge=withdrawal.repo,
+            outbox=withdrawal.outbox, commit=AsyncMock(),
         )
         service = AIOpsRuntimeService(
             uow_factory=lambda: _context(uow), blueprint_registry=Mock(),
@@ -220,6 +226,9 @@ class ReportQueryTest(unittest.TestCase):
         self.assertEqual(result.report_version, 2)
         self.assertEqual(result.title, "修订报告")
         self.assertEqual(result.corrected_from_report_id, report_id)
+        self.assertTrue(any(call.args[0].event_type == "OPS_CASE_WITHDRAWAL_REQUESTED"
+            for call in uow.outbox.add.await_args_list))
+        uow.commit.assert_awaited_once()
         published = inspections.publish_report.await_args.args[0]
         self.assertEqual(published.supersedes_report_id, report_id)
         artifact_payload = runs.add_artifact.await_args.args[0].payload_json

@@ -53,6 +53,8 @@ class AIOpsDomainOutboxSink:
         conversation_turn_service=None,
         situation_recovery_projector=None,
         business_effect_service=None,
+        operations_knowledge_service=None,
+        caller_service: str = "aiops-worker",
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
@@ -67,8 +69,17 @@ class AIOpsDomainOutboxSink:
         self._conversation_turn_service = conversation_turn_service
         self._situation_recovery_projector = situation_recovery_projector
         self._business_effect_service = business_effect_service
+        self._operations_knowledge_service = operations_knowledge_service
+        self._caller_service = caller_service
 
     async def publish(self, event_type: str, payload: dict) -> None:
+        if event_type == "OPS_CASE_WITHDRAWAL_REQUESTED":
+            if self._operations_knowledge_service is None:
+                raise RuntimeError("案例撤回服务未配置，不能以日志投递代替接收方确认")
+            await self._operations_knowledge_service.deliver_case_withdrawal(
+                payload, caller_service=self._caller_service,
+            )
+            return
         if event_type == "OPS_BUSINESS_EFFECT_REQUESTED":
             if self._business_effect_service is None:
                 raise RuntimeError("自动业务效果验证服务未配置")
@@ -431,7 +442,7 @@ class AIOpsOutboxDispatcher:
                     now=now,
                     new_status="RETRY_WAIT" if retry else "FAILED",
                     available_at=now
-                    + timedelta(seconds=min(2 ** snapshot["attempt"], 60)),
+                    + timedelta(seconds=min(2 ** min(snapshot["attempt"], 6), 60)),
                     error_code=(
                         "OUTBOX_PUBLISH_FAILED"
                         if retryable

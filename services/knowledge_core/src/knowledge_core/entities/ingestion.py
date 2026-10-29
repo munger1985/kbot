@@ -62,6 +62,8 @@ class KcBundleRevisionEntity(_AuditEntity):
     review_comment: Mapped[str | None] = mapped_column(String(1000))
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    withdrawn_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    withdrawal_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     failure_code: Mapped[str | None] = mapped_column(String(128))
     failure_message: Mapped[str | None] = mapped_column(String(1000))
 

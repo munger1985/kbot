@@ -13,6 +13,10 @@ from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.case_redaction import CaseRedactor
 from aiops_agent.application.case_semantic_redaction import redact_case_for_index, shared_content_hash
 from aiops_agent.application.case_source_validation import validate_case_sources, validate_case_effect
+from aiops_agent.application.knowledge_withdrawal import (
+    CaseWithdrawalCommand, assert_case_not_withdrawn, invalid_withdrawal,
+    queue_case_withdrawals, validate_command_source, validate_receipt, withdrawal_views,
+)
 from aiops_agent.application.reporting import normalize_report_source
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.knowledge import (
@@ -2052,6 +2056,9 @@ class OperationsKnowledgeService:
                     "locator": item.source_locator_json,
                 } for item in relations["sources"]],
                 "indexes": [_index_view(item) for item in relations["indexes"]],
+                "external_withdrawals": await withdrawal_views(
+                    uow=uow, indexes=relations["indexes"], reviews=relations["reviews"],
+                ) if asset.asset_kind == "DIAGNOSIS_CASE" else [],
                 "reviews": [{
                     "review_id": str(item.review_id),
                     "decision": item.decision,
@@ -2811,6 +2818,7 @@ class OperationsKnowledgeService:
                         before_status = previous.status
                         previous.status = "RETIRED"
                         previous.retired_at = _now()
+                        await queue_case_withdrawals(uow=uow, asset=asset, version=previous)
                         await uow.operations_knowledge.add_review(
                             OperationsKnowledgeReviewEntity(
                                 asset_version_id=previous.asset_version_id,
@@ -3237,6 +3245,7 @@ class OperationsKnowledgeService:
                             if previous is not None:
                                 previous.status = "RETIRED"
                                 previous.retired_at = _now()
+                                await queue_case_withdrawals(uow=uow, asset=asset, version=previous)
                         version.status = "PUBLISHED"
                         version.published_at = _now()
                         asset.status = "PUBLISHED"
@@ -3508,6 +3517,7 @@ class OperationsKnowledgeService:
                     asset_version_id=asset_version_id
                 )
                 if asset.asset_kind == "DIAGNOSIS_CASE":
+                    await assert_case_not_withdrawn(uow=uow, indexes=relations["indexes"])
                     if not await validate_case_sources(uow=uow, domain_id=domain_id, version_id=asset_version_id,
                         plan_capture_reader=getattr(self, "_plan_capture_reader", None)):
                         raise self._state_conflict("案例来源已更正、撤权或无法核验，必须重新审核")
@@ -3550,6 +3560,7 @@ class OperationsKnowledgeService:
                     if previous is not None:
                         previous.status = "RETIRED"
                         previous.retired_at = now
+                        await queue_case_withdrawals(uow=uow, asset=asset, version=previous)
                 version.status = "PUBLISHED"
                 version.published_at = now
                 asset.status = "PUBLISHED"
@@ -3569,6 +3580,7 @@ class OperationsKnowledgeService:
                 asset.status = "RETIRED"
                 if asset.current_version_id == version.asset_version_id:
                     asset.current_version_id = None
+                await queue_case_withdrawals(uow=uow, asset=asset, version=version)
             elif decision == "RETRY":
                 if before not in {"FAILED", "PROCESSING", "TAGGING_FAILED"}:
                     raise self._state_conflict("当前知识版本不需要重试")
@@ -3917,6 +3929,69 @@ class OperationsKnowledgeService:
             await uow.commit()
             return {"feedback_id": str(command.feedback_id), "replayed": False, "trust_level": "USER_PROVIDED"}
 
+    async def recover_case_withdrawal(self) -> bool:
+        """暂时性外部失败每五分钟恢复一项，永久失败仍保留待处理。"""
+        async with self._uow_factory() as uow:
+            now = await uow.runs.database_now()
+            changed = await uow.outbox.rearm_case_withdrawal(
+                before=now - timedelta(minutes=5), now=now,
+            )
+            if changed:
+                await uow.commit()
+            return changed
+
+    async def deliver_case_withdrawal(self, payload: dict, *, caller_service: str) -> None:
+        """至少一次投递精确撤回；只有原接收方提交后回执可作为确认。"""
+        try:
+            command = CaseWithdrawalCommand.model_validate(payload)
+            domain_id = int(command.domain_id)
+        except ValueError as exc:
+            raise invalid_withdrawal() from exc
+        async with self._uow_factory() as uow:
+            asset, version = await validate_command_source(uow=uow, command=command, domain_id=domain_id)
+            previous = await uow.operations_knowledge.get_review(
+                domain_id=domain_id, review_id=command.request_id,
+            )
+            if previous is not None:
+                if previous.decision != "EXTERNAL_WITHDRAWAL_ACK" or previous.asset_version_id != command.asset_version_id:
+                    raise invalid_withdrawal()
+                validate_receipt(command, json.loads(previous.comment_text))
+                return
+        context = create_service_auth_context(caller_service=caller_service).model_copy(update={
+            "domain_id": str(domain_id),
+        })
+        try:
+            response = await self._kc.withdraw_revision(
+                domain_id=domain_id, bundle_id=command.bundle_id,
+                bundle_revision_id=command.bundle_revision_id,
+                request_id=command.request_id, auth_context=context,
+            )
+        except KnowledgeCoreClientError as exc:
+            raise AIOpsApplicationError(
+                code="AIOPS_CASE_WITHDRAWAL_UNAVAILABLE",
+                message="知识服务尚未确认案例撤回，保留请求等待重试",
+                status_code=503, retryable=True,
+            ) from exc
+        receipt = validate_receipt(command, response)
+        async with self._uow_factory() as uow:
+            asset, version = await validate_command_source(uow=uow, command=command, domain_id=domain_id)
+            previous = await uow.operations_knowledge.get_review(
+                domain_id=domain_id, review_id=command.request_id,
+            )
+            if previous is not None:
+                if previous.decision != "EXTERNAL_WITHDRAWAL_ACK" or previous.asset_version_id != command.asset_version_id:
+                    raise invalid_withdrawal()
+                validate_receipt(command, json.loads(previous.comment_text))
+                return
+            await uow.operations_knowledge.add_review(OperationsKnowledgeReviewEntity(
+                review_id=command.request_id,
+                asset_version_id=command.asset_version_id,
+                decision="EXTERNAL_WITHDRAWAL_ACK", reviewer_id=asset.created_by,
+                comment_text=receipt.model_dump_json(),
+                before_status=version.status, after_status=version.status,
+            ))
+            await uow.commit()
+
     async def revalidate_next_case(self) -> bool:
         """后台轮转复核来源；撤回和审计同一事务完成，不改写历史正文。"""
         async with self._uow_factory() as uow:
@@ -3951,6 +4026,7 @@ class OperationsKnowledgeService:
                 version.status = "REVIEW_REQUIRED"
                 asset.status = "REVIEW_REQUIRED"
                 asset.current_version_id = None
+                await queue_case_withdrawals(uow=uow, asset=asset, version=version)
                 await uow.operations_knowledge.add_review(OperationsKnowledgeReviewEntity(
                     asset_version_id=version.asset_version_id, decision="SOURCE_INVALIDATED",
                     reviewer_id=asset.created_by,

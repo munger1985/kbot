@@ -328,6 +328,8 @@ def create_aiops_worker_probe(
             sink=AIOpsDomainOutboxSink(
                 runtime_service=runtime_service,
                 fallback=LoggingOutboxSink(),
+                operations_knowledge_service=operations_knowledge_service,
+                caller_service=config.service_name,
                 business_effect_service=BusinessEffectFollowupService(
                     uow_factory=runtime.uow_factory,
                     change_service=AIOpsChangeService(uow_factory=runtime.uow_factory),

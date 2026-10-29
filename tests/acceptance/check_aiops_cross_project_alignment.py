@@ -13,6 +13,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("packages/platform_core/src/platform_core/contracts/knowledge_withdrawal.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/knowledge_withdrawal.py"),
+    Path("tests/unit/aiops_agent/test_aiops_case_withdrawal.py"),
     Path("tests/unit/aiops_agent/test_aiops_oem_events.py"),
     Path("services/aiops_agent/src/aiops_agent/adapters/diagnostic_sources/oem_events.py"),
     Path("services/aiops_agent/src/aiops_agent/application/diagnosis/event_evidence.py"),

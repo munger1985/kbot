@@ -2,10 +2,11 @@
 from uuid import UUID
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
+from platform_core.contracts.knowledge_withdrawal import KnowledgeWithdrawalReceipt
 
 
 class KnowledgeObjectNotFoundError(Exception):
@@ -138,6 +139,38 @@ class VisualAssetContent:
 class KnowledgeCoreStatusService:
     def __init__(self, *, uow_factory: Callable[[], KnowledgeCoreUnitOfWork]):
         self._uow_factory = uow_factory
+
+    async def withdraw_revision(
+        self, *, domain_id: int, bundle_id: UUID,
+        bundle_revision_id: UUID, request_id: UUID,
+    ) -> KnowledgeWithdrawalReceipt:
+        """永久撤回精确版本；重试幂等，旧版本请求不改变新版本。"""
+        async with self._uow_factory() as uow:
+            bundle = await uow.bundles.get_by_id(bundle_id=bundle_id, lock=True)
+            if bundle is None or await uow.collections.get_by_id_scope(
+                domain_id=domain_id, collection_id=bundle.collection_id,
+            ) is None:
+                raise KnowledgeObjectNotFoundError("知识版本不存在")
+            revision = await uow.revisions.get_by_id(
+                bundle_revision_id=bundle_revision_id, lock=True,
+            )
+            if (
+                revision is None or revision.bundle_id != bundle_id
+                or revision.collection_id != bundle.collection_id
+            ):
+                raise KnowledgeObjectNotFoundError("知识版本不存在")
+            if revision.withdrawn_at is None:
+                revision.withdrawn_at = datetime.now(UTC)
+                revision.withdrawal_id = request_id
+            receipt = KnowledgeWithdrawalReceipt(
+                status="WITHDRAWN",
+                request_id=request_id, withdrawal_id=revision.withdrawal_id,
+                bundle_id=bundle_id, bundle_revision_id=bundle_revision_id,
+                collection_id=bundle.collection_id, withdrawn_at=revision.withdrawn_at,
+            )
+            # 必须在事务成功后返回回执；解析/重新索引不清除永久撤回标记。
+            await uow.commit()
+        return receipt
 
     async def get_bundle(self, *, domain_id: int, bundle_id: UUID) -> BundleStatus:
         async with self._uow_factory() as uow:
