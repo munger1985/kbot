@@ -1034,6 +1034,26 @@ class DbaEvidenceAssessmentHandler:
             datetime.fromisoformat(context.deadline_at) if getattr(context, "deadline_at", None) else None,
             answer_reserve_seconds=self._diagnosis_config.answer_reserve_seconds,
         )
+        from aiops_agent.application.investigation.sql_plan_priority import pending_sql_plan_actions, authorized_plan_tools
+        capability = dict(context.plan_snapshot.get("capability_snapshot") or {})
+        pending_plans = pending_sql_plan_actions(
+            task_frame=task_frame, database_type=str(capability.get("database_type") or ""),
+            evidence=scoped.evidence, gaps=scoped.gaps,
+            prior_actions=tuple(dict(answer_context.get("investigation_plan") or {}).get("actions") or ()),
+            available_tool_ids=authorized_plan_tools(capability),
+        )
+        if pending_plans and scoped.status != SufficiencyStatus.UNSAFE and (
+            assessment_deadline is None or assessment_deadline > datetime.now(UTC)
+        ):
+            return scoped.model_copy(update={
+                "status": SufficiencyStatus.PARTIAL,
+                "investigation": InvestigationAssessment(
+                    round_no=int(context.plan_snapshot.get("revision_no") or 1), sufficiency_status="PARTIAL",
+                    next_action="REPLAN", progress_made=True,
+                    clarification_question=None,
+                    reason="已取得完整游标身份，先读取可用缓存执行计划，再分析访问路径与运行证据。",
+                ),
+            })
         if (assessment_deadline is not None and assessment_deadline <= datetime.now(UTC)) or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
             return scoped
         model_snapshot = dict(answer_context.get("model") or {})
@@ -1043,6 +1063,15 @@ class DbaEvidenceAssessmentHandler:
             "investigation_assessor",
             frozen_prompts=dict(answer_context["prompts"]),
         )
+        sql_bundle = build_sql_evidence_bundle(
+            task_frame=task_frame,
+            database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
+            evidence=scoped.evidence,
+        )
+        model_sufficiency = deterministic.model_dump(mode="json")
+        if sql_bundle is not None:
+            model_sufficiency.pop("evidence", None)
+            model_sufficiency["evidence_location"] = "sql_evidence_bundle.observations"
         try:
             result = await self._model.generate_structured(
                 purpose="aiops.investigation-assessment",
@@ -1054,16 +1083,10 @@ class DbaEvidenceAssessmentHandler:
                     "investigation_plan": dict(
                         answer_context.get("investigation_plan") or {}
                     ),
-                    "deterministic_sufficiency": deterministic.model_dump(
-                        mode="json"
-                    ),
+                    "deterministic_sufficiency": model_sufficiency,
                     "measurement_boundaries": _measurement_boundaries(deterministic),
                     **physical_identity_model_context(scoped.evidence),
-                    "sql_evidence_bundle": build_sql_evidence_bundle(
-                        task_frame=task_frame,
-                        database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
-                        evidence=scoped.evidence,
-                    ),
+                    "sql_evidence_bundle": sql_bundle,
                 },
                 deadline=assessment_deadline,
                 idempotency_key=(
@@ -1656,6 +1679,8 @@ class DbaAnswerComposeHandler:
         )
         if bundle is None:
             return None
+        from aiops_agent.application.diagnosis.sql_plan_presentation import plan_availability_block, matching_plan_refs
+        matched_plans = matching_plan_refs(bundle)
         draft = None
         receipt = None
         fallback_reason = None
@@ -1678,6 +1703,11 @@ class DbaAnswerComposeHandler:
                         "investigation": assessment.investigation.model_dump(mode="json") if assessment.investigation else None,
                         "resource_capabilities": context.plan_snapshot.get("capability_snapshot", {}),
                         "gaps": [item.model_dump(mode="json") for item in assessment.gaps],
+                        "delivery_requirements": {
+                            "summary": "先正面回答该 SQL 是否存在已证实问题；观察范围未见明显异常时明确结论和暂不变更；证据不足时给出已成立的局部判断及唯一关键下一步，不能仅复述缺证。",
+                            "execution_plan": "优先解释已匹配计划的关键节点、对象/索引、估算与实际差异及来源限制；缺计划不阻断锁等待等直接证据结论。",
+                            "recommendations": "围绕已支持机制给出具体可验证措施；不默认要求改索引或参数，不重复通用审批话术。",
+                        },
                     },
                     deadline=self._deadline(context.deadline_at) - timedelta(seconds=3) if context.deadline_at else None,
                     idempotency_key=f"turn:{context.run_id}:sql-diagnosis:{context.attempt}",
@@ -1699,17 +1729,21 @@ class DbaAnswerComposeHandler:
             fallback_reason = "诊断模型未配置；本次仅提供已核验画像，不能视为已完成根因分析。"
         if draft is not None:
             analysis, solution, refs = render_investigation(record)
+            analysis = "结论：" + draft.summary + "\n\n" + analysis
         else:
             record = None
             answer = build_sql_evidence_answer(
                 task_frame=task_frame, database_type=self._database_type(context), evidence=assessment.evidence,
-                gaps=assessment.gaps, fallback_reason=fallback_reason,
+                gaps=assessment.gaps, fallback_reason=fallback_reason, matched_plan_refs=tuple(matched_plans),
             )
             if answer is None:
                 return None
             analysis, solution, refs = answer.analysis, answer.solution, answer.evidence_refs
         if bundle["subject_resolution"]["status"] == "COMPARISON":
             analysis = f"已核验 {len(bundle['subjects'])} 个独立统计主体，以下分别诊断与比较，不合并其计数、计划或原因。\n\n" + analysis
+        data_blocks = self._data_blocks(assessment.evidence, primary_result_kind="SINGLE_SQL_DETAIL")
+        plan_blocks = [block for block in data_blocks if block.payload.get("result_kind") == "SQL_EXECUTION_PLAN"
+                       and any(ref in matched_plans for ref in block.evidence_refs)]
         blocks = [
             TurnAnswerBlock(
                 block_type=AnswerBlockType.ANALYSIS_MARKDOWN,
@@ -1717,15 +1751,19 @@ class DbaAnswerComposeHandler:
                 payload={"markdown": analysis, "sql_diagnosis": draft.model_dump(mode="json") if draft else None,
                          "subject": bundle["subject"], "subject_resolution": bundle["subject_resolution"]}, evidence_refs=refs,
             ),
+            *plan_blocks,
             TurnAnswerBlock(
                 block_type=AnswerBlockType.SOLUTION_MARKDOWN,
                 schema_version="AIOPS_SOLUTION_BLOCK.v1",
                 payload={"markdown": solution}, evidence_refs=refs,
             ),
+            plan_availability_block(database_type=self._database_type(context), bundle=bundle),
         ]
         comparison_blocks = self._sql_candidate_blocks(assessment, context, comparison=True)
         blocks.extend(comparison_blocks)
-        for block in self._data_blocks(assessment.evidence, primary_result_kind="SINGLE_SQL_DETAIL"):
+        for block in data_blocks:
+            if block.payload.get("result_kind") == "SQL_EXECUTION_PLAN":
+                continue
             if comparison_blocks and set(block.evidence_refs) <= set(comparison_blocks[0].evidence_refs):
                 continue
             if str(block.block_type) == "TABLE" and any(
@@ -1763,7 +1801,7 @@ class DbaAnswerComposeHandler:
             sql_result = await self._single_sql_evidence_result(context, assessment)
             if sql_result is not None:
                 sections = {str(block.block_type): str(block.payload.get("markdown") or "") for block in sql_result.blocks}
-                markdown = f"## 分析结论\n{sections.get('ANALYSIS_MARKDOWN', '')}\n\n## 处理建议\n{sections.get('SOLUTION_MARKDOWN', '')}"
+                markdown = f"{sections.get('MARKDOWN', '')}\n\n## 分析结论\n{sections.get('ANALYSIS_MARKDOWN', '')}\n\n## 处理建议\n{sections.get('SOLUTION_MARKDOWN', '')}"
                 for index, delta in enumerate(self._answer_deltas(markdown), start=1):
                     yield DbaAnswerProgress(event_type="answer.delta", event_key=f"answer-delta:{index}", payload={"chunk_index": index, "delta": delta})
                 yield sql_result.model_copy(update={"answer_streamed": True})
@@ -2864,6 +2902,10 @@ class DbaAnswerComposeHandler:
         blocks: list[TurnAnswerBlock] = []
         top_sql_primary = _top_sql_primary_fact(evidence, primary_result_kind)
         for fact in evidence:
+            if fact.sql_plan is not None:
+                from aiops_agent.application.diagnosis.sql_plan_presentation import plan_table_block
+                blocks.append(plan_table_block(fact))
+                continue
             probe = next((item for item in fact.object_access if not item.reused and item.state == "READABLE"), None)
             if probe is not None:
                 blocks.append(TurnAnswerBlock(

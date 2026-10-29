@@ -2293,6 +2293,28 @@ class TurnPlanningService:
         discovered_playbooks = available_playbooks(
             self._playbook_registry, context.capabilities
         )
+        from aiops_agent.application.investigation.sql_plan_priority import pending_sql_plan_actions
+        from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+        plan_actions = pending_sql_plan_actions(
+            task_frame=inputs.task_frame, database_type=str(context.capabilities.database_type),
+            evidence=tuple(TurnEvidenceFact.model_validate(item) for item in inputs.assessment.get("evidence", ())),
+            gaps=inputs.assessment.get("gaps", ()),
+            prior_actions=inputs.prior_plan.get("actions", ()),
+            available_tool_ids=tuple(item["tool_id"] for item in discovered_tools),
+        )
+        if plan_actions:
+            investigation = self._investigation_from_continuation(
+                context=context, inputs=inputs, actions=plan_actions, revision_no=revision_no,
+            )
+            investigation, dynamic_queries, source_queries, _ = self._prepare_query_inputs(
+                investigation=investigation, context=context,
+            )
+            return await self._compile_and_persist_replan(
+                context=context, revision_no=revision_no, inputs=inputs, investigation=investigation,
+                planning_receipt=None, dynamic_queries=dynamic_queries, source_queries=source_queries,
+                diagnosis_model_snapshot=diagnosis_model_snapshot, planner_model_snapshot=planner_model_snapshot,
+                public_summary="已按完整 SQL 游标身份直接读取执行计划，不经过模型重规划",
+            )
         decision = decide_discovery_continuation(
             plan=inputs.prior_plan,
             tool_results=inputs.tool_results,

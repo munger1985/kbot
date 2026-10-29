@@ -476,14 +476,19 @@ def test_background_observation_reuse_also_replays_cursor_plan_projection(tamper
             payload={"evidence": [value.model_dump(mode="json")]})) == (tamper == "none")
 
 
-@pytest.mark.parametrize("tool_id,field,label", [(PLAN, "last_elapsed_time", "LAST 耗时（微秒）"),
+@pytest.mark.parametrize("tool_id,field,label", [(PLAN, "actual_elapsed_time_us", "LAST 耗时（微秒）"),
     (BINDS, "last_captured", "最近绑定捕获时间（数据库原生时间）")])
 def test_cursor_plan_tables_show_native_units_and_bind_time_without_rewriting_source(tool_id, field, label):
     value = fact(observation(tool_id))
     blocks = DbaAnswerComposeHandler._data_blocks((value,))
     columns = blocks[0].payload["columns"]
     assert next(column["label"] for column in columns if column["name"] == field) == label
-    assert next(column["label"] for column in columns if column["name"] == "sql_id") == "SQL_ID"
+    if tool_id == PLAN:
+        assert blocks[0].payload["subject"] == value.sql_plan.subject
+        assert blocks[0].payload["presentation_role"] == "PRIMARY"
+        assert blocks[0].payload["has_row_actions"] is False
+    else:
+        assert next(column["label"] for column in columns if column["name"] == "sql_id") == "SQL_ID"
     assert all("label" not in column for column in value.columns)
 
 

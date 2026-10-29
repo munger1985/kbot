@@ -47,6 +47,24 @@ def _row_dicts(fact: TurnEvidenceFact) -> list[dict[str, Any]]:
     return [dict(zip(names, row, strict=True)) for row in fact.rows if len(row) == len(names)]
 
 
+def _workload_profile(row: dict, database_type: str, is_window: bool) -> str:
+    """只从同一行原生总量和次数计算均值，不猜阈值、不把 CPU 占比当利用率。"""
+    count_key, time_key, factor = (("execution_count", "total_duration_seconds", 1000) if is_window else {
+        "ORACLE": ("executions", "elapsed_seconds", 1000),
+        "POSTGRESQL": ("execution_count", "total_exec_time_ms", 1),
+        "MYSQL": ("execution_count", "total_latency_picoseconds", Decimal("0.000000001")),
+    }[database_type])
+    try:
+        count, total = Decimal(str(row.get(count_key))), Decimal(str(row.get(time_key)))
+        if not count.is_finite() or not total.is_finite() or count <= 0 or total < 0:
+            return ""
+        mean_ms = total * factor / count
+    except (InvalidOperation, TypeError, ValueError):
+        return ""
+    return (f"观测结论：该统计主体记录了 {_number(count)} 次执行，按同一行总耗时÷执行次数计算，平均约 {_number(mean_ms)} 毫秒／次。"
+            "这是平均工作量画像，不能替代尾延迟、执行计划或业务基线；这些数字本身不足以证实故障，也不能证明无需优化。")
+
+
 def _captured_at(fact: TurnEvidenceFact) -> float:
     try:
         value = datetime.fromisoformat(fact.captured_at.replace("Z", "+00:00"))
@@ -141,6 +159,7 @@ def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict,
 def build_sql_evidence_answer(
     *, task_frame: dict[str, Any], database_type: str, evidence: tuple[TurnEvidenceFact, ...],
     gaps: tuple[TurnEvidenceGap, ...] = (), fallback_reason: str | None = None,
+    matched_plan_refs: tuple[str, ...] = (),
 ) -> SqlEvidenceAnswer | None:
     """只处理结构化单 SQL 任务；不同账号、数据库及游标不合并。"""
     if task_frame.get("diagnostic_profile") == "SQL_COMPARISON":
@@ -150,6 +169,7 @@ def build_sql_evidence_answer(
         answers = [(subject, build_sql_evidence_answer(
             task_frame={**task_frame, "diagnostic_profile": "SINGLE_SQL_PERFORMANCE", "subject_ref": subject},
             database_type=database_type, evidence=evidence, gaps=gaps, fallback_reason=fallback_reason,
+            matched_plan_refs=matched_plan_refs,
         )) for subject, _ in matches]
         return SqlEvidenceAnswer(
             analysis="\n\n".join("SQL " + str(subject[next(key for key in ("query_id", "digest", "sql_id") if key in subject)]) + "：\n\n" + answer.analysis
@@ -207,6 +227,9 @@ def build_sql_evidence_answer(
                 dimensions = [f"{key}={row[key]}" for key in ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value") if row.get(key) is not None]
                 scope = f"（{'，'.join(dimensions)}）" if dimensions else ""
                 descriptions.append(f"记录 {index}{scope}：" + "，".join(values) + "。")
+                profile = _workload_profile(row, database_type, is_window)
+                if profile:
+                    descriptions.append(profile)
         origin = "后台观察" if fact.followup_run_id is not None else "历史观测" if fact.source_id == "prior_turn.sql_observation" else "本轮观测"
         basis = "窗口增量统计" if is_window else "累计统计"
         analysis = f"已取得与指定 SQL 匹配的{basis}（{origin}，采集时间 {fact.captured_at}）。" + "\n\n" + "\n\n".join(descriptions)
@@ -227,7 +250,9 @@ def build_sql_evidence_answer(
                 analysis += "\n\n" + "\n".join(fact.warnings)
         else:
             analysis += "\n\n这些是累计值，不代表指定时间窗口；缺少业务基线时不能判断耗时是否异常。"
-        analysis += "共享块命中或对象级扫描统计不能单独证明该 SQL 的扫描方式或根因。"
+        analysis += ("共享块命中或对象级扫描统计不能单独证明该 SQL 的扫描方式或根因。" if database_type == "POSTGRESQL"
+                     else "逻辑读、物理读或对象级统计不能单独证明该 SQL 的访问路径或瓶颈。" if database_type == "ORACLE"
+                     else "Digest 累计扫描行数或对象级统计不能单独证明该 SQL 的访问路径或瓶颈。")
         if database_type == "POSTGRESQL" and any(row.get("statement_stats_reset") for row in rows):
             analysis += "语句统计全局重置时间见原始证据；单条语句仍可能被单独重置或淘汰，不能将该时间当作其确定起点。"
         refs = (fact.evidence_ref,)
@@ -250,6 +275,23 @@ def build_sql_evidence_answer(
         "不要将对象级统计单独作为该 SQL 的根因。生产环境采集实际计划应先评估执行风险和权限。"
         "任何索引、参数或查询变更均需审批，并以可比窗口验证及准备回滚。"
     )
+    plans = [item for item in evidence if item.evidence_ref in matched_plan_refs and item.sql_plan is not None
+             and _matches(item.sql_plan.subject, subject, identity)]
+    if plans:
+        paths = []
+        for item in plans:
+            document = item.sql_plan
+            origin = {"DATABASE_CURSOR": "缓存计划", "CONTROLLED_ESTIMATE": "受控估算计划", "USER_UPLOAD": "人工声明计划"}[document.origin]
+            operations = " → ".join(node.operation for node in document.nodes[:8])
+            paths.append(f"{origin}（{len(document.nodes)} 个节点）：{operations}" + ("…" if len(document.nodes) > 8 else ""))
+        analysis += "\n\n已取得的计划材料：" + "；".join(paths) + "。完整节点见执行计划表；路径描述不等于已证实性能故障，估算或人工材料不能当作生产实际执行。"
+        refs = tuple(dict.fromkeys((*refs, *(item.evidence_ref for item in plans))))
+        solution = (
+            "已取得并展示匹配计划，不需要重复采集同一材料。下一步应沿用这些证据，解释关键访问、连接和聚合节点，"
+            "结合调用频率、等待和资源证据判断影响；实际行数与估算行数只在可比口径下分析。"
+            "当前机制分析未完成，不建议仅凭累计总耗时或某种计划节点修改索引、参数或 SQL。"
+            "若问题针对某段时间的变慢，再补齐同口径窗口或业务基线，验证该时段表现，不能用累计值冒充窗口。"
+        )
     if any(gap.source_id == tool_id for gap in relevant_gaps):
         solution = (
             f"先由平台维护者修复上述 {tool_id} 取证故障，再在同一 Target 上重跑指定 SQL 详情查询。"

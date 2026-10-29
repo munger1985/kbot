@@ -124,7 +124,9 @@ def test_identity_bound_accumulated_evidence(db_type, subject, tool_id, columns,
     assert expected in result.analysis
     assert "累计值，不代表指定时间窗口" in result.analysis
     assert "累计最大耗时不能通过两次快照相减" in result.solution
-    assert "共享块命中或对象级扫描统计不能单独证明" in result.analysis
+    assert "不能单独证明" in result.analysis
+    assert ("共享块命中" in result.analysis) == (db_type == "POSTGRESQL")
+    assert "观测结论：" in result.analysis
     assert "Finding" not in result.analysis
 
 

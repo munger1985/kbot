@@ -1206,11 +1206,12 @@
         .filter(({ column }) => !topSql || payload.result_kind === "SQL_SUBJECT_COMPARISON" || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
       if (topSql) orderedColumns.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);
       const rows = values(payload.rows);
-      const actionHead = primary ? "<th>操作</th>" : "";
+      const hasRowActions = primary && payload.has_row_actions !== false;
+      const actionHead = hasRowActions ? "<th>操作</th>" : "";
       const body = rows.map((row, rowIndex) => {
         const prompt = followUp(row);
         const reference = payload.row_selections?.[rowIndex] || "";
-        const action = primary ? `<td>${prompt ? `<button type="button" data-primary-follow-up="${esc(prompt)}" data-sql-selection="${esc(reference)}">${esc(payload.follow_up_label || "继续诊断")}</button>` : "-"}</td>` : "";
+        const action = hasRowActions ? `<td>${prompt ? `<button type="button" data-primary-follow-up="${esc(prompt)}" data-sql-selection="${esc(reference)}">${esc(payload.follow_up_label || "继续诊断")}</button>` : "-"}</td>` : "";
         const cells = orderedColumns.map(({ column, index }) => {
           const value = cell(row, column, index) ?? (topSql ? "—" : "-");
           if (!topSql) return `<td>${esc(value)}</td>`;
@@ -1562,8 +1563,11 @@
       .map((item) => `<section class="ops-context-banner"><p>已安排后台未来观察，不影响本轮回答；不会补造过去窗口。</p><a href="./run-detail.html?id=${esc(encodeURIComponent(item.payload.background_run_id))}">查看进度、结果或取消采样</a></section>`).join("");
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(displayText(assistant?.payload?.text || "", turn.display_dictionary))}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
+    const planAcquisition = turn.ops_run_id && ["COMPLETED", "PARTIAL"].includes(turn.status)
+      && answerBlocks.some((block) => block.payload?.sql_plan_acquisition)
+      ? `<div data-sql-plan-turn="${esc(turn.turn_id)}"></div>` : "";
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(displayText(turn.error_message || `当前状态：${turn.status}`, turn.display_dictionary))}</div>`;
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${orchestration}${plan}${progress}${future}${answer}`;
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${orchestration}${plan}${progress}${future}${answer}${planAcquisition}`;
   }
 
   async function renderConversation(conversation, turns) {
@@ -1574,6 +1578,7 @@
     const panel = document.getElementById("message-list");
     panel.innerHTML = conversation.source_run_id ? '<div class="ops-context-banner">已关联来源诊断；后续回答只会引用当前 Turn 明确关联的证据。</div>' : "";
     turns.forEach((turn) => panel.insertAdjacentHTML("beforeend", turnHtml(turn)));
+    mountSqlPlanAcquisition(panel, turns);
     const hasCompletedResult = turns.some((turn) => turn.ops_run_id && ["COMPLETED", "PARTIAL"].includes(turn.status));
     const hasActiveTurn = turns.some((turn) => !["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(turn.status));
     if (hasCompletedResult) {
@@ -1614,6 +1619,34 @@
     bindClarificationActions(panel);
     setComposerAvailability(!pendingClarificationTurn());
     resumeActiveTurns(conversation.conversation_id, turns);
+  }
+
+  function mountSqlPlanAcquisition(panel, turns) {
+    for (const turn of turns) {
+      if (!turn.ops_run_id || !["COMPLETED", "PARTIAL"].includes(turn.status)
+          || !values(turn.answer_blocks).some((block) => block.payload?.sql_plan_acquisition)) continue;
+      const anchor = panel.querySelector(`[data-sql-plan-turn="${CSS.escape(String(turn.turn_id))}"]`);
+      if (!anchor) continue;
+      const root = document.createElement("details");
+      root.className = "ops-evidence";
+      root.innerHTML = '<summary>补齐执行计划</summary><div class="ops-evidence-body"><p>复用已取证 SQL 的保护材料与独立审批。估算不执行原 SQL，不等于生产实际计划；当前可用性以权限和策略检查为准。已有计划 JSON 可通过诊断材料上传后继续分析。</p></div>';
+      anchor.appendChild(root);
+      let mounted = false;
+      root.addEventListener("toggle", async () => {
+        if (!root.open || mounted) return;
+        mounted = true;
+        try {
+          const run = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(turn.ops_run_id)}`);
+          if (!root.isConnected) return;
+          const body = root.querySelector(".ops-evidence-body");
+          window.KBotAIOpsPlanMaterials.mount(body, run, api);
+          window.KBotAIOpsPlanCaptures.mount(body, run, api, { canReview: state.permissions.has("aiops:proposal:approve") });
+        } catch (error) {
+          mounted = false;
+          shell.toast(error.message || "无法读取计划采集入口，请重试");
+        }
+      });
+    }
   }
 
   async function loadConversation(id) {

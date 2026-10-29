@@ -145,6 +145,16 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         for forbidden in ("sessionStorage", "localStorage", "console.", "/uploads", "textarea"):
             self.assertNotIn(forbidden, source)
 
+    def test_sql_chat_reuses_lazy_plan_acquisition_with_real_run_and_permissions(self):
+        page = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
+        for asset in ("aiops-plan-materials.js", "aiops-plan-captures.js"):
+            self.assertLess(page.index(asset), page.index("aiops-workspaces.js"))
+        source = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(encoding="utf-8")
+        for required in ("mountSqlPlanAcquisition(panel, turns)", "data-sql-plan-turn", "sql_plan_acquisition",
+                         'root.addEventListener("toggle"', "KBotAIOpsPlanMaterials.mount(body, run, api)",
+                         'state.permissions.has("aiops:proposal:approve")', "补齐执行计划"):
+            self.assertIn(required, source)
+
     def test_dashboard_is_the_action_first_aiops_workbench(self):
         page = (AIOPS_ROOT / "dashboard.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-dashboard.js").read_text(
@@ -559,7 +569,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261027_4", "20261028_1"),
+            "chat": ("20261027_4", "20261029_1"),
             "situations": ("20261027_1", "20261028_1"),
             "inspections": ("20261027_1", "20261028_1"),
         }

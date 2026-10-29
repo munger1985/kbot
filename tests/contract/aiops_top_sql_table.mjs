@@ -164,3 +164,19 @@ assert.equal(normalized[0].payload.presentation_role, "SUPPORTING");
 assert.equal(normalized[0].payload.title, "当前活跃 SQL 快照");
 assert.equal(normalized[1].payload.presentation_role, "PRIMARY");
 assert.equal(historicalCurrent.payload.presentation_role, "PRIMARY");
+
+const executionPlan = context.testTable.answerBlockHtml({
+  block_type: "TABLE", payload: {
+    presentation_role: "PRIMARY", result_kind: "SQL_EXECUTION_PLAN", title: "执行计划 · 缓存计划",
+    measurement_note: "优化器成本不是毫秒", has_row_actions: false,
+    columns: [{ name: "node_id", label: "节点" }, { name: "operation", label: "执行操作" },
+      { name: "object", label: "对象" }],
+    rows: [[0, "SELECT STATEMENT", null], [1, "└─ TABLE ACCESS FULL", 'MES."<unsafe>"']], row_count: 2,
+  },
+}, {});
+assert.ok(executionPlan.includes("执行计划 · 缓存计划"));
+assert.ok(executionPlan.includes("└─ TABLE ACCESS FULL"));
+assert.ok(executionPlan.includes("优化器成本不是毫秒"));
+assert.ok(executionPlan.includes(escape('MES."<unsafe>"')));
+assert.ok(!executionPlan.includes("data-primary-follow-up"));
+assert.ok(!executionPlan.includes(">操作</th>"));

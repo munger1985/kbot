@@ -6,6 +6,8 @@ from pydantic import ValidationError
 
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
 from aiops_agent.application.diagnosis.evidence_projection import database_evidence_fact, top_sql_window_evidence_fact
+from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle
+from aiops_agent.application.diagnosis.sql_plan_presentation import matching_plan_refs, plan_availability_block, plan_table_block
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
@@ -69,7 +71,10 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
     if not facts:
         return None
     evidence = tuple(facts.values())
-    summary = build_sql_evidence_answer(task_frame=task_frame, database_type=database_type, evidence=evidence, gaps=tuple(gaps.values()))
+    bundle = build_sql_evidence_bundle(task_frame=task_frame, database_type=database_type, evidence=evidence)
+    matched_plans = matching_plan_refs(bundle) if bundle is not None else set()
+    summary = build_sql_evidence_answer(task_frame=task_frame, database_type=database_type, evidence=evidence,
+        gaps=tuple(gaps.values()), matched_plan_refs=tuple(matched_plans))
     text = "本轮已达到执行时限，停止继续补证。以下仅保留截止前已核验的结果，尚未完成的原因判断不作推断。"
     refs: tuple[str, ...] = ()
     if summary is not None:
@@ -77,12 +82,19 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
         refs = summary.evidence_refs
     else:
         text += f"\n\n已保留 {len(evidence)} 项受控数据库观测；具体采集时点、原始行与统计口径见诊断证据。"
-    return AIOpsTurnResult(
-        status="PARTIAL", sufficiency_status="PARTIAL", evidence=evidence,
-        blocks=(TurnAnswerBlock(
+    blocks = [TurnAnswerBlock(
             block_type="ANALYSIS_MARKDOWN", schema_version="aiops.analysis.v1",
             payload={"markdown": text, "budget_exhausted": True}, evidence_refs=refs,
-        ),),
+        )]
+    blocks.extend(plan_table_block(fact) for fact in evidence if fact.evidence_ref in matched_plans and fact.sql_plan is not None)
+    if summary is not None:
+        blocks.append(TurnAnswerBlock(block_type="SOLUTION_MARKDOWN", schema_version="AIOPS_SOLUTION_BLOCK.v1",
+            payload={"markdown": summary.solution}, evidence_refs=refs))
+    if bundle is not None:
+        blocks.append(plan_availability_block(database_type=database_type, bundle=bundle))
+    return AIOpsTurnResult(
+        status="PARTIAL", sufficiency_status="PARTIAL", evidence=evidence,
+        blocks=tuple(blocks),
         evidence_gaps=(*gaps.values(), TurnEvidenceGap(
             source_id="execution.budget", step_id="execution.budget", code="RUN_DEADLINE_EXCEEDED",
             detail="全流程预算已用完；已停止后续规划，保留截止前的已核验事实。", retryable=False,

@@ -264,6 +264,16 @@ class InvestigationReasoner:
             "investigation_replanner",
             frozen_prompts=prompt_snapshot,
         )
+        evidence = tuple(TurnEvidenceFact.model_validate(item) for item in assessment.get("evidence", ()))
+        sql_bundle = build_sql_evidence_bundle(
+            task_frame=task_frame,
+            database_type=str(target_context.get("database_type") or target_context.get("db_type") or "").upper(),
+            evidence=evidence,
+        )
+        # SQL Bundle 已保留原行号、字段、来源、截断及口径；不要把同批大表再发送一份。
+        model_assessment = ({**{key: value for key, value in assessment.items() if key != "evidence"},
+                             "evidence_location": "sql_evidence_bundle.observations"}
+                            if sql_bundle is not None else assessment)
         result = await self._model.generate_structured(
             purpose="aiops.investigation-replan",
             output_model=InvestigationPlanningOutput,
@@ -276,13 +286,9 @@ class InvestigationReasoner:
                 "source_run_evidence": source_run_evidence,
                 "task_frame": task_frame,
                 "prior_plan": prior_plan,
-                "assessment": assessment,
-                **physical_identity_model_context(tuple(TurnEvidenceFact.model_validate(item) for item in assessment.get("evidence", ()))),
-                "sql_evidence_bundle": build_sql_evidence_bundle(
-                    task_frame=task_frame,
-                    database_type=str(target_context.get("database_type") or target_context.get("db_type") or "").upper(),
-                    evidence=tuple(TurnEvidenceFact.model_validate(item) for item in assessment.get("evidence", ())),
-                ),
+                "assessment": model_assessment,
+                **physical_identity_model_context(evidence),
+                "sql_evidence_bundle": sql_bundle,
                 "available_tools": list(available_tools),
                 "available_playbooks": list(available_playbooks),
                 "planning_constraints": {
