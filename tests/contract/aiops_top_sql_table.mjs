@@ -7,7 +7,7 @@ const sourcePath = fileURLToPath(new URL("../../ui/aiops/js/aiops-workspaces.js"
 const source = readFileSync(sourcePath, "utf8");
 const instrumented = source.replace(
   /\}\)\(\);\s*$/,
-  "globalThis.testTable = { answerBlockHtml, topSqlColumnClass, normalizePrimaryTopSqlBlocks };})();",
+  "globalThis.testTable = { answerBlockHtml, topSqlColumnClass, sqlPlanColumnClass, normalizePrimaryTopSqlBlocks };})();",
 );
 assert.notEqual(instrumented, source);
 const escape = (value) => String(value ?? "")
@@ -180,3 +180,14 @@ assert.ok(executionPlan.includes("优化器成本不是毫秒"));
 assert.ok(executionPlan.includes(escape('MES."<unsafe>"')));
 assert.ok(!executionPlan.includes("data-primary-follow-up"));
 assert.ok(!executionPlan.includes(">操作</th>"));
+assert.ok(executionPlan.includes('class="ops-primary-result is-sql-plan"'));
+assert.ok(executionPlan.includes('class="is-plan-node is-number">节点'));
+assert.ok(executionPlan.includes('class="is-plan-operation">执行操作'));
+assert.ok(executionPlan.includes('class="is-plan-object">对象'));
+assert.ok(executionPlan.includes('aria-label="查询结果表格，可横向滚动"'));
+for (const name of ["cost", "estimated_rows", "actual_rows", "loops", "actual_elapsed_time_us", "actual_total_time_per_loop_ms"]) {
+  assert.equal(context.testTable.sqlPlanColumnClass({ name }), "is-number");
+}
+assert.equal(context.testTable.sqlPlanColumnClass({ name: "index" }), "is-plan-object");
+assert.ok(!html.includes("is-sql-plan"));
+assert.ok(!alert.includes("is-sql-plan"));

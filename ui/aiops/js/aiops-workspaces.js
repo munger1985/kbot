@@ -35,6 +35,14 @@
     if (["INTEGER", "DECIMAL", "NUMBER", "FLOAT"].includes(String(column?.logical_type || "").toUpperCase())) return "is-number";
     return "is-value";
   }
+  function sqlPlanColumnClass(column) {
+    const name = String(column?.name || column?.key || column || "").toLowerCase();
+    if (name === "node_id") return "is-plan-node is-number";
+    if (name === "operation") return "is-plan-operation";
+    if (["object", "index"].includes(name)) return "is-plan-object";
+    return ["cost", "estimated_rows", "actual_rows", "loops", "actual_elapsed_time_us", "actual_total_time_per_loop_ms"].includes(name)
+      || ["INTEGER", "DECIMAL", "NUMBER", "FLOAT"].includes(String(column?.logical_type || "").toUpperCase()) ? "is-number" : "is-value";
+  }
   function topSqlColumnPriority(column) {
     const name = String(column?.name || column?.key || column || "").toLowerCase();
     if (["sql_id", "digest", "query_id"].includes(name)) return 0;
@@ -1202,6 +1210,7 @@
       };
       const primary = payload.presentation_role === "PRIMARY";
       const topSql = primary && ["TOP_SQL_LIST", "CURRENT_SQL_LIST", "SQL_SUBJECT_CANDIDATES", "SQL_SUBJECT_COMPARISON"].includes(payload.result_kind);
+      const executionPlan = primary && payload.result_kind === "SQL_EXECUTION_PLAN";
       const orderedColumns = columns.map((column, index) => ({ column, index }))
         .filter(({ column }) => !topSql || payload.result_kind === "SQL_SUBJECT_COMPARISON" || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
       if (topSql) orderedColumns.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);
@@ -1214,21 +1223,21 @@
         const action = hasRowActions ? `<td>${prompt ? `<button type="button" data-primary-follow-up="${esc(prompt)}" data-sql-selection="${esc(reference)}">${esc(payload.follow_up_label || "继续诊断")}</button>` : "-"}</td>` : "";
         const cells = orderedColumns.map(({ column, index }) => {
           const value = cell(row, column, index) ?? (topSql ? "—" : "-");
-          if (!topSql) return `<td>${esc(value)}</td>`;
-          const kind = topSqlColumnClass(column);
+          if (!topSql && !executionPlan) return `<td>${esc(value)}</td>`;
+          const kind = executionPlan ? sqlPlanColumnClass(column) : topSqlColumnClass(column);
           const focusable = ["is-sql", "is-identifier"].includes(kind) ? ' tabindex="0"' : "";
           return `<td class="${kind}"><span${focusable} title="${esc(value)}">${esc(value)}</span></td>`;
         }).join("");
         return `<tr>${cells}${action}</tr>`;
       }).join("");
-      const headings = orderedColumns.map(({ column }) => `<th${topSql ? ` class="${topSqlColumnClass(column)}"` : ""}>${esc(column.label || column.name || column.key || column)}</th>`).join("");
-      const scrollAccessibility = topSql ? ' tabindex="0" aria-label="查询结果表格，可横向滚动"' : "";
+      const headings = orderedColumns.map(({ column }) => `<th${topSql || executionPlan ? ` class="${executionPlan ? sqlPlanColumnClass(column) : topSqlColumnClass(column)}"` : ""}>${esc(column.label || column.name || column.key || column)}</th>`).join("");
+      const scrollAccessibility = topSql || executionPlan ? ' tabindex="0" aria-label="查询结果表格，可横向滚动"' : "";
       const table = rows.length
         ? `<div class="ops-table-wrap"${scrollAccessibility}><table class="ops-table"><thead><tr>${headings}${actionHead}</tr></thead><tbody>${body}</tbody></table></div>`
         : '<p class="ops-evidence-empty">当前范围没有符合条件的记录；空结果不代表未执行取证。</p>';
       if (!primary) return table;
       const meta = [payload.measurement_note, payload.captured_at ? shell.fmt(payload.captured_at) : ""].filter(Boolean).join(" · ");
-      return `<section class="ops-primary-result${topSql ? " is-top-sql" : ""}"><header><div><h3>${esc(payload.title || "查询结果")}</h3><p>${esc(meta || "本轮只读取证结果")}</p></div><span>${esc(payload.row_count || rows.length)} 行${payload.truncated ? " · 已截断" : ""}</span></header>${table}<footer>${topSql ? "可横向滚动查看全部列 · " : ""}原始结果仍保留在诊断证据中</footer></section>`;
+      return `<section class="ops-primary-result${topSql ? " is-top-sql" : ""}${executionPlan ? " is-sql-plan" : ""}"><header><div><h3>${esc(payload.title || "查询结果")}</h3><p>${esc(meta || "本轮只读取证结果")}</p></div><span>${esc(payload.row_count || rows.length)} 行${payload.truncated ? " · 已截断" : ""}</span></header>${table}<footer>${topSql || executionPlan ? "可横向滚动查看全部列 · " : ""}原始结果仍保留在诊断证据中</footer></section>`;
     }
     if (block.block_type === "CHART") {
       if (payload.chart_type === "LINE") return lineChartHtml(payload);

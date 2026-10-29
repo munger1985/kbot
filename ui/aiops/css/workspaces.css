@@ -182,6 +182,23 @@
 .ops-primary-result .ops-table-wrap { max-height: 440px; }
 .ops-primary-result .ops-table td { max-width: 420px; overflow-wrap: anywhere; white-space: normal; }
 .ops-primary-result > footer { padding: 9px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+.ops-primary-result.is-sql-plan { min-width: 0; font-family: inherit; line-height: 1.72; }
+.ops-primary-result.is-sql-plan > header > div { min-width: 0; }
+.ops-primary-result.is-sql-plan > header h3 { color: var(--accent); font-size: 13px; line-height: inherit; overflow-wrap: anywhere; }
+.ops-primary-result.is-sql-plan > header p,
+.ops-primary-result.is-sql-plan > header > span,
+.ops-primary-result.is-sql-plan > footer { font-size: 12px; }
+.ops-primary-result.is-sql-plan > header > span { flex-shrink: 0; }
+.ops-primary-result.is-sql-plan .ops-table-wrap { min-width: 0; overflow: auto; }
+.ops-primary-result.is-sql-plan .ops-table { display: table; width: 100%; min-width: max-content; max-width: none; margin: 0; border: 0; border-spacing: 0; border-collapse: separate; background: var(--paper); color: var(--muted); font-family: inherit; font-size: inherit; line-height: 1.72; }
+.ops-primary-result.is-sql-plan .ops-table th,
+.ops-primary-result.is-sql-plan .ops-table td { min-width: 5em; max-width: none; padding: .7em .95em; border: 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; overflow-wrap: normal; }
+.ops-primary-result.is-sql-plan .ops-table th { color: var(--muted); background: var(--bg); font-weight: 700; }
+.ops-primary-result.is-sql-plan .ops-table tbody tr:last-child td { border-bottom: 0; }
+.ops-primary-result.is-sql-plan .ops-table .is-number { text-align: right; font-variant-numeric: tabular-nums; }
+.ops-primary-result.is-sql-plan .ops-table .is-plan-node { min-width: 3em; }
+.ops-primary-result.is-sql-plan .ops-table .is-plan-operation { min-width: 17em; white-space: pre; }
+.ops-primary-result.is-sql-plan .ops-table .is-plan-object { min-width: 8em; }
 .ops-primary-result.is-top-sql { min-width: 0; }
 .ops-primary-result.is-top-sql > header p,
 .ops-primary-result.is-top-sql > header > span,
