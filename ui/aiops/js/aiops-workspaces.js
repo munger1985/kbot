@@ -52,7 +52,7 @@
   const hasNumber = (value) => value !== null && value !== undefined
     && value !== "" && Number.isFinite(Number(value));
   const displayText = (value, dictionary = {}) => String(value ?? "")
-    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g)
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|\b[A-Z][A-Z0-9_$#]*(?:[ \t]+[A-Z][A-Z0-9_$#]*)+\b|\b(?=[A-Za-z0-9_.$#]*[A-Z])[A-Za-z_$][A-Za-z0-9_$#]*(?:\.[A-Za-z_$][A-Za-z0-9_$#]*)+\b)/g)
     .map((part, index) => index % 2 ? part : part.replace(
       /(^|[^A-Za-z0-9_])([A-Z][A-Z0-9_]{2,})(?=$|[^A-Za-z0-9_])/g,
       (match, prefix, code) => `${prefix}${dictionary[code] || code}`,

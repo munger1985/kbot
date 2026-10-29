@@ -142,6 +142,11 @@ class AIOpsDisplayDictionaryTest(unittest.TestCase):
         self.assertNotIn("log_mode", rendered)
         self.assertNotIn("unknown_vendor_field", rendered)
 
+    def test_plan_terms_and_object_names_are_not_translated_as_status_codes(self) -> None:
+        rendered = display_text("FIXED TABLE FULL → SYS.TABLE → schema.TABLE；FIXED；TABLE；`TABLE`")
+        self.assertEqual("FIXED TABLE FULL → SYS.TABLE → schema.TABLE；已修复；数据表格；`TABLE`", rendered)
+        self.assertEqual("```sql\nSELECT FIXED FROM SYS.TABLE\n```", display_text("```sql\nSELECT FIXED FROM SYS.TABLE\n```"))
+
     def test_all_inspection_report_columns_have_human_readable_labels(self) -> None:
         columns = {
             column

@@ -49,6 +49,7 @@ def task_frame():
 def diagnosis(fact, *, field="execution_count", row_index=0, level="SUPPORTED", scope="SUBJECT", goal=True, draft_sql=None):
     return SqlDiagnosisDraft.model_validate({
         "summary": "根据实际观测给出原因方向和有条件措施。",
+        "verdict": "PROBLEM_FOUND",
         "conclusions": [{
             "conclusion_id": "c1", "statement": "该 SQL 的已观测工作量需要结合调用频率治理。",
             "level": level, "scope": scope, "applicable_time": fact.captured_at,

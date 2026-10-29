@@ -2596,6 +2596,11 @@ class AIOpsRuntimeService:
             or not tool_budget_remaining
         ):
             return False
+        if task_frame and task_frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} and (
+            assessment.sql_checkpoint is not None or assessment.sql_diagnosis_error is not None
+        ):
+            # 已有 SQL 阶段判断仅为关键补证继续，不能因无关窗口/监控缺口重跑。
+            return next_action == "REPLAN"
         if has_deferred:
             return True
         requested = (

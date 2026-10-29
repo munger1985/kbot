@@ -62,7 +62,7 @@ def _workload_profile(row: dict, database_type: str, is_window: bool) -> str:
     except (InvalidOperation, TypeError, ValueError):
         return ""
     return (f"观测结论：该统计主体记录了 {_number(count)} 次执行，按同一行总耗时÷执行次数计算，平均约 {_number(mean_ms)} 毫秒／次。"
-            "这是平均工作量画像，不能替代尾延迟、执行计划或业务基线；这些数字本身不足以证实故障，也不能证明无需优化。")
+            "这是该统计范围的单次平均开销，可结合计划、等待和业务调用方式继续分析；不能仅凭均值认定故障或健康。")
 
 
 def _captured_at(fact: TurnEvidenceFact) -> float:
@@ -249,7 +249,7 @@ def build_sql_evidence_answer(
             if fact.warnings:
                 analysis += "\n\n" + "\n".join(fact.warnings)
         else:
-            analysis += "\n\n这些是累计值，不代表指定时间窗口；缺少业务基线时不能判断耗时是否异常。"
+            analysis += "\n\n这些是累计值，不代表指定时间窗口；仍可用于分析单次平均开销及与其他证据结合判断机制。近期是否退化需相应窗口或基线，而非所有诊断都需历史窗口。"
         analysis += ("共享块命中或对象级扫描统计不能单独证明该 SQL 的扫描方式或根因。" if database_type == "POSTGRESQL"
                      else "逻辑读、物理读或对象级统计不能单独证明该 SQL 的访问路径或瓶颈。" if database_type == "ORACLE"
                      else "Digest 累计扫描行数或对象级统计不能单独证明该 SQL 的访问路径或瓶颈。")
@@ -282,15 +282,14 @@ def build_sql_evidence_answer(
         for item in plans:
             document = item.sql_plan
             origin = {"DATABASE_CURSOR": "缓存计划", "CONTROLLED_ESTIMATE": "受控估算计划", "USER_UPLOAD": "人工声明计划"}[document.origin]
-            operations = " → ".join(node.operation for node in document.nodes[:8])
+            operations = " → ".join("`" + node.operation.replace("`", "\\`") + "`" for node in document.nodes[:8])
             paths.append(f"{origin}（{len(document.nodes)} 个节点）：{operations}" + ("…" if len(document.nodes) > 8 else ""))
         analysis += "\n\n已取得的计划材料：" + "；".join(paths) + "。完整节点见执行计划表；路径描述不等于已证实性能故障，估算或人工材料不能当作生产实际执行。"
         refs = tuple(dict.fromkeys((*refs, *(item.evidence_ref for item in plans))))
         solution = (
-            "已取得并展示匹配计划，不需要重复采集同一材料。下一步应沿用这些证据，解释关键访问、连接和聚合节点，"
-            "结合调用频率、等待和资源证据判断影响；实际行数与估算行数只在可比口径下分析。"
-            "当前机制分析未完成，不建议仅凭累计总耗时或某种计划节点修改索引、参数或 SQL。"
-            "若问题针对某段时间的变慢，再补齐同口径窗口或业务基线，验证该时段表现，不能用累计值冒充窗口。"
+            "已取得并展示匹配计划，不需要重复采集同一材料。当前未完成的是诊断生成，应先恢复此阶段并复用已有证据，"
+            "而不是把累计口径或已取得计划当成数据库无法分析。暂不根据累计排名或某个计划节点修改索引、参数或 SQL。"
+            "只有需要判断某段时间的退化或优化效果时，才补齐相应窗口或基线。"
         )
     if any(gap.source_id == tool_id for gap in relevant_gaps):
         solution = (

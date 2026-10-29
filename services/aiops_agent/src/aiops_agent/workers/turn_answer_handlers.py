@@ -47,10 +47,11 @@ from aiops_agent.application.display_dictionary import (
 from aiops_agent.application.investigation.projection import direct_list_result_kind
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
+from aiops_agent.application.diagnosis.sql_review import generate_sql_review, reusable_checkpoint
 from aiops_agent.application.sql_selection import selection_ref
 from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact, controlled_estimate_fact
 from aiops_agent.application.diagnosis.evidence_projection import database_evidence_fact, top_sql_window_evidence_fact
-from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
+from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft, SqlDiagnosticCheckpoint
 from aiops_agent.application.diagnosis.investigation_record import (
     freeze_investigation, render_investigation, sql_investigation_draft,
 )
@@ -1054,6 +1055,10 @@ class DbaEvidenceAssessmentHandler:
                     reason="已取得完整游标身份，先读取可用缓存执行计划，再分析访问路径与运行证据。",
                 ),
             })
+        if task_frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} and scoped.status != SufficiencyStatus.UNSAFE:
+            if getattr(context, "deadline_at", None) and (datetime.fromisoformat(context.deadline_at) - datetime.now(UTC)).total_seconds() <= 3:
+                return scoped
+            return await self._review_sql(context, scoped, task_frame)
         if (assessment_deadline is not None and assessment_deadline <= datetime.now(UTC)) or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
             return scoped
         model_snapshot = dict(answer_context.get("model") or {})
@@ -1201,6 +1206,59 @@ class DbaEvidenceAssessmentHandler:
                 "investigation": investigation.model_dump(mode="python"),
             }
         ))
+
+    async def _review_sql(self, context, assessment, task_frame):
+        """一次推理同时完成诊断和补证决策，已校验结果持久化后直接交付。"""
+        answer_context = dict(context.plan_snapshot.get("answer_context") or {})
+        database_type = str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper()
+        if build_sql_evidence_bundle(task_frame=task_frame, database_type=database_type, evidence=assessment.evidence) is None:
+            return assessment
+        previous = None
+        try:
+            raw = answer_context.get("sql_checkpoint")
+            previous = SqlDiagnosticCheckpoint.model_validate(raw) if raw else None
+            if previous and reusable_checkpoint(previous, task_frame=task_frame, database_type=database_type,
+                                                evidence=assessment.evidence, current_only=False) is None:
+                previous = None
+        except (ValueError, TypeError):
+            previous = None
+        checkpoint = previous
+        error = None
+        record = None
+        try:
+            if self._model is None or self._prompts is None:
+                error = "SQL_DIAGNOSIS_MODEL_UNAVAILABLE"
+            elif reusable_checkpoint(previous, task_frame=task_frame, database_type=database_type, evidence=assessment.evidence) is None:
+                checkpoint = await generate_sql_review(context=context, task_frame=task_frame, database_type=database_type,
+                    evidence=assessment.evidence, gaps=assessment.gaps, model=self._model, prompts=self._prompts, previous=previous)
+            if checkpoint is not None and error is None:
+                bundle = build_sql_evidence_bundle(task_frame=task_frame, database_type=database_type, evidence=assessment.evidence)
+                record = freeze_investigation(draft=sql_investigation_draft(checkpoint.draft, "当前选定 SQL", bundle["subjects"]),
+                    evidence=assessment.evidence, context=context, gaps=assessment.gaps)
+        except (AIOpsModelError, ValueError, TypeError, LookupError) as exc:
+            checkpoint = previous
+            error = getattr(exc, "code", "SQL_DIAGNOSIS_VALIDATION_FAILED")
+            logger.warning("SQL 阶段诊断未完成，保留可核验检查点：task_id={} code={}", context.task_id, error)
+        current = checkpoint is not None and error is None
+        draft = checkpoint.draft if current else None
+        requests = draft.next_evidence if draft else ()
+        complete = bool(record and record.stop_reason == "GOAL_ANSWERED") and not any(gap.code in {
+            "COMPLETION_REQUIREMENT_UNSATISFIED", "SQL_COMPARISON_INCOMPLETE", "SQL_SUBJECT_EVIDENCE_UNMATCHED",
+        } for gap in assessment.gaps)
+        status = SufficiencyStatus.ANSWERABLE if complete else (
+            assessment.status if not current and assessment.status != SufficiencyStatus.ANSWERABLE else SufficiencyStatus.PARTIAL
+        )
+        return assessment.model_copy(update={
+            "status": status, "sql_checkpoint": checkpoint, "sql_diagnosis_error": error,
+            "gaps": (*assessment.gaps, *(TurnEvidenceGap(source_id="sql.diagnosis", step_id=f"next-{index}",
+                code="SQL_DIAGNOSIS_KEY_EVIDENCE", detail=request, retryable=True) for index, request in enumerate(requests, 1))),
+            "investigation": InvestigationAssessment(
+                round_no=int(context.plan_snapshot.get("revision_no") or 1), sufficiency_status=status,
+                next_action="REPLAN" if requests else "ANSWER", progress_made=current,
+                remaining_unknowns=draft.unresolved_questions if draft else (), evidence_gaps=requests,
+                clarification_question=None, reason=draft.summary if draft else "诊断阶段未完成，交付已取得的局部结果，不重复调用失败阶段。",
+            ),
+        })
 
     @staticmethod
     def _incomplete_model_assessment(
@@ -1685,51 +1743,39 @@ class DbaAnswerComposeHandler:
         receipt = None
         fallback_reason = None
         record = None
-        if self._model is not None and self._prompts is not None:
-            answer_context = self._answer_context(context)
-            try:
-                prompt = await self._prompts.resolve(
-                    "sql_diagnosis", frozen_prompts=dict(answer_context.get("prompts") or {}),
-                )
-                generated = await self._model.generate_structured(
-                    purpose="aiops.sql-diagnosis", output_model=SqlDiagnosisDraft,
-                    model_snapshot=dict(answer_context.get("model") or {}),
-                    prompt_ref={**prompt.ref(), "content": prompt.content},
-                    input_payload={
-                        "question": answer_context.get("question", ""),
-                        "evidence_bundle": bundle,
-                        "parent_investigation": answer_context.get("parent_investigation"),
-                        "goal_catalog": self._goal_catalog(task_frame),
-                        "investigation": assessment.investigation.model_dump(mode="json") if assessment.investigation else None,
-                        "resource_capabilities": context.plan_snapshot.get("capability_snapshot", {}),
-                        "gaps": [item.model_dump(mode="json") for item in assessment.gaps],
-                        "delivery_requirements": {
-                            "summary": "先正面回答该 SQL 是否存在已证实问题；观察范围未见明显异常时明确结论和暂不变更；证据不足时给出已成立的局部判断及唯一关键下一步，不能仅复述缺证。",
-                            "execution_plan": "优先解释已匹配计划的关键节点、对象/索引、估算与实际差异及来源限制；缺计划不阻断锁等待等直接证据结论。",
-                            "recommendations": "围绕已支持机制给出具体可验证措施；不默认要求改索引或参数，不重复通用审批话术。",
-                        },
-                    },
-                    deadline=self._deadline(context.deadline_at) - timedelta(seconds=3) if context.deadline_at else None,
-                    idempotency_key=f"turn:{context.run_id}:sql-diagnosis:{context.attempt}",
-                )
-                draft = SqlDiagnosisDraft.model_validate(generated.output.model_dump(mode="python"))
-                validate_sql_diagnosis(draft, bundle)
+        checkpoint = assessment.sql_checkpoint
+        try:
+            draft = reusable_checkpoint(checkpoint, task_frame=task_frame, database_type=self._database_type(context), evidence=assessment.evidence)
+            if (draft is None or assessment.sql_diagnosis_error) and checkpoint is not None:
+                draft = reusable_checkpoint(checkpoint, task_frame=task_frame, database_type=self._database_type(context),
+                                            evidence=assessment.evidence, current_only=False)
+                if draft is not None:
+                    draft = draft.model_copy(update={"goal_satisfied": False, "goal_assessments": (), "next_evidence": ()})
+                    fallback_reason = "本轮后续取证或诊断未完成，以下保留上一阶段已核验判断及原适用时点；不将其冒充对新增证据的完整结论。"
+            if draft is None and assessment.sql_diagnosis_error:
+                fallback_reason = f"诊断阶段未完成（{assessment.sql_diagnosis_error}）；已停止重复生成，保留已核验观测。"
+            elif draft is None and self._model is not None and self._prompts is not None:
+                checkpoint = await generate_sql_review(context=context, task_frame=task_frame, database_type=self._database_type(context),
+                    evidence=assessment.evidence, gaps=assessment.gaps, model=self._model, prompts=self._prompts)
+                draft = checkpoint.draft
+            if draft is not None:
                 record = freeze_investigation(
                     draft=sql_investigation_draft(draft, "SQL " + str(bundle["subject"].get("query_id") or bundle["subject"].get("sql_id") or bundle["subject"].get("digest") or "当前选定语句"), bundle["subjects"]),
                     evidence=assessment.evidence, context=context, gaps=assessment.gaps,
                 )
-                receipt = generated.receipt.model_dump(mode="json")
-            except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
-                logger.warning("SQL 诊断降级为证据摘要：task_id={} error_type={} code={}", context.task_id, type(exc).__name__, getattr(exc, "code", "EVIDENCE_VALIDATION_FAILED"))
-                draft = None
-                record = None
-                cause = f"诊断生成未完成（{exc.code}）" if isinstance(exc, AIOpsModelError) else "诊断生成未通过证据校验"
-                fallback_reason = cause + "；本次仅提供已核验画像，原因与方案尚未完成。"
-        else:
-            fallback_reason = "诊断模型未配置；本次仅提供已核验画像，不能视为已完成根因分析。"
+                receipt = checkpoint.model_receipt if checkpoint else None
+            elif fallback_reason is None:
+                fallback_reason = "诊断模型未配置；保留已核验观测，不能视为已完成根因分析。"
+        except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
+            logger.warning("SQL 诊断降级为证据摘要：task_id={} error_type={} code={}", context.task_id, type(exc).__name__, getattr(exc, "code", "EVIDENCE_VALIDATION_FAILED"))
+            draft, record = None, None
+            cause = f"诊断生成未完成（{exc.code}）" if isinstance(exc, AIOpsModelError) else "诊断生成未通过证据校验"
+            fallback_reason = cause + "；保留已核验观测，不将生成失败解释为 SQL 故障或正常。"
         if draft is not None:
             analysis, solution, refs = render_investigation(record)
             analysis = "结论：" + draft.summary + "\n\n" + analysis
+            if fallback_reason:
+                analysis = fallback_reason + "\n\n" + analysis
         else:
             record = None
             answer = build_sql_evidence_answer(

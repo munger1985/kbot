@@ -7,7 +7,7 @@ const sourcePath = fileURLToPath(new URL("../../ui/aiops/js/aiops-workspaces.js"
 const source = readFileSync(sourcePath, "utf8");
 const instrumented = source.replace(
   /\}\)\(\);\s*$/,
-  "globalThis.testTable = { answerBlockHtml, topSqlColumnClass, sqlPlanColumnClass, normalizePrimaryTopSqlBlocks };})();",
+  "globalThis.testTable = { answerBlockHtml, topSqlColumnClass, sqlPlanColumnClass, normalizePrimaryTopSqlBlocks, displayText };})();",
 );
 assert.notEqual(instrumented, source);
 const escape = (value) => String(value ?? "")
@@ -19,6 +19,11 @@ const context = {
   addEventListener: () => {},
 };
 runInNewContext(instrumented, context, { filename: sourcePath });
+
+assert.equal(context.testTable.displayText("FIXED TABLE FULL → SYS.TABLE；FIXED；TABLE；`TABLE`", {FIXED: "已修复", TABLE: "数据表格"}),
+  "FIXED TABLE FULL → SYS.TABLE；已修复；数据表格；`TABLE`");
+assert.equal(context.testTable.displayText("```sql\nSELECT FIXED FROM SYS.TABLE\n```", {FIXED: "已修复", TABLE: "数据表格"}),
+  "```sql\nSELECT FIXED FROM SYS.TABLE\n```");
 
 const digest = "a061f3c35618dfc240a0b107a2139a89b7290b5ef4958ef258789ee714926538";
 const sql = 'SELECT "<unsafe>" FROM orders WHERE id = 1';

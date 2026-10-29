@@ -190,9 +190,14 @@ def render_investigation(record):
             analysis.append("判断边界：" + "；".join(claim.limitations))
         refs.extend(item.evidence_ref for item in (*claim.evidence_fields, *claim.counterevidence_fields))
     for action in record.recommendations:
-        parts = [action.action, "适用条件：" + "；".join(action.preconditions),
-                 "风险：" + "；".join(action.risks), "验证：" + "；".join(action.validation),
-                 "停止或回退：" + action.rollback_or_stop]
+        parts = [action.action]
+        if action.preconditions:
+            parts.append("适用条件：" + "；".join(action.preconditions))
+        if action.risks:
+            parts.append("风险：" + "；".join(action.risks))
+        parts.append("验证：" + "；".join(action.validation))
+        if action.rollback_or_stop:
+            parts.append("停止或回退：" + action.rollback_or_stop)
         if action.requires_approval:
             parts.append("待确认与审批建议，本轮未执行。")
         if action.draft_sql:

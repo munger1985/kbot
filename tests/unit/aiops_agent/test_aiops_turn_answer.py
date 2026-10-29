@@ -1213,7 +1213,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             )
         )
 
-    def test_single_sql_core_evidence_is_answerable(self) -> None:
+    def test_single_sql_core_evidence_is_retained_without_diagnosis_model(self) -> None:
         artifacts = tuple(
             _tool_artifact(
                 semantics="CURRENT_ACTIVITY",
@@ -1241,7 +1241,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertEqual("SQL_DIAGNOSIS_MODEL_UNAVAILABLE", result.sql_diagnosis_error)
         self.assertFalse(
             any(
                 gap.code == "SINGLE_SQL_CORE_EVIDENCE_MISSING"
@@ -1249,7 +1250,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             )
         )
 
-    def test_single_sql_empty_plan_monitor_does_not_block_answer(self) -> None:
+    def test_single_sql_empty_plan_monitor_does_not_invent_gap(self) -> None:
         artifacts = tuple(
             _tool_artifact(
                 semantics="CURRENT_ACTIVITY",
@@ -1279,7 +1280,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertEqual("SQL_DIAGNOSIS_MODEL_UNAVAILABLE", result.sql_diagnosis_error)
         self.assertFalse(
             any(
                 gap.step_id == "db.sql.plan_monitor"

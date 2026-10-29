@@ -183,7 +183,15 @@ def test_mismatched_plan_is_not_presented_as_the_target_plan(dimension, state):
 def test_no_anomaly_conclusion_and_plan_survive_both_answer_modes():
     async def exercise():
         entry, plan = direct(), fact(observation())
-        draft = diagnosis(entry).model_copy(update={"summary": "在已观察范围未发现明显异常，暂不建议变更。"})
+        original = diagnosis(entry)
+        draft = original.model_copy(update={
+            "summary": "在已观察范围未发现明显异常，暂不建议变更。", "verdict": "NO_OBVIOUS_ISSUE",
+            "conclusions": (original.conclusions[0].model_copy(update={"statement": "已有匹配计划未显示明显异常。"}),),
+            "recommendations": (original.recommendations[0].model_copy(update={
+                "intent": "OBSERVE", "action": "暂不建议变更，保持同口径观测。", "requires_approval": False,
+                "preconditions": (), "risks": (), "rollback_or_stop": "",
+            }),),
+        })
         model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(output=draft, receipt=SimpleNamespace(model_dump=lambda **_: {}))))
         prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="按证据诊断", ref=lambda: {})))
         ctx = _context(task_frame_overrides=frame(subject={"subject_type": "ORACLE_SQL_ID", **SUBJECT}))
@@ -215,7 +223,7 @@ def test_fallback_derives_native_average_without_inventing_anomaly_or_plan(engin
     task = frame(engine, {"subject_type": {"ORACLE": "ORACLE_SQL_ID", "MYSQL": "MYSQL_DIGEST", "POSTGRESQL": "POSTGRESQL_QUERY_ID"}[engine], **SUBJECTS[engine]})
     result = build_sql_evidence_answer(task_frame=task, database_type=engine, evidence=(value,), fallback_reason="诊断生成未完成。")
     assert f"平均约 {expected} 毫秒／次" in result.analysis
-    assert "不能证明无需优化" in result.analysis
+    assert "不能仅凭均值认定故障或健康" in result.analysis
     assert "诊断生成未完成" in result.analysis
 
 @pytest.mark.parametrize("sql_task", [False, True])

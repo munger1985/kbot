@@ -100,7 +100,7 @@ def test_stream_and_nonstream_show_failure_and_incomplete_diagnosis_in_the_body(
     assert result.blocks == streamed[-1].blocks
     text = "".join(item.payload["delta"] for item in streamed[:-1])
     assert "历史观测" in text and "执行次数 10" in text
-    assert "QUERY_COLUMN_AMBIGUOUS" in text and "原因与方案尚未完成" in text
+    assert "QUERY_COLUMN_AMBIGUOUS" in text and "不将生成失败解释为 SQL 故障或正常" in text
     assert "MODEL_DEADLINE_EXCEEDED" in text
 
 

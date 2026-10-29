@@ -13,6 +13,7 @@ from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.contracts.evidence import SourcePaginationObservation
 from aiops_agent.contracts.physical_identity import SourceIdentityWitness
 from aiops_agent.contracts.sql_plan import SqlPlanDocument
+from aiops_agent.contracts.sql_diagnosis import SqlDiagnosticCheckpoint
 
 from platform_core.contracts.aiops import (
     AnswerBlockType,
@@ -148,6 +149,8 @@ class DbaSufficiencyAssessment(BaseModel):
     reasons: tuple[str, ...] = ()
     clarification_question: str | None = Field(default=None, max_length=2000)
     investigation: InvestigationAssessment | None = None
+    sql_checkpoint: SqlDiagnosticCheckpoint | None = None
+    sql_diagnosis_error: str | None = None
 
     @model_validator(mode="after")
     def validate_status(self) -> "DbaSufficiencyAssessment":

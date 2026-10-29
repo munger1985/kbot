@@ -16,6 +16,8 @@ def compile_diagnostic_runbook(record, *, database_type, database_version):
     executors = {"ORACLE": RunbookExecutor.SQLPLUS, "POSTGRESQL": RunbookExecutor.PSQL, "MYSQL": RunbookExecutor.MYSQL}
     steps, missing = [], []
     for action in record.recommendations:
+        if not action.draft_sql and action.intent not in {"MITIGATE", "REPAIR"}:
+            continue
         step_id = "diagnosis." + action.recommendation_id
         unresolved = tuple(action.missing_parameters) + tuple(
             item.name for item in action.parameters if item.source != "OBSERVATION"

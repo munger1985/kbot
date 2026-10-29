@@ -2663,6 +2663,7 @@ class TurnPlanningService:
         return await self._persist_replan(
             context=context,
             revision_no=revision_no,
+            sql_checkpoint=inputs.assessment.get("sql_checkpoint"),
             investigation=investigation,
             planning_receipt=planning_receipt,
             playbook_plan=playbook_plan,
@@ -3329,6 +3330,7 @@ class TurnPlanningService:
         planner_model_snapshot: dict,
         monitoring_execution: dict,
         attachment_searches: tuple[dict, ...],
+        sql_checkpoint: dict | None = None,
         public_summary: str | None = None,
     ) -> dict:
         async with self._uow_factory() as uow:
@@ -3613,6 +3615,7 @@ class TurnPlanningService:
                 "attachment_search": list(attachment_searches),
                 "answer_context": {
                     "question": context.question,
+                    "sql_checkpoint": sql_checkpoint,
                     "parent_investigation": context.parent_investigation,
                     "workflow_kind": str(context.workflow_kind or ""),
                     "input_envelope": investigation.input_envelope.model_dump(

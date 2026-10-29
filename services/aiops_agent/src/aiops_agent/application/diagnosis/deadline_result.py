@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from pydantic import ValidationError
 
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
 from aiops_agent.application.diagnosis.evidence_projection import database_evidence_fact, top_sql_window_evidence_fact
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle
+from aiops_agent.application.diagnosis.sql_review import reusable_checkpoint, evidence_hash
+from aiops_agent.application.diagnosis.investigation_record import sql_investigation_draft, render_investigation, validate_diagnosis
 from aiops_agent.application.diagnosis.sql_plan_presentation import matching_plan_refs, plan_availability_block, plan_table_block
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import (
@@ -21,6 +24,7 @@ from aiops_agent.contracts.turn_answer import (
 def deadline_result(*, artifacts, task_frame: dict, database_type: str, projected_ids: set[str], validated_prior_ids: frozenset[str] = frozenset(), validated_assessment_ids: frozenset[str] = frozenset()) -> AIOpsTurnResult | None:
     """仅使用已投影、可追溯的受控结果；没有任何事实时不伪造部分成功。"""
     facts: dict[str, TurnEvidenceFact] = {}
+    checkpoints = []
     gaps: dict[tuple[str, str | None, str], TurnEvidenceGap] = {}
     for artifact in artifacts:
         if str(artifact.artifact_id) not in projected_ids:
@@ -61,6 +65,8 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
             elif artifact.schema_version == "DBA_SUFFICIENCY.v1" and str(artifact.artifact_id) in validated_assessment_ids:
                 # 监控、计划及未来观察的副本须经正式来源复核，不能只相信副本自述。
                 assessment = DbaSufficiencyAssessment.model_validate(artifact.payload_json)
+                if assessment.sql_checkpoint is not None and assessment.sql_checkpoint.evidence_hash == evidence_hash(assessment.evidence):
+                    checkpoints.append(assessment.sql_checkpoint)
                 for gap in assessment.gaps:
                     gaps.setdefault((gap.source_id, gap.step_id, gap.code), gap)
                 for fact in assessment.evidence:
@@ -82,14 +88,29 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
         refs = summary.evidence_refs
     else:
         text += f"\n\n已保留 {len(evidence)} 项受控数据库观测；具体采集时点、原始行与统计口径见诊断证据。"
+    solution = summary.solution if summary is not None else None
+    for checkpoint in reversed(checkpoints):
+        draft = reusable_checkpoint(checkpoint, task_frame=task_frame, database_type=database_type, evidence=evidence, current_only=False)
+        if draft is None:
+            continue
+        try:
+            converted = sql_investigation_draft(draft, "当前选定 SQL", bundle["subjects"])
+            validate_diagnosis(converted, evidence)
+            analysis, solution, refs = render_investigation(SimpleNamespace(
+                claims=converted.claims, recommendations=converted.recommendations, unresolved_questions=converted.unresolved_questions,
+            ))
+        except (ValueError, TypeError, KeyError):
+            continue
+        text = "本轮已达到执行时限，停止继续补证；保留下列阶段已核验判断和原适用时点，尚未分析的新增证据不视为已完成诊断。\n\n阶段结论：" + draft.summary + "\n\n" + analysis
+        break
     blocks = [TurnAnswerBlock(
             block_type="ANALYSIS_MARKDOWN", schema_version="aiops.analysis.v1",
             payload={"markdown": text, "budget_exhausted": True}, evidence_refs=refs,
         )]
     blocks.extend(plan_table_block(fact) for fact in evidence if fact.evidence_ref in matched_plans and fact.sql_plan is not None)
-    if summary is not None:
+    if solution is not None:
         blocks.append(TurnAnswerBlock(block_type="SOLUTION_MARKDOWN", schema_version="AIOPS_SOLUTION_BLOCK.v1",
-            payload={"markdown": summary.solution}, evidence_refs=refs))
+            payload={"markdown": solution}, evidence_refs=refs))
     if bundle is not None:
         blocks.append(plan_availability_block(database_type=database_type, bundle=bundle))
     return AIOpsTurnResult(

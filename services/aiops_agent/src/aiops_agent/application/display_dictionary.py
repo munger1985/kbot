@@ -615,7 +615,7 @@ _FIELD_ASSIGNMENT_PATTERN = re.compile(
 )
 _DISPLAY_CODE_PATTERN = re.compile(r"(?<![A-Za-z0-9_])([A-Z][A-Z0-9_]{2,})(?![A-Za-z0-9_])")
 _MARKDOWN_CODE_PATTERN = re.compile(
-    r"(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)"
+    r"(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|\b[A-Z][A-Z0-9_$#]*(?:[ \t]+[A-Z][A-Z0-9_$#]*)+\b|\b(?=[A-Za-z0-9_.$#]*[A-Z])[A-Za-z_$][A-Za-z0-9_$#]*(?:\.[A-Za-z_$][A-Za-z0-9_$#]*)+\b)"
 )
 
 
