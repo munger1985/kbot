@@ -511,8 +511,8 @@
     renderRows();
   }
 
-  addEventListener("DOMContentLoaded", async () => {
-    await shell.initialize();
+  shell.ready.then(async (access) => {
+    if (!access) return;
     const dialog = document.getElementById("agent-dialog");
     dialog.querySelectorAll("[data-close-dialog]").forEach((button) => { button.onclick = () => dialog.close(); });
     document.getElementById("create-agent").onclick = openCreate;
@@ -532,5 +532,10 @@
     document.getElementById("agent-picker-previous").onclick = () => { pickerPage -= 1; renderPicker(); };
     document.getElementById("agent-picker-next").onclick = () => { pickerPage += 1; renderPicker(); };
     await load();
-  }, { once: true });
+    document.getElementById("create-agent").disabled = false;
+  }).catch((error) => {
+    document.getElementById("create-agent").disabled = true;
+    document.getElementById("agent-summary").textContent = "";
+    document.getElementById("agent-rows").innerHTML = `<tr><td class="ops-empty" colspan="6">Agent 加载失败：${escape(error?.message || "请稍后重试")}。请刷新页面重试。</td></tr>`;
+  });
 })();

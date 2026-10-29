@@ -1,6 +1,7 @@
 """AIOps Agent 编辑器静态交互边界测试。"""
 
 from pathlib import Path
+import subprocess
 import unittest
 
 
@@ -13,6 +14,13 @@ MAIN_API = ROOT / "services" / "main_api" / "src" / "main_api" / "api" / "aiops_
 
 
 class AIOpsAgentEditorUiTest(unittest.TestCase):
+    def test_initialization_uses_real_shell_and_handles_loading_failures(self) -> None:
+        result = subprocess.run(
+            ["node", str(ROOT / "tests" / "contract" / "aiops_agents_initialization.mjs")],
+            check=False, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
     def test_agent_selects_business_systems_for_authorized_scope(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
@@ -29,7 +37,7 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         page = PAGE.read_text(encoding="utf-8")
 
         self.assertIn("aiops-forms.css?v=20261022_2", page)
-        self.assertIn("aiops-agents.js?v=20261022_4", page)
+        self.assertIn("aiops-agents.js?v=20261029-ready-1", page)
 
     def test_models_are_a_dedicated_wizard_step(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
