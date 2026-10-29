@@ -37,7 +37,7 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         page = PAGE.read_text(encoding="utf-8")
 
         self.assertIn("aiops-forms.css?v=20261022_2", page)
-        self.assertIn("aiops-agents.js?v=20261029-ready-1", page)
+        self.assertIn("aiops-agents.js?v=20261029-catalog-1", page)
 
     def test_models_are_a_dedicated_wizard_step(self) -> None:
         page = PAGE.read_text(encoding="utf-8")

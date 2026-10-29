@@ -7,10 +7,13 @@ const root = new URL("../../ui/aiops/", import.meta.url);
 const html = readFileSync(new URL("agents.html", root), "utf8");
 const shellSource = readFileSync(new URL("js/aiops-shell.js", root), "utf8");
 const agentSource = readFileSync(new URL("js/aiops-agents.js", root), "utf8");
+const publicPaths = new Set(Object.keys(JSON.parse(readFileSync(
+  new URL("../../docs/openapi/main_api_public_v1.json", import.meta.url), "utf8",
+)).paths));
 const api = "/api/v1/apps/aiops";
 const access = { permissions: ["aiops:agent_manage"], domain_id: "domain", user_id: "user" };
 const paths = [
-  `${api}/agents`, `${api}/business-systems?limit=200`, `${api}/agent-model-catalog`,
+  `${api}/agents`, `${api}/business-systems?limit=200`, "/api/v1/model-catalog",
   `${api}/operations-knowledge/tags?limit=200`, `${api}/operations-knowledge/knowledge-bases`,
 ];
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -59,6 +62,7 @@ function setup({ session = true, accessResult = access, responses = {} } = {}) {
       load: () => session ? { access_token: "test-token" } : null,
       async request(path) {
         requests.push(path);
+        assert.ok(publicPaths.has(path.split("?")[0]), `公开合同不存在此接口：${path}`);
         if (path === `${api}/access`) {
           if (accessResult instanceof Error) throw accessResult;
           return accessResult;
@@ -101,7 +105,11 @@ test("实际 Shell 与页面脚本完成列表渲染和事件绑定", async () =
     [paths[0]]: [{ agent_id: "agent", display_name: "诊断 <Agent>", status: "ACTIVE",
       allowed_business_system_ids: ["system"], capabilities: ["RESOURCE_CATALOG_QUERY"] }],
     [paths[1]]: { items: [{ business_system_id: "system", display_name: "生产系统", status: "ENABLED" }] },
-    [paths[2]]: [{ model_id: "model", display_name: "测试模型", category: 1, served_model_name: "test" }],
+    [paths[2]]: [
+      { model_id: "model", display_name: "测试模型", category: 1, served_model_name: "test" },
+      { model_id: "ocr", display_name: "测试 OCR", category: 6, served_model_name: "ocr" },
+      { model_id: "vlm", display_name: "测试 VLM", category: 5, served_model_name: "vlm" },
+    ],
   } });
   await app.start();
   assert.deepEqual(app.errors, []);
@@ -109,6 +117,9 @@ test("实际 Shell 与页面脚本完成列表渲染和事件绑定", async () =
   assert.match(app.elements.get("agent-rows").innerHTML, /诊断 &lt;Agent&gt;/);
   assert.match(app.elements.get("agent-rows").innerHTML, /生产系统/);
   assert.match(app.elements.get("agent-planner-model").innerHTML, /测试模型/);
+  assert.match(app.elements.get("agent-ocr-model").innerHTML, /测试 OCR/);
+  assert.match(app.elements.get("agent-vlm-model").innerHTML, /测试 VLM/);
+  assert.doesNotMatch(app.elements.get("agent-planner-model").innerHTML, /测试 OCR|测试 VLM/);
   assert.equal(app.elements.get("create-agent").disabled, false);
   assert.equal(typeof app.elements.get("create-agent").onclick, "function");
   assert.equal(typeof app.elements.get("agent-form").onsubmit, "function");

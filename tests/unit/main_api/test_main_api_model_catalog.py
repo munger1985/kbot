@@ -29,9 +29,9 @@ class MainApiModelCatalogTest(unittest.TestCase):
         _configure_model_config_clients(app)
 
         clients = app.state.model_config_clients
-        self.assertEqual(5, len(clients))
+        self.assertEqual(6, len(clients))
         self.assertEqual(
-            (2, 1, 3, 5, 6),
+            (2, 1, 3, 5, 6, 8),
             tuple(client.category for client in clients),
         )
         self.assertEqual(
@@ -45,6 +45,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     settings.model_visual,
                     settings.model_vlm,
                     settings.model_ocr,
+                    settings.model_image,
                 )
             ),
             tuple(client.base_url for client in clients),

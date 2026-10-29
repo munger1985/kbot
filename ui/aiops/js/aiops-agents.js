@@ -496,7 +496,7 @@
     const [agentRows, systemPage, modelRows, tagPage, knowledgeBasePage] = await Promise.all([
       KBotAIOpsAuth.request(`${api}/agents`),
       KBotAIOpsAuth.request(`${api}/business-systems?limit=200`),
-      KBotAIOpsAuth.request(`${api}/agent-model-catalog`),
+      KBotAIOpsAuth.request("/api/v1/model-catalog"),
       KBotAIOpsAuth.request(`${api}/operations-knowledge/tags?limit=200`),
       KBotAIOpsAuth.request(`${api}/operations-knowledge/knowledge-bases`),
     ]);
