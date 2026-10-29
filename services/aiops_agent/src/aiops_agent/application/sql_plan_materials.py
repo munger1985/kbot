@@ -1,21 +1,15 @@
-"""代表参数安全提交与撤回；保护材料与执行审批严格分离。"""
+"""历史计划材料的访问复核与隐私清除；不接收参数或发起估算。"""
 
-from datetime import UTC, datetime, timedelta
-from dataclasses import asdict
-import json
+from datetime import UTC, datetime
 from uuid import UUID
 
-from aiops_agent.application.errors import AIOpsApplicationError, resource_not_found, state_conflict, validation_failed
+from aiops_agent.application.errors import AIOpsApplicationError, resource_not_found, state_conflict
 from aiops_agent.contracts.tool_execution import DbaToolResult
-from aiops_agent.domain.evidence.sql_plan_material import parse_sql_plan_material, SqlPlanMaterialInvalid
-from aiops_agent.domain.evidence.sql_plan_capture import inspect_plan_capture, source_sql_text
 from aiops_agent.domain.sql_subjects import normalize_sql_subject, SQL_STATISTICS_TOOLS
-from aiops_agent.entities import OpsArtifactEntity
 from aiops_agent.playbooks import canonical_hash
 from platform_core.contracts.aiops.sql_plan_material import (
-    SqlPlanCapturePreflight, SqlPlanMaterialPage, SqlPlanMaterialSource, SqlPlanMaterialSubmit, SqlPlanMaterialView,
+    SqlPlanMaterialPage, SqlPlanMaterialSource, SqlPlanMaterialView,
 )
-from platform_core.identity import uuid7
 
 
 MATERIAL_SCHEMA = "SQL_PLAN_MATERIAL_RECEIPT.v2"
@@ -93,14 +87,14 @@ class SqlPlanMaterialService:
         if (run.cancel_requested_at is not None or run.status in {"CANCELLED", "CANCELLING", "FAILED", "EXPIRED"}
             or target is None or target.status != "ENABLED" or not target.readonly_connection_enabled
             or target.diagnostic_credential_id is None):
-            raise state_conflict("目标或原诊断已不可用于提交计划材料")
+            raise state_conflict("目标或原诊断已不可用于读取历史计划")
         frozen_database = dict(dict(dict(run.plan_snapshot_json or {}).get("investigation_execution") or {}).get("database") or {})
         if (frozen_database.get("automatic_access_enabled") is not True
             or str(frozen_database.get("target_row_version")) != str(target.row_version)
             or frozen_database.get("db_type") != target.db_type
             or frozen_database.get("connection_profile") != dict(target.endpoint_json or {})
             or str(frozen_database.get("diagnostic_credential_id")) != str(target.diagnostic_credential_id)):
-            raise state_conflict("原诊断的目标版本、连接或凭据引用已变化，请重新取证后提交材料")
+            raise state_conflict("原诊断的目标版本、连接或凭据引用已变化，请重新取证后读取已有材料")
         binding = await uow.agents.get_active(domain_id=run.domain_id, agent_id=run.agent_id, target_id=run.target_id)
         if binding is None or str(binding.binding_id) != str(run.agent_version_id):
             raise state_conflict("Agent 与目标的当前绑定已变化")
@@ -126,76 +120,6 @@ class SqlPlanMaterialService:
             }),
         }
 
-    async def sources(self, *, scope, run_id, agent_ids=()):
-        async with self._uow_factory() as uow:
-            run = await self._owner(uow, scope, run_id, agent_ids=agent_ids)
-            target, _ = await self._access(uow, run)
-            artifacts = await uow.runs.list_artifacts(ops_run_id=run.ops_run_id)
-            sources = []
-            for artifact in reversed(artifacts):
-                sources.extend(_source_rows(artifact, run, target.db_type))
-                if len(sources) >= 64:
-                    break
-            return tuple(sources[:64])
-
-    async def submit(self, *, scope, run_id, command: SqlPlanMaterialSubmit, agent_ids=()):
-        try:
-            protected = parse_sql_plan_material(command.protected_document.get_secret_value())
-        except SqlPlanMaterialInvalid:
-            raise validation_failed("计划参数材料格式无效；数值绑定请使用精确字符串，不通过聊天或普通附件提交原值") from None
-        now = self._clock()
-        async with self._uow_factory() as uow:
-            run = await self._owner(uow, scope, run_id, lock=True, agent_ids=agent_ids)
-            target, access = await self._access(uow, run)
-            key = MATERIAL_PREFIX + str(command.submission_id)
-            if await uow.runs.get_artifact_by_key(ops_run_id=run.ops_run_id, artifact_key=key) is not None:
-                raise state_conflict("材料提交标识已使用，请刷新查看，不重复保存")
-            artifacts = await uow.runs.list_artifacts(ops_run_id=run.ops_run_id)
-            receipts = [item for item in artifacts if item.schema_version == MATERIAL_SCHEMA]
-            if len(receipts) >= 16:
-                raise state_conflict("每轮最多保存16份参数材料；请在新的诊断轮次补充")
-            source_artifact = await uow.runs.get_artifact(artifact_id=command.source_artifact_id)
-            candidates = _source_rows(source_artifact, run, target.db_type) if source_artifact else ()
-            source = next((item for item in candidates
-                if item.step_id == command.step_id and item.row_index == command.row_index), None)
-            if source is None:
-                raise state_conflict("所选 SQL 原始证据已不可用或统计身份不完整，请重新取证")
-            native = next(item for item in source_artifact.payload_json["tool_outcomes"] if item["step_id"] == source.step_id)["observation"]
-            fields = dict(zip((column["name"].lower() for column in native["columns"]), native["rows"][source.row_index], strict=True))
-            inspection = inspect_plan_capture(
-                database_type=target.db_type, sql=source_sql_text(fields, target.db_type),
-                parameter_count=len(protected["parameters"]))
-            preflight = SqlPlanCapturePreflight.model_validate(asdict(inspection))
-            active = 0
-            for receipt in receipts:
-                view = await self._view(uow=uow, scope=scope, run=run, artifact=receipt, now=now, access=access)
-                active += view.state == "STORED"
-            if active >= 4:
-                raise state_conflict("每轮最多同时保留4份有效材料；请先撤回旧材料")
-            payload = {
-                "schema_version": MATERIAL_SCHEMA, "material_id": str(command.submission_id),
-                "ops_run_id": str(run.ops_run_id), "actor_id": str(scope.actor_id),
-                "source": source.model_dump(mode="json"), "source_hash": source_artifact.content_hash,
-                "parameter_count": len(protected["parameters"]), "created_at": now.isoformat(),
-                "capture_preflight": preflight.model_dump(mode="json"),
-                "expires_at": (now + timedelta(seconds=command.ttl_seconds)).isoformat(), **access,
-            }
-            await self._vault.seal(uow=uow, scope=scope, material_id=command.submission_id,
-                payload={"binding": payload, "document": protected})
-            artifact = await uow.runs.add_artifact(OpsArtifactEntity(
-                artifact_id=uuid7(), ops_run_id=run.ops_run_id, ops_task_id=None, artifact_key=key,
-                artifact_type="EVIDENCE", schema_version=MATERIAL_SCHEMA, payload_json=payload,
-                content_hash=canonical_hash(payload), byte_size=len(json.dumps(payload, ensure_ascii=False).encode()),
-                provenance_json={"producer": "aiops.sql-plan-material", "contains_parameter_values": False},
-                trust_level="USER_PROVIDED", security_level=source_artifact.security_level,
-            ))
-            await uow.runs.append_event(ops_run_id=run.ops_run_id, event_type="sql.plan_material.stored",
-                event_key=key + ":stored", visibility="USER",
-                payload_json={"material_id": str(command.submission_id), "parameter_count": payload["parameter_count"],
-                    "expires_at": payload["expires_at"], "execution_authorized": False,
-                    "public_summary": "代表参数已保护保存；未执行计划采集，参数及解析环境尚未经核验"})
-            await uow.commit()
-            return self._public(run, payload, "STORED")
 
     def _public(self, run, payload, state):
         return SqlPlanMaterialView(material_id=payload["material_id"], ops_run_id=run.ops_run_id,

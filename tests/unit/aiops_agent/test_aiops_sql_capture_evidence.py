@@ -22,7 +22,7 @@ from aiops_agent.application.investigation.sql_plan_evidence import (
 )
 from aiops_agent.application.reporting import normalize_report_source, resolve_system_template
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
-from aiops_agent.application.sql_plan_execution import RESULT_KEY, RESULT_SCHEMA
+from aiops_agent.application.sql_plan_results import RESULT_KEY, RESULT_SCHEMA
 from aiops_agent.application.sql_plan_materials import _source_rows
 from aiops_agent.contracts.investigation import DiagnosisAnswerDraft
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
@@ -32,24 +32,14 @@ from aiops_agent.contracts.turn_answer import AIOpsTurnResult, TurnAnswerBlock, 
 from aiops_agent.playbooks import canonical_hash
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
 from platform_core.identity import uuid7
-from tests.unit.aiops_agent.test_aiops_sql_capture_execution import execution_store, claimed, report
-from tests.unit.aiops_agent.test_aiops_sql_capture_approval import call
-from tests.unit.aiops_agent.test_aiops_sql_plan_material import SECRET
+from tests.support.aiops_historical_plan import historical_store, verification, SECRET, call
 from tests.unit.aiops_agent.test_aiops_sql_comparison import answer_context
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis
 from tests.support.aiops_sql_review import diagnostic_response
 
 
 def scenario(engine="POSTGRESQL", *, status="SUCCEEDED", native_verification=None):
-    store = execution_store(engine)
-    background, task, _ = claimed(store)
-    exchanged = call(store.execution.exchange("signed-test"))
-    nodes = ({"node_id": 0, "operation": "Aggregate", "metrics": {"estimated_rows": "1"}},
-        {"node_id": 1, "parent_id": 0, "operation": "Seq Scan", "schema_name": "mes", "relation_name": "t",
-         "metrics": {"estimated_rows": "10000", "optimizer_total_cost": "123.5"}})
-    physical = store.original.payload_json["tool_outcomes"][0]["observation"]["provenance"]["instance_identity"]
-    updates = {"nodes": nodes, "physical_identity": physical} if status == "SUCCEEDED" else {"status": "FAILED", "nodes": (), "error_code": "PLAN_CAPTURE_FAILED"}
-    call(store.execution.report(report(store, exchanged.resource_lease, native_verification=native_verification, **updates)))
+    store, background = historical_store(engine, status=status, native_verification=native_verification)
     store.source, store.background = store.run, background
     store.original.artifact_key, store.original.ops_task_id = "source:sql", None
     store.original.artifact_type = "EVIDENCE"
@@ -60,7 +50,7 @@ def scenario(engine="POSTGRESQL", *, status="SUCCEEDED", native_verification=Non
     current = deepcopy(store.run)
     current.ops_run_id, current.status = uuid7(), "RUNNING"
     store.all_runs.append(current)
-    store.current, store.reader = current, store.execution.results
+    store.current, store.reader = current, store.reader
     subject = _source_rows(store.original, store.source, engine)[0].subject
     store.frame = {"diagnostic_profile": "SINGLE_SQL_PERFORMANCE", "subject_ref": subject,
         "problem_statement": "继续分析指定SQL并利用已经采集的估算计划", "objectives": ["DIAGNOSE"]}
@@ -317,7 +307,6 @@ def test_worker_lease_rechecks_access_and_removes_old_assessment_values_and_judg
 @pytest.mark.parametrize("engine", ["POSTGRESQL", "MYSQL", "ORACLE"])
 @pytest.mark.parametrize("with_verification", [False, True])
 def test_actual_formal_report_and_case_replay_preserve_plan_and_refuse_revoked_source(engine, with_verification):
-    from tests.unit.aiops_agent.test_aiops_sql_plan_verification import verification
     native = verification() if with_verification else None
     store = scenario(engine, native_verification=native)
     async def run():

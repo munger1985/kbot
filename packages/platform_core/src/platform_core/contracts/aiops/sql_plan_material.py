@@ -1,8 +1,8 @@
-"""代表参数的专用保护提交合同；提交材料不构成计划采集授权。"""
+"""历史计划材料的安全摘要；不接收新参数或授权估算。"""
 
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field
 
 from .types import AIOpsContract, UUIDv7, UtcDatetime
 
@@ -13,15 +13,6 @@ class SqlPlanMaterialSource(AIOpsContract):
     row_index: int = Field(ge=0, le=255)
     database_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
     subject: dict[str, str | bool | None] = Field(max_length=8)
-
-
-class SqlPlanMaterialSubmit(AIOpsContract):
-    submission_id: UUIDv7
-    source_artifact_id: UUIDv7
-    step_id: str = Field(min_length=1, max_length=128)
-    row_index: int = Field(ge=0, le=255)
-    protected_document: SecretStr = Field(min_length=2, max_length=65536, repr=False)
-    ttl_seconds: int = Field(default=900, ge=60, le=1800, strict=True)
 
 
 class SqlPlanCapturePreflight(AIOpsContract):
@@ -55,7 +46,7 @@ class SqlPlanMaterialView(AIOpsContract):
     execution_authorized: Literal[False] = False
     representative_parameters: Literal["USER_DECLARED_UNVERIFIED"] = "USER_DECLARED_UNVERIFIED"
     environment: Literal["USER_DECLARED_UNVERIFIED"] = "USER_DECLARED_UNVERIFIED"
-    notice: str = "仅保护保存材料，不触发 EXPLAIN、不重放业务 SQL；仍需独立风险审批及采集能力。"
+    notice: str = "历史材料仅可查看安全摘要或撤回清除；不接受新提交，不发起估算或重放业务 SQL。"
 
 
 class SqlPlanMaterialPage(AIOpsContract):

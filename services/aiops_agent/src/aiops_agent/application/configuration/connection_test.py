@@ -426,12 +426,8 @@ async def _probe_mysql_capabilities(
 
     version_tuple = _mysql_version_tuple(database_version)
     if version_tuple >= (8, 0, 0):
-        capabilities.update({"explain_json", "session_management"})
+        capabilities.add("session_management")
         details["session_management"] = "AVAILABLE"
-    if version_tuple >= (8, 0, 16):
-        capabilities.add("explain_tree")
-    if version_tuple >= (8, 0, 18):
-        capabilities.add("explain_analyze")
 
     slow_query = await _mysql_fetchone(
         cursor,
@@ -648,14 +644,6 @@ async def _probe_postgresql_capabilities(
             details["pg_control_system"] = "AVAILABLE"
         else:
             details["pg_control_system"] = "UNAVAILABLE"
-
-    explain_status = await _postgresql_probe_status(
-        connection,
-        "EXPLAIN (FORMAT JSON) SELECT 1",
-    )
-    details["explain_json"] = explain_status
-    if explain_status == "AVAILABLE":
-        capabilities.add("explain_json")
 
     extension_names = (
         "pg_stat_statements",

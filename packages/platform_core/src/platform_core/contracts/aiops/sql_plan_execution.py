@@ -1,14 +1,12 @@
-"""计划采集专用执行协议；参数兑换与普通只读授权严格隔离。"""
+"""历史计划结果的只读数据合同；不提供估算请求、执行授权或参数兑换。"""
 
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator, model_serializer
+from pydantic import Field, model_validator, model_serializer
 
 from .sql_plan_verification import SqlPlanNativeVerification
 
-from .executor import DiagnosticConnectionProfile, ResourceLeaseReceipt
-from .types import AIOpsContract, UUIDv7, UtcDatetime, OpsRunStatus
-
+from .types import AIOpsContract, UUIDv7, UtcDatetime
 
 def _physical_identity(database_type, identity):
     import re
@@ -32,74 +30,6 @@ def _physical_identity(database_type, identity):
                 raise ValueError
         except ValueError:
             raise ValueError("计划采集物理身份格式无效") from None
-
-
-class SqlPlanCaptureStart(AIOpsContract):
-    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-
-class SqlPlanCaptureGrant(AIOpsContract):
-    schema_version: Literal["sql-plan-capture-grant.v1"] = "sql-plan-capture-grant.v1"
-    issuer: str = Field(min_length=1, max_length=128)
-    audience: str = Field(min_length=1, max_length=128)
-    grant_id: UUIDv7
-    issued_at: UtcDatetime
-    expires_at: UtcDatetime
-    run_id: UUIDv7
-    task_id: UUIDv7
-    source_run_id: UUIDv7
-    request_id: UUIDv7
-    approval_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    lease_token_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
-    db_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
-    trace_id: str = Field(min_length=1, max_length=128)
-
-    @model_validator(mode="after")
-    def validate_lifetime(self):
-        if not 0 < (self.expires_at - self.issued_at).total_seconds() <= 45:
-            raise ValueError("计划采集Grant有效期必须在45秒以内")
-        return self
-
-
-class SqlPlanCaptureExecute(AIOpsContract):
-    grant: str = Field(min_length=64, max_length=16384, repr=False)
-
-
-class SqlPlanCaptureExchange(AIOpsContract):
-    database_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
-    connection_profile: DiagnosticConnectionProfile
-    username: SecretStr
-    password: SecretStr
-    source_sql: SecretStr
-    protected_document: SecretStr
-    allowed_objects: tuple[str, ...] = Field(max_length=64)
-    statement_timeout_seconds: int = Field(ge=1, le=10, strict=True)
-    native_bind_comparison: bool = Field(default=False, strict=True)
-    source_subject: dict[str, str | bool | None] = Field(max_length=16)
-    source_identity: dict[str, str] = Field(default_factory=dict, max_length=8)
-    resource_lease: ResourceLeaseReceipt = Field(repr=False)
-
-    @model_validator(mode="after")
-    def validate_protected_exchange(self):
-        _physical_identity(self.database_type, self.source_identity)
-        if self.native_bind_comparison and self.database_type != "ORACLE":
-            raise ValueError("仅Oracle原生绑定捕获允许独立审批的值比较")
-        if (not self.allowed_objects or any(len(name) > 256 for name in self.allowed_objects)
-            or len(self.source_sql.get_secret_value()) > 20000
-            or len(self.protected_document.get_secret_value().encode("utf-8")) > 65536):
-            raise ValueError("计划采集保护输入超出有界范围")
-        if self.database_type == "ORACLE" and not self.connection_profile.service:
-            raise ValueError("Oracle计划采集必须指定服务")
-        if self.database_type != "ORACLE" and not self.connection_profile.database:
-            raise ValueError("计划采集必须指定数据库")
-        return self
-
-    def protected_transport(self):
-        # 仅专用反向兑换路由调用；默认repr/JSON仍不泄露值。
-        payload = self.model_dump(mode="json")
-        for key in ("username", "password", "source_sql", "protected_document"):
-            payload[key] = getattr(self, key).get_secret_value()
-        return payload
 
 
 class SqlPlanEstimateNode(AIOpsContract):
@@ -132,7 +62,6 @@ class SqlPlanEstimateNode(AIOpsContract):
             except (ValueError, InvalidOperation):
                 raise ValueError("估算计划数值无效") from None
         return self
-
 
 class SqlPlanCaptureResult(AIOpsContract):
     schema_version: Literal["SQL_PLAN_CAPTURE_RESULT.v1"] = "SQL_PLAN_CAPTURE_RESULT.v1"
@@ -180,37 +109,3 @@ class SqlPlanCaptureResult(AIOpsContract):
         if self.native_verification is None:
             result.pop("native_verification", None)
         return result
-
-
-class SqlPlanCaptureReport(AIOpsContract):
-    result: SqlPlanCaptureResult
-    resource_lease: ResourceLeaseReceipt = Field(repr=False)
-
-
-class SqlPlanCaptureExecutionView(AIOpsContract):
-    """后台状态与权威安全结果；审批过期不抹除已采集的证据。"""
-
-    request_id: UUIDv7
-    capture_run_id: UUIDv7
-    run_status: OpsRunStatus
-    phase: Literal["QUEUED", "RUNNING", "CANCEL_REQUESTED", "TERMINAL"]
-    cancel_requested: bool
-    can_cancel: bool
-    result: SqlPlanCaptureResult | None = None
-    notice: str = "仅为估算计划，不证明原解析环境、参数代表性或生产实际执行；请求取消不代表数据库已经终止。"
-
-    @model_validator(mode="after")
-    def validate_reference(self):
-        if self.result is not None and (self.result.request_id != self.request_id
-            or self.result.capture_run_id != self.capture_run_id):
-            raise ValueError("采集结果与后台运行引用不一致")
-        if self.can_cancel and (self.cancel_requested or self.run_status in {
-            OpsRunStatus.COMPLETED, OpsRunStatus.PARTIAL, OpsRunStatus.FAILED,
-            OpsRunStatus.CANCELLED, OpsRunStatus.EXPIRED}):
-            raise ValueError("终态或已请求取消的采集不能重复取消")
-        terminal = self.run_status in {OpsRunStatus.COMPLETED, OpsRunStatus.PARTIAL,
-            OpsRunStatus.FAILED, OpsRunStatus.CANCELLED, OpsRunStatus.EXPIRED}
-        if (terminal != (self.phase == "TERMINAL")
-            or not terminal and self.cancel_requested != (self.phase == "CANCEL_REQUESTED")):
-            raise ValueError("采集阶段与终态或取消状态不一致")
-        return self

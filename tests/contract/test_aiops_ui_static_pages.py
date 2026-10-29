@@ -128,7 +128,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(23, len(scripts))
+        self.assertEqual(21, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -139,35 +139,6 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_plan_capture_approval_entry_is_loaded_before_run_page(self):
-        page = (AIOPS_ROOT / "run-detail.html").read_text(encoding="utf-8")
-        self.assertLess(page.index("aiops-plan-captures.js"), page.index("aiops-pages.js"))
-        source = (AIOPS_ROOT / "js" / "aiops-plan-captures.js").read_text(encoding="utf-8")
-        for required in ("sql-plan-capture-reviews", "request_sha256", "acknowledge_estimate_only",
-                         "acknowledge_oracle_plan_table_write", "capture_timeout", "尚未调度采集"):
-            self.assertIn(required, source)
-        self.assertNotIn("protected_document", source)
-        self.assertNotIn("/credentials", source)
-
-    def test_plan_material_has_isolated_input_and_lifecycle_controls(self):
-        page = (AIOPS_ROOT / "run-detail.html").read_text(encoding="utf-8")
-        self.assertLess(page.index("aiops-plan-materials.js"), page.index("aiops-pages.js"))
-        source = (AIOPS_ROOT / "js" / "aiops-plan-materials.js").read_text(encoding="utf-8")
-        for required in ("sql-plan-material-sources", "sql-plan-materials", "protected_document",
-                         "KBotAIOpsAuth.uuid7()", "input.value = \"\"", "不触发 EXPLAIN", "撤回并清除在线密文"):
-            self.assertIn(required, source)
-        for forbidden in ("sessionStorage", "localStorage", "console.", "/uploads", "textarea"):
-            self.assertNotIn(forbidden, source)
-
-    def test_sql_chat_reuses_lazy_plan_acquisition_with_real_run_and_permissions(self):
-        page = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
-        for asset in ("aiops-plan-materials.js", "aiops-plan-captures.js"):
-            self.assertLess(page.index(asset), page.index("aiops-workspaces.js"))
-        source = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(encoding="utf-8")
-        for required in ("mountSqlPlanAcquisition(panel, turns)", "data-sql-plan-turn", "sql_plan_acquisition",
-                         'root.addEventListener("toggle"', "KBotAIOpsPlanMaterials.mount(body, run, api)",
-                         'state.permissions.has("aiops:proposal:approve")', "补齐执行计划"):
-            self.assertIn(required, source)
 
     def test_dashboard_is_the_action_first_aiops_workbench(self):
         page = (AIOPS_ROOT / "dashboard.html").read_text(encoding="utf-8")
@@ -583,9 +554,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261029_3", "20261029_4"),
-            "situations": ("20261029_3", "20261029_4"),
-            "inspections": ("20261029_3", "20261029_4"),
+            "chat": ("20261029_3", "20261029_5"),
+            "situations": ("20261029_3", "20261029_5"),
+            "inspections": ("20261029_3", "20261029_5"),
         }
         for page_name, (stylesheet_version, script_version) in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
@@ -804,7 +775,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('button.textContent = wasEditing ? "保存中…" : "创建中…"', agent)
         self.assertIn("shell.toast(error.message)", agent)
         self.assertIn('showResult(error.message, "bad")', agent)
-        self.assertIn("controlled_action_execution: values(editing?.controlled_action_execution)", agent)
+        self.assertNotIn("controlled_action_execution:", agent)
         self.assertIn("新增授权需在资源治理中完成", agent)
         pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
@@ -1511,7 +1482,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('name="knowledge_source_kinds"', page)
         self.assertIn("selectionSets.tags", script)
         self.assertNotIn('name="allow_change_execution"', page)
-        self.assertIn("controlled_action_execution:", script)
+        self.assertNotIn("controlled_action_execution:", script)
         self.assertNotIn('/action-catalog/', script)
         self.assertNotIn('name="auto_alert_enabled"', page)
         self.assertIn('name="readonly_database_enabled"', page)

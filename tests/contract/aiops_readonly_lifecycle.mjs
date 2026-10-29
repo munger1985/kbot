@@ -26,10 +26,6 @@ const context = { KBotAIOpsShell: { escape, fmt: String, ready: new Promise(() =
   clearTimeout(id) { timers.delete(id); },
 };
 context.window = context;
-const materialsFile = fileURLToPath(new URL("../../ui/aiops/js/aiops-plan-materials.js", import.meta.url));
-runInNewContext(readFileSync(materialsFile, "utf8"), context, { filename: materialsFile });
-const capturesFile = fileURLToPath(new URL("../../ui/aiops/js/aiops-plan-captures.js", import.meta.url));
-runInNewContext(readFileSync(capturesFile, "utf8"), context, { filename: capturesFile });
 runInNewContext(instrumented, context, { filename: file });
 await context.lifecycleTest.renderDetail("run-detail");
 assert.ok(panel.html.includes("只读查询清理回执"));

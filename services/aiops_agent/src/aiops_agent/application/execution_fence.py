@@ -47,37 +47,22 @@ async def validate_diagnostic_fence(*, uow, grant, now):
 
 
 class ReadonlyExecutionFenceService:
-    def __init__(self, *, uow_factory, diagnostic_codec, audience, plan_captures=None):
+    def __init__(self, *, uow_factory, diagnostic_codec, audience):
         self._uow_factory = uow_factory
         self._codec = diagnostic_codec
         self._audience = audience
-        self._plan_captures = plan_captures
 
     async def check(self, request):
-        capture = False
         try:
             try:
                 grant = self._codec.verify(request.grant)
             except DiagnosticGrantError:
-                try:
-                    grant = self._codec.verify_dynamic(request.grant)
-                except DiagnosticGrantError:
-                    if self._plan_captures is None:
-                        raise
-                    grant = self._codec.verify_plan_capture(request.grant)
-                    capture = True
+                grant = self._codec.verify_dynamic(request.grant)
             if grant.audience != self._audience or grant.expires_at <= datetime.now(UTC):
                 raise ExecutionFenceError("EXECUTION_GRANT_INVALID")
             async with self._uow_factory() as uow:
-                if capture:
-                    _, run, task, _, protected = await self._plan_captures.validate(
-                        uow=uow, grant=grant, now=datetime.now(UTC))
-                    if protected["execution"].get("consumed_grant_id") != str(grant.grant_id):
-                        raise ExecutionFenceError("EXECUTION_LEASE_INVALID")
-                    target_id = run.target_id
-                else:
-                    run, task, _target = await validate_diagnostic_fence(uow=uow, grant=grant, now=datetime.now(UTC))
-                    target_id = grant.target_id
+                run, task, _target = await validate_diagnostic_fence(uow=uow, grant=grant, now=datetime.now(UTC))
+                target_id = grant.target_id
                 lease = await uow.resources.get_lease(request.resource_lease.lease_id, lock=True)
                 now = await uow.resources.database_now()
                 receipt = request.resource_lease

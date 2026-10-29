@@ -110,13 +110,12 @@ def plan_availability_block(*, database_type, bundle):
             "MYSQL": "performance_schema 的 Digest 统计不保存可按 Digest 直接读取的历史执行计划。",
             "ORACLE": "尚未取得与完整游标身份匹配的缓存执行计划，不能据累计统计猜测访问路径。",
         }.get(database_type, "当前没有取得匹配执行计划。")
-        message = mechanism + "可展开本轮“补齐执行计划”，通过代表参数保护材料和独立审批采集估算计划，或上传已有计划 JSON；不自动执行原 SQL 或 EXPLAIN ANALYZE。"
+        message = mechanism + "AIOps 只读取数据库已有计划、统计与运行证据，不发起估算或请求业务表权限。可上传 DBA 已提供的计划 JSON；没有计划时仍依据语句统计、等待与监控判断可确认的问题，不猜测访问路径。"
     return TurnAnswerBlock(
         block_type="MARKDOWN", schema_version="AIOPS_MARKDOWN_BLOCK.v1",
         payload={"markdown": "执行计划：" + message, "sql_plan_acquisition": {
             "database_type": database_type, "status": "AVAILABLE" if available else "MISSING",
-            "controlled_estimate_supported": database_type in {"ORACLE", "POSTGRESQL", "MYSQL"},
-            "availability_requires_policy_check": True,
+            "read_existing_only": True,
             "automatic_cursor_limit": 4 if database_type == "ORACLE" else None,
             "original_execution_authorized": False,
         }}, evidence_refs=tuple(item["evidence_ref"] for item in available if item.get("evidence_ref")),

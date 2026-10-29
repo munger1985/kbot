@@ -176,7 +176,7 @@ _DISPLAY_NAMES = {
     "CHANGE": "受控变更",
     "VERIFICATION": "效果验证",
     "EVIDENCE_FOLLOWUP": "后台未来观察",
-    "SQL_PLAN_CAPTURE": "后台估算计划采集",
+    "SQL_PLAN_CAPTURE": "历史计划采集记录（只读）",
     "OBSERVE": "观测",
     "DIAGNOSE": "诊断",
     "EXPLAIN": "解释",

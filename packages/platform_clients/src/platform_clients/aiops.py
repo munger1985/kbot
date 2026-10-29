@@ -74,7 +74,6 @@ class AIOpsBinaryResponse:
     headers: dict[str, str]
 
 
-
 async def _materialize_upload_body(body, *, max_bytes: int) -> bytes:
     """把上传流读入有界内存，避免边读边转发出错导致上游收不到正文。"""
     if isinstance(body, (bytes, bytearray, memoryview)):
@@ -1606,42 +1605,9 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
 
-    async def list_sql_plan_captures(self, run_id: UUID, *, auth_context: AuthContext):
-        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures", auth_context=auth_context)
-
-    async def list_sql_plan_capture_reviews(self, run_id: UUID, *, auth_context: AuthContext):
-        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-capture-reviews", auth_context=auth_context)
-
-    async def request_sql_plan_capture(self, run_id: UUID, command, *, auth_context: AuthContext):
-        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures", auth_context=auth_context, payload=command)
-
-    async def decide_sql_plan_capture(self, run_id: UUID, request_id: UUID, command, *, auth_context: AuthContext):
-        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}/decision", auth_context=auth_context, payload=command)
-
-    async def revoke_sql_plan_capture(self, run_id: UUID, request_id: UUID, *, auth_context: AuthContext):
-        return await self._json("DELETE", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}", auth_context=auth_context)
-
-    async def start_sql_plan_capture(self, run_id: UUID, request_id: UUID, command, *, auth_context: AuthContext):
-        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}/start", auth_context=auth_context, payload=command)
-
-    async def get_sql_plan_capture_execution(self, run_id: UUID, request_id: UUID, *, auth_context: AuthContext):
-        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}/execution", auth_context=auth_context)
-
-    async def cancel_sql_plan_capture(self, run_id: UUID, request_id: UUID, *, auth_context: AuthContext):
-        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}/cancel", auth_context=auth_context, payload={})
-
-    async def list_sql_plan_material_sources(self, run_id: UUID, *, auth_context: AuthContext):
-        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-material-sources", auth_context=auth_context)
-
     async def list_sql_plan_materials(self, run_id: UUID, *, auth_context: AuthContext):
         return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-materials", auth_context=auth_context)
 
-    async def submit_sql_plan_material(self, run_id: UUID, command, *, auth_context: AuthContext):
-        # SecretStr 的默认序列化是掩码；仅在受信服务传输边界显式取值，不记录载荷。
-        payload = command.model_dump(mode="json", exclude={"protected_document"})
-        payload["protected_document"] = command.protected_document.get_secret_value()
-        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-materials",
-            auth_context=auth_context, payload=payload)
 
     async def revoke_sql_plan_material(self, run_id: UUID, material_id: UUID, *, auth_context: AuthContext):
         return await self._json("DELETE", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-materials/{material_id}", auth_context=auth_context)

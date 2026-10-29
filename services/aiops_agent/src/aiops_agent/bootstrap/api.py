@@ -189,14 +189,10 @@ def create_aiops_api(
             uow_factory=runtime.uow_factory,
             vault=SqlPlanMaterialVault(cipher=credential_cipher),
         )
-        from aiops_agent.application.sql_plan_captures import SqlPlanCaptureService
-        app.state.sql_plan_capture_service = SqlPlanCaptureService(
-            uow_factory=runtime.uow_factory, materials=app.state.sql_plan_material_service,
-            approval_enabled=resolved.management.agent_execution_enabled,
-        )
+        from aiops_agent.application.sql_plan_capture_vault import SqlPlanCaptureVault
         from aiops_agent.application.sql_plan_results import SqlPlanCaptureResultReader
         plan_capture_reader = SqlPlanCaptureResultReader(materials=app.state.sql_plan_material_service,
-            vault=app.state.sql_plan_capture_service._vault)
+            vault=SqlPlanCaptureVault(material_vault=app.state.sql_plan_material_service._vault))
         agent_catalog = AIOpsAgentValidator(
             app.state.agent_service,
             model_client=model_client,
@@ -327,11 +323,6 @@ def create_aiops_api(
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         app.state.managed_credential_service = managed_credential_service
         app.state.diagnostic_grant_codec = diagnostic_grant_codec
-        from aiops_agent.application.sql_plan_execution import SqlPlanCaptureExecutionService
-        app.state.sql_plan_capture_execution_service = SqlPlanCaptureExecutionService(
-            captures=app.state.sql_plan_capture_service, codec=diagnostic_grant_codec,
-            credentials=managed_credential_service, audience="kbot-aiops-db-executor",
-        )
         app.state.mutation_grant_codec = create_mutation_grant_codec(resolved)
         db_executor_client = DatabaseExecutorClient(
             base_url=resolved.clients.db_executor.base_url,
@@ -449,8 +440,6 @@ def create_aiops_api(
                         "aiops.resources.release",
                         "aiops.readonly.check",
                         "aiops.readonly.report",
-                        "aiops.plan-capture.exchange",
-                        "aiops.plan-capture.report",
                     }
                 ),
                 "kbot-model-embedding": frozenset({"model.references"}),

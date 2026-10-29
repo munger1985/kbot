@@ -17,7 +17,6 @@ from main_api.application import (
     require_app_api_agent,
 )
 from platform_core.authorization import can_read_agent, filter_readable_agents
-from platform_core.contracts.aiops.sql_plan_capture import SqlPlanCapturePolicy
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import (
     PUBLIC_API_V1,
@@ -207,7 +206,6 @@ class AIOpsAgentCreatePayload(_Payload):
     readonly_database_enabled: bool = True
     allow_agent_execution: bool = False
     alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
-    sql_plan_capture: SqlPlanCapturePolicy = Field(default_factory=SqlPlanCapturePolicy)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     allowed_business_system_ids: tuple[UUID, ...] = Field(
@@ -235,7 +233,6 @@ class AIOpsAgentUpdatePayload(_Payload):
     readonly_database_enabled: bool | None = None
     allow_agent_execution: bool | None = None
     alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
-    sql_plan_capture: SqlPlanCapturePolicy | None = None
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)

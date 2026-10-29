@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.errors import resource_not_found, state_conflict
 from aiops_agent.application.sql_plan_materials import MATERIAL_PREFIX, MATERIAL_SCHEMA, _source_rows
 from aiops_agent.playbooks import canonical_hash
@@ -13,6 +14,15 @@ WORKFLOW = "SQL_PLAN_CAPTURE"
 RESULT_SCHEMA = "SQL_PLAN_CAPTURE_RESULT.v1"
 RESULT_KEY = "sql-plan-capture:result"
 HANDLER = "sql.plan-capture"
+
+
+def owner_scope(run):
+    # 历史来源复核使用不可变 Scope，不制造新的认证或执行权。
+    return ConfigurationScope(actor_id=run.actor_id, principal_id=run.actor_id,
+        request_id="sql-plan-history:" + str(run.ops_run_id),
+        trace_id=getattr(run, "trace_id", None) or str(run.ops_run_id), **{
+        key: getattr(run, key) for key in ("tenant_id", "domain_id") if hasattr(run, key)
+    })
 
 
 def native_comparison_result_authorized(result, request, decision):

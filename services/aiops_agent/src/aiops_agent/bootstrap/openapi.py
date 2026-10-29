@@ -30,7 +30,6 @@ from platform_core.contracts.aiops.executor import (
     ReadDiagnosticRequest,
     ReadDiagnosticResult,
 )
-from platform_core.contracts.aiops.sql_plan_execution import SqlPlanCaptureExecute, SqlPlanCaptureResult
 from platform_core.contracts.aiops.internal import (
     CreateOpsRunCommand,
     OpsCommand,
@@ -67,9 +66,6 @@ def create_executor_contract_app() -> FastAPI:
     """创建 AIOps DB Executor 隔离契约快照 App。"""
     app = FastAPI(title="KBot AIOps DB Executor Contract", version="1.0.0")
 
-    @app.post("/internal/v1/db-executor/sql-plan-captures", response_model=SqlPlanCaptureResult)
-    async def execute_plan_capture(payload: SqlPlanCaptureExecute):
-        _not_implemented()
 
     @app.post(
         "/internal/v1/db-executor/diagnostics",

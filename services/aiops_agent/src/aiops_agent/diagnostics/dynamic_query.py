@@ -158,7 +158,7 @@ class ValidatedDynamicQuery(BaseModel):
 
 
 class PostgreSQLDynamicQueryPolicySnapshot(BaseModel):
-    """PostgreSQL 动态只读查询和安全 EXPLAIN 的冻结边界。"""
+    """PostgreSQL 只读诊断目录查询的冻结边界，不生成估算计划。"""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -177,7 +177,7 @@ class PostgreSQLDynamicQueryPolicySnapshot(BaseModel):
 
 
 class ValidatedPostgreSQLQuery(BaseModel):
-    """通过 PostgreSQL AST 策略的动态查询或安全计划语句。"""
+    """通过 PostgreSQL AST 策略的只读诊断目录查询。"""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -189,7 +189,6 @@ class ValidatedPostgreSQLQuery(BaseModel):
     bind_names: tuple[str, ...]
     parameters: dict[str, str | int | float | bool | None]
     max_rows: int
-    explain: bool = False
 
 
 class MySQLDynamicQueryPolicySnapshot(BaseModel):
@@ -561,9 +560,8 @@ class OracleDynamicQueryPolicy:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-
 class PostgreSQLDynamicQueryPolicy:
-    """保守验证 PostgreSQL 单条只读 SELECT/CTE，并可生成无 ANALYZE 的 EXPLAIN。"""
+    """保守验证 PostgreSQL 单条只读诊断 SELECT/CTE，不包装或重放业务 SQL。"""
 
     dialect = "postgres"
     result_model = ValidatedPostgreSQLQuery
@@ -585,8 +583,6 @@ class PostgreSQLDynamicQueryPolicy:
         self,
         sql: str,
         parameters: dict[str, Any] | None = None,
-        *,
-        explain: bool = False,
     ) -> ValidatedPostgreSQLQuery:
         if not sql.strip() or len(sql) > self.snapshot.max_sql_chars:
             raise DynamicQueryRejected(
@@ -617,17 +613,9 @@ class PostgreSQLDynamicQueryPolicy:
         normalized_parameters = self._parameters(
             bind_names, parameters or {}
         )
-        normalized_select = expression.sql(
-            dialect=self.dialect, comments=False
-        )
-        normalized_sql = (
-            "EXPLAIN (FORMAT JSON, COSTS TRUE, SETTINGS TRUE) "
-            + normalized_select
-            if explain
-            else expression.copy().limit(
-                self.snapshot.max_rows, copy=False
-            ).sql(dialect=self.dialect, comments=False)
-        )
+        normalized_sql = expression.copy().limit(
+            self.snapshot.max_rows, copy=False
+        ).sql(dialect=self.dialect, comments=False)
         policy_payload = json.dumps(
             self.snapshot.model_dump(mode="json"),
             ensure_ascii=False,
@@ -641,8 +629,7 @@ class PostgreSQLDynamicQueryPolicy:
             referenced_objects=referenced_objects,
             bind_names=bind_names,
             parameters=normalized_parameters,
-            max_rows=1 if explain else self.snapshot.max_rows,
-            explain=explain,
+            max_rows=self.snapshot.max_rows,
         )
 
     def _validate_nodes(self, expression: exp.Select) -> None:

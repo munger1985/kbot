@@ -1642,23 +1642,8 @@
       if (!anchor) continue;
       const root = document.createElement("details");
       root.className = "ops-evidence";
-      root.innerHTML = '<summary>补齐执行计划</summary><div class="ops-evidence-body"><p>复用已取证 SQL 的保护材料与独立审批。估算不执行原 SQL，不等于生产实际计划；当前可用性以权限和策略检查为准。已有计划 JSON 可通过诊断材料上传后继续分析。</p></div>';
+      root.innerHTML = '<summary>已有执行计划材料</summary><div class="ops-evidence-body"><p>只读取数据库已有执行计划；缺少计划时可上传 DBA 已提供的计划 JSON 继续分析。AIOps 不发起估算、不重放业务 SQL，也不请求业务表权限。</p></div>';
       anchor.appendChild(root);
-      let mounted = false;
-      root.addEventListener("toggle", async () => {
-        if (!root.open || mounted) return;
-        mounted = true;
-        try {
-          const run = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(turn.ops_run_id)}`);
-          if (!root.isConnected) return;
-          const body = root.querySelector(".ops-evidence-body");
-          window.KBotAIOpsPlanMaterials.mount(body, run, api);
-          window.KBotAIOpsPlanCaptures.mount(body, run, api, { canReview: state.permissions.has("aiops:proposal:approve") });
-        } catch (error) {
-          mounted = false;
-          shell.toast(error.message || "无法读取计划采集入口，请重试");
-        }
-      });
     }
   }
 

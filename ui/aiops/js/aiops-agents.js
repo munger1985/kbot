@@ -245,12 +245,8 @@
       showResult("最多引用须为 1 到 20 的整数。", "bad");
       return false;
     }
-    if (step === 3 && form.elements.capture_enabled.checked && !form.elements.capture_objects.value.trim()) {
-      showResult("开启计划采集前请明确允许对象范围。", "bad");
-      return false;
-    }
-    if (step === 3 && (!form.elements.alert_cooldown_seconds.checkValidity() || !form.elements.capture_timeout.checkValidity())) {
-      showResult("请填写有效的冷却时间和单语句时限。", "bad");
+    if (step === 3 && (!form.elements.alert_cooldown_seconds.checkValidity())) {
+      showResult("请填写有效的冷却时间。", "bad");
       return false;
     }
     if (step === 4 && editing?.status === "ACTIVE") {
@@ -367,11 +363,6 @@
     form.elements.readonly_database_enabled.checked = true;
     form.elements.allow_agent_execution.checked = false;
     form.elements.alert_cooldown_seconds.value = "900";
-    form.elements.capture_enabled.checked = false;
-    form.elements.capture_distinct.checked = true;
-    form.elements.capture_native_binds.checked = false;
-    form.elements.capture_objects.value = "";
-    form.elements.capture_timeout.value = "5";
     form.elements.max_security_level.value = "3";
     form.elements.maximum_references.value = "8";
     toggleKnowledgePolicy();
@@ -402,12 +393,6 @@
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
     form.elements.auto_observe_min_target_level.value = String(editing.auto_observe_min_target_level || 1);
     form.elements.alert_cooldown_seconds.value = String(editing.alert_cooldown_seconds ?? 900);
-    const capture = editing.sql_plan_capture || {};
-    form.elements.capture_enabled.checked = capture.enabled === true;
-    form.elements.capture_objects.value = values(capture.allowed_objects).join("\n");
-    form.elements.capture_distinct.checked = capture.require_distinct_approver !== false;
-    form.elements.capture_native_binds.checked = capture.native_bind_comparison_enabled === true;
-    form.elements.capture_timeout.value = String(capture.max_statement_timeout_seconds ?? 5);
     const policy = editing.knowledge_policy || {};
     form.elements.knowledge_enabled.checked = policy.enabled !== false;
     form.elements.max_security_level.value = String(policy.max_security_level || 3);
@@ -455,13 +440,6 @@
         maximum_references: Number(form.elements.maximum_references.value || 8),
       },
       // 本页不维护资源动作授权，PATCH 省略以保留服务端配置，不将未加载字段写成空授权。
-      sql_plan_capture: {
-        enabled: form.elements.capture_enabled.checked,
-        allowed_objects: form.elements.capture_objects.value.split("\n").map((name) => name.trim()).filter(Boolean),
-        require_distinct_approver: form.elements.capture_distinct.checked,
-        native_bind_comparison_enabled: form.elements.capture_native_binds.checked,
-        max_statement_timeout_seconds: Number(form.elements.capture_timeout.value),
-      },
       readonly_database_enabled: form.elements.readonly_database_enabled.checked,
       allow_agent_execution: form.elements.allow_agent_execution.checked,
       auto_observe_min_severity: form.elements.auto_observe_min_severity.value,

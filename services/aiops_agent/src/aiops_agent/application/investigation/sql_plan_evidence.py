@@ -1,4 +1,4 @@
-"""同会话估算计划的有界发现、授权重放与模型输入围栏。"""
+"""历史已存计划的有界发现、来源复核与模型输入围栏；不重启采集。"""
 
 import json
 from uuid import UUID
@@ -7,9 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.diagnosis.sql_evidence_answer import _matches, sql_subject_specs
-from aiops_agent.application.diagnosis.sql_plans import controlled_estimate_document, controlled_estimate_fact
+from aiops_agent.application.diagnosis.sql_plans import controlled_estimate_document
 from aiops_agent.application.investigation.evidence_scope import RUN_EVIDENCE_SCOPE_FIELDS, TURN_EVIDENCE_SCOPE_FIELDS
-from aiops_agent.application.sql_plan_execution import owner_scope
+from aiops_agent.application.sql_plan_results import owner_scope
 from aiops_agent.application.sql_plan_results import RESULT_KEY, RESULT_SCHEMA
 from aiops_agent.playbooks import canonical_hash
 

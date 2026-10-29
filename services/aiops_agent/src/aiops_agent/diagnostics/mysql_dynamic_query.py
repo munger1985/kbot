@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from sqlglot import exp
 
 from .dynamic_query import DynamicQueryRejected, PostgreSQLDynamicQueryPolicy, ValidatedMySQLQuery
@@ -23,8 +21,3 @@ class MySQLDynamicQueryPolicy(PostgreSQLDynamicQueryPolicy):
                 "DYNAMIC_SQL_SIDE_EFFECT_FORBIDDEN",
                 "MySQL 动态诊断禁止变量、赋值、文件输出及锁定",
             )
-
-    def validate(self, sql: str, parameters: dict[str, Any] | None = None, *, explain: bool = False):
-        if explain:
-            raise DynamicQueryRejected("DYNAMIC_SQL_NOT_SELECT", "计划取证需要单独工具授权")
-        return super().validate(sql, parameters, explain=False)

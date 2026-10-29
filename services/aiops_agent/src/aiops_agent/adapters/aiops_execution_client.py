@@ -19,9 +19,6 @@ from platform_core.contracts.aiops.executor import (
     ReadonlyTerminationRequest,
 )
 from platform_core.contracts.aiops.readonly_lifecycle import ReadonlyTerminationReceipt
-from platform_core.contracts.aiops.sql_plan_execution import (
-    SqlPlanCaptureExecute, SqlPlanCaptureExchange, SqlPlanCaptureResult,
-)
 from platform_core.contracts.aiops.internal import EventReceipt
 from platform_core.security import (
     build_scoped_internal_auth_headers,
@@ -83,15 +80,6 @@ class AIOpsExecutionClient:
     async def issue_credential(self, grant: str, *, trace_id: str) -> CredentialIssueResponse:
         return await self._post(path="/internal/v1/aiops/credentials:issue", payload=CredentialIssueRequest(grant=grant).model_dump(mode="json"), scope="aiops.credentials.issue", trace_id=trace_id, response_type=CredentialIssueResponse)
 
-    async def exchange_plan_capture(self, grant: str, *, trace_id: str) -> SqlPlanCaptureExchange:
-        return await self._post(path="/internal/v1/aiops/sql-plan-captures:exchange",
-            payload=SqlPlanCaptureExecute(grant=grant).model_dump(mode="json"), scope="aiops.plan-capture.exchange",
-            trace_id=trace_id, response_type=SqlPlanCaptureExchange)
-
-    async def report_plan_capture(self, report, *, trace_id: str) -> SqlPlanCaptureResult:
-        return await self._post(path="/internal/v1/aiops/sql-plan-captures:report",
-            payload=report.model_dump(mode="json"), scope="aiops.plan-capture.report",
-            trace_id=trace_id, response_type=SqlPlanCaptureResult)
 
     async def release_resource(self, receipt: ResourceLeaseReceipt, *, trace_id: str) -> ResourceReleaseReceipt:
         return await self._post(path="/internal/v1/aiops/resources:release",

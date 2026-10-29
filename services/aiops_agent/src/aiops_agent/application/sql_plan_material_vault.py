@@ -3,9 +3,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from aiops_agent.application.errors import resource_not_found, state_conflict
-from platform_core.identity import uuid7
-from platform_core.managed_credentials import ManagedCredentialCipher, ManagedCredentialEntity, ManagedCredentialPayload
+from aiops_agent.application.errors import resource_not_found
+from platform_core.managed_credentials import ManagedCredentialCipher, ManagedCredentialPayload
 
 
 NAMESPACE = "aiops.sql-plan"
@@ -35,20 +34,6 @@ class SqlPlanMaterialVault:
             return None
         return row
 
-    async def seal(self, *, uow, scope, material_id, payload):
-        existing = await uow.managed_credentials.find(**self._scope(scope),
-            namespace=NAMESPACE, credential_kind=KIND, external_key=str(material_id), lock=True)
-        if existing is not None:
-            raise state_conflict("保护材料标识不可复用")
-        credential_id = uuid7()
-        encrypted = self._cipher.encrypt(payload, **self._scope(scope),
-            namespace=NAMESPACE, credential_kind=KIND, credential_id=credential_id)
-        await uow.managed_credentials.add(ManagedCredentialEntity(
-            credential_id=credential_id, **self._scope(scope), namespace=NAMESPACE,
-            credential_kind=KIND, external_key=str(material_id), ciphertext=encrypted.ciphertext,
-            nonce=encrypted.nonce, key_version=encrypted.key_version, status="ACTIVE",
-            created_by=scope.actor_id, updated_by=scope.actor_id,
-        ))
 
     def _clear(self, *, row, scope, binding, state):
         # Oracle 的空 RAW 等同 NULL，凭据状态也不是材料状态；以无原值的加密墓碑替换。
@@ -91,15 +76,6 @@ class SqlPlanMaterialVault:
             return "EXPIRED"
         return "STORED"
 
-    async def open_for_capture(self, *, uow, scope, material_id, binding, now):
-        """专用采集服务在当前审批和任务租约核验后调用，不提供公开读入口。"""
-        if await self.state(uow=uow, scope=scope, material_id=material_id, binding=binding, now=now) != "STORED":
-            raise state_conflict("计划材料不可兑换")
-        row = await self._row(uow=uow, scope=scope, material_id=material_id)
-        protected = self._cipher.decrypt(ManagedCredentialPayload(
-            ciphertext=bytes(row.ciphertext), nonce=bytes(row.nonce), key_version=row.key_version),
-            **self._scope(scope), namespace=NAMESPACE, credential_kind=KIND, credential_id=row.credential_id)
-        return protected["document"]
 
     async def erase(self, *, uow, scope, material_id, binding):
         row = await self._row(uow=uow, scope=scope, material_id=material_id)

@@ -54,13 +54,7 @@
             <label class="check-field"><input name="readonly_database_enabled" type="checkbox" checked><span class="check-field-copy"><strong>允许只读数据库诊断</strong><small>允许 AIOps 使用目标中受管的只读凭据采集诊断证据，不执行变更语句。</small></span></label>
             <div class="dq-form-grid"><label class="control-field"><span class="field-label">自动观察最低告警级别</span><select name="auto_observe_min_severity"><option value="INFO">信息及以上</option><option value="WARNING">警告及以上</option><option value="HIGH">高危及以上</option><option value="CRITICAL" selected>仅严重告警</option></select><small class="field-help">达到该级别的监控告警才允许自动创建诊断任务。</small></label><label class="control-field"><span class="field-label">自动观察最低 Target 重要级</span><select name="auto_observe_min_target_level"><option value="1">L1 及以上</option><option value="2">L2 及以上</option><option value="3">L3 及以上</option><option value="4">L4 及以上</option><option value="5">仅 L5</option></select><small class="field-help">只有重要级达到门槛的 Target 告警才会自动创建诊断任务。</small></label><label class="control-field"><span class="field-label">相同告警冷却时间（秒）</span><input name="alert_cooldown_seconds" required type="number" min="0" max="86400" step="1" value="900"><small class="field-help">同一目标和告警指纹在此时间内不会重复创建诊断任务；0 表示不冷却。</small></label></div>
           </section>
-          <section class="dq-form-section"><header><span>02</span><div><h3>受控估算计划采集</h3><p>独立于普通只读与变更执行授权。默认关闭，仍须保护材料、平台开关和逐次审批；不执行原业务 SQL 或 ANALYZE。</p></div></header>
-            <label class="check-field"><input name="capture_enabled" type="checkbox"><span class="check-field-copy"><strong>允许申请估算计划采集</strong><small>Oracle 需要既有计划表的临时事务写入和回滚，不自动建表或授权。</small></span></label>
-            <label class="control-field"><span class="field-label">允许对象（每行一个 Schema.对象，最多64个）</span><textarea name="capture_objects" rows="4" placeholder="例如 mes.mes_equipment_signal"></textarea><small class="field-help">只在明确范围内采集；修改策略将使旧审批失效。</small></label>
-            <label class="check-field"><input name="capture_distinct" type="checkbox" checked><span class="check-field-copy"><strong>要求另一位操作人审批</strong><small>默认开启；关闭后也不免除逐次风险审批。</small></span></label>
-            <label class="check-field"><input name="capture_native_binds" type="checkbox"><span class="check-field-copy"><strong>允许 Oracle 原生绑定捕获比较</strong><small>默认关闭。仍需逐次独立确认；原值仅在保护执行器内比较，不进入回答、报告或日志，不证明总体参数代表性。</small></span></label>
-            <label class="control-field"><span class="field-label">单语句最长时限（秒）</span><input name="capture_timeout" required type="number" min="1" max="10" step="1" value="5"></label>
-          </section>
+          <section class="dq-form-section"><header><span>02</span><div><h3>执行计划与统计信息</h3><p>数据库负责统计信息与优化器成本估算；AIOps 只读取已有计划、统计和运行证据进行诊断，不发起 EXPLAIN 或要求业务表权限。</p></div></header></section>
           <section class="dq-form-section"><header><span>03</span><div><h3>变更执行</h3><p>决定 AIOps 是否可以从诊断建议进入受控执行流程。</p></div></header><label class="check-field"><input name="allow_agent_execution" type="checkbox"><span class="check-field-copy"><strong>允许 Agent 执行变更</strong><small>开启后仍需目标授权、可用执行凭据，并对每条命令进行人工审批；关闭时只生成建议。</small></span></label></section>
         </div></section>
         <section class="agent-step-panel" data-agent-step="4" hidden><header><p class="eyebrow">STEP 04</p><h3>模型与指令</h3><span>运行中的 Agent 必须配置规划和回答组织模型；启用智能诊断时还必须配置诊断模型。</span></header><div class="drawer-form-section"><div class="form-grid-two">
@@ -76,6 +70,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-agents.js?v=20261029-authorization-2"></script>
+  <script src="./js/aiops-agents.js?v=20261029-read-existing-3"></script>
 </body>
 </html>

@@ -9,7 +9,6 @@ from typing import Any
 
 from jose import jwt
 from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
-from platform_core.contracts.aiops.sql_plan_execution import SqlPlanCaptureGrant
 
 from platform_core.contracts.aiops.executor import (
     DiagnosticExecutionGrant,
@@ -62,11 +61,6 @@ class DiagnosticGrantCodec:
         """签发与固定目录查询隔离的动态查询 Grant。"""
         return self._issue(grant, token_type=DYNAMIC_GRANT_TOKEN_TYPE)
 
-    def issue_plan_capture(self, grant: SqlPlanCaptureGrant) -> str:
-        return self._issue(grant, token_type="sql-plan-capture")
-
-    def verify_plan_capture(self, token: str, *, now: datetime | None = None) -> SqlPlanCaptureGrant:
-        return self._verify(token, contract=SqlPlanCaptureGrant, token_type="sql-plan-capture", now=now)
 
     def _issue(self, grant, *, token_type: str) -> str:
         if grant.issuer != self._issuer or grant.audience != self._audience:

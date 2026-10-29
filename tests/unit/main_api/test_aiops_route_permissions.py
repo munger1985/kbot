@@ -43,7 +43,7 @@ class AIOpsRoutePermissionsTest(unittest.TestCase):
             AIOPS_ROUTE_PERMISSIONS["review_recovery_drill"],
         )
 
-    def test_material_and_capture_http_entrypoints_enforce_registered_permissions(self) -> None:
+    def test_historical_materials_require_permission_and_capture_routes_are_removed(self) -> None:
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
         from main_api.api import ops
@@ -61,26 +61,20 @@ class AIOpsRoutePermissionsTest(unittest.TestCase):
             return None, None, SimpleNamespace(permissions=frozenset({permission}))
 
         downstream = SimpleNamespace(
-            list_sql_plan_material_sources=AsyncMock(return_value=[]),
             list_sql_plan_materials=AsyncMock(return_value={"items": []}),
-            list_sql_plan_captures=AsyncMock(return_value={"items": [], "can_request": False,
-                "can_review": False, "availability": "DISABLED"}),
-            list_sql_plan_capture_reviews=AsyncMock(return_value={"items": [], "can_request": False,
-                "can_review": True, "availability": "DISABLED"}),
         )
         base = f"/api/v1/apps/aiops/runs/{uuid7()}"
         with patch.object(ops, "authorize_app_request", side_effect=authorize), patch.object(ops, "_client", return_value=downstream):
             client = TestClient(app)
-            for suffix in ("/sql-plan-material-sources", "/sql-plan-materials", "/sql-plan-captures"):
+            for suffix in ("/sql-plan-materials",):
                 result = client.get(base + suffix)
                 self.assertEqual(200, result.status_code, result.text)
                 self.assertEqual("no-store", result.headers["cache-control"])
-            self.assertEqual(403, client.get(base + "/sql-plan-capture-reviews").status_code)
-            downstream.list_sql_plan_capture_reviews.assert_not_awaited()
+            self.assertEqual(404, client.get(base + "/sql-plan-capture-reviews").status_code)
             app.state.allowed_permission = "aiops:proposal:approve"
-            self.assertEqual(200, client.get(base + "/sql-plan-capture-reviews").status_code)
+            self.assertEqual(404, client.get(base + "/sql-plan-capture-reviews").status_code)
             self.assertEqual(403, client.get(base + "/sql-plan-materials").status_code)
-            self.assertEqual(["aiops:use"] * 3 + ["aiops:proposal:approve"] * 2 + ["aiops:use"], calls)
+            self.assertEqual(["aiops:use"] * 2, calls)
 
     def test_legacy_target_agent_binding_routes_are_not_public(self) -> None:
         paths = {
