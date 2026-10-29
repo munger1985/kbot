@@ -48,6 +48,7 @@ def native_metric_provenance(samples):
 
 
 def monitoring_provenance(result):
+    from aiops_agent.application.diagnosis.monitoring_calculations import metric_source_quality_flags
     observations = result.observations
     return EvidenceProvenance(
         target_id=str(result.target_id),
@@ -61,6 +62,7 @@ def monitoring_provenance(result):
         quality_flags=tuple(dict.fromkeys((
             "PHYSICAL_IDENTITY_UNKNOWN", "NATIVE_ORIGIN_COARSE",
             *(flag for item in observations for flag in (
+                *metric_source_quality_flags(item),
                 *(("PARTIAL_COVERAGE",) if item.coverage_ratio < 1 else ()),
                 *(("TRUNCATED",) if item.truncated else ()),
             )),

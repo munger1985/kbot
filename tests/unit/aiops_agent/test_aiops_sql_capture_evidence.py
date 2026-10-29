@@ -38,7 +38,7 @@ from tests.unit.aiops_agent.test_aiops_sql_comparison import answer_context
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis
 
 
-def scenario(engine="POSTGRESQL", *, status="SUCCEEDED"):
+def scenario(engine="POSTGRESQL", *, status="SUCCEEDED", native_verification=None):
     store = execution_store(engine)
     background, task, _ = claimed(store)
     exchanged = call(store.execution.exchange("signed-test"))
@@ -47,7 +47,7 @@ def scenario(engine="POSTGRESQL", *, status="SUCCEEDED"):
          "metrics": {"estimated_rows": "10000", "optimizer_total_cost": "123.5"}})
     physical = store.original.payload_json["tool_outcomes"][0]["observation"]["provenance"]["instance_identity"]
     updates = {"nodes": nodes, "physical_identity": physical} if status == "SUCCEEDED" else {"status": "FAILED", "nodes": (), "error_code": "PLAN_CAPTURE_FAILED"}
-    call(store.execution.report(report(store, exchanged.resource_lease, **updates)))
+    call(store.execution.report(report(store, exchanged.resource_lease, native_verification=native_verification, **updates)))
     store.source, store.background = store.run, background
     store.original.artifact_key, store.original.ops_task_id = "source:sql", None
     store.original.artifact_type = "EVIDENCE"
@@ -313,8 +313,11 @@ def test_worker_lease_rechecks_access_and_removes_old_assessment_values_and_judg
 
 
 @pytest.mark.parametrize("engine", ["POSTGRESQL", "MYSQL", "ORACLE"])
-def test_actual_formal_report_and_case_replay_preserve_plan_and_refuse_revoked_source(engine):
-    store = scenario(engine)
+@pytest.mark.parametrize("with_verification", [False, True])
+def test_actual_formal_report_and_case_replay_preserve_plan_and_refuse_revoked_source(engine, with_verification):
+    from tests.unit.aiops_agent.test_aiops_sql_plan_verification import verification
+    native = verification() if with_verification else None
+    store = scenario(engine, native_verification=native)
     async def run():
         _, assessment = await diagnosed(store)
         fact = next(row for row in assessment.evidence if row.sql_plan is not None)
@@ -357,7 +360,10 @@ def test_actual_formal_report_and_case_replay_preserve_plan_and_refuse_revoked_s
         from aiops_agent.application.reporting import report_presentation
         preview = report_presentation(payload=content.payload_json, template=resolve_system_template("system:diagnosis.standard"))
         appendix = next(row for row in preview["sections"] if row["kind"] == "EVIDENCE_APPENDIX")
-        assert any("原解析环境和参数代表性未核验" in text for text in appendix["items"])
+        assert any("参数代表性" in text for text in appendix["items"])
+        if with_verification:
+            assert any("原生核验｜" in text for text in appendix["items"])
+            assert record.sql_plan_assessments[0].native_verification == native
         assert normalize_report_source(schema_version=root.schema_version, payload=root.payload_json,
             source_kind="CHAT")["investigation_record"]["sql_plan_assessments"][0]["runtime_statistics"] == "NONE"
         store.operations_knowledge = SimpleNamespace(get_version_relations=AsyncMock(return_value={"sources": [

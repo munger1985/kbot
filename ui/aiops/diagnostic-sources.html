@@ -24,6 +24,7 @@
           <div class="ops-field span-6"><label for="source-type">类型</label><select id="source-type" name="source_type" required><option value="PROMETHEUS">Prometheus</option><option value="ALERTMANAGER">Alertmanager</option><option value="LOKI">Loki</option><option value="ZABBIX">Zabbix</option><option value="OEM">Oracle OEM</option></select></div>
           <div class="ops-field span-12"><label for="source-endpoint">访问地址</label><input id="source-endpoint" name="endpoint" type="url" placeholder="http://monitor.internal:9090"><small id="source-endpoint-help">请输入 KBot 服务可以访问的地址。</small></div>
           <div id="source-token-field" class="ops-field span-12"><label for="source-token">API Token（可选）</label><input id="source-token" name="token" type="password" autocomplete="new-password"><small>留空表示该监控源不需要 Bearer Token；编辑时留空表示保持原凭据。</small></div>
+          <div id="source-oem-mappings-field" class="ops-field span-12" hidden><label for="source-oem-mappings">标准指标原生映射（JSON，可选）</label><textarea id="source-oem-mappings" name="oem_standard_mappings" rows="8" spellcheck="false">{}</textarea><small>按指标编码配置精确Target类型、指标组、名称、原生/目标单位、scale、value_kind和dimensions/filters。空对象表示仅使用原生目录；不猜测默认映射，也不证明原始窗口覆盖。</small></div>
           <div id="source-oem-username-field" class="ops-field span-6" hidden><label for="source-oem-username">OEM 用户名（可选）</label><input id="source-oem-username" name="oem_username" autocomplete="off"></div>
           <div id="source-oem-password-field" class="ops-field span-6" hidden><label for="source-oem-password">OEM 密码（可选）</label><input id="source-oem-password" name="oem_password" type="password" autocomplete="new-password"><small>用户名和密码需同时填写；编辑时同时留空保持原凭据，保存后不会回显。</small></div>
           <div id="source-webhook-create-note" class="ops-dialog-note span-12" hidden>创建时系统会同时生成 Webhook Secret 和 Webhook Key，并在下一步集中展示，无需提前准备凭据。</div>
@@ -60,6 +61,6 @@
       <footer><button id="test-diagnostic-source" class="secondary-action" type="button">测试连接</button><button id="cancel-diagnostic-source" data-close-dialog type="button">取消</button><button id="save-diagnostic-source" class="primary" type="submit">创建监控源</button></footer>
     </form>
   </dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-pages.js?v=20261010-6"></script><script src="./js/aiops-configurations.js?v=20261028-oem-1"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-pages.js?v=20261010-6"></script><script src="./js/aiops-configurations.js?v=20261029-oem-2"></script>
 </body>
 </html>

@@ -15,12 +15,17 @@ from aiops_agent.domain.evidence.observations import parse_numeric_sample
 def source_identity_witnesses(*, artifact_id, result):
     witnesses = []
     for metric_index, observation in enumerate(result.observations):
-        if observation.metric_code != IDENTITY_METRIC_CODE:
+        same_row = observation.metric_code == "db.native.active_sessions"
+        if observation.metric_code != IDENTITY_METRIC_CODE and not same_row:
             continue
+        template_id = "prom.database.native.active_sessions" if same_row else IDENTITY_TEMPLATE_ID
         protocol_ok = (
-            observation.source_type == "PROMETHEUS" and observation.semantic_role == "DATABASE_IDENTITY"
-            and observation.semantic_version == "1.0.0" and observation.unit == "unix_seconds" and observation.value_kind == "STATE"
-            and observation.provenance.get("template_id") == IDENTITY_TEMPLATE_ID
+            observation.source_type == "PROMETHEUS"
+            and observation.semantic_role == ("ACTIVE_SESSIONS" if same_row else "DATABASE_IDENTITY")
+            and observation.semantic_version == "1.0.0"
+            and observation.unit == ("sessions" if same_row else "unix_seconds")
+            and observation.value_kind == ("GAUGE" if same_row else "STATE")
+            and observation.provenance.get("template_id") == template_id
             and observation.provenance.get("template_version") == IDENTITY_TEMPLATE_VERSION
             and re.fullmatch(r"[a-f0-9]{64}", str(observation.provenance.get("provider_response_hash") or "")) is not None
             and str(observation.target_id) == str(result.target_id)
@@ -34,8 +39,10 @@ def source_identity_witnesses(*, artifact_id, result):
                 continue
             identity, flags = canonical_native_identity(engine, labels)
             flags = list(flags)
-            if not protocol_ok or labels.get("identity_version") != "1":
+            if not protocol_ok or labels.get("metric_identity_version" if same_row else "identity_version") != "1":
                 flags.append("IDENTITY_PROTOCOL_UNVERIFIED")
+            if same_row:
+                flags.append("SAME_QUERY_METRIC_IDENTITY_REPORTED")
             scope = []
             for key in COLLECTOR_LABELS:
                 value = labels.get(key)
@@ -53,8 +60,17 @@ def source_identity_witnesses(*, artifact_id, result):
             if observation.truncated or len(observation.series) > 16:
                 flags.append("TRUNCATED")
             times = []
-            for point in series.points[:120]:
+            for point_index, point in enumerate(series.points[:120]):
                 number = parse_numeric_sample(point.value)
+                if same_row:
+                    try:
+                        clocks = observation.provenance["metric_row_scrape_times"]
+                        clock = datetime.fromisoformat(clocks[series_index][point_index])
+                        if observation.provenance["metric_row_protocol"] != "DATABASE_METRIC_ROW.v1" or clock.tzinfo is None:
+                            raise ValueError
+                        number = parse_numeric_sample(str(clock.timestamp()))
+                    except (ValueError, TypeError, KeyError, IndexError):
+                        number = None
                 if (point.quality != "GOOD" or number is None or not 0 <= number <= 10000000000
                     or not observation.window_start <= point.observed_at <= observation.window_end):
                     flags.append("IDENTITY_SAMPLE_INVALID")
@@ -79,6 +95,7 @@ def source_identity_witnesses(*, artifact_id, result):
                 binding_id=observation.binding_id, source_version=observation.source_version,
                 collector_scope=scope, native_identity=identity,
                 sample_times=tuple(sorted(set(times))), quality_flags=tuple(dict.fromkeys(flags)),
+                protocol_version="DATABASE_METRIC_ROW.v1" if same_row else "DATABASE_IDENTITY_INFO.v1",
             ))
     return tuple(witnesses[:16])
 

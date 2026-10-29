@@ -163,7 +163,8 @@ class OEMNativeMetrics:
                 "OEM 按实际留存自动选择原始、小时或日均值；不能据请求窗口宣称原始执行明细或精确窗口增量。"),
         )
 
-    async def query_native_metric(self, request, *, metric_name, limit, allow_text=False):
+    async def query_native_metric(self, request, *, metric_name, limit, allow_text=False,
+                                  _expected_target_type=None, _shared_budget=False):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             _fail("SOURCE_CAPABILITY_FORBIDDEN")
         group, metric = parse_metric_selector(metric_name)
@@ -171,8 +172,11 @@ class OEMNativeMetrics:
             _fail("SOURCE_QUERY_INVALID")
         if request.pagination is not None:
             _fail("SOURCE_QUERY_UNSUPPORTED")
-        self._remaining_response_bytes = request.max_response_bytes
+        if not _shared_budget:
+            self._remaining_response_bytes = request.max_response_bytes
         target, target_hash = await self._native_target(request)
+        if _expected_target_type is not None and target["targetType"] != _expected_target_type:
+            _fail("SOURCE_TARGET_MISMATCH")
         metadata, metadata_hash = await self._native_get(
             "/targets/" + request.source_locator_key + "/metricGroups/" + quote(group, safe=""),
             max_bytes=request.max_response_bytes // 4,

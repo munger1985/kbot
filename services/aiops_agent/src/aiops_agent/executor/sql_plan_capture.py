@@ -20,10 +20,11 @@ class SqlPlanCaptureExecutor:
         self._semaphore = readonly_semaphore
 
     @staticmethod
-    def _result(grant, *, nodes=(), identity=None, error=None):
+    def _result(grant, *, nodes=(), identity=None, verification=None, error=None):
         return SqlPlanCaptureResult(capture_run_id=grant.run_id, request_id=grant.request_id,
             database_type=grant.db_type, captured_at=datetime.now(UTC), status="FAILED" if error else "SUCCEEDED",
             error_code=error, nodes=nodes, physical_identity=identity or {},
+            native_verification=verification,
             oracle_parameter_peeking="NOT_PROVEN" if grant.db_type == "ORACLE" else "NOT_APPLICABLE")
 
     @staticmethod
@@ -45,8 +46,8 @@ class SqlPlanCaptureExecutor:
                         acquire=lambda: self._control.exchange_plan_capture(command.grant, trace_id=grant.trace_id)) as exchanged:
                         if exchanged.database_type != grant.db_type:
                             raise DiagnosticDriverError("PLAN_CAPTURE_ENGINE_MISMATCH")
-                        nodes, identity = await self._driver.capture(exchanged)
-                        result = self._result(grant, nodes=nodes, identity=identity)
+                        nodes, identity, verification = await self._driver.capture(exchanged)
+                        result = self._result(grant, nodes=nodes, identity=identity, verification=verification)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:

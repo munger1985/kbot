@@ -23,7 +23,7 @@ class SourceIdentityWitness(BaseModel):
     native_identity: tuple[tuple[str, str], ...] = Field(max_length=8)
     sample_times: tuple[UtcDatetime, ...] = Field(max_length=120)
     quality_flags: tuple[str, ...] = Field(default=(), max_length=16)
-    protocol_version: Literal["DATABASE_IDENTITY_INFO.v1"] = "DATABASE_IDENTITY_INFO.v1"
+    protocol_version: Literal["DATABASE_IDENTITY_INFO.v1", "DATABASE_METRIC_ROW.v1"] = "DATABASE_IDENTITY_INFO.v1"
 
     @model_validator(mode="after")
     def validate_scope(self):

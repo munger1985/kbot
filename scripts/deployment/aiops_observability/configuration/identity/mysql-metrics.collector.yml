@@ -1,0 +1,13 @@
+collector_name: aiops_database_metric_row_mysql_v1
+metrics:
+  - metric_name: aiops_database_active_sessions
+    type: gauge
+    help: "同一原生查询的活跃前台线程与server_uuid；不证明启动代际。"
+    key_labels: [metric_identity_version, database_type, server_uuid]
+    values: [active_sessions]
+    query: |
+      SELECT '1' AS metric_identity_version, 'MYSQL' AS database_type,
+             @@server_uuid AS server_uuid,
+             (SELECT count(*) FROM performance_schema.threads
+              WHERE TYPE='FOREGROUND' AND PROCESSLIST_COMMAND<>'Sleep'
+                AND PROCESSLIST_ID<>CONNECTION_ID()) AS active_sessions

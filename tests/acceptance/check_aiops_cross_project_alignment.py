@@ -13,6 +13,16 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("packages/platform_core/src/platform_core/contracts/aiops/sql_plan_verification.py"),
+    Path("services/aiops_agent/src/aiops_agent/executor/drivers/sql_plan_verification.py"),
+    Path("services/aiops_agent/src/aiops_agent/adapters/diagnostic_sources/oem_standard.py"),
+    Path("services/aiops_agent/src/aiops_agent/adapters/diagnostic_sources/prometheus_identity.py"),
+    Path("tests/unit/aiops_agent/test_aiops_sql_plan_verification.py"),
+    Path("tests/unit/aiops_agent/test_aiops_metric_row_identity.py"),
+    Path("tests/unit/aiops_agent/test_aiops_oem_standard_metrics.py"),
+    Path("scripts/deployment/aiops_observability/configuration/identity/postgresql-metrics.collector.yml"),
+    Path("scripts/deployment/aiops_observability/configuration/identity/mysql-metrics.collector.yml"),
+    Path("scripts/deployment/aiops_observability/configuration/identity/oracle-metrics.collector.yml"),
     Path("packages/platform_core/src/platform_core/contracts/knowledge_withdrawal.py"),
     Path("services/aiops_agent/src/aiops_agent/application/knowledge_withdrawal.py"),
     Path("tests/unit/aiops_agent/test_aiops_case_withdrawal.py"),

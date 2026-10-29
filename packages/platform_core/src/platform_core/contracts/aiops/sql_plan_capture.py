@@ -12,6 +12,7 @@ class SqlPlanCapturePolicy(AIOpsContract):
     enabled: bool = Field(default=False, strict=True)
     allowed_objects: tuple[str, ...] = Field(default=(), max_length=64)
     require_distinct_approver: bool = Field(default=True, strict=True)
+    native_bind_comparison_enabled: bool = Field(default=False, strict=True)
     max_statement_timeout_seconds: int = Field(default=5, ge=1, le=10, strict=True)
 
     @model_validator(mode="after")
@@ -35,6 +36,7 @@ class SqlPlanCaptureDecision(AIOpsContract):
     decision: Literal["APPROVE", "REJECT"]
     acknowledge_estimate_only: bool = Field(default=False, strict=True)
     acknowledge_oracle_plan_table_write: bool = Field(default=False, strict=True)
+    acknowledge_native_bind_comparison: bool = Field(default=False, strict=True)
 
 
 class SqlPlanCaptureView(AIOpsContract):
@@ -49,6 +51,7 @@ class SqlPlanCaptureView(AIOpsContract):
     statement_timeout_seconds: int = Field(ge=1, le=10)
     require_distinct_approver: bool
     oracle_plan_table_write: bool
+    native_bind_comparison: bool = False
     requested_by: str = Field(min_length=1, max_length=128)
     decided_by: str | None = Field(default=None, max_length=128)
     created_at: UtcDatetime

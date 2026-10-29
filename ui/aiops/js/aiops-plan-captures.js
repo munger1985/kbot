@@ -15,7 +15,8 @@
       <button type="submit">申请独立审批，不执行</button></form>
       <div data-capture-review hidden><p>当前为审批视图；默认要求另一位操作人审阅。参数原值不可见，请结合本轮原始 SQL 证据核对主体。</p>
       <label><input type="checkbox" name="ack_estimate">确认只采集估算计划，不授权 ANALYZE 或业务执行</label>
-      <label data-oracle-ack><input type="checkbox" name="ack_oracle">确认 Oracle 估算需要 PLAN_TABLE 临时事务写入及回滚，且不证明参数窥探</label></div>
+      <label data-oracle-ack><input type="checkbox" name="ack_oracle">确认 Oracle 估算需要 PLAN_TABLE 临时事务写入及回滚，且不证明参数窥探</label>
+      <label data-native-bind-ack><input type="checkbox" name="ack_native_binds">允许在保护执行器内读取并比较该精确Oracle游标的绑定捕获值；不返回原值，不证明同次执行或总体代表性</label></div>
       <div data-capture-list></div><button type="button" data-capture-refresh>刷新审批状态</button>`;
     panel.appendChild(root);
     const form = root.querySelector("[data-capture-request]");
@@ -23,6 +24,15 @@
     const selector = form.elements.capture_material;
     const ackEstimate = root.querySelector('[name="ack_estimate"]');
     const ackOracle = root.querySelector('[name="ack_oracle"]');
+    const ackNativeBinds = root.querySelector('[name="ack_native_binds"]');
+    function verificationMarkup(native) {
+      if (!native) return "";
+      const fields = { DATABASE: "原数据库", SCHEMA: "原解析Schema", ROLE: "原解析用户", SEARCH_PATH: "原search_path", OPTIMIZER_SETTINGS: "原优化器设置", PARAMETER_TYPES: "参数类型", PARAMETER_VALUES: "原生捕获值" };
+      const statuses = { MATCH: "匹配", MISMATCH: "不匹配", UNKNOWN: "证据不足", UNSUPPORTED: "原生来源不支持", NOT_REQUESTED: "未授权比较", NOT_APPLICABLE: "不适用" };
+      return '<section aria-label="原生环境与绑定核验"><strong>原生核验</strong>'
+        + [...native.original_context, native.parameter_types, native.parameter_values].map(check => '<p>' + escape(fields[check.field] || check.field) + "：" + escape(statuses[check.status] || check.status) + "（" + escape(check.source) + "）</p>").join("")
+        + "<p>已解析计划对象 " + escape(native.resolved_objects.length) + " 个；未解析 " + escape(native.unresolved_object_nodes.length) + " 个。匹配捕获样本不证明总体参数代表性，估算不证明生产实际执行。</p></section>";
+    }
     const base = appApi + "/runs/" + encodeURIComponent(run.ops_run_id);
     let captures = [];
     let executions = {};
@@ -42,6 +52,7 @@
       if (result.status === "FAILED") return html + `<p>估算未取得可用结果：${escape(result.error_code)}</p>`;
       return html + `<p>估算计划 · 采集于 ${escape(result.captured_at)}。不是实际执行计划，不含参数原值或谓词。</p>
         ${item.oracle_plan_table_write ? "<p>Oracle 参数窥探未证明。</p>" : ""}
+        ${verificationMarkup(result.native_verification)}
         <div class="ops-table-wrap" tabindex="0" aria-label="估算计划节点，可横向滚动"><table class="ops-table"><thead><tr><th>节点 / 父节点</th><th>操作</th><th>对象 / 索引</th><th>估算指标</th></tr></thead><tbody>
         ${result.nodes.map((node) => `<tr><td>${escape(node.node_id)} / ${escape(node.parent_id ?? "—")}</td><td>${escape(node.operation)}</td><td>${escape([node.schema_name, node.relation_name].filter(Boolean).join("."))} ${escape(node.index_name || "")}</td><td>${escape(JSON.stringify(node.metrics))}</td></tr>`).join("")}
         </tbody></table></div>`;
@@ -51,7 +62,8 @@
       root.querySelectorAll("button, input, select").forEach((element) => { element.disabled = value; });
       list.querySelectorAll('[data-capture-action="APPROVE"]').forEach((button) => {
         const item = captures.find((entry) => entry.request_id === button.dataset.captureId);
-        button.disabled = value || !ackEstimate.checked || (item.oracle_plan_table_write && !ackOracle.checked);
+        button.disabled = value || !ackEstimate.checked || (item.oracle_plan_table_write && !ackOracle.checked)
+          || (item.native_bind_comparison && !ackNativeBinds.checked);
       });
     }
     async function load() {
@@ -78,6 +90,8 @@
         form.hidden = !page.can_request;
         root.querySelector("[data-capture-review]").hidden = !page.can_review;
         root.querySelector("[data-oracle-ack]").hidden = !captures.some((item) => item.oracle_plan_table_write);
+        root.querySelector("[data-native-bind-ack]").hidden = !captures.some((item) => item.native_bind_comparison);
+        ackNativeBinds.checked = false;
         ackEstimate.checked = false; ackOracle.checked = false;
         root.querySelector("[data-capture-availability]").textContent = ({
           AVAILABLE: "", DISABLED: "平台审批开关未开启。", POLICY_REQUIRED: "需管理员显式配置 sql_plan_capture 及允许对象范围，普通只读权限不足以授权。",
@@ -120,7 +134,7 @@
       void mutate("/sql-plan-captures", "POST", { request_id: KBotAIOpsAuth.uuid7(), material_id: selector.value,
         statement_timeout_seconds: Number(form.elements.capture_timeout.value) });
     };
-    ackEstimate.onchange = ackOracle.onchange = () => setBusy(busy);
+    ackEstimate.onchange = ackOracle.onchange = ackNativeBinds.onchange = () => setBusy(busy);
     list.onclick = (event) => {
       const button = event.target.closest("[data-capture-action]");
       if (!button || busy || button.disabled) return;
@@ -132,7 +146,8 @@
       if (action === "REVOKE") { void mutate(path, "DELETE"); return; }
       void mutate(path + "/decision", "POST", { request_sha256: item.request_sha256, decision: action,
         acknowledge_estimate_only: action === "APPROVE" && ackEstimate.checked,
-        acknowledge_oracle_plan_table_write: action === "APPROVE" && item.oracle_plan_table_write && ackOracle.checked });
+        acknowledge_oracle_plan_table_write: action === "APPROVE" && item.oracle_plan_table_write && ackOracle.checked,
+        acknowledge_native_bind_comparison: action === "APPROVE" && Boolean(item.native_bind_comparison) && ackNativeBinds.checked });
     };
   }
   window.KBotAIOpsPlanCaptures = { mount };

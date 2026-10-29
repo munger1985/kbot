@@ -2,7 +2,8 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
+from platform_core.contracts.aiops.sql_plan_verification import SqlPlanNativeVerification
 
 
 class SqlPlanNode(BaseModel):
@@ -30,6 +31,7 @@ class SqlPlanDocument(BaseModel):
     declared_captured_at: str | None = Field(default=None, max_length=64)
     observed_at: str | None = Field(default=None, max_length=64)
     source_sql_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    native_verification: SqlPlanNativeVerification | None = None
     original_parse_context_verified: Literal[False] = False
     parameter_types: tuple[Literal["NULL", "BOOLEAN", "NUMBER", "STRING", "ARRAY", "OBJECT"], ...] = Field(default=(), max_length=64)
     parameter_values_available: Literal[False] = False
@@ -39,7 +41,12 @@ class SqlPlanDocument(BaseModel):
 
     @model_validator(mode="after")
     def validate_tree(self):
+        if self.native_verification is not None and self.origin != "CONTROLLED_ESTIMATE":
+            raise ValueError("人工材料不能自报专用Executor原生核验")
         ids = {node.node_id for node in self.nodes}
+        if self.native_verification is not None and (any(item.node_id not in ids for item in self.native_verification.resolved_objects)
+            or any(index not in ids for index in self.native_verification.unresolved_object_nodes)):
+            raise ValueError("原生核验对象不能引用不存在的计划节点")
         if ids != set(range(len(self.nodes))):
             raise ValueError("计划节点必须使用连续且唯一的投影编号")
         for node in self.nodes:
@@ -66,6 +73,13 @@ class SqlPlanDocument(BaseModel):
             raise ValueError("仅受控估算可以携带独立复核的原SQL哈希")
         return self
 
+    @model_serializer(mode="wrap")
+    def preserve_historical_document(self, handler):
+        value = handler(self)
+        if self.native_verification is None:
+            value.pop("native_verification", None)
+        return value
+
 
 class SqlPlanAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -82,11 +96,14 @@ class SqlPlanAssessment(BaseModel):
     representative_parameters: Literal["UNVERIFIED"] = "UNVERIFIED"
     production_execution_verified: Literal[False] = False
     node_count: int = Field(ge=1, le=128)
+    native_verification: SqlPlanNativeVerification | None = None
     bind_metadata_refs: tuple[str, ...] = Field(default=(), max_length=4)
     limitations: tuple[str, ...]
 
     @model_validator(mode="after")
     def validate_origin(self):
+        if self.native_verification is not None and self.origin != "CONTROLLED_ESTIMATE":
+            raise ValueError("只有独立回执重放的估算计划可携带原生核验")
         if self.origin == "USER_UPLOAD" and (
             "SOURCE_MATCH" in {self.identity_match, self.physical_match}
             or self.time_relation == "SOURCE_NEAR_OBSERVATION" or self.bind_metadata_refs
@@ -95,3 +112,10 @@ class SqlPlanAssessment(BaseModel):
         if self.origin == "CONTROLLED_ESTIMATE" and (self.runtime_statistics != "NONE" or self.bind_metadata_refs):
             raise ValueError("估算计划不能升级为运行时计划或绑定捕获证明")
         return self
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_assessment(self, handler):
+        value = handler(self)
+        if self.native_verification is None:
+            value.pop("native_verification", None)
+        return value

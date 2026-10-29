@@ -25,7 +25,7 @@
     root.className = "ops-panel-body";
     root.innerHTML = `<summary>代表参数保护材料</summary>
       <p>仅通过可信 HTTPS 或受保护隧道提交真实参数，不要经公网明文 HTTP 传输。</p>
-      <p>此入口只加密保存参数和声明的解析环境，不触发 EXPLAIN 或业务 SQL 执行。独立风险审批及计划采集尚未接通；材料不证明参数代表性或原环境。不要通过聊天、普通附件提交参数原值。</p>
+      <p>此入口只加密保存参数和声明的解析环境，不触发 EXPLAIN 或业务 SQL 执行。计划采集须通过独立风险审批并由申请人显式发起；材料不证明参数代表性或原环境。不要通过聊天、普通附件提交参数原值。</p>
       <form class="ops-form" autocomplete="off">
         <div class="ops-field span-12"><label>已取证的 SQL<select name="source"><option value="">请选择完整统计主体</option></select></label></div>
         <div class="ops-field span-6"><label>专用参数 JSON 文件<input name="material" type="file" accept=".json,application/json"></label></div>

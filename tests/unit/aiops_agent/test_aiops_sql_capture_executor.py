@@ -38,7 +38,7 @@ def fixture():
         report_readonly_termination=AsyncMock(),
         report_plan_capture=AsyncMock(side_effect=lambda command, **_: command.result))
     native = SimpleNamespace(capture=AsyncMock(return_value=([
-        {"node_id": 0, "operation": "Seq Scan", "metrics": {"estimated_rows": "2"}}], {})))
+        {"node_id": 0, "operation": "Seq Scan", "metrics": {"estimated_rows": "2"}}], {}, None)))
     codec = SimpleNamespace(verify_plan_capture=Mock(return_value=grant))
     service = SqlPlanCaptureExecutor(grant_codec=codec, control_plane=control, driver=native,
         readonly_semaphore=asyncio.Semaphore(1))
@@ -51,7 +51,7 @@ def test_authoritative_callback_only_after_native_cleanup_and_final_fence():
     events = []
     async def capture(_):
         events.append("DRIVER_CLEANED")
-        return [{"node_id": 0, "operation": "Seq Scan"}], {}
+        return [{"node_id": 0, "operation": "Seq Scan"}], {}, None
     async def report(command, **_):
         assert f.control.check_readonly_execution.await_count >= 2
         events.append("REPORTED")

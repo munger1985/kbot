@@ -59,3 +59,22 @@ PHYSICAL_IDENTITY_GRAPH.v1保留原始来源节点及有界关系，最多64节�
 诊断回答和SQL Evidence Bundle使用同一图；调查记录冻结见证和图；
 报告/案例发布与检索通过共享来源校验重读OBSERVATION_SET和DBA_TOOL_RESULT，
 重新计算图。删除见证、图或来源标记不能绕过原始来源复核。
+
+## 可选的同查询指标身份（2026-10-29）
+
+三库新增 `postgresql-metrics.collector.yml`、`mysql-metrics.collector.yml`、
+`oracle-metrics.collector.yml`，每条SQL同时返回原生身份字符串和active_sessions。
+沿上面的同一受保护采集器流程接入；不创建新凭据文件，不自动加载或授予权限。
+在既有Binding显式授权 `db.native.active_sessions` 后才能查询，默认基线不启用。
+
+Prometheus必须保留metric_identity_version="1"、target_key及job/instance/集群作用域。
+协议DATABASE_METRIC_ROW.v1同时保留数值及timestamp(同一指标)抓取时点与响应Hash；
+陈旧超过120秒、未来、重复序列/求值时点不升级身份关联。
+PG只统计当前库活跃后端；MySQL统计server前台非Sleep线程；
+Oracle统计当前实例、当前容器活跃USER会话，三者都排除当前采集会话。
+这三种活跃定义不是完全等价的数据库负载，不据此跨引擎直接排名。
+
+此资产只把本条原生数值与来源自报身份放在同一查询；
+不能认证其他Exporter指标、运行节点、窗口连续性或SQL因果。
+Prometheus抓取新鲜也不排除Exporter缓存，两个HTTP响应Hash不构成数据库原子时钟证明。
+部署者须实际审核sql_exporter版本、列类型/大小写、原生目录权限及真实抓取；本批未部署验收。

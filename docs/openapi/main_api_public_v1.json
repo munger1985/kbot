@@ -18164,6 +18164,11 @@
             "title": "Acknowledge Estimate Only",
             "type": "boolean"
           },
+          "acknowledge_native_bind_comparison": {
+            "default": false,
+            "title": "Acknowledge Native Bind Comparison",
+            "type": "boolean"
+          },
           "acknowledge_oracle_plan_table_write": {
             "default": false,
             "title": "Acknowledge Oracle Plan Table Write",
@@ -18327,6 +18332,11 @@
             "minimum": 1.0,
             "title": "Max Statement Timeout Seconds",
             "type": "integer"
+          },
+          "native_bind_comparison_enabled": {
+            "default": false,
+            "title": "Native Bind Comparison Enabled",
+            "type": "boolean"
           },
           "require_distinct_approver": {
             "default": true,
@@ -18514,6 +18524,16 @@
             "title": "Mode",
             "type": "string"
           },
+          "native_verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SqlPlanNativeVerification"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "nodes": {
             "default": [],
             "items": {
@@ -18669,6 +18689,11 @@
             "default": "ESTIMATE_ONLY",
             "title": "Mode",
             "type": "string"
+          },
+          "native_bind_comparison": {
+            "default": false,
+            "title": "Native Bind Comparison",
+            "type": "boolean"
           },
           "notice": {
             "default": "审批回执不授予执行权；采集须由独立后台任务兑换当前授权，不执行 ANALYZE 或业务 SQL。",
@@ -19039,6 +19064,213 @@
           "capture_preflight"
         ],
         "title": "SqlPlanMaterialView",
+        "type": "object"
+      },
+      "SqlPlanNativeVerification": {
+        "additionalProperties": false,
+        "properties": {
+          "capture_context": {
+            "const": "MATCHED_DECLARATION",
+            "default": "MATCHED_DECLARATION",
+            "title": "Capture Context",
+            "type": "string"
+          },
+          "limitations": {
+            "items": {
+              "enum": [
+                "PARTIAL_CONTEXT_ONLY",
+                "CAPTURED_VALUES_NOT_ONE_EXECUTION",
+                "POPULATION_NOT_OBSERVED",
+                "NATIVE_BIND_CAPTURE_UNSUPPORTED",
+                "NATIVE_SOURCE_UNAVAILABLE",
+                "OBJECT_RESOLUTION_INCOMPLETE",
+                "ESTIMATE_NOT_PRODUCTION_EXECUTION",
+                "CATALOG_IS_CURRENT_NOT_HISTORICAL"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "native_source_rows": {
+            "default": 0,
+            "maximum": 256.0,
+            "minimum": 0.0,
+            "title": "Native Source Rows",
+            "type": "integer"
+          },
+          "original_context": {
+            "items": {
+              "$ref": "#/components/schemas/SqlPlanVerificationCheck"
+            },
+            "maxItems": 5,
+            "minItems": 5,
+            "title": "Original Context",
+            "type": "array"
+          },
+          "parameter_types": {
+            "$ref": "#/components/schemas/SqlPlanVerificationCheck"
+          },
+          "parameter_values": {
+            "$ref": "#/components/schemas/SqlPlanVerificationCheck"
+          },
+          "representativeness": {
+            "default": "UNPROVEN",
+            "enum": [
+              "UNPROVEN",
+              "NOT_APPLICABLE"
+            ],
+            "title": "Representativeness",
+            "type": "string"
+          },
+          "resolved_objects": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SqlPlanResolvedObject"
+            },
+            "maxItems": 128,
+            "title": "Resolved Objects",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "SQL_PLAN_NATIVE_VERIFICATION.v1",
+            "default": "SQL_PLAN_NATIVE_VERIFICATION.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "unresolved_object_nodes": {
+            "default": [],
+            "items": {
+              "maximum": 127.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 128,
+            "title": "Unresolved Object Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "original_context",
+          "parameter_types",
+          "parameter_values",
+          "limitations"
+        ],
+        "title": "SqlPlanNativeVerification",
+        "type": "object"
+      },
+      "SqlPlanResolvedObject": {
+        "additionalProperties": false,
+        "properties": {
+          "native_object_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,20}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Object Id"
+          },
+          "node_id": {
+            "maximum": 127.0,
+            "minimum": 0.0,
+            "title": "Node Id",
+            "type": "integer"
+          },
+          "object_kind": {
+            "enum": [
+              "TABLE",
+              "INDEX"
+            ],
+            "title": "Object Kind",
+            "type": "string"
+          },
+          "object_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w$#.-]+$",
+            "title": "Object Name",
+            "type": "string"
+          },
+          "resolution": {
+            "enum": [
+              "NATIVE_CATALOG",
+              "SQL_ALIAS_TO_CATALOG"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          },
+          "schema_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w$#.-]+$",
+            "title": "Schema Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "object_kind",
+          "schema_name",
+          "object_name",
+          "resolution"
+        ],
+        "title": "SqlPlanResolvedObject",
+        "type": "object"
+      },
+      "SqlPlanVerificationCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "DATABASE",
+              "SCHEMA",
+              "ROLE",
+              "SEARCH_PATH",
+              "OPTIMIZER_SETTINGS",
+              "PARAMETER_TYPES",
+              "PARAMETER_VALUES"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "CAPTURE_CONNECTION",
+              "SOURCE_SUBJECT_CATALOG",
+              "DIGEST_SCHEMA",
+              "NATIVE_CURSOR",
+              "NATIVE_OPTIMIZER_ENV",
+              "NATIVE_BIND_CAPTURE",
+              "UNAVAILABLE"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "MATCH",
+              "MISMATCH",
+              "UNKNOWN",
+              "UNSUPPORTED",
+              "NOT_REQUESTED",
+              "NOT_APPLICABLE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "status",
+          "source"
+        ],
+        "title": "SqlPlanVerificationCheck",
         "type": "object"
       },
       "StatusChangeRequest": {

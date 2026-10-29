@@ -1,0 +1,17 @@
+collector_name: aiops_database_metric_row_oracle_v1
+metrics:
+  - metric_name: aiops_database_active_sessions
+    type: gauge
+    help: "同一原生查询的当前实例/容器活跃会话与原生身份；不扩展到RAC其他实例。"
+    key_labels: [metric_identity_version, database_type, dbid, instance_number, container_id, instance_started_at]
+    values: [active_sessions]
+    query: |
+      SELECT '1' AS "metric_identity_version", 'ORACLE' AS "database_type",
+             TO_CHAR(db.dbid, 'FM99999999999999999999') AS "dbid",
+             TO_CHAR(inst.instance_number, 'FM9999999999') AS "instance_number",
+             SYS_CONTEXT('USERENV','CON_ID') AS "container_id",
+             TO_CHAR(inst.startup_time, 'YYYY-MM-DD"T"HH24:MI:SS') AS "instance_started_at",
+             (SELECT count(*) FROM SYS.V_$SESSION s WHERE s.status='ACTIVE' AND s.type='USER'
+              AND s.con_id=TO_NUMBER(SYS_CONTEXT('USERENV','CON_ID'))
+              AND s.sid<>TO_NUMBER(SYS_CONTEXT('USERENV','SID'))) AS "active_sessions"
+      FROM SYS.V_$DATABASE db CROSS JOIN SYS.V_$INSTANCE inst

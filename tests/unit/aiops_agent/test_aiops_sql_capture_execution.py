@@ -22,13 +22,14 @@ from tests.unit.aiops_agent.test_aiops_sql_capture_approval import setup, reques
 from tests.unit.aiops_agent.test_aiops_sql_plan_material import command, SECRET
 
 
-def execution_store(engine="POSTGRESQL"):
+def execution_store(engine="POSTGRESQL", *, native_bind_comparison=False):
     store = setup(engine)
+    store.policy.rules_json["sql_plan_capture"]["native_bind_comparison_enabled"] = native_bind_comparison
     store.target.endpoint_json.update(port=5432, service="app", tls_enabled=False)
     store.run.plan_snapshot_json["investigation_execution"]["database"]["connection_profile"] = deepcopy(store.target.endpoint_json)
     store.material = call(store.service.submit(scope=store.scope, run_id=store.run.ops_run_id, command=command(store.original)))
     view = request(store)
-    decide(store, view)
+    decide(store, view, acknowledge_native_bind_comparison=engine == "ORACLE" and native_bind_comparison)
     store.all_runs, store.all_tasks, store.leases = [store.run], [], []
 
     async def add_run(row):

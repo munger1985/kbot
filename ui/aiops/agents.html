@@ -58,6 +58,7 @@
                   <label class="ops-field span-12"><span><input name="capture_enabled" type="checkbox">允许申请估算计划采集（默认关闭）</span></label>
                   <label class="ops-field span-12">允许对象（每行一个 Schema.对象，最多64个）<textarea name="capture_objects" rows="4" placeholder="例如 mes.mes_equipment_signal"></textarea></label>
                   <label class="ops-field span-12"><span><input name="capture_distinct" type="checkbox" checked>要求另一位操作人审批</span></label>
+                  <label class="ops-field span-12"><span><input name="capture_native_binds" type="checkbox">允许 Oracle 原生绑定捕获比较</span><small>默认关闭，仍需逐次独立确认；原值只在保护执行器内比较，不进入回答、报告或日志，不证明总体参数代表性。</small></label>
                   <label class="ops-field span-6">单语句最长时限（秒）<input name="capture_timeout" type="number" min="1" max="10" value="5" required></label>
                 </div><p>Oracle 需既有计划表的临时事务写入及回滚，不自动建表或授权。修改策略会使旧审批失效。</p>
               </article>
@@ -79,6 +80,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261023_1"></script>
   <script src="./js/aiops-pages.js"></script>
-  <script src="./js/aiops-agents.js?v=20261022_4"></script>
+  <script src="./js/aiops-agents.js?v=20261029-native-1"></script>
 </body>
 </html>

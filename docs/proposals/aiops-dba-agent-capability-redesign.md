@@ -1,6 +1,6 @@
 # AIOps DBA Agent 能力、回答、报告与案例知识统一设计
 
-修订日期：2026-10-28。
+修订日期：2026-10-29。
 
 状态：目标设计与实施验收基线；跨轮修订、精确计算、Prometheus/Zabbix 发现查询、
 三库处置审阅稿、执行前冻结的窗口效果复算与案例入索引前语义脱敏已有代码，
@@ -1207,3 +1207,73 @@ OEM数值历史必须有 `metric.query_range`，不能借用Zabbix的 `item.hist
 账号权限及留存质量仍需独立验证，不以官方文档或HTTP替身测试冒充线上接入完成。
 
 接口依据：[Oracle OEM 13.5官方OpenAPI](https://docs.oracle.com/en/enterprise-manager/cloud-control/enterprise-manager-cloud-control/13.5/emrest/openapi.json)。
+
+### OEM标准映射、同查询指标身份和原生计划核验（2026-10-29）
+
+本节更新此前“标准Provider映射、原解析环境核验及运行时对象解析待实施”的状态；
+实现范围与真实验收分开记录，不把部分原生核验说成完整生产执行证明。
+
+#### 监控来源及单位
+
+OEM标准指标仅使用官方原生目录/元数据/历史接口。管理员在两端
+“监控源 → 编辑 → 标准指标原生映射（JSON）”配置standard_metric_mappings，
+按标准metric_code明确target_type、metric_group、metric_name、native_unit、unit、
+value_kind、十进制scale和dimensions/filters。名称与单位先通过实际目录发现，
+不能从演示示例猜测；未配置返回SOURCE_MAPPING_REQUIRED，不调用旧虚构路径。
+配置禁止未知字段、非正/越界缩放、维度合并和未保留维度，精确筛选不等于聚合。
+数值使用Decimal换算，大整数不经过浮点；同次请求共用响应字节预算。
+
+OEM可能自动返回小时/日留存聚合，不能将返回点数换算成原始窗口完整率。
+expected_points=0、coverage_ratio=0及COVERAGE_UNKNOWN表示未知，不表示实际零覆盖；
+PROVIDER_RETENTION_ROLLUP_POSSIBLE随计算、报告和案例原件重放保留。
+映射语义为OPERATOR_CONFIGURED，不冒充供应商认证，也不把留存均值作为原始计数器。
+
+新增可选db.native.active_sessions和三库*-metrics.collector.yml部署资产，
+每个Collector用同一条原生SQL返回数值及原始身份标签，区别于独立info探针。
+Prometheus额外核对timestamp(同一指标)的抓取时点，拒绝陈旧、未来和重复结果；
+保留数值与时钟的独立响应Hash及DATABASE_METRIC_ROW.v1协议。
+只关联本条原生指标的来源自报身份，不把其他Exporter历史、同族主备/RAC运行节点、
+窗口连续性或SQL因果一并认证。新指标不在默认基线，须沿既有Binding显式授权；
+不自动部署Collector、不扩大默认Profile或数据库权限。
+
+#### 原解析环境与参数
+
+独立审批的专用估算Executor复用同一采集连接，在原整体时限内追加最多2秒、
+最多256行的可选原生核验；不运行原业务查询/ANALYZE，不ALTER/SET原角色或优化器环境。
+DATABASE、SCHEMA、ROLE、SEARCH_PATH、OPTIMIZER_SETTINGS分别输出
+MATCH/MISMATCH/UNKNOWN/UNSUPPORTED等状态及来源，不能压成一个“环境已核验”布尔值。
+
+- PostgreSQL以完整主体database_oid/user_oid查当前原生目录，并核对采集连接的原生参数OID；
+  当前目录不能还原历史search_path、角色改名、对象生命周期或原优化器设置。
+- MySQL以Digest的原生schema_name比较原默认库，不用诊断连接的DATABASE()替代原SQL环境。
+  受控采集可只读核对声明的当前session_variables；未知设置拒绝，不自动更改。
+- Oracle必须使用SQL_ID、DBID、实例、容器、child_number及plan_hash_value完整游标定位，
+  读取原parsing schema/user、原优化器环境及绑定捕获元数据；
+  采集会话优化器设置另外只读核对，不能用当前设置证明原游标设置。
+
+Oracle绑定原值比较默认关闭，必须Agent类型化策略native_bind_comparison_enabled开启，
+且审阅人对本请求单独确认acknowledge_native_bind_comparison；批准估算风险不自动授权读原值。
+未授权时SQL不投影VALUE_STRING。授权时原值只在保护Executor内短暂比较，持久化结果仅状态；
+不输出值、可猜测值Hash、原生错误正文，不进入模型、报告或案例。
+仅比较完整位置、受支持类型和无截断的捕获值；NUMBER精确十进制比较，
+NLS日期、空/不完整或不支持样本保持UNKNOWN。单个捕获样本即使匹配，
+也不证明同一次执行、绑定窥探、当前业务分布或总体代表性；PG/MySQL不伪造原生绑定捕获。
+
+#### 计划对象、回答、报告及案例
+
+计划中的目录对象在同一采集连接只读核对；MySQL先做SQL作用域/唯一别名消歧，
+再核对对应表和索引归属。CTE、派生表、跨作用域同名、未限定/不明确对象不猜测。
+目录权限不足可保留其他已完成证据，PG通过SAVEPOINT隔离可选查询失败；
+清理不能确认则拒绝成功，外部取消向上传播。有界超时保留明确缺口。
+
+SQL_PLAN_NATIVE_VERIFICATION.v1随专用结果回执Hash冻结，后续诊断、正式报告、
+案例发布和检索复核均从独立原件重放，不接受Worker或用户材料自报。
+SQL_OBJECT_GRAPH.v1的plan_objects只接入完整主体、物理身份和近时点匹配的可信计划，
+保留节点、原始字段引用、主体锚点及已核验目录对象。128对象预算明确截断；
+受控估算对象与原Oracle游标计划对象分开，不叫作某次生产实际访问证明。
+运行时拼接SQL、未知远端对象或缺少原生运行记录仍需实际证据，不承诺无条件解析。
+
+两端运行详情显示逐项核验、已解/未解对象和参数边界，报告附录保留同一安全投影。
+未携带新核验的历史结果/文档和空对象图不新增空字段，不因新字段改变其规范Hash形状。
+上线前须用户核对真实OMS映射/单位/留存、Collector接入、三库绑定凭据、
+原生计划及模型输出质量；本批不执行这些线上操作或声称已验收。

@@ -153,6 +153,7 @@ def assess_sql_plans(*, database_type, subject, evidence):
             origin=document.origin,
             subject=subject, identity_match=identity_match, physical_match=physical_match, time_relation=time_relation,
             bind_metadata_refs=_bind_refs(document, subject, evidence, anchor) if native and identity_match == physical_match == "SOURCE_MATCH" and time_relation == "SOURCE_NEAR_OBSERVATION" else (),
+            native_verification=document.native_verification if estimate else None,
             runtime_statistics=document.runtime_statistics, node_count=len(document.nodes), limitations=((
                 "已核验的数据库来源仅证明缓存计划或 LAST 行源；采集时点不等于执行时点，不自证过去指定执行或参数。",
                 "绑定元数据仅为位置、类型、采集标记及原生时间；不是绑定值或代表性证明。",
@@ -160,7 +161,7 @@ def assess_sql_plans(*, database_type, subject, evidence):
                 "缺失或零启动行源不能当作实际执行；LAST 各节点也不保证来自一个可定位的完整执行。",
             ) if native else (
                 "来源为独立审批的受控估算；节点仅证明采集环境和所提交参数下的优化器估算，不证明生产实际路径。",
-                "原解析环境和参数代表性未核验；同主体、同SQL文本哈希、同物理身份或相近时点均不能代替运行时证明。",
+                "原解析环境按逐项原生核验解释，未知项和总体参数代表性不补全；同主体、文本、物理身份或相近时点不能代替运行时证明。",
                 "不能从估算计划生成实际行数偏差、实际耗时或根因确认；成本是优化器单位，不是毫秒。",
                 "Oracle来源游标标识不是本次估算计划哈希，估算不证明参数窥探；MySQL对象名可能是别名。",
             ) if estimate else (

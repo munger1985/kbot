@@ -12,6 +12,12 @@ MAX_TRACE_INPUTS = 8192
 MAX_SUMMARY_ROWS = 128
 
 
+def metric_source_quality_flags(observation):
+    """留存层聚合不能由点数或管理员映射升级成原始覆盖证明。"""
+    return (("PROVIDER_RETENTION_ROLLUP_POSSIBLE", "COVERAGE_UNKNOWN")
+        if observation.provenance.get("history_resolution") == "PROVIDER_MANAGED" else ())
+
+
 def _scope(observation, series):
     return (str(observation.target_id), str(observation.source_id), observation.source_version,
         str(observation.binding_id), observation.external_target_fingerprint,
@@ -43,7 +49,7 @@ def build_monitoring_rows(*, artifact_id, result, forecast_horizon_days=None):
             if len(rows) >= MAX_SUMMARY_ROWS:
                 warnings.append("MONITORING_SERIES_BUDGET_EXCEEDED：摘要仅保留前 128 条序列")
                 break
-            points, flags = [], []
+            points, flags = [], list(metric_source_quality_flags(observation))
             for point in series.points:
                 number = parse_numeric_sample(point.value)
                 if point.quality != "GOOD" or number is None or not observation.window_start <= point.observed_at <= observation.window_end:
@@ -176,7 +182,7 @@ async def validate_monitoring_trace_sources(*, uow, run, payload):
                     and (number := parse_numeric_sample(point.value)) is not None)
                 if trace.samples != original:
                     return False
-                flags = set()
+                flags = set(metric_source_quality_flags(observation))
                 if observation.truncated:
                     flags.add("TRUNCATED")
                 if observation.coverage_ratio < 1:

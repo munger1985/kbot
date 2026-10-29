@@ -15,6 +15,16 @@ RESULT_KEY = "sql-plan-capture:result"
 HANDLER = "sql.plan-capture"
 
 
+def native_comparison_result_authorized(result, request, decision):
+    """安全回执同样受冻结策略与额外批准约束，不只在兑换时检查。"""
+    native = result.native_verification
+    if native is None or native.parameter_values.status in {"NOT_REQUESTED", "NOT_APPLICABLE", "UNSUPPORTED"}:
+        return True
+    return (result.database_type == "ORACLE" and decision.get("decision") == "APPROVE"
+        and decision.get("acknowledge_native_bind_comparison") is True
+        and request.get("frozen", {}).get("capture_policy", {}).get("native_bind_comparison_enabled") is True)
+
+
 def task_binding(task):
     return {name: getattr(task, name) for name in ("task_key", "task_type", "handler_id", "handler_version",
         "input_schema_version", "output_schema_version", "depends_on_json", "input_artifacts_json",
@@ -104,7 +114,8 @@ class SqlPlanCaptureResultReader:
                 or provenance.get("approval_sha256") != execution["approval_sha256"]):
                 raise state_conflict("计划采集结果无法独立复核")
             result = SqlPlanCaptureResult.model_validate(artifact.payload_json)
-            if (result.database_type != frozen["source"]["database_type"]
+            if (not native_comparison_result_authorized(result, frozen, protected["decision"])
+                or result.database_type != frozen["source"]["database_type"]
                 or result.request_id != request_id or result.capture_run_id != run.ops_run_id):
                 raise state_conflict("计划采集结果引擎或引用不一致")
         return VerifiedSqlPlanCapture(run=run, task=task, request=frozen, original=original, artifact=artifact, result=result)

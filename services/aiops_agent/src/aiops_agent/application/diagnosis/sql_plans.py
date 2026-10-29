@@ -24,6 +24,8 @@ _COLUMN_LABELS = {
     "optimizer_total_cost": "优化器总成本", "optimizer_query_cost": "优化器查询成本", "optimizer_cost": "优化器成本",
     "optimizer_read_cost": "优化器读取成本", "optimizer_eval_cost": "优化器计算成本", "optimizer_prefix_cost": "优化器前缀成本",
     "shared_hit_blocks": "共享块命中", "shared_read_blocks": "共享块读取", "temp_read_blocks": "临时块读取",
+    "resolved_object_name": "同连接目录对象", "resolved_schema_name": "同连接目录Schema",
+    "resolved_native_object_id": "原生对象标识",
     "temp_written_blocks": "临时块写入", "rows_removed_by_filter_per_loop": "过滤丢弃行数／循环",
     "rows_removed_by_join_filter_per_loop": "连接过滤丢弃行数／循环", "workers_planned": "计划并行 Worker", "workers_launched": "启动并行 Worker",
 }
@@ -104,12 +106,13 @@ def controlled_estimate_document(verified):
         native_format={"POSTGRESQL": "POSTGRESQL_EXPLAIN_JSON", "MYSQL": "MYSQL_EXPLAIN_JSON",
             "ORACLE": "ORACLE_PLAN_ROWS"}[result.database_type],
         subject=source["subject"], physical_identity=result.physical_identity,
+        native_verification=result.native_verification,
         source_sql_sha256=canonical_hash(sql), observed_at=result.captured_at.isoformat(),
         nodes=tuple({**node.model_dump(mode="python"),
             "object_name_semantics": "ALIAS_OR_NAME" if result.database_type == "MYSQL" else "CATALOG_NAME"}
             for node in result.nodes),
         warnings=("独立审批和隔离执行器回执已复核；仅为估算计划，未执行原业务语句或ANALYZE。",
-            "采集时间不等于业务执行时间；原解析环境及用户提交参数的代表性尚未核验。",
+            "采集时间不等于业务执行时间；原环境与绑定捕获按逐字段核验结果解释，未知项不补全，捕获样本不证明总体参数代表性。",
             "原SQL统计主体仅用于来源关联，不证明当前或过去实际使用了此估算计划。",
             *(("Oracle估算不证明绑定窥探；原游标plan_hash_value不是本次估算计划的哈希。",)
                 if result.database_type == "ORACLE" else ())))
@@ -123,7 +126,14 @@ def controlled_plan_appendix(assessments):
         plan = SqlPlanAssessment.model_validate(raw)
         if plan.origin == "CONTROLLED_ESTIMATE":
             results.append("受控估算计划｜仅说明采集环境及所提交参数下的优化器估算，不证明生产实际执行。"
-                "原解析环境和参数代表性未核验；优化器成本不是毫秒。" + "；".join(plan.limitations))
+                "原解析环境按逐项来源核验；缺失项与总体参数代表性不补全，优化器成本不是毫秒。" + "；".join(plan.limitations))
+            if plan.native_verification is not None:
+                native = plan.native_verification
+                results.append("原生核验｜" + "；".join(
+                    check.field + "=" + check.status + "（" + check.source + "）"
+                    for check in (*native.original_context, native.parameter_types, native.parameter_values))
+                    + "；已核验目录对象" + str(len(native.resolved_objects))
+                    + "个；单个捕获样本不证明总体代表性或某次生产执行。")
     return results
 
 
@@ -138,7 +148,16 @@ def controlled_estimate_fact(artifact):
     origin = payload["origin"]
     names = ("node_id", "parent_id", "operation", "schema_name", "relation_name", "index_name",
         *sorted({key for node in document.nodes for key in node.metrics}))
-    rows = tuple(tuple({**node.model_dump(), **node.metrics}.get(key) for key in names) for node in document.nodes)
+    objects = {item.node_id: item for item in document.native_verification.resolved_objects} if document.native_verification else {}
+    if document.native_verification is not None:
+        names = (*names, "resolved_schema_name", "resolved_object_name", "resolved_native_object_id")
+    def node_fields(node):
+        item = objects.get(node.node_id)
+        return {**node.model_dump(), **node.metrics,
+            "resolved_schema_name": item.schema_name if item else None,
+            "resolved_object_name": item.object_name if item else None,
+            "resolved_native_object_id": item.native_object_id if item else None}
+    rows = tuple(tuple(node_fields(node).get(key) for key in names) for node in document.nodes)
     identity = str(artifact["artifact_id"])
     return TurnEvidenceFact(evidence_ref=f"artifact:{identity}#controlled-estimate", artifact_id=identity,
         source_id="sql.plan_capture", step_id="controlled-estimate", tool_id=CONTROLLED_PLAN_TOOL_ID,

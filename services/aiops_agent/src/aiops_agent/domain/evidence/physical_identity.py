@@ -116,6 +116,8 @@ def build_physical_identity_graph(evidence):
                 break
             delta = min((abs((a - b).total_seconds()) for a in left.observed_times for b in right.observed_times), default=None)
             reasons = ["SOURCE_REPORTED_IDENTITY_ONLY", "OTHER_METRIC_SERIES_NOT_ASSIGNED", "WINDOW_CONTINUITY_NOT_PROVEN"]
+            if "SAME_QUERY_METRIC_IDENTITY_REPORTED" in right.quality_flags:
+                reasons[1] = "ONLY_THIS_NATIVE_QUERY_METRIC_REPORTED"
             matched, conflicting = (), ()
             relation = "UNKNOWN"
             bad = {"INVALID_NATIVE_IDENTITY", "NATIVE_DATABASE_IDENTITY_MISSING", "IDENTITY_SAMPLE_INVALID",

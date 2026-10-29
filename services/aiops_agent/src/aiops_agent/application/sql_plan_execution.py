@@ -14,6 +14,7 @@ from aiops_agent.application.resource_governance import TERMINAL_RUN_STATES, res
 from aiops_agent.application.sql_plan_captures import PREFIX
 from aiops_agent.application.sql_plan_results import (
     HANDLER, RESULT_KEY, RESULT_SCHEMA, WORKFLOW, SqlPlanCaptureResultReader, task_binding as _task_binding,
+    native_comparison_result_authorized,
 )
 from aiops_agent.domain.evidence.sql_plan_capture import source_sql_text
 from aiops_agent.domain.operations import normalize_task_type
@@ -226,6 +227,9 @@ class SqlPlanCaptureExecutionService:
                 protected_document=json.dumps(document, ensure_ascii=False),
                 allowed_objects=request["frozen"]["capture_policy"]["allowed_objects"],
                 statement_timeout_seconds=request["statement_timeout_seconds"], source_subject=view.source.subject,
+                native_bind_comparison=grant.db_type == "ORACLE"
+                    and request["frozen"]["capture_policy"].get("native_bind_comparison_enabled", False)
+                    and protected["decision"].get("acknowledge_native_bind_comparison", False),
                 source_identity=dict(dict(observation.get("provenance") or {}).get("instance_identity") or {}),
                 resource_lease=lease)
             protected = {**protected, "execution": {**execution, "consumed_grant_id": str(grant.grant_id)}}
@@ -267,6 +271,7 @@ class SqlPlanCaptureExecutionService:
                 or protected.get("request", {}).get("ops_run_id") != str(source.ops_run_id)
                 or canonical_hash({"request": protected["request"], "decision": protected["decision"]}) != info.get("approval_sha256")
                 or result.database_type != info.get("database_type")
+                or not native_comparison_result_authorized(result, protected["request"], protected["decision"])
                 or not secrets.compare_digest(lease.release_token_hash, token_hash(receipt.release_token))
                 or lease.execution_deadline_at != receipt.execution_deadline_at or lease.held_until != receipt.held_until
                 or result.captured_at < lease.acquired_at or result.captured_at > now

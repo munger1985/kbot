@@ -66,7 +66,7 @@ def driver():
 def test_postgresql_explain_is_bound_readonly_and_not_original_execution(monkeypatch):
     connection, transaction, statement, connect = postgresql(monkeypatch)
     item = protected()
-    nodes, identity = call(driver().capture(item))
+    nodes, identity, verification = call(driver().capture(item))
     assert identity == {"database_oid": "123"} and PRIVATE not in json.dumps(nodes)
     assert connection.prepare.call_args.args == (
         "EXPLAIN (FORMAT JSON, VERBOSE TRUE, COSTS TRUE, SETTINGS FALSE) SELECT id FROM mes.t WHERE code=$1",)
@@ -174,7 +174,7 @@ def mysql(monkeypatch):
 
 def test_mysql_uses_parameter_protocol_rollback_and_owned_connection(monkeypatch):
     connection, cursor = mysql(monkeypatch)
-    nodes, identity = call(driver().capture(protected("MYSQL")))
+    nodes, identity, verification = call(driver().capture(protected("MYSQL")))
     assert identity["server_uuid"] and PRIVATE not in json.dumps(nodes)
     explained = [(sql, values) for sql, values in cursor.executed if sql.startswith("EXPLAIN")]
     assert explained == [("EXPLAIN FORMAT=JSON SELECT id FROM mes.t WHERE code=%(plan_bind_1)s", {"plan_bind_1": PRIVATE})]
@@ -235,7 +235,7 @@ def oracle(monkeypatch, *, available=True, close_error=None):
 
 def test_oracle_explicit_temporary_plan_table_typed_binds_separate_read_cursor_and_rollback(monkeypatch):
     connection, first, plan = oracle(monkeypatch)
-    nodes, identity = call(driver().capture(protected("ORACLE")))
+    nodes, identity, verification = call(driver().capture(protected("ORACLE")))
     assert identity == {"dbid": "123", "container_id": "3"} and len(nodes) == 2
     sql, binds = first.executed[-1]
     assert sql.startswith("EXPLAIN PLAN SET STATEMENT_ID = 'AIOPS_")

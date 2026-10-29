@@ -159,6 +159,46 @@ def _comparable(left, left_row, right, right_row, engine):
         return False
 
 
+def matched_plan_objects(*, database_type, subject, evidence):
+    """从完整匹配计划读取底层对象；不执行动态SQL，不借连接Schema消歧。"""
+    from aiops_agent.domain.evidence.sql_plan_matching import assess_sql_plans
+    from aiops_agent.contracts.sql_object_graph import SqlPlanObjectReference
+
+    facts = {fact.evidence_ref: fact for fact in evidence}
+    result = []
+    for assessment in assess_sql_plans(database_type=database_type, subject=subject, evidence=evidence):
+        if (assessment.identity_match != "SOURCE_MATCH" or assessment.physical_match != "SOURCE_MATCH"
+            or assessment.time_relation != "SOURCE_NEAR_OBSERVATION" or assessment.anchor_ref is None):
+            continue
+        fact = facts[assessment.evidence_ref]
+        if fact.trust_level != "SOURCE_VERIFIED":
+            continue
+        document = fact.sql_plan
+        if document.origin == "CONTROLLED_ESTIMATE" and document.native_verification is not None:
+            row_indices = {node.node_id: index for index, node in enumerate(document.nodes)}
+            for item in document.native_verification.resolved_objects:
+                result.append(SqlPlanObjectReference(node_id=item.node_id, source="CONTROLLED_ESTIMATE_OBJECT",
+                    object_kind=item.object_kind, schema_name=item.schema_name, object_name=item.object_name,
+                    native_object_id=item.native_object_id, subject_anchor_ref=assessment.anchor_ref,
+                    field_ref={"evidence_ref":fact.evidence_ref, "row_index":row_indices[item.node_id], "field":"resolved_object_name"}))
+        elif document.origin == "DATABASE_CURSOR":
+            names = [str(column.get("name") or "").lower() for column in fact.columns]
+            for node in document.nodes:
+                name = node.index_name or node.relation_name
+                if not name or not node.schema_name:
+                    continue
+                rows = [index for index, row in enumerate(fact.rows) if len(row) == len(names)
+                    and dict(zip(names,row,strict=True)).get("object_owner") == node.schema_name
+                    and dict(zip(names,row,strict=True)).get("object_name") == name]
+                if not rows:
+                    continue
+                result.append(SqlPlanObjectReference(node_id=node.node_id, source="DATABASE_CURSOR_OBJECT",
+                    object_kind="INDEX" if node.index_name else "TABLE", schema_name=node.schema_name, object_name=name,
+                    subject_anchor_ref=assessment.anchor_ref,
+                    field_ref={"evidence_ref":fact.evidence_ref, "row_index":rows[0], "field":"object_name"}))
+    return tuple(result)
+
+
 def build_sql_object_graph(*, database_type, subject, evidence):
     """关系只在可信当前观测、核验物理数据库范围及五分钟内建立。"""
     facts = tuple(fact for fact in evidence[:64] if fact.trust_level == "SOURCE_VERIFIED"
@@ -364,7 +404,10 @@ def build_sql_object_graph(*, database_type, subject, evidence):
         if len(relationships) >= 128 and queue:
             truncated = True
             break
+    plan_objects = matched_plan_objects(database_type=database_type, subject=subject, evidence=facts)
+    truncated = truncated or len(plan_objects) > 128
     return SqlObjectGraph(database_type=database_type, subject=subject, references=tuple(references), relationships=tuple(relationships),
+        plan_objects=plan_objects[:128],
         truncated=truncated, limitations=("仅覆盖可核验物理数据库范围内的语法名称、MySQL 原生默认数据库、当前目录及最多四层已采集依赖；PG 历史 search_path、Oracle 同义词优先级、运行时动态 SQL和代表参数不猜测。",
             "未建立关系不代表 SQL 未访问对象；缺失、未解析或范围未知不能作为否定证据。",
             *(("可达目录含远端引用；只保留原始记录，不跨 DB Link、外部服务器或未知物理范围展开。",) if remote_references else ())))

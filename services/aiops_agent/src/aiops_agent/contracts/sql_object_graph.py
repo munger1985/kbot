@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
 
 from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference
 
@@ -83,6 +83,20 @@ class SqlObjectRelationship(BaseModel):
     limitation: str = Field(min_length=1, max_length=1000)
 
 
+class SqlPlanObjectReference(BaseModel):
+    """计划中解析到的对象；不是依靠语法猜测，也不证明某次生产实际访问。"""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    node_id: int = Field(ge=0, le=127)
+    source: Literal["CONTROLLED_ESTIMATE_OBJECT", "DATABASE_CURSOR_OBJECT"]
+    object_kind: Literal["TABLE", "INDEX"]
+    schema_name: str = Field(min_length=1, max_length=128)
+    object_name: str = Field(min_length=1, max_length=128)
+    native_object_id: str | None = None
+    field_ref: EvidenceFieldReference
+    subject_anchor_ref: str
+    production_execution_verified: Literal[False] = False
+
+
 class SqlObjectGraph(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -91,6 +105,7 @@ class SqlObjectGraph(BaseModel):
     subject: dict[str, str | int | bool | None] = Field(min_length=1, max_length=16)
     references: tuple[SqlObjectReference, ...] = Field(default=(), max_length=64)
     relationships: tuple[SqlObjectRelationship, ...] = Field(default=(), max_length=128)
+    plan_objects: tuple[SqlPlanObjectReference, ...] = Field(default=(), max_length=128)
     truncated: bool = False
     limitations: tuple[str, ...] = ()
 
@@ -99,3 +114,10 @@ class SqlObjectGraph(BaseModel):
         if self.database_type != "MYSQL" and any(item.resolution == "NATIVE_DEFAULT_SCHEMA" for item in self.references):
             raise ValueError("只有 MySQL Digest 的原生默认数据库可提供此名称上下文")
         return self
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_graph(self, handler):
+        value = handler(self)
+        if not self.plan_objects:
+            value.pop("plan_objects", None)
+        return value

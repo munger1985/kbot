@@ -368,6 +368,7 @@
     form.elements.capture_enabled.checked = capture.enabled === true;
     form.elements.capture_objects.value = values(capture.allowed_objects).join("\n");
     form.elements.capture_distinct.checked = capture.require_distinct_approver !== false;
+    form.elements.capture_native_binds.checked = capture.native_bind_comparison_enabled === true;
     form.elements.capture_timeout.value = String(capture.max_statement_timeout_seconds ?? 5);
     const policy = editing.knowledge_policy || {};
     form.elements.knowledge_enabled.checked = policy.enabled !== false;
@@ -420,6 +421,7 @@
         enabled: form.elements.capture_enabled.checked,
         allowed_objects: form.elements.capture_objects.value.split("\n").map((name) => name.trim()).filter(Boolean),
         require_distinct_approver: form.elements.capture_distinct.checked,
+        native_bind_comparison_enabled: form.elements.capture_native_binds.checked,
         max_statement_timeout_seconds: Number(form.elements.capture_timeout.value),
       },
       auto_alert_enabled: form.elements.auto_alert_enabled.checked,

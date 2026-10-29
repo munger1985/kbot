@@ -1,6 +1,7 @@
 {
   "catalog_version": "baseline.v1",
   "metrics": [
+{"metric_code":"db.native.active_sessions","semantic_role":"ACTIVE_SESSIONS","semantic_version":"1.0.0","name":"原生同查询活跃会话","description":"采集器在同一原生SQL中读取活跃会话和数据库身份；额外核对原始抓取时点。仅为该指标的来源自报，不把独立身份探针用于其他Exporter。","unit":"sessions","value_kind":"GAUGE","expected_dimensions":["metric_identity_version","database_type","system_identifier","database_oid","instance_started_at","server_uuid","dbid","instance_number","container_id","target_key","job","instance","cluster","prometheus","replica","namespace","pod"],"supported_db_types":["POSTGRESQL","MYSQL","ORACLE"],"allowed_aggregations":["AVG","MAX","LAST"],"default_window_seconds":900,"min_step_seconds":60,"max_points":120,"max_series":16,"providers":{"PROMETHEUS":{"template_id":"prom.database.native.active_sessions","template_version":"1","query_template":"aiops_database_active_sessions{target_key=\"${external_target}\",metric_identity_version=\"1\"}","required_labels":["target_key","database_type","job","instance","metric_identity_version"]}}},
     {
       "metric_code": "db.identity.info",
       "semantic_role": "DATABASE_IDENTITY",

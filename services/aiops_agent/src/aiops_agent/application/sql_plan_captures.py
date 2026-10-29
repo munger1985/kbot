@@ -84,6 +84,8 @@ class SqlPlanCaptureService:
             statement_timeout_seconds=request["statement_timeout_seconds"],
             require_distinct_approver=request["frozen"]["capture_policy"]["require_distinct_approver"],
             oracle_plan_table_write=request["oracle_plan_table_write"], requested_by=request["requested_by"],
+            native_bind_comparison=request["source"]["database_type"] == "ORACLE"
+                and request["frozen"]["capture_policy"].get("native_bind_comparison_enabled", False),
             decided_by=decision["decided_by"] if decision else None,
             created_at=request["created_at"], expires_at=request["expires_at"],
             capture_run_id=execution.get("capture_run_id") if execution else None,
@@ -211,12 +213,14 @@ class SqlPlanCaptureService:
                 if view.require_distinct_approver and str(scope.actor_id) == view.requested_by:
                     raise state_conflict("当前策略要求由另一位具备审批权限的操作人审阅")
                 if (not command.acknowledge_estimate_only
-                    or command.acknowledge_oracle_plan_table_write != view.oracle_plan_table_write):
-                    raise state_conflict("请明确确认估算计划风险及对应引擎的计划表写入边界")
+                    or command.acknowledge_oracle_plan_table_write != view.oracle_plan_table_write
+                    or command.acknowledge_native_bind_comparison != view.native_bind_comparison):
+                    raise state_conflict("请明确确认估算风险、计划表写入边界及策略要求的原生绑定捕获值比较")
             decision = {"schema_version": DECISION_SCHEMA, "request_id": str(request_id),
                 "request_sha256": view.request_sha256, "decision": command.decision,
                 "decided_by": str(scope.actor_id), "decided_at": now.isoformat(),
                 "acknowledge_estimate_only": command.acknowledge_estimate_only,
+                "acknowledge_native_bind_comparison": command.acknowledge_native_bind_comparison,
                 "acknowledge_oracle_plan_table_write": command.acknowledge_oracle_plan_table_write}
             protected = {**protected, "state": "APPROVED" if command.decision == "APPROVE" else "REJECTED", "decision": decision}
             self._vault.update(row=row, scope=scope, payload=protected)

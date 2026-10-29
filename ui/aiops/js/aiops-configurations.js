@@ -62,6 +62,7 @@
     document.getElementById("source-token-field").hidden = type === "OEM" || (isAlertmanager && !endpoint.value.trim());
     document.getElementById("source-oem-username-field").hidden = type !== "OEM";
     document.getElementById("source-oem-password-field").hidden = type !== "OEM";
+    document.getElementById("source-oem-mappings-field").hidden = type !== "OEM";
     document.getElementById("source-webhook-field").hidden = !receivesWebhook || creatingAlertmanager;
     document.getElementById("source-webhook-create-note").hidden = !creatingAlertmanager;
     document.getElementById("source-webhook-key-section").hidden = !(receivesWebhook && editing);
@@ -113,6 +114,11 @@
     if (type === "LOKI" && form.elements.tenant_id.value.trim()) {
       payload.config.tenant_id = form.elements.tenant_id.value.trim();
     }
+    if (type === "OEM") {
+      const mappings = JSON.parse(form.elements.oem_standard_mappings.value || "{}");
+      if (!mappings || typeof mappings !== "object" || Array.isArray(mappings)) throw new Error("OEM标准指标映射必须为JSON对象");
+      payload.config.standard_metric_mappings = mappings;
+    }
     if (Object.keys(credentials).length) payload.credentials = credentials;
     if (["ALERTMANAGER", "ZABBIX"].includes(type) && webhookSecret) {
       payload.webhook_credentials = { webhook_secret: webhookSecret };
@@ -151,6 +157,7 @@
       form.elements.source_type.disabled = true;
       form.elements.endpoint.value = source.endpoint || "";
       form.elements.tenant_id.value = source.config?.tenant_id || "";
+      form.elements.oem_standard_mappings.value = JSON.stringify(source.config?.standard_metric_mappings || {}, null, 2);
       renderSourceType(form);
       resetWebhookKeyResult();
       document.getElementById("rotate-source-webhook-key").textContent = source.webhook_configured

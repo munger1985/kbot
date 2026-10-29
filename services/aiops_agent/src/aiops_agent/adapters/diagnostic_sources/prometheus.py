@@ -454,6 +454,15 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                 if not raw_series:
                     continue
                 fallback_used = query_index > 0
+                row_identity = {}
+                from .prometheus_identity import ROW_METRIC, metric_row_provenance
+                if definition.metric_code == ROW_METRIC:
+                    try:
+                        row_identity = await metric_row_provenance(self, request=request, query=query,
+                            step=step, raw_series=raw_series, response_hash=response_hash)
+                    except DiagnosticSourceAdapterError as exc:
+                        query_errors.append(exc)
+                        continue
                 observation = self._observation(
                     request=request,
                     definition=definition,
@@ -471,6 +480,7 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                     provenance={
                         "query_variant": query_variant,
                         "fallback_used": fallback_used,
+                        **row_identity,
                     },
                 )
                 if (

@@ -20,6 +20,7 @@ from aiops_agent.executor.drivers.mysql_cancellation import OwnedMySQLExecution
 from aiops_agent.executor.identity import observe_postgresql_identity, observe_mysql_connection_identity, observe_oracle_identity
 from aiops_agent.executor.readonly_lifecycle import observe_termination
 from aiops_agent.executor.drivers.sql_plan_catalog import validate_postgresql_catalog, validate_mysql_catalog, validate_oracle_catalog
+from aiops_agent.executor.drivers.sql_plan_verification import native_plan_verification, capture_session_settings
 
 
 def check_context(document, *, database, schema, role, search_path=None, settings=None):
@@ -111,9 +112,11 @@ class NativeSqlPlanCaptureDriver:
                         raise SqlPlanReplayRejected("PLAN_NATIVE_PARAMETER_TYPE_MISMATCH")
                 raw = await statement.fetchval(*replay.parameters)
                 nodes = project_plan(raw, "POSTGRESQL")
+                verification = await native_plan_verification(engine="POSTGRESQL", connection=connection,
+                    cursor=None, exchanged=exchanged, document=document, replay=replay, nodes=nodes)
                 await transaction.rollback()
                 completed = True
-                return nodes, identity
+                return nodes, identity, verification
         except (asyncio.CancelledError, TimeoutError):
             if connection is not None:
                 await _cancel_owned_connection(connection)
@@ -163,9 +166,8 @@ class NativeSqlPlanCaptureDriver:
             await cursor.execute("SET SESSION MAX_EXECUTION_TIME=%s", (exchanged.statement_timeout_seconds * 1000,))
             await cursor.execute("SELECT DATABASE(), CURRENT_USER()")
             row = (await cursor.fetchmany(1))[0]
-            if document["execution_context"].get("settings"):
-                raise SqlPlanReplayRejected("PLAN_CONTEXT_SETTINGS_UNSUPPORTED")
-            check_context(document, database=row[0], schema=row[0], role=row[1])
+            settings = await capture_session_settings(cursor, document["execution_context"].get("settings", {}), "MYSQL")
+            check_context(document, database=row[0], schema=row[0], role=row[1], settings=settings)
             await validate_mysql_catalog(cursor, replay)
             ownership.ensure_active()
             await cursor.execute("EXPLAIN FORMAT=JSON " + _mysql_bound_sql(replay.sql),
@@ -174,8 +176,10 @@ class NativeSqlPlanCaptureDriver:
             if len(rows) != 1 or len(rows[0]) != 1:
                 raise SqlPlanReplayRejected("PLAN_RESULT_INVALID")
             nodes = project_plan(rows[0][0], "MYSQL")
+            verification = await native_plan_verification(engine="MYSQL", connection=connection,
+                cursor=cursor, exchanged=exchanged, document=document, replay=replay, nodes=nodes)
             await connection.rollback()
-            return nodes, identity
+            return nodes, identity, verification
 
     async def _oracle(self, exchanged, document, replay):
         profile = exchanged.connection_profile
@@ -196,9 +200,8 @@ class NativeSqlPlanCaptureDriver:
                 try:
                     await cursor.execute("SELECT SYS_CONTEXT('USERENV','CON_NAME'), SYS_CONTEXT('USERENV','CURRENT_SCHEMA'), SYS_CONTEXT('USERENV','SESSION_USER') FROM SYS.DUAL")
                     row = (await cursor.fetchmany(1))[0]
-                    if document["execution_context"].get("settings"):
-                        raise SqlPlanReplayRejected("PLAN_CONTEXT_SETTINGS_UNSUPPORTED")
-                    check_context(document, database=row[0], schema=row[1], role=row[2])
+                    settings = await capture_session_settings(cursor, document["execution_context"].get("settings", {}), "ORACLE")
+                    check_context(document, database=row[0], schema=row[1], role=row[2], settings=settings)
                     identity = check_identity(exchanged.source_identity, await observe_oracle_identity(connection))
                     await validate_oracle_catalog(cursor, replay, schema=row[1])
                     # 显式使用Oracle自带临时计划表，不能解析到用户创建的同名表/触发器。
@@ -231,9 +234,11 @@ class NativeSqlPlanCaptureDriver:
                             "object_owner": row[4], "object_name": row[5], "object_type": row[6],
                             "cardinality": row[7], "cost": row[8]})
                     nodes = project_plan(plan_rows, "ORACLE")
+                    verification = await native_plan_verification(engine="ORACLE", connection=connection,
+                        cursor=cursor, exchanged=exchanged, document=document, replay=replay, nodes=nodes)
                     await connection.rollback()
                     completed = True
-                    return nodes, identity
+                    return nodes, identity, verification
                 finally:
                     cursor.close()
         except (asyncio.CancelledError, TimeoutError):

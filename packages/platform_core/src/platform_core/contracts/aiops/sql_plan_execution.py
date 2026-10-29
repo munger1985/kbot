@@ -2,7 +2,9 @@
 
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator, model_serializer
+
+from .sql_plan_verification import SqlPlanNativeVerification
 
 from .executor import DiagnosticConnectionProfile, ResourceLeaseReceipt
 from .types import AIOpsContract, UUIDv7, UtcDatetime, OpsRunStatus
@@ -72,6 +74,7 @@ class SqlPlanCaptureExchange(AIOpsContract):
     protected_document: SecretStr
     allowed_objects: tuple[str, ...] = Field(max_length=64)
     statement_timeout_seconds: int = Field(ge=1, le=10, strict=True)
+    native_bind_comparison: bool = Field(default=False, strict=True)
     source_subject: dict[str, str | bool | None] = Field(max_length=16)
     source_identity: dict[str, str] = Field(default_factory=dict, max_length=8)
     resource_lease: ResourceLeaseReceipt = Field(repr=False)
@@ -79,6 +82,8 @@ class SqlPlanCaptureExchange(AIOpsContract):
     @model_validator(mode="after")
     def validate_protected_exchange(self):
         _physical_identity(self.database_type, self.source_identity)
+        if self.native_bind_comparison and self.database_type != "ORACLE":
+            raise ValueError("仅Oracle原生绑定捕获允许独立审批的值比较")
         if (not self.allowed_objects or any(len(name) > 256 for name in self.allowed_objects)
             or len(self.source_sql.get_secret_value()) > 20000
             or len(self.protected_document.get_secret_value().encode("utf-8")) > 65536):
@@ -138,6 +143,7 @@ class SqlPlanCaptureResult(AIOpsContract):
     error_code: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,95}$")
     captured_at: UtcDatetime
     physical_identity: dict[str, str] = Field(default_factory=dict, max_length=8)
+    native_verification: SqlPlanNativeVerification | None = None
     nodes: tuple[SqlPlanEstimateNode, ...] = Field(default=(), max_length=128)
     mode: Literal["ESTIMATE_ONLY"] = "ESTIMATE_ONLY"
     original_parse_context_verified: Literal[False] = False
@@ -148,6 +154,14 @@ class SqlPlanCaptureResult(AIOpsContract):
     @model_validator(mode="after")
     def validate_result(self):
         _physical_identity(self.database_type, self.physical_identity)
+        if self.native_verification is not None:
+            if self.database_type != "ORACLE" and any(check.source == "NATIVE_BIND_CAPTURE"
+                for check in (self.native_verification.parameter_types, self.native_verification.parameter_values)):
+                raise ValueError("不能为其他引擎声明Oracle原生绑定捕获")
+            if self.status != "SUCCEEDED" or any(item.node_id >= len(self.nodes)
+                for item in self.native_verification.resolved_objects
+            ) or any(index >= len(self.nodes) for index in self.native_verification.unresolved_object_nodes):
+                raise ValueError("原生核验只能关联成功结果的有效节点")
         if (self.status == "SUCCEEDED") != bool(self.nodes) or (self.status == "SUCCEEDED") == bool(self.error_code):
             raise ValueError("估算结果状态、节点和错误不一致")
         if self.oracle_parameter_peeking != ("NOT_PROVEN" if self.database_type == "ORACLE" else "NOT_APPLICABLE"):
@@ -159,6 +173,13 @@ class SqlPlanCaptureResult(AIOpsContract):
         if self.nodes and sum(node.parent_id is None for node in self.nodes) != 1:
             raise ValueError("估算计划必须只有一个根节点")
         return self
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_result(self, handler):
+        result = handler(self)
+        if self.native_verification is None:
+            result.pop("native_verification", None)
+        return result
 
 
 class SqlPlanCaptureReport(AIOpsContract):
