@@ -42,6 +42,7 @@ function setup({ session = true, accessResult = access, responses = {} } = {}) {
   elements.get("agent-rows").innerHTML = "正在加载 Agent…";
   const controls = new Map([
     ['[name="knowledge_enabled"]', element()],
+    ['[name="auto_alert_enabled"]', element()],
   ]);
   const document = {
     body: {

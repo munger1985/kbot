@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Agent 管理 · AIOps</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-  <link rel="stylesheet" href="./css/aiops-agents.css?v=20261029-boundaries-1">
+  <link rel="stylesheet" href="./css/aiops-agents.css?v=20261029-six-tabs-1">
 </head>
 <body data-page="agents">
   <main class="ops-main aiops-agents-page">
@@ -21,37 +21,38 @@
     <header class="admin-drawer-header"><div><p class="eyebrow">AIOps Agent</p><h2 id="agent-dialog-title">新建 Agent</h2><p>按步骤配置业务范围、诊断边界和必需模型角色。</p></div><button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button></header>
     <div class="agent-editor-layout">
       <nav class="agent-wizard-rail" aria-label="Agent 配置步骤">
-        <button type="button" data-agent-step-button="1" class="active"><b>01</b><span><strong>角色信息</strong><small>名称与职责</small></span></button>
-        <button type="button" data-agent-step-button="2"><b>02</b><span><strong>工作范围</strong><small>系统、能力与知识</small></span></button>
-        <button type="button" data-agent-step-button="3"><b>03</b><span><strong>诊断边界</strong><small>监控、只读与变更</small></span></button>
-        <button type="button" data-agent-step-button="4"><b>04</b><span><strong>模型与指令</strong><small>必需模型与图片能力</small></span></button>
-        <button type="button" data-agent-step-button="5"><b>05</b><span><strong>确认配置</strong><small>核对并保存</small></span></button>
-        <p><strong>五步配置</strong>模型角色单独配置并明确标注运行时必选条件。</p>
+        <button type="button" data-agent-step-button="1" class="active"><b>01</b><span><strong>基本信息</strong><small>名称与职责</small></span></button>
+        <button type="button" data-agent-step-button="2"><b>02</b><span><strong>能力与知识</strong><small>任务能力与知识来源</small></span></button>
+        <button type="button" data-agent-step-button="3"><b>03</b><span><strong>诊断边界</strong><small>资源范围与访问权限</small></span></button>
+        <button type="button" data-agent-step-button="4"><b>04</b><span><strong>自动触发</strong><small>告警条件与冷却时间</small></span></button>
+        <button type="button" data-agent-step-button="5"><b>05</b><span><strong>模型与指令</strong><small>模型角色与专业要求</small></span></button>
+        <button type="button" data-agent-step-button="6"><b>06</b><span><strong>确认配置</strong><small>核对并保存</small></span></button>
+        <p><strong>六步配置</strong>能力、权限和触发方式各有独立入口，保存前统一核对。</p>
       </nav>
       <form id="agent-form" class="agent-form" novalidate>
         <p id="agent-result" class="form-error agent-form-error" role="alert" hidden></p>
-        <section class="agent-step-panel" data-agent-step="1"><header><p class="eyebrow">STEP 01</p><h3>角色信息</h3><span>说明这个 Agent 面向谁、负责什么。</span></header><div class="drawer-form-section"><div class="form-grid-two">
+        <section class="agent-step-panel" data-agent-step="1"><header><p class="eyebrow">STEP 01</p><h3>基本信息</h3><span>说明这个 Agent 面向谁、负责什么。</span></header><div class="drawer-form-section"><div class="form-grid-two">
           <label class="control-field"><span class="field-label">Agent 名称</span><input name="display_name" maxlength="256" required placeholder="例如：Oracle 生产诊断 Agent"></label>
           <label class="control-field"><span class="field-label">简短说明</span><input name="description" maxlength="1000" placeholder="说明职责与适用范围"></label>
         </div></div></section>
-        <section class="agent-step-panel" data-agent-step="2" hidden><header><p class="eyebrow">STEP 02</p><h3>工作范围</h3><span>决定 Agent 可以查看哪些系统、完成哪些任务、使用哪些知识。</span></header>
-          <article class="agent-decision-card"><header><div><strong>允许访问的业务系统</strong><small>必选，最多 32 个；只显示已上线系统。</small></div><button id="open-agent-system-picker" class="secondary-button" type="button">选择业务系统</button></header><div id="agent-business-system-summary" class="agent-selection-summary"></div></article>
+        <section class="agent-step-panel" data-agent-step="2" hidden><header><p class="eyebrow">STEP 02</p><h3>能力与知识</h3><span>决定 Agent 能做什么、使用哪些知识；资源与访问权限在诊断边界中配置。</span></header>
+
           <article class="agent-decision-card"><header><div><strong>开放能力</strong><small>主流程按任务分组；需要时可展开调整细分查询能力。</small></div></header>
-            <div class="agent-capability-groups"><label id="agent-query-group" class="agent-capability-group"><input id="agent-query-capabilities" type="checkbox"><span><strong>查询与问答</strong><small id="agent-query-capability-count"></small></span></label><label id="agent-diagnosis-group" class="agent-capability-group"><input name="capabilities" type="checkbox" value="ACTIVE_DIAGNOSIS"><span><strong>智能诊断</strong><small>按自然语言范围执行有界诊断并生成报告</small></span></label></div>
-            <details class="agent-capability-details"><summary>调整细分查询能力</summary><div id="agent-capabilities" class="agent-granular-options"></div></details>
-            <p id="agent-controlled-change-note" class="agent-inline-note" hidden>本页不修改资源动作授权；实际变更仍需授权与审批。</p>
+            <p class="agent-inline-note">监控分析是固定基础能力。<span id="agent-query-capability-count"></span></p><input name="capabilities" value="MONITORING_QUERY" type="checkbox" checked disabled hidden><div class="agent-capability-groups"><label id="agent-diagnosis-group" class="agent-capability-group"><input name="capabilities" type="checkbox" value="ACTIVE_DIAGNOSIS"><span><strong>智能诊断</strong><small>分析监控或数据库证据并生成报告；数据库访问另受诊断边界控制</small></span></label></div>
+            <details class="agent-capability-details"><summary>基础查询高级设置</summary><div id="agent-capabilities" class="agent-granular-options"></div></details>
+
           </article>
-          <article class="agent-decision-card"><header><div><strong>运维知识</strong><small>只检索已审批版本，并在回答中保留原文引用。</small></div><label class="agent-policy-switch"><input name="knowledge_enabled" type="checkbox" checked><span>已启用</span></label></header><input name="capabilities" value="KNOWLEDGE_QA" type="checkbox" hidden checked>
+          <article class="agent-decision-card"><header><div><strong>知识问答</strong><small>只检索已审批版本，并在回答中保留原文引用。</small></div><label class="agent-policy-switch"><input name="knowledge_enabled" type="checkbox" checked><span>已启用</span></label></header><input name="capabilities" value="KNOWLEDGE_QA" type="checkbox" hidden checked>
             <div id="agent-knowledge-policy-fields" class="knowledge-policy"><div class="agent-knowledge-sources"><label><input type="checkbox" name="knowledge_source_kinds" value="MANUAL" checked><span><strong>运维手册</strong><small>已审批发布的原始资料</small></span></label><label><input type="checkbox" name="knowledge_source_kinds" value="DIAGNOSIS_CASE" checked><span><strong>诊断案例</strong><small>可追溯调查记录提炼</small></span></label></div>
               <div class="agent-scope-row"><div><strong>绑定运维知识库</strong><small>至少一个，最多 32 个；选择器支持搜索和分页。</small></div><button id="open-agent-knowledge-base-picker" class="secondary-button" type="button">选择知识库</button></div><div id="agent-knowledge-base-summary" class="agent-selection-summary"></div>
-              <div class="form-grid-two"><label class="control-field"><span class="field-label">最高安全级别</span><select name="max_security_level"><option value="1">L1</option><option value="2">L2</option><option value="3" selected>L3</option><option value="4">L4</option><option value="5">L5</option></select></label><label class="control-field"><span class="field-label">最多引用</span><input name="maximum_references" type="number" min="1" max="20" value="8"></label></div>
+              <details class="agent-capability-details"><summary>知识高级设置</summary>              <div class="form-grid-two"><label class="control-field"><span class="field-label">最高安全级别</span><select name="max_security_level"><option value="1">L1</option><option value="2">L2</option><option value="3" selected>L3</option><option value="4">L4</option><option value="5">L5</option></select></label><label class="control-field"><span class="field-label">最多引用</span><input name="maximum_references" type="number" min="1" max="20" value="8"></label></div></details>
               <div class="agent-scope-row"><div><strong>知识标签范围</strong><small id="agent-knowledge-tag-help">不限制标签，使用所选知识库中的全部已审批知识</small></div><button id="open-agent-tag-picker" class="secondary-button" type="button">限制标签</button></div><div id="agent-knowledge-tag-summary" class="agent-selection-summary"></div>
             </div>
           </article>
         </section>
-        <section class="agent-step-panel" data-agent-step="3" hidden><header><p class="eyebrow">STEP 03</p><h3>诊断边界</h3><span>监控始终开启；只读和变更独立选择，实际权限以 Target 为上限。</span></header><div class="drawer-form-section execution-policy-form">
+        <section class="agent-step-panel" data-agent-step="3" hidden><header><p class="eyebrow">STEP 03</p><h3>诊断边界</h3><span>监控始终开启；只读和变更独立选择，实际权限以 Target 为上限。</span></header>          <article class="agent-decision-card"><header><div><strong>允许访问的业务系统</strong><small>必选，最多 32 个；只显示已上线系统。</small></div><button id="open-agent-system-picker" class="secondary-button" type="button">选择业务系统</button></header><div id="agent-business-system-summary" class="agent-selection-summary"></div></article><div class="drawer-form-section execution-policy-form">
   <section class="dq-form-section">
-    <header><span>01</span><div><h3>监控分析</h3><p>基础能力，始终启用；仅使用工作范围内已绑定的监控源。</p></div></header>
+    <header><span>01</span><div><h3>监控分析</h3><p>基础能力，始终启用；仅使用资源范围内已绑定的监控源。</p></div></header>
     <label class="check-field"><input type="checkbox" checked disabled /><span class="check-field-copy"><strong>监控分析（必选）</strong><small>读取指标、告警与趋势，不连接业务数据库。</small></span></label>
   </section>
 
@@ -71,19 +72,20 @@
     </label>
   </section>
 
-  <details class="agent-alert-rules">
-    <summary>告警触发规则</summary>
-    <div class="dq-form-grid">
+            <p id="agent-controlled-change-note" class="agent-inline-note" hidden>本页不修改资源动作授权；实际变更仍需授权与审批。</p>
+
+<section id="agent-boundary-resources" class="agent-boundary-resources" aria-label="Target 配置摘要"></section></div></section>
+        <section class="agent-step-panel" data-agent-step="4" hidden><header><p class="eyebrow">STEP 04</p><h3>自动触发</h3><span>决定何时由告警发起调查；不影响手工提问，不会自动批准变更。</span></header><article class="agent-decision-card"><label class="check-field"><input name="auto_alert_enabled" type="checkbox" checked><span class="check-field-copy"><strong>允许告警自动触发诊断</strong><small>关闭后保留条件配置，不再由告警创建新任务。</small></span></label>  <div id="agent-trigger-fields" class="agent-trigger-fields">
+    <div class="form-grid-two">
       <label class="control-field"><span class="field-label">自动观察最低告警级别</span><select name="auto_observe_min_severity"><option value="INFO">信息及以上</option><option value="WARNING">警告及以上</option><option value="HIGH">高危及以上</option><option value="CRITICAL">仅严重告警</option></select><small class="field-help">达到该级别的监控告警才允许自动创建诊断任务。</small></label>
       <label class="control-field"><span class="field-label">自动观察最低 Target 重要级</span><select name="auto_observe_min_target_level"><option value="1">L1 及以上</option><option value="2">L2 及以上</option><option value="3">L3 及以上</option><option value="4">L4 及以上</option><option value="5">仅 L5</option></select><small class="field-help">只有重要级达到门槛的 Target 告警才会自动创建诊断任务。</small></label>
       <label class="control-field"><span class="field-label">相同告警冷却时间（秒）</span><input name="alert_cooldown_seconds" required type="number" min="0" max="86400" step="1" /><small class="field-help">同一目标和告警指纹在此时间内不会重复创建诊断任务；0 表示不冷却。</small></label>
     </div>
-  </details>
-<section id="agent-boundary-resources" class="agent-boundary-resources" aria-label="Target 配置摘要"></section></div></section>
-        <section class="agent-step-panel" data-agent-step="4" hidden><header><p class="eyebrow">STEP 04</p><h3>模型与指令</h3><span>运行中的 Agent 必须配置规划和回答组织模型；启用智能诊断时还必须配置诊断模型。</span></header><div class="drawer-form-section"><div class="form-grid-two">
-          <label class="control-field"><span class="field-label">规划模型（运行必选）</span><select id="agent-planner-model" name="planner_model_id"></select></label><label class="control-field"><span class="field-label">回答组织模型（运行必选）</span><select id="agent-composer-model" name="composer_model_id"></select></label><label class="control-field"><span id="agent-diagnosis-label" class="field-label">诊断模型（智能诊断必选）</span><select id="agent-model" name="diagnosis_model_id"></select></label><label class="control-field"><span class="field-label">会话摘要模型（可选）</span><select id="agent-memory-model" name="memory_model_id"></select></label><label class="control-field"><span class="field-label">OCR 模型（可选）</span><select id="agent-ocr-model" name="ocr_model_id"></select></label><label class="control-field"><span class="field-label">VLM 模型（可选）</span><select id="agent-vlm-model" name="vlm_model_id"></select></label><label class="control-field form-span"><span class="field-label">专业指令（可选）</span><textarea name="instruction" maxlength="32000" rows="5" placeholder="补充诊断边界、关注重点或输出要求"></textarea></label>
+  </div></article></section>
+        <section class="agent-step-panel" data-agent-step="5" hidden><header><p class="eyebrow">STEP 05</p><h3>模型与指令</h3><span>运行中的 Agent 必须配置规划和回答组织模型；启用智能诊断时还必须配置诊断模型。</span></header><div class="drawer-form-section"><h4>核心模型</h4><div class="form-grid-two">
+          <label class="control-field"><span class="field-label">规划模型（运行必选）</span><select id="agent-planner-model" name="planner_model_id"></select></label><label class="control-field"><span class="field-label">回答组织模型（运行必选）</span><select id="agent-composer-model" name="composer_model_id"></select></label><label class="control-field"><span id="agent-diagnosis-label" class="field-label">诊断模型（智能诊断必选）</span><select id="agent-model" name="diagnosis_model_id"></select></label></div><h4>可选模型</h4><div class="form-grid-two"><label class="control-field"><span class="field-label">会话摘要模型（可选）</span><select id="agent-memory-model" name="memory_model_id"></select></label><label class="control-field"><span class="field-label">OCR 模型（可选）</span><select id="agent-ocr-model" name="ocr_model_id"></select></label><label class="control-field"><span class="field-label">VLM 模型（可选）</span><select id="agent-vlm-model" name="vlm_model_id"></select></label></div><h4>专业指令</h4><p class="field-help">补充关注重点和输出要求，不能覆盖 Target 权限、动作授权或审批边界。</p><div class="form-grid-two"><label class="control-field form-span"><span class="field-label">专业指令（可选）</span><textarea name="instruction" maxlength="32000" rows="5" placeholder="补充关注重点或输出要求"></textarea></label>
         </div></div></section>
-        <section class="agent-step-panel" data-agent-step="5" hidden><header><p class="eyebrow">STEP 05</p><h3>确认配置</h3><span>核对业务范围、知识策略和模型角色后保存。</span></header><div id="agent-review" class="agent-review-grid"></div></section>
+        <section class="agent-step-panel" data-agent-step="6" hidden><header><p class="eyebrow">STEP 06</p><h3>确认配置</h3><span>按前五页核对配置；如需调整，请返回对应页面。</span></header><div id="agent-review" class="agent-review-grid"></div><section id="agent-review-required" class="agent-review-issues" aria-label="配置必填检查"></section><section id="agent-review-targets" class="agent-review-issues" aria-label="Target 配置缺口"></section></section>
         <footer class="admin-drawer-footer agent-wizard-footer"><button class="secondary-button" data-close-dialog type="button">取消</button><span></span><button id="agent-previous-step" class="secondary-button" type="button" hidden>上一步</button><button id="agent-next-step" class="primary-button" type="button">下一步</button><button id="save-agent" class="primary-button" type="submit" hidden>创建 Agent</button></footer>
       </form>
     </div>
@@ -93,6 +95,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-agents.js?v=20261029-boundaries-1"></script>
+  <script src="./js/aiops-agents.js?v=20261029-six-tabs-1"></script>
 </body>
 </html>

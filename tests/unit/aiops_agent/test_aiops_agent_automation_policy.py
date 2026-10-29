@@ -79,6 +79,33 @@ def test_real_create_edit_freezes_flags_and_exact_cooldown(seconds):
     asyncio.run(run())
 
 
+def test_auto_alert_toggle_preserves_conditions_and_frozen_policy():
+    uow = _UnitOfWork()
+    service = AIOpsAgentService(uow_factory=lambda: uow)
+
+    async def run():
+        created = await service.create(CreateAIOpsAgentCommand(
+            domain_id=100, actor_id="tester", display_name="自动触发配置测试",
+            allowed_business_system_ids=[uow.system.business_system_id], capabilities=["RESOURCE_CATALOG_QUERY"],
+            knowledge_policy={"enabled": False}, auto_alert_enabled=False,
+            auto_observe_min_severity="WARNING", auto_observe_min_target_level=4, alert_cooldown_seconds=137,
+        ))
+        frozen = dict(uow.policies.rows[UUID(created["policy_id"])].rules_json)
+        assert created["auto_alert_enabled"] is False
+        changed = await service.update(UpdateAIOpsAgentCommand(
+            domain_id=100, actor_id="tester", agent_id=UUID(created["agent_id"]),
+            expected_row_version=created["row_version"], auto_alert_enabled=True,
+        ))
+        assert changed["auto_alert_enabled"] is True
+        assert changed["auto_observe_min_severity"] == "WARNING"
+        assert changed["auto_observe_min_target_level"] == 4
+        assert changed["alert_cooldown_seconds"] == 137
+        assert uow.policies.rows[UUID(created["policy_id"])].rules_json == frozen
+        assert changed["agent_version_id"] != created["agent_version_id"]
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("agent_allows,binding_allows,target_allows,expected", [
     (False, True, True, ["AGENT_MUTATION_DISABLED"]),
     (True, False, True, ["BINDING_MUTATION_DISABLED"]),

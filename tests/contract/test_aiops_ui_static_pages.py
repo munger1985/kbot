@@ -1484,7 +1484,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('name="allow_change_execution"', page)
         self.assertNotIn("controlled_action_execution:", script)
         self.assertNotIn('/action-catalog/', script)
-        self.assertNotIn('name="auto_alert_enabled"', page)
+        self.assertIn('name="auto_alert_enabled"', page)
         self.assertIn('name="readonly_database_enabled"', page)
         self.assertIn('name="allow_agent_execution"', page)
         self.assertIn('name="alert_cooldown_seconds"', page)

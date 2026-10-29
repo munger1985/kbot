@@ -151,7 +151,7 @@ class AgentKnowledgePolicy(AIOpsContract):
     @model_validator(mode="after")
     def validate_selectors(self) -> "AgentKnowledgePolicy":
         allowed = {"MANUAL", "DIAGNOSIS_CASE"}
-        if not self.source_kinds or not set(self.source_kinds) <= allowed:
+        if (self.enabled and not self.source_kinds) or not set(self.source_kinds) <= allowed:
             raise ValueError("知识来源只能选择 MANUAL 或 DIAGNOSIS_CASE")
         if len(set(self.source_kinds)) != len(self.source_kinds):
             raise ValueError("知识来源不能重复")

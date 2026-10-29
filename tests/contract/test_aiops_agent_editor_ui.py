@@ -36,8 +36,8 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.css?v=20261029-boundaries-1", page)
-        self.assertIn("aiops-agents.js?v=20261029-boundaries-1", page)
+        self.assertIn("aiops-agents.css?v=20261029-six-tabs-1", page)
+        self.assertIn("aiops-agents.js?v=20261029-six-tabs-1", page)
 
     def test_automation_only_keeps_actionable_sections_with_contiguous_numbers(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
@@ -54,14 +54,15 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         page = PAGE.read_text(encoding="utf-8")
         script = SCRIPT.read_text(encoding="utf-8")
 
-        self.assertIn('data-agent-step-button="4"', page)
+        self.assertIn('data-agent-step-button="5"', page)
+        self.assertIn('data-agent-step="6"', page)
         self.assertIn('<strong>模型与指令</strong>', page)
         self.assertIn('data-agent-step="5"', page)
         self.assertIn("规划模型（运行必选）", page)
         self.assertIn("回答组织模型（运行必选）", page)
         self.assertNotIn('class="agent-advanced"', page)
-        self.assertIn("Math.min(5", script)
-        self.assertIn("if (currentStep === 5) renderReview()", script)
+        self.assertIn("Math.min(6", script)
+        self.assertIn("if (currentStep === 6) renderReview()", script)
 
     def test_wizard_step_tabs_support_direct_navigation(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")

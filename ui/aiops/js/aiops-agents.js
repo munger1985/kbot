@@ -11,11 +11,12 @@
     ["MONITORING_QUERY", "监控现状", "实时指标、趋势与资源状态"],
     ["ALERT_QUERY", "告警查询", "当前告警与历史告警"],
     ["INSPECTION_QUERY", "巡检查询", "巡检执行结果与报告"],
-    ["REPORT_CASE_QUERY", "历史案例", "已审核发布的诊断案例"],
+    ["REPORT_CASE_QUERY", "报告与案例", "历史诊断报告与已审核案例"],
     ["ACTIVE_DIAGNOSIS", "主动诊断", "按自然语言范围执行有界诊断"],
     ["CONTROLLED_CHANGE", "受控变更", "仅保留已有资源级授权；新增授权需在资源治理中完成"],
   ];
   const capabilityLabels = Object.fromEntries(capabilityCatalog.map(([key, label]) => [key, label]));
+  const severityLabels = { INFO: "信息及以上", WARNING: "警告及以上", HIGH: "高危及以上", CRITICAL: "仅严重告警" };
   const providerLabels = {
     local_deepseek: "本地部署 · DeepSeek",
     api_deepseek: "API 调用 · DeepSeek",
@@ -51,6 +52,30 @@
     }
     renderRows();
     renderBoundaryResources();
+    if (currentStep === 6) renderReview();
+  }
+  function targetGaps(item) {
+    const form = document.getElementById("agent-form");
+    const readonly = form.elements.readonly_database_enabled.checked;
+    const change = form.elements.allow_agent_execution.checked;
+    return [
+      !item.target_enabled && "Target 未启用，不能执行数据库诊断或变更",
+      !item.scope_enabled && "业务系统未上线，不能执行诊断或变更",
+      !item.monitoring_configured && "尚未绑定监控源，无法读取监控数据",
+      readonly && !item.readonly_connection_enabled && "Agent 已允许只读，但 Target 未开放只读连接",
+      (readonly || change) && !item.connection_configured && "Target 缺少数据库连接配置，不能执行数据库诊断或变更",
+      readonly && item.readonly_connection_enabled && !item.diagnostic_credential_configured && "Target 缺少只读凭据",
+      change && !item.controlled_change_enabled && "Agent 已允许受控变更，但 Target 未允许变更，因此该目标不能执行变更",
+      change && item.controlled_change_enabled && !item.execution_credential_configured && "Target 缺少变更凭据，不能执行变更",
+    ].filter(Boolean).join("；");
+  }
+  function targetIssues() {
+    if (!selectionSets.systems.size) return ["尚未选择业务系统"];
+    const state = boundaryStates.get(boundaryKey([...selectionSets.systems]));
+    if (!state || state.status === "loading") return ["Target 配置核验中"];
+    if (state.status === "error") return ["Target 配置状态未知，请重新核验"];
+    if (!state.items.length) return ["所选业务系统尚无数据库 Target"];
+    return state.items.flatMap(item => targetGaps(item) ? [item.display_name + "：" + targetGaps(item)] : []);
   }
   function renderBoundaryResources() {
     if (!document.getElementById("agent-dialog").open) return;
@@ -59,14 +84,7 @@
     const state = boundaryStates.get(boundaryKey(ids));
     const readonly = form.elements.readonly_database_enabled.checked;
     const change = form.elements.allow_agent_execution.checked;
-    const gaps = (item) => [
-      !item.target_enabled && "Target 未启用",
-      !item.scope_enabled && "业务系统未上线",
-      !item.monitoring_configured && "监控绑定未就绪",
-      readonly && !item.readonly_configured && "只读连接或凭据未就绪",
-      change && !item.change_configured && "Target 未允许变更或执行凭据未就绪",
-    ].filter(Boolean).join("；") || "所选边界的 Target 配置已就绪";
-    document.getElementById("agent-boundary-resources").innerHTML = `<h4>工作范围内的 Target 配置</h4><p>账号和连接由业务系统资源（Target）维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p><p class="agent-inline-note">${escape(document.getElementById("agent-controlled-change-note").textContent)}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type)}</strong><small>${escape(gaps(item))}</small><a href="business-system-workspace.html?view=readonly&id=${encodeURIComponent(item.business_system_ids[0])}" target="_blank" rel="noopener">查看业务系统资源 ↗</a></li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${!ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
+    document.getElementById("agent-boundary-resources").innerHTML = `<h4>关联 Target 配置与限制</h4><p>账号和连接由业务系统资源（Target）维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type)}</strong><small>所属系统：${escape(values(item.business_system_ids).map(systemName).join("、"))}</small><small>监控：${item.monitoring_configured ? "已配置" : "未配置"} · 只读：${item.readonly_configured ? "已配置" : "未配置"} · 变更：${item.change_configured ? "已配置" : "未配置"}</small><small>${escape(targetGaps(item) || "所选边界的 Target 配置已就绪；实际执行仍需权限与审批校验")}</small><a href="business-system-workspace.html?view=readonly&id=${encodeURIComponent(item.business_system_ids[0])}" target="_blank" rel="noopener">查看业务系统资源 ↗</a></li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${!ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
     document.getElementById("retry-boundary")?.addEventListener("click", () => { loadBoundary(ids, true); });
   }
 
@@ -83,7 +101,7 @@
   let loading = true;
   let catalogReady = false;
   const pickerPageSize = 12;
-  const queryCapabilities = ["RESOURCE_CATALOG_QUERY", "MONITORING_QUERY", "ALERT_QUERY", "INSPECTION_QUERY", "REPORT_CASE_QUERY"];
+  const queryCapabilities = ["RESOURCE_CATALOG_QUERY", "ALERT_QUERY", "INSPECTION_QUERY", "REPORT_CASE_QUERY"];
   const selectionSets = {
     systems: new Set(),
     knowledgeBases: new Set(),
@@ -125,8 +143,8 @@
   function renderResources() {
     document.getElementById("agent-capabilities").innerHTML = capabilityCatalog
       .filter(([key]) => queryCapabilities.includes(key))
-      .map(([key, label, help]) => `<label><input type="checkbox" name="capabilities" value="${key}" ${key === "MONITORING_QUERY" ? "checked disabled" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
-    ["agent-planner-model", "agent-model", "agent-composer-model", "agent-memory-model"].forEach((id) => renderModelOptions(id, 1, id === "agent-memory-model" ? "复用回答组织模型" : id === "agent-model" ? "不启用主动诊断" : "请选择"));
+      .map(([key, label, help]) => `<label><input type="checkbox" name="capabilities" value="${key}"><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
+    ["agent-planner-model", "agent-model", "agent-composer-model", "agent-memory-model"].forEach((id) => renderModelOptions(id, 1, id === "agent-memory-model" ? "复用回答组织模型" : id === "agent-model" ? "未配置诊断模型" : "请选择"));
     renderModelOptions("agent-ocr-model", 6, "不启用 OCR");
     renderModelOptions("agent-vlm-model", 5, "不启用 VLM");
     renderSelectionSummaries();
@@ -215,14 +233,11 @@
     document.querySelector('[name="capabilities"][value="MONITORING_QUERY"]').checked = true;
     const capabilities = selected("capabilities");
     const count = queryCapabilities.filter((key) => capabilities.includes(key)).length;
-    document.getElementById("agent-query-capabilities").checked = count === queryCapabilities.length;
-    document.getElementById("agent-query-capabilities").indeterminate = count > 0 && count < queryCapabilities.length;
-    document.getElementById("agent-query-capability-count").textContent = `资源、监控、告警、巡检与报告 · 已启用 ${count}/${queryCapabilities.length} 项`;
-    document.getElementById("agent-query-group").classList.toggle("selected", count > 0);
+    document.getElementById("agent-query-capability-count").textContent = `基础查询已启用 ${count}/${queryCapabilities.length} 项。`;
     document.getElementById("agent-diagnosis-group").classList.toggle("selected", capabilities.includes("ACTIVE_DIAGNOSIS"));
     document.getElementById("agent-diagnosis-label").textContent = `诊断模型${capabilities.includes("ACTIVE_DIAGNOSIS") ? "（智能诊断必选）" : "（可选）"}`;
     const changeNote = document.getElementById("agent-controlled-change-note");
-    changeNote.hidden = !values(editing?.capabilities).includes("CONTROLLED_CHANGE");
+    changeNote.hidden = !document.getElementById("agent-form").elements.allow_agent_execution.checked && !values(editing?.capabilities).includes("CONTROLLED_CHANGE");
     const actionPolicies = editing?.controlled_action_execution;
     changeNote.textContent = !Array.isArray(actionPolicies)
       ? "本页不修改资源动作授权；保存时沿用服务端现有配置，实际变更仍需授权与审批。"
@@ -266,76 +281,75 @@
     document.querySelector('[name="knowledge_enabled"] + span').textContent = enabled ? "已启用" : "未启用";
   }
 
-  function validateStep(step) {
+  function missingRuntimeModels() {
     const form = document.getElementById("agent-form");
-    showResult();
-    if (step === 1 && !form.elements.display_name.value.trim()) {
-      showResult("请填写 Agent 名称。", "bad");
-      return false;
-    }
-    if (step === 2 && !selectionSets.systems.size) {
-      showResult("请至少选择一个业务系统。", "bad");
-      return false;
-    }
-    if (step === 2 && !selected("capabilities").length && !values(editing?.capabilities).includes("CONTROLLED_CHANGE")) {
-      showResult("请至少启用一项能力。", "bad");
-      return false;
-    }
-    if (step === 2 && form.elements.knowledge_enabled.checked && !selected("knowledge_source_kinds").length) {
-      showResult("请至少选择一种知识来源。", "bad");
-      return false;
-    }
-    if (step === 2 && form.elements.knowledge_enabled.checked && !selectionSets.knowledgeBases.size) {
-      showResult("请至少绑定一个运维知识库。", "bad");
-      return false;
-    }
-    if (step === 2 && form.elements.knowledge_enabled.checked && !form.elements.maximum_references.checkValidity()) {
-      showResult("最多引用须为 1 到 20 的整数。", "bad");
-      return false;
-    }
-    if (step === 3 && (!form.elements.alert_cooldown_seconds.checkValidity())) {
-      showResult("请填写有效的冷却时间。", "bad");
-      return false;
-    }
-    if (step === 4 && editing?.status === "ACTIVE") {
-      const missing = [];
-      if (!form.elements.planner_model_id.value) missing.push("规划模型");
-      if (!form.elements.composer_model_id.value) missing.push("回答组织模型");
-      if (selected("capabilities").includes("ACTIVE_DIAGNOSIS") && !form.elements.diagnosis_model_id.value) missing.push("诊断模型");
-      if (missing.length) {
-        showResult(`运行中的 Agent 必须配置${missing.join("、")}。`, "bad");
-        return false;
-      }
-    }
-    return true;
+    return [
+      !form.elements.planner_model_id.value && "规划模型",
+      !form.elements.composer_model_id.value && "回答组织模型",
+      selected("capabilities").includes("ACTIVE_DIAGNOSIS") && !form.elements.diagnosis_model_id.value && "诊断模型",
+    ].filter(Boolean);
   }
-
+  function stepError(step) {
+    const form = document.getElementById("agent-form");
+    if (step === 1 && !form.elements.display_name.value.trim()) return "请填写 Agent 名称。";
+    if (step === 2 && form.elements.knowledge_enabled.checked) {
+      if (!selected("knowledge_source_kinds").length) return "请至少选择一种知识来源。";
+      if (!selectionSets.knowledgeBases.size) return "请至少绑定一个运维知识库。";
+      if (!form.elements.maximum_references.value || !form.elements.maximum_references.checkValidity()) return "最多引用须为 1 到 20 的整数。";
+    }
+    if (step === 3 && !selectionSets.systems.size) return "请至少选择一个业务系统。";
+    if (step === 4 && form.elements.auto_alert_enabled.checked) {
+      if (!["INFO", "WARNING", "HIGH", "CRITICAL"].includes(form.elements.auto_observe_min_severity.value)) return "请选择有效的最低告警级别。";
+      const level = Number(form.elements.auto_observe_min_target_level.value);
+      if (!Number.isInteger(level) || level < 1 || level > 5) return "请选择有效的 Target 重要级。";
+      if (!form.elements.alert_cooldown_seconds.value || !form.elements.alert_cooldown_seconds.checkValidity()) return "冷却时间须为 0 到 86400 的整数。";
+    }
+    if (step === 5 && editing?.status === "ACTIVE" && missingRuntimeModels().length) return "运行中的 Agent 必须配置" + missingRuntimeModels().join("、") + "。";
+    return "";
+  }
+  function validateStep(step) {
+    const message = stepError(step);
+    showResult(message, message ? "bad" : "");
+    return !message;
+  }
+  function toggleAutoAlert() {
+    const form = document.getElementById("agent-form");
+    document.getElementById("agent-trigger-fields").hidden = !form.elements.auto_alert_enabled.checked;
+  }
   function renderReview() {
+    const form = document.getElementById("agent-form");
     const capabilities = selected("capabilities").map((item) => capabilityLabels[item] || item);
-    const knowledgeEnabled = document.getElementById("agent-form").elements.knowledge_enabled.checked;
+    const knowledgeEnabled = form.elements.knowledge_enabled.checked;
+    const card = (step, title, value, detail) => `<article><span>${escape(title)}</span><strong>${escape(value)}</strong><small>${escape(detail)}</small><button type="button" class="row-action" data-review-step="${step}">返回修改${escape(title)}</button></article>`;
+    const modelName = (name) => models.find(item => item.model_id === form.elements[name].value)?.display_name || (form.elements[name].value ? "原配置（当前目录不可用）" : "未配置");
     document.getElementById("agent-review").innerHTML = [
-      `<article><span>已选诊断边界</span><strong>${escape(boundaryLabels({ readonly_database_enabled: document.getElementById("agent-form").elements.readonly_database_enabled.checked, allow_agent_execution: document.getElementById("agent-form").elements.allow_agent_execution.checked }).join("、"))}</strong><small>实际执行以 Target、动作授权和审批为准</small></article>`,
-      `<article><span>业务系统</span><strong>${selectionSets.systems.size} 个</strong><small>${escape(selectionRows("systems").map((item) => item.title).join("、") || "未选择")}</small></article>`,
-      `<article><span>能力范围</span><strong>${capabilities.length} 项</strong><small>${escape(capabilities.join("、") || "未启用")}</small></article>`,
-      `<article><span>运维知识</span><strong>${knowledgeEnabled ? `${selectionSets.knowledgeBases.size} 个知识库` : "未启用"}</strong><small>${knowledgeEnabled ? `最高 L${escape(document.getElementById("agent-form").elements.max_security_level.value)} · ${selectionSets.tags.size ? `${selectionSets.tags.size} 个标签` : "全部标签"}` : ""}</small></article>`,
-      `<article><span>模型角色</span><strong>${["planner_model_id", "composer_model_id", "diagnosis_model_id"].filter((name) => document.getElementById("agent-form").elements[name].value).length} 个已配置</strong><small>规划、回答组织与诊断模型</small></article>`,
+      card(1, "基本信息", form.elements.display_name.value || "未填写名称", form.elements.description.value || "未填写职责说明"),
+      card(2, "能力与知识", capabilities.join("、"), knowledgeEnabled ? `知识问答：${selectionSets.knowledgeBases.size} 个知识库 · ${selected("knowledge_source_kinds").map(source => source === "MANUAL" ? "运维手册" : "诊断案例").join("、")} · 最多引用 ${form.elements.maximum_references.value} 项 · 最高 L${form.elements.max_security_level.value} · ${selectionSets.tags.size ? selectionSets.tags.size + " 个标签" : "全部标签"}` : "知识问答：未启用"),
+      card(3, "诊断边界", boundaryLabels({ readonly_database_enabled: form.elements.readonly_database_enabled.checked, allow_agent_execution: form.elements.allow_agent_execution.checked }).join("、"), (selectionRows("systems").map(item => item.title).join("、") || "未选择业务系统") + "；实际权限取 Agent、Target、动作范围、平台和审批的交集。"),
+      card(4, "自动触发", form.elements.auto_alert_enabled.checked ? "告警自动触发已开启" : "告警自动触发已关闭", `已保存条件：${severityLabels[form.elements.auto_observe_min_severity.value] || form.elements.auto_observe_min_severity.value} · Target L${form.elements.auto_observe_min_target_level.value} 及以上 · 冷却 ${form.elements.alert_cooldown_seconds.value} 秒；手工提问不受影响。`),
+      card(5, "模型与指令", `规划：${modelName("planner_model_id")} · 回答：${modelName("composer_model_id")} · 诊断：${modelName("diagnosis_model_id")}`, `摘要：${form.elements.memory_model_id.value ? modelName("memory_model_id") : "复用回答组织模型"} · OCR：${modelName("ocr_model_id")} · VLM：${modelName("vlm_model_id")}；专业指令：${form.elements.instruction.value || "未填写"}`),
     ].join("");
+    const required = [1, 2, 3, 4, 5].flatMap(step => stepError(step) ? [{ step, message: stepError(step) }] : []);
+    document.getElementById("agent-review-required").innerHTML = '<h4>保存前必填检查</h4>' + (required.length ? "<ul>" + required.map(issue => `<li>${escape(issue.message)} <button type="button" class="row-action" data-review-step="${issue.step}">返回修改</button></li>`).join("") + "</ul>" : "<p>必填配置检查通过。</p>") + (missingRuntimeModels().length && editing?.status !== "ACTIVE" ? `<p>启用前还需配置：${escape(missingRuntimeModels().join("、"))}；当前可保存草稿。</p>` : "");
+    const issues = targetIssues();
+    document.getElementById("agent-review-targets").innerHTML = '<h4>Target 配置缺口</h4>' + (issues.length ? "<ul>" + issues.map(issue => `<li>${escape(issue)}</li>`).join("") + "</ul>" : "<p>所选边界的 Target 配置已就绪；不代表连接健康或动作可执行。</p>") + "<p>缺少 Target 配置仍可保存；不会自动补权限、凭据或授权。</p>";
+    document.querySelectorAll("[data-review-step]").forEach(button => { button.onclick = () => { showResult(); setStep(button.dataset.reviewStep); }; });
   }
 
   function setStep(step) {
-    currentStep = Math.max(1, Math.min(5, Number(step) || 1));
+    currentStep = Math.max(1, Math.min(6, Number(step) || 1));
     document.querySelectorAll("[data-agent-step]").forEach((panel) => { panel.hidden = Number(panel.dataset.agentStep) !== currentStep; });
     document.querySelectorAll("[data-agent-step-button]").forEach((button) => {
       const buttonStep = Number(button.dataset.agentStepButton);
       button.classList.toggle("active", buttonStep === currentStep);
-      button.classList.toggle("complete", buttonStep < currentStep);
+      button.classList.toggle("complete", buttonStep < currentStep && !stepError(buttonStep));
       button.disabled = saving;
-      button.querySelector("b").textContent = buttonStep < currentStep ? "✓" : `0${buttonStep}`;
+      button.querySelector("b").textContent = buttonStep < currentStep && !stepError(buttonStep) ? "✓" : `0${buttonStep}`;
     });
     document.getElementById("agent-previous-step").hidden = currentStep === 1;
-    document.getElementById("agent-next-step").hidden = currentStep === 5;
-    document.getElementById("save-agent").hidden = currentStep !== 5;
-    if (currentStep === 5) renderReview();
+    document.getElementById("agent-next-step").hidden = currentStep === 6;
+    document.getElementById("save-agent").hidden = currentStep !== 6;
+    if (currentStep === 6) renderReview();
     if (currentStep === 3) { renderBoundaryResources(); void loadBoundary([...selectionSets.systems]); }
   }
 
@@ -409,6 +423,8 @@
     form.elements.memory_model_id.value = "";
     setChecked("capabilities", ["RESOURCE_CATALOG_QUERY", "KNOWLEDGE_QA", "MONITORING_QUERY", "ALERT_QUERY", "INSPECTION_QUERY", "REPORT_CASE_QUERY", "ACTIVE_DIAGNOSIS"]);
     setChecked("knowledge_source_kinds", ["MANUAL", "DIAGNOSIS_CASE"]);
+    form.elements.auto_alert_enabled.checked = true;
+    toggleAutoAlert();
     form.elements.knowledge_enabled.checked = true;
     form.elements.readonly_database_enabled.checked = false;
     form.elements.auto_observe_min_severity.value = "CRITICAL";
@@ -434,6 +450,14 @@
     document.getElementById("save-agent").textContent = "保存新版本";
     form.elements.display_name.value = editing.display_name || "";
     form.elements.description.value = editing.description || "";
+    for (const [name, modelId] of Object.entries({
+      planner_model_id: editing.models?.planner_llm, diagnosis_model_id: editing.models?.diagnosis_llm,
+      composer_model_id: editing.models?.composer_llm, memory_model_id: editing.models?.memory_llm,
+      ocr_model_id: editing.image_capabilities?.ocr?.default_model_id, vlm_model_id: editing.image_capabilities?.vlm?.default_model_id,
+    })) {
+      const control = form.elements[name];
+      if (modelId && ![...control.options].some(option => option.value === modelId)) control.add(new Option("原配置（当前目录不可用）", modelId));
+    }
     form.elements.planner_model_id.value = editing.models?.planner_llm || "";
     form.elements.diagnosis_model_id.value = editing.models?.diagnosis_llm || "";
     form.elements.composer_model_id.value = editing.models?.composer_llm || "";
@@ -441,6 +465,8 @@
     form.elements.ocr_model_id.value = editing.image_capabilities?.ocr?.default_model_id || "";
     form.elements.vlm_model_id.value = editing.image_capabilities?.vlm?.default_model_id || "";
     form.elements.instruction.value = editing.instruction || "";
+    form.elements.auto_alert_enabled.checked = editing.auto_alert_enabled ?? true;
+    toggleAutoAlert();
     form.elements.readonly_database_enabled.checked = editing.readonly_database_enabled !== false;
     form.elements.allow_agent_execution.checked = editing.allow_agent_execution === true;
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
@@ -475,6 +501,7 @@
     if (editing && values(editing.capabilities).includes("CONTROLLED_CHANGE")) capabilityValues.push("CONTROLLED_CHANGE");
     const knowledgeEnabled = form.elements.knowledge_enabled.checked;
     const modelsPayload = {
+      ...editing?.models,
       planner_llm: form.elements.planner_model_id.value || null,
       diagnosis_llm: form.elements.diagnosis_model_id.value || null,
       composer_llm: form.elements.composer_model_id.value || null,
@@ -487,13 +514,14 @@
       capabilities: [...new Set(capabilityValues)],
       knowledge_policy: {
         enabled: knowledgeEnabled,
-        source_kinds: knowledgeEnabled ? selected("knowledge_source_kinds") : ["MANUAL", "DIAGNOSIS_CASE"],
-        knowledge_base_ids: knowledgeEnabled ? [...selectionSets.knowledgeBases] : [],
-        tag_ids: knowledgeEnabled ? [...selectionSets.tags] : [],
+        source_kinds: selected("knowledge_source_kinds"),
+        knowledge_base_ids: [...selectionSets.knowledgeBases],
+        tag_ids: [...selectionSets.tags],
         max_security_level: Number(form.elements.max_security_level.value || 3),
         maximum_references: Number(form.elements.maximum_references.value || 8),
       },
       // 本页不维护资源动作授权，PATCH 省略以保留服务端配置，不将未加载字段写成空授权。
+      auto_alert_enabled: form.elements.auto_alert_enabled.checked,
       readonly_database_enabled: form.elements.readonly_database_enabled.checked,
       allow_agent_execution: form.elements.allow_agent_execution.checked,
       auto_observe_min_severity: form.elements.auto_observe_min_severity.value,
@@ -510,12 +538,12 @@
   async function save(event) {
     event.preventDefault();
     if (saving) return;
-    if (currentStep < 5) {
+    if (currentStep < 6) {
       nextStep();
       return;
     }
     const form = event.currentTarget;
-    for (let step = 1; step <= 4; step += 1) {
+    for (let step = 1; step <= 5; step += 1) {
       if (!validateStep(step)) { setStep(step); return; }
     }
     const body = buildPayload(form);
@@ -637,11 +665,8 @@
     document.getElementById("refresh-agents").onclick = load;
     document.getElementById("agent-search").oninput = renderRows;
     document.querySelector('[name="knowledge_enabled"]').onchange = () => { toggleKnowledgePolicy(); renderCapabilityGroups(); };
-    document.getElementById("agent-query-capabilities").onchange = (event) => {
-      document.querySelectorAll('[name="capabilities"]').forEach((input) => { if (queryCapabilities.includes(input.value)) input.checked = event.target.checked; });
-      renderCapabilityGroups();
-    };
-    document.getElementById("agent-form").addEventListener("change", () => { renderCapabilityGroups(); renderBoundaryResources(); });
+    document.querySelector('[name="auto_alert_enabled"]').onchange = toggleAutoAlert;
+    document.getElementById("agent-form").addEventListener("change", () => { renderCapabilityGroups(); renderBoundaryResources(); if (currentStep === 6) renderReview(); });
     document.addEventListener("click", (event) => { if (!event.target.closest(".management-catalog-overflow")) closeMenus(); });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenus(); });
     document.getElementById("agent-form").onsubmit = save;
