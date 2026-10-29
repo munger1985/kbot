@@ -527,6 +527,7 @@ class AIOpsAgentService:
             )
             # 可选更新的空值不删除既有策略；停用须提交显式禁用值。
             for field in (
+                "controlled_action_execution",
                 "sql_plan_capture",
                 "readonly_database_enabled",
                 "allow_agent_execution",

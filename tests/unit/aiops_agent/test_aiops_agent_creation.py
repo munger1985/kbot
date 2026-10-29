@@ -258,10 +258,19 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(created["controlled_action_execution"], updated["controlled_action_execution"])
-        revoked = await service.update(
+        null_update = await service.update(
             UpdateAIOpsAgentCommand(
                 domain_id=100, agent_id=created["agent_id"],
                 expected_row_version=updated["row_version"],
+                instruction="空值不撤销动作授权",
+                controlled_action_execution=None, actor_id="tester",
+            )
+        )
+        self.assertEqual(created["controlled_action_execution"], null_update["controlled_action_execution"])
+        revoked = await service.update(
+            UpdateAIOpsAgentCommand(
+                domain_id=100, agent_id=created["agent_id"],
+                expected_row_version=null_update["row_version"],
                 controlled_action_execution=(), actor_id="tester",
             )
         )
