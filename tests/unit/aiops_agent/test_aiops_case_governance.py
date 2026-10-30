@@ -69,14 +69,15 @@ def source_uow(failure=None):
         plan_snapshot_json={"capability_snapshot": {"source_snapshots": [{"source_id": "monitor"}]}})
     if failure == "hash":
         artifact.content_hash = "wrong"
-    report = SimpleNamespace(is_current=failure != "report_corrected")
+    report = SimpleNamespace(is_current=failure != "report_corrected", status="READY", report_id="report")
     repository = SimpleNamespace(
         get_version_relations=AsyncMock(return_value={"sources": [source]}),
         list_published_candidates=AsyncMock(),
     )
     uow = SimpleNamespace(
         operations_knowledge=repository,
-        inspections=SimpleNamespace(get_report_scoped=AsyncMock(return_value=report)),
+        inspections=SimpleNamespace(get_report_scoped=AsyncMock(return_value=report),
+            list_report_successors_scoped=AsyncMock(return_value=[])),
         runs=SimpleNamespace(get_artifact=AsyncMock(return_value=artifact), get_run_scoped=AsyncMock(return_value=run)),
         agents=SimpleNamespace(
             get=AsyncMock(return_value=SimpleNamespace(current_version_id=version_id)),

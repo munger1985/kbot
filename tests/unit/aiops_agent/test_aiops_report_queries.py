@@ -172,6 +172,7 @@ class ReportQueryTest(unittest.TestCase):
         report = SimpleNamespace(
             report_id=report_id, ops_run_id=run_id, target_id=target_id,
             report_key="diagnosis.standard", report_version=1, is_current=1,
+            supersedes_report_id=None,
             report_type="INCIDENT", title="原报告", status="READY",
             period_start=now - timedelta(hours=1), period_end=now,
             baseline_start=None, baseline_end=None, after_start=None,

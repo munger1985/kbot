@@ -709,6 +709,17 @@ class InspectionRepository(AIOpsRepository):
         entity.is_current = 1
         return await self._add(entity)
 
+    async def list_report_successors_scoped(self, *, report_id, domain_id):
+        """返回确切父版本的后继；有分叉时交由来源门禁拒绝，不任取最新版。"""
+        self._check_active()
+        statement = select(ReportEntity).join(
+            TargetEntity, TargetEntity.target_id == ReportEntity.target_id,
+        ).where(
+            ReportEntity.supersedes_report_id == report_id,
+            TargetEntity.domain_id == domain_id,
+        ).order_by(ReportEntity.report_version).limit(2)
+        return list((await self._session.execute(statement)).scalars())
+
     async def get_current_effect_report(self, *, ops_run_id, report_key):
         """由所属 Run 锁串行化同一效果计划的报告修订。"""
         self._check_active()

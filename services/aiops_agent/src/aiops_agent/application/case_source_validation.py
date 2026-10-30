@@ -2,6 +2,7 @@
 
 from aiops_agent.playbooks import canonical_hash
 from aiops_agent.application.source_authorization import source_scope_is_current
+from aiops_agent.application.report_source_revision import report_source_is_usable
 
 
 async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None, plan_capture_reader=None):
@@ -23,7 +24,7 @@ async def validate_case_source_rows(*, uow, domain_id, sources, agent_id=None, p
             report = await uow.inspections.get_report_scoped(
                 report_id=source.source_report_id, domain_id=domain_id,
             )
-            if report is None or not report.is_current:
+            if not await report_source_is_usable(uow=uow, domain_id=domain_id, report=report):
                 return False
         if source.source_artifact_id is None or source.source_run_id is None:
             return False

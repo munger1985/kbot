@@ -7,6 +7,7 @@ from aiops_agent.application.case_source_validation import validate_case_source_
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.contracts.knowledge import DiagnosisCaseProfile
 from aiops_agent.playbooks import canonical_hash
+from aiops_agent.application.report_source_revision import report_source_is_usable
 
 
 def rejected_source():
@@ -28,9 +29,11 @@ class ReportCaseSource:
 async def load_case_report(*, uow, domain_id, report_id, expected_hash=None, plan_capture_reader=None):
     """在当前事务重新读取源；同一冻结内容的模型前、索引前和落库后复核共用。"""
     report = await uow.inspections.get_report_scoped(report_id=report_id, domain_id=domain_id)
-    if (report is None or not report.is_current or report.status not in {"READY", "PARTIAL"}
+    if (report is None or report.status not in {"READY", "PARTIAL"}
         or not report.content_hash or report.content_artifact_id is None
         or expected_hash is not None and report.content_hash != expected_hash):
+        raise rejected_source()
+    if not await report_source_is_usable(uow=uow, domain_id=domain_id, report=report):
         raise rejected_source()
     artifact = await uow.runs.get_artifact(artifact_id=report.content_artifact_id)
     if (artifact is None or artifact.schema_version != "REPORT_CONTENT.v1"

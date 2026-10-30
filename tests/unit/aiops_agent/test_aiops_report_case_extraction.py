@@ -47,6 +47,7 @@ async def case_fixture(*, closure=False, result="RESOLVED", action_refs=True):
     )
     f.uow.outbox.get_by_idempotency = AsyncMock(return_value=None)
     f.uow.inspections.get_report_scoped = AsyncMock(side_effect=lambda **kw: f.state.current)
+    f.uow.inspections.list_report_successors_scoped = AsyncMock(return_value=[])
     f.uow.inspections.list_report_sources = AsyncMock(side_effect=lambda **kw:
         f.uow.inspections.add_report_sources.await_args.args[0])
     if closure:

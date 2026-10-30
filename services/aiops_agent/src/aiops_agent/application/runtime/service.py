@@ -7603,14 +7603,16 @@ class AIOpsRuntimeService:
             if template is None:
                 raise state_conflict("历史报告缺少可重现的模板快照")
             protected = {"EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"}
-            overrides: dict[str, tuple[str, ...]] = {}
+            overrides = dict(content.presentation_overrides)
+            edited_kinds: set[str] = set()
             for section in sections:
                 if section.kind in protected:
                     raise validation_failed("证据边界和证据索引不能人工编辑")
                 if section.kind not in template.sections:
                     raise validation_failed("报告包含不属于模板的章节")
-                if section.kind in overrides:
+                if section.kind in edited_kinds:
                     raise validation_failed("同一报告章节只能编辑一次")
+                edited_kinds.add(section.kind)
                 overrides[section.kind] = tuple(
                     item.strip() for item in section.items if item.strip()
                 )
@@ -7634,6 +7636,8 @@ class AIOpsRuntimeService:
                 "provenance": provenance,
             })
             payload = updated_content.model_dump(mode="json")
+            from aiops_agent.application.report_source_revision import report_ancestors, same_report_diagnosis
+            presentation_only = same_report_diagnosis(content.model_dump(mode="json"), payload)
             content_hash = sha256_json(payload)
             report_artifact = await uow.runs.add_artifact(
                 OpsArtifactEntity(
@@ -7712,6 +7716,7 @@ class AIOpsRuntimeService:
                 payload_json={
                     "report_id": str(saved.report_id),
                     "supersedes_report_id": str(report.report_id),
+                    "correction_kind": "PRESENTATION_ONLY" if presentation_only else "SUBSTANTIVE",
                     "report_version": version,
                     "trace_id": trace_id,
                 },
@@ -7725,18 +7730,19 @@ class AIOpsRuntimeService:
                     "report_id": str(saved.report_id),
                     "ops_run_id": str(saved.ops_run_id),
                     "report_version": version,
+                    "correction_kind": "PRESENTATION_ONLY" if presentation_only else "SUBSTANTIVE",
                 },
                 trace_id=trace_id,
                 now=now,
             )
             knowledge_repository = getattr(uow, "operations_knowledge", None)
-            if knowledge_repository is not None:
-                affected_cases = await knowledge_repository.mark_cases_for_report_review(
-                    report_id=report.report_id,
-                    reviewer_id=actor_id,
-                )
-                for case_asset, case_version in affected_cases:
-                    await queue_case_withdrawals(uow=uow, asset=case_asset, version=case_version)
+            if knowledge_repository is not None and not presentation_only:
+                for affected_report in [report, *await report_ancestors(uow=uow, domain_id=domain_id, report=report)]:
+                    affected_cases = await knowledge_repository.mark_cases_for_report_review(
+                        report_id=affected_report.report_id, reviewer_id=actor_id,
+                    )
+                    for case_asset, case_version in affected_cases:
+                        await queue_case_withdrawals(uow=uow, asset=case_asset, version=case_version)
             await uow.commit()
             return self._report_view(saved, report_artifact)
 

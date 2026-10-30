@@ -150,8 +150,7 @@ def _diagnosis_case_eligibility(
     """使用冻结报告的结构化语义判断能否沉淀历史案例。"""
     scope = dict(report_content.get("scope") or {})
     reasons: list[dict[str, str]] = []
-    if not bool(report.is_current):
-        reasons.append({"code": "REPORT_NOT_CURRENT", "message": "来源报告不是当前版本"})
+    # 当前性与纯展示修订链已由 load_case_report 重验，不能在此只按版本标记误拒。
     if str(report.status or "").upper() not in {"READY", "PARTIAL"}:
         reasons.append({"code": "REPORT_NOT_READY", "message": "来源报告尚未形成完整诊断结论"})
     if str(scope.get("source_kind") or "").upper() not in {"CHAT", "ALERT", "INSPECTION"}:
@@ -2604,10 +2603,15 @@ class OperationsKnowledgeService:
             if existing is not None:
                 return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=existing)
             previous_case = None
-            if report.supersedes_report_id is not None:
+            from aiops_agent.application.report_source_revision import report_ancestors, report_source_is_usable
+            for ancestor in await report_ancestors(uow=uow, domain_id=domain_id, report=report):
                 previous_case = await uow.operations_knowledge.find_case_by_report_id(
-                    domain_id=domain_id, report_id=report.supersedes_report_id,
+                    domain_id=domain_id, report_id=ancestor.report_id,
                 )
+                if previous_case is not None:
+                    if await report_source_is_usable(uow=uow, domain_id=domain_id, report=ancestor):
+                        return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=previous_case)
+                    break
             case_asset_id = previous_case[0].asset_id if previous_case is not None else uuid7()
             case_version_no = int(previous_case[1].version_no) + 1 if previous_case is not None else 1
             evidence_refs = [
@@ -3570,18 +3574,7 @@ class OperationsKnowledgeService:
                         raise self._state_conflict("案例效果来源、执行回执或冻结测量无法核验，必须重新审核")
                     profile.redaction = profile.redaction.model_copy(update={"status": "REVIEWED"})
                     version.profile_json = profile.model_dump(mode="json")
-                    report_ids = {
-                        item.source_report_id for item in relations["sources"]
-                        if item.source_report_id is not None
-                    }
-                    for report_id in report_ids:
-                        source_report = await uow.inspections.get_report_scoped(
-                            report_id=report_id, domain_id=domain_id
-                        )
-                        if source_report is None or not bool(source_report.is_current):
-                            raise self._state_conflict(
-                                "来源报告已经更正，必须从当前报告重新提炼案例"
-                            )
+                    # validate_case_sources 已核对每条展示修订及当前授权，不再仅按 is_current 拒绝。
                 if not relations["indexes"] or any(
                     item.index_status != "READY" for item in relations["indexes"]
                 ):
