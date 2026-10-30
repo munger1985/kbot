@@ -1,4 +1,27 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>告警诊断</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/workspaces.css?v=20261029_3"><link rel="stylesheet" href="./css/sql-plan-viewer.css?v=20261029_2"></head>
-<body data-page="situations"><main class="ops-main"><header class="ops-head"><div><h1>告警诊断</h1><p>查看监控触发的自动只读诊断，并基于已有证据继续与 Agent 深入分析。</p></div><button id="refresh-workspace" type="button">刷新</button></header><section class="ops-master-detail"><article class="ops-panel ops-case-list"><div class="ops-panel-head"><h2>告警事件</h2></div><form id="case-filters" class="ops-case-filters"><label>Agent<select name="agent_id"><option value="">全部 Agent</option></select></label><label>严重程度<select name="severity"><option value="">全部级别</option><option value="CRITICAL">CRITICAL</option><option value="HIGH">HIGH</option><option value="WARNING">WARNING</option><option value="INFO">INFO</option></select></label><label>Target<select name="target_id"><option value="">全部 Target</option></select></label><div><button class="primary" type="submit">筛选</button><button type="reset">清除</button></div></form><div id="case-list"></div></article><article class="ops-panel ops-case-detail"><div class="ops-panel-head"><h2 id="case-title">选择一个告警事件</h2></div><div id="case-detail" class="ops-case-content"><div class="ops-empty">自动诊断结果、证据和恢复状态将在这里展示。</div></div></article></section></main>
-<script src="../runtime-config.js"></script><script src="../vendor/marked.umd.js"></script><script src="../vendor/purify.min.js"></script><script src="../shared/kbot-markdown.js?v=20260827_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-effect-verification.js?v=20261028_1"></script><script src="./js/aiops-sql-plan-viewer.js?v=20261029_2"></script><script src="./js/aiops-workspaces.js?v=20261030_1"></script></body></html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>告警诊断</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/workspaces.css?v=20261029_3"><link rel="stylesheet" href="./css/sql-plan-viewer.css?v=20261029_2"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-situations.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
+<body data-page="situations">
+<main class="ops-main platform-home-page aiops-page">
+  <header class="platform-home-header"><div class="login-brand"><span class="brand-mark">A</span><strong>告警诊断</strong></div></header>
+  <section class="platform-home-hero app-page-head"><div><p class="eyebrow">监控告警入口</p><h1>告警诊断</h1><p>查看监控信号归并后的故障情境、关联来源以及自动诊断进展。</p></div></section>
+  <section id="situations-loading" class="loading-card"><span class="loading-orb"></span>正在读取告警诊断…</section>
+  <section id="situations-table" class="table-card" hidden><header class="resource-list-header"><div class="resource-list-heading"><h2>告警诊断</h2><p>按最近观测时间查看聚合后的监控信号与诊断状态。</p></div><div class="resource-list-tools"><span id="situations-count" class="resource-list-count">0 条</span><button id="refresh-workspace" class="secondary-button" type="button">刷新</button></div></header><div class="table-scroll"><table><thead><tr><th>诊断情境</th><th>严重程度</th><th>状态</th><th>信号数</th><th>最近观测</th><th class="table-action-heading">操作</th></tr></thead><tbody id="situations-body"></tbody></table></div></section>
+  <dialog id="situation-drawer" class="reference-drawer admin-drawer admin-drawer-sectioned aiops-detail-drawer" aria-label="告警诊断详情">
+    <header class="admin-drawer-header aiops-situation-drawer-header"><div class="aiops-situation-title-block"><div class="aiops-situation-kicker"><span id="situation-status" class="status-pill"></span><time id="situation-observed"></time></div><h2 id="situation-title"></h2><p id="situation-counts"></p></div><button class="icon-button" type="button" aria-label="关闭告警诊断详情" data-close-situation>×</button></header>
+    <div class="admin-drawer-body aiops-situation-workspace">
+      <aside class="aiops-situation-facts" aria-label="告警事实"><header class="aiops-situation-pane-header"><h3>告警事实</h3><p>调查过程中保持可见</p></header><div id="situation-facts" class="aiops-situation-fact-body"></div></aside>
+      <section class="aiops-situation-action-pane" aria-label="诊断工作区"><header class="aiops-situation-action-header"><div><h3 id="situation-mode-title">自动诊断结果</h3><p id="situation-mode-description">阅读 Agent 结论，并与左侧原始事实持续对照。</p></div><div class="aiops-situation-mode-switch" role="tablist" aria-label="诊断详情模式"><button class="active" type="button" role="tab" aria-selected="true" data-situation-results>自动诊断结果</button><button type="button" role="tab" aria-selected="false" data-situation-continue disabled>继续调查</button></div></header><div id="situation-action-body" class="aiops-situation-action-body"></div></section>
+    </div>
+  </dialog>
+</main>
+<script src="../runtime-config.js"></script>
+<script src="../vendor/marked.umd.js"></script>
+<script src="../vendor/purify.min.js"></script>
+<script src="../shared/kbot-markdown.js?v=20260827_1"></script>
+<script src="./js/aiops-auth.js"></script>
+<script src="./js/aiops-shell.js?v=20261030_1"></script>
+<script src="../vendor/echarts.min.js"></script>
+<script src="./js/aiops-chat-charts.js?v=20261030_1"></script>
+<script src="./js/aiops-workspaces.js?v=20261030_4"></script>
+<script src="./js/aiops-situations.js?v=20261030_1"></script>
+</body></html>

@@ -6,7 +6,6 @@
   const markdown = globalThis.KBotMarkdown;
   const state = {
     agents: [], conversation: null, selectedFiles: [],
-    caseAgents: [], caseTargets: [],
     permissions: new Set(), starters: [], starterCatalogVersion: "",
     starterBusinessSystems: [], starterCatalogLoaded: false,
   };
@@ -14,20 +13,32 @@
   const typingFrameMs = 22;
   const streamRecoveryAttempts = 120;
   const activeTurnFollowers = new Set();
-  const terminalRunStatuses = new Set([
-    "COMPLETED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED",
-  ]);
   const terminalTurnStatuses = new Set([
     "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
   ]);
-  let activeSituationId = null;
-  let situationRefreshTimer = null;
   const graphemeSegmenter = typeof Intl?.Segmenter === "function"
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : null;
 
   const esc = shell.escape;
   const values = (items) => Array.isArray(items) ? items : [];
+  function formatEvidenceValue(value) {
+    if (value === null) return "—";
+    if (typeof value === "boolean") return value ? "是" : "否";
+    return value === undefined || value === "" ? "—" : String(value);
+  }
+  const publicProgressEventTypes = new Set([
+    "turn.created", "planning.started", "planning.route.selected", "turn.status",
+    "input.analysis.started", "input.analysis.completed", "task.frame.completed",
+    "investigation.planned", "investigation.replanned", "playbook.completed",
+    "tool.started", "tool.completed", "tool.gap", "evidence.added",
+    "assessment.started", "assessment.completed", "thinking.delta",
+    "diagnostic.query_approval_required", "diagnostic.query_approved",
+    "diagnostic.query_rejected", "answer.completed", "evidence.future_observation.scheduled",
+  ]);
+  const turnStatusLabels = { CREATED:"已创建", RUNNING:"诊断中", WAITING_USER:"等待补证", COMPLETED:"已完成", PARTIAL:"部分完成", FAILED:"失败", CANCELLED:"已取消" };
+  const chatVisibleAnswerTypes = new Set(["FINDING_CARDS","ANALYSIS_MARKDOWN","CHART","SOLUTION_MARKDOWN","FACT_CONFIRMATION","MARKDOWN","REPORT_ARTIFACT_LINKS","HTML_REPORT_LINKS","IMPLEMENTATION_RUNBOOK","PROPOSAL_SUMMARY"]);
+  const chatAnswerMarkdown = (payload, dictionary) => displayText(String(payload.markdown ?? "").replace(/(?:\r?\n)+(?:#{1,6}\s*|\*\*)?(?:引用的证据|证据引用)(?:\*\*)?\s*(?:\r?\n[\s\S]*)?$/u," ").trim(), dictionary);
   function topSqlColumnClass(column) {
     const name = String(column?.name || column?.key || column || "").toLowerCase();
     if (["sql_text", "query_text", "digest_text", "query_sample_text", "normalized_statement"].includes(name)) return "is-sql";
@@ -49,8 +60,6 @@
     if (["sql_text", "query_text", "query_sample_text", "normalized_statement"].includes(name)) return 1;
     return name === "digest_text" ? 2 : 3;
   }
-  const hasNumber = (value) => value !== null && value !== undefined
-    && value !== "" && Number.isFinite(Number(value));
   const displayText = (value, dictionary = {}) => String(value ?? "")
     .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|\b[A-Z][A-Z0-9_$#]*(?:[ \t]+[A-Z][A-Z0-9_$#]*)+\b|\b(?=[A-Za-z0-9_.$#]*[A-Z])[A-Za-z_$][A-Za-z0-9_$#]*(?:\.[A-Za-z_$][A-Za-z0-9_$#]*)+\b)/g)
     .map((part, index) => index % 2 ? part : part.replace(
@@ -58,70 +67,6 @@
       (match, prefix, code) => `${prefix}${dictionary[code] || code}`,
     ))
     .join("");
-  const bullets = (items) => values(items).length
-    ? values(items).map((item) => `- ${typeof item === "string" ? item : item.fact_summary || item.summary || item.title || "已记录"}`).join("\n")
-    : "- 无";
-  const inspectionItemText = (item) => {
-    if (typeof item === "string") return item;
-    return item?.fact_summary || item?.summary || item?.title || item?.detail || item?.code || "";
-  };
-  const inspectionBullets = (items, emptyText) => {
-    const lines = values(items).map(inspectionItemText).map((item) => String(item || "").trim()).filter(Boolean);
-    return lines.length ? lines.map((item) => `- ${item}`).join("\n") : `- ${emptyText}`;
-  };
-  const inspectionEvidenceFacts = (payload) => values(payload?.evidence).map((item) => {
-    const title = item.tool_id || "检查项";
-    const count = Number(item.row_count || 0);
-    if (count <= 0) return `${title}：查询成功，本期返回 0 条记录，需按检查项规则判断。`;
-    return `${title}：查询成功，采集 ${count} 条可验证观测，需按检查项规则判断。`;
-  });
-
-  const inspectionStatusLabels = {
-    CLEAR: "正常",
-    FINDING: "需关注",
-    OBSERVED: "仅观测",
-    NOT_APPLICABLE: "不适用",
-    PARTIAL: "证据不完整",
-    GAP: "未完成",
-    MISSING: "未取证",
-  };
-  const inspectionHealthLabels = {
-    NORMAL: "正常",
-    INFO: "提示",
-    LOW: "低风险",
-    MEDIUM: "中风险",
-    HIGH: "高风险",
-    CRITICAL: "严重风险",
-    UNKNOWN: "无法判定",
-  };
-  const inspectionGapCategoryLabels = {
-    PRODUCT_CONTRACT: "产品证据契约",
-    MONITORING: "监控采集",
-    REPORT_CONTRACT: "报告契约",
-    SOURCE_ACCESS: "数据库访问",
-    SOURCE_CAPABILITY: "版本或能力",
-    DATA_SOURCE: "数据源取证",
-  };
-
-  function inspectionObservationText(item) {
-    const rows = values(item?.observations);
-    if (!rows.length) return "";
-    return rows.map((row) => Object.entries(row || {})
-      .map(([key, value]) => `${key}=${value === null || value === undefined || value === "" ? "—" : value}`)
-      .join("，"))
-      .join("；");
-  }
-
-  function inspectionChecksHtml(checks) {
-    if (!checks.length) return markdown.render("### 检查清单\n\n- 正式报告未记录检查项。");
-    const rows = checks.map((item) => {
-      const status = String(item?.check_status || "OBSERVED");
-      const detail = inspectionObservationText(item);
-      return `<tr><td><span class="ops-badge ${status === "FINDING" ? "danger" : (["PARTIAL", "GAP", "MISSING"].includes(status) ? "warn" : "neutral")}">${esc(inspectionStatusLabels[status] || status)}</span></td><td>${esc(item?.title || item?.tool_id || "检查项")}</td><td>${esc(inspectionItemText(item))}</td><td>${esc(detail || "—")}</td></tr>`;
-    }).join("");
-    return `<section class="ops-inspection-checks"><header><strong>检查清单</strong></header><div class="ops-table-wrap"><table><thead><tr><th>状态</th><th>检查项</th><th>结论</th><th>关键观测（最多 5 条）</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
-  }
-
   function uploadMediaType(file) {
     const suffix = String(file.name || "").toLowerCase().split(".").pop();
     if (["log", "txt", "trc", "trace", "out", "lst"].includes(suffix)) return "text/plain";
@@ -131,161 +76,6 @@
     if (suffix === "sql") return "application/sql";
     if (file.type) return file.type;
     return "application/octet-stream";
-  }
-
-  function inspectionMarkdown(result) {
-    const payload = result?.payload || {};
-    const schemaVersion = result?.final_artifact?.schema_version;
-    if (!result?.final_artifact) {
-      return `### 巡检尚未形成最终报告\n\n当前状态：${result?.status || "处理中"}`;
-    }
-    const healthyRecommendation = "继续按既定周期执行该巡检模板并关注趋势变化。";
-    const emptyFindings = "本期检查均已完成，未发现异常。";
-    const emptyGaps = "未发现数据缺口，全部检查已形成可验证观测。";
-    if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
-      const conclusion = values(payload.blocks)
-        .filter((block) => block.block_type === "MARKDOWN")
-        .map((block) => String(block.payload?.markdown || "").trim())
-        .filter(Boolean)
-        .join("\n\n");
-      const gaps = values(payload.evidence_gaps);
-      const recommendations = gaps.length
-        ? ["请先处理本报告列出的数据缺口，再重新执行同一巡检模板。"]
-        : [healthyRecommendation];
-      return `## 巡检报告\n\n${conclusion || "本期巡检已完成，所有计划检查均已形成可追溯观测。"}\n\n### 发现\n${inspectionBullets(inspectionEvidenceFacts(payload), emptyFindings)}\n\n### 建议\n${inspectionBullets(recommendations, healthyRecommendation)}\n\n### 数据缺口\n${inspectionBullets(gaps, emptyGaps)}`;
-    }
-    const conclusion = values(payload.facts)
-      .filter((item) => item && item.kind === "agent_health_inspection")
-      .map((item) => String(item.markdown || "").trim())
-      .filter(Boolean)
-      .join("\n\n");
-    const checks = values(payload.facts).filter((item) => !(item && item.kind === "agent_health_inspection"));
-    const summary = payload.summary || conclusion || "本期巡检已完成，所有计划检查均已形成可追溯观测。";
-    const body = conclusion && payload.summary ? `${summary}\n\n${conclusion}` : summary;
-    return `## ${payload.title || "巡检报告"}\n\n${body}\n\n### 发现\n${inspectionBullets(checks.length ? checks : payload.facts, emptyFindings)}\n\n### 建议\n${inspectionBullets(payload.recommendations, healthyRecommendation)}\n\n### 数据缺口\n${inspectionBullets(payload.gaps, emptyGaps)}`;
-  }
-
-  function inspectionReportHtml(result) {
-    const payload = result?.payload || {};
-    const facts = values(payload.facts);
-    const checks = facts.filter((item) => item?.kind === "inspection_check");
-    const findings = checks.flatMap((item) => values(item?.findings));
-    const healthyRecommendation = "继续按既定周期执行该巡检模板并关注趋势变化。";
-    const emptyFindings = "本期未发现达到规则阈值的异常。";
-    const emptyGaps = "未发现数据缺口，全部检查已形成可验证观测。";
-    const summary = payload.summary || "本期巡检已完成。";
-    const scope = payload.scope || {};
-    const coverage = scope.evidence_coverage_percent;
-    const healthStatus = String(scope.health_status || (payload.status === "PARTIAL" ? "UNKNOWN" : "NORMAL"));
-    const monitoringCoverage = scope.monitoring_sample_coverage_percent;
-    const coverageLine = typeof coverage === "number" && Number.isFinite(coverage)
-      ? `\n\n**健康状态：${inspectionHealthLabels[healthStatus] || healthStatus} · 数据库检查覆盖率：${coverage}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)} 项）${typeof monitoringCoverage === "number" && Number.isFinite(monitoringCoverage) ? ` · 监控采样覆盖率：${monitoringCoverage}%` : ""}**`
-      : "";
-    const heading = markdown.render(`## ${payload.title || "巡检报告"}\n\n${summary}${coverageLine}`);
-    const findingCards = findingCardsHtml({
-      findings,
-      empty_reasons: findings.length ? [] : [emptyFindings],
-    });
-    const checksHtml = inspectionChecksHtml(checks);
-    const recommendationsMarkdown = `### 建议\n${inspectionBullets(payload.recommendations, healthyRecommendation)}`;
-    const gapLines = values(payload.gaps).map((item) => {
-      const category = inspectionGapCategoryLabels[item?.category] || "数据源取证";
-      return `[${category}] ${inspectionItemText(item)}`;
-    });
-    const gapsMarkdown = `### 数据缺口\n${inspectionBullets(gapLines, emptyGaps)}`;
-    return `${heading}${findingCards}${checksHtml}${markdown.render(`${recommendationsMarkdown}\n\n${gapsMarkdown}`)}`;
-  }
-
-  function inspectionAnswerHtml(result, turn) {
-    const context = turn || { display_dictionary: result?.payload?.display_dictionary || {} };
-    const schemaVersion = result?.final_artifact?.schema_version;
-    if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
-      const narrative = values(result?.payload?.blocks).filter(
-        (block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type),
-      );
-      return narrative.map((block) => answerBlockHtml(block, context)).join("")
-        || markdown.render("本次巡检已完成，但未生成可展示的巡检结论。");
-    }
-    if (schemaVersion === "REPORT_CONTENT.v1") {
-      return inspectionReportHtml(result);
-    }
-    return markdown.render(inspectionMarkdown(result));
-  }
-
-  function inspectionReportQualityText(run) {
-    const coverage = run?.evidence_coverage_percent;
-    if (coverage !== null && coverage !== undefined && coverage !== "" && Number.isFinite(Number(coverage))) {
-      const parts = [`语义满足 ${Number(run.evidence_coverage_percent)}%`];
-      if (hasNumber(run.tool_execution_coverage_percent)) parts.push(`工具执行 ${Number(run.tool_execution_coverage_percent)}%`);
-      if (hasNumber(run.monitoring_sample_coverage_percent)) parts.push(`监控采样 ${Number(run.monitoring_sample_coverage_percent)}%`);
-      return parts.join(" · ");
-    }
-    return ({
-      READY: "证据完整",
-      PARTIAL: "证据有缺口",
-      FAILED: "报告生成失败",
-      GENERATING: "报告生成中",
-    })[run?.report_status] || "";
-  }
-
-  function diagnosisQuality(result, runStatus = "") {
-    const payload = result?.payload || {};
-    const schemaVersion = result?.final_artifact?.schema_version;
-    if (!result?.final_artifact) {
-      const status = ["CREATED", "QUEUED", "RUNNING", "WAITING_INPUT", "WAITING_APPROVAL"].includes(runStatus)
-        ? "结论生成中"
-        : ["FAILED", "CANCELLED", "EXPIRED"].includes(runStatus) ? "诊断未完成" : "证据有缺口";
-      const coverage = ["CREATED", "QUEUED", "RUNNING", "WAITING_INPUT", "WAITING_APPROVAL"].includes(runStatus)
-        ? "覆盖率待生成"
-        : "历史报告未记录覆盖率";
-      return { status, coverage };
-    }
-    if (schemaVersion === "REPORT_CONTENT.v1") {
-      const scope = payload.scope || {};
-      const rawPercent = scope.evidence_coverage_percent;
-      const hasCoverage = typeof rawPercent === "number" && Number.isFinite(rawPercent);
-      const quality = [
-        hasNumber(scope.tool_execution_coverage_percent) ? `工具执行 ${Number(scope.tool_execution_coverage_percent)}%` : "",
-        hasNumber(scope.monitoring_sample_coverage_percent) ? `监控采样 ${Number(scope.monitoring_sample_coverage_percent)}%` : "",
-      ].filter(Boolean);
-      const coverage = hasCoverage
-        ? `语义满足 ${rawPercent}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)}）${quality.length ? ` · ${quality.join(" · ")}` : ""}`
-        : "历史报告未记录覆盖率";
-      return { status: payload.status === "READY" ? "证据充分" : "证据有缺口", coverage };
-    }
-    const covered = new Set(values(payload.evidence).map((item, index) => String(item.step_id || item.tool_id || item.evidence_ref || `evidence-${index}`)));
-    const total = new Set(covered);
-    values(payload.evidence_gaps).forEach((item, index) => total.add(String(item.step_id || item.code || `gap-${index}`)));
-    const percent = total.size ? Math.round(covered.size * 10000 / total.size) / 100 : null;
-    return {
-      status: payload.sufficiency_status === "ANSWERABLE" && !values(payload.evidence_gaps).length ? "证据充分" : "证据有缺口",
-      coverage: percent === null ? "历史报告未记录覆盖率" : `证据覆盖 ${percent}%（${covered.size}/${total.size}）`,
-    };
-  }
-
-  function diagnosisStatusHtml(run, result) {
-    const quality = diagnosisQuality(result, run?.status);
-    return `<div class="ops-context-banner"><strong>Agent 诊断</strong> ${shell.badge(run?.status || "PENDING", `执行${run?.status || "待开始"}`)} ${shell.badge(quality.status)} ${shell.badge(quality.coverage)}</div>`;
-  }
-
-  function conversationAnswerMarkdown(result) {
-    const payload = result?.payload || {};
-    if (!result?.final_artifact) {
-      return `诊断尚未完成，当前状态为 ${result?.status || "处理中"}。`;
-    }
-    const direct = payload.direct_answer?.answer_text;
-    const solution = payload.solution || {};
-    let answer = direct || payload.diagnosis_rationale || "现有证据还不足以回答这个问题。";
-    const limitations = values(payload.direct_answer?.limitations).filter((item) => !answer.includes(String(item)));
-    if (limitations.length) answer += `\n\n${limitations.map((item) => `> ${item}`).join("\n")}`;
-    if (!direct) {
-      const recommendations = [
-        ...values(solution.immediate_mitigations),
-        ...values(solution.long_term_remediations),
-      ].filter(Boolean);
-      if (recommendations.length) answer += `\n\n接下来可以这样处理：\n\n${bullets(recommendations)}`;
-    }
-    return answer;
   }
 
   function normalizePrimaryTopSqlBlocks(blocks) {
@@ -299,76 +89,16 @@
       : block);
   }
 
-  function conversationAnswerHtml(result, turn) {
-    const context = turn || { display_dictionary: result?.payload?.display_dictionary || {} };
-    const schemaVersion = result?.final_artifact?.schema_version;
-    if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
-      const narrative = normalizePrimaryTopSqlBlocks(result?.payload?.blocks).filter(
-        (block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type)
-          || (block.block_type === "TABLE" && block.payload?.presentation_role === "PRIMARY"),
-      );
-      return narrative.map((block) => answerBlockHtml(block, context)).join("")
-        || markdown.render("Agent 已完成诊断，但本轮没有生成可展示的文字结论。");
-    }
-    return markdown.render(conversationAnswerMarkdown(result));
-  }
-
-  function evidenceDetails(result) {
-    if (result?.final_artifact?.schema_version === "AIOPS_TURN_RESULT.v1") {
-      return turnEvidenceHtml(
-        normalizePrimaryTopSqlBlocks(result?.payload?.blocks),
-        values(result?.payload?.evidence_gaps),
-        result?.payload?.display_dictionary || {},
-      );
-    }
-    const payload = result?.payload || {};
-    const facts = values(payload.facts);
-    const gaps = values(payload.gaps);
-    const root = payload.root_cause || {};
-    if (!facts.length && !gaps.length && !root.effective_level) return "";
-    const factRows = facts.length
-      ? `<ol class="ops-evidence-list">${facts.map((fact) => `<li><span>${esc(fact.fact_summary || "已验证事实")}</span><small>${esc(fact.source_type || "EVIDENCE")}${fact.captured_at ? ` · ${esc(shell.fmt(fact.captured_at))}` : ""}</small></li>`).join("")}</ol>`
-      : '<p class="ops-evidence-empty">本次没有形成可展示的事实条目。</p>';
-    const rootRow = root.effective_level
-      ? `<div class="ops-evidence-assessment"><span>根因判断</span><strong>${esc(root.effective_level)}</strong></div>`
-      : "";
-    const gapRows = gaps.length
-      ? `<div class="ops-evidence-gaps"><strong>仍缺少的证据</strong><ul>${gaps.map((item) => `<li>${esc(typeof item === "string" ? item : item.code || item.summary || "EVIDENCE_GAP")}</li>`).join("")}</ul></div>`
-      : "";
-    return `<details class="ops-evidence"><summary>诊断依据 <span>${facts.length} 项已验证事实</span></summary><div class="ops-evidence-body">${rootRow}${factRows}${gapRows}</div></details>`;
-  }
-
-  function monitoringSourceSummary(detail) {
-    const sources = values(detail?.monitoring_sources);
-    if (!sources.length) return '<p class="ops-evidence-empty">当前情境没有可展示的监控来源。</p>';
-    const rows = sources.map((item) => `<li><span><strong>${esc(item.display_name || "未命名监控来源")}</strong> ${shell.badge(item.latest_status, situationStatusText(item.latest_status))}</span><small>${esc(item.source_type || "UNKNOWN")} · 累计 ${esc(item.event_count)} 次观测 · 最近观测 ${esc(shell.fmt(item.last_observed_at))}</small></li>`).join("");
-    return `<details class="ops-evidence" open><summary>监控来源 <span>${sources.length} 个</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${rows}</ol></div></details>`;
-  }
-
-  function situationAlertContent(detail) {
-    const sources = values(detail?.monitoring_sources);
-    const latestRows = sources.map((item) => `<li><span>${esc(item.latest_summary || detail.summary || detail.title)}</span><small>${esc(item.latest_event_class || "ALERT")} · ${esc(item.latest_severity || detail.severity)} · ${esc(shell.fmt(item.last_observed_at))}</small></li>`).join("");
-    const content = latestRows || `<p>${esc(detail.summary || detail.title)}</p>`;
-    return `<details class="ops-evidence" open><summary>告警内容 <span>最新状态</span></summary><div class="ops-evidence-body">${latestRows ? `<ol class="ops-evidence-list">${content}</ol>` : content}</div></details>`;
-  }
-
-  function situationStatusText(status) {
-    const labels = {
-      OPEN: "持续告警，仍有未恢复信号",
-      RESOLVED: "当前无活动告警",
-      ACKNOWLEDGED: "已确认",
-      INVESTIGATING: "诊断中",
-      DIAGNOSED: "已诊断",
-      MITIGATING: "处理中",
-      OBSERVING: "观察中",
-      SUPPRESSED: "已抑制",
-    };
-    return labels[String(status || "").toUpperCase()] || String(status || "未知状态");
-  }
-
-  function messageHtml(role, text, meta = "", supplemental = "") {
+  function messageHtml(role, text, meta = "", supplemental = "", renderedContent = null) {
     const user = role === "USER";
-    return `<article class="ops-message ${user ? "user" : "agent"}"><div class="ops-avatar">${user ? "我" : "AI"}</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${markdown.render(text)}</div>${supplemental}${meta ? `<div class="ops-message-meta">${esc(meta)}</div>` : ""}</div></article>`;
+    const agent = state.agents.find((item) => String(item.agent_id) === String(state.conversation?.agent_id || document.getElementById("agent-select")?.value));
+    const avatar = user
+      ? '<path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M16 11a4 4 0 0 0 0-8 M22 20v-2a4 4 0 0 0-3-3.87"/>'
+      : '<path d="M8 9h8 M8 13h5 M9 3h6l1 3h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2z"/>';
+    if (document.body.dataset.page === "chat") {
+      return `<article class="aiops-chat-message aiops-chat-message-${user ? "user" : "agent"}"><span class="chat-message-avatar" aria-hidden="true"><svg viewBox="0 0 24 24">${avatar}</svg></span><div class="aiops-chat-message-body"><header><strong>${user ? "你" : esc(agent?.display_name || "智能诊断助理")}</strong>${meta ? `<time>${esc(meta)}</time>` : ""}</header>${user ? `<p class="aiops-chat-bubble ops-message-content">${esc(text)}</p>` : `<div class="agent-markdown-content aiops-chat-bubble ops-message-content">${renderedContent ?? markdown.render(text)}</div>`}${supplemental}</div></article>`;
+    }
+    return `<article class="ops-message ${user ? "user" : "agent"}"><div class="ops-avatar" aria-hidden="true"><svg viewBox="0 0 24 24">${avatar}</svg></div><div class="ops-message-body ops-result-markdown"><header><strong>${user ? "你" : esc(agent?.display_name || "智能诊断助理")}</strong>${meta ? `<time>${esc(meta)}</time>` : ""}</header><div class="ops-message-content">${user ? esc(text) : renderedContent ?? markdown.render(text)}</div>${supplemental}</div></article>`;
   }
 
   function imageAttachmentsHtml(conversationId, turn) {
@@ -450,7 +180,7 @@
       const roles = values(item.topology_roles);
       return `${item.display_name}${roles.length ? `（${roles.join(" / ")}）` : ""}`;
     });
-    if (!capabilities.length && !systems.length && !resources.length && !clarification) return "";
+    if (!turn.capability_plan && !turn.scope_resolution && !clarification) return "";
     const scopeText = scope.status === "NOT_REQUIRED"
       ? "本轮不需要实时资源"
       : [systems.join("、"), resources.join("、")].filter(Boolean).join(" → ") || "正在解析业务范围";
@@ -465,6 +195,14 @@
     const responseText = clarificationResponse
       ? clarificationResponse.payload?.free_text || selectedCandidate?.label || "已提交范围确认"
       : "";
+    if (document.body.dataset.page === "chat") {
+      const pending = clarification && turn.status === "WAITING_USER" && !clarificationResponse;
+      const candidatesHtml = pending ? `<div class="aiops-clarification-candidates">${candidates.map(item => `<button class="secondary-button" type="button" data-clarification-candidate="${esc(item.candidate_id)}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}" data-clarification-id="${esc(clarification.clarification_id)}"><b>${esc(item.label)}</b>${item.description ? `<span>${esc(item.description)}</span>` : ""}</button>`).join("")}</div>` : "";
+      const freeText = pending && clarification.allow_free_text !== false ? `<form class="aiops-clarification-free-text" data-clarification-response data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}" data-clarification-id="${esc(clarification.clarification_id)}"><label class="control-field"><span class="field-label">补充范围说明</span><textarea name="free_text" rows="2" maxlength="2000" required placeholder="输入业务系统、资源名称或其他可帮助确定范围的信息"></textarea></label><button class="primary-button" type="submit" disabled>提交并在当前轮继续</button></form>` : "";
+      const clarificationHtml = clarification ? `<aside class="aiops-clarification" data-clarification-controls><strong>${esc(clarification.question)}</strong>${pending ? candidatesHtml + freeText : '<p>范围确认已提交，本轮将继续使用冻结的候选和回答。</p>'}</aside>` : "";
+      const resolvedScope = scope.status === "NOT_REQUIRED" ? scopeText : [systems.join("、"),resources.join("、")].filter(Boolean).join(" → ") || (turn.scope_resolution ? "范围尚未确定" : "正在解析业务范围");
+      return `<section class="key-value-card aiops-action-card aiops-turn-orchestration"><header><div><strong>本轮理解与范围</strong><p>能力路由和资源范围均来自当前 Agent 的授权边界</p></div><span class="status-pill status-muted">${esc(scope.scope_type || "解析中")}</span></header><dl><div><dt>能力</dt><dd>${esc(capabilities.join("、") || "正在识别")}</dd></div><div><dt>范围</dt><dd>${esc(resolvedScope)}</dd></div></dl>${clarificationHtml}</section>`;
+    }
     const controls = clarification && turn.status === "WAITING_USER" && !clarificationResponse
       ? `<div class="ops-clarification-controls" data-clarification-controls><div class="ops-starter-grid">${candidates.map((item) => `<button class="ops-starter-card" type="button" data-clarification-candidate="${esc(item.candidate_id)}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}" data-clarification-id="${esc(clarification.clarification_id)}"><strong>${esc(item.label)}</strong>${item.description ? `<span>${esc(item.description)}</span>` : ""}<small>选择后在当前轮继续</small></button>`).join("")}</div>${clarification.allow_free_text !== false ? `<form class="ops-starter-parameters" data-clarification-response data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}" data-clarification-id="${esc(clarification.clarification_id)}"><label><span>补充范围说明</span><textarea name="free_text" maxlength="2000" required placeholder="输入业务系统、资源名称或其他可帮助确定范围的信息"></textarea></label><div class="ops-query-actions"><button class="primary" type="submit">提交并在当前轮继续</button></div></form>` : ""}</div>`
       : responseText ? `<p><strong>已确认：</strong>${esc(responseText)}</p>` : "";
@@ -488,7 +226,11 @@
       shell.toast("请选择候选范围或填写补充说明");
       return;
     }
-    container?.querySelectorAll("button, textarea").forEach((item) => { item.disabled = true; });
+    if (container?.dataset.busy) return;
+    if (container) container.dataset.busy = "true";
+    container?.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+    const submit = container?.querySelector('[type="submit"]');
+    if (submit) submit.textContent = "正在提交…";
     try {
       const receipt = await KBotAIOpsAuth.request(
         `${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/clarification-responses`,
@@ -512,7 +254,10 @@
       await loadConversationList();
     } catch (error) {
       shell.toast(error.message);
-      container?.querySelectorAll("button, textarea").forEach((item) => { item.disabled = false; });
+    } finally {
+      if (container) delete container.dataset.busy;
+      container?.querySelectorAll("button").forEach((item) => { item.disabled = false; });
+      if (submit) { submit.textContent = "提交并在当前轮继续"; submit.disabled = !container.querySelector("textarea").value.trim(); }
     }
   }
 
@@ -523,6 +268,7 @@
       });
     });
     root.querySelectorAll("[data-clarification-response]").forEach((form) => {
+      form.oninput = () => { form.querySelector('[type="submit"]').disabled = !form.elements.free_text.value.trim(); };
       form.onsubmit = (event) => {
         event.preventDefault();
         submitClarificationResponse(form, {
@@ -539,6 +285,7 @@
   }
 
   function showInvestigationPlan(progress, plan) {
+    if (document.body.dataset.page === "chat") return;
     const html = investigationPlanHtml(plan);
     if (!html) return;
     const existing = progress.parentElement?.querySelector(".ops-investigation-plan.is-live");
@@ -548,6 +295,15 @@
 
   function ensureProgressTimeline(progress) {
     if (progress.dataset.timelineReady === "true") return;
+    if (document.body.dataset.page === "chat") {
+      progress.className = "key-value-card aiops-action-card aiops-live-progress";
+      progress.setAttribute("aria-live", "polite");
+      progress.setAttribute("aria-label", "Agent 执行过程");
+      progress.dataset.timelineReady = "true";
+      progress.dataset.startedAt = String(Date.now());
+      progress.innerHTML = chatProgressBody([], null, {}, true);
+      return;
+    }
     const initial = progress.textContent.trim() || "正在建立诊断计划：先固定执行上下文，再理解问题并选择证据…";
     progress.dataset.timelineReady = "true";
     progress.dataset.startedAt = String(Date.now());
@@ -561,8 +317,23 @@
     }, "client.started");
   }
 
-  function appendProgress(progress, event, payload = {}, eventId = "") {
+  function appendProgress(progress, event, payload = {}, eventId = "", occurredAt = "") {
     ensureProgressTimeline(progress);
+    if (document.body.dataset.page === "chat") {
+      if (!publicProgressEventTypes.has(event) && event !== "stream.recovery") return;
+      const items = progress._chatEvents || [];
+      const key = String(eventId || `${event}:${payload.action_id || payload.status || payload.revision_no || "current"}`);
+      const item = {event_type:event, payload, sequence_no:Math.max(0,...items.map(item => Number(item.sequence_no) || 0)) + 1, occurred_at:occurredAt || new Date().toISOString(), key};
+      const previous = items.findIndex(entry => entry.key === key || eventId && String(entry.sequence_no) === eventId);
+      if (previous >= 0) items[previous] = {...item, sequence_no:items[previous].sequence_no};
+      else items.push(item);
+      progress._chatEvents = items;
+      progress.innerHTML = chatProgressBody(items, progress._chatPlan, progress._chatDictionary || {}, true);
+      const list = progress.querySelector(".aiops-live-progress-list");
+      list.scrollTop = list.scrollHeight;
+      updateProgressElapsed(progress);
+      return;
+    }
     const summary = String(payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`);
     const key = String(eventId || `${event}:${payload.action_id || payload.status || payload.revision_no || "current"}`);
     const timeline = progress.querySelector(".ops-progress-timeline");
@@ -588,6 +359,36 @@
     const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
     const label = progress.querySelector(".ops-progress-elapsed");
     if (label) label.textContent = `已运行 ${seconds} 秒`;
+  }
+
+  function chatProgressBody(events, plan, dictionary, active, status = "RUNNING") {
+    const items = values(events).filter(event => publicProgressEventTypes.has(event.event_type) || event.event_type === "stream.recovery")
+      .map(event => ({...event, summary:displayText(event.payload?.public_summary ?? event.payload?.summary ?? "", dictionary).trim(), isPlan:["investigation.planned","investigation.replanned"].includes(event.event_type)}))
+      .filter(item => item.summary || item.isPlan);
+    if (plan && !items.some(item => item.isPlan && item.payload?.plan)) items.push({sequence_no:(items.at(-1)?.sequence_no || 0) + 1, summary:"当前调查计划", isPlan:true, payload:{plan}});
+    items.sort((left, right) => left.sequence_no - right.sequence_no);
+    const clock = value => new Intl.DateTimeFormat("zh-CN", {hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(value));
+    const rows = items.map((item, index) => {
+      const currentPlan = item.isPlan && item.payload?.plan;
+      const hypotheses = values(currentPlan?.hypotheses).map(hypothesis => `<li><strong>${esc(displayText(hypothesis.statement,dictionary))}</strong>${hypothesis.rationale ? `<span>${esc(displayText(hypothesis.rationale,dictionary))}</span>` : ""}</li>`).join("");
+      const actions = values(currentPlan?.actions).map(action => {
+        const sampling = action.sampling ? ` · 按需采样 ${action.sampling.count} 次，间隔至少 ${action.sampling.interval_seconds} 秒（不是历史窗口）` : "";
+        const scheduled = action.observation_schedule ? ` · 后台未来观察 ${action.observation_schedule.count} 次（含本次基线），间隔至少 ${action.observation_schedule.interval_seconds} 秒` : "";
+        const pagination = action.pagination ? ` · ${String(action.tool_id).startsWith("db.") ? "同次查询分批" : "来源原生续取（非一致快照）"}，每页最多 ${action.pagination.page_size} 行、最多 ${action.pagination.max_pages} 页` : "";
+        return `<li><strong>${esc(displayText(action.question,dictionary))}</strong><span>${esc(action.tool_id)}${esc(sampling)}${esc(scheduled)}${esc(pagination)} · ${action.execution_mode === "APPROVAL_REQUIRED" ? "需人工审批" : "自动只读执行"} · ${esc(displayText(action.status,dictionary))}</span></li>`;
+      }).join("");
+      const inlinePlan = currentPlan ? `<div class="aiops-inline-plan">${currentPlan.task_frame?.problem_statement ? `<p class="table-secondary">${esc(displayText(currentPlan.task_frame.problem_statement,dictionary))}</p>` : ""}${hypotheses ? `<ol class="aiops-plan-list">${hypotheses}</ol>` : ""}${actions ? `<ol class="aiops-plan-list">${actions}</ol>` : ""}</div>` : "";
+      const sections = values(item.payload?.public_sections).filter(section => section && typeof section === "object" && !Array.isArray(section))
+        .map(section => ({title:displayText(section.title ?? "阶段详情",dictionary),items:values(section.items).map(detail => displayText(detail,dictionary).trim()).filter(Boolean)})).filter(section => section.items.length);
+      return `<li class="${active && index === items.length - 1 ? "is-active " : ""}${item.isPlan ? "is-plan" : ""}"><span class="aiops-live-progress-marker" aria-hidden="true"></span><div><strong>${esc(item.summary)}</strong>${inlinePlan}${sections.length ? `<div class="aiops-live-progress-sections">${sections.map(section => `<section><span>${esc(section.title)}</span><ul>${section.items.map(detail => `<li>${esc(detail)}</li>`).join("")}</ul></section>`).join("")}</div>` : ""}</div>${item.occurred_at ? `<time>${esc(clock(item.occurred_at))}</time>` : ""}</li>`;
+    }).join("");
+    return `<header><div><strong>${active ? '<span class="aiops-live-progress-dot" aria-hidden="true"></span>Agent 正在执行' : "Agent 执行过程"}</strong><p>计划、取证与结论生成均在此处按执行顺序展示</p></div><span class="technical-value${active ? " ops-progress-elapsed" : ""}">${active ? "已运行 0 秒" : esc(turnStatusLabels[status] || status)}</span></header><ol class="aiops-live-progress-list${active ? " is-current" : ""}" tabindex="0">${rows || '<li class="is-active"><span class="aiops-live-progress-marker" aria-hidden="true"></span><div><strong>正在分析问题并准备生成查询计划…</strong></div></li>'}</ol>`;
+  }
+
+  function chatProgressHtml(turn) {
+    const active = !terminalTurnStatuses.has(turn.status);
+    if (!active && !turn.investigation_plan && !values(turn.events).some(event => publicProgressEventTypes.has(event.event_type) && (event.payload?.public_summary || event.payload?.summary || ["investigation.planned","investigation.replanned"].includes(event.event_type)))) return "";
+    return `<section class="key-value-card aiops-action-card aiops-live-progress" data-turn-progress="${esc(turn.turn_id)}" data-timeline-ready="true" aria-live="polite" aria-label="Agent 执行过程">${chatProgressBody(turn.events,turn.investigation_plan,turn.display_dictionary || {},active,turn.status)}</section>`;
   }
 
   function diagnosticQueryApprovalHtml(pending) {
@@ -651,8 +452,7 @@
 
   async function agents() {
     const rows = await KBotAIOpsAuth.request(`${api}/agents`);
-    state.caseAgents = values(rows);
-    state.agents = state.caseAgents.filter((item) => item.status === "ACTIVE");
+    state.agents = values(rows).filter((item) => item.status === "ACTIVE");
     return state.agents;
   }
 
@@ -666,6 +466,7 @@
   }
 
   async function confirmTargetFact(form) {
+    if (form.dataset.busy) return;
     const conversationId = form.dataset.conversationId;
     const turnId = form.dataset.turnId;
     const targetId = form.dataset.targetId;
@@ -677,7 +478,10 @@
       shell.toast("请完整填写需要确认的运维事实");
       return;
     }
-    if (!confirm("确认把这条事实写入 Target 运维记忆吗？系统只会记下来，不会执行 SQL。")) return;
+    if (document.body.dataset.page === "chat") {
+      if (!await confirmChatAction({title:"确认写入运维记忆？",message:"系统只会记下来，不会执行 SQL。",confirmLabel:"确认写入"})) return;
+    } else if (!confirm("确认把这条事实写入 Target 运维记忆吗？系统只会记下来，不会执行 SQL。")) return;
+    form.dataset.busy = "true";
     const button = form.querySelector("button[type=submit]");
     if (button) button.disabled = true;
     try {
@@ -699,16 +503,98 @@
     } catch (error) {
       shell.toast(error.message);
       if (button) button.disabled = false;
-    }
+    } finally { delete form.dataset.busy; }
   }
 
-  async function proposalAction(button) {
+  async function loadChatEvidenceRequest(turn, panel) {
+    if (!turn || turn.status !== "WAITING_USER") return;
+    const event = [...values(turn.events)].reverse().find(item => item.event_type === "diagnostic.input_required");
+    if (!event?.payload?.hitl_id) return;
+    const pending = await KBotAIOpsAuth.request(`${api}/hitl/${encodeURIComponent(event.payload.hitl_id)}`);
+    if (pending.hitl_type !== "MANUAL_DIAGNOSTIC_SQL" || pending.status !== "PENDING") return;
+    const request = pending.request || {};
+    const queries = values(request.queries);
+    if (!queries.length) return;
+    const anchor = panel.querySelector(`[data-evidence-request-turn="${CSS.escape(String(turn.turn_id))}"]`);
+    if (!anchor) return;
+    const card = document.createElement("section");
+    card.className = "key-value-card aiops-action-card aiops-evidence-request";
+    card.innerHTML = `<header><div><h3>需要补充数据库证据</h3><p>${esc(values(request.instructions).join("\n"))}</p></div><span class="status-pill status-warning">等待补证</span></header><p class="table-secondary">请只使用目标数据库的只读账号执行以下冻结 SQL；每项粘贴完整原始输出。${pending.expires_at ? ` 请求截止：${esc(shell.fmt(pending.expires_at))}` : ""}</p>${queries.map(item=>`<div class="aiops-query-card"><strong>${esc(item.purpose)}</strong><p><code>${esc(item.query_id)}</code> · 最多 ${esc(item.max_rows)} 行 · 超时 ${esc(item.timeout_hint_seconds)} 秒</p><pre class="technical-value">${esc(item.sql_text)}</pre><label>原始数据库输出<textarea data-evidence-output="${esc(item.query_id)}" rows="7" maxlength="65536" placeholder="粘贴 ${esc(item.query_id)} 的完整原始输出"></textarea></label></div>`).join("")}<footer><button class="secondary-button" type="button" data-skip-evidence>跳过补证</button><button class="primary-button" type="button" data-submit-evidence disabled>提交并继续诊断</button></footer>`;
+    anchor.replaceWith(card);
+    const submit = card.querySelector("[data-submit-evidence]");
+    const skip = card.querySelector("[data-skip-evidence]");
+    let busy = false;
+    const outputs = () => [...card.querySelectorAll("[data-evidence-output]")];
+    const refresh = () => {
+      submit.disabled = busy || outputs().some(input=>!input.value.trim());
+      skip.disabled = busy;
+      submit.textContent = busy ? "正在提交…" : "提交并继续诊断";
+    };
+    card.oninput = refresh;
+    const respond = async skipping => {
+      if (busy || !skipping && submit.disabled) return;
+      if (skipping && !await confirmChatAction({title:"跳过人工补证？",message:"系统将只基于已经保存的证据继续分析，可能无法给出确定根因。",confirmLabel:"跳过补证",tone:"warning"})) return;
+      busy = true;
+      refresh();
+      try {
+        await KBotAIOpsAuth.request(`${api}/hitl/${encodeURIComponent(pending.hitl_id)}/${skipping ? "skip" : "response"}`, {
+          method:"POST",
+          headers:{"Idempotency-Key":KBotAIOpsAuth.uuid(),...(skipping ? {"If-Match":`"rv-${pending.row_version}"`} : {})},
+          ...(!skipping ? {body:JSON.stringify({expected_row_version:pending.row_version,responses:outputs().map(input=>({query_id:input.dataset.evidenceOutput,status:"SUCCEEDED",raw_output:input.value}))})} : {}),
+        });
+        await loadConversation(turn.conversation_id);
+        shell.toast(skipping ? "已跳过人工补证，诊断将继续执行" : "人工证据已提交，诊断将继续执行");
+      } catch (error) {shell.toast(error.message || "无法提交人工证据");}
+      finally {busy=false;refresh();}
+    };
+    submit.onclick=()=>respond(false);
+    skip.onclick=()=>respond(true);
+  }
+
+  function confirmChatAction({title,message,confirmLabel,tone="danger"}) {
+    const dialog = document.getElementById("conversation-confirm-dialog");
+    document.getElementById("conversation-confirm-title").textContent = title;
+    document.getElementById("conversation-confirm-message").textContent = message;
+    dialog.className = `confirm-dialog confirm-dialog--${tone}`;
+    dialog.querySelector(".confirm-dialog-mark").textContent = tone === "danger" ? "!" : "?";
+    dialog.querySelector(".confirm-dialog-kicker").textContent = tone === "danger" ? "请确认此操作" : "需要你的确认";
+    const button = dialog.querySelector('[value="confirm"]');
+    button.className = tone === "danger" ? "danger-button" : "primary-button";
+    button.textContent = confirmLabel;
+    return new Promise(resolve => {
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), {once:true});
+      dialog.returnValue = "";
+      dialog.showModal();
+      dialog.querySelector('[value="cancel"]').focus();
+    });
+  }
+
+  async function proposalAction(button, rejectionReason) {
+    if (state.actingProposal) return;
     const approving = Boolean(button.dataset.approveProposal);
     const proposalId = button.dataset.approveProposal || button.dataset.rejectProposal;
-    if (approving && !confirm("确认批准并执行这一条受控变更吗？系统会继续执行前置校验，并在完成后验证效果。")) return;
-    const reason = approving ? "用户在诊断对话中逐条确认" : prompt("请输入拒绝原因");
+    const chat = document.body.dataset.page === "chat";
+    if (chat && !approving && rejectionReason === undefined) {
+      const proposal = button.closest(".ops-proposal");
+      document.querySelectorAll(".ops-reject-form").forEach(form => form.remove());
+      const form = document.createElement("form");
+      form.className = "ops-reject-form";
+      form.innerHTML = '<label>拒绝原因<textarea maxlength="4000" rows="3" required placeholder="请输入拒绝原因"></textarea></label><div class="button-row"><button class="secondary-button" type="button">取消</button><button class="primary-button" type="submit" disabled>确认拒绝</button></div>';
+      form.querySelector('[type="button"]').onclick = () => {if(!state.actingProposal)form.remove();};
+      form.oninput = () => {form.querySelector('[type="submit"]').disabled = !form.querySelector("textarea").value.trim();};
+      form.onsubmit = event => {event.preventDefault();proposalAction(button,form.querySelector("textarea").value.trim());};
+      proposal.append(form);
+      return;
+    }
+    if (approving) {
+      if (chat) {if (!await confirmChatAction({title:"批准并执行这一条受控变更？",message:"系统会继续执行前置校验，并在完成后验证效果。",confirmLabel:"批准并执行",tone:"warning"})) return;}
+      else if (!confirm("确认批准并执行这一条受控变更吗？系统会继续执行前置校验，并在完成后验证效果。")) return;
+    }
+    const reason = approving ? "用户在诊断对话中逐条确认" : rejectionReason ?? prompt("请输入拒绝原因");
     if (!reason) return;
+    state.actingProposal = proposalId;
     button.disabled = true;
+    if(chat) document.querySelectorAll(".ops-proposal-actions button,.ops-manual-result button,.ops-reject-form button").forEach(control => {control.disabled=true;});
     try {
       await KBotAIOpsAuth.request(`${api}/proposals/${encodeURIComponent(proposalId)}/${approving ? "approve" : "reject"}`, {
         method: "POST",
@@ -717,17 +603,29 @@
       });
       shell.toast(approving ? "审批已提交，等待执行与验证" : "已拒绝该变更");
       if (state.conversation) await loadConversation(state.conversation.conversation_id);
-      else button.closest(".ops-message")?.remove();
-    } catch (error) { shell.toast(error.message); button.disabled = false; }
+      else button.closest(".ops-message,.aiops-chat-message")?.remove();
+    } catch (error) {
+      shell.toast(error.message); button.disabled = false;
+      if(chat) {
+        document.querySelectorAll(".ops-proposal-actions button,.ops-manual-result button,.ops-reject-form button").forEach(control => {control.disabled=false;});
+        document.querySelectorAll('.ops-reject-form [type="submit"]').forEach(control => {control.disabled=!control.closest("form").querySelector("textarea").value.trim();});
+      }
+    } finally { state.actingProposal = null; }
   }
 
   async function submitManualResult(button) {
+    if(state.actingProposal) return;
     const proposal = button.closest(".ops-proposal");
     const status = proposal.querySelector("[data-manual-status]").value;
     const note = proposal.querySelector("[data-manual-note]").value.trim();
     const boundedOutput = proposal.querySelector("[data-manual-output]").value.trim();
-    if (!confirm(`确认回填人工处理结果为“${status}”吗？系统不会执行页面中的命令。`)) return;
+    if(document.body.dataset.page === "chat") {
+      if(!await confirmChatAction({title:`确认回填人工处理结果为“${status}”吗？`,message:"系统不会执行页面中的命令。",confirmLabel:"回填结果",tone:"warning"})) return;
+    } else if (!confirm(`确认回填人工处理结果为“${status}”吗？系统不会执行页面中的命令。`)) return;
+    state.actingProposal = button.dataset.manualProposal;
     button.disabled = true;
+    const controls = document.querySelectorAll(".ops-proposal-actions button,.ops-manual-result button,.ops-reject-form button");
+    controls.forEach(control => {control.disabled=true;});
     try {
       await KBotAIOpsAuth.request(`${api}/proposals/${encodeURIComponent(button.dataset.manualProposal)}/manual-result`, {
         method: "POST",
@@ -742,7 +640,12 @@
       });
       shell.toast(status === "EXECUTED" ? "人工结果已回填，系统将进行只读验证" : "人工结果已回填");
       if (state.conversation) await loadConversation(state.conversation.conversation_id);
-    } catch (error) { shell.toast(error.message); button.disabled = false; }
+    } catch (error) { shell.toast(error.message); }
+    finally {
+      state.actingProposal = null;
+      controls.forEach(control => {control.disabled=false;});
+      document.querySelectorAll('.ops-reject-form [type="submit"]').forEach(control => {control.disabled=!control.closest("form").querySelector("textarea").value.trim();});
+    }
   }
 
   const findingTypeLabels = {
@@ -961,10 +864,29 @@
     return `<ul class="ops-finding-fields">${ordered.map((key) => `<li><span>${esc(findingFieldLabels[key] || key)}</span><strong>${esc(displayText(findingFieldValue(source[key]), dictionary))}</strong></li>`).join("")}</ul>`;
   }
 
-  function findingCardsHtml(payload, dictionary = {}) {
+  function findingCardsHtml(payload, dictionary = {}, canonical = document.body.dataset.page === "chat") {
     const findings = values(payload.findings);
     const emptyReasons = values(payload.empty_reasons);
     const gaps = values(payload.gaps);
+    if (canonical) {
+      const cards = findings.filter(card => card && typeof card === "object" && !Array.isArray(card));
+      const urgent = cards.filter(card => ["CRITICAL", "HIGH"].includes(card.severity)).length;
+      const pending = cards.filter(card => card.confirmation !== "CONFIRMED").length;
+      const overview = [`${cards.length} 项`, urgent ? `${urgent} 项高风险` : "", pending ? `${pending} 项待确认` : ""].filter(Boolean).join(" · ");
+      const rows = cards.map(card => {
+        const severity = String(card.severity || "INFO");
+        const tone = ["CRITICAL", "HIGH"].includes(severity) ? "status-danger" : severity === "MEDIUM" ? "status-warning" : severity === "LOW" ? "status-success" : "status-muted";
+        const source = card.fields && typeof card.fields === "object" && !Array.isArray(card.fields) ? card.fields : {};
+        const priority = findingPriorityFields[card.finding_type] || [];
+        const keys = [...priority.filter(key => Object.hasOwn(source, key)), ...Object.keys(source).filter(key => !priority.includes(key))];
+        const fields = keys.map(key => `<div><dt>${esc(findingFieldLabels[key] || key)}</dt><dd>${esc(displayText(findingFieldValue(source[key]), dictionary))}</dd></div>`).join("");
+        const impact = displayText(card.impact || "", dictionary);
+        return `<details class="ops-finding-row is-${esc(severity.toLowerCase())}"><summary><div class="ops-finding-copy"><div class="ops-finding-title"><strong>${esc(findingTypeLabels[card.finding_type] || displayText(card.finding_type, dictionary) || "发现")}</strong><span>${esc(findingConfirmationLabels[card.confirmation] || displayText(card.confirmation, dictionary))}</span></div>${impact ? `<p>${esc(impact)}</p>` : ""}</div><span class="status-pill ${tone}">${esc(findingSeverityLabels[severity] || displayText(severity, dictionary))}</span><span class="ops-finding-toggle">${keys.length} 项明细</span></summary>${fields ? `<div class="ops-finding-detail"><dl class="key-value-table key-value-table-grid">${fields}</dl></div>` : ""}</details>`;
+      }).join("");
+      const empty = displayText(emptyReasons.map(item => String(item).trim()).filter(Boolean).join(" ") || (!findings.length ? "当前没有需要报告的发现，不等于未取证。" : ""), dictionary);
+      const gap = gaps.filter(item => item && typeof item === "object" && !Array.isArray(item)).map(item => displayText(item.detail || item.column || "字段缺失", dictionary)).filter(Boolean).join("；");
+      return `<section class="ops-findings aiops-diagnosis-findings"><header class="ops-findings-header"><div><strong>诊断发现</strong><p>先浏览结论，按需展开结构化证据字段。</p></div>${cards.length ? `<span class="ops-findings-overview">${esc(overview)}</span>` : ""}</header>${cards.length ? `<div class="ops-finding-list">${rows}</div>` : ""}${empty ? `<p class="ops-finding-empty">${esc(empty)}</p>` : ""}${gap ? `<p class="ops-finding-gaps">${esc(gap)}</p>` : ""}</section>`;
+    }
     const cards = findings.map((card) => {
       const severity = String(card.severity || "INFO");
       const tone = ["CRITICAL", "HIGH"].includes(severity) ? "bad" : severity === "MEDIUM" ? "warn" : "good";
@@ -982,6 +904,11 @@
   }
 
   function factConfirmationHtml(payload, turn) {
+    if (document.body.dataset.page === "chat") {
+      const options = String(payload.db_type || "").toUpperCase() === "ORACLE" ? values(payload.storage_media_options).filter(item => item && typeof item === "object" && !Array.isArray(item) && item.value && item.fact_type && item.label && item.key_field && item.field?.name) : [];
+      const form = options.length ? `<form class="ops-fact-confirmation-form" data-confirm-target-fact data-conversation-id="${esc(turn?.conversation_id)}" data-turn-id="${esc(turn?.turn_id)}" data-target-id="${esc(payload.target_id)}"><label class="control-field"><span class="field-label">存储介质</span><select data-storage-fact-option required><option disabled value="">请选择实际存储介质</option>${options.map((option,index) => `<option value="${index}">${esc(option.label)}</option>`).join("")}</select></label><div data-storage-fact-fields style="display:contents"></div><footer><button class="primary-button" type="submit" disabled>确认补证</button></footer></form>` : '<p class="ops-fact-confirmation-unavailable">该补证卡缺少有效的数据库类型或介质契约，请重新发起诊断。</p>';
+      return `<section class="ops-fact-confirmation" data-storage-fact-options="${esc(JSON.stringify(options))}"><header><strong>确认运维记忆</strong></header><p>${esc(payload.instruction || "确认后才会写入 Target 运维记忆，不会执行 SQL。")}</p>${form}</section>`;
+    }
     const candidates = values(payload.candidates);
     if (!candidates.length) return "";
     const forms = candidates.map((candidate) => {
@@ -1011,6 +938,41 @@
       + forms
       + `</section>`
     );
+  }
+
+  function bindStorageFactOptions(root) {
+    root.querySelectorAll("[data-storage-fact-option]").forEach(select => {
+      select.value = "";
+      select.onchange = () => {
+        const form = select.closest("form");
+        if (form.dataset.busy) return;
+        const options = JSON.parse(form.parentElement.dataset.storageFactOptions);
+        const option = select.value ? options[Number(select.value)] : null;
+        form.dataset.factType = option?.fact_type || "";
+        form.dataset.keyField = option?.key_field || "";
+        form.querySelector("[data-storage-fact-fields]").innerHTML = option ? `<p class="ops-fact-confirmation-description">${esc(option.description)}</p><label class="control-field"><span class="field-label">${esc(option.field.label)}</span><input name="${esc(option.field.name)}" placeholder="${esc(option.field.placeholder)}" maxlength="256"${option.field.required ? " required" : ""} autocomplete="off"></label><label class="control-field"><span class="field-label">备注（可选）</span><textarea name="note" maxlength="1000" rows="2" placeholder="记录信息来源或核对方式"></textarea></label>` : "";
+        form.querySelector('[type="submit"]').disabled = !option;
+      };
+    });
+  }
+
+  function chatRunbookHtml(payload, turn, dictionary) {
+    const text = value => esc(displayText(value,dictionary));
+    const phases = values(payload.phases);
+    const phaseId = index => `runbook-${turn.turn_id}-phase-${index + 1}`;
+    const manual = command => [command.command_type,command.executor].some(value => String(value || "").toUpperCase() === "MANUAL");
+    const command = item => `<div class="aiops-runbook-command"><header><span><strong>${text(item.executor || item.command_type || "COMMAND")}</strong> · ${text(item.title || "")}</span><button class="text-button" type="button" data-copy-runbook-command="${esc(item.content || "")}">复制命令</button></header>${item.run_as || item.risk_level ? `<p class="technical-meta">${esc(item.run_as ? `身份 ${item.run_as}` : "")}${item.risk_level ? ` · 风险 ${text(item.risk_level)}` : ""}</p>` : ""}<pre><code>${esc(item.content || "")}</code></pre>${values(item.expected_result).length ? `<div class="aiops-runbook-expected"><strong>预期结果</strong><ul>${item.expected_result.map(value => `<li>${text(value)}</li>`).join("")}</ul></div>` : ""}</div>`;
+    const groups = step => [{label:"实施命令",commands:values(step.commands).filter(item => !manual(item))},{label:"验证命令",commands:values(step.verification_commands)},{label:"回退命令",commands:values(step.rollback)}]
+      .map(group => `<section class="aiops-runbook-command-group">${group.commands.length ? `<h6>${group.label}</h6>${group.commands.map(command).join("")}` : ""}</section>`).join("");
+    const content = phases.map((phase,phaseIndex) => `<section class="aiops-runbook-phase" id="${esc(phaseId(phaseIndex))}"><header><span>${phaseIndex + 1}</span><div><h4>${text(phase.title || phase.phase_id)}</h4><p>${text(phase.objective || "")}</p></div></header><div class="aiops-runbook-steps">${values(phase.steps).map((step,stepIndex) => {
+      const manualCommands = values(step.commands).filter(manual);
+      return `<article class="aiops-runbook-step"><header><div><span class="technical-value">${phaseIndex + 1}.${stepIndex + 1}</span><h5>${text(step.title || step.step_id)}</h5><p>${text(step.rationale || "")}</p></div><span class="status-pill status-muted">${text(step.applicability || "REQUIRED")}</span></header>${values(step.required_inputs).length ? `<p class="aiops-runbook-needs"><strong>所需输入：</strong>${step.required_inputs.map(text).join("、")}</p>` : ""}${manualCommands.length ? `<section class="aiops-runbook-command-group is-manual"><h6>人工确认项</h6>${manualCommands.map(item => `<div class="aiops-runbook-manual"><strong>${esc(item.title || "人工确认")}</strong><p>${esc(item.content || "")}</p></div>`).join("")}</section>` : ""}${groups(step)}${values(step.risks).length ? `<aside class="aiops-runbook-risks"><strong>风险与注意事项</strong><ul>${step.risks.map(value => `<li>${text(value)}</li>`).join("")}</ul></aside>` : ""}</article>`;
+    }).join("")}</div></section>`).join("");
+    const parameters = values(payload.resolved_parameters);
+    const missing = values(payload.missing_facts);
+    const appendix = parameters.length || missing.length || values(payload.artifacts).length ? `<section class="aiops-runbook-appendix"><h4>附录：实施参数与交付物</h4>${parameters.length ? `<div class="table-scroll"><table><thead><tr><th>参数</th><th>值</th><th>来源</th></tr></thead><tbody>${parameters.map(item => `<tr><td><strong class="table-primary">${text(item.label || item.key)}</strong></td><td class="technical-value">${esc(item.value || "")}</td><td>${text(item.status || "")} · ${text(item.source || "")}</td></tr>`).join("")}</tbody></table></div>` : ""}${missing.length ? `<ul class="aiops-runbook-missing">${missing.map(item => `<li><strong>${esc(item.fact_key || "必要事实")}</strong><span>${text(item.reason || "")}</span></li>`).join("")}</ul>` : ""}</section>` : "";
+    const downloads = [{format:"pdf",label:"PDF"},{format:"markdown",label:"Markdown"},...(values(payload.artifacts).length ? [{format:"zip",label:"脚本 ZIP"}] : [])].map(item => `<button class="secondary-button" type="button" data-download-implementation-runbook="${item.format}" data-runbook-profile="${esc(payload.profile || "database-implementation")}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 ${item.label}</button>`).join("");
+    return `<article class="key-value-card aiops-action-card aiops-runbook-card"><header class="aiops-runbook-header"><div><p class="eyebrow">数据库实施操作文档</p><h3>${text(payload.title || "数据库实施 Runbook")}</h3><p>${text(payload.profile || "")} · ${esc(payload.schema_version || "")}</p></div><div class="button-row"><span class="status-pill ${payload.status === "READY" ? "status-success" : "status-warning"}">${text(payload.status || "PARTIAL_EVIDENCE")}</span>${payload.generation ? `<button class="secondary-button" type="button" data-adjust-implementation-runbook="${esc(turn.turn_id)}">调整参数并重新生成</button>` : ""}</div></header><section class="aiops-runbook-policy"><h4>执行边界</h4><p>${text(payload.execution_policy || "所有命令均需由 DBA 在审核实施边界后执行。")}</p></section>${phases.length ? `<nav class="aiops-runbook-toc" aria-label="实施文档目录"><h4>目录</h4><ol>${phases.map((phase,index) => `<li><a href="#${esc(phaseId(index))}">${index + 1}. ${text(phase.title || phase.phase_id)}</a></li>`).join("")}</ol></nav>` : ""}<div class="aiops-runbook-body">${content}</div>${appendix}<footer class="button-row">${downloads}</footer></article>`;
   }
 
   function chartNumber(value, unit) {
@@ -1102,10 +1064,11 @@
     const reports = values(payload.reports);
     if (!reports.length) return "";
     const items = reports.map((report) => {
-      const label = report.title || report.label || report.report_type || "原生报告";
+      const chat = document.body.dataset.page === "chat";
+      const label = chat ? report.title || (report.artifact_id ? "下载报告" : "诊断报告") : report.title || report.label || report.report_type || "原生报告";
       if (turn && report.artifact_id) {
         return (
-          `<button type="button" data-download-report-artifact="${esc(report.artifact_id)}" `
+          `<button type="button"${chat ? ' class="secondary-button"' : ""} data-download-report-artifact="${esc(report.artifact_id)}" `
           + `data-conversation-id="${esc(turn.conversation_id)}" `
           + `data-turn-id="${esc(turn.turn_id)}" `
           + `data-report-artifact-filename="${esc(report.file_name || "aiops-report.bin")}">`
@@ -1114,23 +1077,44 @@
       }
       return `<span class="ops-html-report-label">${esc(label)}</span>`;
     }).join("");
-    return `<div class="ops-workload-report-actions">${items}</div>`;
+    return `<div class="${document.body.dataset.page === "chat" ? "aiops-workload-report-actions" : "ops-workload-report-actions"}">${items}</div>`;
+  }
+
+  function chatProposalHtml(payload, dictionary) {
+    const text = value => esc(displayText(value,dictionary));
+    const manual = payload.execution_mode === "MANUAL_ONLY" && payload.status === "ADVISORY_READY";
+    const pending = payload.status === "PENDING_APPROVAL";
+    const canApprove = state.permissions.has("aiops:proposal:approve");
+    const title = payload.execution_mode === "MANUAL_ONLY" ? "仅供人工执行" : pending ? "受控变更待审批" : "受控动作建议";
+    const parameters = Object.entries(payload.parameters || {}).map(([key,value]) => `<li><code>${esc(key)}</code><span>${esc(typeof value === "object" ? JSON.stringify(value) : String(value ?? ""))}</span></li>`).join("");
+    const actions = pending && canApprove ? `<div class="ops-proposal-actions"><button class="primary-button" type="button" data-approve-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}" data-hash="${esc(payload.proposal_hash)}">批准并执行</button><button class="secondary-button" type="button" data-reject-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">拒绝</button></div>` : manual && canApprove
+      ? `<div class="ops-manual-result"><strong>DBA 人工执行结果</strong><label>处理结果<select data-manual-status><option value="EXECUTED">已执行</option><option value="FAILED">执行失败</option><option value="CANCELLED">已取消</option></select></label><label>处理说明（可选）<textarea data-manual-note maxlength="4000" rows="3" placeholder="处理说明（可选）"></textarea></label><label>受限输出（可选，请勿填写密码或密钥）<textarea data-manual-output maxlength="16000" rows="4" placeholder="受限输出（可选，请勿填写密码或密钥）"></textarea></label><button class="primary-button" type="button" data-manual-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">回填结果</button></div>`
+      : `<p class="ops-proposal-status">当前状态：${text(payload.status || "UNKNOWN")}</p>`;
+    const effect = canApprove && payload.proposal_id ? `<details class="effect-verification" data-effect-proposal="${esc(payload.proposal_id)}"><summary data-effect-open>业务效果验证</summary><p>执行前冻结基线、主要效果、负载条件、护栏与停止条件。动作成功不等于业务恢复；没有对照实验时不能排除混杂因素。</p><div data-effect-body><button class="secondary-button" type="button" data-effect-refresh-initial>刷新受控证据</button></div></details>` : "";
+    return `<section class="key-value-card aiops-action-card ops-proposal"><header><div><h3>${title}</h3><p>${esc(payload.action_template_id || "Action Template")} · ${text(payload.risk_level || "UNKNOWN")}</p></div><span class="status-pill status-warning">${payload.status === "ADVISORY_READY" ? "建议语句已就绪" : pending ? "待审批" : text(payload.status || "未知")}</span></header>${payload.rationale ? `<p>${text(payload.rationale)}</p>` : ""}${payload.impact ? `<p><strong>影响范围：</strong>${text(payload.impact)}</p>` : ""}${payload.lock_impact ? `<p><strong>锁影响：</strong>${text(payload.lock_impact)}</p>` : ""}${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${payload.command_preview ? `<p class="table-secondary">${manual ? "仅供 DBA 人工核对并在系统外执行" : "仅供 DBA 人工核对"}</p><pre class="technical-value">${esc(payload.command_preview)}</pre>` : ""}${values(payload.verification_plan).length ? `<p><strong>验证计划：</strong>${payload.verification_plan.map(text).join("、")}</p>` : ""}${actions}${effect}</section>`;
   }
 
   function answerBlockHtml(block, turn) {
     const payload = block.payload || {};
     const dictionary = turn?.display_dictionary || {};
-    if (block.block_type === "MARKDOWN") return markdown.render(displayText(payload.markdown || payload.text || "", dictionary));
+    if (block.block_type === "MARKDOWN") {
+      const text = document.body.dataset.page === "chat" ? chatAnswerMarkdown(payload,dictionary) : displayText(payload.markdown || payload.text || "", dictionary);
+      const createdAt = values(turn?.messages).filter(item => item.message_type === "ASSISTANT_MESSAGE").at(-1)?.created_at;
+      return document.body.dataset.page === "chat" ? messageHtml("AGENT", text, createdAt ? shell.fmt(createdAt) : "") : markdown.render(text);
+    }
     if (block.block_type === "ANALYSIS_MARKDOWN") {
-      return `<section class="ops-analysis"><header><strong>分析</strong></header>${markdown.render(displayText(payload.markdown || payload.text || "", dictionary))}</section>`;
+      const content = markdown.render(document.body.dataset.page === "chat" ? chatAnswerMarkdown(payload,dictionary) : displayText(payload.markdown || payload.text || "", dictionary));
+      return `<section class="ops-analysis"><header><strong>分析</strong></header>${document.body.dataset.page === "chat" ? `<div class="agent-markdown-content">${content}</div>` : content}</section>`;
     }
     if (block.block_type === "SOLUTION_MARKDOWN") {
-      return `<section class="ops-solution"><header><strong>解决方案</strong></header>${markdown.render(displayText(payload.markdown || payload.text || "", dictionary))}</section>`;
+      const content = markdown.render(document.body.dataset.page === "chat" ? chatAnswerMarkdown(payload,dictionary) : displayText(payload.markdown || payload.text || "", dictionary));
+      return `<section class="ops-solution"><header><strong>解决方案</strong></header>${document.body.dataset.page === "chat" ? `<div class="agent-markdown-content">${content}</div>` : content}</section>`;
     }
     if (block.block_type === "FACT_CONFIRMATION") return factConfirmationHtml(payload, turn);
     if (block.block_type === "FINDING_CARDS") return findingCardsHtml(payload, dictionary);
     if (["REPORT_ARTIFACT_LINKS", "HTML_REPORT_LINKS"].includes(block.block_type)) return reportArtifactLinksHtml(payload, turn);
     if (block.block_type === "IMPLEMENTATION_RUNBOOK") {
+      if (document.body.dataset.page === "chat") return chatRunbookHtml(payload,turn,dictionary);
       const applicabilityLabel = {
         REQUIRED: "必须实施",
         ALREADY_SATISFIED: "当前已满足",
@@ -1211,6 +1195,27 @@
       const primary = payload.presentation_role === "PRIMARY";
       const topSql = primary && ["TOP_SQL_LIST", "CURRENT_SQL_LIST", "SQL_SUBJECT_CANDIDATES", "SQL_SUBJECT_COMPARISON"].includes(payload.result_kind);
       const executionPlan = primary && payload.result_kind === "SQL_EXECUTION_PLAN";
+      if (document.body.dataset.page === "chat" && primary) {
+        const ordered = columns.map((column, index) => ({ column, index }))
+          .filter(({ column }) => !topSql || payload.result_kind === "SQL_SUBJECT_COMPARISON" || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
+        if (topSql) ordered.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);
+        const rows = values(payload.rows).filter(Array.isArray);
+        const disabled = state.submitting || values(state.turns).some(item => !terminalTurnStatuses.has(item.status)) || Boolean(pendingClarificationTurn());
+        const headings = ordered.map(({ column }) => `<th class="${topSql ? topSqlColumnClass(column) : ""}">${esc(column.label || column.name || column.key || column)}</th>`).join("");
+        const body = rows.map((row, rowIndex) => {
+          const cells = ordered.map(({ column, index }) => {
+            const kind = topSql ? topSqlColumnClass(column) : "";
+            const value = formatEvidenceValue(row[index]);
+            return `<td class="${kind}"><span${topSql && ["is-sql", "is-identifier"].includes(kind) ? ' tabindex="0"' : ""} title="${esc(value)}">${esc(value)}</span></td>`;
+          }).join("");
+          const prompt = followUp(row);
+          return `<tr>${cells}<td>${prompt ? `<button type="button" class="row-action" data-primary-follow-up="${esc(prompt)}" data-sql-selection="${esc(payload.row_selections?.[rowIndex] || "")}"${disabled ? " disabled" : ""}>${esc(payload.follow_up_label || "继续诊断")}</button>` : ""}</td></tr>`;
+        }).join("");
+        const table = executionPlan ? `<div class="aiops-sql-plan-host">${globalThis.AIOpsSqlPlanViewer.html(payload)}</div>` : rows.length
+          ? `<div class="table-scroll" tabindex="0" aria-label="查询结果表格，可横向滚动"><table><thead><tr>${headings}<th>操作</th></tr></thead><tbody>${body}</tbody></table></div>`
+          : '<p class="table-secondary">当前范围没有符合条件的记录；空结果不代表未执行取证。</p>';
+        return `<section class="key-value-card aiops-primary-result${topSql ? " is-top-sql" : ""}${executionPlan ? " is-sql-plan" : ""}"><header><div><strong>${esc(payload.title || "查询结果")}</strong><p>${esc(payload.measurement_note || "本轮只读取证结果")}</p></div><span class="technical-value">${esc(Number(payload.row_count || 0))} ${executionPlan ? "个节点" : "行"}${payload.truncated ? " · 已截断" : ""}</span></header>${table}<footer><span>采集时间 ${esc(payload.captured_at ? shell.fmt(payload.captured_at) : "未记录")}</span>${payload.result_kind === "TOP_SQL_LIST" ? "<span>可横向滚动查看全部列</span>" : ""}<span>原始结果仍保留在诊断证据中</span></footer></section>`;
+      }
       if (executionPlan) {
         const meta = [payload.measurement_note, payload.captured_at ? shell.fmt(payload.captured_at) : ""].filter(Boolean).join(" · ");
         return `<section class="ops-primary-result is-sql-plan"><header><div><h3>${esc(payload.title || "执行计划")}</h3><p>${esc(meta)}</p></div><span>${esc(payload.row_count || values(payload.rows).length)} 个节点${payload.truncated ? " · 已截断" : ""}</span></header>${globalThis.AIOpsSqlPlanViewer.html(payload)}<footer>原始结果仍保留在诊断证据中</footer></section>`;
@@ -1244,11 +1249,13 @@
       return `<section class="ops-primary-result${topSql ? " is-top-sql" : ""}${executionPlan ? " is-sql-plan" : ""}"><header><div><h3>${esc(payload.title || "查询结果")}</h3><p>${esc(meta || "本轮只读取证结果")}</p></div><span>${esc(payload.row_count || rows.length)} 行${payload.truncated ? " · 已截断" : ""}</span></header>${table}<footer>${topSql || executionPlan ? "可横向滚动查看全部列 · " : ""}原始结果仍保留在诊断证据中</footer></section>`;
     }
     if (block.block_type === "CHART") {
+      if (document.body.dataset.page === "chat") return globalThis.AIOpsChatCharts.html(payload);
       if (payload.chart_type === "LINE") return lineChartHtml(payload);
       if (payload.chart_type === "STACKED_BAR") return stackedChartHtml(payload);
       return barChartHtml(payload);
     }
     if (block.block_type === "PROPOSAL_SUMMARY") {
+      if (document.body.dataset.page === "chat") return chatProposalHtml(payload,dictionary);
       const parameters = Object.entries(payload.parameters || {}).map(([key, value]) => `<li><code>${esc(key)}</code><span>${esc(typeof value === "object" ? JSON.stringify(value) : value)}</span></li>`).join("");
       const pending = payload.status === "PENDING_APPROVAL";
       const manual = payload.execution_mode === "MANUAL_ONLY" && payload.status === "ADVISORY_READY";
@@ -1267,6 +1274,61 @@
     if (block.block_type === "EVIDENCE_REFERENCES") return "";
     return markdown.render(displayText(payload.markdown || payload.text || payload.instruction || "", dictionary));
   }
+
+  // 总览、告警与运行详情共享同一份只读结果，不在上下文视图暴露写入操作。
+  globalThis.KBotAIOpsTurnResult = {
+    inspection(payload) {
+      const report = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+      const dictionary = report.display_dictionary || {}, scope = report.scope || {};
+      const records = value => values(value).filter(item => item && typeof item === "object" && !Array.isArray(item));
+      const itemText = item => displayText(typeof item === "string" ? item : item?.fact_summary || item?.summary || item?.detail || item?.title || item?.code || "",dictionary);
+      const facts = records(report.facts), checks = facts.filter(item => item.kind !== "agent_health_inspection"), gaps = records(report.gaps);
+      const recommendations = values(report.recommendations).map(itemText).filter(Boolean);
+      const health = String(scope.health_status || (report.status === "PARTIAL" ? "UNKNOWN" : "NORMAL"));
+      const healthLabels = {NORMAL:"正常",INFO:"提示",LOW:"低风险",MEDIUM:"中风险",HIGH:"高风险",CRITICAL:"严重风险",UNKNOWN:"无法判定"};
+      const healthClass = ["CRITICAL","HIGH"].includes(health) ? "status-danger" : ["MEDIUM","UNKNOWN"].includes(health) ? "status-warning" : ["INFO","LOW"].includes(health) ? "status-info" : "status-success";
+      const checkLabels = {CLEAR:"正常",FINDING:"需关注",OBSERVED:"仅观测",NOT_APPLICABLE:"不适用",PARTIAL:"证据不完整",GAP:"检查未完成",MISSING:"未取证",COMPLIANT:"符合策略",BREACHED:"不符合策略",NOT_OBSERVABLE:"无法验证"};
+      const gapLabels = {PRODUCT_CONTRACT:"产品证据契约",MONITORING:"监控采集",REPORT_CONTRACT:"报告契约",SOURCE_ACCESS:"数据库访问",SOURCE_CAPABILITY:"版本或能力",DATA_SOURCE:"数据源取证"};
+      const pill = (label,tone) => `<span class="status-pill ${tone}">${esc(label)}</span>`;
+      const section = (title,content,extra = "") => `<section class="inspection-report-section${extra}"><h5>${title}</h5>${content}</section>`;
+      const findings = checks.flatMap(item => records(item.findings));
+      const findingBlock = {findings,empty_reasons:findings.length ? [] : ["本期未发现达到规则阈值的异常。"]};
+      const count = scope.check_status_counts || {};
+      const coverage = typeof scope.evidence_coverage_percent === "number" ? `<p class="inspection-coverage">数据库检查覆盖率 ${scope.evidence_coverage_percent}% · ${scope.evidence_covered_count ?? 0}/${scope.evidence_total_count ?? 0} 项${typeof scope.monitoring_sample_coverage_percent === "number" ? ` · 监控采样覆盖率 ${scope.monitoring_sample_coverage_percent}% · 低覆盖 ${scope.monitoring_low_coverage_metric_count ?? 0}/${scope.monitoring_metric_count ?? 0} 项` : ""} · 数据缺口 ${scope.evidence_gap_count ?? gaps.length} 项</p>` : "";
+      const checkContent = checks.length ? `<div class="inspection-check-list">${checks.map(item => {
+        const status = String(item.check_status || "");
+        const tone = ["FINDING","BREACHED"].includes(status) ? "status-danger" : ["PARTIAL","GAP","MISSING","NOT_OBSERVED"].includes(status) ? "status-warning" : ["OBSERVED","NOT_APPLICABLE","NOT_OBSERVABLE"].includes(status) ? "status-info" : "status-success";
+        const observations = records(item.observations);
+        return `<article><header><strong>${esc(displayText(item.title || item.tool_id || "巡检检查项",dictionary))}</strong>${pill(checkLabels[status] || displayText(status || "已记录",dictionary),tone)}</header><p>${esc(itemText(item))}</p>${observations.length ? `<ul class="inspection-observations">${observations.map(row => `<li><code>${esc(Object.entries(row).map(([key,value]) => `${key}=${value ?? "—"}`).join(" · "))}</code></li>`).join("")}</ul>` : ""}</article>`;
+      }).join("")}</div>` : '<p class="empty-cell">正式报告未记录独立检查项。</p>';
+      return `<div class="inspection-report-result"><header class="inspection-report-heading"><div><p class="eyebrow">巡检正式结果</p><h4>${esc(report.title || "数据库巡检报告")}</h4><p>${esc(report.summary || "本次巡检已形成正式结果。")}</p>${coverage}</div><div class="inspection-status-stack">${pill(healthLabels[health] || health,healthClass)}${pill(report.status === "PARTIAL" ? "证据不完整" : "证据完整",report.status === "PARTIAL" ? "status-warning" : "status-success")}</div></header>`
+        + facts.filter(item => item.kind === "agent_health_inspection" && String(item.markdown || "").trim()).map(item => section("巡检结论",`<div class="agent-markdown-content">${markdown.render(displayText(item.markdown,dictionary))}</div>`)).join("")
+        + section("已核验发现",findingCardsHtml(findingBlock,dictionary,true))
+        + section("检查结果",(Object.keys(count).length ? `<p class="inspection-status-summary">正常 ${count.CLEAR ?? 0} 项 · 需关注 ${count.FINDING ?? 0} 项 · 仅观测 ${count.OBSERVED ?? 0} 项 · 不适用 ${count.NOT_APPLICABLE ?? 0} 项 · 不完整 ${(count.PARTIAL ?? 0) + (count.GAP ?? 0) + (count.MISSING ?? 0)} 项</p>` : "") + checkContent)
+        + section("建议",recommendations.length ? `<ul>${recommendations.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : '<p class="empty-cell">继续按既定周期执行该巡检模板并关注趋势变化。</p>')
+        + section("数据缺口",gaps.length ? `<ul>${gaps.map(item => `<li>${pill(gapLabels[item.category || "DATA_SOURCE"] || "数据源取证","status-warning")} ${esc(itemText(item))}</li>`).join("")}</ul>` : '<p class="empty-cell">未记录数据缺口，全部计划检查均已形成可验证观测。</p>',gaps.length ? " has-gaps" : "") + "</div>";
+    },
+    html(payload, emptyText = "本次诊断尚未形成可展示的四段结论。") {
+      const dictionary = payload?.display_dictionary || {};
+      const visible = new Set(["FINDING_CARDS","ANALYSIS_MARKDOWN","CHART","SOLUTION_MARKDOWN","FACT_CONFIRMATION","MARKDOWN","REPORT_ARTIFACT_LINKS","PROPOSAL_SUMMARY"]);
+      const blocks = values(payload?.blocks).filter(block => block && typeof block === "object" && visible.has(block.block_type));
+      if (!blocks.length) return `<p class="ops-turn-result-empty">${esc(emptyText)}</p>`;
+      return blocks.map(block => {
+        const data = block.payload || {};
+        if (block.block_type === "FINDING_CARDS") return findingCardsHtml(data,dictionary,true);
+        if (block.block_type === "CHART") return globalThis.AIOpsChatCharts?.html(data) || "";
+        if (["ANALYSIS_MARKDOWN","SOLUTION_MARKDOWN","MARKDOWN"].includes(block.block_type)) {
+          const heading = block.block_type === "ANALYSIS_MARKDOWN" ? "分析" : block.block_type === "SOLUTION_MARKDOWN" ? "解决方案" : "";
+          const className = block.block_type === "SOLUTION_MARKDOWN" ? "ops-solution" : "ops-analysis";
+          return `<section class="${className}">${heading ? `<header><strong>${heading}</strong></header>` : ""}<div class="agent-markdown-content">${markdown.render(chatAnswerMarkdown(data,dictionary))}</div></section>`;
+        }
+        if (block.block_type === "REPORT_ARTIFACT_LINKS") return `<section class="ops-html-report-readonly"><header><strong>诊断报告</strong></header><ul>${values(data.reports).filter(report=>report && typeof report === "object").map(report=>String(report.title || report.report_type || "诊断报告").trim()).filter(Boolean).map(label=>`<li>${esc(label)}</li>`).join("")}</ul></section>`;
+        if (block.block_type === "PROPOSAL_SUMMARY") return `<section class="ops-proposal-readonly"><header><strong>受控变更</strong></header><p>当前状态：${esc(displayText(data.status || "未知状态",dictionary))}</p></section>`;
+        return `<section class="ops-fact-confirmation"><header><strong>确认运维记忆</strong></header><p>${esc(displayText(data.instruction || "确认后才会写入 Target 运维记忆，不会执行 SQL。",dictionary))}</p></section>`;
+      }).join("");
+    },
+    mount(container) { globalThis.AIOpsChatCharts?.mount(container); },
+  };
 
   function turnEvidenceHtml(blocks, gaps = [], dictionary = {}) {
     const evidence = new Map();
@@ -1314,6 +1376,25 @@
     return `<details class="ops-evidence"><summary>诊断依据 <span>${rows.length} 项证据${dataBlocks.length ? ` · ${dataBlocks.length} 份原始结果` : ""}${gapRows.length ? ` · ${gapRows.length} 项缺口` : ""}</span></summary><div class="ops-evidence-body">${evidenceRows}${evidenceData}${missingRows}</div></details>`;
   }
 
+  function chatTurnEvidenceHtml(blocks, gaps, dictionary, planAcquisition = "") {
+    const table = (columns, rows) => `<div class="table-scroll aiops-citation-table"><table><thead><tr>${columns.map(column => `<th>${esc(typeof column === "object" ? column.label || column.name || column.key : column)}</th>`).join("")}</tr></thead><tbody>${values(rows).filter(Array.isArray).map(row => `<tr>${row.map(value => `<td>${esc(formatEvidenceValue(value))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    const supporting = blocks.filter(block => block.block_type === "TABLE" && block.payload?.result_kind === "TOP_SQL_LIST" && block.payload.presentation_role === "SUPPORTING");
+    const supportingHtml = supporting.length ? `<details class="key-value-card aiops-action-card aiops-citation-card"><summary>辅助 SQL 证据 · ${supporting.length} 项</summary>${supporting.map(block => {
+      const payload = block.payload;
+      return `<div class="aiops-citation-evidence"><strong>${esc(payload.measurement_semantics === "CURRENT_ACTIVITY" ? "当前活跃 SQL 快照" : payload.title || "SQL 统计")}</strong><p>${esc(payload.measurement_note || "辅助取证结果")} · ${Number(payload.row_count || 0)} 行</p>${values(payload.rows).some(Array.isArray) ? table(values(payload.columns),payload.rows) : '<p class="table-secondary">采集时没有匹配记录。</p>'}</div>`;
+    }).join("")}</details>` : "";
+    const citations = new Map();
+    blocks.forEach(block => values(block.citations).forEach(citation => {
+      if (!citations.has(citation.turn_evidence_id)) citations.set(citation.turn_evidence_id,citation);
+    }));
+    const citationHtml = citations.size ? `<details class="key-value-card aiops-action-card aiops-citation-card"><summary>引用的证据 · ${citations.size} 项</summary><ol class="aiops-citation-list">${[...citations.values()].map((citation,index) => {
+      const evidence = citation.evidence;
+      return `<li><span class="aiops-citation-number">${index + 1}</span>${evidence ? `<div class="aiops-citation-evidence"><strong>${esc(evidence.tool_id)}</strong><p>采集于 ${esc(shell.fmt(evidence.captured_at))} · ${esc(evidence.row_count)} 行${evidence.truncated ? "（结果已截断）" : ""}</p>${values(evidence.columns).length ? table(evidence.columns,evidence.rows) : '<p class="table-secondary">该观察不包含可公开展示的字段。</p>'}</div>` : `<span>${esc(citation.label)}</span>`}</li>`;
+    }).join("")}</ol></details>` : "";
+    const gapsHtml = values(gaps).length ? `<details class="key-value-card aiops-action-card"><summary>仍缺少的证据 · ${gaps.length} 项</summary><ul class="aiops-plan-list">${gaps.map(gap => `<li><strong>${esc(displayText(gap.code || "待补充证据",dictionary))}</strong><span>${esc(displayText(gap.detail || (gap.retryable ? "可继续重试获取。" : "当前无法自动取得。"),dictionary))}</span></li>`).join("")}</ul></details>` : "";
+    return `${supportingHtml}${citationHtml}${planAcquisition}${gapsHtml}`;
+  }
+
   function reportAction({ runId, conversationId, sourceKind, periodKind = "AD_HOC" }) {
     if (!runId && !conversationId) return "";
     const source = conversationId
@@ -1322,6 +1403,7 @@
     const closure = conversationId
       ? `<button type="button" class="primary" data-close-diagnosis="${esc(conversationId)}">诊断收口</button>`
       : "";
+    if (conversationId && document.body.dataset.page === "chat") return `<button type="button" class="primary-button" data-close-diagnosis="${esc(conversationId)}">诊断收口</button><button type="button" class="secondary-button" ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成会话报告</button>`;
     return `<div class="ops-filter-actions ops-conversation-actions">${closure}<button type="button" ${conversationId ? "" : 'class="primary"'} ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成正式报告</button></div>`;
   }
 
@@ -1329,11 +1411,10 @@
     .map((item) => item.trim()).filter(Boolean);
 
   function closureEvidenceOptions(preview, name) {
-    const roleLabels = { DIAGNOSIS: "诊断", ACTION: "动作", VERIFICATION: "验证" };
     const candidates = name === "action_evidence_ids"
       ? values(preview.evidence_candidates).filter((item) => item.role === "ACTION")
       : values(preview.evidence_candidates);
-    return candidates.map((item) => `<label class="ops-case-closure-evidence"><input type="checkbox" name="${name}" value="${esc(item.artifact_id)}"><span>${esc(item.label || item.schema_version)}<small>${esc(roleLabels[item.role] || item.role)} · ${esc(shell.fmt(item.created_at))}</small></span></label>`).join("") || `<p class="ops-evidence-empty">${name === "action_evidence_ids" ? "当前诊断没有实际执行结果，只能形成诊断参考。" : "当前诊断没有可选择的结构化证据。"}</p>`;
+    return candidates.map((item) => `<label><input type="checkbox" name="${name}" value="${esc(item.artifact_id)}"><span>${esc(item.label)}<small>${esc(item.role)} · ${esc(shell.fmt(item.created_at))}</small></span></label>`).join("") || (name === "action_evidence_ids" ? '<small>当前诊断没有实际执行结果，只能形成诊断参考。</small>' : "");
   }
 
   async function openDiagnosisClosure(button) {
@@ -1344,24 +1425,26 @@
         `${api}/operations-knowledge/conversations/${encodeURIComponent(conversationId)}/case-candidate`,
       );
       const dialog = document.createElement("dialog");
-      dialog.className = "ops-starter-dialog ops-case-closure-dialog";
-      const header = '<header><div><strong>诊断收口</strong><p>基于调查记录登记处置与人工结果；仅生成案例候选，仍需审核发布。</p></div><button type="button" data-close-closure aria-label="关闭诊断收口">关闭</button></header>';
+      dialog.id = "diagnosis-closure-dialog";
+      dialog.className = "reference-drawer admin-drawer aiops-case-closure-drawer";
+      dialog.setAttribute("aria-label", "诊断收口");
+      const header = '<header class="admin-drawer-header"><div><p class="eyebrow">DIAGNOSIS CLOSURE</p><h2>诊断收口</h2><p>基于调查记录登记处置与人工结果；仅生成案例候选，仍需审核发布。</p></div><button class="icon-button" type="button" data-close-closure aria-label="关闭诊断收口">×</button></header>';
       if (!preview.eligible) {
-        dialog.innerHTML = `<div class="ops-starter-dialog-shell ops-case-closure-shell">${header}<div class="ops-case-closure-empty"><strong>当前诊断还不能收口</strong><ul>${values(preview.reasons).map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul><p>继续调查并形成可追溯的有效判断后，可提炼诊断参考。</p></div></div>`;
+        dialog.innerHTML = `${header}<div class="admin-drawer-body aiops-case-closure-empty"><strong>当前诊断还不能收口</strong><ul>${values(preview.reasons).map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul><p>继续调查并形成可追溯的有效判断后，可提炼诊断参考。</p></div>`;
       } else {
         const environment = [preview.environment?.database_type, preview.environment?.database_version, preview.environment?.platform].filter(Boolean).join(" · ") || "未限定";
-        dialog.innerHTML = `<form class="ops-starter-dialog-shell ops-case-closure-shell">${header}<div class="ops-case-closure-body"><section class="ops-case-closure-summary"><div><span>结论来源</span><strong>人工归纳，待审核</strong></div><div><span>案例类型</span><strong data-closure-kind>诊断参考</strong></div><div><span>目标环境</span><strong data-closure-environment>${esc(environment)}</strong></div></section><label class="ops-case-closure-field"><span>案例名称</span><input name="display_name" maxlength="256" required value="${esc(preview.display_name)}"></label><label class="ops-case-closure-field"><span>问题现象（每行一条）</span><textarea name="symptoms" rows="4" required>${esc(values(preview.symptoms).join("\n"))}</textarea></label><label class="ops-case-closure-field"><span>调查结论与原因判断</span><textarea name="root_cause_summary" rows="4" maxlength="4000" required>${esc(preview.root_cause_summary)}</textarea></label><label class="ops-case-closure-field"><span>实际执行动作（每行一条，不填写建议动作）</span><textarea name="actions" rows="4"></textarea></label><section class="ops-case-closure-evidence-section"><header><strong>动作与验证证据</strong><small>人工登记结果不等于受控效果验证；不同前后证据不能自动证明改善。</small></header><div class="ops-case-closure-evidence-grid"><fieldset><legend>动作证据</legend>${closureEvidenceOptions(preview, "action_evidence_ids")}</fieldset><fieldset><legend>实施前证据</legend>${closureEvidenceOptions(preview, "before_evidence_ids")}</fieldset><fieldset><legend>实施后证据</legend>${closureEvidenceOptions(preview, "after_evidence_ids")}</fieldset></div></section><label class="ops-case-closure-field"><span>验证结果</span><select name="verification_result"><option value="NOT_VERIFIED">未验证</option><option value="RESOLVED">问题已解决</option><option value="IMPROVED">问题已改善</option><option value="NOT_ACHIEVED">未达到预期</option><option value="ADVERSE">出现不利影响</option><option value="INCONCLUSIVE">无法判断</option></select></label><div class="ops-case-closure-columns"><label class="ops-case-closure-field"><span>适用条件（每行一条）</span><textarea name="applicability" rows="3"></textarea></label><label class="ops-case-closure-field"><span>不适用条件（每行一条）</span><textarea name="contraindications" rows="3"></textarea></label></div></div><footer><span>保存后进入待完善队列，不会自动发布。</span><button type="button" data-close-closure>取消</button><button class="primary" type="submit">完成收口并生成候选</button></footer></form>`;
+        dialog.innerHTML = `${header}<form class="admin-drawer-body aiops-case-closure-form">${preview.existing_asset_id ? '<p>此范围已有案例候选；相同提交会重用，修改人工内容将形成待审核新版本。</p>' : ""}<section class="aiops-case-closure-summary"><div><span>结论来源</span><strong>人工归纳，待审核</strong></div><div><span>案例类型</span><strong data-closure-kind>诊断参考</strong></div><div><span>目标环境</span><strong data-closure-environment>${esc(environment)}</strong></div></section><label class="control-field"><span class="field-label">案例名称</span><input name="display_name" maxlength="256" required value="${esc(preview.display_name)}"></label><label class="control-field"><span class="field-label">问题现象（每行一条）</span><textarea name="symptoms" rows="4" required>${esc(values(preview.symptoms).join("\n"))}</textarea></label><label class="control-field"><span class="field-label">调查结论与原因判断</span><textarea name="root_cause_summary" rows="4" maxlength="4000" required>${esc(preview.root_cause_summary)}</textarea></label><label class="control-field"><span class="field-label">实际执行动作（每行一条，不填写建议动作）</span><textarea name="actions" rows="4"></textarea></label><section class="aiops-case-evidence-section"><header><strong>动作与验证证据</strong><small>人工登记结果不等于受控效果验证；不同前后证据不能自动证明改善。</small></header><div class="aiops-case-evidence-grid"><fieldset><legend>动作证据</legend>${closureEvidenceOptions(preview, "action_evidence_ids")}</fieldset><fieldset><legend>实施前证据</legend>${closureEvidenceOptions(preview, "before_evidence_ids")}</fieldset><fieldset><legend>实施后证据</legend>${closureEvidenceOptions(preview, "after_evidence_ids")}</fieldset></div></section><label class="control-field"><span class="field-label">验证结果</span><select name="verification_result"><option value="NOT_VERIFIED">未验证</option><option value="RESOLVED">问题已解决</option><option value="IMPROVED">问题已改善</option><option value="NOT_ACHIEVED">未达到预期</option><option value="ADVERSE">出现不利影响</option><option value="INCONCLUSIVE">无法判断</option></select></label><div class="aiops-case-closure-two-column"><label class="control-field"><span class="field-label">适用条件（每行一条）</span><textarea name="applicability" rows="3"></textarea></label><label class="control-field"><span class="field-label">不适用条件（每行一条）</span><textarea name="contraindications" rows="3"></textarea></label></div><footer class="admin-drawer-footer"><span>保存后进入待完善队列，不会自动发布。</span><button class="secondary-button" type="button" data-close-closure>取消</button><button class="primary-button" type="submit">完成收口并生成候选</button></footer></form>`;
         const form = dialog.querySelector("form");
         let previewRequest = 0;
         let savingClosure = false;
         const turns = document.createElement("fieldset");
-        turns.className = "ops-case-closure-evidence-section";
+        turns.className = "aiops-case-evidence-section";
         const renderTurns = () => {
-          turns.innerHTML = '<legend>纳入收口的调查轮次</legend><p>仅保留仍有效的判断；切换范围将重新生成结论草稿。选择其他 Target 时切换范围，不合并不同目标。</p>' +
-            values(preview.turn_candidates).map(item => `<label class="ops-case-closure-evidence"><input type="checkbox" data-closure-turn="${esc(item.turn_id)}" ${item.selected ? "checked" : ""} ${item.eligible ? "" : "disabled"}><span>第 ${esc(item.turn_no)} 轮 · ${esc(item.eligible ? item.summary : item.reason)}</span></label>`).join("");
+          turns.innerHTML = '<legend>纳入收口的调查轮次</legend><p>仅保留仍有效的判断；切换范围将重新生成结论草稿。选择其他 Target 时会切换范围，不合并不同目标。</p>' +
+            values(preview.turn_candidates).map(item => `<label class="check-field"><input type="checkbox" data-closure-turn="${esc(item.turn_id)}" ${item.selected ? "checked" : ""} ${item.eligible ? "" : "disabled"}><span>第 ${esc(item.turn_no)} 轮 · ${esc(item.eligible ? item.summary : item.reason)}</span></label>`).join("");
         };
         renderTurns();
-        form.querySelector(".ops-case-closure-body").prepend(turns);
+        form.prepend(turns);
         turns.onchange = async event => {
           if (savingClosure || !event.target.dataset.closureTurn) return;
           const selected = values(preview.turn_candidates).find(item => item.turn_id === event.target.dataset.closureTurn);
@@ -1391,7 +1474,7 @@
             form.elements.root_cause_summary.value = preview.root_cause_summary;
             const legends = { action_evidence_ids: "动作证据", before_evidence_ids: "实施前证据", after_evidence_ids: "实施后证据" };
             const previous = new FormData(form);
-            form.querySelector(".ops-case-closure-evidence-grid").innerHTML = Object.entries(legends).map(([name, label]) =>
+            form.querySelector(".aiops-case-evidence-grid").innerHTML = Object.entries(legends).map(([name, label]) =>
               `<fieldset><legend>${label}</legend>${closureEvidenceOptions(preview, name)}</fieldset>`).join("");
             Object.keys(legends).forEach(name => {
               const kept = new Set(previous.getAll(name));
@@ -1404,6 +1487,7 @@
         };
         const updateKind = () => {
           const data = new FormData(form);
+          form.querySelector('[type="submit"]').disabled = savingClosure || turns.disabled || !String(data.get("display_name") || "").trim() || !closureLines(data.get("symptoms")).length || !String(data.get("root_cause_summary") || "").trim();
           form.querySelector("[data-closure-kind]").textContent = closureLines(data.get("actions")).length &&
             data.getAll("action_evidence_ids").length && ["ADVERSE", "NOT_ACHIEVED"].includes(data.get("verification_result"))
             ? "失败经验（人工反馈）" : "诊断参考";
@@ -1415,10 +1499,13 @@
         };
         form.addEventListener("input", updateKind);
         form.addEventListener("change", updateKind);
+        updateKind();
         form.onsubmit = async (event) => {
           event.preventDefault();
           if (savingClosure || turns.disabled || !form.reportValidity()) return;
           savingClosure = true;
+          dialog.dataset.busy = "true";
+          dialog.querySelectorAll("[data-close-closure]").forEach(close=>{close.disabled=true;});
           turns.disabled = true;
           const submit = form.querySelector('[type="submit"]');
           submit.disabled = true;
@@ -1450,6 +1537,8 @@
             location.href = `./cases.html?asset_id=${encodeURIComponent(result.asset.asset_id)}`;
           } catch (error) {
             savingClosure = false;
+            delete dialog.dataset.busy;
+            dialog.querySelectorAll("[data-close-closure]").forEach(close=>{close.disabled=false;});
             turns.disabled = false;
             shell.toast(error.message || "无法完成诊断收口");
             submit.disabled = false;
@@ -1457,9 +1546,9 @@
           }
         };
       }
-      document.body.append(dialog);
+      document.querySelector("main.ops-main").append(dialog);
       dialog.querySelectorAll("[data-close-closure]").forEach((close) => {
-        close.onclick = () => dialog.close();
+        close.onclick = () => { if (!dialog.dataset.busy) dialog.close(); };
       });
       dialog.addEventListener("close", () => {
         button.disabled = false;
@@ -1475,6 +1564,10 @@
   function bindReportArtifactActions(root = document) {
     root.querySelectorAll("[data-download-report-artifact]").forEach((button) => {
       button.onclick = async () => {
+        if (state.downloadingArtifact) return;
+        state.downloadingArtifact = true;
+        const downloads = document.querySelectorAll("[data-download-report-artifact],[data-download-implementation-runbook]");
+        downloads.forEach(control => {control.disabled=true;});
         button.disabled = true;
         const label = button.textContent;
         button.textContent = "正在下载…";
@@ -1487,11 +1580,12 @@
             button.dataset.reportArtifactFilename,
             "*/*",
           );
-          shell.toast("原生 Oracle 报告已开始下载");
+          shell.toast(document.body.dataset.page === "chat" ? "报告已开始下载" : "原生 Oracle 报告已开始下载");
         } catch (error) {
           shell.toast(error.message || "无法下载原生 Oracle 报告");
         } finally {
-          button.disabled = false;
+          state.downloadingArtifact = false;
+          downloads.forEach(control => {control.disabled=false;});
           button.textContent = label;
         }
       };
@@ -1510,9 +1604,13 @@
     });
     root.querySelectorAll("[data-download-implementation-runbook]").forEach((button) => {
       button.onclick = async () => {
+        if (state.downloadingArtifact) return;
+        state.downloadingArtifact = true;
+        const downloads = document.querySelectorAll("[data-download-report-artifact],[data-download-implementation-runbook]");
+        downloads.forEach(control => {control.disabled=true;});
         button.disabled = true;
         const label = button.textContent;
-        button.textContent = "正在下载…";
+        if (document.body.dataset.page !== "chat") button.textContent = "正在下载…";
         try {
           const conversationId = encodeURIComponent(button.dataset.conversationId);
           const turnId = encodeURIComponent(button.dataset.turnId);
@@ -1528,18 +1626,57 @@
             `${profile}-${button.dataset.turnId}.${format.extension}`,
             format.mediaType,
           );
-          shell.toast(`数据库实施文档 ${format.label} 已开始下载`);
+          shell.toast(document.body.dataset.page === "chat" ? "实施文档已开始下载" : `数据库实施文档 ${format.label} 已开始下载`);
         } catch (error) {
           shell.toast(error.message || "无法下载数据库实施文档");
         } finally {
-          button.disabled = false;
+          state.downloadingArtifact = false;
+          downloads.forEach(control => {control.disabled=false;});
           button.textContent = label;
         }
       };
     });
   }
 
+  async function openConversationReportGenerator(button) {
+    if (button.disabled || button.dataset.reportDrawerOpen) return;
+    button.dataset.reportDrawerOpen = "true";
+    const dialog = document.createElement("dialog");
+    dialog.id = "conversation-report-template-dialog";
+    dialog.className = "reference-drawer admin-drawer aiops-report-template-drawer";
+    dialog.setAttribute("aria-label", "选择报告模板");
+    const reportable = values(state.turns).filter(turn=>["COMPLETED","PARTIAL"].includes(turn.status)).length;
+    const incomplete = values(state.turns).length - reportable;
+    dialog.innerHTML = `<header class="admin-drawer-header"><div><p class="eyebrow">正式会话报告</p><h2>选择报告模板</h2><p>模板版本和当前会话的诊断证据将在生成时一并冻结。</p></div><button class="icon-button" type="button" aria-label="关闭报告模板选择" data-close-report>×</button></header><form class="admin-drawer-body aiops-report-template-form"><section class="aiops-report-scope"><div><span>会话</span><strong>${esc(state.conversation?.title || "未命名诊断会话")}</strong></div><div><span>纳入报告</span><strong>${reportable} 个终态诊断轮次</strong></div>${incomplete ? `<div><span>证据边界</span><strong>${incomplete} 个轮次将记录为不完整</strong></div>` : ""}</section><div data-report-options><div class="loading-card"><span class="loading-orb"></span>正在读取会话报告模板…</div></div><footer class="admin-drawer-footer"><span>生成后将直接进入报告详情。</span><button class="secondary-button" type="button" data-close-report>取消</button><button class="primary-button" type="submit" disabled>生成报告</button></footer></form>`;
+    document.querySelector("main.ops-main").append(dialog);
+    const form = dialog.querySelector("form"), submit = form.querySelector('[type="submit"]');
+    dialog.querySelectorAll("[data-close-report]").forEach(close=>{close.onclick=()=>{if(!dialog.dataset.busy)dialog.close();};});
+    dialog.addEventListener("close",()=>{button.disabled=false;delete button.dataset.reportDrawerOpen;dialog.remove();},{once:true});
+    dialog.showModal();
+    try {
+      const templates = values(await KBotAIOpsAuth.request(`${api}/session-report-templates`)).filter(item=>item.status==="ACTIVE");
+      if (!dialog.open) return;
+      const preferred = templates.find(item=>item.is_default) || templates[0];
+      const sectionLabels = {EXECUTIVE_SUMMARY:"执行摘要",SCOPE:"诊断范围",RISK_OVERVIEW:"风险概览",TREND:"趋势分析",FINDINGS:"诊断发现",ROOT_CAUSE:"根因分析",RECOMMENDATIONS:"建议与行动",ACTIONS:"处置记录",EVIDENCE_BOUNDARY:"证据边界",EVIDENCE_APPENDIX:"证据附录"};
+      dialog.querySelector("[data-report-options]").outerHTML = templates.length ? `<fieldset class="aiops-report-template-options"><legend class="visually-hidden">会话报告模板</legend>${templates.map(item=>`<label class="aiops-report-template-option${item===preferred?" is-selected":""}"><input type="radio" name="report-template" value="${esc(item.template_ref)}" ${item===preferred?"checked":""}><span><strong>${esc(item.display_name)} ${item.is_default?"<small>默认</small>":""}</strong><small>v${esc(item.version_no ?? item.version ?? "—")} · ${item.system_defined?"系统内置":"当前业务空间"}</small><em>${esc(values(item.sections).map(kind=>sectionLabels[kind] || kind).join("、"))}</em></span></label>`).join("")}</fieldset>` : '<div class="aiops-starter-empty"><strong>暂无可用的会话报告模板</strong><p>请先到模板中心创建并启用模板。</p></div>';
+      submit.disabled = !preferred;
+      form.onchange=()=>{form.querySelectorAll(".aiops-report-template-option").forEach(option=>option.classList.toggle("is-selected",option.querySelector("input").checked));};
+      form.onsubmit=async event=>{
+        event.preventDefault();
+        const selected = templates.find(item=>item.template_ref===new FormData(form).get("report-template"));
+        if (!selected || dialog.dataset.busy) return;
+        dialog.dataset.busy="true"; button.disabled=true; dialog.querySelectorAll("button,input").forEach(control=>{control.disabled=true;});submit.textContent="正在生成…";
+        try {
+          const result=await KBotAIOpsAuth.request(`${api}/reports:generate`,{method:"POST",headers:{"Idempotency-Key":KBotAIOpsAuth.uuid()},body:JSON.stringify({conversation_id:button.dataset.generateReportConversation,template_ref:selected.template_ref,template_version_id:selected.template_version_id ?? null,period_kind:"AD_HOC"})});
+          location.href=`./report-detail.html?id=${encodeURIComponent(result.report_id)}`;
+        } catch(error) {shell.toast(error.message);}
+        finally {delete dialog.dataset.busy;button.disabled=false;dialog.querySelectorAll("button,input").forEach(control=>{control.disabled=false;});submit.textContent="生成报告";}
+      };
+    } catch(error) {dialog.close();shell.toast(error.message);}
+  }
+
   async function openReportGenerator(button) {
+    if (button.dataset.generateReportConversation && document.body.dataset.page === "chat") return openConversationReportGenerator(button);
     button.disabled = true;
     try {
       const sourceKind = button.dataset.reportSourceKind;
@@ -1617,48 +1754,83 @@
   }
 
   function turnHtml(turn) {
+    const chat = document.body.dataset.page === "chat";
     const messages = values(turn.messages);
     const user = messages.find((item) => item.message_type === "USER_MESSAGE");
     const assistant = messages.find((item) => item.message_type === "ASSISTANT_MESSAGE");
     const answerBlocks = normalizePrimaryTopSqlBlocks(turn.answer_blocks);
-    const narrativeBlocks = answerBlocks.filter((block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type)
+    const narrativeBlocks = answerBlocks.filter((block) => (chat ? chatVisibleAnswerTypes.has(block.block_type) : !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type))
       || (block.block_type === "TABLE" && block.payload?.presentation_role === "PRIMARY"));
     const blocks = narrativeBlocks.map((block) => answerBlockHtml(block, turn)).join("");
-    const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary);
+    const planMaterial = turn.ops_run_id && ["COMPLETED","PARTIAL"].includes(turn.status) && answerBlocks.some(block => block.payload?.sql_plan_acquisition)
+      ? '<details class="key-value-card aiops-action-card"><summary>已有执行计划材料</summary><p>只读取数据库已有计划、统计和运行证据，不发起估算、不重放业务 SQL、不请求业务表权限。已有计划 JSON 可通过诊断材料上传后继续分析；来源及匹配边界随材料保留。</p></details>' : "";
+    const evidence = chat ? chatTurnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary, planMaterial) : turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary);
     const orchestration = turnOrchestrationHtml(turn);
     const plan = investigationPlanHtml(turn.investigation_plan, turn.display_dictionary);
     const future = values(turn.events).filter((item) => item.event_type === "evidence.future_observation.scheduled")
       .map((item) => `<section class="ops-context-banner"><p>已安排后台未来观察，不影响本轮回答；不会补造过去窗口。</p><a href="./run-detail.html?id=${esc(encodeURIComponent(item.payload.background_run_id))}">查看进度、结果或取消采样</a></section>`).join("");
-    const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(displayText(assistant?.payload?.text || "", turn.display_dictionary))}</div>${evidence}</div></article>` : "";
+    const answer = assistant || blocks || evidence ? messageHtml("AGENT", "", "", evidence,
+      blocks || markdown.render(displayText(assistant?.payload?.text || "", turn.display_dictionary))) : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
-    const planAcquisition = turn.ops_run_id && ["COMPLETED", "PARTIAL"].includes(turn.status)
+    const planAcquisition = !chat && turn.ops_run_id && ["COMPLETED", "PARTIAL"].includes(turn.status)
       && answerBlocks.some((block) => block.payload?.sql_plan_acquisition)
       ? `<div data-sql-plan-turn="${esc(turn.turn_id)}"></div>` : "";
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(displayText(turn.error_message || `当前状态：${turn.status}`, turn.display_dictionary))}</div>`;
+    if (document.body.dataset.page === "chat") {
+      const statuses = { CREATED:["已创建","status-muted"], RUNNING:["诊断中","status-warning"], WAITING_USER:["等待补证","status-warning"], COMPLETED:["已完成","status-success"], PARTIAL:["部分完成","status-warning"], FAILED:["失败","status-danger"], CANCELLED:["已取消","status-muted"] };
+      const [statusLabel,tone] = statuses[turn.status] || [turn.status || "未知","status-muted"];
+      const conversationMessages = messages.filter(message => !(answerBlocks.length && message.message_type === "ASSISTANT_MESSAGE"));
+      const chatMessages = conversationMessages.map(message => {
+        const content = values(message.payload?.content).map(item => item.text || "").filter(Boolean).join("\n");
+        const candidate = values(turn.clarification?.candidates).find(item => item.candidate_id === message.payload?.candidate_id);
+        const text = message.message_type === "CLARIFICATION_RESPONSE" ? message.payload?.free_text || (candidate ? `已选择：${candidate.label}` : "已提交范围选择") : content || message.payload?.text || message.payload?.summary || "";
+        return messageHtml(message.role || (message.message_type === "USER_MESSAGE" ? "USER" : "AGENT"),text,message.created_at ? shell.fmt(message.created_at) : "",message.message_type === "USER_MESSAGE" ? imageAttachmentsHtml(turn.conversation_id,turn) : "");
+      }).join("");
+      const error = turn.error_message ? `<p class="aiops-diagnosis-notice" role="status">${esc(displayText(turn.error_code || "",turn.display_dictionary))}：${esc(displayText(turn.error_message,turn.display_dictionary))}</p>` : "";
+      const futureHtml = values(turn.events).filter(item => item.event_type === "evidence.future_observation.scheduled" && item.payload?.background_run_id).map(item => `<section class="key-value-card aiops-action-card"><p>已安排后台未来观察，不影响本轮回答。未来采集结果不会补造过去窗口。</p><a class="secondary-button" href="./run-detail.html?id=${esc(encodeURIComponent(item.payload.background_run_id))}">查看进度、结果或取消采样</a></section>`).join("");
+      const evidenceAnchor = turn.status === "WAITING_USER" && values(turn.events).some(item=>item.event_type === "diagnostic.input_required") ? `<span data-evidence-request-turn="${esc(turn.turn_id)}" style="display:contents"></span>` : "";
+      return `<section class="aiops-diagnosis-turn" data-turn-id="${esc(turn.turn_id)}"><p class="aiops-turn-marker"><span>第 ${esc(turn.turn_no)} 轮</span><span class="status-pill ${tone}">${esc(statusLabel)}</span></p>${chatMessages}${orchestration}${chatProgressHtml(turn)}${futureHtml}${blocks}${evidence}${evidenceAnchor}${error}</section>`;
+    }
     return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${orchestration}${plan}${progress}${future}${answer}${planAcquisition}`;
   }
 
-  async function renderConversation(conversation, turns) {
+  async function renderConversation(conversation, turns, resume = true) {
     state.conversation = conversation;
     state.turns = turns;
     document.getElementById("conversation-title").textContent = conversation.title || "诊断对话";
-    document.getElementById("conversation-context").textContent = conversation.source_type === "RUN" ? "这次对话继承自告警或巡检结果。" : "人工发起的智能运维。";
+    document.getElementById("conversation-eyebrow").textContent = turns.length ? `第 ${turns.at(-1).turn_no} 轮` : "新的运维会话";
+    document.getElementById("conversation-context").textContent = "每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。"
+      + (conversation.source_type === "RUN" ? "已继承来源 RUN。" : "");
+    const headerActions = document.getElementById("conversation-actions");
+    headerActions.innerHTML = "";
     const panel = document.getElementById("message-list");
     panel.innerHTML = conversation.source_run_id ? '<div class="ops-context-banner">已关联来源诊断；后续回答只会引用当前 Turn 明确关联的证据。</div>' : "";
     turns.forEach((turn) => panel.insertAdjacentHTML("beforeend", turnHtml(turn)));
+    if (document.body.dataset.page === "chat") turns.forEach(turn => {
+      const progress = panel.querySelector(`[data-turn-progress="${CSS.escape(String(turn.turn_id))}"]`);
+      if (!progress) return;
+      progress._chatEvents = values(turn.events).map(event => ({...event,key:String(event.sequence_no)}));
+      progress._chatPlan = turn.investigation_plan;
+      progress._chatDictionary = turn.display_dictionary || {};
+      progress.dataset.startedAt = String(Date.now());
+    });
     mountSqlPlanAcquisition(panel, turns);
-    const hasCompletedResult = turns.some((turn) => turn.ops_run_id && ["COMPLETED", "PARTIAL"].includes(turn.status));
-    const hasActiveTurn = turns.some((turn) => !["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(turn.status));
+    const hasCompletedResult = turns.length > 0;
+    const hasActiveTurn = turns.some((turn) => !terminalTurnStatuses.has(turn.status));
     if (hasCompletedResult) {
       const action = reportAction({
         conversationId: conversation.conversation_id,
         sourceKind: "CHAT",
       });
-      panel.insertAdjacentHTML("beforeend", hasActiveTurn
-        ? '<div class="ops-context-banner">会话仍有进行中的 Turn；全部结束后可生成覆盖整个会话的正式报告。</div>'
-        : action);
+      if (hasActiveTurn && document.body.dataset.page !== "chat") panel.insertAdjacentHTML("beforeend", '<div class="ops-context-banner">会话仍有进行中的 Turn；全部结束后可生成覆盖整个会话的正式报告。</div>');
+      else if (!hasActiveTurn) {
+        headerActions.innerHTML = action;
+        headerActions.querySelector("[data-generate-report-conversation]").textContent = "生成会话报告";
+        bindReportActions(headerActions);
+      }
     }
     await hydrateConversationImages(panel);
+    if (document.body.dataset.page === "chat") await loadChatEvidenceRequest(turns.at(-1), panel);
     await Promise.all(turns.filter((turn) => turn.status === "WAITING_USER" && turn.ops_run_id).map(async (turn) => {
       const progress = panel.querySelector(`[data-turn-progress="${String(turn.turn_id)}"]`);
       if (!progress) return;
@@ -1685,8 +1857,28 @@
     bindReportActions(panel);
     bindPrimaryResultActions(panel);
     bindClarificationActions(panel);
-    setComposerAvailability(!pendingClarificationTurn());
-    resumeActiveTurns(conversation.conversation_id, turns);
+    bindStorageFactOptions(panel);
+    globalThis.AIOpsChatCharts?.mount(panel);
+    panel.querySelectorAll("[data-copy-runbook-command]").forEach(button => {
+      button.onclick = async () => {
+        try { await navigator.clipboard.writeText(button.dataset.copyRunbookCommand); shell.toast("命令已复制"); }
+        catch (error) { shell.toast(error.message || "无法复制命令"); }
+      };
+    });
+    setComposerAvailability(!pendingClarificationTurn() && !turns.some(turn => !terminalTurnStatuses.has(turn.status)));
+    if(resume) resumeActiveTurns(conversation.conversation_id, turns);
+  }
+
+  async function prepareChatTurn(receipt) {
+    const conversationId = encodeURIComponent(receipt.conversation_id);
+    const turnId = encodeURIComponent(receipt.turn_id);
+    const [conversation,turn] = await Promise.all([
+      KBotAIOpsAuth.request(`${api}/conversations/${conversationId}`),
+      KBotAIOpsAuth.request(`${api}/conversations/${conversationId}/turns/${turnId}`),
+    ]);
+    const turns = state.conversation?.conversation_id === receipt.conversation_id ? values(state.turns).filter(item => item.turn_id !== receipt.turn_id) : [];
+    await renderConversation(conversation,[...turns,turn],false);
+    return document.querySelector(`[data-turn-progress="${CSS.escape(String(receipt.turn_id))}"]`);
   }
 
   function mountSqlPlanAcquisition(panel, turns) {
@@ -1716,18 +1908,18 @@
 
   function resetConversationView({ agentSelected = false } = {}) {
     state.conversation = null;
+    state.turns = [];
     document.querySelectorAll(".ops-workspace-item").forEach((button) => button.removeAttribute("aria-current"));
     syncAgentTargetContext();
-    document.getElementById("conversation-title").textContent = agentSelected
-      ? "开始一次智能运维问答"
-      : "请先选择 Agent";
-    document.getElementById("conversation-context").textContent = agentSelected
-      ? "可以选择历史会话，或在下方发起一次新诊断。"
-      : "选择 Agent 后可直接描述业务系统和问题，也可以从左侧打开历史会话。";
-    document.getElementById("message-list").innerHTML = agentSelected
-      ? starterHomeHtml()
-      : '<div class="ops-empty">请选择 Agent 开始问答，或从左侧打开历史会话。</div>';
-    if (agentSelected) bindStarterButtons(document.getElementById("message-list"));
+    document.getElementById("conversation-title").textContent = "新运维会话";
+    const source = continuationSource();
+    document.getElementById("conversation-eyebrow").textContent = source ? "继续深入诊断" : "新的运维会话";
+    document.getElementById("conversation-context").textContent = "每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。" + (source ? `已继承来源 ${source.sourceType}。` : "");
+    document.getElementById("conversation-actions").innerHTML = "";
+    document.getElementById("message-list").innerHTML = starterHomeHtml();
+    globalThis.AIOpsChatCharts?.mount(document.getElementById("message-list"));
+    bindStarterButtons(document.getElementById("message-list"));
+    setComposerAvailability(agentSelected);
   }
 
   const starterCategoryLabels = {
@@ -1757,7 +1949,7 @@
     const shortcuts = availableCapabilityShortcuts();
     if (!shortcuts.length) return "";
     const cards = shortcuts.map((item) => `<button class="ops-starter-card" type="button" data-capability-shortcut="${esc(item.capability)}"><strong>${esc(item.title)}</strong><span>${esc(item.description)}</span><small>点击后开始查询</small></button>`).join("");
-    return `<section class="ops-starter-section"><h4>Agent 能力</h4><div class="ops-starter-grid">${cards}</div></section>`;
+    return `<section class="ops-starter-section aiops-starter-section"><h3>Agent 能力</h3><div class="ops-starter-grid aiops-starter-grid">${cards}</div></section>`;
   }
 
   function starterCardHtml(item) {
@@ -1774,16 +1966,16 @@
       let rows = values(items).filter((item) => item.category === category);
       if (recommendedOnly) rows = rows.slice(0, category === "RECOMMENDED" ? 4 : category === "QUERY" ? 2 : 3);
       if (!rows.length) return "";
-      return `<section class="ops-starter-section"><h4>${esc(starterCategoryLabels[category] || category)}</h4><div class="ops-starter-grid">${rows.map(starterCardHtml).join("")}</div></section>`;
+      return `<section class="ops-starter-section aiops-starter-section"><h3>${esc(starterCategoryLabels[category] || category)}</h3><div class="ops-starter-grid aiops-starter-grid">${rows.map(starterCardHtml).join("")}</div></section>`;
     }).join("");
   }
 
   function starterHomeHtml() {
     const capabilitySection = capabilityShortcutSectionHtml();
-    if (!state.starters.length && !capabilitySection) return state.starterCatalogLoaded
-      ? '<div class="ops-empty">功能目录暂不可用，仍可在下方直接输入运维问题。</div>'
-      : '<div class="ops-empty">正在读取当前 Agent 可用功能…</div>';
-    return `<section class="ops-starter-home"><header><h3>今天要处理什么？</h3><p>选择一个功能直接执行，或在下方输入任何运维问题。</p></header>${capabilitySection}${starterSectionsHtml(state.starters, { recommendedOnly: true })}<button class="ops-button ops-starter-more" type="button" data-open-all-starters>查看全部功能</button></section>`;
+    const functions = state.starters.length || capabilitySection
+      ? `${capabilitySection}${starterSectionsHtml(state.starters, { recommendedOnly: true })}<footer><button id="open-starter-menu" type="button" data-open-all-starters>查看全部功能</button></footer>`
+      : '<div class="aiops-starter-empty"><strong>当前没有可用的快捷功能</strong><p>仍可在下方描述异常现象、影响范围和发生时间来开始诊断。</p></div>';
+    return `<section class="ops-starter-home" aria-labelledby="aiops-starter-home-title"><header><span class="aiops-diagnosis-empty-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M8 13h8 M8 17h6"/></svg></span><h2 id="aiops-starter-home-title">今天要处理什么？</h2><p>可以直接询问业务系统、监控告警、巡检报告、运维知识，或描述故障现象。</p></header>${functions}</section>`;
   }
 
   function bindStarterButtons(root) {
@@ -1833,11 +2025,16 @@
   function openStarterMenu() {
     if (!document.getElementById("agent-select").value) return shell.toast("请先选择 Agent");
     const dialog = document.getElementById("starter-dialog");
-    document.getElementById("starter-dialog-title").textContent = "全部功能";
-    document.getElementById("starter-dialog-description").textContent = "功能会根据 Agent 能力筛选；执行前需要明确选择业务系统和数据库 Target。";
+    document.getElementById("starter-dialog-title").textContent = "全部快捷功能";
+    document.getElementById("starter-dialog-description").textContent = "按任务类型查找当前 Agent 可用的功能；执行前需要明确选择业务系统和数据库 Target。";
     const content = document.getElementById("starter-dialog-content");
-    content.innerHTML = capabilityShortcutSectionHtml() + starterSectionsHtml(state.starters)
-      || '<div class="ops-empty">当前没有可展示的功能，请直接在聊天框中描述问题。</div>';
+    content.className = "admin-drawer-body aiops-starter-catalog";
+    content.innerHTML = (capabilityShortcutSectionHtml() + starterSectionsHtml(state.starters)
+      || '<div class="aiops-starter-empty"><strong>当前没有可用的快捷功能</strong><p>关闭抽屉后仍可直接输入问题。</p></div>')
+      + '<footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close-starter>取消</button></footer>';
+    content.querySelector('[data-close-starter]').onclick = () => dialog.close();
+    dialog.querySelector('form').onsubmit = event => event.preventDefault();
+    content.querySelectorAll('.ops-starter-card').forEach(button => button.classList.add('aiops-starter-option'));
     bindStarterButtons(content);
     if (!dialog.open) dialog.showModal();
   }
@@ -1859,6 +2056,7 @@
       field.required ? "required" : "",
       field.min !== undefined ? `min="${esc(field.min)}"` : "",
       field.max !== undefined ? `max="${esc(field.max)}"` : "",
+      field.max_length !== undefined ? `maxlength="${esc(field.max_length)}"` : "",
       isDateTime ? 'step="1"' : "",
       field.pattern ? `pattern="${esc(field.pattern)}"` : "",
       field.placeholder ? `placeholder="${esc(field.placeholder)}"` : "",
@@ -1872,24 +2070,11 @@
     }
     const windowField = item?.starter_id === "database.sql.top-current" && ["begin_time", "end_time"].includes(field.name);
     const hidden = windowField && (initialParameters.window || "15m") !== "custom";
-    return `<label${windowField ? " data-top-sql-window-field" : ""}${hidden ? " hidden" : ""}><span>${esc(field.label)}${field.required || windowField ? " *" : ""}</span>${control}${field.help ? `<small>${esc(field.help)}</small>` : ""}</label>`;
+    return `<label class="control-field"${windowField ? " data-top-sql-window-field" : ""}${hidden ? " hidden" : ""}><span class="field-label">${esc(field.label)}</span>${control}${field.help ? `<small>${esc(field.help)}</small>` : ""}</label>`;
   }
 
   function starterParameterGroupsHtml(item, initialParameters = {}) {
-    const groups = new Map();
-    values(item.input_schema).forEach((field) => {
-      const group = field.group || "参数";
-      if (!groups.has(group)) groups.set(group, []);
-      groups.get(group).push(field);
-    });
-    return [...groups.entries()].map(([group, fields]) => {
-      const help = group === "高级参数"
-        ? "仅在需要覆盖自动识别结果时填写。"
-        : fields.every((field) => !field.required)
-          ? "所有字段均可留空，系统会继续使用数据库事实、Target 运维事实和默认策略。"
-          : "请填写带星号的必填参数后继续。";
-      return `<section class="ops-starter-parameter-group"><header><h4>${esc(group)}</h4><p>${help}</p></header><div>${fields.map((field) => starterParameterHtml(field, initialParameters, item)).join("")}</div></section>`;
-    }).join("");
+    return values(item.input_schema).map(field => starterParameterHtml(field, initialParameters, item)).join("");
   }
 
   function compatibleStarterSystems(item) {
@@ -1915,13 +2100,13 @@
   }
 
   function starterTargetOptionsHtml(system) {
-    if (!system) return '<p class="ops-starter-resource-empty">请先选择业务系统。</p>';
-    return `<fieldset class="ops-starter-target-list"><legend>数据库 Target</legend>${values(system.targets).map((target) => `<label class="ops-starter-target-option${starterTargetSelectable(target) ? "" : " is-disabled"}"><input type="radio" name="starter_resource_id" value="${esc(target.resource_id)}" required${starterTargetSelectable(target) ? "" : " disabled"}><span><strong>${esc(target.target_name)}</strong><small>${esc(target.resource_name)} · ${esc(target.db_type)}</small><em>${esc(starterTargetStatus(target))}</em></span></label>`).join("")}</fieldset>`;
+    if (!system) return "";
+    return `<fieldset class="aiops-starter-target-list"><legend>数据库 Target</legend>${values(system.targets).map((target) => `<label class="aiops-starter-target-option${starterTargetSelectable(target) ? "" : " is-disabled"}"><input type="radio" name="starter_resource_id" value="${esc(target.resource_id)}" required${starterTargetSelectable(target) ? "" : " disabled"}><span><strong>${esc(target.target_name)}</strong><small>${esc(target.resource_name)} · ${esc(target.db_type)}</small><em>${esc(starterTargetStatus(target))}</em></span></label>`).join("")}</fieldset>`;
   }
 
   function starterResourceScopeHtml(item) {
     const systems = compatibleStarterSystems(item);
-    return `<section class="ops-starter-resource-scope"><header><h4>执行资源</h4><p>资源来自当前 Agent 版本的授权边界，提交后由服务端再次校验。</p></header><label><span>业务系统 *</span><select name="starter_business_system_id" required><option value="">请选择业务系统</option>${systems.map((system) => `<option value="${esc(system.business_system_id)}">${esc(system.display_name)}（${esc(system.environment)}）</option>`).join("")}</select></label><div data-starter-target-options>${systems.length ? starterTargetOptionsHtml(null) : '<p class="ops-starter-resource-empty">当前 Agent 没有与该功能兼容的数据库资源。</p>'}</div></section>`;
+    return `<section class="aiops-starter-resource-scope"><header><strong>执行资源</strong><p>资源来自当前 Agent 版本的授权边界，提交后由服务端再次校验。</p></header><label class="control-field"><span class="field-label">业务系统</span><select name="starter_business_system_id" required><option value="" disabled selected>请选择业务系统</option>${systems.map((system) => `<option value="${esc(system.business_system_id)}">${esc(system.display_name)}（${esc(system.environment)}）</option>`).join("")}</select></label><div data-starter-target-options>${systems.length ? "" : '<p class="table-secondary">当前 Agent 没有与该功能兼容的数据库资源。</p>'}</div></section>`;
   }
 
   function selectStarter(starterId, initialParameters = {}) {
@@ -1933,7 +2118,8 @@
     document.getElementById("starter-dialog-description").textContent = item.description;
     const content = document.getElementById("starter-dialog-content");
     const isRunbook = item.execution_mode === "RUNBOOK";
-    content.innerHTML = `<div class="ops-starter-parameters">${starterResourceScopeHtml(item)}${starterParameterGroupsHtml(item, initialParameters)}</div><div class="ops-starter-form-actions"><button type="button" data-starter-back>返回功能列表</button>${isRunbook ? '<button type="button" data-starter-auto>使用自动配置生成</button>' : ""}<button class="primary" type="button" data-starter-submit>${isRunbook ? "按当前参数生成" : "开始执行"}</button></div>`;
+    content.className = "admin-drawer-body aiops-starter-parameter-form";
+    content.innerHTML = `${starterResourceScopeHtml(item)}${isRunbook ? '<div class="aiops-starter-mode-actions"><button class="secondary-button" type="button" data-starter-auto>使用自动配置生成</button><span>留空参数将由 Target 事实与只读预检自动解析。</span></div>' : ""}${starterParameterGroupsHtml(item, initialParameters)}<footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-starter-back>返回全部功能</button><button class="primary-button" type="submit" data-starter-submit>${isRunbook ? "按当前参数生成" : "开始执行"}</button></footer>`;
     if (item.starter_id === "database.sql.top-current") {
       const windowSelect = content.querySelector('[name="window"]');
       const updateWindowFields = () => {
@@ -1954,8 +2140,10 @@
     systemSelect.onchange = () => {
       const system = systems.find((row) => row.business_system_id === systemSelect.value);
       content.querySelector("[data-starter-target-options]").innerHTML = starterTargetOptionsHtml(system);
+      content.querySelectorAll('[name="starter_resource_id"]').forEach(input => { input.onchange = () => content.querySelectorAll('.aiops-starter-target-option').forEach(label => label.classList.toggle('is-selected', label.querySelector('input').checked)); });
     };
     const submitSelection = (automatic = false) => {
+      if (dialog.dataset.busy === 'true') return;
       if (!systemSelect.reportValidity()) return;
       const system = systems.find((row) => row.business_system_id === systemSelect.value);
       const selectedResource = content.querySelector('[name="starter_resource_id"]:checked');
@@ -1979,14 +2167,18 @@
           parameters[field.name] = value;
         }
       }
-      const actionButtons = content.querySelectorAll("[data-starter-auto],[data-starter-submit]");
-      actionButtons.forEach((button) => { button.disabled = true; });
+      const controls = Array.from(dialog.querySelectorAll('input,select,textarea,button'), control => ({control,disabled:control.disabled}));
+      dialog.dataset.busy = 'true';
+      controls.forEach(({control}) => { control.disabled = true; });
       executeStarter(item, parameters, { system, target })
         .catch((error) => shell.toast(error.message))
-        .finally(() => actionButtons.forEach((button) => { button.disabled = false; }));
+        .finally(() => {
+          delete dialog.dataset.busy;
+          controls.forEach(({control,disabled}) => { control.disabled = disabled; });
+        });
     };
     if (isRunbook) content.querySelector("[data-starter-auto]").onclick = () => submitSelection(true);
-    content.querySelector("[data-starter-submit]").onclick = () => submitSelection(false);
+    dialog.querySelector('form').onsubmit = event => { event.preventDefault(); submitSelection(false); };
     if (!dialog.open) dialog.showModal();
   }
 
@@ -2018,28 +2210,73 @@
       body: JSON.stringify(body),
     });
     document.getElementById("starter-dialog").close();
-    const panel = document.getElementById("message-list");
-    panel.innerHTML = "";
-    panel.insertAdjacentHTML("beforeend", messageHtml("USER", starterSubmittedText(item, parameters, selection)));
-    panel.insertAdjacentHTML("beforeend", '<section id="live-progress" class="ops-context-banner ops-progress" aria-live="polite">正在按所选功能建立确定性执行计划…</section>');
-    await followTurn(receipt.conversation_id, receipt.turn_id, document.getElementById("live-progress"));
+    const progress = await prepareChatTurn(receipt);
+    if(progress) await followTurn(receipt.conversation_id, receipt.turn_id, progress);
     await loadConversation(receipt.conversation_id);
     await loadConversationList();
   }
 
   function setComposerAvailability(enabled) {
+    state.submitting = !enabled;
     const form = document.getElementById("conversation-form");
     form.elements.message.disabled = !enabled;
-    form.querySelector('button[type="submit"]').disabled = !enabled;
-    document.getElementById("open-starter-menu").disabled = !enabled;
+    updateComposerSubmitAvailability();
+    document.getElementById("add-evidence").disabled = !enabled;
+    document.getElementById("evidence-file").disabled = !enabled;
+    document.querySelectorAll("[data-open-all-starters]").forEach((button) => { button.disabled = !enabled; });
+    document.querySelectorAll("[data-primary-follow-up]").forEach(button => { button.disabled = !enabled; });
+    document.querySelectorAll("[data-remove-evidence]").forEach(button => { button.disabled = !enabled; });
+    const label = state.conversation ? "发送新问题" : "开始诊断";
+    form.querySelector('button[type="submit"]').setAttribute("aria-label", label);
+    form.querySelector('button[type="submit"]').title = label;
+  }
+
+  function updateComposerSubmitAvailability() {
+    const form = document.getElementById("conversation-form");
+    form.querySelector('button[type="submit"]').disabled = form.elements.message.disabled
+      || !(form.elements.message.value.trim() || state.selectedFiles.length);
+  }
+
+  function renderSelectedFiles() {
+    const preview = document.getElementById("upload-preview");
+    preview.innerHTML = state.selectedFiles.map((file,index) => `<span>${esc(file.name)} <button class="text-button" type="button" data-remove-evidence="${index}">移除</button></span>`).join("");
+    preview.querySelectorAll("[data-remove-evidence]").forEach(button => {
+      button.onclick = () => {
+        if(state.submitting) return;
+        state.selectedFiles.splice(Number(button.dataset.removeEvidence),1);
+        renderSelectedFiles();
+        updateComposerSubmitAvailability();
+      };
+    });
   }
 
   function clearConversationUrl() {
     history.replaceState(null, "", "./chat.html");
   }
 
+  function continuationSource() {
+    const params = new URLSearchParams(location.search);
+    const sourceType = params.get("sourceType"), sourceId = params.get("sourceId");
+    return sourceId && ["RUN","SITUATION"].includes(sourceType) ? {sourceType,sourceId} : null;
+  }
+
   async function archiveConversation(id, title) {
-    if (!confirm(`确认删除会话“${title || "未命名会话"}”吗？\n\n会话将从聊天历史中移除；关联的诊断、证据和变更审计记录仍会保留。`)) return;
+    const dialog = document.getElementById('conversation-confirm-dialog');
+    dialog.className = "confirm-dialog confirm-dialog--danger";
+    document.getElementById("conversation-confirm-title").textContent = "删除会话？";
+    dialog.querySelector(".confirm-dialog-mark").textContent = "!";
+    dialog.querySelector(".confirm-dialog-kicker").textContent = "请确认此操作";
+    const confirmButton = dialog.querySelector('[value="confirm"]');
+    confirmButton.className = "danger-button";
+    confirmButton.textContent = "删除会话";
+    document.getElementById('conversation-confirm-message').textContent = `“${title || '未命名诊断会话'}”将从会话列表中删除。已保存的诊断审计记录不受影响。`;
+    dialog.returnValue = 'cancel';
+    const approved = await new Promise(resolve => {
+      dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), {once:true});
+      dialog.showModal();
+      dialog.querySelector('[value="cancel"]').focus();
+    });
+    if (!approved) return;
     await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
@@ -2123,13 +2360,18 @@
     const list = document.getElementById("conversation-list");
     bindConversationMenuEvents();
     closeConversationMenu();
-    list.innerHTML = rows.length ? conversationGroups(rows).map((group) => `<section class="ops-conversation-group" aria-label="${esc(group.label)}"><h3>${esc(group.label)}</h3>${group.items.map((item) => `<div class="ops-workspace-row"><button class="ops-workspace-item" type="button" data-id="${esc(item.conversation_id)}" ${String(item.conversation_id) === String(state.conversation?.conversation_id) ? 'aria-current="true"' : ""} title="${esc(`${item.title || "未命名会话"} · ${shell.fmt(item.updated_at)}`)}"><strong>${esc(item.title || "未命名会话")}</strong><small>${esc(shell.fmt(item.updated_at))}${item.source_type ? ` · ${esc(item.source_type)}` : ""}</small></button><button class="ops-workspace-more" type="button" data-delete-id="${esc(item.conversation_id)}" data-delete-title="${esc(item.title || "未命名会话")}" aria-label="会话操作：${esc(item.title || "未命名会话")}" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">⋮</span></button></div>`).join("")}</section>`).join("") : '<div class="ops-empty">还没有诊断会话</div>';
+    list.innerHTML = rows.length ? conversationGroups(rows).map((group) => `<section class="ops-conversation-group" aria-label="${esc(group.label)}"><h3>${esc(group.label)}</h3>${group.items.map((item, index) => `<div class="ops-workspace-row"><button class="ops-workspace-item" type="button" data-id="${esc(item.conversation_id)}" ${String(item.conversation_id) === String(state.conversation?.conversation_id) ? 'aria-current="true"' : ""} title="${esc(`${item.title || "未命名会话"} · ${shell.fmt(item.updated_at)}`)}"><span class="agent-chat-session-badge" aria-hidden="true">${esc(compactConversationLabel(item.title, index))}</span><span class="conversation-copy"><strong>${esc(item.title || "未命名会话")}</strong><small>${esc(shell.fmt(item.updated_at))}</small></span></button><button class="ops-workspace-more" type="button" data-delete-id="${esc(item.conversation_id)}" data-delete-title="${esc(item.title || "未命名会话")}" aria-label="会话操作：${esc(item.title || "未命名会话")}" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">⋮</span></button></div>`).join("")}</section>`).join("") : '<div class="aiops-diagnosis-rail-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M8 13h8 M8 17h6"/></svg><strong>还没有运维会话</strong><span>选择 Agent 后，用自然语言描述业务系统和问题。</span></div>';
     list.querySelectorAll(".ops-workspace-item").forEach((button) => {
       button.onclick = () => loadConversation(button.dataset.id).catch((error) => shell.toast(error.message));
     });
     list.querySelectorAll(".ops-workspace-more").forEach((button) => {
       button.onclick = () => showConversationMenu(button);
     });
+  }
+
+  function compactConversationLabel(title, index) {
+    const text = String(title || "").trim().replace(/\s+/g, "");
+    return Array.from(text).slice(0, 2).join("") || String(Math.min(index + 1, 99));
   }
 
   function mergePinnedConversation(rows, pinned) {
@@ -2151,7 +2393,7 @@
       resetConversationView();
       return;
     }
-    setComposerAvailability(!pendingClarificationTurn());
+    setComposerAvailability(!pendingClarificationTurn() && !values(state.turns).some(turn => !terminalTurnStatuses.has(turn.status)));
     await loadConversationStarters();
   }
 
@@ -2175,6 +2417,7 @@
     pending.timer = null;
     pending.message.classList.remove("is-typing");
     pending.message.setAttribute("aria-busy", "false");
+    if(pending.finalizing) pending.content.classList.remove("is-streaming");
     pending.waiters.splice(0).forEach((resolve) => resolve());
   }
 
@@ -2218,7 +2461,7 @@
         "investigation.replanned", "diagnostic.query_approval_required",
         "diagnostic.query_approved", "diagnostic.query_rejected",
       ].includes(event)) {
-        appendProgress(progress, event, payload, id);
+        appendProgress(progress, event, payload, id, data?.occurred_at);
       }
       if (["investigation.planned", "investigation.replanned"].includes(event)) {
         showInvestigationPlan(progress, payload.plan);
@@ -2236,6 +2479,10 @@
         if (!pending) {
           progress.insertAdjacentHTML("afterend", messageHtml("AGENT", ""));
           const message = progress.nextElementSibling;
+          if(document.body.dataset.page === "chat") {
+            message.querySelector("header").insertAdjacentHTML("beforeend","<small>正在生成结论</small>");
+            message.querySelector(".ops-message-content").classList.add("is-streaming");
+          }
           pending = {
             message,
             content: message.querySelector(".ops-message-content"),
@@ -2315,7 +2562,7 @@
   async function submitConversation(event) {
     event.preventDefault();
     const form = event.currentTarget;
-    const button = form.querySelector('button[type="submit"]');
+    if (form.elements.message.disabled) return;
     const agentId = document.getElementById("agent-select").value;
     const text = form.elements.message.value.trim();
     const selectedFiles = state.selectedFiles;
@@ -2324,7 +2571,9 @@
     if (pendingClarificationTurn()) return shell.toast("请先在当前轮回答范围确认");
     if (!agentId) return shell.toast("请先选择 Agent");
     if (!text && !selectedFiles.length) return shell.toast("请输入问题或上传诊断材料");
-    button.disabled = true;
+    setComposerAvailability(false);
+    document.getElementById("agent-select").disabled = true;
+    document.getElementById("new-conversation").disabled = true;
     try {
       const path = state.conversation
         ? `${api}/conversations/${state.conversation.conversation_id}/turns`
@@ -2350,6 +2599,8 @@
       const body = state.conversation
         ? { content }
         : { agent_id: agentId, content };
+      const source = state.conversation ? null : continuationSource();
+      if (source) body[source.sourceType === "RUN" ? "source_run_id" : "source_situation_id"] = source.sourceId;
       if (sqlSelection) body.sql_diagnosis = { selection_ref: sqlSelection };
       const receipt = await KBotAIOpsAuth.request(path, {
         method: "POST",
@@ -2357,32 +2608,38 @@
         body: JSON.stringify(body),
       });
       form.reset(); state.selectedFiles = []; document.getElementById("upload-preview").textContent = "";
-      const panel = document.getElementById("message-list");
-      const submittedText = [
-        text,
-        ...selectedFiles.map((file) => `已上传诊断材料：${file.name}`),
-      ].filter(Boolean).join("\n\n");
-      panel.insertAdjacentHTML("beforeend", messageHtml("USER", submittedText));
-      panel.insertAdjacentHTML("beforeend", '<section id="live-progress" class="ops-context-banner ops-progress" aria-live="polite">正在建立诊断计划：先固定执行上下文，再理解问题并选择证据…</section>');
-      const progress = document.getElementById("live-progress");
-      await followTurn(receipt.conversation_id, receipt.turn_id, progress);
+      const progress = await prepareChatTurn(receipt);
+      if(progress) await followTurn(receipt.conversation_id, receipt.turn_id, progress);
       await loadConversation(receipt.conversation_id);
       await loadConversationList();
-    } catch (error) { shell.toast(error.message); } finally { button.disabled = false; }
+    } catch (error) { shell.toast(error.message); } finally {
+      setComposerAvailability(!pendingClarificationTurn() && !values(state.turns).some(turn => !terminalTurnStatuses.has(turn.status)));
+      document.getElementById("agent-select").disabled = false;
+      document.getElementById("new-conversation").disabled = false;
+    }
   }
 
   async function initChat() {
+    const starterDialog = document.getElementById('starter-dialog');
+    starterDialog.querySelector('[data-close-starter]').onclick = () => {
+      if (starterDialog.dataset.busy !== 'true') starterDialog.close();
+    };
+    starterDialog.addEventListener('cancel', event => { if (starterDialog.dataset.busy === 'true') event.preventDefault(); });
     const workspace = document.getElementById("chat-workspace");
     const railToggle = document.getElementById("chat-rail-toggle");
+    const sessionToggle = document.getElementById("chat-session-toggle");
     const setRailCollapsed = (collapsed) => {
       workspace.classList.toggle("is-rail-collapsed", collapsed);
       railToggle.setAttribute("aria-expanded", String(!collapsed));
-      railToggle.setAttribute("aria-label", collapsed ? "展开诊断会话" : "收起诊断会话");
+      railToggle.setAttribute("aria-label", collapsed ? "展开会话列表" : "收起会话列表");
+      sessionToggle.setAttribute("aria-expanded", String(!collapsed));
     };
     railToggle.onclick = () => setRailCollapsed(!workspace.classList.contains("is-rail-collapsed"));
+    sessionToggle.onclick = railToggle.onclick;
     const select = document.getElementById("agent-select");
     await agents();
-    renderAgentOptions();
+    renderAgentOptions(state.agents[0]?.agent_id || "");
+    document.getElementById("agent-empty-notice").hidden = Boolean(state.agents.length);
     select.onchange = () => {
       clearConversationUrl();
       syncAgentTargetContext();
@@ -2395,240 +2652,55 @@
       resetConversationView({ agentSelected: true });
     };
     document.getElementById("conversation-form").onsubmit = submitConversation;
-    document.getElementById("open-starter-menu").onclick = openStarterMenu;
+    document.getElementById("add-evidence").onclick = () => document.getElementById("evidence-file").click();
+    const question = document.getElementById("conversation-form").elements.message;
+    question.oninput = updateComposerSubmitAvailability;
+    question.onkeydown = (event) => {
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+        event.preventDefault();
+        const form = document.getElementById("conversation-form");
+        if (!form.querySelector('button[type="submit"]').disabled) form.requestSubmit();
+      }
+    };
     document.getElementById("evidence-file").onchange = (event) => {
       const files = Array.from(event.target.files || []);
       if (files.length > maxDiagnosticFiles) {
         event.target.value = "";
         state.selectedFiles = [];
+        renderSelectedFiles();
+        updateComposerSubmitAvailability();
         return shell.toast(`单次最多选择 ${maxDiagnosticFiles} 份诊断材料`);
       }
       if (files.some((file) => file.size > 20 * 1024 * 1024)) {
         event.target.value = "";
         state.selectedFiles = [];
+        renderSelectedFiles();
+        updateComposerSubmitAvailability();
         return shell.toast("每份诊断材料不能超过 20 MiB");
       }
       state.selectedFiles = files;
-      document.getElementById("upload-preview").textContent = files.length
-        ? `已选择 ${files.length} 份诊断材料：${files.map((file) => file.name).join("、")}（点击发送时上传）`
-        : "";
+      updateComposerSubmitAvailability();
+      renderSelectedFiles();
     };
     await loadConversationList();
+    if (!state.conversation) resetConversationView({agentSelected:Boolean(select.value)});
   }
 
   function renderAgentOptions(preferredId = "") {
     const select = document.getElementById("agent-select");
     const rows = state.agents;
     select.disabled = false;
-    select.innerHTML = '<option value="">选择 Agent</option>' + rows.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
+    select.innerHTML = '<option value="" disabled>选择 Agent</option>' + rows.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))} · ${values(item.allowed_business_system_ids).length} 个业务系统</option>`).join("");
     if (rows.some((item) => String(item.agent_id) === String(preferredId))) select.value = preferredId;
   }
 
-  function continueForm(source, title) {
-    const allowed = state.agents;
-    const inherited = source.source_run_id ? "自动诊断结果与证据" : "告警情境及其监控信号";
-    const prompt = source.source_run_id
-      ? `请基于“${title}”的自动诊断结果继续分析：`
-      : `请基于告警情境“${title}”开始诊断，并核验关联监控证据：`;
-    return `<div class="ops-inline-dialog"><h3>继续深入诊断</h3><p>系统会在服务端继承本次${inherited}；后续人工对话才可能按 Agent 权限产生审批待办。</p><form id="continue-form" class="ops-form"><div class="ops-field span-12"><label>Agent</label><select name="agent_id" required><option value="">请选择</option>${allowed.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("")}</select></div><div class="ops-field span-12"><label>继续追问</label><textarea name="message" required>${esc(prompt)}</textarea></div><div class="ops-filter-actions"><button class="primary" type="submit">进入对话</button></div></form></div>`;
-  }
-
-  async function bindContinue(source) {
-    const form = document.getElementById("continue-form");
-    if (!form) return;
-    form.onsubmit = async (event) => {
-      event.preventDefault();
-      const fields = Object.fromEntries(new FormData(form));
-      const body = {
-        agent_id: fields.agent_id,
-        content: [{ content_type: "TEXT", text: fields.message }],
-      };
-      if (source.source_run_id) body.source_run_id = source.source_run_id;
-      if (source.source_situation_id) body.source_situation_id = source.source_situation_id;
-      try {
-        const result = await KBotAIOpsAuth.request(`${api}/conversations`, { method: "POST", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify(body) });
-        location.href = `./chat.html?conversation=${encodeURIComponent(result.conversation_id)}`;
-      } catch (error) { shell.toast(error.message); }
-    };
-  }
-
-  function scheduleSituationRefresh(item, delayMs) {
-    window.clearTimeout(situationRefreshTimer);
-    situationRefreshTimer = window.setTimeout(() => {
-      loadSituation(item, { background: true });
-    }, delayMs);
-  }
-
-  async function loadSituation(item, { background = false } = {}) {
-    const situationId = String(item.situation_id);
-    if (activeSituationId !== situationId) return;
-    try {
-      const detail = await KBotAIOpsAuth.request(`${api}/situations/${encodeURIComponent(situationId)}`);
-      if (activeSituationId !== situationId) return;
-      document.getElementById("case-title").textContent = detail.title;
-      const panel = document.getElementById("case-detail");
-      const selectedAgentId = document.getElementById("case-filters")?.elements.agent_id.value || "";
-      let run = null; let result = null;
-      if (detail.run_ids.length) {
-        const runs = await Promise.all(detail.run_ids.map((runId) => KBotAIOpsAuth.request(`${api}/runs/${runId}`)));
-        run = runs.find((candidate) => !selectedAgentId || String(candidate.agent_id) === selectedAgentId) || runs[0];
-        try {
-          result = await KBotAIOpsAuth.request(`${api}/runs/${run.ops_run_id}/result`);
-        } catch (error) {
-          if (error.status !== 404 && error.status !== 409) throw error;
-        }
-      }
-      if (activeSituationId !== situationId) return;
-      const hasFinalResult = Boolean(result?.final_artifact);
-      const source = hasFinalResult
-        ? { target_id: run.target_id, source_run_id: run.ops_run_id }
-        : { target_id: detail.target_id, source_situation_id: detail.situation_id };
-      let diagnosis;
-      if (hasFinalResult) {
-        diagnosis = `<div class="ops-result-markdown">${conversationAnswerHtml(result)}${evidenceDetails(result)}</div>`;
-      } else if (run && !terminalRunStatuses.has(run.status)) {
-        diagnosis = `<div class="ops-empty">Agent 正在诊断，当前状态：${esc(run.status)}。页面会自动更新结果。</div>`;
-      } else if (run) {
-        const errorCode = run.error_code
-          ? `<div><strong>错误码：</strong><code>${esc(run.error_code)}</code></div>`
-          : "";
-        const errorMessage = run.error_message
-          ? `<div>${esc(run.error_message)}</div>`
-          : '<div>本次自动诊断未形成可展示结果，请依据运行状态重试或联系管理员。</div>';
-        diagnosis = `<div class="ops-error"><div><strong>自动诊断状态：</strong>${esc(run.status)}</div>${errorCode}${errorMessage}</div>`;
-      } else {
-        diagnosis = '<div class="ops-empty">告警已接收，正在等待 Agent 自动诊断任务启动。</div>';
-      }
-      const report = hasFinalResult ? reportAction({ runId: run.ops_run_id, sourceKind: "ALERT" }) : "";
-      panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status, situationStatusText(detail.status))} · 累计 ${esc(detail.event_count)} 次观测 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${diagnosisStatusHtml(run, result)}${monitoringSourceSummary(detail)}${situationAlertContent(detail)}${diagnosis}${report}${continueForm(source, detail.title)}`;
-      await bindContinue(source);
-      bindReportActions(panel);
-      const runActive = !run || !terminalRunStatuses.has(run.status);
-      if (runActive) scheduleSituationRefresh(item, 3000);
-      else if (detail.status !== "RESOLVED") scheduleSituationRefresh(item, 15000);
-    } catch (error) {
-      if (!background) throw error;
-      if (activeSituationId === situationId) {
-        scheduleSituationRefresh(item, 5000);
-      }
-    }
-  }
-
-  async function showSituation(item) {
-    activeSituationId = String(item.situation_id);
-    window.clearTimeout(situationRefreshTimer);
-    await loadSituation(item);
-  }
-
-  async function showInspection(item) {
-    const detail = await KBotAIOpsAuth.request(`${api}/inspection-fires/${encodeURIComponent(item.fire_id)}`);
-    document.getElementById("case-title").textContent = detail.plan_display_name || `巡检 ${shell.fmt(detail.scheduled_at)}`;
-    const panel = document.getElementById("case-detail");
-    const runs = detail.runs || [];
-    const targetNames = new Map(state.caseTargets.map((target) => [String(target.target_id), target.display_name]));
-    const runSelector = runs.length > 1
-      ? `<div class="inspection-run-selector">${runs.map((run, index) => `<button type="button" data-inspection-run="${esc(run.run_id)}" aria-pressed="${index === 0}"><strong>${esc(targetNames.get(String(run.target_id)) || shell.short(run.target_id))}</strong><span>${shell.badge(run.status)}${inspectionReportQualityText(run) ? shell.badge(inspectionReportQualityText(run)) : ""}</span></button>`).join("")}</div>`
-      : "";
-    const fireError = detail.error_message || detail.error_code
-      ? `<div class="ops-error"><strong>巡检未完成</strong><br>${esc(detail.error_message || detail.error_code)}</div>`
-      : "";
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${esc(detail.completed_count)}/${esc(detail.target_count)} 个目标完成 · ${esc(detail.failed_count)} 个失败</div>${fireError}${runSelector}<div id="inspection-run-report"><div class="ops-empty">正在读取巡检报告…</div></div>`;
-    const reportPanel = document.getElementById("inspection-run-report");
-    const renderRun = async (runSummary) => {
-      panel.querySelectorAll("[data-inspection-run]").forEach((button) => {
-        button.setAttribute("aria-pressed", String(button.dataset.inspectionRun === String(runSummary.run_id)));
-      });
-      let run = null; let result = null;
-      try {
-        run = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(runSummary.run_id)}`);
-        result = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(runSummary.run_id)}/result`);
-      } catch (error) {
-        reportPanel.innerHTML = `<div class="ops-empty">${esc(runSummary.error_message || error.message || "本次巡检尚未形成可展示结果")}</div>`;
-        return;
-      }
-      const source = { target_id: run.target_id, source_run_id: run.ops_run_id };
-      const reportActionHtml = result?.final_artifact?.schema_version === "REPORT_CONTENT.v1"
-        ? ""
-        : reportAction({ runId: run.ops_run_id, sourceKind: "INSPECTION", periodKind: "DAILY" });
-      reportPanel.innerHTML = `${diagnosisStatusHtml(run, result)}<div class="ops-result-markdown">${inspectionAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}`;
-      await bindContinue(source);
-      bindReportActions(reportPanel);
-      bindReportArtifactActions(reportPanel);
-      bindImplementationRunbookActions(reportPanel);
-    };
-    panel.querySelectorAll("[data-inspection-run]").forEach((button) => {
-      button.onclick = () => {
-        const run = runs.find((candidate) => String(candidate.run_id) === button.dataset.inspectionRun);
-        if (run) renderRun(run).catch((error) => shell.toast(error.message));
-      };
-    });
-    if (runs[0]) await renderRun(runs[0]);
-    else reportPanel.innerHTML = '<div class="ops-empty">本次巡检没有生成目标运行记录。</div>';
-  }
-
-  async function initCases(page) {
-    await agents();
-    const requested = new URLSearchParams(location.search);
-    const requestedTargetId = requested.get("target_id");
-    const requestedPlanId = page === "inspections" ? requested.get("plan_id") : "";
-    const requestedSituationId = page === "situations" ? requested.get("situation") : "";
-    state.caseTargets = values(
-      (await KBotAIOpsAuth.request(`${api}/targets?limit=200`))?.items,
-    );
-    const list = document.getElementById("case-list");
-    const filters = document.getElementById("case-filters");
-    if (filters) {
-      filters.elements.agent_id.innerHTML = '<option value="">全部 Agent</option>' + state.caseAgents.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
-      filters.elements.target_id.innerHTML = '<option value="">全部 Target</option>' + state.caseTargets.map((item) => `<option value="${esc(item.target_id)}">${esc(item.display_name)} · L${esc(item.importance_level)}</option>`).join("");
-      if (requestedTargetId && state.caseTargets.some((item) => String(item.target_id) === requestedTargetId)) {
-        filters.elements.target_id.value = requestedTargetId;
-      }
-    }
-    const loadRows = async () => {
-      window.clearTimeout(situationRefreshTimer);
-      const endpoint = page === "situations" ? "/situations" : "/inspection-fires";
-      const query = new URLSearchParams({ limit: "100" });
-      if (requestedPlanId) query.set("plan_id", requestedPlanId);
-      if (filters) {
-        for (const name of ["agent_id", "severity", "target_id"]) {
-          if (filters.elements[name].value) query.set(name, filters.elements[name].value);
-        }
-      }
-      const payload = await KBotAIOpsAuth.request(`${api}${endpoint}?${query}`);
-      const rows = payload.items || [];
-      if (page === "inspections") {
-        const setCount = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = String(value); };
-        setCount("inspection-total", rows.length);
-        setCount("inspection-running", rows.filter((item) => ["QUEUED", "RUNNING"].includes(item.status)).length);
-        setCount("inspection-attention", rows.filter((item) => ["PARTIAL", "FAILED"].includes(item.status)).length);
-        setCount("inspection-completed", rows.filter((item) => item.status === "COMPLETED").length);
-      }
-      const targetNames = new Map(state.caseTargets.map((target) => [String(target.target_id), target.display_name]));
-      list.innerHTML = rows.length ? rows.map((item) => `<button class="ops-case-row" data-id="${esc(item.situation_id || item.fire_id)}"><strong>${esc(item.title || item.plan_display_name || `巡检 ${shell.fmt(item.scheduled_at)}`)}</strong>${shell.badge(item.severity || item.status)}<p>${esc(item.summary || targetNames.get(String(item.target_id)) || `${item.completed_count || 0}/${item.target_count || 0} 个目标已完成`)}</p></button>`).join("") : '<div class="ops-empty">当前筛选范围内暂无记录</div>';
-      list.querySelectorAll("button").forEach((button, index) => { button.onclick = () => (page === "situations" ? showSituation(rows[index]) : showInspection(rows[index])).catch((error) => shell.toast(error.message)); });
-      const selected = page === "situations" && requestedSituationId
-        ? rows.find((item) => String(item.situation_id) === requestedSituationId) || rows[0]
-        : rows[0];
-      if (selected) await (page === "situations" ? showSituation(selected) : showInspection(selected));
-      else {
-        activeSituationId = null;
-        document.getElementById("case-title").textContent = page === "situations" ? "没有匹配的告警事件" : "没有匹配的巡检";
-        document.getElementById("case-detail").innerHTML = '<div class="ops-empty">请调整筛选条件后重试。</div>';
-      }
-    };
-    if (filters) {
-      filters.onsubmit = (event) => { event.preventDefault(); loadRows().catch((error) => shell.toast(error.message)); };
-      filters.onreset = () => window.setTimeout(() => loadRows().catch((error) => shell.toast(error.message)), 0);
-    }
-    document.getElementById("refresh-workspace").onclick = () => loadRows().catch((error) => shell.toast(error.message));
-    await loadRows();
-  }
-
   addEventListener("click", (event) => {
+    const effectRefresh = event.target.closest("[data-effect-refresh-initial]");
+    if (effectRefresh) window.AIOpsEffectVerification.load(effectRefresh.closest("[data-effect-proposal]"), api, (url, init) => KBotAIOpsAuth.request(url, init), message => shell.toast(message)).catch(error => shell.toast(error.message));
     const effectButton = event.target.closest("[data-effect-open]");
     if (effectButton) {
       const root = effectButton.closest("[data-effect-proposal]");
-      if (!root.open) window.AIOpsEffectVerification.load(root, api, (url, init) => KBotAIOpsAuth.request(url, init), message => shell.toast(message)).catch(error => shell.toast(error.message));
+      if (!root.open && !root.dataset.effectLoaded) window.AIOpsEffectVerification.load(root, api, (url, init) => KBotAIOpsAuth.request(url, init), message => shell.toast(message)).catch(error => shell.toast(error.message));
     }
     const copyButton = event.target.closest("[data-copy-code]");
     if (copyButton) markdown.copyCode(copyButton);
@@ -2637,6 +2709,10 @@
     const manualButton = event.target.closest("[data-manual-proposal]");
     if (manualButton) submitManualResult(manualButton);
   });
+  addEventListener("toggle", event => {
+    const root = event.target;
+    if (root.matches?.("[data-effect-proposal]") && root.open && !root.dataset.effectLoaded) window.AIOpsEffectVerification.load(root, api, (url, init) => KBotAIOpsAuth.request(url, init), message => shell.toast(message)).catch(error => shell.toast(error.message));
+  }, true);
   addEventListener("submit", (event) => {
     const form = event.target.closest("[data-confirm-target-fact]");
     if (!form) return;
@@ -2647,7 +2723,6 @@
     state.permissions = new Set(access?.permissions || []);
     const page = document.body.dataset.page;
     if (page === "chat") return initChat();
-    if (["situations", "inspections"].includes(page)) return initCases(page);
     return null;
   }).catch((error) => shell.toast(error.message));
 })();

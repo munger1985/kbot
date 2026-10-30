@@ -6,69 +6,56 @@
   <title>DBA 责任组</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/aiops-forms.css?v=20261009-3">
-</head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-responsibility-groups.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="responsibility-groups">
   <main class="ops-main ops-responsibility-groups-main">
     <header class="ops-head">
       <div>
-        <h1>DBA 责任组</h1>
-        <p>从当前工作域已有的有效 AIOps 用户中维护工作路由关系；责任组不创建账号，也不授予 App 权限。</p>
-      </div>
-      <div class="ops-actions">
-        <button id="group-create-open" class="primary" type="button">新增责任组</button>
-        <button id="groups-refresh" type="button">刷新</button>
+        <p class="eyebrow">DBA ROUTING</p><h1>责任组</h1>
+        <p>责任组只管理组织与人员职责；Target 的责任归属在运维目标中维护，Agent 只关联可运维的 Target。</p>
       </div>
     </header>
-    <section class="ops-panel">
-      <div class="ops-panel-head">
-        <div><h2>责任组列表</h2><p>责任组只管理组织与人员职责；Target 的责任归属在运维目标中维护。</p></div>
-      </div>
-      <div class="ops-table-wrap">
-        <table class="ops-table ops-responsibility-group-table">
-          <thead><tr><th>名称</th><th>状态</th><th>组长</th><th>成员</th><th>操作</th></tr></thead>
-          <tbody id="groups-body"><tr><td colspan="5" class="ops-empty">正在加载…</td></tr></tbody>
-        </table>
-      </div>
+    <div class="data-toolbar"><label class="search-field"><span aria-hidden="true">⌕</span><input id="group-search" type="search" placeholder="搜索责任组名称或说明" aria-label="搜索责任组"></label><button id="groups-refresh" class="secondary-button" type="button">刷新目录</button></div>
+    <section class="resource-list-surface">
+      <div class="resource-list-body"><div class="management-catalog-grid"><button id="group-create-open" class="management-catalog-add-card" type="button"><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新增责任组</strong><small>建立新的 DBA 工作路由与人员职责边界</small></button><div id="groups-body" class="catalog-entries"><p class="resource-list-empty">正在加载…</p></div></div></div>
     </section>
   </main>
 
-  <dialog id="group-editor-dialog" class="ops-dialog">
-    <form id="group-editor-form">
-      <header><div><h2 id="group-editor-title">新增责任组</h2><p id="group-editor-hint">建立 DBA 工作路由边界，创建后再添加具体人员。</p></div><button type="button" data-close-group-editor>关闭</button></header>
-      <div class="ops-dialog-body ops-work-item-action-form">
-        <label>名称<input name="name" maxlength="128" required></label>
-        <label>说明<textarea name="description" maxlength="1000" rows="4"></textarea></label>
-        <small>责任组只维护工作路由和人员职责，不创建账号或授予权限。</small>
+  <dialog id="group-editor-dialog" class="confirm-dialog responsibility-dialog" aria-labelledby="group-editor-title">
+    <header class="responsibility-dialog-header"><div><p class="eyebrow">DBA ROUTING</p><h2 id="group-editor-title">新增责任组</h2><p id="group-editor-hint">建立 DBA 工作路由边界，创建后再添加具体人员。</p></div><button class="icon-button" type="button" data-close-group-editor aria-label="关闭">×</button></header>
+    <form id="group-editor-form" class="responsibility-dialog-form">
+      <div class="responsibility-dialog-body">
+        <label class="control-field"><span class="field-label">名称</span><input name="name" maxlength="128" required></label>
+        <label class="control-field"><span class="field-label">说明</span><textarea name="description" maxlength="1000" rows="4"></textarea></label>
+        <small class="field-help">责任组只维护工作路由和人员职责，不创建账号或授予权限。</small>
       </div>
-      <footer><button type="button" data-close-group-editor>取消</button><button id="group-editor-submit" class="primary" type="submit">创建责任组</button></footer>
+      <footer class="responsibility-dialog-actions"><button class="secondary-button" type="button" data-close-group-editor>取消</button><button id="group-editor-submit" class="primary-button" type="submit">创建责任组</button></footer>
     </form>
   </dialog>
 
-  <dialog id="group-members-dialog" class="ops-dialog">
-    <div>
-      <header><div><h2 id="group-members-title">维护人员</h2><p id="group-members-status"></p></div><button type="button" data-close-group-members>关闭</button></header>
-      <div class="ops-dialog-body ops-responsibility-group-maintenance">
-        <div id="group-members" class="ops-responsibility-group-members"></div>
-        <form id="group-member-form" class="ops-work-item-action-form">
-          <label>选择人员<select name="user_id" required><option value="">请选择人员</option></select></label>
-          <small>这里只维护责任组与人员的关系，不修改该用户的 AIOps 角色或权限。</small>
-          <button class="primary" type="submit">添加人员</button>
+  <dialog id="group-members-dialog" class="confirm-dialog responsibility-dialog responsibility-members-dialog" aria-labelledby="group-members-title">
+      <header class="responsibility-dialog-header"><div><p class="eyebrow">GROUP MEMBERS</p><h2 id="group-members-title">维护人员</h2><p id="group-members-status"></p></div><button class="icon-button" type="button" data-close-group-members aria-label="关闭">×</button></header>
+      <div class="responsibility-dialog-body responsibility-member-body">
+        <div id="group-members" class="responsibility-member-list"></div>
+        <form id="group-member-form" class="responsibility-member-form">
+          <label class="control-field"><span class="field-label">选择人员</span><select name="user_id" required><option value="" disabled selected>请选择人员</option></select></label>
+          <small class="field-help">这里只维护责任组与人员的关系，不修改该用户的 AIOps 角色或权限。</small>
+          <button class="primary-button" type="submit" disabled>添加人员</button>
         </form>
       </div>
-      <footer><button type="button" data-close-group-members>完成</button></footer>
-    </div>
+      <footer class="responsibility-dialog-actions"><button class="secondary-button" type="button" data-close-group-members>完成</button></footer>
   </dialog>
 
-  <dialog id="group-confirm-dialog" class="ops-dialog ops-responsibility-confirm-dialog">
+  <dialog id="group-confirm-dialog" class="confirm-dialog confirm-dialog--danger" role="alertdialog" aria-labelledby="group-confirm-title" aria-describedby="group-confirm-message">
     <form id="group-confirm-form">
-      <header><div><h2 id="group-confirm-title">确认操作</h2></div></header>
-      <div class="ops-dialog-body"><p id="group-confirm-message"></p></div>
-      <footer><button type="button" data-cancel-group-confirm>取消</button><button id="group-confirm-submit" class="danger" type="submit">确认</button></footer>
+      <header class="confirm-dialog-header"><span class="confirm-dialog-mark" aria-hidden="true">!</span><div><p class="confirm-dialog-kicker">请确认此操作</p><h2 id="group-confirm-title">确认操作</h2></div></header>
+      <p id="group-confirm-message" class="confirm-dialog-message"></p>
+      <footer class="confirm-dialog-actions"><button class="secondary-button" type="button" data-cancel-group-confirm>取消</button><button id="group-confirm-submit" class="danger-button" type="submit">确认</button></footer>
     </form>
   </dialog>
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
-  <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-responsibility-groups.js?v=20261012_2"></script>
+  <script src="./js/aiops-shell.js?v=20261030_1"></script>
+  <script src="./js/aiops-responsibility-groups.js?v=20261030_1"></script>
 </body>
 </html>

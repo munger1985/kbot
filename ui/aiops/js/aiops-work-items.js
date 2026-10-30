@@ -4,11 +4,10 @@
   const rootApi = "/api/v1/apps/aiops";
   const groupApi = "/api/v1/apps/aiops/responsibility-groups";
   const shell = globalThis.KBotAIOpsShell;
-  const markdown = globalThis.KBotMarkdown;
   const state = {
     access: null, cursor: null, filters: { visibility: "SCOPE" }, item: null,
     items: new Map(), processingItem: null, processingContext: null, assignmentItem: null,
-    scopedTargets: [], handling: false, assigning: false, suppressReset: false,
+    scopedTargets: [], people: [], handling: false, assigning: false, suppressReset: false, listRequest: 0,
   };
   const labels = {
     PENDING_TRIAGE: "待研判", OPEN: "待处理", IN_PROGRESS: "处理中",
@@ -20,16 +19,12 @@
     FIXED: "已修复", MITIGATED: "已缓解", OBSERVED_STABLE: "观察稳定",
     ACCEPTED_RISK: "风险已接受", FALSE_POSITIVE: "误报", DUPLICATE: "重复事项",
     RECOVERY_DRILL: "恢复演练", SCHEDULE: "策略计划",
+    CREATED: "创建工作项", ASSIGNED: "更新责任分派", STATUS_CHANGED: "更新处理状态",
+    CLAIMED: "开始处理", RETURNED_TO_GROUP: "退回责任组", DBA_COMPLETED: "标记处理完成",
+    OCCURRENCE_MERGED: "归并新发生记录", VERIFICATION_COMPLETED: "完成验证运行",
   };
   const text = (value) => labels[value] || value || "—";
   const values = (items) => Array.isArray(items) ? items : [];
-  const displayText = (value, dictionary = {}) => String(value ?? "")
-    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g)
-    .map((part, index) => index % 2 ? part : part.replace(
-      /(^|[^A-Za-z0-9_])([A-Z][A-Z0-9_]{2,})(?=$|[^A-Za-z0-9_])/g,
-      (match, prefix, code) => `${prefix}${dictionary[code] || code}`,
-    ))
-    .join("");
   const jsonBody = (value) => ({ method: "POST", body: JSON.stringify(value) });
   const query = (values) => {
     const params = new URLSearchParams();
@@ -38,14 +33,6 @@
     });
     return params.toString() ? `?${params}` : "";
   };
-  function priority(value) {
-    return `<span class="ops-work-item-priority priority-${shell.escape(String(value).toLowerCase())}">${shell.escape(text(value))}</span>`;
-  }
-  function due(value) {
-    if (!value) return "—";
-    const overdue = new Date(value).getTime() < Date.now();
-    return `<time class="${overdue ? "is-overdue" : ""}">${shell.escape(shell.fmt(value))}</time>`;
-  }
   function processingAlertHtml(item, situation) {
     const occurrence = values(item.occurrences)[0];
     const finding = occurrence?.finding || {};
@@ -56,108 +43,52 @@
       ["确认度", occurrence.confirmation],
       ["关联对象", objectLabel],
       ["观测时间", shell.fmt(occurrence.observed_at)],
-    ].filter((row) => row[1]).map((row) => `<div><dt>${shell.escape(row[0])}</dt><dd>${shell.escape(row[1])}</dd></div>`).join("") : "";
+    ].filter((row) => row[0] !== "关联对象" || row[1]).map((row) => `<div><dt>${shell.escape(row[0])}</dt><dd>${shell.escape(row[1] || "")}</dd></div>`).join("") : "";
     const signals = values(situation?.signal_events).map((signal) => `<li><strong>${shell.escape(signal.event_class)} · ${shell.escape(signal.severity)}</strong><span>${shell.escape(signal.summary || signal.normalized_status)}</span><time>${shell.escape(shell.fmt(signal.occurred_at))}</time></li>`).join("");
-    const sourceAlerts = signals || values(situation?.monitoring_sources).map((source) => `<li><strong>${shell.escape(source.latest_event_class || source.source_type || "ALERT")} · ${shell.escape(source.latest_severity || item.severity)}</strong><span>${shell.escape(source.latest_summary || item.summary)}</span><time>${shell.escape(shell.fmt(source.last_observed_at))}</time></li>`).join("");
     const evidence = values(occurrence?.evidence_refs).map((ref) => `<code>${shell.escape(ref)}</code>`).join("");
-    return `<p class="ops-work-item-context-summary">${shell.escape(finding.impact || item.summary)}</p>${facts ? `<dl class="ops-work-item-context-facts">${facts}</dl>` : ""}${sourceAlerts ? `<ul class="ops-work-item-signal-list">${sourceAlerts}</ul>` : ""}${evidence ? `<div class="ops-work-item-context-evidence">${evidence}</div>` : ""}`;
-  }
-  function findingSummaryHtml(payload) {
-    const rows = values(payload?.findings).map((finding) => `<article><header><strong>${shell.escape(finding.finding_type || "发现")}</strong>${shell.badge(finding.severity || "INFO")}</header><p>${shell.escape(finding.impact || "")}</p></article>`).join("");
-    return rows ? `<section class="ops-work-item-diagnosis-findings">${rows}</section>` : "";
-  }
-  function processingDiagnosisHtml(result, run) {
-    if (!result) {
-      if (run) return `<div class="ops-empty">自动诊断运行状态：${shell.escape(run.status)}，尚未形成可展示结果。</div>`;
-      return '<div class="ops-empty">该工作项没有关联可展示的 Agent 初步诊断。</div>';
-    }
-    const blocks = values(result.payload?.blocks);
-    const dictionary = result.payload?.display_dictionary || {};
-    if (result.final_artifact?.schema_version === "AIOPS_TURN_RESULT.v1" && blocks.length) {
-      const html = blocks.map((block) => {
-        const payload = block.payload || {};
-        if (block.block_type === "FINDING_CARDS") return findingSummaryHtml(payload);
-        if (["ANALYSIS_MARKDOWN", "SOLUTION_MARKDOWN", "MARKDOWN"].includes(block.block_type)) {
-          const heading = block.block_type === "ANALYSIS_MARKDOWN" ? "分析" : block.block_type === "SOLUTION_MARKDOWN" ? "解决方案" : "";
-          const body = markdown.render(displayText(payload.markdown || payload.text || "", dictionary));
-          return heading ? `<section class="ops-analysis"><header><strong>${heading}</strong></header>${body}</section>` : body;
-        }
-        return "";
-      }).join("");
-      return html || '<div class="ops-empty">Agent 已完成诊断，但没有可展示的文字结论。</div>';
-    }
-    const payload = result.payload || {};
-    const answer = payload.direct_answer?.answer_text || payload.diagnosis_rationale || payload.summary || "Agent 已完成初步诊断，但没有可展示的文字结论。";
-    return `<div class="ops-result-markdown">${markdown.render(displayText(answer, dictionary))}</div>`;
+    return `<p class="work-item-context-summary">${shell.escape(finding.impact || item.summary)}</p>${facts ? `<dl class="work-item-context-facts">${facts}</dl>` : ""}${signals ? `<ul class="work-item-signal-list">${signals}</ul>` : ""}${evidence ? `<div class="work-item-context-evidence">${evidence}</div>` : ""}`;
   }
   async function loadProcessingContext(item) {
-    document.getElementById("work-item-alert-context").innerHTML = '<div class="ops-empty">正在读取错误与告警上下文…</div>';
-    document.getElementById("work-item-agent-diagnosis").innerHTML = '<div class="ops-empty">正在读取 Agent 初步诊断…</div>';
-    document.getElementById("work-item-diagnosis-agent").innerHTML = '<option value="">正在读取可用 Agent…</option>';
-    document.getElementById("work-item-diagnosis-agent").disabled = true;
-    document.getElementById("work-item-continue-diagnosis").disabled = true;
+    const diagnosis = document.getElementById("work-item-agent-diagnosis");
+    const renderer = globalThis.KBotAIOpsTurnResult;
+    document.getElementById("work-item-alert-context").innerHTML = processingAlertHtml(item,null);
+    diagnosis.innerHTML = renderer.html(null,"正在读取 Agent 初步诊断…");
+    document.getElementById("work-item-continue-diagnosis").hidden = true;
+    const severity = document.getElementById("work-item-processing-severity");
     const occurrence = values(item.occurrences)[0];
+    severity.textContent = occurrence?.severity || item.severity;
+    severity.className = `status-pill ${occurrence?.severity === "CRITICAL" ? "status-info" : "status-warning"}`;
     const runId = occurrence?.ops_run_id || values(item.links).find((link) => ["RUN", "VERIFICATION"].includes(link.resource_kind))?.resource_id;
     const situationId = occurrence?.situation_id || values(item.links).find((link) => link.resource_kind === "SITUATION")?.resource_id;
-    const [situationResult, runResult, diagnosisResult, agentResult] = await Promise.allSettled([
+    const [situationResult, runResult, diagnosisResult] = await Promise.allSettled([
       situationId ? KBotAIOpsAuth.request(`${rootApi}/situations/${encodeURIComponent(situationId)}`) : Promise.resolve(null),
       runId ? KBotAIOpsAuth.request(`${rootApi}/runs/${encodeURIComponent(runId)}`) : Promise.resolve(null),
       runId ? KBotAIOpsAuth.request(`${rootApi}/runs/${encodeURIComponent(runId)}/result`) : Promise.resolve(null),
-      KBotAIOpsAuth.request(`${rootApi}/agents`),
     ]);
+    if (state.processingItem !== item) return;
     const situation = situationResult.status === "fulfilled" ? situationResult.value : null;
     const run = runResult.status === "fulfilled" ? runResult.value : null;
     const result = diagnosisResult.status === "fulfilled" ? diagnosisResult.value : null;
-    const agents = agentResult.status === "fulfilled"
-      ? values(agentResult.value).filter((agent) => agent.status === "ACTIVE")
-      : [];
-    const source = result?.final_artifact && runId
-      ? { source_run_id: runId }
-      : situationId
-        ? { source_situation_id: situationId }
-        : runId ? { source_run_id: runId } : null;
+    const effectiveRunId = run?.ops_run_id || occurrence?.ops_run_id;
+    const source = result?.final_artifact && effectiveRunId
+      ? { sourceType: "RUN", sourceId: effectiveRunId }
+      : occurrence?.situation_id
+        ? { sourceType: "SITUATION", sourceId: occurrence.situation_id }
+        : effectiveRunId ? { sourceType: "RUN", sourceId: effectiveRunId } : null;
     state.processingContext = { situation, run, result, source };
     document.getElementById("work-item-alert-context").innerHTML = processingAlertHtml(item, situation);
-    document.getElementById("work-item-agent-diagnosis").innerHTML = processingDiagnosisHtml(result, run);
-    const agentSelect = document.getElementById("work-item-diagnosis-agent");
-    agentSelect.innerHTML = '<option value="">请选择 Agent</option>' + agents.map((agent) => `<option value="${shell.escape(agent.agent_id)}">${shell.escape(agent.display_name || agent.agent_key || shell.short(agent.agent_id))}</option>`).join("");
-    if (agents.some((agent) => String(agent.agent_id) === String(item.agent_id))) agentSelect.value = item.agent_id;
-    agentSelect.disabled = !source || !agents.length;
-    const prompt = document.getElementById("work-item-diagnosis-prompt");
-    prompt.value = source ? `请基于工作项“${item.title}”已有的告警、诊断结论和证据继续分析：` : "该工作项没有可继承的诊断上下文。";
-    prompt.disabled = !source;
-    document.getElementById("work-item-diagnosis-note").textContent = source
-      ? `系统将在服务端继承本次${source.source_run_id ? "自动诊断结果与证据" : "告警情境及其监控信号"}。`
-      : "人工创建且未关联 Situation 或 Run 的工作项不能继续诊断。";
-    const continueButton = document.getElementById("work-item-continue-diagnosis");
-    continueButton.disabled = !source || !agents.length;
+    const emptyText = runId && runResult.status === "rejected" && diagnosisResult.status === "rejected"
+      ? "关联的 Agent 初步诊断暂时无法读取。"
+      : run && !result ? `自动诊断运行状态：${run.status}，尚未形成可展示结果。` : "该工作项没有关联可展示的 Agent 初步诊断。";
+    diagnosis.innerHTML = renderer.html(result?.payload,emptyText);
+    renderer.mount(diagnosis);
+    document.getElementById("work-item-continue-diagnosis").hidden = !source;
   }
-  async function continueProcessingDiagnosis(button) {
+  function continueProcessingDiagnosis() {
     const item = state.processingItem;
     const source = state.processingContext?.source;
-    const agentId = document.getElementById("work-item-diagnosis-agent").value;
-    const message = document.getElementById("work-item-diagnosis-prompt").value.trim();
     if (!item || !source) return shell.toast("该工作项没有可继承的诊断上下文");
-    if (!agentId) return shell.toast("请选择继续诊断使用的 Agent");
-    if (!message) return shell.toast("请填写继续追问的内容");
-    button.disabled = true;
-    try {
-      const body = {
-        agent_id: agentId,
-        target_id: item.target_id,
-        content: [{ content_type: "TEXT", text: message }],
-        ...source,
-      };
-      const result = await KBotAIOpsAuth.request(`${rootApi}/conversations`, {
-        method: "POST",
-        headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-        body: JSON.stringify(body),
-      });
-      location.href = `./chat.html?conversation=${encodeURIComponent(result.conversation_id)}`;
-    } catch (error) {
-      shell.toast(error.message);
-      button.disabled = false;
-    }
+    location.href = `./chat.html?${new URLSearchParams({targetId:item.target_id,...source})}`;
   }
   function renderQueues(summary) {
     const definitions = [
@@ -168,8 +99,9 @@
       ["pending_verification", "待验证", "verification", "等待复核处理结果", "info"],
     ];
     document.getElementById("work-item-queues").innerHTML = definitions.map(([key, label, filter, description, tone]) =>
-      `<button class="${tone ? `is-${tone} ` : ""}${queueIsActive(filter) ? "is-active" : ""}" type="button" data-queue="${filter}" aria-pressed="${queueIsActive(filter)}"><header><span>${label}</span><strong>${Number(summary?.[key] || 0)}</strong></header><p>${description}</p></button>`
+      `<button class="operational-summary-card ${tone ? `is-${tone} ` : ""}${queueIsActive(filter) ? "is-active" : ""}" type="button" data-queue="${filter}" aria-pressed="${queueIsActive(filter)}"><header><span>${label}</span><strong>${Number(summary?.[key] || 0)}</strong></header><p>${description}</p></button>`
     ).join("");
+    document.getElementById("work-item-overdue").setAttribute("aria-pressed",String(Boolean(state.filters.overdue)));
   }
   function queueIsActive(value) {
     const filters = state.filters;
@@ -188,6 +120,7 @@
     const details = await Promise.all(groups.map((group) =>
       KBotAIOpsAuth.request(`${groupApi}/${encodeURIComponent(group.responsibility_group_id)}`)
     ));
+    state.people = groups.length ? values((await KBotAIOpsAuth.request(`${groupApi}/${encodeURIComponent(groups[0].responsibility_group_id)}/member-candidates`)).items) : [];
     const userGroupIds = new Set(details.filter((group) =>
       values(group.members).some((member) => member.status === "ACTIVE"
         && String(member.user_id) === String(state.access.user_id))
@@ -201,7 +134,8 @@
       + state.scopedTargets.map((target) => `<option value="${shell.escape(target.target_id)}">${shell.escape(target.display_name || shell.short(target.target_id))} · ${shell.escape(target.db_type || "")}</option>`).join("");
   }
   function listRow(item) {
-    const assignee = item.assignee_user_id || item.responsibility_group_name || item.responsibility_group_id || "未分派";
+    const person = state.people.find(person=>String(person.user_id)===String(item.assignee_user_id));
+    const assignee = person?.display_name || person?.username || item.responsibility_group_name || (item.assignee_user_id ? "责任人已不可用" : "未分派");
     const detail = `./work-item-detail.html?id=${encodeURIComponent(item.work_item_id)}&visibility=${encodeURIComponent(state.filters.visibility || "SCOPE")}`;
     const canHandle = new Set(state.access.permissions || []).has("aiops:work_item_handle");
     const canManage = new Set(state.access.permissions || []).has("aiops:work_item_manage");
@@ -213,10 +147,12 @@
     const canAssign = canManage && item.responsibility_group_id
       && ["PENDING_TRIAGE", "OPEN", "WAITING", "IN_PROGRESS"].includes(item.status);
     const processAction = canProcess
-      ? `<button class="primary" type="button" data-handle-id="${shell.escape(item.work_item_id)}">${isMine && item.status === "IN_PROGRESS" ? "继续处理" : "处理"}</button>` : "";
+      ? `<button class="row-action" type="button" data-handle-id="${shell.escape(item.work_item_id)}">${isMine && item.status === "IN_PROGRESS" ? "继续处理" : "处理"}</button>` : "";
     const assignmentAction = canAssign
-      ? `<button type="button" data-assignment-id="${shell.escape(item.work_item_id)}">分派</button>` : "";
-    return `<tr><td>${priority(item.priority)}</td><td><a href="${detail}"><strong>${shell.escape(item.title)}</strong></a><small>${shell.escape(item.item_key)} · ${shell.escape(text(item.source_kind))}</small></td><td><strong>${shell.escape(item.target_name)}</strong><small>${shell.escape(shell.short(item.target_id))}</small></td><td>${shell.badge(text(item.status))}<small>${shell.escape(text(item.phase))}</small></td><td>${shell.escape(assignee)}</td><td>${shell.escape(shell.fmt(item.last_observed_at))}</td><td>${due(item.resolution_due_at)}</td><td>${Number(item.occurrence_count || 0)}</td><td><div class="ops-actions">${processAction}${assignmentAction}</div></td></tr>`;
+      ? `<button class="row-action" type="button" data-assignment-id="${shell.escape(item.work_item_id)}">分派</button>` : "";
+    const typeLabels = {INCIDENT_RESPONSE:"故障响应",RISK_REMEDIATION:"风险整改",PROBLEM_INVESTIGATION:"问题调查",OPTIMIZATION:"优化事项",OBSERVABILITY_GAP:"监控缺口",RECOVERY_OBSERVATION:"恢复观察",RECOVERY_DRILL:"恢复演练"};
+    const tone = ["CLOSED","RESOLVED"].includes(item.status) ? "status-success" : ["WAITING","PENDING_TRIAGE","PENDING_VERIFICATION"].includes(item.status) ? "status-warning" : item.status === "CANCELLED" ? "status-muted" : "status-info";
+    return `<tr><td><strong>${shell.escape(item.priority)}</strong><small class="table-secondary">${shell.escape(item.severity)}</small></td><td><button class="work-item-title-link" type="button" data-open-work-item="${shell.escape(detail)}"><strong class="table-primary">${shell.escape(item.title)}</strong></button><small class="table-secondary">${shell.escape(item.item_key)} · ${shell.escape(typeLabels[item.work_type] || item.work_type)}</small></td><td><strong class="table-primary">${shell.escape(item.target_name)}</strong></td><td><span class="status-pill ${tone}">${shell.escape(text(item.status))}</span></td><td>${shell.escape(assignee)}</td><td${item.resolution_due_at && new Date(item.resolution_due_at).getTime()<Date.now() ? ' class="status-danger-text"' : ""}>${shell.escape(shell.fmt(item.resolution_due_at))}</td><td>${Number(item.occurrence_count || 0)}</td><td><div class="work-item-row-actions">${processAction}${assignmentAction}</div></td></tr>`;
   }
   async function handleItem(button) {
     if (state.handling) return;
@@ -284,7 +220,8 @@
       select.value = members.some((member) => String(member.user_id) === String(item.assignee_user_id)) ? item.assignee_user_id : "";
       select.disabled = !members.length;
       document.getElementById("work-item-assignment-title").textContent = item.title;
-      document.getElementById("work-item-assignment-group").value = item.responsibility_group_name || item.responsibility_group_id;
+      document.getElementById("work-item-assignment-group").value = item.responsibility_group_name || "未设置责任组";
+      document.querySelector('#work-item-assignment-form [type="submit"]').disabled = !select.value;
       state.assignmentItem = item;
       document.getElementById("work-item-assignment-dialog").showModal();
     } catch (error) {
@@ -296,21 +233,33 @@
   }
   async function loadList({ append = false } = {}) {
     const body = document.getElementById("work-item-body");
+    const sequence = ++state.listRequest;
+    const panel = body.closest(".work-item-list-panel");
+    const loading = document.getElementById("work-item-list-loading");
+    const moreButton = document.getElementById("work-item-more");
     const values = { ...state.filters, limit: 50, cursor: append ? state.cursor : null };
-    if (!append) body.innerHTML = '<tr><td colspan="9" class="ops-empty">正在加载工作项…</td></tr>';
+    loading.hidden = append;
+    panel.hidden = !append;
+    if (append) {moreButton.disabled = true;moreButton.textContent = "正在加载…";}
     try {
       const payload = await KBotAIOpsAuth.request(api + query(values));
+      if (sequence !== state.listRequest) return;
       if (!append) state.items.clear();
       (payload.items || []).forEach((item) => state.items.set(item.work_item_id, item));
       const rows = (payload.items || []).map(listRow).join("");
-      body.innerHTML = append ? body.innerHTML + rows : rows || '<tr><td colspan="9" class="ops-empty">当前筛选范围内暂无工作项</td></tr>';
+      body.innerHTML = append ? body.innerHTML + rows : rows || '<tr><td colspan="8" class="empty-cell">当前筛选范围内没有工作项。</td></tr>';
       renderQueues(payload.queue_summary);
       state.cursor = payload.next_cursor || null;
       const more = document.getElementById("work-item-more");
       more.hidden = !payload.has_more;
-      document.getElementById("work-item-count").textContent = `本页 ${payload.items?.length || 0} 项 · 按解决 SLA 排序`;
+      more.closest("footer").hidden = !payload.has_more;
+      document.getElementById("work-item-count").textContent = `当前显示 ${state.items.size} 项 · 按解决 SLA 排序`;
     } catch (error) {
-      body.innerHTML = `<tr><td colspan="9" class="ops-empty">${shell.escape(error.message)}</td></tr>`;
+      if (sequence !== state.listRequest) return;
+      shell.toast(error.message || "无法读取工作项");
+      body.innerHTML = [...state.items.values()].map(listRow).join("") || '<tr><td colspan="8" class="empty-cell">当前筛选范围内没有工作项。</td></tr>';
+    } finally {
+      if (sequence === state.listRequest) {loading.hidden = true;panel.hidden = false;moreButton.disabled = false;moreButton.textContent = "加载更多";}
     }
   }
   function applyQueue(value) {
@@ -331,8 +280,73 @@
     if (value === "urgent") state.filters.priority = "P1,P2";
     if (value === "verification") state.filters.status = "PENDING_VERIFICATION";
     if (value === "overdue") state.filters.overdue = true;
+    form.elements.ownership.value = value === "mine" || value === "unassigned" ? value : "";
+    form.elements.status.value = value === "verification" ? "PENDING_VERIFICATION" : "";
+    form.elements.priority.value = value === "urgent" ? "P1,P2" : "";
     loadList();
   }
+  function bindCreateWorkItem() {
+    const dialog = document.getElementById("work-item-create-dialog");
+    const form = document.getElementById("work-item-create-form");
+    const trigger = document.getElementById("work-item-create");
+    const submit = form.querySelector('[type="submit"]');
+    const canManage = new Set(state.access.permissions || []).has("aiops:work_item_manage");
+    trigger.hidden = !canManage;
+    let targets = [], groups = [], memberRequest = 0;
+    const selectedGroup = () => targets.find(target=>target.target_id===form.elements.target_id.value)?.responsibility_group_id || "";
+    const loadMembers = async () => {
+      const sequence = ++memberRequest;
+      const id = selectedGroup();
+      form.querySelector("[data-create-group]").value = groups.find(group=>group.responsibility_group_id===id)?.name || "未配置有效责任组";
+      submit.disabled = Boolean(dialog.dataset.busy) || !id;
+      const select = form.elements.assignee_user_id;
+      select.disabled = true;
+      select.innerHTML = '<option value="">正在读取成员…</option>';
+      try {
+        const group = id ? await KBotAIOpsAuth.request(`${groupApi}/${encodeURIComponent(id)}`) : {members:[]};
+        if(sequence!==memberRequest) return;
+        select.innerHTML = '<option value="">由组内 DBA 领取</option>'+values(group.members).filter(member=>member.status==="ACTIVE").map(member=>{
+          const person = state.people.find(person=>person.user_id===member.user_id);
+          return `<option value="${shell.escape(member.user_id)}">${shell.escape(person?.display_name || person?.username || "用户已不可用")} · ${member.member_role==="LEAD"?"组长":"成员"}</option>`;
+        }).join("");
+      } catch(error) {if(sequence===memberRequest){select.innerHTML='<option value="">由组内 DBA 领取</option>';shell.toast(error.message);}}
+      finally {if(sequence===memberRequest)select.disabled=!id;}
+    };
+    trigger.onclick = async () => {
+      if (!canManage || dialog.open) return;
+      dialog.showModal();
+      if(targets.length && groups.length) return;
+      try {
+        const [targetPage,groupPage] = await Promise.all([KBotAIOpsAuth.request(`${rootApi}/targets?limit=200`),KBotAIOpsAuth.request(groupApi)]);
+        targets=values(targetPage.items);
+        groups=values(groupPage.items).filter(group=>group.status==="ACTIVE");
+        const groupIds=new Set(groups.map(group=>group.responsibility_group_id));
+        const eligible=targets.filter(target=>target.status==="ENABLED" && target.responsibility_group_id && groupIds.has(target.responsibility_group_id));
+        form.elements.target_id.innerHTML='<option value="">请选择要处理的数据库实例</option>'+eligible.map(target=>`<option value="${shell.escape(target.target_id)}">${shell.escape(target.display_name)} · ${shell.escape(target.db_type)}</option>`).join("");
+        form.elements.target_id.value=eligible[0]?.target_id || "";
+        await loadMembers();
+      } catch(error) {shell.toast(error.message || "无法读取数据库实例");}
+    };
+    form.elements.target_id.onchange=loadMembers;
+    dialog.querySelectorAll("[data-close-create]").forEach(button=>{button.onclick=()=>{if(!dialog.dataset.busy)dialog.close();};});
+    dialog.addEventListener("cancel",event=>{if(dialog.dataset.busy)event.preventDefault();});
+    form.onsubmit=async event=>{
+      event.preventDefault();
+      if(dialog.dataset.busy || !selectedGroup()) return;
+      const data=Object.fromEntries(new FormData(form));
+      if(!data.target_id || !data.title.trim() || !data.summary.trim()) return shell.toast("请选择数据库实例，并填写标题与处理说明。");
+      dialog.dataset.busy="true";
+      submit.disabled=true;
+      submit.textContent="正在创建…";
+      try {
+        const item=await KBotAIOpsAuth.request(api,{method:"POST",headers:{"Idempotency-Key":KBotAIOpsAuth.uuid()},body:JSON.stringify({...data,title:data.title.trim(),summary:data.summary.trim(),assignee_user_id:data.assignee_user_id?.trim() || null})});
+        shell.toast("工作项已创建");
+        location.href=`./work-item-detail.html?id=${encodeURIComponent(item.work_item_id)}&visibility=${encodeURIComponent(state.filters.visibility)}`;
+      } catch(error) {shell.toast(error.message || "无法创建工作项");}
+      finally {delete dialog.dataset.busy;submit.disabled=!selectedGroup();submit.textContent="创建工作项";}
+    };
+  }
+
   function bindList() {
     const form = document.getElementById("work-item-filters");
     form.addEventListener("submit", (event) => {
@@ -343,13 +357,16 @@
         assignee_user_id: values.ownership === "mine" ? state.access.user_id : "",
         unassigned: values.ownership === "unassigned",
         visibility: values.visibility || "SCOPE",
+        overdue: state.filters.overdue,
       };
       loadList();
     });
+    form.addEventListener("change", () => form.requestSubmit());
     form.addEventListener("reset", () => {
       if (state.suppressReset) return;
-      setTimeout(() => { state.filters = { visibility: "SCOPE" }; loadList(); }, 0);
+      setTimeout(() => { state.filters = { visibility: "SCOPE" };loadList(); }, 0);
     });
+    document.getElementById("work-item-overdue").onclick = () => {state.filters.overdue=!state.filters.overdue;loadList();};
     document.getElementById("work-items-refresh").onclick = () => loadList();
     document.getElementById("work-item-more").onclick = () => loadList({ append: true });
     document.getElementById("work-item-queues").onclick = (event) => {
@@ -357,28 +374,42 @@
       if (button) applyQueue(button.dataset.queue);
     };
     document.getElementById("work-item-body").onclick = (event) => {
+      const open = event.target.closest("[data-open-work-item]");
+      if (open) location.href = open.dataset.openWorkItem;
       const handleButton = event.target.closest("[data-handle-id]");
       if (handleButton) return void handleItem(handleButton);
       const assignmentButton = event.target.closest("[data-assignment-id]");
       if (assignmentButton) void openAssignment(assignmentButton);
     };
     document.querySelectorAll("[data-close-work-item-dialog]").forEach((button) => {
-      button.onclick = () => button.closest("dialog").close();
+      button.onclick = () => {const dialog=button.closest("dialog");if(!dialog.dataset.busy)dialog.close();};
     });
+    for (const dialog of document.querySelectorAll("dialog.work-item-modal")) {
+      dialog.addEventListener("cancel",event=>{if(dialog.dataset.busy)event.preventDefault();});
+      dialog.addEventListener("click",event=>{
+        const box=dialog.getBoundingClientRect();
+        if(event.target===dialog && !dialog.dataset.busy && (event.clientX<box.left || event.clientX>box.right || event.clientY<box.top || event.clientY>box.bottom)) dialog.close();
+      });
+    }
     document.getElementById("work-item-processing-dialog").addEventListener("close", () => {
       state.processingItem = null;
       state.processingContext = null;
     });
     document.getElementById("work-item-assignment-dialog").addEventListener("close", () => { state.assignmentItem = null; });
+    document.getElementById("work-item-assignment-user").onchange = event => {document.querySelector('#work-item-assignment-form [type="submit"]').disabled=!event.target.value;};
     document.getElementById("work-item-continue-diagnosis").onclick = (event) => {
       void continueProcessingDiagnosis(event.currentTarget);
     };
     document.getElementById("work-item-processing-form").onsubmit = async (event) => {
       event.preventDefault();
-      if (!state.processingItem) return;
+      const dialog = document.getElementById("work-item-processing-dialog");
+      if (!state.processingItem || dialog.dataset.busy) return;
       const submit = event.currentTarget.querySelector("button[type=submit]");
       const values = Object.fromEntries(new FormData(event.currentTarget));
-      submit.disabled = true;
+      if (!String(values.completion_note || "").trim()) return shell.toast("请填写处理结果。");
+      dialog.dataset.busy = "true";
+      dialog.querySelectorAll('[data-close-work-item-dialog],[type="submit"]').forEach(button=>{button.disabled=true;});
+      submit.textContent = "正在提交…";
       try {
         await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(state.processingItem.work_item_id)}:complete`, jsonBody({
           expected_row_version: state.processingItem.row_version,
@@ -391,15 +422,18 @@
         shell.toast("处理结果已记录，工作项已标记完成");
         await loadList();
       } catch (error) { shell.toast(error.message); }
-      finally { submit.disabled = false; }
+      finally { delete dialog.dataset.busy;dialog.querySelectorAll('[data-close-work-item-dialog],[type="submit"]').forEach(button=>{button.disabled=false;});submit.textContent="标记工作完成"; }
     };
     document.getElementById("work-item-assignment-form").onsubmit = async (event) => {
       event.preventDefault();
-      if (!state.assignmentItem) return;
+      const dialog = document.getElementById("work-item-assignment-dialog");
+      if (!state.assignmentItem || dialog.dataset.busy) return;
       const submit = event.currentTarget.querySelector("button[type=submit]");
       const assignee = document.getElementById("work-item-assignment-user").value;
       if (!assignee) return;
-      submit.disabled = true;
+      dialog.dataset.busy = "true";
+      dialog.querySelectorAll('[data-close-work-item-dialog],[type="submit"]').forEach(button=>{button.disabled=true;});
+      submit.textContent = "正在分派…";
       try {
         await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(state.assignmentItem.work_item_id)}/assignment`, {
           method: "PATCH",
@@ -410,47 +444,61 @@
         shell.toast("工作项已分派；被分派人点击“处理”后开始处理");
         await loadList();
       } catch (error) { shell.toast(error.message); }
-      finally { submit.disabled = false; }
+      finally { delete dialog.dataset.busy;dialog.querySelectorAll('[data-close-work-item-dialog],[type="submit"]').forEach(button=>{button.disabled=false;});submit.disabled=!document.getElementById("work-item-assignment-user").value;submit.textContent="确认分派"; }
     };
   }
   function overview(item) {
-    return `<article><span>优先级</span>${priority(item.priority)}</article><article><span>状态</span><strong>${shell.escape(text(item.status))}</strong><small>${shell.escape(text(item.phase))}</small></article><article><span>来源 Agent</span><strong>${shell.escape(item.agent_name || "待归属")}</strong><small>${shell.escape(item.agent_id ? shell.short(item.agent_id) : "历史工作项")}</small></article><article><span>数据库实例</span><strong>${shell.escape(item.target_name)}</strong><small>${shell.escape(shell.short(item.target_id))}</small></article><article><span>责任人</span><strong>${shell.escape(item.assignee_user_id || "未领取")}</strong><small>${shell.escape(item.responsibility_group_name || item.responsibility_group_id || "未设置责任组")}</small></article><article><span>最近分派 / 领取</span><strong>${shell.escape(shell.fmt(item.assigned_at))}</strong><small>${shell.escape(item.assignee_user_id || "尚未领取")}</small></article><article><span>最后发现</span><strong>${shell.escape(shell.fmt(item.last_observed_at))}</strong><small>累计 ${Number(item.occurrence_count)} 次</small></article><article><span>解决 SLA</span><strong>${due(item.resolution_due_at)}</strong><small>验证期限 ${shell.escape(shell.fmt(item.verification_due_at))}</small></article>`;
+    const esc = shell.escape;
+    const small = (value,technical=false) => `<small class="table-secondary${technical?" technical-value":""}">${esc(value)}</small>`;
+    const rows = [
+      ["来源 Agent",esc(item.agent_name || "待归属")+(item.agent_id?small(item.agent_id,true):"")],
+      ["数据库实例",esc(item.target_name)+small(item.target_id,true)],
+      ["责任人",esc(item.assignee_user_id || "未领取")+small(item.responsibility_group_name || item.responsibility_group_id || "未设置责任组")],
+      ["最近分派 / 领取",esc(shell.fmt(item.assigned_at))],
+      ["当前阶段",esc(item.phase || "")],
+      ["首次发现",esc(shell.fmt(item.first_observed_at))],
+      ["最近发现",`${esc(shell.fmt(item.last_observed_at))} · 累计 ${Number(item.occurrence_count || 0)} 次`],
+      ["确认时限",esc(shell.fmt(item.acknowledgement_due_at))],
+      ["解决时限",esc(shell.fmt(item.resolution_due_at))],
+      ["验证时限",esc(shell.fmt(item.verification_due_at))],
+    ];
+    if(item.completed_at) rows.push(["DBA 完成",`${esc(text(item.resolution_code))} · ${esc(item.completion_note || "")}${small(`${item.completed_by || ""} · ${shell.fmt(item.completed_at)}`)}`]);
+    return rows.map(([label,value])=>`<tr><th>${label}</th><td>${value}</td></tr>`).join("");
   }
   function occurrenceRow(row) {
     const finding = row.finding || {};
     const object = finding.object_ref || {};
     const evidence = (row.evidence_refs || []).length
-      ? `<div class="ops-work-item-evidence">${row.evidence_refs.map((ref) => `<code>${shell.escape(ref)}</code>`).join("")}</div>` : "";
-    return `<article class="ops-work-item-occurrence"><header><div>${shell.badge(row.severity)}<strong>${shell.escape(row.finding_type)}</strong></div><time>${shell.escape(shell.fmt(row.observed_at))}</time></header><p>${shell.escape(finding.impact || state.item.summary)}</p><dl><div><dt>对象</dt><dd>${shell.escape(object.object_name || object.sql_id || object.object_kind || "数据采集链路")}</dd></div><div><dt>确认度</dt><dd>${shell.escape(row.confirmation)}</dd></div><div><dt>来源 Run</dt><dd><a href="./run-detail.html?id=${encodeURIComponent(row.ops_run_id)}">${shell.escape(shell.short(row.ops_run_id))}</a></dd></div></dl>${evidence}</article>`;
+      ? `<div class="work-item-evidence">${row.evidence_refs.map((ref) => `<code>${shell.escape(ref)}</code>`).join("")}</div>` : "";
+    return `<article><header><div><span class="status-pill ${row.severity==="CRITICAL"?"status-info":"status-warning"}">${shell.escape(row.severity)}</span><strong>${shell.escape(row.finding_type)} · ${shell.escape(object.object_name || object.sql_id || object.object_kind || "数据采集链路")}</strong></div><time>${shell.escape(shell.fmt(row.observed_at))}</time></header><p>${shell.escape(finding.impact || state.item.summary)}</p><small>确认度 ${shell.escape(row.confirmation)} · Run ${shell.escape(row.ops_run_id)}</small>${evidence}</article>`;
   }
   function resourceLink(row) {
-    const paths = { RUN: "run-detail.html?id=", VERIFICATION: "run-detail.html?id=", REPORT: "report-detail.html?id=" };
-    const href = paths[row.resource_kind] ? `./${paths[row.resource_kind]}${encodeURIComponent(row.resource_id)}` : "";
-    const content = `<strong>${shell.escape(row.label || text(row.resource_kind))}</strong><small>${shell.escape(row.role)} · ${shell.escape(shell.short(row.resource_id))}${row.status ? ` · ${shell.escape(row.status)}` : ""}</small>`;
-    return href ? `<a href="${href}">${content}</a>` : `<article>${content}</article>`;
+    const paths = { RUN: "runs.html", VERIFICATION: "runs.html", REPORT: `report-detail.html?id=${encodeURIComponent(row.resource_id)}`, SITUATION:"situations.html" };
+    const href = paths[row.resource_kind] ? `./${paths[row.resource_kind]}` : "";
+    const content = `<strong>${shell.escape(row.label || row.resource_id)}</strong>`;
+    return `<tr><th>${shell.escape(row.resource_kind)}</th><td>${href?`<a class="text-button" href="${href}">${content}</a>`:content}<small class="table-secondary">${shell.escape(row.role)}${row.status?` · ${shell.escape(row.status)}`:""} · ${shell.escape(row.resource_id)}</small></td></tr>`;
   }
   function activityRow(row) {
     const transition = row.from_status || row.to_status
-      ? `<small>${shell.escape(text(row.from_status))} → ${shell.escape(text(row.to_status))}</small>` : "";
-    return `<article><time>${shell.escape(shell.fmt(row.created_at))}</time><div><strong>${shell.escape(text(row.activity_type))}</strong>${transition}<small>${shell.escape(row.actor_id)}</small></div></article>`;
+      ? `<p>${shell.escape(text(row.from_status))} → ${shell.escape(text(row.to_status))}</p>` : "";
+    return `<article><time>${shell.escape(shell.fmt(row.created_at))}</time><div><strong>${shell.escape(text(row.activity_type))}</strong>${transition}<small class="technical-value">操作人 ${shell.escape(row.actor_id)}</small></div></article>`;
   }
   function renderDetail(item) {
     state.item = item;
     document.getElementById("work-item-title").textContent = item.title;
+    document.getElementById("work-item-heading-title").textContent = item.title;
     document.getElementById("work-item-summary").textContent = item.summary;
-    document.getElementById("work-item-key").textContent = item.item_key;
+    document.getElementById("work-item-key").textContent = `${item.item_key} · ${item.priority}`;
+    const status = document.getElementById("work-item-heading-status");
+    status.textContent = text(item.status);
+    status.className = `status-pill ${["CLOSED","RESOLVED"].includes(item.status)?"status-success":["WAITING","PENDING_TRIAGE","PENDING_VERIFICATION"].includes(item.status)?"status-warning":item.status==="CANCELLED"?"status-muted":"status-info"}`;
     document.getElementById("work-item-overview").innerHTML = overview(item);
     document.getElementById("work-item-occurrences").innerHTML = (item.occurrences || []).length
-      ? item.occurrences.map(occurrenceRow).join("") : '<div class="ops-empty">人工创建的工作项暂无自动诊断发生记录</div>';
+      ? `<div class="work-item-record-list">${item.occurrences.map(occurrenceRow).join("")}</div>` : '<p class="empty-cell">人工创建的工作项暂无自动诊断发生记录。</p>';
     document.getElementById("work-item-links").innerHTML = (item.links || []).length
-      ? item.links.map(resourceLink).join("") : '<div class="ops-empty">暂无关联资源</div>';
+      ? item.links.map(resourceLink).join("") : '<tr><td colspan="2">暂无关联 Run、Situation、Report、Proposal 或 Verification。</td></tr>';
     document.getElementById("work-item-activities").innerHTML = (item.activities || []).length
-      ? item.activities.map(activityRow).join("") : '<div class="ops-empty">暂无活动记录</div>';
-    const result = document.getElementById("work-item-result");
-    result.hidden = !item.completed_at;
-    if (item.completed_at) {
-      document.getElementById("work-item-result-body").innerHTML = `<dl class="ops-detail"><dt>处理结论</dt><dd>${shell.escape(text(item.resolution_code))}</dd><dt>处理结果</dt><dd>${shell.escape(item.completion_note || "—")}</dd><dt>完成人</dt><dd>${shell.escape(item.completed_by || "—")}</dd><dt>完成时间</dt><dd>${shell.escape(shell.fmt(item.completed_at))}</dd></dl>`;
-    }
+      ? `<div class="work-item-timeline">${item.activities.map(activityRow).join("")}</div>` : '<p class="empty-cell">暂无活动记录。</p>';
   }
   async function loadDetail() {
     const params = new URLSearchParams(location.search);
@@ -459,16 +507,18 @@
     const requestedVisibility = params.get("visibility") || "SCOPE";
     const visibility = canManage && ["ALL", "EXCEPTIONS"].includes(requestedVisibility) ? requestedVisibility : "SCOPE";
     if (!id) {
-      document.getElementById("work-item-overview").innerHTML = '<div class="ops-empty">缺少工作项 ID</div>';
-      return;
+      location.replace("./dashboard.html");return;
     }
+    const loading=document.getElementById("work-item-detail-loading");
+    const content=document.getElementById("work-item-detail-content");
+    loading.hidden=false;content.hidden=true;
     try {
       const item = await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(id)}?visibility=${encodeURIComponent(visibility)}`);
       document.querySelector(".ops-back-link").href = `./dashboard.html?visibility=${encodeURIComponent(visibility)}`;
       renderDetail(item);
     } catch (error) {
-      document.getElementById("work-item-overview").innerHTML = `<div class="ops-empty">${shell.escape(error.message)}</div>`;
-    }
+      shell.toast(error.message || "无法读取工作项详情");
+    } finally {loading.hidden=true;content.hidden=!state.item;}
   }
   function bindDetail() {
     document.getElementById("work-item-detail-refresh").onclick = loadDetail;
@@ -476,6 +526,7 @@
   shell.ready.then((access) => {
     state.access = access;
     if (document.body.dataset.page === "dashboard") {
+      globalThis.KBotAIOpsWorkItems = { refresh: () => loadList() };
       const canManage = new Set(access.permissions || []).has("aiops:work_item_manage");
       const requested = new URLSearchParams(location.search).get("visibility") || "SCOPE";
       state.filters.visibility = canManage && ["ALL", "EXCEPTIONS"].includes(requested) ? requested : "SCOPE";
@@ -485,6 +536,7 @@
         visibility.value = state.filters.visibility;
       }
       bindList();
+      bindCreateWorkItem();
       void loadScopedTargets()
         .catch((error) => shell.toast(`无法读取责任范围内数据库实例：${error.message}`))
         .finally(() => loadList());

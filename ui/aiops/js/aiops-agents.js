@@ -193,7 +193,7 @@
     const keyword = document.getElementById("agent-search").value.trim().toLocaleLowerCase();
     const visibleAgents = agents.filter((agent) => !keyword || [agent.display_name, agent.description || "", ...values(agent.allowed_business_system_ids).map(systemName), ...values(agent.capabilities).map((item) => capabilityLabels[item] || item)].join(" ").toLocaleLowerCase().includes(keyword));
     if (!visibleAgents.length) {
-      body.innerHTML = `<p class="resource-list-empty">${keyword ? "没有匹配的 Agent" : "当前范围内暂无 Agent"}</p>`;
+      body.innerHTML = "";
       return;
     }
     body.innerHTML = visibleAgents.map((agent) => {

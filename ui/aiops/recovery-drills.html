@@ -1,63 +1,28 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>恢复演练</title>
-  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-  <link rel="stylesheet" href="./css/aiops-forms.css">
-</head>
-<body data-page="recovery-drills">
-  <main class="ops-main">
-    <header class="ops-head">
-      <div>
-        <h1>恢复演练</h1>
-        <p>按数据库资源登记恢复结果；执行端点由资源绑定自动解析，不暴露内部 Target。</p>
-      </div>
-      <a id="recovery-target-detail-link" class="ops-button" href="./business-systems.html">查看业务系统</a>
-    </header>
-
-    <section id="recovery-work-item-context" class="ops-panel" hidden>
-      <div class="ops-panel-head"><div><h2>计划内恢复演练</h2><p>提交后工作项进入待审核；审核通过且满足当前策略后自动生成下一周期工单。</p></div><span class="ops-badge good">处理中</span></div>
-    </section>
-
-    <section class="ops-panel recovery-drill-context">
-      <div class="ops-panel-head"><div><h2>演练对象</h2><p>恢复目标与策略直接归属数据库资源。</p></div><span id="recovery-workspace-state" class="ops-badge">请选择</span></div>
-      <div class="ops-panel-body recovery-drill-context-grid">
-        <label class="ops-field span-12">数据库资源<select id="recovery-target-select"><option value="">请选择数据库资源</option></select></label>
-        <div id="recovery-profile-summary" class="recovery-profile-summary span-12"><p class="ops-empty">尚未选择数据库资源。</p></div>
-      </div>
-    </section>
-
-    <section class="ops-panel recovery-drill-entry">
-      <div class="ops-panel-head"><div><h2>登记恢复演练</h2><p>记录已经实际完成的演练，不在此页面执行 Restore 或 Recover。</p></div></div>
-      <div class="ops-panel-body">
-        <form id="recovery-drill-form" class="ops-form recovery-drill-form">
-          <p class="target-recovery-note span-12">请填写本次演练中可由人员确认的事实。介质恢复校验不等同于数据库已经打开。SCN、LSN、GTID 和证据哈希不接受人工抄录，只接受备份 Provider 或受控采集工具产生的数据；当前未接入时留空。人工登记始终标记为 USER_PROVIDED。</p>
-          <div class="ops-field"><label>场景</label><select name="scenario"><option value="FULL_INSTANCE">完整实例</option><option value="POINT_IN_TIME">时间点恢复</option><option value="DATABASE_OR_PDB">数据库/PDB</option><option value="DATAFILE">数据文件</option><option value="CONTROLFILE_OR_SYSTEM">控制文件/System</option><option value="LOGICAL_RESTORE">逻辑恢复</option></select></div>
-          <div class="ops-field"><label>验证范围</label><select name="assurance_level"><option value="BACKUP_METADATA">备份记录核对</option><option value="RESTORE_VALIDATE">介质恢复校验</option><option value="DATABASE_OPEN">数据库启动验证</option><option value="APPLICATION_VALIDATED">业务可用性验证</option></select></div>
-          <div class="ops-field"><label>结果</label><select name="result"><option value="PASS">通过</option><option value="FAIL">失败</option><option value="INCONCLUSIVE">无法确认</option></select></div>
-          <div class="ops-field"><label>环境</label><select name="environment"><option value="ISOLATED">隔离环境</option><option value="STG">预发布</option><option value="DEV">开发</option><option value="PROD">生产</option></select></div>
-          <div class="ops-field"><label>备份来源</label><select name="backup_source_type" id="recovery-backup-source"></select></div>
-          <div class="ops-field"><label>模拟故障时间</label><input name="simulated_failure_at" type="datetime-local" required><small>RTO 从这个时间开始计算。</small></div>
-          <div class="ops-field"><label>实际恢复到的数据时间</label><input name="recovered_through_at" type="datetime-local"><small>用于计算实际数据丢失窗口；无法确认时可留空。</small></div>
-          <div class="ops-field"><label>验证完成时间</label><input name="service_validated_at" type="datetime-local"><small>验证范围为“数据库启动”或“业务可用性”且结果为通过时必填。</small></div>
-          <div class="ops-field span-12"><label>演练说明</label><textarea name="notes" maxlength="4000" placeholder="填写演练范围、关键检查结果、失败原因或待跟进事项"></textarea></div>
-          <div class="ops-filter-actions"><button id="submit-recovery-drill" class="primary" type="submit" disabled>提交待审核记录</button></div>
-          <p id="recovery-drill-result" class="ops-connection-result span-12" role="status"></p>
-        </form>
-      </div>
-    </section>
-
-    <section class="ops-panel">
-      <div class="ops-panel-head"><div><h2>演练历史</h2><p>最新失败与无法确认记录始终保留，不会被更早的成功记录覆盖。</p></div></div>
-      <div id="recovery-drill-history" class="ops-table-wrap"><p class="ops-empty">请选择数据库资源。</p></div>
-    </section>
-  </main>
-
-  <script src="../runtime-config.js"></script>
-  <script src="./js/aiops-auth.js"></script>
-  <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-recovery-drills.js"></script>
-</body>
-</html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>恢复演练</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-recovery-drills.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
+<body data-page="recovery-drills"><main class="ops-main platform-home-page aiops-page recovery-drills-page">
+  <section class="platform-home-hero app-page-head recovery-hero"><div><p class="eyebrow">恢复保障</p><h1>恢复演练</h1><p>按计划工单登记恢复演练结果；也可以从菜单进入，补录计划外演练并查看历史。</p></div></section>
+  <section id="recovery-work-item-context" class="recovery-work-item-banner" role="status" hidden><div><strong>正在处理计划内恢复演练</strong><span>恢复策略归属数据库资源，平台自动使用该资源对应的受管数据库入口。</span></div><code></code></section>
+  <section class="table-card recovery-context-card"><header class="table-card-header"><div><h2>演练对象</h2><p>选择业务系统下的数据库资源；内部执行入口由平台自动解析。</p></div><span id="recovery-workspace-state" class="status-pill status-muted">未配置策略</span></header><div class="recovery-context-grid"><label class="control-field"><span class="field-label">数据库资源</span><select id="recovery-target-select"></select></label><dl id="recovery-profile-summary" class="recovery-policy-summary"></dl></div></section>
+  <section class="table-card recovery-entry-card"><header class="table-card-header"><div><h2 id="recovery-entry-title">补录计划外演练</h2><p>这里只记录已完成的演练事实，不会在目标数据库执行 Restore 或 Recover。</p></div></header>
+    <form id="recovery-drill-form" class="recovery-entry-form">
+      <p class="recovery-form-note">人工登记始终标记为 USER_PROVIDED。通过记录必须引用可核验材料并填写其 SHA-256；人工审核不会将其提升为系统直采证据。</p>
+      <label class="control-field"><span class="field-label">场景</span><select name="scenario"><option value="FULL_INSTANCE">完整实例</option><option value="POINT_IN_TIME">时间点恢复</option><option value="DATABASE_OR_PDB">数据库 / PDB</option><option value="DATAFILE">数据文件</option><option value="CONTROLFILE_OR_SYSTEM">控制文件 / System</option><option value="LOGICAL_RESTORE">逻辑恢复</option></select></label>
+      <label class="control-field"><span class="field-label">验证范围</span><select name="assurance_level"><option value="BACKUP_METADATA">备份记录核对</option><option value="RESTORE_VALIDATE">介质恢复校验</option><option value="DATABASE_OPEN" selected>数据库启动验证</option><option value="APPLICATION_VALIDATED">业务可用性验证</option></select></label>
+      <label class="control-field"><span class="field-label">结果</span><select name="result"><option value="PASS">通过</option><option value="FAIL">失败</option><option value="INCONCLUSIVE">无法确认</option></select></label>
+      <label class="control-field"><span class="field-label">环境</span><select name="environment"><option value="ISOLATED">隔离环境</option><option value="STG">预发布</option><option value="DEV">开发</option><option value="PROD">生产（需明确批准）</option></select></label>
+      <label class="control-field"><span class="field-label">备份来源</span><select name="backup_source_type" id="recovery-backup-source" required></select></label>
+      <label class="control-field"><span class="field-label">模拟故障时间</span><span class="date-time-picker-control is-empty"><span class="date-time-picker-display" aria-hidden="true">请选择日期和时间</span><input class="date-time-picker-native" name="simulated_failure_at" type="datetime-local" required><span class="date-time-picker-icon" aria-hidden="true"></span></span><small class="field-help">RTO 从该时间开始计算。</small></label>
+      <label class="control-field"><span class="field-label">实际恢复到的数据时间</span><span class="date-time-picker-control is-empty"><span class="date-time-picker-display" aria-hidden="true">请选择日期和时间</span><input class="date-time-picker-native" name="recovered_through_at" type="datetime-local"><span class="date-time-picker-icon" aria-hidden="true"></span></span><small class="field-help">用于计算实际 RPO。</small></label>
+      <label class="control-field"><span class="field-label">验证完成时间</span><span class="date-time-picker-control is-empty"><span class="date-time-picker-display" aria-hidden="true">请选择日期和时间</span><input class="date-time-picker-native" name="service_validated_at" type="datetime-local"><span class="date-time-picker-icon" aria-hidden="true"></span></span><small class="field-help">数据库启动或业务验证通过时必填。</small></label>
+      <label class="control-field"><span class="field-label">证据类型</span><select name="evidence_kind"><option value="DATABASE_CHECK">数据库检查</option><option value="BACKUP_TOOL_LOG">备份工具日志</option><option value="DATABASE_LOG">数据库日志</option><option value="APPLICATION_CHECK">业务检查</option><option value="EXTERNAL_REPORT">外部报告</option></select></label>
+      <label class="control-field"><span class="field-label">证据引用</span><input name="evidence_reference" maxlength="2048" required></label>
+      <label class="control-field"><span class="field-label">证据 SHA-256</span><input name="evidence_hash" maxlength="64" pattern="[a-f0-9]{64}" required></label>
+      <label class="control-field recovery-span"><span class="field-label">演练说明</span><textarea name="notes" rows="4" maxlength="4000" placeholder="填写演练范围、关键检查结果、失败原因或待跟进事项"></textarea></label>
+      <footer class="recovery-span"><button id="submit-recovery-drill" class="primary-button" type="submit" disabled>提交待审核记录</button></footer>
+    </form>
+  </section>
+  <section class="resource-list-surface recovery-history-card"><header class="resource-list-header"><div class="resource-list-heading"><h2>演练历史</h2><p>最新失败和无法确认记录不会被更早的成功记录覆盖。</p></div><div class="resource-list-tools"><span id="recovery-history-count" class="resource-list-count">0 次</span><button id="refresh-recovery" class="secondary-button" type="button">刷新</button></div></header><div id="recovery-drill-history" class="resource-list-body"></div></section>
+</main>
+<dialog id="recovery-confirm-dialog" class="confirm-dialog confirm-dialog--danger" aria-labelledby="recovery-confirm-title" aria-describedby="recovery-confirm-message"><header class="confirm-dialog-header"><span class="confirm-dialog-mark" aria-hidden="true">!</span><div><p class="confirm-dialog-kicker">请确认此操作</p><h2 id="recovery-confirm-title"></h2></div></header><p id="recovery-confirm-message" class="confirm-dialog-message"></p><footer class="confirm-dialog-actions"><button class="secondary-button" type="button" data-cancel-review>取消</button><button class="danger-button" type="button" data-confirm-review>审核通过</button></footer></dialog>
+<script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261030_1"></script><script src="./js/aiops-recovery-drills.js?v=20261030_1"></script></body></html>

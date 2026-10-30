@@ -6,6 +6,10 @@
   const state = { tags: [], editing: null, saving: false };
   const escape = (value) => shell.escape(value == null ? "" : value);
   const categoryLabel = (value) => ({ RESOURCE_CATEGORY: "资源分类", TECHNOLOGY_STACK: "技术栈", VENDOR: "厂商" }[value] || value || "—");
+  function updateSaveState() {
+    document.getElementById("save-tag").disabled = state.saving || !document.getElementById("editor-name").value.trim();
+    document.querySelectorAll('#tag-drawer [data-close]').forEach(button => { button.disabled = state.saving; });
+  }
 
   function visibleTags() {
     const keyword = document.getElementById("tag-search").value.trim().toLowerCase();
@@ -17,7 +21,7 @@
   function render() {
     const items = visibleTags();
     document.getElementById("tag-count").textContent = `${items.length} 项`;
-    document.getElementById("knowledge-tags").innerHTML = items.length ? items.map((item) => `<tr><td><strong>${escape(item.display_name)}</strong><small>${escape(item.tag_id)}</small></td><td>${escape(categoryLabel(item.category))}</td><td>${escape(item.description || "—")}</td><td>${escape(item.sort_order)}</td><td><span class="ops-badge ${item.status === "ACTIVE" ? "good" : ""}">${item.status === "ACTIVE" ? "启用" : "停用"}</span></td><td><button type="button" data-edit="${escape(item.tag_id)}">编辑</button><button class="${item.status === "ACTIVE" ? "danger" : ""}" type="button" data-toggle="${escape(item.tag_id)}">${item.status === "ACTIVE" ? "停用" : "启用"}</button></td></tr>`).join("") : '<tr><td colspan="6" class="ops-empty">当前条件下没有知识标签。</td></tr>';
+    document.getElementById("knowledge-tags").innerHTML = items.length ? items.map((item) => `<tr><td><strong>${escape(item.display_name)}</strong><small class="table-secondary technical-value">${escape(item.tag_id)}</small></td><td>${escape(categoryLabel(item.category))}</td><td>${escape(item.description || "—")}</td><td>${escape(item.sort_order)}</td><td><span class="status-pill ${item.status === "ACTIVE" ? "status-success" : "status-muted"}">${item.status === "ACTIVE" ? "启用" : "停用"}</span></td><td><button class="row-action" type="button" data-edit="${escape(item.tag_id)}">编辑</button><button class="row-action ${item.status === "ACTIVE" ? "danger-row-action" : ""}" type="button" data-toggle="${escape(item.tag_id)}">${item.status === "ACTIVE" ? "停用" : "启用"}</button></td></tr>`).join("") : '<tr><td colspan="6" class="empty-cell">当前条件下没有知识标签。</td></tr>';
   }
 
   async function load() {
@@ -35,6 +39,8 @@
     document.getElementById("editor-description").value = item?.description || "";
     document.getElementById("editor-sort").value = String(item?.sort_order || 0);
     document.getElementById("tag-result").textContent = "";
+    document.getElementById("tag-result").hidden = true;
+    updateSaveState();
     document.getElementById("tag-drawer").showModal();
   }
 
@@ -51,8 +57,9 @@
       expected_row_version: state.editing?.row_version || null,
     };
     state.saving = true;
-    document.getElementById("save-tag").disabled = true;
+    updateSaveState();
     document.getElementById("tag-result").textContent = "正在保存…";
+    document.getElementById("tag-result").hidden = false;
     try {
       await KBotAIOpsAuth.request(state.editing ? `${api}/${encodeURIComponent(state.editing.tag_id)}` : api, { method: state.editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       document.getElementById("tag-drawer").close();
@@ -60,7 +67,7 @@
       await load();
     } finally {
       state.saving = false;
-      document.getElementById("save-tag").disabled = false;
+      updateSaveState();
     }
   }
 
@@ -78,6 +85,8 @@
   }
 
   shell.ready.then(async () => {
+    document.getElementById("editor-name").oninput = updateSaveState;
+    document.getElementById("tag-drawer").addEventListener("cancel", event => { if (state.saving) event.preventDefault(); });
     document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
     document.getElementById("create-tag").onclick = () => openEditor();
     document.getElementById("refresh-tags").onclick = () => load().catch((error) => shell.toast(error.message));
@@ -90,7 +99,7 @@
       if (edit && item) openEditor(item);
       if (toggleButton && item) toggle(item).catch((error) => shell.toast(error.message));
     };
-    document.getElementById("tag-form").onsubmit = (event) => save(event).catch((error) => { document.getElementById("tag-result").textContent = error.message; shell.toast(error.message); });
+    document.getElementById("tag-form").onsubmit = (event) => save(event).catch((error) => { document.getElementById("tag-result").hidden = false; document.getElementById("tag-result").textContent = error.message; shell.toast(error.message); });
     try { await load(); } catch (error) { shell.toast(error.message); }
   });
 })();

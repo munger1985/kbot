@@ -2,9 +2,9 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
-from aiops_agent.entities import OpsConversationEntity
+from aiops_agent.entities import OpsConversationEntity, OpsRunEntity
 from aiops_agent.repositories._base import AIOpsRepository
 
 
@@ -24,6 +24,7 @@ class ConversationRepository(AIOpsRepository):
     async def list_conversations(
         self, *, domain_id: int, created_by: str,
         agent_id: UUID | None = None, limit: int = 50,
+        situation_id: UUID | None = None, run_id: UUID | None = None,
     ):
         statement = select(OpsConversationEntity).where(
             OpsConversationEntity.domain_id == domain_id,
@@ -32,8 +33,21 @@ class ConversationRepository(AIOpsRepository):
         )
         if agent_id is not None:
             statement = statement.where(OpsConversationEntity.agent_id == agent_id)
+        if run_id is not None:
+            statement = statement.where(OpsConversationEntity.source_run_id == run_id)
+        if situation_id is not None:
+            statement = statement.outerjoin(
+                OpsRunEntity,
+                and_(
+                    OpsRunEntity.ops_run_id == OpsConversationEntity.source_run_id,
+                    OpsRunEntity.domain_id == domain_id,
+                ),
+            ).where(or_(
+                OpsConversationEntity.source_situation_id == situation_id,
+                OpsRunEntity.situation_id == situation_id,
+            ))
         rows = await self._session.scalars(statement.order_by(
-            OpsConversationEntity.updated_at.desc(),
+            OpsConversationEntity.created_at.desc(),
             OpsConversationEntity.conversation_id.desc(),
         ).limit(limit))
         return list(rows)

@@ -665,15 +665,20 @@ class ConversationTurnService:
         domain_id: int,
         actor_id: str,
         agent_id: UUID | None = None,
+        situation_id: UUID | None = None,
+        run_id: UUID | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
-            rows = await uow.conversations.list_conversations(
-                domain_id=domain_id,
-                created_by=actor_id,
-                agent_id=agent_id,
-                limit=limit,
-            )
+            filters: dict[str, Any] = {
+                "domain_id": domain_id, "created_by": actor_id,
+                "agent_id": agent_id, "limit": limit,
+            }
+            if situation_id is not None:
+                filters["situation_id"] = situation_id
+            if run_id is not None:
+                filters["run_id"] = run_id
+            rows = await uow.conversations.list_conversations(**filters)
             return [self._conversation_summary(row) for row in rows]
 
     async def get_conversation(

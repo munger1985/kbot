@@ -12,18 +12,6 @@
 .ops-connection-result{min-height:22px;margin:12px 0 0;color:var(--muted)}
 .ops-connection-result[data-tone="good"]{color:var(--good)}
 .ops-connection-result[data-tone="bad"]{color:var(--bad)}
-.target-access-policy{padding:16px;border:1px solid #cfd6e4;background:#f8faff}
-.target-access-policy-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:12px}
-.target-access-policy-head h3{margin:0;font:650 16px Georgia,"Songti SC",serif}
-.target-access-policy-head p{margin:4px 0 0;color:var(--muted);font-size:11px}
-.target-access-policy-head>span{flex:0 0 auto;padding:4px 8px;background:#e7ebf2;color:#526075;font-size:10px;font-weight:700}
-.target-access-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-.target-access-option{display:flex;align-items:flex-start;gap:9px;padding:12px;border:1px solid var(--line);background:#fff;cursor:pointer}
-.target-access-option:has(input:checked){border-color:#8fa0c2;background:#edf2fa}
-.target-access-option:has(input:disabled){cursor:not-allowed;opacity:.5}
-.target-access-option input{width:16px!important;height:16px;margin:2px 0 0!important;accent-color:var(--accent)}
-.target-access-option strong,.target-access-option small{display:block}
-.target-access-option small{margin-top:4px;color:var(--muted);font-size:10px;line-height:1.45}
 .ops-field-label{display:block;margin-bottom:7px;font-weight:650;color:var(--ink)}
 .ops-field small{display:block;margin-top:7px;color:var(--muted);line-height:1.45}
 .ops-capability-list{display:flex;flex-wrap:wrap;gap:8px;min-height:32px;align-items:center}
@@ -50,7 +38,6 @@
 .source-webhook-onboarding small{display:block;margin-top:12px;color:var(--muted)}
 @media(max-width:600px){.ops-dialog{max-height:calc(100vh - 20px)}.ops-dialog header,.ops-dialog footer,.ops-dialog-body{padding:16px}}
 @media(max-width:600px){.ops-choice-list{grid-template-columns:1fr}}
-@media(max-width:600px){.target-access-policy-head{flex-direction:column}.target-access-options{grid-template-columns:1fr}}
 @media(max-width:600px){.source-webhook-key{grid-template-columns:1fr}.source-webhook-key>button{justify-self:start}.source-webhook-key-result>div,.source-webhook-secret-input,.source-webhook-onboarding>div{grid-template-columns:1fr}}
 
 /* 巡检计划：把底层调度规则转换为可理解的业务周期。 */
@@ -275,16 +262,7 @@
 .agent-picker-dialog{position:fixed;inset:0 0 0 auto;width:min(560px,100vw);height:100dvh;max-height:none;margin:0;padding:0;border:0;border-left:1px solid var(--line);box-shadow:-18px 0 42px rgba(29,39,60,.2)}.agent-picker-dialog::backdrop{background:rgba(29,39,60,.35);backdrop-filter:blur(2px)}.agent-picker-shell{display:flex;height:100%;flex-direction:column}.agent-picker-shell>header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:22px;border-bottom:1px solid var(--line)}.agent-picker-shell>header p{margin:0;color:var(--accent);font:700 9px ui-monospace,monospace;letter-spacing:.12em}.agent-picker-shell>header h2{margin:4px 0 2px;font:650 22px Georgia,"Songti SC",serif}.agent-picker-shell>header span{color:var(--muted);font-size:10px}.agent-picker-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:13px 16px;border-bottom:1px solid var(--line);background:#f7f8fb}.agent-picker-tools input,.agent-picker-tools select{min-height:38px;padding:7px 9px;border:1px solid var(--line-strong);background:#fff}.agent-picker-list{display:grid;min-height:0;align-content:start;gap:8px;flex:1;overflow:auto;padding:15px 16px}.agent-picker-row{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:start;gap:9px;width:100%;padding:11px;border:1px solid var(--line);background:#fff;text-align:left}.agent-picker-row.selected{border-color:var(--accent);background:#eef1f8}.agent-picker-row:disabled{cursor:not-allowed;opacity:.5}.agent-picker-check{display:grid;width:19px;height:19px;place-items:center;border:1px solid var(--line-strong);color:#fff;background:#fff;font-size:10px}.agent-picker-row.selected .agent-picker-check{border-color:var(--accent);background:var(--accent)}.agent-picker-row strong,.agent-picker-row small{display:block}.agent-picker-row small{margin-top:3px;color:var(--muted);font-size:10px}.agent-picker-empty{padding:30px;color:var(--muted);text-align:center}.agent-picker-shell>footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px;border-top:1px solid var(--line)}.agent-picker-shell>footer>span{color:var(--muted);font-size:10px}.agent-picker-shell>footer>div{display:flex;gap:7px}
 @media(max-width:800px){.agent-dialog-workspace{grid-template-columns:1fr}.agent-wizard-rail{grid-template-columns:repeat(5,minmax(0,1fr));padding:9px;border-right:0;border-bottom:1px solid var(--line)}.agent-wizard-rail>button{grid-template-columns:1fr;text-align:center}.agent-wizard-rail>button b{margin:auto}.agent-wizard-rail>button small,.agent-wizard-rail>p{display:none}.agent-step-panel{padding:20px 17px}.agent-review-grid{grid-template-columns:1fr}.agent-result{margin-right:17px;margin-left:17px}.agent-wizard-footer{padding-right:17px!important;padding-left:17px!important}}@media(max-width:600px){.agent-capability-grid{grid-template-columns:1fr}.agent-decision-card>header,.agent-scope-row,.agent-picker-shell>footer{align-items:stretch;flex-direction:column}.agent-picker-tools{grid-template-columns:1fr}.agent-picker-shell>footer>div{display:grid;grid-template-columns:repeat(3,1fr)}}
 
-/* Target 详情中的按需通知设置。 */
-.target-detail-grid{align-items:start}
-.target-overview-head{align-items:flex-start;padding:20px 22px}
-.target-overview-head h2{margin:2px 0 4px;font-size:24px}
-.target-overview-head p,.target-overview-head small{margin:0;color:var(--muted)}
-.target-overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
-.target-overview-grid section{min-width:0}
-.target-overview-grid h3{margin:0 0 8px;font:650 15px Georgia,"Songti SC",serif}
-.target-overview-grid .ops-detail{grid-template-columns:120px minmax(0,1fr)}
-.target-overview-grid .ops-detail dd{overflow-wrap:anywhere}
+/* 监控源详情与能力摘要。 */
 .source-overview-head{align-items:flex-start;padding:20px 22px}
 .source-overview-head h2{margin:2px 0 4px;font-size:24px}
 .source-overview-head p,.source-overview-head small{margin:0;color:var(--muted)}
@@ -297,67 +275,14 @@
 .source-capability-section p{margin:0 0 12px;color:var(--muted);font-size:11px}
 .source-capability-empty{color:var(--muted);font-size:12px}
 .source-detail-note{margin:0 18px 18px;padding:13px 15px;border-left:3px solid var(--accent);background:#f5f7fa;color:var(--muted)}
-.target-subscription-dialog{width:min(640px,calc(100vw - 32px))}
-.target-subscription-dialog header>div{display:grid;gap:3px}
-.target-subscription-dialog header p{margin:0;color:var(--muted);font-size:12px}
-.target-subscription-dialog-state{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;color:var(--muted)}
-.target-follow-switch{display:flex;align-items:flex-start;gap:11px;padding:14px;border:1px solid #cfd6e4;background:#f7f8fb;cursor:pointer}
-.target-follow-switch input{width:17px;height:17px;margin:3px 0 0;accent-color:var(--accent)}
-.target-follow-switch strong,.target-follow-switch small{display:block}
-.target-follow-switch small{margin-top:3px;color:var(--muted);font-weight:400}
-.target-subscription-settings{display:grid;gap:17px;margin-top:19px;transition:opacity .16s ease}
-.target-subscription-disabled{opacity:.42}
-.target-stage-fieldset{display:grid;gap:0;margin:0;padding:0;border:1px solid var(--line)}
-.target-stage-fieldset legend{margin-left:10px;padding:0 6px;color:var(--muted);font-size:11px;font-weight:650}
-.target-stage-fieldset>label{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}
-.target-stage-fieldset>label:last-child{border-bottom:0}
-.target-stage-fieldset input{margin:3px 0 0;accent-color:var(--accent)}
-.target-stage-fieldset strong,.target-stage-fieldset small{display:block}
-.target-stage-fieldset small{margin-top:2px;color:var(--muted);font-size:11px;font-weight:400}
-@media(max-width:900px){.target-overview-grid,.source-overview-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.source-overview-grid{grid-template-columns:1fr}}
 
-/* Target 详情中的运维记忆。 */
-.target-facts-list{margin-bottom:16px}
-.target-facts-form{display:grid;gap:14px;margin-top:8px}
-.target-facts-form .ops-filter-actions{justify-content:flex-start}
-
-/* Target 恢复目标与独立恢复演练工作区。 */
-.target-recovery-layout{display:grid;grid-template-columns:repeat(12,1fr);gap:22px}
-.target-recovery-form{grid-column:span 8;display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
-.target-recovery-form.span-12{grid-column:span 12}
-.target-recovery-form h3,.target-recovery-form>p,.target-recovery-form>.ops-filter-actions,.target-recovery-form>.ops-connection-result{grid-column:span 12;margin:0}
-.target-recovery-form .ops-field{grid-column:span 4}
-.target-recovery-form .ops-field.span-6{grid-column:span 6}
-.target-recovery-form .ops-field.span-12{grid-column:span 12}
-.target-recovery-summary{grid-column:span 4;border-left:1px solid var(--line);padding-left:22px}
-.target-recovery-summary h3{margin-top:0}
-.target-recovery-note{padding:10px 12px;background:#f7f8fb;border-left:3px solid var(--accent);color:var(--muted)}
-@media(max-width:900px){.target-recovery-form,.target-recovery-summary{grid-column:span 12}.target-recovery-summary{border-left:0;border-top:1px solid var(--line);padding:18px 0 0}.target-recovery-form .ops-field,.target-recovery-form .ops-field.span-6{grid-column:span 12}}
+/* 独立恢复演练工作区。 */
 .recovery-drill-context,.recovery-drill-entry{margin-bottom:16px}
 .recovery-drill-context-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px;align-items:start}
 .recovery-profile-summary .ops-detail{grid-template-columns:120px 1fr}
 .recovery-drill-form .ops-connection-result{margin:0}
 
-/* 运维目标四步配置向导。沿用现有表单 Token，不创建独立主题。 */
-#target-dialog{width:min(1180px,calc(100vw - 32px))}
-#target-dialog form{display:flex;max-height:calc(100vh - 48px);flex-direction:column}
-#target-dialog .ops-dialog-body{min-height:0}
-.target-wizard-shell{display:grid;grid-template-columns:250px minmax(0,1fr);min-height:560px;border:1px solid var(--line);background:#fff}
-.target-wizard-nav{display:flex;flex-direction:column;gap:5px;padding:12px;border-right:1px solid var(--line);background:#f7f8fb}
-.target-wizard-nav button{display:grid;grid-template-columns:32px minmax(0,1fr);gap:4px 10px;padding:13px 11px;border:1px solid transparent;background:transparent;color:var(--ink);text-align:left;cursor:pointer}
-.target-wizard-nav button:hover{background:#fff}
-.target-wizard-nav button.active{border-color:#bac6dc;background:#fff;box-shadow:0 4px 14px rgba(37,63,112,.08)}
-.target-wizard-nav button>span:first-child{display:grid;width:32px;height:32px;grid-row:span 2;place-items:center;background:#e8edf6;color:var(--accent);font:750 11px ui-monospace,monospace}
-.target-wizard-nav button>span:nth-child(2){display:grid;gap:3px;min-width:0}
-.target-wizard-nav strong{font-size:12px}.target-wizard-nav small{color:var(--muted);font-size:10px;line-height:1.45}
-.target-wizard-nav em{grid-column:2;color:var(--muted);font-size:10px;font-style:normal}.target-wizard-nav em.good{color:#19704a}.target-wizard-nav em.bad{color:#a22f36}
-.target-wizard-content{min-width:0;padding:23px 25px 28px}
-.target-wizard-heading{display:block!important;margin:0 0 20px;padding:0 0 16px!important;border:0!important;border-bottom:1px solid var(--line)!important}
-.target-wizard-heading p,.target-wizard-heading small{margin:0;color:var(--muted);font-size:11px}.target-wizard-heading h3{margin:3px 0 5px;font:650 19px Georgia,"Songti SC",serif}
-.target-wizard-content>.target-recovery-summary{margin-top:22px;padding:17px;border:1px solid var(--line);background:#f8fafc}
-.target-wizard-summary-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.target-wizard-summary-head h3{margin:0}
-#save-target[hidden]{display:none!important}
-@media(max-width:800px){.target-wizard-shell{grid-template-columns:1fr}.target-wizard-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-right:0;border-bottom:1px solid var(--line)}.target-wizard-nav button{grid-template-columns:26px minmax(0,1fr);padding:9px 7px}.target-wizard-nav button>span:first-child{width:26px;height:26px}.target-wizard-nav small,.target-wizard-nav em{display:none}.target-wizard-content{padding:18px 15px}.target-recovery-form .ops-field{grid-column:span 12}}
 /* 业务系统独立三步工作区：列表适配大规模资源，拓扑用于关系确认。 */
 .business-architecture-tags{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}.business-architecture-tags span{padding:3px 7px;border:1px solid var(--line);border-radius:999px;color:var(--accent);background:#edf1fa;font-size:11px}
 .business-workspace-v2{--business-surface:var(--paper,#fff);--business-subtle:#f7f8fb;max-width:none;padding-bottom:30px;color:var(--ink)}

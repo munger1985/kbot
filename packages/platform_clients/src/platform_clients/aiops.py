@@ -2325,10 +2325,16 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         agent_id: UUID | None,
         limit: int,
         auth_context: AuthContext,
+        situation_id: UUID | None = None,
+        run_id: UUID | None = None,
     ) -> list[dict[str, Any]]:
         path = f"{INTERNAL_API_V1}/aiops/conversations?limit={limit}"
         if agent_id is not None:
             path += f"&agent_id={agent_id}"
+        if situation_id is not None:
+            path += f"&situation_id={situation_id}"
+        if run_id is not None:
+            path += f"&run_id={run_id}"
         return await self._json("GET", path, auth_context=auth_context)
 
     async def get_conversation(

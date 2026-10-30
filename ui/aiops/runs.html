@@ -1,35 +1,11 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>运行记录</title>
-  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-</head>
-<body data-page="runs">
-  <main class="ops-main">
-    <header class="ops-head">
-      <div>
-        <h1>运行记录</h1>
-        <p>追踪智能诊断、告警诊断、日常巡检和受控变更的系统执行状态及冻结结果。</p>
-      </div>
-      <button type="button" onclick="location.reload()">刷新</button>
-    </header>
-    <section class="ops-panel">
-      <div class="ops-panel-head">
-        <div><h2>运行记录</h2><p>按创建时间查看诊断、巡检与受控变更的执行结果。</p></div>
-      </div>
-      <div class="ops-table-wrap">
-        <table class="ops-table">
-          <thead id="ops-table-head"></thead>
-          <tbody id="ops-table-body"><tr><td class="ops-empty">正在加载运行记录…</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-  </main>
-  <script src="../runtime-config.js"></script>
-  <script src="./js/aiops-auth.js"></script>
-  <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-pages.js?v=20261029-read-existing-1"></script>
-</body>
-</html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>运行记录</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-runs.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
+<body data-page="runs"><main class="ops-main platform-home-page aiops-page">
+  <header class="platform-home-header"><div class="login-brand"><span class="brand-mark">A</span><strong>运行记录</strong></div></header>
+  <section class="platform-home-hero app-page-head"><div><p class="eyebrow">系统执行管理</p><h1>运行记录</h1><p>追踪智能诊断、告警诊断、日常巡检和受控变更的系统执行状态及冻结结果。</p></div></section>
+  <section id="runs-loading" class="loading-card"><span class="loading-orb"></span>正在读取运行记录…</section>
+  <section id="runs-table" class="table-card" hidden><header class="resource-list-header"><div class="resource-list-heading"><h2>运行记录</h2><p>按创建时间查看诊断、巡检与受控变更的执行结果。</p></div><div class="resource-list-tools"><span id="runs-count" class="resource-list-count">0 条</span><button id="refresh-runs" class="secondary-button" type="button">刷新</button></div></header><div class="table-scroll"><table><thead><tr><th>工作流</th><th>触发方式</th><th>状态</th><th>创建时间</th><th>完成时间</th><th class="table-action-heading">操作</th></tr></thead><tbody id="runs-body"></tbody></table></div></section>
+</main>
+<dialog id="run-drawer" class="reference-drawer admin-drawer aiops-detail-drawer" aria-labelledby="run-detail-title"><header class="admin-drawer-header"><div><p id="run-detail-eyebrow" class="eyebrow"></p><h2 id="run-detail-title">运行详情</h2><p id="run-detail-id" class="technical-value"></p></div><button class="icon-button" type="button" aria-label="关闭运行详情" data-close-run>×</button></header><section id="run-detail-facts" class="key-value-card"></section><section class="key-value-card"><h3>自动诊断</h3><div id="run-result"></div></section><section id="run-lifecycle" class="key-value-card" aria-label="只读查询清理回执" hidden></section><footer class="admin-drawer-footer"><button id="refresh-run-detail" class="secondary-button" type="button">刷新详情</button><button id="cancel-future-observation" class="secondary-button" type="button" hidden>取消后续采样</button><button id="continue-run-diagnosis" class="primary-button" type="button" hidden>继续深入诊断</button><button class="secondary-button" type="button" data-close-run>关闭</button></footer></dialog>
+<dialog id="run-confirm-dialog" class="confirm-dialog confirm-dialog--warning" aria-labelledby="run-confirm-title" aria-describedby="run-confirm-message"><header class="confirm-dialog-header"><span class="confirm-dialog-mark" aria-hidden="true">!</span><div><p class="confirm-dialog-kicker">请确认此操作</p><h2 id="run-confirm-title">取消未来观察</h2></div></header><p id="run-confirm-message" class="confirm-dialog-message">停止后续采样，已采集的原始结果仍保留。</p><footer class="confirm-dialog-actions"><button class="secondary-button" type="button" data-cancel-run-confirm>取消</button><button class="primary-button" type="button" data-confirm-run>取消采样</button></footer></dialog>
+<script src="../runtime-config.js"></script><script src="../vendor/marked.umd.js"></script><script src="../vendor/purify.min.js"></script><script src="../shared/kbot-markdown.js?v=20260827_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261030_1"></script><script src="../vendor/echarts.min.js"></script><script src="./js/aiops-chat-charts.js?v=20261030_1"></script><script src="./js/aiops-workspaces.js?v=20261030_4"></script><script src="./js/aiops-runs.js?v=20261030_1"></script></body></html>

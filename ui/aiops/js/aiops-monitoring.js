@@ -7,6 +7,7 @@
     sources: [], instances: [], profiles: [], view: null,
     sourceId: "", baseline: "1w", profileId: "", window: "1h", selected: [], search: "",
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
+    chartObservers: new Map(),
     visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null,
     instanceDrawerTrigger: null, railCollapsed: false,
   };
@@ -41,10 +42,10 @@
   function label(value) { return readinessLabels[value] || value || "不可用"; }
   function setRailCollapsed(collapsed) {
     state.railCollapsed = collapsed;
-    document.getElementById("monitoring-workspace").classList.toggle("is-rail-collapsed", collapsed);
+    document.getElementById("monitoring-workspace").classList.toggle("rail-collapsed", collapsed);
     const toggle = document.getElementById("monitoring-rail-toggle");
     toggle.setAttribute("aria-expanded", String(!collapsed));
-    toggle.setAttribute("aria-label", collapsed ? "展开实时监控查询上下文" : "收起实时监控查询上下文");
+    toggle.setAttribute("aria-label", collapsed ? "展开数据库与过滤条件" : "收起数据库与过滤条件");
   }
   function pointQualityLabel(value) {
     return ({ GOOD: "正常", INVALID: "无效", STALE: "已过期", ESTIMATED: "估算" })[value] || value || "未知";
@@ -54,7 +55,7 @@
     if (["DISCONNECTED", "UNAVAILABLE", "NO_DATA"].includes(value)) return "bad";
     return "warn";
   }
-  function badge(value, text) { return `<span class="ops-badge ${tone(value)}">${esc(text || label(value))}</span>`; }
+  function badge(value, text, tag = "span") { return `<${tag} class="status-pill ${({ good: "status-success", bad: "status-danger", warn: "status-warning" })[tone(value)]}">${esc(text || label(value))}</${tag}>`; }
   function unitLabel(unit = "") {
     return ({
       state: "状态", percent: "%", count: "个", milliseconds: "毫秒",
@@ -155,13 +156,15 @@
     state.controller = null;
   }
   function disposeCharts() {
+    state.chartObservers.forEach(observer => observer.disconnect());
+    state.chartObservers.clear();
     state.charts.forEach((chart) => chart.dispose());
     state.charts.clear();
   }
   function setLoading(loading, text = "正在查询实时指标…") {
     const node = document.getElementById("monitoring-loading");
     node.hidden = !loading;
-    node.querySelector(".ops-empty").textContent = text;
+    node.firstElementChild.textContent = text;
   }
   function updateDiagnosisLink() {
     const link = document.getElementById("monitoring-diagnosis-link");
@@ -179,18 +182,13 @@
   }
   function renderFreshness() {
     const view = state.view;
-    const status = view ? (view.partial ? "部分成功" : "正常") : "未查询";
-    document.getElementById("monitoring-freshness").textContent = [
-      `生成于 ${shell.fmt(view?.generated_at)}`,
-      `最新采样 ${shell.fmt(latestSampleAt())}`,
-      `来源 ${sourceById()?.display_name || "—"}`,
-      `实例 ${state.instances.find((item) => state.selected.includes(item.instance_id))?.display_name || "未选择"}`, status,
-    ].join(" · ");
+    document.getElementById("monitoring-freshness").textContent = shell.fmt(latestSampleAt());
+    document.getElementById("monitoring-profile-name").textContent = profileById()?.display_name || "统一总览";
     document.getElementById("refresh-monitoring").disabled = !canQuery();
     updateDiagnosisLink();
   }
   function gateContent(title, detail, gaps = []) {
-    return `<div class="ops-monitoring-gate-copy"><span>接入状态</span><h2>${esc(title)}</h2><p>${esc(detail)}</p></div><a class="ops-button" href="./diagnostic-sources.html">前往监控接入</a>${gaps.length ? `<ul>${gaps.map((gap) => `<li><strong>${esc(gap.code)}</strong><span>${esc(gap.detail)}</span></li>`).join("")}</ul>` : ""}`;
+    return `<div><p class="eyebrow">接入状态</p><h2>${esc(title)}</h2><p>${esc(detail)}</p></div><div class="monitoring-gate-actions"><a class="secondary-button" href="./diagnostic-sources.html">前往监控接入</a></div>${gaps.length ? `<ul>${gaps.map((gap) => `<li><strong>${esc(gap.code)}</strong><span>${esc(gap.detail)}</span></li>`).join("")}</ul>` : ""}`;
   }
   function renderGate() {
     const gate = document.getElementById("monitoring-gate");
@@ -223,6 +221,7 @@
   function renderContext() {
     const context = document.getElementById("monitoring-context");
     context.hidden = !state.sources.length;
+    document.getElementById("monitoring-workspace").classList.toggle("is-empty", !state.sources.length);
     document.getElementById("monitoring-source").innerHTML = state.sources.map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.sourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(label(source.monitoring_readiness))}</option>`).join("");
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
@@ -247,7 +246,8 @@
   }
   function renderInstances() {
     const picker = document.getElementById("monitoring-instance-picker");
-    picker.hidden = renderGate();
+    renderGate();
+    picker.hidden = !state.sources.length;
     if (picker.hidden) {
       closeInstanceDrawer();
       return;
@@ -255,12 +255,12 @@
     const instances = filteredInstances();
     const selectedInstance = state.instances.find((item) => state.selected.includes(item.instance_id)) || null;
     document.getElementById("monitoring-current-instance").textContent = selectedInstance?.resource_name || selectedInstance?.display_name || "未选择";
-    document.getElementById("monitoring-current-instance-meta").textContent = selectedInstance
-      ? [selectedInstance.business_system_name || "未归属业务系统", selectedInstance.db_type].join(" · ")
-      : "请选择一个数据库资源";
+    document.getElementById("monitoring-current-instance-meta").textContent = selectedInstance?.db_type || "—";
+    document.getElementById("monitoring-collapsed-label").textContent = `${selectedInstance?.resource_name || selectedInstance?.display_name || "数据库"} · ${selectedInstance?.db_type || "—"}`;
     document.getElementById("monitoring-current-instance-status").innerHTML = selectedInstance
-      ? `${badge(selectedInstance.monitoring_readiness, `监控 ${label(selectedInstance.monitoring_readiness)}`)}<span title="${esc(diagnosticGapText(selectedInstance))}">${badge(selectedInstance.diagnostic_readiness, `自动诊断 ${label(selectedInstance.diagnostic_readiness)}`)}</span>`
+      ? `<strong><i></i>${state.view?.partial ? "监控数据部分可用" : "数据库观测就绪"}</strong><span title="${esc(diagnosticGapText(selectedInstance))}">监控 ${esc(label(selectedInstance.monitoring_readiness))} · 诊断 ${esc(label(selectedInstance.diagnostic_readiness))}</span>`
       : "";
+    document.getElementById("monitoring-current-instance-status").classList.toggle("is-warning", Boolean(state.view?.partial || allGaps().length || state.view?.instances.some(item => item.status !== "AVAILABLE")));
     const count = document.getElementById("monitoring-selection-count");
     count.classList.toggle("has-selection", Boolean(state.selected.length));
     count.innerHTML = `<strong>${instances.length}</strong> 个匹配资源${state.selected.length ? " · 已选择 1 个" : " · 请选择"}`;
@@ -276,10 +276,10 @@
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
       const queryStatus = targetPickerStatus(instance, result);
       const displayName = instance.resource_name || instance.display_name;
-      return `<label class="ops-monitoring-target-option ${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(displayName)}" ${selected ? "checked" : ""}><span><strong>${esc(displayName)}</strong><small>${esc(instance.db_type)} · 监控 ${esc(label(instance.monitoring_readiness))}</small></span>${badge(queryStatus.value, queryStatus.label)}</label>`;
+      return `<label class="${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(displayName)}" ${selected ? "checked" : ""}><span><strong>${esc(displayName)}</strong><small>${esc(instance.db_type)} · 监控 ${esc(label(instance.monitoring_readiness))}</small></span>${badge(queryStatus.value, queryStatus.label, "i")}</label>`;
     };
-    const cards = [...groups.values()].map((group) => `<section class="ops-monitoring-instance-group"><header><strong>${esc(group.systemName)}</strong><span>${esc(group.resourceName)} · ${group.items.length} 个数据库入口</span></header><div>${group.items.map(card).join("")}</div></section>`).join("");
-    document.getElementById("monitoring-instance-list").innerHTML = cards || '<div class="ops-empty">当前筛选条件下没有数据库实例。</div>';
+    const cards = [...groups.values()].map((group) => `<section class="monitoring-target-group"><header><strong>${esc(group.systemName)}</strong><span>${esc(group.resourceName)} · ${group.items.length} 个数据库入口</span></header>${group.items.map(card).join("")}</section>`).join("");
+    document.getElementById("monitoring-instance-list").innerHTML = cards || '<p class="monitoring-target-empty">没有匹配的数据库资源。</p>';
     renderFreshness();
   }
   function scheduleView() {
@@ -426,14 +426,6 @@
       label: instance.monitoring_readiness === "READY" ? "监控就绪" : label(instance.monitoring_readiness),
     };
   }
-  function deltaText(points, unit) {
-    const valid = points.filter((point) => numericValue(point.value) !== null);
-    if (valid.length < 2) return "暂无变化基线";
-    const delta = numericValue(valid.at(-1).value) - numericValue(valid.at(-2).value);
-    if (delta === 0) return "较前值持平";
-    if (unit === "state") return `状态由${formatValue(valid.at(-2).value, unit)}变为${formatValue(valid.at(-1).value, unit)}`;
-    return `较前值${delta > 0 ? "上升" : "下降"} ${formatValue(Math.abs(delta), unit)}`;
-  }
   function buildCapacityTrendSeries(series, bounded) {
     const groups = new Map();
     series.forEach((item) => {
@@ -522,19 +514,6 @@
     });
     return regularPanels;
   }
-  function renderSingleSummary() {
-    const node = document.getElementById("monitoring-single-summary");
-    const panels = (state.view.panels || []).slice(0, 6);
-    node.hidden = state.view.instances.length !== 1 || !panels.length;
-    if (node.hidden) return;
-    const instance = state.view.instances[0];
-    node.innerHTML = panels.map((panel) => {
-      const code = panel.metric_code;
-      const series = panel.series.find((item) => item.instance_id === instance.instance_id);
-      const point = latestPoint(series);
-      return `<article><span>${esc(panel.title)}</span><strong>${esc(point ? formatValue(point.value, panel.unit) : "无有效采样")}</strong><small>${point ? `${esc(deltaText(series.points, panel.unit))} · ${esc(shell.fmt(point.observed_at))}` : esc((allGaps().find((gap) => gap.instance_id === instance.instance_id && gap.metric_code === code) || {}).code || "NO_DATA")}</small></article>`;
-    }).join("");
-  }
   function seriesValueAt(series, observedAt) {
     if (!series) return null;
     const exact = series.points.find((point) => point.observed_at === observedAt);
@@ -621,20 +600,23 @@
     if (!rows.length) return '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>';
     const logicalOnly = rows.every((row) => row.scope === "LOGICAL");
     const thresholds = panel.capacity_thresholds || {};
-    const list = rows.map((row) => `<button type="button" class="ops-capacity-row" data-capacity-instance-id="${esc(row.instanceId)}"><span class="ops-capacity-heading"><strong title="${esc(row.label)}">${esc(row.label)}</strong><span class="ops-capacity-status is-${esc(row.statusTone)}">${esc(row.status)}</span></span>${row.scope === "LOGICAL" ? `<span class="ops-capacity-bar-shell ops-capacity-bar-shell-absolute"><span class="ops-capacity-bar"><i style="width:${row.barPercent}%"></i></span><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>` : row.total !== null && row.used !== null ? `<span class="ops-capacity-bar-shell"><span class="ops-capacity-bar ops-capacity-threshold-rail ${row.inconsistent ? "is-inconsistent" : ""}" style="--warning-at:${thresholds.warning_percent || 80}%;--critical-at:${thresholds.critical_percent || 90}%"><i style="width:${row.barPercent}%"></i></span><strong>${row.utilization.toFixed(1)}%</strong></span>` : `<span class="ops-capacity-unbounded"><i></i><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>`}${row.scope !== "LOGICAL" ? `<span class="ops-capacity-values"><span><small>已用</small><strong>${esc(formatValue(row.used, panel.unit))}</strong></span><span><small>可用</small><strong>${esc(row.free === null ? "未提供" : formatValue(row.free, panel.unit))}</strong></span><span><small>最大容量</small><strong>${esc(row.total === null ? "未提供" : formatValue(row.total, panel.unit))}</strong></span></span>` : ""}</button>`).join("");
+    const list = rows.map((row) => `<button type="button" class="capacity-row" data-capacity-instance-id="${esc(row.instanceId)}"><span class="capacity-row-heading"><strong title="${esc(row.label)}">${esc(row.label)}</strong><span class="capacity-status is-${esc(row.statusTone)}">${esc(row.status)}</span></span>${row.scope === "LOGICAL" ? `<span class="capacity-bar-shell capacity-bar-shell-absolute"><span class="capacity-bar"><i style="width:${row.barPercent}%"></i></span><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>` : row.total !== null && row.used !== null ? `<span class="capacity-bar-shell"><span class="capacity-bar capacity-threshold-rail ${row.inconsistent ? "is-inconsistent" : ""}" style="--warning-at:${thresholds.warning_percent || 80}%;--critical-at:${thresholds.critical_percent || 90}%"><i style="width:${row.barPercent}%"></i></span><strong>${row.utilization.toFixed(1)}%</strong></span>` : `<span class="capacity-unbounded"><i></i><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>`}${row.scope !== "LOGICAL" ? `<span class="capacity-values"><span><small>已用</small><strong>${esc(formatValue(row.used, panel.unit))}</strong></span><span><small>可用</small><strong>${esc(row.free === null ? "未提供" : formatValue(row.free, panel.unit))}</strong></span><span><small>最大容量</small><strong>${esc(row.total === null ? "未提供" : formatValue(row.total, panel.unit))}</strong></span></span>` : ""}</button>`).join("");
     const legend = logicalOnly
       ? '<span><i class="is-used"></i>逻辑占用</span><small>柱长按当前最大逻辑占用归一，仅用于库间大小对比，不表示使用率。</small>'
       : `<span><i class="is-used"></i>已用</span><span><i class="is-available"></i>可用</span><small>状态阈值由 ${esc(thresholds.warning_percent)}% / ${esc(thresholds.critical_percent)}% Monitoring Profile 下发</small>`;
-    return `<div class="ops-capacity-overview"><div class="ops-capacity-legend">${legend}</div><div class="ops-capacity-row-list">${list}</div></div>`;
+    return `<div class="capacity-overview"><div class="capacity-legend">${legend}</div><div class="capacity-row-list">${list}</div></div>`;
   }
   function chartOption(panel) {
-    const colors = ["#465f9e", "#247455", "#9a6518", "#ad3c45", "#526f8a", "#7a5f8f"];
+    const cssColor = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const colors = ["--accent", "--info", "--success", "--warning", "--danger", "--muted"].map(cssColor).filter(Boolean);
     const series = panel.series.filter((item) => item.points.some((point) => numericValue(point.value) !== null));
     const selected = Object.fromEntries(series.map((item, index) => [seriesLabel(item), index < 6]));
     const showLegend = series.length > 1;
-    const common = { animationDuration: 220, color: colors, legend: { show: showLegend, top: 0, type: "scroll", selected, textStyle: { color: "#697386", fontSize: 10 } }, grid: { left: 54, right: 18, top: showLegend ? 38 : 16, bottom: 34 } };
+    const common = { animationDuration: 220, color: colors, legend: { show: showLegend, top: 0, type: "scroll", selected, textStyle: { color: cssColor("--muted"), fontSize: 10 } }, grid: { left: 54, right: 18, top: showLegend ? 38 : 16, bottom: 34 } };
     const sourceNames = [...new Set(series.map((item) => item.source_display_name).filter(Boolean))].join(" / ");
-    const tooltip = { trigger: "axis", formatter: (entries) => {
+    const tooltip = { renderMode: "html", appendTo: "body", confine: false, enterable: true,
+      extraCssText: "max-width:min(420px,calc(100vw - 24px));max-height:min(360px,calc(100vh - 24px));overflow:auto;",
+      backgroundColor: cssColor("--surface-raised"), borderColor: cssColor("--line-strong"), textStyle: { color: cssColor("--ink") }, trigger: "axis", formatter: (entries) => {
       const values = Array.isArray(entries) ? entries : [entries];
       const at = values[0]?.axisValue || values[0]?.name || "";
       return [esc(shell.fmt(at)), ...values.map((entry) => {
@@ -648,15 +630,15 @@
       : panel.unit === "state" ? { min: 0, max: 1 } : { scale: true };
     if (["STAT", "GAUGE"].includes(panel.visualization)) return {
       ...common, tooltip: { ...tooltip, axisPointer: { type: "shadow" } },
-      xAxis: { type: "category", data: series.map(seriesLabel), axisTick: { show: false }, axisLabel: { interval: 0, hideOverlap: true, color: "#697386", fontSize: 10 } },
-      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#697386", fontSize: 10, formatter: (value) => axisValueLabel(value, panel.unit) }, splitNumber: 3, splitLine: { lineStyle: { color: "#d8dde7", opacity: .62 } }, ...axisBounds },
+      xAxis: { type: "category", data: series.map(seriesLabel), axisTick: { show: false }, axisLine: { lineStyle: { color: cssColor("--line") } }, axisLabel: { interval: 0, hideOverlap: true, color: cssColor("--faint"), fontSize: 10 } },
+      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), nameTextStyle: { color: cssColor("--faint") }, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: cssColor("--faint"), fontSize: 10, formatter: (value) => axisValueLabel(value, panel.unit) }, splitNumber: 3, splitLine: { lineStyle: { color: cssColor("--line-subtle"), opacity: .62 } }, ...axisBounds },
       series: [{ type: "bar", name: panel.title, barMaxWidth: 22, itemStyle: { borderRadius: [3, 3, 0, 0] }, data: series.map((item) => numericValue(latestPoint(item)?.value)) }],
     };
     return {
       ...common, tooltip,
-      xAxis: { type: "time", axisTick: { show: false }, axisLabel: { hideOverlap: true, color: "#697386", fontSize: 10 } },
-      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#697386", fontSize: 10, formatter: (value) => axisValueLabel(value, panel.unit) }, splitNumber: 3, splitLine: { lineStyle: { color: "#d8dde7", opacity: .62 } }, ...axisBounds },
-      series: series.map((item, index) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, smooth: .16, areaStyle: index === 0 ? { opacity: .08 } : undefined, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]), markLine: index === 0 && (panel.thresholds || panel.capacity_thresholds) ? { silent: true, symbol: "none", label: { show: false }, data: [{ yAxis: panel.thresholds?.warning_value ?? panel.capacity_thresholds?.warning_percent, lineStyle: { color: "#9a6518", type: "dashed" } }, { yAxis: panel.thresholds?.critical_value ?? panel.capacity_thresholds?.critical_percent, lineStyle: { color: "#ad3c45", type: "dashed" } }] } : undefined })),
+      xAxis: { type: "time", axisTick: { show: false }, axisLine: { lineStyle: { color: cssColor("--line") } }, axisLabel: { hideOverlap: true, color: cssColor("--faint"), fontSize: 10 } },
+      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), nameTextStyle: { color: cssColor("--faint") }, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: cssColor("--faint"), fontSize: 10, formatter: (value) => axisValueLabel(value, panel.unit) }, splitNumber: 3, splitLine: { lineStyle: { color: cssColor("--line-subtle"), opacity: .62 } }, ...axisBounds },
+      series: series.map((item, index) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, lineStyle: { width: 2 }, emphasis: { focus: "series" }, smooth: .16, areaStyle: index === 0 ? { opacity: .08 } : undefined, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]), markLine: index === 0 && (panel.thresholds || panel.capacity_thresholds) ? { silent: true, symbol: "none", label: { show: false }, data: [{ yAxis: panel.thresholds?.warning_value ?? panel.capacity_thresholds?.warning_percent, lineStyle: { color: cssColor("--warning"), type: "dashed" } }, { yAxis: panel.thresholds?.critical_value ?? panel.capacity_thresholds?.critical_percent, lineStyle: { color: cssColor("--danger"), type: "dashed" } }] } : undefined })),
     };
   }
 
@@ -733,7 +715,7 @@
     const rows = times.length
       ? times.map((time) => `<tr><td>${esc(shell.fmt(time))}</td>${panel.series.map((series) => { const point = series.points.find((item) => item.observed_at === time); return `<td>${point ? `${esc(formatValue(point.value, panel.unit))} · ${esc(pointQualityLabel(point.quality))}` : "—"}</td>`; }).join("")}</tr>`).join("")
       : `<tr><td colspan="${panel.series.length + 1}" class="ops-empty">当前指标没有返回采样数据。</td></tr>`;
-    return `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>采样时间</th>${panel.series.map((series) => `<th>${esc(seriesLabel(series))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    return `<div class="table-scroll"><table><thead><tr><th>采样时间</th>${panel.series.map((series) => `<th>${esc(seriesLabel(series))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   function sortedPoints(series) {
     return [...(series.points || [])].sort((left, right) => left.observed_at.localeCompare(right.observed_at));
@@ -800,12 +782,12 @@
     const body = rows.join("") || '<tr><td colspan="6" class="ops-empty">当前指标没有返回采样数据。</td></tr>';
     const averageHeading = panel.unit === "state" ? "可用情况" : "区间均值";
     const rangeHeading = panel.unit === "state" ? "状态分布" : "波动范围";
-    return `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>时间区间</th><th>实例与来源</th><th>${averageHeading}</th><th>${rangeHeading}</th><th>区间变化</th><th>采样质量</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    return `<div class="table-scroll"><table><thead><tr><th>时间区间</th><th>实例与来源</th><th>${averageHeading}</th><th>${rangeHeading}</th><th>区间变化</th><th>采样质量</th></tr></thead><tbody>${body}</tbody></table></div>`;
   }
   function fillDataDrawer(panel) {
     document.getElementById("monitoring-data-drawer-title").textContent = panel.title;
     document.getElementById("monitoring-data-drawer-description").textContent = panel.description;
-    document.getElementById("monitoring-data-drawer-quality").innerHTML = badge(panel.quality, qualityLabels[panel.quality]);
+    document.getElementById("monitoring-data-drawer-quality").textContent = qualityLabels[panel.quality];
     document.getElementById("monitoring-data-drawer-metric").textContent = panel.metric_code;
     document.getElementById("monitoring-data-drawer-unit").textContent = unitLabel(panel.unit) || "无量纲";
     const sources = [...new Set(panel.series.map((series) => series.source_display_name).filter(Boolean))];
@@ -835,7 +817,7 @@
     state.visiblePanels = panels;
     if (!panels.length) {
       closeDataDrawer();
-      node.innerHTML = '<div class="ops-panel ops-empty">当前指标范围没有可展示图表。无采样不会显示为 0 或健康。</div>';
+      node.innerHTML = '<p class="monitoring-no-panels">当前指标范围没有可展示图表。无采样不会显示为 0 或健康。</p>';
       return;
     }
     node.innerHTML = panels.map((panel, index) => {
@@ -844,14 +826,14 @@
       const threshold = thresholdPresentation(panel);
       const snapshot = presentation.snapshot;
       const statusLabel = ({ normal: "正常", warning: "关注", danger: "紧张", none: "无数据" })[toneValue];
-      const statusValue = toneValue === "normal" ? "GOOD" : toneValue === "danger" || toneValue === "none" ? "NO_DATA" : "PARTIAL";
+      const statusValue = toneValue === "normal" ? "GOOD" : toneValue === "danger" ? "NO_DATA" : "PARTIAL";
       const averageCoverage = panel.series.length
         ? panel.series.reduce((total, series) => total + series.coverage_ratio, 0) / panel.series.length
         : 0;
       const hasData = panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null));
-      const thresholdHtml = threshold ? `<div class="ops-monitoring-threshold-rail" style="--warning-at:${threshold.warningAt};--critical-at:${threshold.criticalAt};--current-at:${threshold.currentAt};--baseline-at:${threshold.baselineAt || "0%"}"><div class="ops-monitoring-threshold-track"><i class="is-${toneValue}"></i>${threshold.baselineAt ? '<b title="所选周期基线"></b>' : ""}</div><div><span>0</span><span>关注 ${esc(threshold.warningLabel)}</span><span>紧张 ${esc(threshold.criticalLabel)}</span><span>${esc(threshold.maximumLabel)}</span></div></div>` : "";
+      const thresholdHtml = threshold ? `<div class="monitoring-threshold-rail" style="--warning-at:${threshold.warningAt};--critical-at:${threshold.criticalAt};--current-at:${threshold.currentAt};--baseline-at:${threshold.baselineAt || "0%"}"><div class="monitoring-threshold-track"><i class="is-${toneValue}"></i>${threshold.baselineAt ? '<b title="所选周期基线"></b>' : ""}</div><div><span>0</span><span>关注 ${esc(threshold.warningLabel)}</span><span>紧张 ${esc(threshold.criticalLabel)}</span><span>${esc(threshold.maximumLabel)}</span></div></div>` : "";
       const heading = conclusionTitle(panel, toneValue, presentation);
-      return `<article class="ops-panel ops-monitoring-panel tone-${toneValue} ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><div class="ops-panel-head"><div><h2 title="${esc(heading)}">${esc(heading)}</h2><p>${esc(cardSubtitle(panel, toneValue))}</p></div><div>${badge(statusValue, statusLabel)}<button type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p><div class="ops-monitoring-current-value"><strong>${esc(snapshot ? formatValue(snapshot.current, snapshot.unit) : "—")}</strong><span>${esc(snapshot?.subject || "当前值")}</span></div><div class="ops-monitoring-baseline"><span>${esc(baselineLabel())}均值 <strong>${esc(snapshot?.average === null || snapshot?.average === undefined ? "无有效采样" : formatValue(snapshot.average, snapshot.unit))}</strong></span><b>${esc(presentation.differenceText)}</b></div>${thresholdHtml}${panel.visualization === "CAPACITY_BAR" ? capacityPanelHtml(panel) : hasData ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty ops-monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span><span>覆盖率 ${(averageCoverage * 100).toFixed(1)} %</span></div></article>`;
+      return `<article class="monitoring-panel tone-${toneValue} ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><header><div><h2 title="${esc(heading)}">${esc(heading)}</h2><p>${esc(cardSubtitle(panel, toneValue))}</p></div><div class="monitoring-panel-actions">${badge(statusValue, statusLabel)}<button class="row-action" type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></header><p class="sr-only">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p><div class="monitoring-current-value"><strong>${esc(snapshot ? formatValue(snapshot.current, snapshot.unit) : "—")}</strong><span>${esc(snapshot?.subject || "当前值")}</span></div><div class="monitoring-baseline"><span>${esc(baselineLabel())}均值 <strong>${esc(snapshot?.average === null || snapshot?.average === undefined ? "无有效采样" : formatValue(snapshot.average, snapshot.unit))}</strong></span><b>${esc(presentation.differenceText)}</b></div>${thresholdHtml}${panel.visualization === "CAPACITY_BAR" ? capacityPanelHtml(panel) : hasData ? `<div id="monitoring-chart-${index}" class="monitoring-chart-canvas" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<footer><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span><span>覆盖率 ${(averageCoverage * 100).toFixed(1)} %</span></footer></article>`;
     }).join("");
     panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);
@@ -866,6 +848,9 @@
         if (series) drillInto(series.instance_id);
       });
       state.charts.set(panel.panel_id, chart);
+      const observer = new ResizeObserver(() => chart.resize());
+      observer.observe(container);
+      state.chartObservers.set(panel.panel_id, observer);
     });
     const drawer = document.getElementById("monitoring-data-drawer");
     if (drawer.open) {
@@ -875,21 +860,23 @@
   }
   function renderQuality() {
     const gaps = allGaps();
-    document.getElementById("monitoring-result-state").innerHTML = badge(state.view.partial ? "PARTIAL" : "GOOD", state.view.partial ? "部分成功" : "查询完成");
+    document.getElementById("monitoring-result-state").textContent = state.view.partial ? "部分成功" : "查询完成";
     const sourceLabel = [state.view.source, state.view.compare_source].filter(Boolean).map((source) => `${source.display_name} · ${source.source_type}`).join(" / ");
-    document.getElementById("monitoring-quality-context").innerHTML = `<dt>监控源</dt><dd>${esc(sourceLabel)}</dd><dt>采样窗口</dt><dd>${esc(shell.fmt(state.view.window.start))} 至 ${esc(shell.fmt(state.view.window.end))}</dd><dt>指标范围</dt><dd>${esc(state.view.profile.display_name)} · ${esc(state.view.profile.version)}</dd><dt>返回实例</dt><dd>${state.view.instances.length}</dd>`;
-    document.getElementById("monitoring-gaps").innerHTML = gaps.length ? gaps.map((gap) => `<article>${badge("PARTIAL", gap.scope)}<div><strong>${esc(gap.code)}${gap.metric_code ? ` · ${esc(gap.metric_code)}` : ""}</strong><p>${esc(gap.detail)}</p></div><small>${gap.retryable ? "可重试" : "需配置或检查"}</small></article>`).join("") : '<div class="ops-empty">当前查询未返回能力或采样缺口。</div>';
+    document.getElementById("monitoring-quality-context").innerHTML = `<div><dt>监控源</dt><dd>${esc(sourceLabel)}</dd></div><div><dt>采样窗口</dt><dd>${esc(shell.fmt(state.view.window.start))} 至 ${esc(shell.fmt(state.view.window.end))}</dd></div><div><dt>指标范围</dt><dd>${esc(state.view.profile.display_name)} · ${esc(state.view.profile.version)}</dd></div><div><dt>返回实例</dt><dd>${state.view.instances.length}</dd></div>`;
+    document.getElementById("monitoring-gaps").innerHTML = gaps.length ? gaps.map((gap) => `<li>${badge("PARTIAL", gap.scope)}<div><strong>${esc(gap.code)}${gap.metric_code ? ` · ${esc(gap.metric_code)}` : ""}</strong><p>${esc(gap.detail)}</p></div><small>${gap.retryable ? "可重试" : "需配置或检查"}</small></li>`).join("") : '<li class="monitoring-quality-ok">当前查询未返回能力或采样缺口。</li>';
   }
   function renderResult() {
     document.getElementById("monitoring-gate").hidden = true;
     document.getElementById("monitoring-result").hidden = false;
-    const counts = {
-      available: state.view.instances.filter((item) => item.status === "AVAILABLE").length,
-      partial: state.view.instances.filter((item) => item.status === "PARTIAL").length,
-      unavailable: state.view.instances.filter((item) => item.status === "UNAVAILABLE").length,
-    };
-    document.getElementById("monitoring-quality-ledger").innerHTML = [["正常实例", counts.available], ["部分成功", counts.partial], ["不可用", counts.unavailable], ["缺口数量", allGaps().length], ["时间窗口", state.window]].map(([name, value]) => `<div><span>${esc(name)}</span><strong>${esc(value)}</strong></div>`).join("");
-    renderSingleSummary(); renderPanels(); renderQuality(); renderInstances(); renderFreshness();
+    const counts = { available: 0, partial: 0, unavailable: 0 };
+    state.view.instances.forEach(item => { counts[item.status === "AVAILABLE" ? "available" : item.status === "PARTIAL" ? "partial" : "unavailable"]++; });
+    const hasIssue = Boolean(state.view.partial || counts.partial || counts.unavailable || allGaps().length);
+    const summary = hasIssue ? `${counts.partial} 个部分成功 · ${counts.unavailable} 个不可用 · ${allGaps().length} 个缺口` : `${counts.available} 个正常实例 · 无缺口`;
+    const ledger = document.getElementById("monitoring-quality-ledger");
+    ledger.classList.toggle("has-issue", hasIssue);
+    ledger.innerHTML = `<div><i></i><strong>${state.view.partial ? "部分指标需要关注" : "当前数据库运行状态可观测"}</strong><span>生成于 ${esc(shell.fmt(state.view.generated_at))}</span></div><span class="monitoring-summary-source">来源 <code>${esc(sourceById()?.display_name || "—")}</code></span><button class="monitoring-quality-toggle" id="toggle-monitoring-quality" type="button"><span>数据质量</span><strong>${esc(summary)}</strong><b>${document.getElementById("monitoring-quality-detail").hidden ? "详情" : "收起"}</b></button>`;
+    document.getElementById("toggle-monitoring-quality").onclick = (event) => { const detail = document.getElementById("monitoring-quality-detail"); detail.hidden = !detail.hidden; event.currentTarget.querySelector("b").textContent = detail.hidden ? "详情" : "收起"; };
+    renderPanels(); renderQuality(); renderInstances(); renderFreshness();
   }
   function drillInto(instanceId) {
     void selectInstance(instanceId);

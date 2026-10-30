@@ -1,864 +1,151 @@
 (function () {
   "use strict";
-
-  const api = "/api/v1/apps/aiops";
-  const shell = globalThis.KBotAIOpsShell;
-  let editing = null;
-  let inspectionAgents = [];
-  let inspectionCatalog = null;
-  let inspectionTemplates = [];
-
-  function showResult(id, message, tone = "bad") {
-    const element = document.getElementById(id);
-    if (!element) return;
-    element.textContent = message;
-    element.dataset.tone = tone;
+  if (document.body.dataset.page === "diagnostic-source-detail") {
+    const query = new URLSearchParams(location.search);if (query.has("id")) {query.set("sourceId",query.get("id"));query.delete("id");}location.replace("./diagnostic-sources.html?"+query);return;
   }
-
-  function closeButtons(dialog) {
-    dialog.querySelectorAll("[data-close-dialog]").forEach((button) => {
-      button.addEventListener("click", () => dialog.close());
-    });
+  const api = "/api/v1/apps/aiops/diagnostic-sources", shell = globalThis.KBotAIOpsShell, auth = globalThis.KBotAIOpsAuth;
+  const esc = value => shell.escape(value ?? ""), rows = value => Array.isArray(value) ? value : value?.items || [];
+  const drawer = document.getElementById("diagnostic-source-dialog"), form = document.getElementById("diagnostic-source-form"), webhookDrawer = document.getElementById("source-webhook-drawer");
+  const state = {items:[],editing:null,loading:false,busy:false,search:"",sequence:0,opening:0,openingWebhook:"",poll:null,attempts:0,confirm:null,webhook:null,reveal:null,generating:false,webhookError:"",rotationKey:"",copied:{},copyTimers:[],manage:false};
+  const request = (path = "",init) => auth.request(api + path,init), versionHeaders = item => ({"If-Match":`"rv-${item.row_version}"`});
+  function showError(message = "") {const node = document.getElementById("source-error");node.textContent = message;node.hidden = !message;}
+  function connectivity(item) {
+    const status = item.connectivity_check_pending ? "CHECKING" : item.health_status ?? item.connectivity_status ?? "UNKNOWN";
+    const labels = {HEALTHY:["已连通","success"],CONNECTED:["已连通","success"],DEGRADED:["受限","warning"],CHECKING:["未检测","muted"],UNREACHABLE:["不可达","danger"],MISCONFIGURED:["容器不匹配","danger"],DISCONNECTED:["未连接","danger"],UNHEALTHY:["异常","danger"],UNKNOWN:["未检测","muted"]};
+    const [label,tone] = labels[status] || [status || "未检测","muted"];
+    return {label,tone,usable:!item.connectivity_check_pending && ["HEALTHY","CONNECTED","DEGRADED"].includes(status)};
   }
-
-  const sourcePresentation = {
-    PROMETHEUS: {
-      placeholder: "http://prometheus.internal:9090",
-      help: "Prometheus HTTP API 地址，必须能从 KBot 服务访问。",
-      capabilities: ["指标时序查询", "活动告警查询"],
-    },
-    ALERTMANAGER: {
-      placeholder: "http://alertmanager.internal:9093（可选）",
-      help: "只接收 Webhook 时可以留空；填写后可同时检查 Alertmanager 就绪状态。",
-      capabilities: ["告警事件接收"],
-    },
-    LOKI: {
-      placeholder: "http://loki.internal:3100",
-      help: "Loki HTTP API 地址，必须能从 KBot 服务访问。",
-      capabilities: ["日志查询"],
-    },
-    ZABBIX: {
-      placeholder: "https://zabbix.internal/api_jsonrpc.php",
-      help: "请输入完整的 Zabbix JSON-RPC API 地址。",
-      capabilities: ["告警事件接收", "活动事件查询", "指标时序查询"],
-    },
-    OEM: {
-      placeholder: "https://oem.internal/em/api",
-      help: "OEM 13.5 官方 REST API 地址；目标映射使用 32 位 Target GUID，历史数据可能按留存聚合。",
-      capabilities: ["原生指标目录发现", "精确指标历史（可能含留存聚合）"],
-    },
-  };
-
-  function renderSourceType(form) {
-    const type = form.elements.source_type.value;
-    const presentation = sourcePresentation[type];
-    const endpoint = form.elements.endpoint;
-    const isAlertmanager = type === "ALERTMANAGER";
-    const creatingAlertmanager = isAlertmanager && !editing;
-    const receivesWebhook = isAlertmanager || type === "ZABBIX";
-    endpoint.placeholder = presentation.placeholder;
-    endpoint.required = !isAlertmanager;
-    document.getElementById("source-endpoint-help").textContent = presentation.help;
-    document.getElementById("source-token-field").hidden = type === "OEM" || (isAlertmanager && !endpoint.value.trim());
-    document.getElementById("source-oem-username-field").hidden = type !== "OEM";
-    document.getElementById("source-oem-password-field").hidden = type !== "OEM";
-    document.getElementById("source-oem-mappings-field").hidden = type !== "OEM";
-    document.getElementById("source-webhook-field").hidden = !receivesWebhook || creatingAlertmanager;
-    document.getElementById("source-webhook-create-note").hidden = !creatingAlertmanager;
-    document.getElementById("source-webhook-key-section").hidden = !(receivesWebhook && editing);
-    document.getElementById("source-tenant-field").hidden = type !== "LOKI";
-    document.getElementById("test-diagnostic-source").hidden = isAlertmanager && !endpoint.value.trim();
-    if (!editing) {
-      document.getElementById("save-diagnostic-source").textContent = creatingAlertmanager
-        ? "创建并生成接入凭据"
-        : "创建监控源";
+  function button(label,action,source,extra = "",className = "row-action") {return `<button class="${className}" type="button" data-source-action="${action}" data-source-id="${esc(source.source_id)}"${state.busy || !state.manage ? " disabled" : ""}${extra}>${label}</button>`;}
+  function renderCatalog() {
+    const keyword = state.search.trim().toLocaleLowerCase();
+    const items = state.items.filter(item => !keyword || [item.display_name,item.source_type,item.endpoint].some(value => String(value || "").toLocaleLowerCase().includes(keyword)));
+    document.getElementById("source-catalog").innerHTML = `<button id="create-diagnostic-source" class="management-catalog-add-card" type="button"${state.loading || drawer.open || webhookDrawer.open || !state.manage ? " disabled" : ""}><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新增监控源</strong><small>接入 Prometheus、Zabbix、OEM 等监控来源</small></button>` + items.map(item => {
+      const active = ["ENABLED","ACTIVE"].includes(item.status), health = connectivity(item), enabled = item.status === "ENABLED";
+      return `<article class="management-catalog-card monitor-source-card"><header><div><p class="monitor-source-card-updated">更新于 ${esc(shell.fmt(item.updated_at))}</p><h3 title="${esc(item.display_name)}">${esc(item.display_name)}</h3></div><div class="monitor-source-card-statuses"><span class="status-pill ${active ? "status-active" : "status-disabled"}">${active ? "已启用" : "已停用"}</span><span class="status-pill target-status-badge status-${health.tone}">${health.label}</span></div></header><dl><div><dt>类型</dt><dd>${esc(item.source_type || "—")}</dd></div><div><dt>服务地址</dt><dd title="${esc(item.endpoint)}">${esc(item.endpoint || "未配置")}</dd></div></dl><footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">${button("编辑","edit",item)}${button(item.connectivity_check_pending ? "检查中" : "测试连接","connectivity",item,item.connectivity_check_pending ? " disabled" : "")}${["ALERTMANAGER","ZABBIX"].includes(item.source_type) ? button(state.openingWebhook === item.source_id ? "打开中…" : "Webhook","webhook",item,` aria-label="Webhook 接入"${state.openingWebhook ? " disabled" : ""}`) : ""}</div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" type="button" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden>${button(enabled ? "停用" : "启用",enabled ? "disable" : "enable",item,item.status === "DISABLED" && !health.usable ? ' disabled title="请先完成连接测试并确认通过"' : "",enabled ? "danger-row-action" : "row-action")}${button("删除","delete",item,item.status !== "DISABLED" ? ' disabled title="请先停用监控源"' : "","danger-row-action")}</div></div></footer></article>`;
+    }).join("");
+    const refresh = document.getElementById("refresh-sources");refresh.disabled = state.loading;refresh.textContent = state.loading ? "刷新中…" : "刷新目录";
+  }
+  function syncBusy() {
+    form.querySelectorAll("input,select,textarea,button").forEach(node => {node.disabled = state.busy;});form.elements.source_type.disabled = state.busy || Boolean(state.editing);
+    drawer.querySelector("[data-close-source]").disabled = state.busy;document.getElementById("save-diagnostic-source").textContent = state.busy ? "正在提交…" : state.editing ? "保存监控源" : "创建监控源";renderCatalog();
+  }
+  async function load() {
+    const sequence = ++state.sequence;state.loading = true;showError();renderCatalog();
+    try {
+      const result = await request("?limit=100");if (sequence !== state.sequence) return;state.items = rows(result);clearTimeout(state.poll);state.poll = null;
+      if (!state.items.some(item => item.connectivity_check_pending)) state.attempts = 0;
+      else if (state.attempts < 6) {state.attempts++;state.poll = setTimeout(load,1500);}
+    } catch (error) {if (sequence === state.sequence) showError(error.message);}
+    finally {if (sequence === state.sequence) {state.loading = false;renderCatalog();}}
+  }
+  function renderType() {
+    const type = form.elements.source_type.value, oem = type === "OEM";document.getElementById("source-token-field").hidden = oem;
+    ["username","password","mappings"].forEach(key => {document.getElementById(`source-oem-${key}-field`).hidden = !oem;});document.getElementById("source-tenant-field").hidden = type !== "LOKI";
+    document.getElementById("source-endpoint-help").textContent = oem ? "OEM 13.5 官方 API 地址，例如 https://oem.example.com/em/api；目标映射填写 32 位 Target GUID。" : "填写监控源的根地址，例如 https://monitor.example.com。";
+  }
+  function fillForm(item = null) {
+    state.editing = item;form.reset();form.elements.display_name.value = item?.display_name || "";form.elements.source_type.value = item?.source_type || "PROMETHEUS";form.elements.endpoint.value = item?.endpoint || "";
+    form.elements.loki_tenant_id.value = item?.config?.tenant_id || "";form.elements.oem_standard_mappings.value = JSON.stringify(item?.config?.standard_metric_mappings || {},null,2);
+    document.getElementById("diagnostic-source-dialog-title").textContent = item ? "编辑监控源" : "新增监控源";renderType();syncBusy();if (!drawer.open) drawer.showModal();drawer.scrollTop = 0;renderCatalog();
+  }
+  function closeSource() {if (state.busy) return;++state.opening;if (drawer.open) drawer.close();state.editing = null;form.reset();showError();renderCatalog();}
+  async function openEdit(sourceId) {
+    if (state.busy || !state.manage) return;const sequence = ++state.opening;state.busy = true;syncBusy();showError();
+    try {const item = await request(`/${encodeURIComponent(sourceId)}`);if (sequence === state.opening) fillForm(item);}
+    catch (error) {if (sequence === state.opening) showError(error.message);}
+    finally {if (sequence === state.opening) {state.busy = false;syncBusy();}}
+  }
+  function payload() {
+    const value = name => form.elements[name].value.trim(), type = value("source_type");let credentials;
+    if (type === "OEM") {const username = value("source_username"), password = form.elements.source_password.value;if (username || password) {if (!username || !password) throw new Error("OEM 用户名和密码需要同时填写；编辑时同时留空保持原凭据。");credentials = {username,password};}}
+    else if (value("access_token")) credentials = {token:value("access_token")};
+    let config = {};
+    if (type === "OEM") {const mappings = JSON.parse(form.elements.oem_standard_mappings.value || "{}");if (!mappings || typeof mappings !== "object" || Array.isArray(mappings)) throw new Error("OEM标准指标映射必须为JSON对象");config = {standard_metric_mappings:mappings};}
+    else if (type === "LOKI" && value("loki_tenant_id")) config = {tenant_id:value("loki_tenant_id")};
+    return {display_name:value("display_name"),...(!state.editing ? {source_type:type} : {}),endpoint:value("endpoint") || undefined,...(credentials ? {credentials} : {}),config};
+  }
+  async function save(event) {
+    event.preventDefault();if (state.busy || !state.manage) return;let body;try {body = payload();} catch (error) {showError(error.message);shell.toast(error.message);return;}
+    state.busy = true;syncBusy();showError();
+    try {const editing = state.editing;await request(editing ? `/${encodeURIComponent(editing.source_id)}` : "",{method:editing ? "PATCH" : "POST",headers:editing ? versionHeaders(editing) : {"Idempotency-Key":auth.uuid()},body:JSON.stringify(body)});state.busy = false;closeSource();await load();}
+    catch (error) {showError(error.message);shell.toast(error.message);} finally {state.busy = false;syncBusy();}
+  }
+  function settleConfirmation(value) {const resolve = state.confirm;state.confirm = null;document.getElementById("source-confirm-dialog").close();resolve?.(value);}
+  async function confirmAction(copy) {
+    if (state.confirm) return false;const dialog = document.getElementById("source-confirm-dialog");dialog.className = `confirm-dialog confirm-dialog--${copy.tone}`;
+    dialog.querySelector(".confirm-dialog-mark").textContent = copy.tone === "danger" ? "!" : "?";dialog.querySelector(".confirm-dialog-kicker").textContent = copy.tone === "danger" ? "请确认此操作" : "需要你的确认";
+    document.getElementById("source-confirm-title").textContent = copy.title;document.getElementById("source-confirm-message").textContent = copy.message;const button = dialog.querySelector("[data-confirm-source]");button.textContent = copy.label;button.className = copy.tone === "danger" ? "danger-button" : "primary-button";
+    dialog.showModal();dialog.querySelector("[data-cancel-source-confirm]").focus();return new Promise(resolve => {state.confirm = resolve;});
+  }
+  async function command(item,action) {
+    if (state.busy || !state.manage) return;
+    if (action !== "connectivity") {const copy = action === "delete" ? {title:"删除监控源？",message:"删除后将移除受管凭据。仍被 Agent、映射或监控信号历史引用的数据源不能删除。",label:"删除",tone:"danger"} : action === "enable" ? {title:"启用监控源？",message:"启用后 Agent 可以使用该数据源采集诊断证据。",label:"启用",tone:"warning"} : {title:"停用监控源？",message:"停用后 Agent 不会再使用该数据源。",label:"停用",tone:"danger"};if (!await confirmAction(copy)) return;}
+    state.busy = true;syncBusy();showError();
+    try {
+      const result = await request(`/${encodeURIComponent(item.source_id)}${action === "delete" ? "" : action === "connectivity" ? "/connectivity-checks" : `/${action}`}`,{method:action === "delete" ? "DELETE" : "POST",headers:{...versionHeaders(item),"Idempotency-Key":auth.uuid()}});
+      await load();if (action === "connectivity") shell.toast(`测试结果：${connectivity({...result,health_status:result.connectivity_status}).label}${result.last_error_code ? `（${result.last_error_code}）` : ""}`);else if (action === "delete") shell.toast("监控源已删除。");
+    } catch (error) {showError(error.message);shell.toast(error.message);} finally {state.busy = false;syncBusy();}
+  }
+  function clearCopied() {state.copyTimers.forEach(clearTimeout);state.copyTimers = [];state.copied = {};}
+  function closeWebhook() {if (state.generating) return;if (webhookDrawer.open) webhookDrawer.close();state.webhook = null;state.reveal = null;state.webhookError = "";state.rotationKey = "";clearCopied();document.getElementById("source-webhook-content").replaceChildren();renderCatalog();}
+  async function openWebhook(item) {
+    if (state.openingWebhook || state.busy || !state.manage) return;const sequence = ++state.opening;state.openingWebhook = item.source_id;renderCatalog();
+    try {const detail = await request(`/${encodeURIComponent(item.source_id)}`);if (sequence !== state.opening) return;state.webhook = detail;state.reveal = null;state.webhookError = "";state.rotationKey = "";clearCopied();renderWebhook();webhookDrawer.showModal();webhookDrawer.scrollTop = 0;}
+    catch (error) {shell.toast(error.message);} finally {state.openingWebhook = "";renderCatalog();}
+  }
+  function snippet() {const reveal = state.reveal;if (!reveal?.webhook_key) return "";const prefix = state.webhook.source_type === "ALERTMANAGER" ? "kbot_" : "";return `${prefix}webhook_key = ${reveal.webhook_key}\n${prefix}webhook_secret = ${reveal.webhook_secret}`;}
+  function renderWebhook() {
+    const source = state.webhook;if (!source) return;document.getElementById("webhook-source-name").textContent = `监控源 · ${source.display_name}`;webhookDrawer.querySelector("[data-close-webhook]").disabled = state.generating;
+    const replacing = source.webhook_configured || source.webhook_secret?.configured, alertmanager = source.source_type === "ALERTMANAGER", content = document.getElementById("source-webhook-content");
+    const heading = (index,title,description) => `<header><span>${index}</span><div><strong>${title}</strong><small>${description}</small></div></header>`;
+    if (!state.reveal) {
+      content.className = "webhook-credential-intro";
+      content.innerHTML = `<section class="drawer-form-section">${heading("01","系统将生成两项独立凭据","无需自行编写随机值，也不要让两项使用相同内容。")}<dl class="webhook-credential-purpose"><div><dt>Webhook HMAC Secret</dt><dd>签名桥使用它计算 HMAC，KBot 使用同一个值验证告警正文。</dd></div><div><dt>Webhook Key</dt><dd>KBot 使用它在接收 URL 中定位当前监控源。</dd></div></dl></section><section class="drawer-form-section">${heading("02","生成后的配置位置","两项凭据只显示一次，生成后请立即复制。")}${alertmanager ? '<p class="field-help">把生成结果写入 <code>var/aiops-stack/aiops-stack.ini</code> 的 <code>[metrics]</code>：</p><dl class="webhook-config-map"><div><dt>HMAC Secret</dt><dd><code>kbot_webhook_secret</code></dd></div><div><dt>Webhook Key</dt><dd><code>kbot_webhook_key</code></dd></div></dl>' : '<p class="field-help">将 HMAC Secret 配置到 Webhook 发送端的签名凭据，将 Webhook Key 放入 KBot 事件接收 URL。</p>'}</section>${replacing ? '<div class="notice notice-warning"><strong>当前监控源已有 Webhook 凭据</strong><span>重新生成会替换 Secret 并轮换 Key；部署侧必须立即同步更新。</span></div>' : ""}<footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close-webhook${state.generating ? " disabled" : ""}>取消</button><button class="primary-button" type="button" data-generate-webhook${state.generating ? " disabled" : ""}>${state.generating ? "正在生成…" : replacing ? "重新生成两项凭据" : "生成两项凭据"}</button></footer>`;return;
     }
-    const list = document.getElementById("source-capability-list");
-    list.replaceChildren(...presentation.capabilities.map((label) => {
-      const item = document.createElement("span");
-      item.className = "ops-capability";
-      item.textContent = label;
-      return item;
-    }));
+    const reveal = state.reveal, config = snippet(), copy = (key,label) => `<button class="secondary-button button-compact" type="button" data-copy-webhook="${key}">${state.copied[key] ? "已复制" : label}</button>`;
+    content.className = "webhook-credential-result";
+    content.innerHTML = `<div class="notice notice-warning"><strong>两项凭据只显示一次</strong><span>关闭抽屉后无法再次查看；遗失时必须重新生成并同步更新部署。</span></div>${state.webhookError ? `<p class="form-error">HMAC Secret 已更新，但 Webhook Key 生成失败：${esc(state.webhookError)}。请先复制 Secret，然后重试生成 Key。</p>` : ""}<div class="secret-reveal-panel"><strong>Webhook HMAC Secret</strong><div class="secret-reveal-value"><code>${esc(reveal.webhook_secret)}</code>${copy("secret","复制 Secret")}</div><span>配置到 ${alertmanager ? "kbot_webhook_secret" : "Webhook 发送端的 HMAC Secret"}。</span></div>${reveal.webhook_key ? `<div class="secret-reveal-panel"><strong>Webhook Key</strong><div class="secret-reveal-value"><code>${esc(reveal.webhook_key)}</code>${copy("key","复制 Key")}</div><span>${reveal.previous_key_expires_at ? `旧 Key 可使用到 ${esc(shell.fmt(reveal.previous_key_expires_at))}，请在此前完成部署切换。` : `配置到 ${alertmanager ? "kbot_webhook_key" : "KBot Webhook 接收 URL"}。`}</span></div>` : `<button class="secondary-button" type="button" data-retry-webhook${state.generating ? " disabled" : ""}>${state.generating ? "重试中…" : "重试生成 Webhook Key"}</button>`}${config ? `<section class="drawer-form-section">${heading("03","复制部署配置","以下内容包含敏感凭据，不要写入日志或提交到 Git。")}<pre class="webhook-config-snippet">${esc(config)}</pre><button class="secondary-button" type="button" data-copy-webhook="config">${state.copied.config ? "配置已复制" : "复制完整配置"}</button></section>` : ""}${alertmanager && reveal.webhook_key ? `<section class="drawer-form-section">${heading("04","下一步","按顺序完成部署与验证。")}<ol class="webhook-next-steps"><li>将上方两行写入 <code>var/aiops-stack/aiops-stack.ini</code> 的 <code>[metrics]</code>，并确认 <code>kbot_webhook_url</code> 是 Main API 根地址。</li><li>在部署主机执行无参数命令 <code>scripts/aiops-stack</code>，更新并重启 Webhook signer。</li><li>发送一条带 <code>target_key</code> 的测试告警，确认 KBot 能接收并关联到正确 Target。</li></ol></section>` : ""}<footer class="admin-drawer-footer">${reveal.created_at ? `<span>生成时间：${esc(shell.fmt(reveal.created_at))}</span>` : ""}<button class="primary-button" type="button" data-close-webhook${state.generating ? " disabled" : ""}>完成</button></footer>`;
   }
-
-  function sourcePayload(form, includeIdentity = true, testing = false) {
-    const type = form.elements.source_type.value;
-    const endpoint = form.elements.endpoint.value.trim();
-    const webhookSecret = form.elements.webhook_secret.value;
-    if (
-      type === "ALERTMANAGER"
-      && !endpoint
-      && !webhookSecret
-      && (testing || !editing?.webhook_secret?.configured)
-    ) {
-      throw new Error("Alertmanager 必须填写访问地址或 Webhook Secret。");
-    }
-    const credentials = {};
-    if (type === "OEM") {
-      const username = form.elements.oem_username.value.trim();
-      const password = form.elements.oem_password.value;
-      if (username || password) {
-        if (!username || !password) throw new Error("OEM 用户名和密码需要同时填写；编辑时同时留空保持原凭据。");
-        credentials.username = username;
-        credentials.password = password;
+  async function rotateKey() {
+    if (!state.rotationKey) state.rotationKey = auth.uuid();const result = await request(`/${encodeURIComponent(state.webhook.source_id)}/webhook-key:rotate`,{method:"POST",headers:{...versionHeaders(state.webhook),"Idempotency-Key":state.rotationKey}});
+    state.reveal = {...state.reveal,...result};state.webhookError = "";await load();shell.toast("Webhook 接入凭据已生成，请立即复制并完成部署配置。");
+  }
+  async function generateWebhook(retry = false) {
+    if (!state.webhook || state.generating || !state.manage || (retry && !state.reveal?.webhook_secret)) return;
+    if (!retry && (state.webhook.webhook_configured || state.webhook.webhook_secret?.configured) && !await confirmAction({title:"重新生成 Webhook 接入凭据？",message:"此操作会同时替换 HMAC Secret 并轮换 Webhook Key。必须立即更新签名桥配置，否则新的告警将验签失败。",label:"重新生成",tone:"warning"})) return;
+    state.generating = true;state.webhookError = "";renderWebhook();
+    try {
+      if (!retry) {
+        if (!globalThis.crypto?.getRandomValues) throw new Error("当前浏览器不支持安全随机数生成，请更换现代浏览器。");
+        const bytes = new Uint8Array(32);crypto.getRandomValues(bytes);const secret = Array.from(bytes,value => value.toString(16).padStart(2,"0")).join("");state.rotationKey = auth.uuid();
+        state.webhook = await request(`/${encodeURIComponent(state.webhook.source_id)}`,{method:"PATCH",headers:versionHeaders(state.webhook),body:JSON.stringify({webhook_credentials:{value:secret}})});
+        state.reveal = {webhook_secret:secret,webhook_key:""};clearCopied();renderWebhook();
       }
-    } else if (form.elements.token.value) {
-      credentials.token = form.elements.token.value;
-    }
-    const payload = {
-      display_name: form.elements.display_name.value.trim(),
-      endpoint: endpoint || null,
-      config: {},
+      try {await rotateKey();} catch (error) {state.webhookError = error.message;shell.toast(`HMAC Secret 已更新，但 Webhook Key 生成失败：${error.message}`);}
+    } catch (error) {shell.toast(error.message);} finally {state.generating = false;renderWebhook();}
+  }
+  async function copyWebhook(key) {
+    const value = key === "config" ? snippet() : state.reveal?.[key === "secret" ? "webhook_secret" : "webhook_key"];if (!value) return;
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value);
+      else {const field = document.createElement("textarea");field.value = value;field.style.position = "fixed";field.style.opacity = "0";webhookDrawer.append(field);field.select();const copied = document.execCommand("copy");field.remove();if (!copied) throw new Error("自动复制失败，请手动复制。");}
+      state.copied[key] = true;renderWebhook();state.copyTimers.push(setTimeout(() => {state.copied[key] = false;renderWebhook();},1800));
+    } catch (error) {shell.toast(error.message);}
+  }
+  function closeMenus() {document.querySelectorAll(".management-catalog-menu").forEach(menu => {menu.hidden = true;});document.querySelectorAll(".management-catalog-more").forEach(button => button.setAttribute("aria-expanded","false"));}
+  shell.ready.then(async access => {
+    state.manage = rows(access.permissions).includes("aiops:diagnostic_source_manage");document.getElementById("source-search").oninput = event => {state.search = event.target.value;renderCatalog();};document.getElementById("refresh-sources").onclick = () => {state.attempts = 0;load();};form.onsubmit = save;form.elements.source_type.onchange = renderType;
+    drawer.querySelectorAll("[data-close-source]").forEach(button => {button.onclick = closeSource;});drawer.addEventListener("cancel",event => {event.preventDefault();closeSource();});drawer.addEventListener("close",closeSource);
+    document.getElementById("source-catalog").onclick = event => {
+      if (event.target.closest("#create-diagnostic-source")) {if (!state.manage || state.busy) return;showError();fillForm();return;}
+      const more = event.target.closest(".management-catalog-more");if (more) {const menu = more.nextElementSibling, wasOpen = !menu.hidden;closeMenus();menu.hidden = wasOpen;more.setAttribute("aria-expanded",String(!wasOpen));return;}
+      const button = event.target.closest("[data-source-action]");if (!button || button.disabled) return;const item = state.items.find(row => row.source_id === button.dataset.sourceId);if (!item) return;closeMenus();if (button.dataset.sourceAction === "edit") openEdit(item.source_id);else if (button.dataset.sourceAction === "webhook") openWebhook(item);else command(item,button.dataset.sourceAction);
     };
-    if (type === "LOKI" && form.elements.tenant_id.value.trim()) {
-      payload.config.tenant_id = form.elements.tenant_id.value.trim();
-    }
-    if (type === "OEM") {
-      const mappings = JSON.parse(form.elements.oem_standard_mappings.value || "{}");
-      if (!mappings || typeof mappings !== "object" || Array.isArray(mappings)) throw new Error("OEM标准指标映射必须为JSON对象");
-      payload.config.standard_metric_mappings = mappings;
-    }
-    if (Object.keys(credentials).length) payload.credentials = credentials;
-    if (["ALERTMANAGER", "ZABBIX"].includes(type) && webhookSecret) {
-      payload.webhook_credentials = { webhook_secret: webhookSecret };
-    }
-    if (includeIdentity) payload.source_type = type;
-    return payload;
-  }
-
-  function openSourceCreate() {
-    editing = null;
-    const form = document.getElementById("diagnostic-source-form");
-    form.reset();
-    resetSourceDialogLayout(form);
-    resetWebhookSecretControl(form);
-    form.elements.source_type.disabled = false;
-    resetWebhookKeyResult();
-    renderSourceType(form);
-    document.getElementById("diagnostic-source-dialog-title").textContent = "新增监控源";
-    document.getElementById("save-diagnostic-source").textContent = "创建监控源";
-    showResult("source-test-result", "", "");
-    document.getElementById("diagnostic-source-dialog").showModal();
-    form.elements.display_name.focus();
-  }
-
-  async function openSourceEdit(sourceId) {
-    try {
-      const source = await KBotAIOpsAuth.request(`${api}/diagnostic-sources/${encodeURIComponent(sourceId)}`);
-      editing = source;
-      const form = document.getElementById("diagnostic-source-form");
-      form.reset();
-      resetSourceDialogLayout(form);
-      resetWebhookSecretControl(form);
-      form.elements.display_name.value = source.display_name;
-      form.elements.source_type.disabled = false;
-      form.elements.source_type.value = source.source_type;
-      form.elements.source_type.disabled = true;
-      form.elements.endpoint.value = source.endpoint || "";
-      form.elements.tenant_id.value = source.config?.tenant_id || "";
-      form.elements.oem_standard_mappings.value = JSON.stringify(source.config?.standard_metric_mappings || {}, null, 2);
-      renderSourceType(form);
-      resetWebhookKeyResult();
-      document.getElementById("rotate-source-webhook-key").textContent = source.webhook_configured
-        ? "轮换 Webhook Key"
-        : "生成 Webhook Key";
-      document.getElementById("diagnostic-source-dialog-title").textContent = "编辑监控源";
-      document.getElementById("save-diagnostic-source").textContent = "保存修改";
-      showResult("source-test-result", "", "");
-      document.getElementById("diagnostic-source-dialog").showModal();
-      form.elements.display_name.focus();
-    } catch (error) {
-      shell.toast(error.message);
-    }
-  }
-
-  async function saveSource(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = document.getElementById("save-diagnostic-source");
-    button.disabled = true;
-    const creatingAlertmanager = !editing && form.elements.source_type.value === "ALERTMANAGER";
-    let generatedSecret = "";
-    try {
-      if (creatingAlertmanager) {
-        generatedSecret = createWebhookSecretValue();
-        form.elements.webhook_secret.value = generatedSecret;
-      }
-      const payload = sourcePayload(form, !editing);
-      const saved = await KBotAIOpsAuth.request(
-        editing ? `${api}/diagnostic-sources/${encodeURIComponent(editing.source_id)}` : `${api}/diagnostic-sources`,
-        {
-          method: editing ? "PATCH" : "POST",
-          headers: editing
-            ? { "If-Match": `"rv-${editing.row_version}"` }
-            : { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-          body: JSON.stringify(payload),
-        },
-      );
-      if (creatingAlertmanager) {
-        editing = saved;
-        form.elements.webhook_secret.value = "";
-        let generatedKey = "";
-        let generationError = "";
-        try {
-          const rotation = await requestWebhookKey(saved);
-          generatedKey = rotation.webhook_key;
-        } catch (error) {
-          generationError = error.message;
-        }
-        showWebhookOnboarding(form, generatedSecret, generatedKey, generationError);
-        await KBotAIOpsPages.reload();
-        return;
-      }
-      form.elements.oem_username.value = "";
-      form.elements.oem_password.value = "";
-      document.getElementById("diagnostic-source-dialog").close();
-      shell.toast(
-        saved.connectivity_check_pending
-          ? "监控源已保存，正在执行连通性检查"
-          : editing ? "监控源已更新" : "监控源已创建"
-      );
-      editing = null;
-      await KBotAIOpsPages.reload();
-    } catch (error) {
-      showResult("source-test-result", error.message);
-    } finally {
-      button.disabled = false;
-      if (document.getElementById("source-webhook-onboarding").hidden) {
-        button.textContent = editing ? "保存修改" : "创建监控源";
-      }
-    }
-  }
-
-  async function testSource() {
-    const form = document.getElementById("diagnostic-source-form");
-    if (!form.reportValidity()) return;
-    const button = document.getElementById("test-diagnostic-source");
-    button.disabled = true;
-    button.textContent = "测试中…";
-    showResult("source-test-result", "正在验证监控源 API 和认证…", "");
-    try {
-      const response = await KBotAIOpsAuth.request(`${api}/diagnostic-sources/test-connection`, {
-        method: "POST",
-        body: JSON.stringify(sourcePayload(form, true, true)),
-      });
-      if (!response.ok) throw new Error(response.error_code || "监控源连接测试失败。");
-      const count = (response.discovered_capabilities || []).length;
-      showResult("source-test-result", `连接成功，已发现 ${count} 项系统能力。`, "good");
-    } catch (error) {
-      showResult("source-test-result", error.message);
-    } finally {
-      button.disabled = false;
-      button.textContent = "测试连接";
-    }
-  }
-
-  function createWebhookSecretValue() {
-    if (!globalThis.crypto?.getRandomValues) {
-      throw new Error("当前浏览器不支持安全随机数生成，请更换现代浏览器。");
-    }
-    const bytes = new Uint8Array(32);
-    globalThis.crypto.getRandomValues(bytes);
-    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-  }
-
-  function generateWebhookSecret() {
-    let secret;
-    try {
-      secret = createWebhookSecretValue();
-    } catch (error) {
-      showResult("source-test-result", error.message, "bad");
-      return;
-    }
-    const input = document.getElementById("source-webhook-secret");
-    input.value = secret;
-    input.type = "text";
-    document.getElementById("copy-source-webhook-secret").textContent = "复制";
-    showResult("source-test-result", "新 Webhook Secret 已生成。复制后保存修改，并立即更新监控部署配置。", "good");
-  }
-
-  function resetSourceDialogLayout(form) {
-    form.querySelector(".ops-form").hidden = false;
-    form.querySelector(".ops-dialog-body > .ops-dialog-note").hidden = false;
-    document.getElementById("source-webhook-onboarding").hidden = true;
-    document.getElementById("source-created-webhook-secret").value = "";
-    document.getElementById("source-created-webhook-key").value = "";
-    document.getElementById("source-created-webhook-ini").value = "";
-    [
-      ["copy-created-webhook-secret", "复制"],
-      ["copy-created-webhook-key", "复制"],
-      ["copy-created-webhook-ini", "复制配置"],
-    ].forEach(([id, label]) => {
-      const button = document.getElementById(id);
-      button.textContent = label;
-      button.disabled = false;
-    });
-    document.getElementById("source-webhook-onboarding-note").textContent = "关闭弹窗后无法再次查看；遗失时需要轮换对应凭据。";
-    document.getElementById("test-diagnostic-source").hidden = false;
-    document.getElementById("save-diagnostic-source").hidden = false;
-    document.getElementById("cancel-diagnostic-source").textContent = "取消";
-  }
-
-  function showWebhookOnboarding(form, secret, key, errorMessage = "") {
-    form.querySelector(".ops-form").hidden = true;
-    form.querySelector(".ops-dialog-body > .ops-dialog-note").hidden = true;
-    document.getElementById("source-test-result").textContent = "";
-    document.getElementById("source-created-webhook-secret").value = secret;
-    document.getElementById("source-created-webhook-key").value = key;
-    document.getElementById("source-created-webhook-ini").value = [
-      `kbot_webhook_key = ${key || "生成失败，请编辑监控源后重试"}`,
-      `kbot_webhook_secret = ${secret}`,
-    ].join("\n");
-    document.getElementById("copy-created-webhook-key").disabled = !key;
-    document.getElementById("copy-created-webhook-ini").disabled = !key;
-    document.getElementById("source-webhook-onboarding-note").textContent = errorMessage
-      ? `监控源已创建，但 Webhook Key 生成失败：${errorMessage}。请先复制 Secret，关闭后编辑监控源重试。`
-      : "Secret和Key只显示一次；复制配置后即可关闭。";
-    document.getElementById("source-webhook-onboarding").hidden = false;
-    document.getElementById("test-diagnostic-source").hidden = true;
-    document.getElementById("save-diagnostic-source").hidden = true;
-    document.getElementById("cancel-diagnostic-source").textContent = "完成";
-    document.getElementById("diagnostic-source-dialog-title").textContent = "Alertmanager 接入凭据";
-  }
-
-  function resetWebhookSecretControl(form) {
-    form.elements.webhook_secret.type = "password";
-    document.getElementById("copy-source-webhook-secret").textContent = "复制";
-  }
-
-  async function copyWebhookSecret() {
-    const input = document.getElementById("source-webhook-secret");
-    if (!input.value) {
-      showResult("source-test-result", "请先生成或填写 Webhook Secret。", "bad");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(input.value);
-    } catch (_) {
-      input.select();
-      document.execCommand("copy");
-      input.setSelectionRange(0, 0);
-    }
-    document.getElementById("copy-source-webhook-secret").textContent = "已复制";
-    shell.toast("Webhook Secret 已复制");
-  }
-
-  function resetWebhookKeyResult() {
-    const result = document.getElementById("source-webhook-key-result");
-    result.hidden = true;
-    document.getElementById("source-webhook-key-value").value = "";
-    document.getElementById("source-webhook-key-note").textContent = "关闭弹窗后无法再次查看；遗失时需要重新轮换。";
-    document.getElementById("copy-source-webhook-key").textContent = "复制";
-  }
-
-  function requestWebhookKey(source) {
-    return KBotAIOpsAuth.request(`${api}/diagnostic-sources/${encodeURIComponent(source.source_id)}/webhook-key:rotate`, {
-      method: "POST",
-      headers: {
-        "If-Match": `"rv-${source.row_version}"`,
-        "Idempotency-Key": KBotAIOpsAuth.uuid(),
-      },
-    });
-  }
-
-  async function rotateWebhookKey() {
-    if (!editing || !["ALERTMANAGER", "ZABBIX"].includes(editing.source_type)) return;
-    const form = document.getElementById("diagnostic-source-form");
-    if (form.elements.webhook_secret.value) {
-      showResult("source-test-result", "请先保存新的 Webhook Secret，再生成 Webhook Key。", "bad");
-      return;
-    }
-    if (editing.webhook_configured && !confirm("轮换后必须及时更新监控部署配置。确认继续吗？")) return;
-    const button = document.getElementById("rotate-source-webhook-key");
-    button.disabled = true;
-    button.textContent = editing.webhook_configured ? "轮换中…" : "生成中…";
-    try {
-      const result = await requestWebhookKey(editing);
-      document.getElementById("source-webhook-key-value").value = result.webhook_key;
-      document.getElementById("source-webhook-key-result").hidden = false;
-      document.getElementById("source-webhook-key-note").textContent = result.previous_key_expires_at
-        ? `旧Key可使用到 ${shell.fmt(result.previous_key_expires_at)}；请在此前重新执行部署脚本。`
-        : "关闭弹窗后无法再次查看；请立即复制到aiops-stack.ini。";
-      editing = await KBotAIOpsAuth.request(`${api}/diagnostic-sources/${encodeURIComponent(editing.source_id)}`);
-      button.textContent = "再次轮换 Webhook Key";
-      shell.toast("Webhook Key 已生成，请立即复制");
-    } catch (error) {
-      showResult("source-test-result", error.message, "bad");
-      button.textContent = editing.webhook_configured ? "轮换 Webhook Key" : "生成 Webhook Key";
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  async function copyWebhookKey() {
-    const input = document.getElementById("source-webhook-key-value");
-    if (!input.value) return;
-    try {
-      await navigator.clipboard.writeText(input.value);
-    } catch (_) {
-      input.select();
-      document.execCommand("copy");
-      input.setSelectionRange(0, 0);
-    }
-    document.getElementById("copy-source-webhook-key").textContent = "已复制";
-    shell.toast("Webhook Key 已复制");
-  }
-
-  async function copyCreatedWebhookValue(inputId, buttonId, message) {
-    const input = document.getElementById(inputId);
-    if (!input.value) return;
-    try {
-      await navigator.clipboard.writeText(input.value);
-    } catch (_) {
-      input.select();
-      document.execCommand("copy");
-      if (input.setSelectionRange) input.setSelectionRange(0, 0);
-    }
-    document.getElementById(buttonId).textContent = "已复制";
-    shell.toast(message);
-  }
-
-  const weekdayLabels = {
-    "0": "周日",
-    "1": "周一",
-    "2": "周二",
-    "3": "周三",
-    "4": "周四",
-    "5": "周五",
-    "6": "周六",
-  };
-
-  const intervalSchedules = {
-    MINUTES_15: { cron: "*/15 * * * *", summary: "每 15 分钟执行" },
-    MINUTES_30: { cron: "*/30 * * * *", summary: "每 30 分钟执行" },
-    HOURS_1: { cron: "0 * * * *", summary: "每小时整点执行" },
-    HOURS_2: { cron: "0 */2 * * *", summary: "每 2 小时整点执行" },
-    HOURS_6: { cron: "0 */6 * * *", summary: "每 6 小时整点执行" },
-    HOURS_12: { cron: "0 */12 * * *", summary: "每 12 小时整点执行" },
-  };
-
-  function scheduleTime(value) {
-    const match = /^(\d{2}):(\d{2})$/.exec(value || "");
-    if (!match) throw new Error("请选择有效的执行时间。");
-    return { hour: Number(match[1]), minute: Number(match[2]), label: value };
-  }
-
-  function checkedWeekdays(form) {
-    return Array.from(form.querySelectorAll('input[name="weekdays"]:checked'))
-      .map((input) => input.value);
-  }
-
-  function weekdaySummary(days) {
-    const ordered = ["1", "2", "3", "4", "5", "6", "0"];
-    const positions = days.map((day) => ordered.indexOf(day));
-    const consecutive = positions.every(
-      (position, index) => index === 0 || position === positions[index - 1] + 1,
-    );
-    if (days.length === 7) return "每天";
-    if (days.length >= 3 && consecutive) {
-      return `每${weekdayLabels[days[0]]}至${weekdayLabels[days.at(-1)]}`;
-    }
-    return `每${days.map((day) => weekdayLabels[day]).join("、")}`;
-  }
-
-  function catalogScheduleType(form) {
-    return form.elements.schedule_type.value === "WEEKLY" ? "WEEKLY" : "DAILY";
-  }
-
-  function catalogDefaultCheckIds(scheduleType) {
-    const wanted = scheduleType === "WEEKLY" ? "WEEKLY" : "DAILY";
-    if (!inspectionCatalog) return [];
-    return inspectionCatalog.groups.flatMap((group) => group.checks)
-      .filter((check) => check.availability === "READY" && (check.default_for || []).includes(wanted))
-      .map((check) => check.check_id);
-  }
-
-  function selectedCheckIds(form) {
-    return Array.from(form.querySelectorAll('input[name="selected_check_ids"]:checked'))
-      .map((input) => input.value);
-  }
-
-  function setSelectedCheckIds(form, checkIds) {
-    const selected = new Set(checkIds || []);
-    form.querySelectorAll('input[name="selected_check_ids"]').forEach((input) => {
-      input.checked = !input.disabled && selected.has(input.value);
-    });
-  }
-
-  function applyDefaultChecksIfCreating(form) {
-    if (editing) return;
-    setSelectedCheckIds(form, catalogDefaultCheckIds(catalogScheduleType(form)));
-  }
-
-  function renderCheckCatalog(form, selectedIds) {
-    const root = document.getElementById("inspection-check-catalog");
-    if (!root) return;
-    root.replaceChildren();
-    if (!inspectionCatalog) {
-      root.textContent = "检查目录读取失败，无法勾选检查项。";
-      return;
-    }
-    inspectionCatalog.groups.forEach((group) => {
-      const section = document.createElement("section");
-      section.className = "inspection-check-group";
-      const heading = document.createElement("h4");
-      heading.textContent = group.display_name;
-      const list = document.createElement("div");
-      list.className = "inspection-check-list";
-      group.checks.forEach((check) => {
-        const label = document.createElement("label");
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.name = "selected_check_ids";
-        input.value = check.check_id;
-        const planned = check.availability !== "READY";
-        input.disabled = planned;
-        input.checked = !planned && (selectedIds || []).includes(check.check_id);
-        if (planned) label.dataset.planned = "true";
-        const text = document.createElement("span");
-        const title = document.createElement("strong");
-        title.textContent = check.display_name;
-        const hint = document.createElement("small");
-        hint.textContent = planned
-          ? "规划中"
-          : (check.trend_required ? "周检看趋势" : "趋势可选");
-        text.append(title, hint);
-        label.append(input, text);
-        list.append(label);
-      });
-      section.append(heading, list);
-      root.append(section);
-    });
-  }
-
-  function buildSchedule(form) {
-    const mode = form.querySelector('input[name="schedule_mode"]:checked')?.value;
-    if (!mode) {
-      return {
-        type: form.elements.schedule_type.value,
-        cron: form.elements.cron_expression.value,
-        summary: "保持现有高级调度",
-      };
-    }
-    if (mode === "DAILY") {
-      const time = scheduleTime(form.elements.daily_time.value);
-      return { type: "DAILY", cron: `${time.minute} ${time.hour} * * *`, summary: `每天 ${time.label} 执行` };
-    }
-    if (mode === "WEEKLY") {
-      const time = scheduleTime(form.elements.weekly_time.value);
-      const days = checkedWeekdays(form);
-      if (!days.length) throw new Error("每周巡检至少选择一个执行日期。");
-      return { type: "WEEKLY", cron: `${time.minute} ${time.hour} * * ${days.join(",")}`, summary: `${weekdaySummary(days)} ${time.label} 执行` };
-    }
-    if (mode === "MONTHLY") {
-      const time = scheduleTime(form.elements.monthly_time.value);
-      const day = Number(form.elements.month_day.value);
-      if (!Number.isInteger(day) || day < 1 || day > 28) throw new Error("请选择每月执行日期。");
-      return { type: "CRON", cron: `${time.minute} ${time.hour} ${day} * *`, summary: `每月 ${day} 日 ${time.label} 执行` };
-    }
-    const interval = intervalSchedules[form.elements.interval_preset.value];
-    if (!interval) throw new Error("请选择有效的重复间隔。");
-    return { type: "CRON", cron: interval.cron, summary: interval.summary };
-  }
-
-  function renderSchedule(form) {
-    const mode = form.querySelector('input[name="schedule_mode"]:checked')?.value;
-    form.querySelectorAll("[data-schedule-panel]").forEach((panel) => {
-      panel.hidden = panel.dataset.schedulePanel !== mode;
-    });
-    document.getElementById("inspection-legacy-schedule").hidden = Boolean(mode);
-    try {
-      const schedule = buildSchedule(form);
-      form.elements.schedule_type.value = schedule.type;
-      form.elements.cron_expression.value = schedule.cron;
-      document.getElementById("inspection-schedule-summary").textContent = schedule.summary;
-      applyDefaultChecksIfCreating(form);
-    } catch (error) {
-      document.getElementById("inspection-schedule-summary").textContent = error.message;
-    }
-    const timezone = form.elements.timezone;
-    document.getElementById("inspection-timezone-summary").textContent =
-      timezone.selectedOptions[0]?.textContent || timezone.value;
-  }
-
-  function selectScheduleMode(form, mode, locked) {
-    form.querySelectorAll('input[name="schedule_mode"]').forEach((input) => {
-      input.checked = input.value === mode;
-      input.disabled = Boolean(locked && input.value !== mode);
-    });
-  }
-
-  function parseCronValues(value, minimum, maximum) {
-    const values = new Set();
-    for (const part of value.split(",")) {
-      const range = /^(\d+)(?:-(\d+))?$/.exec(part);
-      if (!range) return null;
-      const start = Number(range[1]);
-      const end = Number(range[2] || range[1]);
-      if (start < minimum || end > maximum || start > end) return null;
-      for (let current = start; current <= end; current += 1) values.add(current);
-    }
-    return values;
-  }
-
-  function setTime(input, hour, minute) {
-    input.value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-  }
-
-  function ensureSelectOption(select, value, label = value) {
-    if (!Array.from(select.options).some((option) => option.value === value)) {
-      select.add(new Option(label, value));
-    }
-    select.value = value;
-  }
-
-  function cronInteger(value, minimum, maximum) {
-    if (!/^\d+$/.test(value || "")) return null;
-    const parsed = Number(value);
-    return parsed >= minimum && parsed <= maximum ? parsed : null;
-  }
-
-  function hydrateScheduleBuilder(form, plan) {
-    const fields = plan.cron_expression.trim().split(/\s+/);
-    const minute = cronInteger(fields[0], 0, 59);
-    const hour = cronInteger(fields[1], 0, 23);
-    let mode = null;
-    if (fields.length === 5 && minute !== null && hour !== null && plan.schedule_type === "DAILY" && fields.slice(2).every((field) => field === "*")) {
-      mode = "DAILY";
-      setTime(form.elements.daily_time, hour, minute);
-    } else if (fields.length === 5 && minute !== null && hour !== null && plan.schedule_type === "WEEKLY" && fields[2] === "*" && fields[3] === "*" && fields[4] !== "*") {
-      const days = parseCronValues(fields[4], 0, 7);
-      if (days) {
-        mode = "WEEKLY";
-        setTime(form.elements.weekly_time, hour, minute);
-        form.querySelectorAll('input[name="weekdays"]').forEach((input) => {
-          input.checked = days.has(Number(input.value)) || (input.value === "0" && days.has(7));
-        });
-      }
-    } else if (fields.length === 5 && minute !== null && hour !== null && plan.schedule_type === "CRON" && cronInteger(fields[2], 1, 28) !== null && fields[3] === "*" && fields[4] === "*") {
-      const day = cronInteger(fields[2], 1, 28);
-      if (day >= 1 && day <= 28) {
-        mode = "MONTHLY";
-        form.elements.month_day.value = String(day);
-        setTime(form.elements.monthly_time, hour, minute);
-      }
-    } else if (plan.schedule_type === "CRON") {
-      const interval = Object.entries(intervalSchedules).find(([, item]) => item.cron === plan.cron_expression);
-      if (interval) {
-        mode = "INTERVAL";
-        form.elements.interval_preset.value = interval[0];
-      }
-    }
-    selectScheduleMode(form, mode, true);
-    ensureSelectOption(form.elements.timezone, plan.timezone);
-    ensureSelectOption(
-      form.elements.timeout_seconds,
-      String(plan.timeout_seconds),
-      `自定义 · ${plan.timeout_seconds} 秒`,
-    );
-    renderSchedule(form);
-  }
-
-  function resetScheduleBuilder(form) {
-    selectScheduleMode(form, "DAILY", false);
-    form.elements.daily_time.value = "02:00";
-    form.elements.weekly_time.value = "09:00";
-    form.elements.monthly_time.value = "09:00";
-    form.elements.month_day.value = "1";
-    form.elements.interval_preset.value = "MINUTES_15";
-    form.querySelectorAll('input[name="weekdays"]').forEach((input) => {
-      input.checked = ["1", "2", "3", "4", "5"].includes(input.value);
-    });
-    form.elements.timezone.value = "Asia/Shanghai";
-    renderSchedule(form);
-  }
-
-  function planPayload(form, create) {
-    const schedule = buildSchedule(form);
-    form.elements.schedule_type.value = schedule.type;
-    form.elements.cron_expression.value = schedule.cron;
-    const payload = {
-      display_name: form.elements.display_name.value.trim(),
-      agent_id: form.elements.agent_id.value,
-      cron_expression: schedule.cron,
-      timezone: form.elements.timezone.value,
-      inspection_template_id: form.elements.inspection_template_id.value,
-      timeout_seconds: Number(form.elements.timeout_seconds.value),
-      overlap_policy: form.elements.overlap_policy.value,
-      misfire_policy: form.elements.misfire_policy.value,
-    };
-    if (create) payload.schedule_type = form.elements.schedule_type.value;
-    return payload;
-  }
-
-  function renderInspectionTemplatePreview(form) {
-    const selected = inspectionTemplates.find((item) => String(item.inspection_template_id) === String(form.elements.inspection_template_id.value));
-    const preview = document.getElementById("inspection-template-preview");
-    if (!selected) {
-      preview.innerHTML = '<p class="inspection-helper">请选择巡检模板。</p>';
-      return;
-    }
-    const names = new Map();
-    (inspectionCatalog?.groups || []).forEach((group) => (group.checks || []).forEach((check) => names.set(check.check_id, `${group.display_name} · ${check.display_name}`)));
-    preview.innerHTML = `<div class="inspection-template-summary"><strong>${shell.escape(selected.display_name)} · v${shell.escape(selected.version_no)}</strong><small>${shell.escape((selected.selected_check_ids || []).length)} 项检查 · ${shell.escape(shell.short(selected.content_hash))}</small></div><ul>${(selected.selected_check_ids || []).map((checkId) => `<li>${shell.escape(names.get(checkId) || checkId)}</li>`).join("")}</ul>`;
-  }
-
-  function openPlanCreate() {
-    editing = null;
-    const form = document.getElementById("inspection-plan-form");
-    form.reset();
-    resetScheduleBuilder(form);
-    form.elements.inspection_template_id.value = inspectionTemplates[0]?.inspection_template_id || "";
-    renderInspectionTemplatePreview(form);
-    form.elements.timeout_seconds.value = 1800;
-    document.getElementById("inspection-plan-dialog-title").textContent = "新增巡检计划";
-    document.getElementById("save-inspection-plan").textContent = "创建并启用";
-    showResult("inspection-plan-result", "", "");
-    document.getElementById("inspection-plan-dialog").showModal();
-    form.elements.display_name.focus();
-  }
-
-  async function openPlanEdit(planId) {
-    try {
-      const plan = await KBotAIOpsAuth.request(`${api}/inspection-plans/${encodeURIComponent(planId)}`);
-      editing = plan;
-      const form = document.getElementById("inspection-plan-form");
-      form.reset();
-      Object.entries(planPayloadValues(plan)).forEach(([key, value]) => { form.elements[key].value = value; });
-      renderInspectionTemplatePreview(form);
-      hydrateScheduleBuilder(form, plan);
-      document.getElementById("inspection-plan-dialog-title").textContent = "编辑巡检计划";
-      document.getElementById("save-inspection-plan").textContent = "保存修改";
-      showResult("inspection-plan-result", "", "");
-      document.getElementById("inspection-plan-dialog").showModal();
-      form.elements.display_name.focus();
-    } catch (error) {
-      shell.toast(error.message);
-    }
-  }
-
-  function planPayloadValues(plan) {
-    return {
-      display_name: plan.display_name,
-      agent_id: plan.agent_id,
-      schedule_type: plan.schedule_type,
-      cron_expression: plan.cron_expression,
-      timezone: plan.timezone,
-      inspection_template_id: plan.inspection_template_id,
-      timeout_seconds: plan.timeout_seconds,
-      overlap_policy: plan.overlap_policy,
-      misfire_policy: plan.misfire_policy,
-    };
-  }
-
-  async function savePlan(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = document.getElementById("save-inspection-plan");
-    button.disabled = true;
-    try {
-      await KBotAIOpsAuth.request(
-        editing ? `${api}/inspection-plans/${encodeURIComponent(editing.plan_id)}` : `${api}/inspection-plans`,
-        {
-          method: editing ? "PATCH" : "POST",
-          headers: editing
-            ? { "If-Match": `"rv-${editing.row_version}"` }
-            : { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-          body: JSON.stringify(planPayload(form, !editing)),
-        },
-      );
-      document.getElementById("inspection-plan-dialog").close();
-      shell.toast(editing ? "巡检计划已更新" : "巡检计划已创建并启用");
-      editing = null;
-      await KBotAIOpsPages.reload();
-    } catch (error) {
-      showResult("inspection-plan-result", error.message);
-    } finally {
-      button.disabled = false;
-      button.textContent = editing ? "保存修改" : "创建并启用";
-    }
-  }
-
-  function openEdit(page, resourceId) {
-    if (page === "diagnostic-sources") return openSourceEdit(resourceId);
-    if (page === "inspection-plans") return openPlanEdit(resourceId);
-    return Promise.resolve();
-  }
-
-  globalThis.KBotAIOpsConfigurations = { openEdit };
-  shell.ready.then(async () => {
-    const page = document.body.dataset.page;
-    if (page === "diagnostic-sources") {
-      const dialog = document.getElementById("diagnostic-source-dialog");
-      closeButtons(dialog);
-      document.getElementById("create-diagnostic-source").addEventListener("click", openSourceCreate);
-      document.getElementById("diagnostic-source-form").addEventListener("submit", saveSource);
-      document.getElementById("test-diagnostic-source").addEventListener("click", testSource);
-      document.getElementById("generate-source-webhook-secret").addEventListener("click", generateWebhookSecret);
-      document.getElementById("copy-source-webhook-secret").addEventListener("click", copyWebhookSecret);
-      document.getElementById("rotate-source-webhook-key").addEventListener("click", rotateWebhookKey);
-      document.getElementById("copy-source-webhook-key").addEventListener("click", copyWebhookKey);
-      document.getElementById("copy-created-webhook-secret").addEventListener("click", () => copyCreatedWebhookValue("source-created-webhook-secret", "copy-created-webhook-secret", "Webhook Secret 已复制"));
-      document.getElementById("copy-created-webhook-key").addEventListener("click", () => copyCreatedWebhookValue("source-created-webhook-key", "copy-created-webhook-key", "Webhook Key 已复制"));
-      document.getElementById("copy-created-webhook-ini").addEventListener("click", () => copyCreatedWebhookValue("source-created-webhook-ini", "copy-created-webhook-ini", "INI 凭据配置已复制"));
-      document.getElementById("source-type").addEventListener("change", (event) => {
-        renderSourceType(event.target.form);
-      });
-      document.getElementById("source-endpoint").addEventListener("input", (event) => {
-        renderSourceType(event.target.form);
-      });
-    } else if (page === "inspection-plans") {
-      const planDialog = document.getElementById("inspection-plan-dialog");
-      const planForm = document.getElementById("inspection-plan-form");
-      try {
-        const rows = await KBotAIOpsAuth.request(`${api}/agents`);
-        inspectionAgents = (Array.isArray(rows) ? rows : []).filter((agent) => agent.status === "ACTIVE");
-        planForm.elements.agent_id.replaceChildren(
-          new Option("请选择已启用的 DBA Agent", ""),
-          ...inspectionAgents.map((agent) => new Option(
-            `${agent.display_name} · ${agent.allowed_business_system_ids?.length || 0} 个业务系统`,
-            agent.agent_id,
-          )),
-        );
-        document.getElementById("plan-agent-help").textContent = inspectionAgents.length
-          ? "计划触发时，将使用该 Agent 当前发布版本关联的全部 Target、模型和策略。"
-          : "当前没有可用 Agent，请先创建并启用至少一名 DBA Agent。";
-      } catch (error) {
-        planForm.elements.agent_id.replaceChildren(new Option("Agent 读取失败", ""));
-        document.getElementById("plan-agent-help").textContent = error.message;
-      }
-      closeButtons(planDialog);
-      const monthDay = planForm.elements.month_day;
-      monthDay.replaceChildren(...Array.from({ length: 28 }, (_, index) => {
-        const day = index + 1;
-        return new Option(`${day} 日`, String(day));
-      }));
-      try {
-        inspectionCatalog = await KBotAIOpsAuth.request(`${api}/inspection-check-catalog`);
-        inspectionTemplates = await KBotAIOpsAuth.request(`${api}/inspection-templates`);
-        planForm.elements.inspection_template_id.replaceChildren(
-          new Option("请选择已启用的巡检模板", ""),
-          ...inspectionTemplates.filter((item) => item.status === "ACTIVE").map((item) => new Option(
-            `${item.display_name} · v${item.version_no} · ${item.selected_check_ids?.length || 0} 项`,
-            item.inspection_template_id,
-          )),
-        );
-        document.getElementById("plan-template-help").textContent = inspectionTemplates.length
-          ? "计划保存时固定当前模板版本；升级模板后需显式更新计划。"
-          : "当前没有巡检模板，请先到模板管理中创建。";
-      } catch (error) {
-        inspectionCatalog = null;
-        inspectionTemplates = [];
-        planForm.elements.inspection_template_id.replaceChildren(new Option("巡检模板读取失败", ""));
-        document.getElementById("plan-template-help").textContent = error.message;
-      }
-      document.getElementById("create-inspection-plan").addEventListener("click", openPlanCreate);
-      planForm.addEventListener("submit", savePlan);
-      planForm.elements.inspection_template_id.addEventListener("change", () => renderInspectionTemplatePreview(planForm));
-      planForm.querySelectorAll('input[name="schedule_mode"], input[name="weekdays"], input[type="time"], select[name="month_day"], select[name="interval_preset"], select[name="timezone"]').forEach((control) => {
-        control.addEventListener("change", () => renderSchedule(planForm));
-      });
-    }
+    document.addEventListener("pointerdown",event => {if (!event.target.closest(".management-catalog-overflow")) closeMenus();});document.addEventListener("keydown",event => {if (event.key === "Escape") closeMenus();});
+    webhookDrawer.onclick = event => {if (event.target.closest("[data-close-webhook]")) closeWebhook();else if (event.target.closest("[data-generate-webhook]")) generateWebhook();else if (event.target.closest("[data-retry-webhook]")) generateWebhook(true);else {const copy = event.target.closest("[data-copy-webhook]");if (copy) copyWebhook(copy.dataset.copyWebhook);}};webhookDrawer.addEventListener("cancel",event => {event.preventDefault();closeWebhook();});webhookDrawer.addEventListener("close",closeWebhook);
+    const confirm = document.getElementById("source-confirm-dialog");confirm.querySelector("[data-cancel-source-confirm]").onclick = () => settleConfirmation(false);confirm.querySelector("[data-confirm-source]").onclick = () => settleConfirmation(true);confirm.addEventListener("cancel",event => {event.preventDefault();settleConfirmation(false);});
+    window.addEventListener("pagehide",() => {clearTimeout(state.poll);++state.sequence;++state.opening;state.webhook = null;state.reveal = null;form.reset();document.getElementById("source-webhook-content").replaceChildren();clearCopied();});
+    await load();const sourceId = new URLSearchParams(location.search).get("sourceId");if (sourceId) await openEdit(sourceId);
   });
+  globalThis.KBotAIOpsConfigurations = {openEdit:(kind,id) => kind === "diagnostic-sources" ? openEdit(id) : undefined};
 })();

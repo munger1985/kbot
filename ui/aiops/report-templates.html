@@ -1,24 +1,34 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>模板管理</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/aiops-forms.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>模板中心</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/aiops-forms.css"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-report-templates.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="report-templates">
-  <main class="ops-main">
-    <header class="ops-head"><div><h1>模板管理</h1><p>巡检模板决定执行哪些检查；会话报告模板只决定 Session 正式报告的展示章节。</p></div></header>
-
-    <section class="ops-panel">
-      <div class="ops-panel-head"><div><h2>巡检模板</h2><p>从受控 Check Catalog 勾选检查内容，发布后形成不可变版本。</p></div><button id="create-inspection-template" class="primary" type="button">新建巡检模板</button></div>
-      <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>模板</th><th>版本</th><th>检查项</th><th>内容哈希</th><th>状态</th><th>操作</th></tr></thead><tbody id="ops-inspection-template-body"><tr><td class="ops-empty" colspan="6">正在加载…</td></tr></tbody></table></div>
+  <main class="ops-main aiops-template-page">
+    <header class="ops-head"><div><p class="eyebrow">AIOps 模板中心</p><h1>模板中心</h1><p>分别管理巡检执行内容与智能诊断会话的正式报告结构。</p></div></header>
+    <div class="data-toolbar"><label class="search-field"><span aria-hidden="true">⌕</span><input id="template-search" type="search" placeholder="搜索模板名称或报告章节"></label><button id="refresh-templates" class="secondary-button" type="button">刷新目录</button><nav class="segmented-control aiops-template-switch" role="tablist" aria-label="模板类型"><button class="active" data-template-tab="inspection" type="button" role="tab" aria-selected="true">巡检内容模板</button><button data-template-tab="session" type="button" role="tab" aria-selected="false">会话报告模板</button></nav></div>
+    <section id="inspection-template-catalog" class="resource-list-surface">
+      <div class="resource-list-body"><div class="management-catalog-grid"><button id="create-inspection-template" class="management-catalog-add-card" type="button"><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新建巡检模板</strong><small>为巡检计划组合检查项与取证步骤</small></button><div id="ops-inspection-template-body" class="catalog-entries"></div></div></div>
     </section>
-
-    <section class="ops-panel">
-      <div class="ops-panel-head"><div><h2>会话报告模板</h2><p>用于完整 Session 生成正式报告，仅定义章节选择和展示顺序；系统预设模板只读。</p></div><button id="create-session-report-template" class="primary" type="button">新建会话报告模板</button></div>
-      <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>模板</th><th>章节</th><th>版本</th><th>内容哈希</th><th>使用次数</th><th>属性</th><th>操作</th></tr></thead><tbody id="ops-session-report-template-body"><tr><td class="ops-empty" colspan="7">正在加载…</td></tr></tbody></table></div>
+    <section id="session-template-catalog" class="resource-list-surface" hidden>
+      <div class="resource-list-body"><div class="management-catalog-grid"><button id="create-session-report-template" class="management-catalog-add-card" type="button"><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新建会话报告模板</strong><small>定义正式报告的章节与展示顺序</small></button><div id="ops-session-report-template-body" class="catalog-entries"></div></div></div>
     </section>
   </main>
 
-  <dialog id="inspection-template-dialog" class="ops-dialog"><form id="inspection-template-form"><header><h2>新建巡检模板</h2><p>模板只引用受控检查目录，不能提交 SQL、脚本或自由查询。</p></header><div class="ops-dialog-body"><label class="ops-field">模板名称<input name="display_name" maxlength="256" required></label><div id="inspection-template-checks" class="inspection-check-groups"></div><p id="inspection-template-result" class="ops-connection-result" role="status"></p></div><footer><button type="button" data-close-inspection-template>取消</button><button class="primary" type="submit">创建模板</button></footer></form></dialog>
+  <dialog id="inspection-template-dialog" class="reference-drawer admin-drawer aiops-template-editor" aria-label="新建模板">
+    <header class="admin-drawer-header"><div><p class="eyebrow">巡检内容</p><h2>新建模板</h2></div><button class="icon-button" type="button" data-close-inspection-template aria-label="关闭">×</button></header>
+    <form id="inspection-template-form" class="admin-drawer-body">
+      <section class="drawer-form-section"><label class="control-field"><span class="field-label">模板名称</span><input name="display_name" maxlength="256" required></label><div id="inspection-template-checks" class="catalog-entries"></div><p id="inspection-template-result" class="notice notice-error" role="status" hidden></p></section>
+      <footer class="admin-drawer-footer"><span>保存后形成不可变新版本；历史报告不受影响。</span><button class="secondary-button" type="button" data-close-inspection-template>取消</button><button class="primary-button" type="submit" disabled>保存</button></footer>
+    </form>
+  </dialog>
 
-  <dialog id="session-report-template-dialog" class="ops-dialog"><form id="session-report-template-form"><header><h2>新建会话报告模板</h2><p>勾选并按页面顺序生成章节；执行摘要和证据边界（必选）由系统固定保留。</p></header><div class="ops-dialog-body"><label class="ops-field">模板名称<input name="display_name" maxlength="256" required></label><fieldset><legend>展示章节</legend><label><input type="checkbox" name="section" value="EXECUTIVE_SUMMARY" checked disabled> 执行摘要（必选）</label><label><input type="checkbox" name="section" value="SCOPE" checked> 会话范围</label><label><input type="checkbox" name="section" value="RISK_OVERVIEW" checked> 风险概览</label><label><input type="checkbox" name="section" value="FINDINGS" checked> 核验发现</label><label><input type="checkbox" name="section" value="ROOT_CAUSE" checked> 根因分析</label><label><input type="checkbox" name="section" value="RECOMMENDATIONS" checked> 处置建议</label><label><input type="checkbox" name="section" value="ACTIONS"> 处置与验证</label><label><input type="checkbox" name="section" value="EVIDENCE_APPENDIX"> 证据附录</label><label><input type="checkbox" name="section" value="EVIDENCE_BOUNDARY" checked disabled> 证据边界（必选）</label></fieldset><p id="session-report-template-result" class="ops-connection-result" role="status"></p></div><footer><button type="button" data-close-session-report-template>取消</button><button class="primary" type="submit">创建模板</button></footer></form></dialog>
+  <dialog id="session-report-template-dialog" class="reference-drawer admin-drawer aiops-template-editor" aria-label="新建模板">
+    <header class="admin-drawer-header"><div><p class="eyebrow">会话报告</p><h2>新建模板</h2></div><button class="icon-button" type="button" data-close-session-report-template aria-label="关闭">×</button></header>
+    <form id="session-report-template-form" class="admin-drawer-body">
+      <section class="drawer-form-section"><label class="control-field"><span class="field-label">模板名称</span><input name="display_name" maxlength="256" required></label><div class="aiops-section-editor"><fieldset id="session-template-sections" class="aiops-template-check-group"><legend>报告章节</legend></fieldset><aside class="aiops-template-preview"><p class="eyebrow">REPORT OUTLINE</p><h3>报告目录预览</h3><ol id="session-template-outline"></ol></aside></div><p id="session-report-template-result" class="notice notice-error" role="status" hidden></p></section>
+      <footer class="admin-drawer-footer"><span>保存后形成不可变新版本；历史报告不受影响。</span><button class="secondary-button" type="button" data-close-session-report-template>取消</button><button class="primary-button" type="submit" disabled>保存</button></footer>
+    </form>
+  </dialog>
 
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-report-templates.js"></script>
+  <dialog id="template-history-drawer" class="reference-drawer admin-drawer" aria-label="模板版本历史"><header class="admin-drawer-header"><div><p class="eyebrow">VERSION HISTORY</p><h2 id="template-history-title"></h2><p>每个版本均保持不可变，已生成报告继续引用当时的冻结定义。</p></div><button id="close-template-history" class="icon-button" type="button" aria-label="关闭版本历史">×</button></header><div id="template-history-list" class="admin-drawer-body aiops-version-list"></div></dialog>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261030_1"></script><script src="./js/aiops-report-templates.js?v=20261030_1"></script>
 </body></html>

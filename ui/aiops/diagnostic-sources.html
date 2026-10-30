@@ -1,66 +1,41 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>监控源</title>
-  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-  <link rel="stylesheet" href="./css/aiops-forms.css?v=20261010-6">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>监控源</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/aiops-forms.css?v=20261010-6">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-diagnostic-sources.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1">
 </head>
 <body data-page="diagnostic-sources">
-  <main class="ops-main">
-    <header class="ops-head">
-      <div><h1>监控源</h1><p>先接入 Prometheus、Alertmanager、Loki、OEM 等监控系统，再到运维目标上绑定具体监控 label。</p></div>
-      <button id="create-diagnostic-source" class="primary" type="button" data-write-ready>新增监控源</button>
-    </header>
-    <section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section>
+  <main class="ops-main aiops-page aiops-config-page">
+    <header class="ops-head page-header app-page-head"><div><p class="eyebrow">AIOps 配置</p><h1>监控源</h1><p>管理 Prometheus、Loki、Alertmanager、Zabbix 与 OEM 等按能力接入的数据源。</p></div></header>
+    <p id="source-error" class="form-error" role="alert" hidden></p>
+    <div class="data-toolbar"><label class="search-field"><span aria-hidden="true">⌕</span><input id="source-search" type="search" placeholder="搜索监控源名称、类型或地址"></label><button id="refresh-sources" class="secondary-button" type="button">刷新目录</button></div>
+    <section class="resource-list-surface"><div class="resource-list-body"><div id="source-catalog" class="management-catalog-grid"></div></div></section>
   </main>
-  <dialog id="diagnostic-source-dialog" class="ops-dialog">
-    <form id="diagnostic-source-form">
-      <header><h2 id="diagnostic-source-dialog-title">新增监控源</h2><button data-close-dialog type="button">关闭</button></header>
-      <div class="ops-dialog-body">
-        <div class="ops-form">
-          <div class="ops-field span-6"><label for="source-display-name">名称</label><input id="source-display-name" name="display_name" maxlength="256" placeholder="例如：生产 Prometheus" required></div>
-          <div class="ops-field span-6"><label for="source-type">类型</label><select id="source-type" name="source_type" required><option value="PROMETHEUS">Prometheus</option><option value="ALERTMANAGER">Alertmanager</option><option value="LOKI">Loki</option><option value="ZABBIX">Zabbix</option><option value="OEM">Oracle OEM</option></select></div>
-          <div class="ops-field span-12"><label for="source-endpoint">访问地址</label><input id="source-endpoint" name="endpoint" type="url" placeholder="http://monitor.internal:9090"><small id="source-endpoint-help">请输入 KBot 服务可以访问的地址。</small></div>
-          <div id="source-token-field" class="ops-field span-12"><label for="source-token">API Token（可选）</label><input id="source-token" name="token" type="password" autocomplete="new-password"><small>留空表示该监控源不需要 Bearer Token；编辑时留空表示保持原凭据。</small></div>
-          <div id="source-oem-mappings-field" class="ops-field span-12" hidden><label for="source-oem-mappings">标准指标原生映射（JSON，可选）</label><textarea id="source-oem-mappings" name="oem_standard_mappings" rows="8" spellcheck="false">{}</textarea><small>按指标编码配置精确Target类型、指标组、名称、原生/目标单位、scale、value_kind和dimensions/filters。空对象表示仅使用原生目录；不猜测默认映射，也不证明原始窗口覆盖。</small></div>
-          <div id="source-oem-username-field" class="ops-field span-6" hidden><label for="source-oem-username">OEM 用户名（可选）</label><input id="source-oem-username" name="oem_username" autocomplete="off"></div>
-          <div id="source-oem-password-field" class="ops-field span-6" hidden><label for="source-oem-password">OEM 密码（可选）</label><input id="source-oem-password" name="oem_password" type="password" autocomplete="new-password"><small>用户名和密码需同时填写；编辑时同时留空保持原凭据，保存后不会回显。</small></div>
-          <div id="source-webhook-create-note" class="ops-dialog-note span-12" hidden>创建时系统会同时生成 Webhook Secret 和 Webhook Key，并在下一步集中展示，无需提前准备凭据。</div>
-          <div id="source-webhook-field" class="ops-field span-12" hidden><label for="source-webhook-secret">重新设置 Webhook Secret</label><div class="source-webhook-secret-input"><input id="source-webhook-secret" name="webhook_secret" type="password" autocomplete="new-password"><button id="generate-source-webhook-secret" type="button">生成新 Secret</button><button id="copy-source-webhook-secret" type="button">复制</button></div><small>仅在轮换 Secret 时填写；保存后旧 Secret 立即失效，必须同步更新监控部署配置。</small></div>
-          <section id="source-webhook-key-section" class="source-webhook-key span-12" hidden>
-            <div>
-              <strong>Webhook Key</strong>
-              <p>签名桥使用它定位当前监控源。Key只在生成或轮换后显示一次。</p>
-            </div>
-            <button id="rotate-source-webhook-key" type="button">生成 Webhook Key</button>
-            <div id="source-webhook-key-result" class="source-webhook-key-result" hidden>
-              <label for="source-webhook-key-value">请立即复制到监控部署配置</label>
-              <div><input id="source-webhook-key-value" readonly autocomplete="off"><button id="copy-source-webhook-key" type="button">复制</button></div>
-              <small id="source-webhook-key-note">关闭弹窗后无法再次查看；遗失时需要重新轮换。</small>
-            </div>
-          </section>
-          <div id="source-tenant-field" class="ops-field span-12" hidden><label for="source-tenant-id">Loki Tenant ID（可选）</label><input id="source-tenant-id" name="tenant_id" maxlength="256"><small>仅多租户 Loki 需要，对应 X-Scope-OrgID。</small></div>
-          <div class="ops-field span-12"><span class="ops-field-label">系统声明能力</span><div id="source-capability-list" class="ops-capability-list" aria-live="polite"></div><small>能力由监控源类型和内置 Adapter 自动确定，无需手工配置。</small></div>
-        </div>
-        <section id="source-webhook-onboarding" class="source-webhook-onboarding" hidden>
-          <strong>Alertmanager 监控源已创建</strong>
-          <p>以下接入凭据只显示一次。请复制到 <code>aiops-stack.ini</code>，然后重新运行 <code>./scripts/aiops-stack</code>。</p>
-          <label for="source-created-webhook-secret">Webhook Secret</label>
-          <div><input id="source-created-webhook-secret" readonly autocomplete="off"><button id="copy-created-webhook-secret" type="button">复制</button></div>
-          <label for="source-created-webhook-key">Webhook Key</label>
-          <div><input id="source-created-webhook-key" readonly autocomplete="off"><button id="copy-created-webhook-key" type="button">复制</button></div>
-          <label for="source-created-webhook-ini">INI 凭据配置</label>
-          <div><textarea id="source-created-webhook-ini" rows="3" readonly></textarea><button id="copy-created-webhook-ini" type="button">复制配置</button></div>
-          <small id="source-webhook-onboarding-note">关闭弹窗后无法再次查看；遗失时需要轮换对应凭据。</small>
+  <dialog id="diagnostic-source-dialog" class="reference-drawer admin-drawer aiops-target-detail-drawer" aria-labelledby="diagnostic-source-dialog-title">
+    <header class="admin-drawer-header"><div><p class="eyebrow">AIOps 配置</p><h2 id="diagnostic-source-dialog-title">新增监控源</h2><p>按数据源能力填写连接信息；凭据保存后不会再次显示。</p></div><button class="icon-button" type="button" data-close-source aria-label="关闭">×</button></header>
+    <div class="admin-drawer-body aiops-target-detail-body">
+      <form id="diagnostic-source-form" class="resource-form aiops-target-edit-form">
+        <section class="drawer-form-section">
+          <label class="control-field"><span class="field-label">名称</span><input name="display_name" required maxlength="256"></label>
+          <label class="control-field"><span class="field-label">监控源类型</span><select name="source_type"><option>PROMETHEUS</option><option>LOKI</option><option>ALERTMANAGER</option><option>ZABBIX</option><option>OEM</option></select></label>
+          <label class="control-field form-span"><span class="field-label">服务地址</span><input name="endpoint" required type="url"><small id="source-endpoint-help" class="field-help">填写监控源的根地址，例如 https://monitor.example.com。</small></label>
+          <label id="source-token-field" class="control-field form-span"><span class="field-label">访问令牌（可选）</span><input name="access_token" type="password" autocomplete="new-password"><small class="field-help">仅用于 KBot 主动访问上方监控源 Endpoint；服务端要求 Bearer Token 时才填写。保存后不会再次显示。</small></label>
+          <label id="source-oem-username-field" class="control-field" hidden><span class="field-label">OEM 用户名（可选）</span><input name="source_username" autocomplete="off"></label>
+          <label id="source-oem-password-field" class="control-field" hidden><span class="field-label">OEM 密码（可选）</span><input name="source_password" type="password" autocomplete="new-password"><small class="field-help">用户名和密码需同时填写；编辑时同时留空保持原凭据，保存后不会回显。</small></label>
+          <label id="source-oem-mappings-field" class="control-field form-span" hidden><span class="field-label">标准指标原生映射（JSON，可选）</span><textarea name="oem_standard_mappings" rows="8" spellcheck="false">{}</textarea><small class="field-help">按指标编码配置精确 Target 类型、指标组、名称、原生/目标单位、scale、value_kind 和 dimensions/filters。空对象表示仅使用原生目录；不猜测默认映射，也不证明原始窗口覆盖。</small></label>
+          <label id="source-tenant-field" class="control-field form-span" hidden><span class="field-label">日志租户 ID（可选）</span><input name="loki_tenant_id"><small class="field-help">仅多租户 Loki 需要填写；单租户部署请留空。</small></label>
+          <p class="field-help form-span">先保存并启用监控源，再到运维目标的“监控映射”中绑定具体 Label。</p>
         </section>
-        <p class="ops-dialog-note">测试连接始终使用当前表单内容且不会保存；编辑时如需验证认证，请重新输入临时凭据。</p>
-        <p id="source-test-result" class="ops-connection-result" role="status"></p>
-      </div>
-      <footer><button id="test-diagnostic-source" class="secondary-action" type="button">测试连接</button><button id="cancel-diagnostic-source" data-close-dialog type="button">取消</button><button id="save-diagnostic-source" class="primary" type="submit">创建监控源</button></footer>
-    </form>
+        <footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close-source>取消</button><button id="save-diagnostic-source" class="primary-button" type="submit">创建监控源</button></footer>
+      </form>
+    </div>
   </dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-pages.js?v=20261029-read-existing-1"></script><script src="./js/aiops-configurations.js?v=20261029-oem-2"></script>
+  <dialog id="source-webhook-drawer" class="reference-drawer admin-drawer webhook-credential-drawer" aria-labelledby="webhook-credential-title">
+    <header class="admin-drawer-header"><div><p id="webhook-source-name" class="eyebrow"></p><h2 id="webhook-credential-title">Webhook 接入凭据</h2><p>在独立流程中同时生成验签 Secret 与路由 Key，并完成部署侧配置。</p></div><button class="icon-button" type="button" data-close-webhook aria-label="关闭 Webhook 接入凭据">×</button></header>
+    <div id="source-webhook-content"></div>
+  </dialog>
+  <dialog id="source-confirm-dialog" class="confirm-dialog" role="alertdialog" aria-labelledby="source-confirm-title" aria-describedby="source-confirm-message"><header class="confirm-dialog-header"><span class="confirm-dialog-mark" aria-hidden="true"></span><div><p class="confirm-dialog-kicker"></p><h2 id="source-confirm-title"></h2></div></header><p id="source-confirm-message" class="confirm-dialog-message"></p><footer class="confirm-dialog-actions"><button class="secondary-button" type="button" data-cancel-source-confirm>取消</button><button class="primary-button" type="button" data-confirm-source></button></footer></dialog>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261030_1"></script><script src="./js/aiops-configurations.js?v=20261030_1"></script>
 </body>
 </html>

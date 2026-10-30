@@ -5,103 +5,89 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>实时监控 · KBot AIOps</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-</head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-monitoring.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="monitoring">
-  <main class="ops-main ops-special-page ops-monitoring-main">
-    <header class="ops-head ops-monitoring-head">
+  <main class="ops-main aiops-monitoring-page">
+    <header class="ops-head monitoring-page-heading app-page-head">
       <div>
-        <h1>实时监控</h1>
-        <p>从已接入的监控源查看单个数据库资源的实时指标。</p>
-        <small id="monitoring-freshness" class="ops-monitoring-freshness">正在读取监控源目录…</small>
+        <p class="eyebrow">监控观测工作区</p><h1>实时监控</h1>
+        <p>围绕当前数据库资源查看实时状态和关键趋势。</p>
       </div>
-      <div class="ops-actions">
-        <button id="refresh-monitoring" type="button" disabled>立即刷新</button>
-        <a id="monitoring-diagnosis-link" class="ops-button primary is-disabled" aria-disabled="true" href="./chat.html">进入智能运维</a>
+      <div class="monitoring-page-actions">
+        <button id="refresh-monitoring" class="secondary-button" type="button" disabled>刷新</button>
       </div>
     </header>
 
-    <section id="monitoring-workspace" class="ops-special-workspace ops-monitoring-workspace">
-      <aside class="ops-special-rail ops-monitoring-rail" aria-label="实时监控查询上下文">
-        <button id="monitoring-rail-toggle" class="ops-special-rail-toggle" type="button" aria-label="收起实时监控查询上下文" aria-controls="monitoring-rail-content" aria-expanded="true">☰</button>
-        <span class="ops-special-rail-collapsed-label">监控上下文</span>
-        <div id="monitoring-rail-content" class="ops-special-rail-content">
-    <section id="monitoring-context" class="ops-monitoring-context" aria-label="实时监控筛选" hidden>
-      <label>监控源<select id="monitoring-source"></select></label>
-      <label>时间范围<select id="monitoring-window"><option value="15m">15 分钟</option><option value="1h" selected>1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option></select></label>
-      <label>基线<select id="monitoring-baseline"><option value="1d">过去 1 天平均值</option><option value="1w" selected>过去 1 周平均值</option><option value="1m">过去 1 月平均值</option></select></label>
-      <label>自动刷新<select id="monitoring-refresh-interval"><option value="0" selected>关闭</option><option value="15">15 秒</option><option value="30">30 秒</option><option value="60">1 分钟</option></select></label>
-      <div id="monitoring-readiness" class="ops-monitoring-readiness"></div>
-    </section>
-
-    <section id="monitoring-instance-picker" class="ops-monitoring-target-summary" hidden>
-      <span>当前数据库</span>
-      <div class="ops-monitoring-target-heading">
-        <div><strong id="monitoring-current-instance">未选择</strong><small id="monitoring-current-instance-meta">—</small></div>
-        <button id="open-monitoring-instance-drawer" type="button">切换</button>
-      </div>
-      <div id="monitoring-current-instance-status" class="ops-monitoring-current-status"></div>
-    </section>
+    <section id="monitoring-workspace" class="monitoring-dashboard-shell">
+      <aside class="monitoring-context-rail" aria-label="当前数据库与查询上下文">
+        <button id="monitoring-rail-toggle" class="icon-button monitoring-rail-toggle" type="button" aria-label="收起数据库与过滤条件" aria-controls="monitoring-rail-content" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
+        <span id="monitoring-collapsed-label" class="monitoring-rail-collapsed-label">数据库 · —</span>
+        <div id="monitoring-rail-content" class="monitoring-rail-content">
+          <div id="monitoring-instance-picker" hidden><p class="monitoring-rail-kicker">当前数据库</p><div class="monitoring-target-heading"><div><h2 id="monitoring-current-instance">未选择</h2><span id="monitoring-current-instance-meta">—</span></div><button id="open-monitoring-instance-drawer" class="icon-button" type="button" aria-label="切换数据库资源">⇄</button></div></div>
+          <div id="monitoring-current-instance-status" class="monitoring-readiness"></div>
+          <section id="monitoring-context" class="monitoring-rail-section monitoring-query-section" aria-label="实时监控查询设置" hidden><p>观测设置</p><div class="monitoring-rail-fields">
+            <label class="control-field"><span class="field-label">监控源</span><select id="monitoring-source"></select></label>
+            <label class="control-field"><span class="field-label">时间窗口</span><select id="monitoring-window"><option value="15m">15 分钟</option><option value="1h" selected>1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option></select></label>
+            <label class="control-field"><span class="field-label">基线</span><select id="monitoring-baseline"><option value="1d">过去 1 天平均值</option><option value="1w" selected>过去 1 周平均值</option><option value="1m">过去 1 月平均值</option></select></label>
+            <label class="control-field"><span class="field-label">自动刷新</span><select id="monitoring-refresh-interval"><option value="0" selected>关闭</option><option value="15">15 秒</option><option value="30">30 秒</option><option value="60">1 分钟</option></select></label>
+          </div><dl class="monitoring-profile-context"><div><dt>指标范围</dt><dd id="monitoring-profile-name">统一总览</dd></div></dl><div id="monitoring-readiness" hidden></div></section>
+          <footer class="monitoring-rail-footer"><p>最新采样<time id="monitoring-freshness">—</time></p><a id="monitoring-diagnosis-link" class="primary-button is-disabled" aria-disabled="true" href="./chat.html">进入智能运维</a></footer>
         </div>
       </aside>
-      <div class="ops-special-main ops-monitoring-workspace-main">
-    <section id="monitoring-gate" class="ops-panel ops-monitoring-gate"><div class="ops-empty">正在读取监控源目录…</div></section>
+      <div class="monitoring-dashboard-main">
+    <section id="monitoring-gate" class="monitoring-gate"><div class="empty-cell">正在读取监控源目录…</div></section>
 
-    <section id="monitoring-loading" class="ops-panel ops-monitoring-loading" hidden><div class="ops-empty">正在查询实时指标…</div></section>
+    <section id="monitoring-loading" class="loading-card monitoring-inline-state" hidden><div>正在查询实时指标…</div></section>
     <div id="monitoring-result" hidden>
-      <section id="monitoring-quality-ledger" class="ops-monitoring-ledger" aria-label="数据质量概览"></section>
-      <section id="monitoring-single-summary" class="ops-monitoring-single-summary" aria-label="单实例当前状态" hidden></section>
-      <section id="monitoring-panels" class="ops-monitoring-panels" aria-label="实时监控图表"></section>
-      <section class="ops-panel ops-monitoring-quality-panel">
-        <div class="ops-panel-head"><div><h2>数据质量与缺口</h2><p>来源、窗口、覆盖率与稳定 Gap Code。</p></div><span id="monitoring-result-state"></span></div>
-        <div class="ops-monitoring-quality-layout"><dl id="monitoring-quality-context" class="ops-detail"></dl><div id="monitoring-gaps" class="ops-monitoring-gaps"></div></div>
+      <section id="monitoring-quality-ledger" class="monitoring-summary-strip monitoring-single-summary" aria-label="数据质量概览"></section>
+      <section id="monitoring-panels" class="monitoring-panels" aria-label="实时监控图表"></section>
+      <section id="monitoring-quality-detail" class="monitoring-quality-detail" hidden>
+        <header><div><p class="eyebrow">证据边界</p><h2>数据质量与缺口</h2></div><span id="monitoring-result-state"></span></header>
+        <div class="monitoring-quality-grid"><dl id="monitoring-quality-context"></dl><ul id="monitoring-gaps"></ul></div>
       </section>
     </div>
       </div>
     </section>
   </main>
-  <dialog id="monitoring-instance-drawer" class="ops-monitoring-instance-drawer" aria-labelledby="monitoring-instance-drawer-title">
-    <div class="ops-monitoring-instance-drawer-shell">
-      <header>
-        <div><span>数据库切换</span><h2 id="monitoring-instance-drawer-title">选择数据库资源</h2><p>按业务系统与资源分组，也可直接搜索数据库。</p></div>
-        <button id="close-monitoring-instance-drawer" type="button" aria-label="关闭数据库选择">关闭</button>
+  <dialog id="monitoring-instance-drawer" class="reference-drawer admin-drawer admin-drawer-compact monitoring-target-drawer" aria-labelledby="monitoring-instance-drawer-title">
+      <header class="admin-drawer-header">
+        <div><p class="eyebrow">数据库切换</p><h2 id="monitoring-instance-drawer-title">选择数据库资源</h2><p>按业务系统和资源展开，也可直接搜索数据库。</p></div>
+        <button id="close-monitoring-instance-drawer" class="icon-button" type="button" aria-label="关闭数据库选择">×</button>
       </header>
-      <div class="ops-monitoring-instance-drawer-body">
-        <label class="ops-monitoring-instance-search">搜索业务系统、资源或数据库<input id="monitoring-instance-search" type="search" placeholder="业务系统 / 数据库资源 / 数据库类型"></label>
-        <span id="monitoring-selection-count" class="ops-monitoring-selection-count"><strong>0</strong> / 0 请选择</span>
-        <div id="monitoring-instance-list" class="ops-monitoring-instance-list" role="radiogroup" aria-label="数据库资源单选"></div>
+      <div class="admin-drawer-body monitoring-target-drawer-body">
+        <label class="control-field"><span class="field-label">搜索业务系统、资源或数据库</span><input id="monitoring-instance-search" type="search" placeholder="业务系统 / 数据库资源 / 数据库类型"></label>
+        <span id="monitoring-selection-count" hidden></span>
+        <div id="monitoring-instance-list" class="monitoring-target-list" role="radiogroup" aria-label="数据库资源单选"></div>
       </div>
-    </div>
   </dialog>
-  <dialog id="monitoring-data-drawer" class="ops-monitoring-data-drawer" aria-labelledby="monitoring-data-drawer-title">
-    <div class="ops-monitoring-data-drawer-shell">
-      <header>
-        <div><span>实时监控数据</span><h2 id="monitoring-data-drawer-title">指标数据</h2><p id="monitoring-data-drawer-description"></p></div>
-        <button id="close-monitoring-data-drawer" type="button" aria-label="关闭指标数据">关闭</button>
+  <dialog id="monitoring-data-drawer" class="reference-drawer admin-drawer admin-drawer-wide monitoring-data-drawer" aria-labelledby="monitoring-data-drawer-title">
+      <header class="admin-drawer-header">
+        <div><p class="eyebrow">实时监控数据</p><h2 id="monitoring-data-drawer-title">指标数据</h2><p id="monitoring-data-drawer-description"></p></div>
+        <button id="close-monitoring-data-drawer" class="icon-button" type="button" aria-label="关闭指标数据">×</button>
       </header>
-      <div class="ops-monitoring-data-drawer-body">
-        <section class="ops-monitoring-data-context" aria-label="指标上下文">
+      <div class="admin-drawer-body monitoring-data-drawer-body">
+        <section class="drawer-summary-grid" aria-label="指标上下文">
           <article><span>数据质量</span><strong id="monitoring-data-drawer-quality"></strong></article>
-          <article><span>指标代码</span><strong id="monitoring-data-drawer-metric"></strong></article>
+          <article><span>指标代码</span><strong id="monitoring-data-drawer-metric" class="technical-value"></strong></article>
           <article><span>单位</span><strong id="monitoring-data-drawer-unit"></strong></article>
           <article><span>监控来源</span><strong id="monitoring-data-drawer-source"></strong></article>
         </section>
-        <section class="ops-monitoring-data-insights">
+        <section class="drawer-section monitoring-insight-section">
           <div><h3>当前值与区间概览</h3><p>先展示当前状态、区间均值、波动范围和整体变化，避免逐条解读采样。</p></div>
-          <div id="monitoring-data-drawer-insights" class="ops-monitoring-series-insights"></div>
+          <div id="monitoring-data-drawer-insights" class="monitoring-series-insights"></div>
         </section>
-        <section class="ops-monitoring-data-samples">
+        <section class="drawer-section monitoring-data-section">
           <div><h3>区间统计</h3><p>连续相同采样自动合并；变化频繁时，每个序列最多汇总为 12 个时间区间。</p></div>
-          <div id="monitoring-data-drawer-intervals"></div>
-          <details class="ops-monitoring-raw-evidence"><summary id="monitoring-data-drawer-raw-summary">查看原始采样</summary><p>原始数据仅用于核对证据；缺失采样保持为空，不按 0 填充。</p><div id="monitoring-data-drawer-raw-table"></div></details>
+          <div id="monitoring-data-drawer-intervals" class="table-card monitoring-data-table"></div>
+          <details class="monitoring-raw-evidence"><summary id="monitoring-data-drawer-raw-summary">查看原始采样</summary><p>原始数据仅用于核对证据；缺失采样保持为空，不按 0 填充。</p><div id="monitoring-data-drawer-raw-table" class="table-card monitoring-data-table"></div></details>
         </section>
       </div>
-      <footer><button id="finish-monitoring-data-drawer" type="button">关闭</button></footer>
-    </div>
+      <footer class="admin-drawer-footer"><button id="finish-monitoring-data-drawer" class="secondary-button" type="button">关闭</button></footer>
   </dialog>
   <script src="../runtime-config.js"></script>
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
-  <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-monitoring.js?v=20261019_1"></script>
+  <script src="./js/aiops-shell.js?v=20261030_1"></script>
+  <script src="./js/aiops-monitoring.js?v=20261030_1"></script>
 </body>
 </html>

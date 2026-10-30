@@ -1,0 +1,79 @@
+/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* business/AIOpsOperationsKnowledgeView.vue */
+:is([data-page="operations-knowledge"]) .knowledge-page { display:grid; gap:20px; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card { min-width:0; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card table { min-width:860px; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card th:first-child { width:34%; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(2) { width:13%; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(3) { width:15%; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(4) { width:24%; }
+:is([data-page="operations-knowledge"]) .table-secondary { display:block; max-width:440px; margin-top:5px; overflow:hidden; color:var(--faint); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+:is([data-page="operations-knowledge"]) .knowledge-submitted-time { white-space:nowrap; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-drawer { width:min(920px,100vw); }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form { display:grid; align-content:start; gap:18px; margin:0; padding:22px 28px 0; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form > .admin-drawer-footer { margin:0 -28px; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-mode-picker,:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-drop-zone,:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-ledger { grid-column:1/-1; margin-left:42px; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-drop-zone { min-height:145px; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-row { grid-template-columns:28px minmax(180px,1fr) minmax(250px,.9fr) auto; }
+:is([data-page="operations-knowledge"]) .upload-limit-notice { margin:0 0 0 42px; }
+:is([data-page="operations-knowledge"]) .knowledge-detail-drawer { width:min(820px,100vw); }
+:is([data-page="operations-knowledge"]) .knowledge-detail-head-actions { display:flex; align-items:center; gap:10px; }
+:is([data-page="operations-knowledge"]) .knowledge-detail-tabs { flex:0 0 auto; margin:0; padding:13px 28px 0; background:var(--surface); }
+:is([data-page="operations-knowledge"]) .knowledge-detail-body { display:grid; align-content:start; gap:18px; min-height:0; padding:22px 28px 32px; overflow:auto; }
+:is([data-page="operations-knowledge"]) .knowledge-stage-track { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+:is([data-page="operations-knowledge"]) .knowledge-stage-track.four-steps { grid-template-columns:repeat(4,minmax(0,1fr)); }
+:is([data-page="operations-knowledge"]) .knowledge-stage-track div { display:flex; min-width:0; align-items:center; gap:8px; padding:11px 12px; border:1px solid var(--line); border-radius:8px; color:var(--faint); background:var(--surface-subtle); font-size:13px; }
+:is([data-page="operations-knowledge"]) .knowledge-stage-track span { display:grid; width:22px; height:22px; flex:0 0 22px; place-items:center; border:1px solid currentColor; border-radius:50%; font-size:12px; }
+:is([data-page="operations-knowledge"]) .knowledge-stage-track .is-complete { border-color:color-mix(in srgb,var(--success) 30%,var(--line)); color:var(--success); background:var(--success-soft); }
+:is([data-page="operations-knowledge"]) .knowledge-stage-track .is-current { border-color:color-mix(in srgb,var(--warning) 35%,var(--line)); color:var(--warning); background:var(--warning-soft); }
+:is([data-page="operations-knowledge"]) .knowledge-stage-track .is-error { border-color:color-mix(in srgb,var(--danger) 32%,var(--line)); color:var(--danger); background:var(--danger-soft); }
+:is([data-page="operations-knowledge"]) .knowledge-summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-column:1/-1; margin:0; overflow:hidden; border:1px solid var(--line); border-radius:9px; background:var(--surface); }
+:is([data-page="operations-knowledge"]) .knowledge-summary-grid div { display:grid; min-width:0; gap:5px; padding:14px 15px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+:is([data-page="operations-knowledge"]) .knowledge-summary-grid div:nth-child(3n) { border-right:0; }
+:is([data-page="operations-knowledge"]) .knowledge-summary-grid div:nth-last-child(-n+3) { border-bottom:0; }
+:is([data-page="operations-knowledge"]) .knowledge-summary-grid dt { color:var(--faint); font-size:12px; }
+:is([data-page="operations-knowledge"]) .knowledge-summary-grid dd { overflow-wrap:anywhere; margin:0; color:var(--ink); font-size:13px; font-weight:650; }
+:is([data-page="operations-knowledge"]) .knowledge-tag-review { align-items:start; }
+:is([data-page="operations-knowledge"]) .knowledge-tag-group { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:0; padding:14px; border:1px solid var(--line); border-radius:9px; background:var(--surface-subtle); }
+:is([data-page="operations-knowledge"]) .knowledge-tag-group legend { padding:0 6px; color:var(--ink); font-size:13px; font-weight:700; }
+:is([data-page="operations-knowledge"]) .knowledge-tag-option { display:flex; min-width:0; align-items:flex-start; gap:9px; padding:11px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); cursor:pointer; }
+:is([data-page="operations-knowledge"]) .knowledge-tag-option.suggested { border-color:color-mix(in srgb,var(--brand) 38%,var(--line)); background:color-mix(in srgb,var(--brand) 6%,var(--surface)); }
+:is([data-page="operations-knowledge"]) .knowledge-tag-option input { margin-top:3px; }
+:is([data-page="operations-knowledge"]) .knowledge-tag-option > span { display:grid; min-width:0; gap:3px; }
+:is([data-page="operations-knowledge"]) .knowledge-tag-option small { color:var(--muted); }
+:is([data-page="operations-knowledge"]) .knowledge-tag-option em { color:var(--brand); font-size:11px; font-style:normal; font-weight:700; }
+:is([data-page="operations-knowledge"]) .knowledge-tag-evidence { grid-column:1/-1; display:grid; gap:5px; margin:0 0 4px 27px; padding:10px 12px; border-left:3px solid color-mix(in srgb,var(--brand) 46%,var(--line)); color:var(--muted); background:var(--surface); }
+:is([data-page="operations-knowledge"]) .knowledge-tag-evidence small { color:var(--faint); }
+:is([data-page="operations-knowledge"]) .knowledge-tag-evidence q { color:var(--ink); font-size:12px; line-height:1.6; }
+:is([data-page="operations-knowledge"]) .knowledge-source-list { display:grid; grid-column:1/-1; gap:8px; }
+:is([data-page="operations-knowledge"]) .knowledge-source-card { display:grid; grid-template-columns:28px minmax(0,1fr); align-items:center; gap:12px; padding:13px 15px; border:1px solid var(--line); border-radius:9px; background:var(--surface); }
+:is([data-page="operations-knowledge"]) .knowledge-source-card > div { display:grid; min-width:0; gap:4px; }
+:is([data-page="operations-knowledge"]) .knowledge-source-card strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+:is([data-page="operations-knowledge"]) .knowledge-source-card small { color:var(--muted); }
+:is([data-page="operations-knowledge"]) .knowledge-source-card code { overflow:hidden; color:var(--faint); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+:is([data-page="operations-knowledge"]) .knowledge-source-actions { display:flex; grid-column:1/-1; justify-content:flex-end; }
+:is([data-page="operations-knowledge"]) .knowledge-technical-list { display:grid; grid-template-columns:100px minmax(0,1fr); grid-column:1/-1; gap:10px 16px; margin:0; }
+:is([data-page="operations-knowledge"]) .knowledge-technical-list dt { color:var(--muted); }
+:is([data-page="operations-knowledge"]) .knowledge-technical-list dd { margin:0; overflow-wrap:anywhere; }
+:is([data-page="operations-knowledge"]) .knowledge-profile { grid-column:1/-1; max-height:360px; margin:0; padding:15px; overflow:auto; border:1px solid var(--line); border-radius:9px; color:var(--ink); background:var(--surface-subtle); white-space:pre-wrap; font:12px/1.7 var(--font-data); }
+:is([data-page="operations-knowledge"]) .knowledge-review-timeline { grid-column:1/-1; width:100%; margin:0; }
+:is([data-page="operations-knowledge"]) .knowledge-review-timeline li > div { display:grid; gap:3px; }
+:is([data-page="operations-knowledge"]) .knowledge-review-timeline small { color:var(--faint); }
+:is([data-page="operations-knowledge"]) .notice ul { margin:8px 0 0; padding-left:20px; }
+@media (max-width:760px) {
+  :is([data-page="operations-knowledge"]) .knowledge-upload-form { padding:18px 18px 0; }
+  :is([data-page="operations-knowledge"]) .knowledge-upload-form > .admin-drawer-footer { align-items:stretch; flex-direction:column; margin-right:-18px; margin-left:-18px; }
+  :is([data-page="operations-knowledge"]) .knowledge-upload-form > .admin-drawer-footer button { width:100%; }
+  :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-mode-picker,:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-drop-zone,:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-ledger,:is([data-page="operations-knowledge"]) .upload-limit-notice { margin-left:0; }
+  :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-row { grid-template-columns:25px minmax(0,1fr) auto; }
+  :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-settings { grid-column:2/-1; }
+  :is([data-page="operations-knowledge"]) .knowledge-detail-tabs { padding-right:18px; padding-left:18px; }
+  :is([data-page="operations-knowledge"]) .knowledge-detail-body { padding:18px; }
+  :is([data-page="operations-knowledge"]) .knowledge-stage-track { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :is([data-page="operations-knowledge"]) .knowledge-summary-grid { grid-template-columns:1fr; }
+  :is([data-page="operations-knowledge"]) .knowledge-tag-group { grid-template-columns:1fr; }
+  :is([data-page="operations-knowledge"]) .knowledge-summary-grid div,:is([data-page="operations-knowledge"]) .knowledge-summary-grid div:nth-child(3n),:is([data-page="operations-knowledge"]) .knowledge-summary-grid div:nth-last-child(-n+3) { border-right:0; border-bottom:1px solid var(--line); }
+  :is([data-page="operations-knowledge"]) .knowledge-summary-grid div:last-child { border-bottom:0; }
+  :is([data-page="operations-knowledge"]) .knowledge-source-card { align-items:stretch; flex-direction:column; }
+}

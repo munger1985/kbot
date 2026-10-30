@@ -16,6 +16,7 @@ const escape = (value) => String(value ?? "")
 const context = {
   KBotAIOpsShell: { escape, fmt: (value) => value, ready: new Promise(() => {}) },
   KBotMarkdown: {},
+  document: {body:{dataset:{page:"runs"}},addEventListener:()=>{}},
   addEventListener: () => {},
 };
 runInNewContext(readFileSync(fileURLToPath(new URL("../../ui/aiops/js/aiops-sql-plan-viewer.js", import.meta.url)), "utf8"), context);
@@ -199,3 +200,20 @@ for (const name of ["cost", "estimated_rows", "actual_rows", "loops", "actual_el
 assert.equal(context.testTable.sqlPlanColumnClass({ name: "index" }), "is-plan-object");
 assert.ok(!html.includes("is-sql-plan"));
 assert.ok(!alert.includes("is-sql-plan"));
+
+// 工作台与其他记录页共享数据合同，但使用 Ammolite 的查询结果卡片和空值显示。
+context.document.body.dataset.page = "chat";
+const chatTable = context.testTable.answerBlockHtml(block, {});
+assert.ok(chatTable.includes('class="key-value-card aiops-primary-result is-top-sql"'));
+assert.ok(chatTable.includes('class="table-scroll"'));
+assert.ok(chatTable.includes('class="row-action"'));
+assert.ok(chatTable.includes('采集时间 未记录'));
+assert.ok(chatTable.includes(escape(sql)));
+assert.ok(!chatTable.includes('>Digest</th>'));
+const emptyTable = context.testTable.answerBlockHtml({block_type:"TABLE",payload:{presentation_role:"PRIMARY",columns:[],rows:[],row_count:0}},{});
+assert.ok(emptyTable.includes('0 行'));
+assert.ok(emptyTable.includes('空结果不代表未执行取证'));
+const valueTable = context.testTable.answerBlockHtml({block_type:"TABLE",payload:{presentation_role:"PRIMARY",columns:[{name:"flag",label:"结果"}],rows:[[false],[true],[null]],row_count:3}},{});
+assert.ok(valueTable.includes('title="否">否</span>'));
+assert.ok(valueTable.includes('title="是">是</span>'));
+assert.ok(valueTable.includes('title="—">—</span>'));

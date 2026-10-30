@@ -1,0 +1,242 @@
+/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* business/AIOpsObservationSeriesView.vue */
+:is([data-page="run-detail"]) .aiops-observation-series td span {
+  display: block;
+  max-width: 32ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* business/AIOpsTurnResultView.vue */
+:is([data-page="run-detail"]) .ops-analysis, :is([data-page="run-detail"]) .ops-solution, :is([data-page="run-detail"]) .ops-fact-confirmation, :is([data-page="run-detail"]) .ops-html-report-readonly, :is([data-page="run-detail"]) .ops-proposal-readonly {
+  margin: 0 0 16px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+:is([data-page="run-detail"]) .ops-analysis header, :is([data-page="run-detail"]) .ops-solution header, :is([data-page="run-detail"]) .ops-fact-confirmation header, :is([data-page="run-detail"]) .ops-html-report-readonly header, :is([data-page="run-detail"]) .ops-proposal-readonly header {
+  margin-bottom: 10px;
+}
+:is([data-page="run-detail"]) .ops-analysis header strong, :is([data-page="run-detail"]) .ops-solution header strong, :is([data-page="run-detail"]) .ops-fact-confirmation header strong, :is([data-page="run-detail"]) .ops-html-report-readonly header strong, :is([data-page="run-detail"]) .ops-proposal-readonly header strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+:is([data-page="run-detail"]) .ops-html-report-readonly ul {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+:is([data-page="run-detail"]) .ops-proposal-readonly p, :is([data-page="run-detail"]) .ops-fact-confirmation p {
+  color: var(--muted);
+}
+:is([data-page="run-detail"]) .ops-turn-result-empty {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* business/AIOpsFindingList.vue */
+:is([data-page="run-detail"]) .ops-findings {
+  overflow: hidden;
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+:is([data-page="run-detail"]) .ops-findings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+:is([data-page="run-detail"]) .ops-findings-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+:is([data-page="run-detail"]) .ops-findings-header strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+
+:is([data-page="run-detail"]) .ops-findings-header p,
+:is([data-page="run-detail"]) .ops-findings-overview {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+:is([data-page="run-detail"]) .ops-findings-overview {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+:is([data-page="run-detail"]) .ops-finding-list {
+  background: var(--surface);
+}
+
+:is([data-page="run-detail"]) .ops-finding-row + .ops-finding-row {
+  border-top: 1px solid var(--line);
+}
+
+:is([data-page="run-detail"]) .ops-finding-row > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(78px, auto);
+  align-items: center;
+  min-height: 66px;
+  gap: 12px;
+  padding: 9px 14px;
+  cursor: pointer;
+  list-style: none;
+  transition: background-color .15s ease;
+}
+
+:is([data-page="run-detail"]) .ops-finding-row > summary::-webkit-details-marker {
+  display: none;
+}
+
+:is([data-page="run-detail"]) .ops-finding-row > summary:hover {
+  background: var(--surface-subtle);
+}
+
+:is([data-page="run-detail"]) .ops-finding-row > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+:is([data-page="run-detail"]) .ops-finding-row.is-critical > summary,
+:is([data-page="run-detail"]) .ops-finding-row.is-high > summary {
+  background: color-mix(in srgb, var(--danger-soft) 38%, var(--surface));
+}
+
+:is([data-page="run-detail"]) .ops-finding-row.is-medium > summary {
+  background: color-mix(in srgb, var(--warning-soft) 34%, var(--surface));
+}
+
+:is([data-page="run-detail"]) .ops-finding-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+:is([data-page="run-detail"]) .ops-finding-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+:is([data-page="run-detail"]) .ops-finding-title strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:is([data-page="run-detail"]) .ops-finding-title span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+:is([data-page="run-detail"]) .ops-finding-copy > p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+:is([data-page="run-detail"]) .ops-finding-row[open] .ops-finding-copy > p {
+  display: block;
+  overflow: visible;
+}
+
+:is([data-page="run-detail"]) .ops-finding-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+:is([data-page="run-detail"]) .ops-finding-toggle::after {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform .15s ease;
+}
+
+:is([data-page="run-detail"]) .ops-finding-row[open] .ops-finding-toggle::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+:is([data-page="run-detail"]) .ops-finding-detail {
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+:is([data-page="run-detail"]) .ops-finding-empty,
+:is([data-page="run-detail"]) .ops-finding-gaps {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+:is([data-page="run-detail"]) .ops-finding-gaps {
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 720px) {
+  :is([data-page="run-detail"]) .ops-findings-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  :is([data-page="run-detail"]) .ops-findings-overview {
+    white-space: normal;
+  }
+
+  :is([data-page="run-detail"]) .ops-finding-row > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  :is([data-page="run-detail"]) .ops-finding-toggle {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is([data-page="run-detail"]) .ops-finding-row > summary,
+  :is([data-page="run-detail"]) .ops-finding-toggle::after {
+    transition: none;
+  }
+}

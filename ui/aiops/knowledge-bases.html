@@ -6,35 +6,26 @@
   <title>AIOps 运维知识库</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/aiops-forms.css?v=20261020_1">
-</head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-knowledge-bases.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="knowledge-bases">
-  <main class="ops-main">
-    <header class="ops-head"><div><h1>运维知识库</h1><p>在当前 Domain 内创建和管理独立知识边界，Agent 可同时绑定多个知识库。</p></div><a class="ops-related-link" href="./operations-knowledge.html"><span><small>关联页面</small><strong>查看运维知识</strong></span><b aria-hidden="true">→</b></a></header>
-    <section class="ops-panel">
-      <header class="ops-panel-head"><div><h2>知识库目录</h2><p>维护知识库及其 KC Collection 解析与索引模型。</p></div><div class="ops-actions"><button id="create-knowledge-base" class="primary" type="button">新建知识库</button></div></header>
-      <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>知识库</th><th>状态</th><th>资料</th><th>Agent 引用</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="knowledge-base-rows"><tr><td colspan="6" class="ops-empty">正在读取运维知识库…</td></tr></tbody></table></div>
+  <main class="ops-main knowledge-bases-page">
+    <header class="ops-head"><div><p class="eyebrow">AIOps 配置</p><h1>运维知识库</h1><p>每个知识库拥有独立的 Knowledge Core Collection；运维资料和 Agent 只在所选知识库范围内工作。</p></div><a class="secondary-button related-page-link" href="./operations-knowledge.html"><span class="related-page-link-copy"><small>关联页面</small><strong>查看运维知识</strong></span><span class="related-page-link-arrow" aria-hidden="true">→</span></a></header>
+    <section class="table-card">
+      <header class="resource-list-header"><div class="resource-list-heading"><h2>知识库目录</h2><p>创建、维护和删除当前 Domain 的运维知识库。</p></div><div class="resource-list-tools"><label class="search-field"><span aria-hidden="true">⌕</span><input id="knowledge-base-search" type="search" placeholder="搜索知识库名称或说明" aria-label="搜索知识库"></label><span id="knowledge-base-count" class="resource-list-count" aria-live="polite">0 项</span><button id="refresh-knowledge-bases" class="secondary-button" type="button">刷新</button><button id="create-knowledge-base" class="primary-button" type="button">新建知识库</button></div></header>
+      <div class="table-scroll"><table><thead><tr><th>知识库</th><th>使用情况</th><th>最近更新</th><th>状态</th><th class="table-action-heading">操作</th></tr></thead><tbody id="knowledge-base-rows"><tr><td colspan="5" class="empty-cell">正在读取运维知识库…</td></tr></tbody></table></div>
     </section>
   </main>
-  <dialog id="knowledge-base-dialog" class="ops-dialog">
-    <form id="knowledge-base-form">
-      <header><div><h2 id="knowledge-base-dialog-title">新建运维知识库</h2><p>知识库名称在当前 Domain 内不可重复。</p></div><button type="button" data-close>关闭</button></header>
-      <div class="ops-dialog-body ops-form">
-        <label class="ops-field span-12"><span>知识库名称</span><input name="display_name" maxlength="256" required placeholder="例如：Oracle 核心库运维手册"></label>
-        <label class="ops-field span-12"><span>说明</span><textarea name="description" maxlength="1000" rows="4" placeholder="说明知识范围、适用系统或维护责任"></textarea></label>
-        <div class="ops-field span-12"><span>文档解析模型</span><small>OCR 必选；视觉解析仅在需要识别图片内容时启用。</small></div>
-        <label class="ops-field span-6"><span>OCR 解析模型</span><select name="parser_ocr" required></select></label>
-        <label class="ops-field span-6"><span>视觉解析模型（可选）</span><select name="parser_vlm"></select></label>
-        <div class="ops-field span-12"><span>语义处理模型</span><small>解析 LLM 用于标签预分析，检索规划 LLM 用于理解查询。</small></div>
-        <label class="ops-field span-6"><span>LLM 解析模型</span><select name="parser_llm" required></select></label>
-        <label class="ops-field span-6"><span>检索规划模型</span><select name="retrieval_llm" required></select></label>
-        <div class="ops-field span-12"><span>索引模型</span><small>文本向量模型必选；视觉向量模型按需启用。</small></div>
-        <label class="ops-field span-6"><span>文本向量模型</span><select name="embedding" required></select></label>
-        <label class="ops-field span-6"><span>视觉向量模型（可选）</span><select name="visual_embedding"></select></label>
-        <p id="knowledge-base-result" class="ops-connection-result" role="status"></p>
-      </div>
-      <footer><button type="button" data-close>取消</button><button id="save-knowledge-base" class="primary" type="submit">创建知识库</button></footer>
+  <dialog id="knowledge-base-dialog" class="admin-drawer admin-drawer-sectioned reference-drawer knowledge-base-drawer" aria-labelledby="knowledge-base-dialog-title">
+    <header class="admin-drawer-header"><div><p class="eyebrow">OPERATIONS KNOWLEDGE BASE</p><h2 id="knowledge-base-dialog-title">新建运维知识库</h2><p>知识库使用独立 Collection，名称、说明和模型配置会作为一次修改保存。</p></div><button class="icon-button" type="button" data-close aria-label="关闭">×</button></header>
+    <form id="knowledge-base-form" class="admin-drawer-body knowledge-base-form">
+      <section class="drawer-form-section"><header><span>01</span><div><strong>基本信息</strong><small>名称在当前 Domain 内不可重复。</small></div></header><label class="control-field form-span"><span class="field-label">知识库名称</span><input name="display_name" maxlength="256" required placeholder="例如：Oracle 数据库运维手册"></label><label class="control-field form-span"><span class="field-label">说明</span><textarea name="description" maxlength="1000" rows="5" placeholder="说明知识范围、适用团队或系统"></textarea></label></section>
+      <section class="drawer-form-section"><header><span>02</span><div><strong>文档解析</strong><small>OCR 必选；视觉解析仅在需要识别图片内容时启用。</small></div></header><div class="form-grid-two form-span"><label class="control-field"><span class="field-label">OCR 解析模型</span><select name="parser_ocr" required></select></label><label class="control-field"><span class="field-label">视觉解析模型（可选）</span><select name="parser_vlm"></select></label></div></section>
+      <section class="drawer-form-section"><header><span>03</span><div><strong>语义处理</strong><small>解析 LLM 用于标签预分析，检索规划 LLM 用于理解查询。</small></div></header><div class="form-grid-two form-span"><label class="control-field"><span class="field-label">LLM 解析模型</span><select name="parser_llm" required></select></label><label class="control-field"><span class="field-label">检索规划模型</span><select name="retrieval_llm" required></select></label></div></section>
+      <section class="drawer-form-section"><header><span>04</span><div><strong>索引模型</strong><small>文本向量模型必选；视觉向量模型按需启用。</small></div></header><div class="form-grid-two form-span"><label class="control-field"><span class="field-label">文本向量模型</span><select name="embedding" required></select></label><label class="control-field"><span class="field-label">视觉向量模型（可选）</span><select name="visual_embedding"></select></label></div></section>
+      <p id="knowledge-base-result" class="form-error" role="status" hidden></p>
+      <footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close>取消</button><button id="save-knowledge-base" class="primary-button" type="submit">保存知识库</button></footer>
     </form>
   </dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-knowledge-bases.js?v=20261020_2"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261030_1"></script><script src="./js/aiops-knowledge-bases.js?v=20261030_1"></script>
 </body>
 </html>

@@ -1,0 +1,189 @@
+/* KBot 公开 BFF 与静态页面的呈现适配；设计规格来自 ammolite-shared.css。 */
+body.aiops-static-page {
+  --bg: var(--canvas);
+  --paper: var(--surface);
+  --accent2: var(--accent-strong);
+  --good: var(--success);
+  --warn: var(--warning);
+  --bad: var(--danger);
+  --shadow: var(--shadow-soft);
+  margin: 0;
+  font: var(--type-body)/1.6 var(--font-ui);
+}
+body.aiops-static-page [hidden] { display: none !important; }
+body.aiops-static-page dialog:not([open]) { display: none !important; }
+/* Portal 的居中模态框用 HTML dialog 保留键盘焦点与顶层模态语义。 */
+body.aiops-static-page dialog.responsibility-dialog { position: fixed; inset: 0; max-width: calc(100vw - 48px); margin: auto; padding: 0; }
+body.aiops-static-page dialog.responsibility-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
+body.aiops-static-page #group-confirm-dialog { width: min(468px,calc(100vw - 48px)); max-width: none; padding: 0; }
+body.aiops-static-page #group-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
+body.aiops-static-page #recovery-confirm-dialog { width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
+body.aiops-static-page #recovery-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
+.business-app-shell .catalog-entries { display: contents; }
+.business-app-shell .ops-current-domain { cursor: default; }
+.business-app-shell .ops-current-domain:hover { border-color: color-mix(in srgb,var(--accent) 30%,var(--line)); background: var(--surface-subtle); box-shadow: none; }
+.business-app-shell .business-app-sidebar nav .nav-group-items { position: static; min-height: auto; flex: none; overflow: visible; scrollbar-gutter: auto; }
+.business-app-shell .business-app-content > .ops-main {
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  margin-block: 0;
+  margin-right: 0;
+  padding: 0 0 28px;
+  background: transparent;
+}
+.business-app-shell .business-app-content > .ops-main.recovery-drills-page { padding: 0; background: var(--canvas); }
+.business-app-shell .business-app-content > .ops-main.aiops-report-detail-page { padding: 0; background: var(--canvas); }
+.business-app-shell .business-app-content > .ops-main.aiops-config-page { padding: 0; }
+.business-app-shell .business-app-content > .ops-main.system-workspace { padding: 0; background: var(--page-bg); }
+/* 旧日报的 font 简写不能重置源组件继承的行高和字重。 */
+body.aiops-static-page[data-page="report-detail"] :is(.daily-report-kicker,.daily-section-kicker,.daily-conclusion-ledger strong,.daily-finding > span:first-child,.daily-finding h3,.daily-report-footer) { line-height: 1.6; }
+body.aiops-static-page[data-page="report-detail"] .daily-finding > .status-pill { font-family: var(--font-ui); line-height: 1.6; }
+body.aiops-static-page[data-page="report-detail"] :is(.daily-report-kicker,.daily-section-kicker) { text-transform: none; }
+body.aiops-static-page[data-page="report-detail"] .daily-conclusion-ledger strong { font-weight: 700; }
+.business-app-shell .business-app-content > .ops-main:not(.app-page-rail-workspace) { margin-left: 0; }
+.business-app-shell .business-app-content > .ops-chat-main {
+  height: 100%;
+  margin-block: 0;
+  margin-right: 0;
+  padding: 0;
+}
+.business-app-shell .ops-panel { border-color: var(--line); background: var(--surface); box-shadow: none; }
+.business-app-shell .ops-panel.resource-list-surface { background: var(--surface-raised); }
+.business-app-shell .ops-table { color: var(--ink); font-size: var(--type-table); }
+.business-app-shell .ops-table th { border-color: var(--line); background: var(--surface-subtle); font-size: 13px; }
+.business-app-shell .ops-table td { border-color: var(--line); }
+.business-app-shell .ops-table td > small { display: block; margin-top: 4px; color: var(--faint); font-size: 12px; }
+.business-app-shell .ops-table tr:last-child td { border-bottom: 0; }
+.business-app-shell .ops-table a:not([class]) { color: var(--accent-strong); font-weight: 650; }
+.business-app-shell .ops-badge { min-height: 24px; padding: 3px 9px; color: var(--muted); background: var(--surface-subtle); font: 600 12px/1.4 var(--font-ui); }
+.business-app-shell .ops-badge.good { color: var(--success); background: var(--success-soft); }
+.business-app-shell .ops-badge.warn { color: var(--warning); background: var(--warning-soft); }
+.business-app-shell .ops-badge.bad { color: var(--danger); background: var(--danger-soft); }
+.business-app-shell .ops-field { min-width: 0; gap: var(--form-label-control-gap); }
+.business-app-shell .ops-field > :is(span,label) { color: var(--ink); font-size: 14px; font-weight: 600; }
+.business-app-shell .ops-field :is(input,textarea,select) { border-color: var(--line-strong); border-radius: 7px; color: var(--ink); background-color: var(--surface-raised); font-size: 14px; }
+.business-app-shell .ops-field :is(input,textarea,select):focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-focus); }
+.business-app-shell .ops-field input[type="checkbox"] { width: auto; min-height: 0; }
+.business-app-shell .ops-dialog { color: var(--ink); background: var(--canvas); }
+.business-app-shell .ops-dialog > form > header h2 { font-size: 22px; }
+.business-app-shell .ops-toast { background: var(--surface-code); }
+/* 静态版的 -card 命名不是 Portal 的卡片组件，避免被公共卡片通配规则误选。 */
+.business-app-shell .ops-chat-main .ops-starter-card { border-color: var(--line); border-radius: 0; box-shadow: none; transform: none; }
+.business-app-shell .ops-chat-main .ops-starter-card:hover:not(:disabled) { box-shadow: var(--shadow-soft); transform: none; }
+.business-app-shell .ops-chat-main .ops-starter-section > h3 { color: var(--muted); font-weight: 700; }
+.business-app-shell .ops-chat-main .ops-conversation-group h3 { color: var(--faint); font-weight: 650; }
+.business-app-shell .ops-chat-main :is(.icon-button,.ops-workspace-item,.agent-chat-session-badge) { font-weight: 400; }
+.business-app-shell .ops-chat-main .aiops-composer-send { margin: 0; }
+.business-app-shell .ops-chat-main .agent-chat-composer-input { margin: 0; }
+.business-app-shell #conversation-actions { display: contents; }
+.business-app-shell .ops-chat-main .aiops-diagnosis-findings { padding: 0; }
+.business-app-shell .ops-chat-main .ops-findings-header { margin-bottom: 0; }
+.business-app-shell .aiops-turn-result .aiops-diagnosis-findings { padding: 0; }
+.business-app-shell .aiops-turn-result .ops-findings-header { margin-bottom: 0; }
+.business-app-shell .aiops-turn-result .agent-chart-warning { margin: 10px 0 0; color: var(--warning); font-size: 13px; line-height: 1.5; }
+.business-app-shell .ops-chat-main .agent-chart-warning { margin: 10px 0 0; color: var(--warning); font-size: 13px; line-height: 1.5; }
+/* 原始计划由独立子组件拥有，不继承父页面普通结果表格的列宽下限。 */
+.business-app-shell .ops-chat-main .sql-plan-raw :is(th,td) { min-width: 0; }
+.business-app-shell .ops-chat-main .attachment-list .text-button { border: 0; background: transparent; }
+.business-app-shell .ops-chat-main .effect-verification :is([data-effect-body],[data-effect-rules]) { display: contents; }
+.business-app-shell .ops-chat-main .effect-verification .text-button { border: 0; background: transparent; }
+.business-app-shell .ops-chat-main .ops-manual-result { padding: 0; border: 0; }
+.business-app-shell .ops-chat-main .ops-manual-result button { justify-self: stretch; }
+/* HTML dialog 保留浏览器的焦点约束与模态语义，编辑区采用相同的右侧抽屉。 */
+body.aiops-static-page dialog.reference-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(640px,100vw);
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid var(--line);
+  box-shadow: -18px 0 42px rgb(22 43 31 / 20%);
+}
+body.aiops-static-page dialog.reference-drawer::backdrop { background: rgb(20 35 27 / 30%); backdrop-filter: blur(2px); }
+body.aiops-static-page dialog.reference-drawer[open] { display: flex; flex-direction: column; }
+body.aiops-static-page :is(#diagnostic-source-dialog,#source-webhook-drawer) { width: min(760px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; box-shadow: -18px 0 42px rgb(22 43 31 / 16%); }
+body.aiops-static-page :is(#diagnostic-source-dialog,#source-webhook-drawer)::backdrop { background: rgb(20 35 27 / 26%); }
+body.aiops-static-page #source-webhook-drawer[open] { display: block; }
+body.aiops-static-page #diagnostic-source-dialog[open] { display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; }
+body.aiops-static-page #source-confirm-dialog { position: fixed; inset: 0; width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
+body.aiops-static-page #source-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
+body.aiops-static-page #workspace-leave-dialog { position: fixed; inset: 0; width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
+body.aiops-static-page #workspace-leave-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
+body.aiops-static-page #business-resource-drawer { width: min(760px,100vw); box-shadow: -18px 0 42px rgb(22 43 31 / 16%); font: var(--type-body)/1.6 var(--font-ui); }
+body.aiops-static-page #business-resource-drawer::backdrop { background: rgb(20 35 27 / 26%); }
+body.aiops-static-page dialog.reference-drawer > form { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+body.aiops-static-page dialog.reference-drawer .ops-dialog-body { min-height: 0; flex: 1; overflow-y: auto; }
+body.aiops-static-page dialog.reference-drawer > form > :is(header,footer) { flex: 0 0 auto; }
+body.aiops-static-page #knowledge-base-dialog { width: min(820px,100vw); }
+body.aiops-static-page #knowledge-base-dialog > form { display: grid; height: auto; min-height: 0; flex: 1; overflow-y: auto; }
+body.aiops-static-page #knowledge-base-result[hidden] { display: none; }
+body.aiops-static-page #tag-drawer { width: min(680px,100vw); }
+body.aiops-static-page #tag-form { display: grid; height: auto; min-height: 0; flex: 1; overflow-y: auto; }
+body.aiops-static-page .native-drawer-shell { display: flex; min-height: 0; height: 100%; flex-direction: column; }
+body.aiops-static-page #case-drawer { width: min(860px,94vw); }
+body.aiops-static-page :is(#inspection-template-dialog,#session-report-template-dialog) { width: min(820px,calc(100vw - 24px)); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }
+body.aiops-static-page :is(#inspection-template-dialog,#session-report-template-dialog)[open] { display: block; }
+body.aiops-static-page :is(#inspection-template-form,#session-report-template-form) { display: block; height: auto; min-height: 0; flex: none; }
+body.aiops-static-page #template-history-drawer { width: min(700px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }
+body.aiops-static-page #conversation-report-template-dialog { width: min(650px,calc(100vw - 24px)); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }
+body.aiops-static-page dialog.aiops-report-template-drawer[open] { display: block; }
+body.aiops-static-page dialog.aiops-report-template-drawer > form { display: grid; height: auto; }
+body.aiops-static-page #diagnosis-closure-dialog { width: min(920px,calc(100vw - 24px)); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }
+body.aiops-static-page #diagnosis-closure-dialog[open] { display: block; }
+body.aiops-static-page #diagnosis-closure-dialog > form { display: grid; height: auto; }
+.business-app-shell .case-overview-grid article strong { margin-top: 0; }
+.business-app-shell .table-primary-button { display: inline-block; min-height: 0; border-radius: 0; }
+.business-app-shell .monitoring-dashboard-shell.is-empty { display: block; border: 0; background: transparent; overflow: auto; }
+.business-app-shell .monitoring-dashboard-shell.is-empty > .monitoring-context-rail { display: none; }
+.business-app-shell .monitoring-dashboard-shell.is-empty > .monitoring-dashboard-main { padding: 0; background: transparent; }
+.business-app-shell .monitoring-quality-toggle { min-height: 0; }
+.business-app-shell .business-app-content > .aiops-monitoring-page { padding-bottom: 0; }
+.business-app-shell #monitoring-result { display: contents; }
+.business-app-shell #monitoring-instance-picker { display: contents; }
+body.aiops-static-page #upload-drawer { width: min(920px,100vw); }
+body.aiops-static-page #manual-form { display: grid; height: auto; min-height: 0; flex: 1; }
+body.aiops-static-page #manual-result:empty { display: none; }
+body.aiops-static-page #work-item-create-dialog { width: min(700px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }
+body.aiops-static-page #work-item-create-dialog[open] { display: block; }
+body.aiops-static-page #work-item-create-form { display: grid; height: auto; min-height: 0; flex: none; }
+body.aiops-static-page #situation-drawer { width: min(1080px,100vw); box-shadow: -18px 0 42px rgb(22 43 31 / 16%); }
+body.aiops-static-page #situation-drawer::backdrop { background: rgba(20,35,27,.26); }
+body.aiops-static-page #inspection-drawer { width: min(1080px,100vw); box-shadow: -18px 0 42px rgb(22 43 31 / 16%); }
+body.aiops-static-page #inspection-drawer::backdrop { background: rgba(20,35,27,.26); }
+body.aiops-static-page:is([data-page="inspections"],[data-page="inspection-plans"]) .inspection-tabs { margin: 0; }
+body.aiops-static-page #inspection-plan-dialog { width: min(760px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; box-shadow: -18px 0 42px rgba(22,43,31,.16); }
+body.aiops-static-page #inspection-plan-dialog::backdrop { background: rgba(20,35,27,.26); }
+body.aiops-static-page #inspection-plan-dialog[open] { display: block; }
+body.aiops-static-page #inspection-plan-form { display: grid; gap: 18px; height: auto; min-height: 0; flex: none; overflow: visible; }
+body.aiops-static-page #inspection-plan-confirm { position: fixed; inset: 0; width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
+body.aiops-static-page #inspection-plan-confirm::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
+body.aiops-static-page #run-drawer { width: min(760px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; box-shadow: -18px 0 42px rgba(22,43,31,.16); }
+body.aiops-static-page #run-drawer::backdrop { background: rgba(20,35,27,.26); }
+body.aiops-static-page #run-drawer[open] { display: block; }
+body.aiops-static-page #run-confirm-dialog { position: fixed; inset: 0; width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
+body.aiops-static-page #run-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
+body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer) { width: min(700px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; box-shadow: -18px 0 42px rgba(22,43,31,.16); }
+body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer)::backdrop { background: rgba(20,35,27,.26); }
+body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer)[open] { display: block; }
+body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer) > form { display: grid; height: auto; flex: none; min-height: 0; overflow: visible; }
+:root body.aiops-static-page dialog.work-item-modal { position: fixed; inset: 0; max-width: none; margin: auto; padding: 0; border: 0; color: var(--ink); }
+:root body.aiops-static-page dialog.work-item-modal::backdrop { background: rgba(15,23,42,.5); }
+:root body.aiops-static-page dialog.work-item-processing-modal { width: min(980px,calc(100vw - 40px)); }
+:root body.aiops-static-page dialog.work-item-assignment-modal { width: min(560px,calc(100vw - 40px)); }
+body.aiops-static-page #monitoring-instance-drawer { width: min(580px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }
+body.aiops-static-page #monitoring-data-drawer { width: min(1120px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }
+@media (min-width:901px) {
+  .business-app-shell .business-app-content > .ops-monitoring-main { display: flex; height: 100%; padding-bottom: 0; flex-direction: column; overflow: hidden; }
+  .business-app-shell .ops-chat-main .is-rail-collapsed .ops-workspace-item { grid-template-columns: minmax(0,1fr); }
+  .business-app-shell .ops-chat-main .is-rail-collapsed .agent-chat-session-badge { font-weight: 750; }
+}
+@media (max-width:900px) {
+  .business-app-shell .business-app-content > .ops-chat-main { height: auto; padding: 0; }
+  .business-app-shell .business-app-topbar { width: 100%; min-width: 0; }
+}

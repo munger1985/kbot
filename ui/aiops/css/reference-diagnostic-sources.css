@@ -1,0 +1,131 @@
+/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* management/AIOpsConfigurationView.vue */
+:is([data-page="diagnostic-sources"]) .aiops-config-page { display: grid; gap: 20px; }
+:is([data-page="diagnostic-sources"]) .page-header, :is([data-page="diagnostic-sources"]) .header-actions, :is([data-page="diagnostic-sources"]) .form-actions { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+:is([data-page="diagnostic-sources"]) .page-header h1 { margin: 4px 0 8px; }
+:is([data-page="diagnostic-sources"]) .page-header p { margin: 0; }
+:is([data-page="diagnostic-sources"]) .eyebrow { color: var(--text-secondary); font-weight: 600; }
+:is([data-page="diagnostic-sources"]) .form-error { color: var(--danger-text); }
+:is([data-page="diagnostic-sources"]) .resource-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+:is([data-page="diagnostic-sources"]) .resource-form label { display: grid; gap: 6px; color: var(--text-secondary); }
+:is([data-page="diagnostic-sources"]) .resource-form input, :is([data-page="diagnostic-sources"]) .resource-form select, :is([data-page="diagnostic-sources"]) .resource-form textarea { width: 100%; }
+:is([data-page="diagnostic-sources"]) .resource-form .form-span, :is([data-page="diagnostic-sources"]) .resource-form footer { grid-column: 1 / -1; }
+:is([data-page="diagnostic-sources"]) .resource-form .checkbox-label { display: flex; align-items: center; gap: 8px; }
+:is([data-page="diagnostic-sources"]) .resource-form.aiops-target-edit-form { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+:is([data-page="diagnostic-sources"]) .aiops-target-edit-form .drawer-form-section { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+:is([data-page="diagnostic-sources"]) .aiops-target-edit-form .control-field { align-content: start; }
+:is([data-page="diagnostic-sources"]) .aiops-target-edit-form .drawer-form-section .form-span { grid-column: 1 / -1; }
+:is([data-page="diagnostic-sources"]) .target-form-monitoring { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md); }
+:is([data-page="diagnostic-sources"]) .target-form-monitoring > header { display: flex; grid-column: 1 / -1; align-items: flex-start; justify-content: space-between; gap: 12px; }
+:is([data-page="diagnostic-sources"]) .target-form-monitoring h3, :is([data-page="diagnostic-sources"]) .target-form-monitoring p { margin: 0; }
+:is([data-page="diagnostic-sources"]) .target-form-monitoring .table-card, :is([data-page="diagnostic-sources"]) .target-form-monitoring .form-error, :is([data-page="diagnostic-sources"]) .target-form-monitor-candidates { grid-column: 1 / -1; }
+:is([data-page="diagnostic-sources"]) .target-form-monitor-candidates { display: grid; gap: 8px; }
+:is([data-page="diagnostic-sources"]) .target-form-monitor-candidate { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+:is([data-page="diagnostic-sources"]) .target-form-monitor-candidate input { width: auto; }
+:is([data-page="diagnostic-sources"]) .target-form-monitor-candidate span { display: grid; gap: 3px; }
+:is([data-page="diagnostic-sources"]) .target-discovery-more { margin-top: 10px; }
+:is([data-page="diagnostic-sources"]) .instance-discovery-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+:is([data-page="diagnostic-sources"]) .instance-discovery-actions small { color: var(--text-secondary); }
+:is([data-page="diagnostic-sources"]) .form-actions { justify-content: flex-end; align-items: center; }
+:is([data-page="diagnostic-sources"]) .empty-state { color: var(--text-secondary); text-align: center; }
+:is([data-page="diagnostic-sources"]) .target-database-type { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 650; white-space: nowrap; }
+:is([data-page="diagnostic-sources"]) .target-database-icon { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; font-family: var(--font-data); font-size: 12px; font-weight: 760; letter-spacing: -.04em; }
+:is([data-page="diagnostic-sources"]) .target-database-type.is-oracle .target-database-icon { color: var(--danger); background: var(--danger-soft); }
+:is([data-page="diagnostic-sources"]) .target-database-type.is-postgresql .target-database-icon { color: var(--info); background: var(--info-soft); }
+:is([data-page="diagnostic-sources"]) .target-database-type.is-mysql .target-database-icon { color: var(--accent-strong); background: var(--accent-soft); }
+:is([data-page="diagnostic-sources"]) .target-database-type.is-generic .target-database-icon { color: var(--muted); background: var(--surface-subtle); }
+:is([data-page="diagnostic-sources"]) .target-status-badge { gap: 6px; border: 1px solid transparent; font-weight: 700; }
+:is([data-page="diagnostic-sources"]) .target-status-badge::before { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; content: ''; }
+:is([data-page="diagnostic-sources"]) .monitor-source-card > header { display: grid; grid-template-rows: auto auto auto; grid-template-columns: minmax(0,1fr); gap: 4px; height: auto; min-height: 94px; }
+:is([data-page="diagnostic-sources"]) .monitor-source-card > header > :first-child { display: contents; }
+:is([data-page="diagnostic-sources"]) .monitor-source-card-statuses { display: flex; grid-row: 1; align-items: center; justify-self: end; flex-wrap: wrap; gap: 6px; }
+:is([data-page="diagnostic-sources"]) .monitor-source-card-updated { grid-row: 2; min-width: 0; margin: 0; color: var(--faint); font-size: 12px; line-height: 1.4; white-space: nowrap; }
+:is([data-page="diagnostic-sources"]) .monitor-source-card h3 { display: block; grid-row: 3; min-width: 0; overflow: hidden; margin: 2px 0 0; font-size: 21px; font-weight: 760; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+:is([data-page="diagnostic-sources"]) .target-readonly-details { display: grid; grid-template-columns: minmax(140px, 0.45fr) minmax(0, 1fr); gap: 10px 18px; margin: 0; }
+:is([data-page="diagnostic-sources"]) .target-readonly-details dt { color: var(--text-secondary); }
+:is([data-page="diagnostic-sources"]) .target-readonly-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+:is([data-page="diagnostic-sources"]) .target-facts-section { display: grid; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+:is([data-page="diagnostic-sources"]) .target-facts-section h3 { margin: 0; font-size: 15px; }
+:is([data-page="diagnostic-sources"]) .target-facts-form { display: grid; gap: 10px; }
+:is([data-page="diagnostic-sources"]) .target-facts-result[data-tone='good'] { color: var(--accent-strong); }
+:is([data-page="diagnostic-sources"]) .target-facts-result[data-tone='bad'] { color: var(--danger); }
+:is([data-page="diagnostic-sources"]) .webhook-credential-drawer { width: min(760px, 100vw); }
+:is([data-page="diagnostic-sources"]) .webhook-credential-intro, :is([data-page="diagnostic-sources"]) .webhook-credential-result { display: grid; gap: 18px; padding-top: 18px; }
+:is([data-page="diagnostic-sources"]) .webhook-credential-purpose, :is([data-page="diagnostic-sources"]) .webhook-config-map { display: grid; gap: 10px; margin: 0; }
+:is([data-page="diagnostic-sources"]) .webhook-credential-purpose > div, :is([data-page="diagnostic-sources"]) .webhook-config-map > div { display: grid; grid-template-columns: minmax(150px, .45fr) minmax(0, 1fr); gap: 16px; }
+:is([data-page="diagnostic-sources"]) .webhook-credential-purpose dt, :is([data-page="diagnostic-sources"]) .webhook-config-map dt { font-weight: 700; }
+:is([data-page="diagnostic-sources"]) .webhook-credential-purpose dd, :is([data-page="diagnostic-sources"]) .webhook-config-map dd { margin: 0; color: var(--text-secondary); }
+:is([data-page="diagnostic-sources"]) .webhook-config-snippet { margin: 0; padding: 14px; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-subtle); font-family: var(--font-data); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+:is([data-page="diagnostic-sources"]) .webhook-next-steps { display: grid; gap: 10px; margin: 0; padding-left: 22px; color: var(--text-secondary); }
+:is([data-page="diagnostic-sources"]) .webhook-next-steps code { font-family: var(--font-data); }
+:is([data-page="diagnostic-sources"]) .recovery-assurance-section { display: grid; gap: 18px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+:is([data-page="diagnostic-sources"]) .recovery-assurance-section h3 { margin: 0 0 6px; }
+:is([data-page="diagnostic-sources"]) .recovery-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+:is([data-page="diagnostic-sources"]) .recovery-source-list { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md); }
+:is([data-page="diagnostic-sources"]) .recovery-source-list .checkbox-label { display: flex; align-items: center; gap: 8px; }
+:is([data-page="diagnostic-sources"]) .recovery-span { grid-column: 1 / -1; }
+:is([data-page="diagnostic-sources"]) .aiops-target-wizard-drawer { display:grid; grid-template-rows:auto minmax(0,1fr); height:100%; overflow:hidden; }
+:is([data-page="diagnostic-sources"]) .target-wizard-body { display:grid; grid-template-rows:minmax(0,1fr) auto; gap:18px; min-height:0; padding-top:20px; overflow:hidden; }
+:is([data-page="diagnostic-sources"]) .target-wizard-error { margin:0 17px 15px; padding:11px 13px; border:1px solid color-mix(in srgb,var(--danger) 35%,var(--line)); border-radius:var(--radius-sm); background:var(--danger-soft); font-size:13px; }
+:is([data-page="diagnostic-sources"]) .target-identity-panel { overflow:hidden; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface); }
+:is([data-page="diagnostic-sources"]) .target-identity-panel.incomplete { border-color:color-mix(in srgb,var(--danger) 45%,var(--line)); }
+:is([data-page="diagnostic-sources"]) .target-identity-summary { display:flex; width:100%; align-items:center; justify-content:space-between; gap:18px; padding:15px 17px; border:0; color:var(--ink); background:transparent; cursor:pointer; text-align:left; }
+:is([data-page="diagnostic-sources"]) .target-identity-summary>span:first-child { display:grid; min-width:0; gap:3px; }
+:is([data-page="diagnostic-sources"]) .target-identity-summary small { color:var(--muted); font-size:12px; font-weight:650; }
+:is([data-page="diagnostic-sources"]) .target-identity-summary strong { overflow:hidden; font-size:16px; text-overflow:ellipsis; white-space:nowrap; }
+:is([data-page="diagnostic-sources"]) .target-identity-summary em { overflow:hidden; color:var(--muted); font-size:12px; font-style:normal; text-overflow:ellipsis; white-space:nowrap; }
+:is([data-page="diagnostic-sources"]) .target-identity-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; }
+:is([data-page="diagnostic-sources"]) .target-group-field { grid-column:span 2; }
+:is([data-page="diagnostic-sources"]) .target-group-control { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+:is([data-page="diagnostic-sources"]) .target-group-quick-create { display:grid; grid-column:1/-1; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto; align-items:end; gap:12px; padding:14px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface); }
+:is([data-page="diagnostic-sources"]) .target-group-quick-create .form-error { grid-column:1/-1; margin:0; }
+:is([data-page="diagnostic-sources"]) .target-identity-actions { display:flex; grid-column:1/-1; align-items:center; justify-content:flex-end; gap:12px; }
+:is([data-page="diagnostic-sources"]) .target-wizard-shell { display:grid; grid-template-columns:240px minmax(0,1fr); min-height:0; overflow:hidden; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface); }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav { display:flex; min-width:0; flex-direction:column; gap:4px; padding:12px; border-right:1px solid var(--line); background:var(--surface-subtle); }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav>button { display:grid; grid-template-columns:30px minmax(0,1fr); gap:4px 10px; padding:13px 11px; border:1px solid transparent; border-radius:var(--radius-sm); color:var(--ink); background:transparent; cursor:pointer; text-align:left; }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav>button:hover { background:var(--surface); }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav>button.active { border-color:color-mix(in srgb,var(--accent) 35%,var(--line)); background:var(--surface); box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 8%,transparent); }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav>button>span:first-child { display:grid; width:30px; height:30px; grid-row:span 2; place-items:center; border-radius:8px; color:var(--accent-strong); background:var(--accent-soft); font-family:var(--font-data); font-size:12px; font-weight:750; }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav>button>span:nth-child(2) { display:grid; gap:3px; min-width:0; }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav strong { font-size:13px; }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav small { color:var(--muted); font-size:12px; line-height:1.45; }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav em { grid-column:2; width:max-content; color:var(--muted); font-size:12px; font-style:normal; font-weight:650; }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav em[data-state='已完成'],:is([data-page="diagnostic-sources"]) .target-wizard-nav em[data-state='仅监控'] { color:var(--accent-strong); }
+:is([data-page="diagnostic-sources"]) .target-wizard-nav em[data-state='异常'] { color:var(--danger); }
+:is([data-page="diagnostic-sources"]) .target-wizard-capability { display:grid; gap:5px; margin-top:auto; padding:13px 11px; border-top:1px solid var(--line); }
+:is([data-page="diagnostic-sources"]) .target-wizard-capability small,:is([data-page="diagnostic-sources"]) .target-wizard-capability span { color:var(--muted); font-size:12px; line-height:1.5; }
+:is([data-page="diagnostic-sources"]) .target-wizard-capability strong { color:var(--accent-strong); font-size:13px; }
+:is([data-page="diagnostic-sources"]) .target-wizard-content { min-width:0; min-height:0; padding:20px 22px 28px; overflow-y:auto; }
+:is([data-page="diagnostic-sources"]) .target-wizard-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--line); }
+:is([data-page="diagnostic-sources"]) .target-wizard-heading h3 { margin:3px 0 5px; font-size:20px; }
+:is([data-page="diagnostic-sources"]) .target-wizard-heading p { margin:0; color:var(--muted); font-size:13px; }
+:is([data-page="diagnostic-sources"]) .target-wizard-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; }
+:is([data-page="diagnostic-sources"]) .target-wizard-form>.form-span,:is([data-page="diagnostic-sources"]) .target-access-form>.form-span { grid-column:1/-1; }
+:is([data-page="diagnostic-sources"]) .target-section-intro { display:flex; align-items:baseline; justify-content:space-between; gap:14px; }
+:is([data-page="diagnostic-sources"]) .target-section-intro p { margin:0; color:var(--muted); font-size:12px; }
+:is([data-page="diagnostic-sources"]) .target-choice-fieldset { min-width:0; margin:0; padding:0; border:0; }
+:is([data-page="diagnostic-sources"]) .target-choice-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:8px; }
+:is([data-page="diagnostic-sources"]) .target-choice-grid>label { display:flex; align-items:flex-start; gap:10px; min-width:0; padding:14px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface-subtle); cursor:pointer; }
+:is([data-page="diagnostic-sources"]) .target-choice-grid>label.selected { border-color:var(--accent); background:var(--accent-soft); box-shadow:0 0 0 2px var(--accent-focus); }
+:is([data-page="diagnostic-sources"]) .target-choice-grid input { width:auto; margin-top:3px; }
+:is([data-page="diagnostic-sources"]) .target-choice-grid span { display:grid; gap:4px; }
+:is([data-page="diagnostic-sources"]) .target-choice-grid strong { color:var(--ink); font-size:13px; }
+:is([data-page="diagnostic-sources"]) .target-choice-grid small { color:var(--muted); font-size:12px; line-height:1.55; }
+:is([data-page="diagnostic-sources"]) .target-access-modes { grid-template-columns:repeat(3,minmax(0,1fr)); }
+:is([data-page="diagnostic-sources"]) .credential-panel { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; padding:15px; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface-subtle); }
+:is([data-page="diagnostic-sources"]) .credential-panel>header { display:flex; grid-column:1/-1; align-items:flex-start; justify-content:space-between; gap:12px; }
+:is([data-page="diagnostic-sources"]) .credential-panel>header>div { display:grid; gap:3px; }
+:is([data-page="diagnostic-sources"]) .credential-panel>header small { color:var(--muted); font-size:12px; }
+:is([data-page="diagnostic-sources"]) .execution-requirements { display:grid; grid-column:1/-1; gap:5px; padding:12px; border-radius:var(--radius-sm); color:var(--muted); background:var(--surface); font-size:12px; }
+:is([data-page="diagnostic-sources"]) .execution-requirements strong { color:var(--ink); }
+:is([data-page="diagnostic-sources"]) .execution-credential-panel>.danger-row-action { justify-self:start; }
+:is([data-page="diagnostic-sources"]) .target-advanced-settings { overflow:hidden; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface-subtle); }
+:is([data-page="diagnostic-sources"]) .target-advanced-settings summary { padding:14px 15px; color:var(--ink); cursor:pointer; font-size:13px; font-weight:700; }
+:is([data-page="diagnostic-sources"]) .target-advanced-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; padding:0 15px 15px; }
+:is([data-page="diagnostic-sources"]) .target-advanced-grid>section { display:grid; align-content:start; gap:11px; padding:14px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface); }
+:is([data-page="diagnostic-sources"]) .target-advanced-grid p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.5; }
+:is([data-page="diagnostic-sources"]) .target-wizard-footer { position:sticky; z-index:3; bottom:0; margin:0 -1px -1px; padding:15px 0 calc(2px + env(safe-area-inset-bottom)); background:color-mix(in srgb,var(--canvas) 95%,transparent); backdrop-filter:blur(10px); }
+:is([data-page="diagnostic-sources"]) .target-wizard-footer>span { margin-right:auto; color:var(--muted); font-size:12px; }
+:is([data-page="diagnostic-sources"]) .target-facts-section { margin-top:0; padding-top:17px; border-top:1px solid var(--line); }
+@media (max-width: 900px) { :is([data-page="diagnostic-sources"]) .resource-form, :is([data-page="diagnostic-sources"]) .aiops-target-edit-form .drawer-form-section, :is([data-page="diagnostic-sources"]) .target-identity-fields, :is([data-page="diagnostic-sources"]) .target-wizard-form, :is([data-page="diagnostic-sources"]) .credential-panel, :is([data-page="diagnostic-sources"]) .target-advanced-grid { grid-template-columns:1fr; } :is([data-page="diagnostic-sources"]) .resource-form .form-span, :is([data-page="diagnostic-sources"]) .resource-form footer, :is([data-page="diagnostic-sources"]) .aiops-target-edit-form .drawer-form-section .form-span, :is([data-page="diagnostic-sources"]) .target-wizard-form>.form-span, :is([data-page="diagnostic-sources"]) .target-group-field { grid-column:auto; } :is([data-page="diagnostic-sources"]) .webhook-credential-purpose > div, :is([data-page="diagnostic-sources"]) .webhook-config-map > div { grid-template-columns:1fr; gap:3px; } :is([data-page="diagnostic-sources"]) .target-group-quick-create { grid-template-columns:1fr; }:is([data-page="diagnostic-sources"]) .target-group-quick-create .form-error,:is([data-page="diagnostic-sources"]) .target-identity-actions { grid-column:auto; }:is([data-page="diagnostic-sources"]) .target-wizard-shell { grid-template-columns:1fr; overflow:visible; }:is([data-page="diagnostic-sources"]) .target-wizard-body { overflow-y:auto; }:is([data-page="diagnostic-sources"]) .target-wizard-nav { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-right:0; border-bottom:1px solid var(--line); }:is([data-page="diagnostic-sources"]) .target-wizard-nav>button { grid-template-columns:26px minmax(0,1fr); }:is([data-page="diagnostic-sources"]) .target-wizard-nav>button>span:first-child { width:26px; height:26px; }:is([data-page="diagnostic-sources"]) .target-wizard-nav small,:is([data-page="diagnostic-sources"]) .target-wizard-nav em,:is([data-page="diagnostic-sources"]) .target-wizard-capability { display:none; }:is([data-page="diagnostic-sources"]) .target-wizard-content { overflow:visible; }:is([data-page="diagnostic-sources"]) .target-access-modes,:is([data-page="diagnostic-sources"]) .target-choice-grid { grid-template-columns:1fr; }:is([data-page="diagnostic-sources"]) .target-section-intro { align-items:flex-start; flex-direction:column; }:is([data-page="diagnostic-sources"]) .target-wizard-footer { flex-wrap:wrap; }:is([data-page="diagnostic-sources"]) .target-wizard-footer>span { width:100%; }:is([data-page="diagnostic-sources"]) .target-group-control { grid-template-columns:1fr; } }

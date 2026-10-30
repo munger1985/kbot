@@ -5,37 +5,34 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AIOps 知识标签</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-  <link rel="stylesheet" href="./css/aiops-knowledge.css?v=20261016_3">
-</head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-knowledge-tags.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="knowledge-tags">
-  <main class="ops-main knowledge-page">
-    <header class="ops-head"><div><h1>知识标签</h1><p>维护供 AI 有限选择的资源分类、技术栈和厂商；标签 ID 由系统生成，用户只维护业务名称。</p></div></header>
-    <section class="ops-panel knowledge-table-card">
-      <header class="knowledge-list-header">
-        <div class="knowledge-list-heading"><h2>受控词表</h2><p>停用标签不会参与新资料识别，已审批版本仍保留原标签。</p></div>
-        <div class="knowledge-list-tools">
-          <label class="knowledge-search"><span aria-hidden="true">⌕</span><input id="tag-search" type="search" aria-label="搜索知识标签" placeholder="搜索标签名称或说明"></label>
-          <label class="knowledge-status-filter"><span>分类</span><select id="tag-category"><option value="">全部分类</option><option value="RESOURCE_CATEGORY">资源分类</option><option value="TECHNOLOGY_STACK">技术栈</option><option value="VENDOR">厂商</option></select></label>
-          <label class="knowledge-status-filter"><span>状态</span><select id="tag-status"><option value="">全部状态</option><option value="ACTIVE">启用</option><option value="DISABLED">停用</option></select></label>
-          <span id="tag-count" class="knowledge-count">0 项</span>
-          <button id="refresh-tags" type="button">刷新</button><button id="create-tag" class="primary" type="button">新增标签</button>
+  <main class="ops-main page-section management-page knowledge-tags-page">
+    <header class="detail-hero"><div><p class="eyebrow">AIOps</p><h2>AIOps 知识标签</h2><p>维护供 AI 有限选择的资源分类、技术栈和厂商。用户只维护显示名称，无需管理编码。</p></div><button id="refresh-tags" class="secondary-button" type="button">刷新</button></header>
+    <section class="table-card knowledge-tags-table">
+      <header class="resource-list-header">
+        <div class="resource-list-heading"><h2>受控词表</h2><p>停用标签不会再参与新资料识别，已审批版本仍保留原标签。</p></div>
+        <div class="resource-list-tools">
+          <label class="search-field"><span aria-hidden="true">⌕</span><input id="tag-search" type="search" aria-label="搜索知识标签" placeholder="搜索标签名称或说明"></label>
+          <label class="resource-list-filter"><span>分类</span><select id="tag-category"><option value="">全部分类</option><option value="RESOURCE_CATEGORY">资源分类</option><option value="TECHNOLOGY_STACK">技术栈</option><option value="VENDOR">厂商</option></select></label>
+          <label class="resource-list-filter"><span>状态</span><select id="tag-status"><option value="">全部状态</option><option value="ACTIVE">启用</option><option value="DISABLED">停用</option></select></label>
+          <span id="tag-count" class="resource-list-count">0 项</span>
+          <button id="create-tag" class="primary" type="button">新增标签</button>
         </div>
       </header>
-      <div class="ops-table-wrap"><table class="ops-table knowledge-table knowledge-tags-table"><thead><tr><th>标签名称</th><th>分类</th><th>说明</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody id="knowledge-tags"><tr><td colspan="6" class="ops-empty">正在读取知识标签…</td></tr></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>标签名称</th><th>分类</th><th>说明</th><th>排序</th><th>状态</th><th class="table-action-heading">操作</th></tr></thead><tbody id="knowledge-tags"><tr><td colspan="6" class="empty-cell">正在读取知识标签…</td></tr></tbody></table></div>
     </section>
   </main>
 
-  <dialog id="tag-drawer" class="knowledge-drawer knowledge-tag-drawer" aria-labelledby="tag-drawer-title">
-    <form id="tag-form">
-      <header class="knowledge-drawer-header"><div><span>Controlled vocabulary</span><h2 id="tag-drawer-title">新增知识标签</h2><p>AI 只能从启用的词表中选择，不会自行创建同义标签。</p></div><button type="button" data-close aria-label="关闭标签抽屉">关闭</button></header>
-      <div class="knowledge-drawer-body">
-        <section class="knowledge-form-section"><header><b>01</b><div><strong>标签信息</strong><small>标签 ID 由系统生成并保持稳定；这里只维护业务可读内容。</small></div></header><div class="knowledge-form-grid"><label><span>分类</span><select id="editor-category" required><option value="RESOURCE_CATEGORY">资源分类</option><option value="TECHNOLOGY_STACK">技术栈</option><option value="VENDOR">厂商</option></select></label><label><span>显示名称</span><input id="editor-name" maxlength="128" required placeholder="例如：Oracle Database"></label><label class="span-12"><span>说明</span><textarea id="editor-description" maxlength="1000" rows="5" placeholder="描述该标签的适用范围，帮助 AI 准确选择"></textarea></label><label><span>排序</span><input id="editor-sort" type="number" min="0" max="1000000" value="0"></label></div></section>
-        <p id="tag-result" class="knowledge-status" role="status"></p>
-      </div>
-      <footer><button type="button" data-close>取消</button><button id="save-tag" class="primary" type="submit">保存标签</button></footer>
+  <dialog id="tag-drawer" class="reference-drawer admin-drawer admin-drawer-sectioned knowledge-tag-drawer" aria-labelledby="tag-drawer-title">
+    <header class="admin-drawer-header"><div><p class="eyebrow">CONTROLLED VOCABULARY</p><h2 id="tag-drawer-title">新增知识标签</h2><p>标签 ID 由系统生成且保持稳定；这里只维护业务可读名称。</p></div><button class="icon-button" type="button" data-close aria-label="关闭标签抽屉">×</button></header>
+    <form id="tag-form" class="admin-drawer-body knowledge-tag-form">
+      <section class="drawer-form-section"><header><span>01</span><div><strong>标签信息</strong><small>AI 只能从启用的词表中选择，不会自行创建同义标签。</small></div></header><label class="control-field"><span class="field-label">分类</span><select id="editor-category" required><option value="RESOURCE_CATEGORY">资源分类</option><option value="TECHNOLOGY_STACK">技术栈</option><option value="VENDOR">厂商</option></select></label><label class="control-field"><span class="field-label">显示名称</span><input id="editor-name" maxlength="128" required placeholder="例如：Oracle Database"></label><label class="control-field form-span"><span class="field-label">说明</span><textarea id="editor-description" maxlength="1000" rows="5" placeholder="描述该标签适用范围，帮助 AI 准确选择"></textarea></label><label class="control-field"><span class="field-label">排序</span><input id="editor-sort" type="number" min="0" max="1000000" value="0"></label></section>
+      <p id="tag-result" class="form-error" role="status" hidden></p>
+      <footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close>取消</button><button id="save-tag" class="primary-button" type="submit">保存标签</button></footer>
     </form>
   </dialog>
 
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-knowledge-tags.js?v=20261016_1"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261030_1"></script><script src="./js/aiops-knowledge-tags.js?v=20261030_1"></script>
 </body>
 </html>

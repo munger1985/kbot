@@ -1,0 +1,253 @@
+/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* business/AIOpsSituationsView.vue */
+:is([data-page="situations"]) .aiops-detail-drawer{width:min(1080px,100vw)}
+:is([data-page="situations"]) .aiops-situation-drawer-header{padding:20px 24px 18px!important}
+:is([data-page="situations"]) .aiops-situation-title-block{min-width:0}:is([data-page="situations"]) .aiops-situation-kicker{display:flex;align-items:center;gap:10px;margin-bottom:8px}:is([data-page="situations"]) .aiops-situation-kicker time{color:var(--faint);font-size:12px;white-space:nowrap}:is([data-page="situations"]) .aiops-situation-title-block h2{overflow:hidden;max-width:900px;text-overflow:ellipsis;white-space:nowrap}:is([data-page="situations"]) .aiops-situation-title-block>p{margin-top:5px!important}
+:is([data-page="situations"]) .aiops-situation-workspace{display:grid;min-height:0;overflow:hidden!important;grid-template-columns:390px minmax(0,1fr)}
+:is([data-page="situations"]) .aiops-situation-facts{min-height:0;overflow-y:auto;border-right:1px solid var(--line);background:var(--surface-subtle)}
+:is([data-page="situations"]) .aiops-situation-pane-header{position:sticky;z-index:2;top:0;padding:16px 20px;border-bottom:1px solid var(--line);background:var(--surface-glass-strong);backdrop-filter:blur(10px)}:is([data-page="situations"]) .aiops-situation-pane-header h3,:is([data-page="situations"]) .aiops-situation-action-header h3{margin:0;color:var(--ink);font-size:16px}:is([data-page="situations"]) .aiops-situation-pane-header p,:is([data-page="situations"]) .aiops-situation-action-header p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+:is([data-page="situations"]) .aiops-situation-fact-body{display:grid}:is([data-page="situations"]) .aiops-situation-fact-group{padding:18px 20px;border-bottom:1px solid var(--line)}:is([data-page="situations"]) .aiops-situation-fact-group>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:11px;color:var(--faint);font-size:12px;font-weight:700}:is([data-page="situations"]) .aiops-situation-fact-group>header span:last-child{font-family:var(--font-data);font-weight:500}
+:is([data-page="situations"]) .aiops-situation-source-list,:is([data-page="situations"]) .aiops-situation-signal-list{display:grid;gap:10px}:is([data-page="situations"]) .aiops-situation-source{display:grid;gap:4px}:is([data-page="situations"]) .aiops-situation-source strong{overflow:hidden;color:var(--ink);font-size:14px;text-overflow:ellipsis;white-space:nowrap}:is([data-page="situations"]) .aiops-situation-source code{color:var(--accent-strong);font-family:var(--font-data);font-size:12px}:is([data-page="situations"]) .aiops-situation-source span,:is([data-page="situations"]) .aiops-situation-empty{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
+:is([data-page="situations"]) .aiops-situation-observation{margin:0}:is([data-page="situations"]) .aiops-situation-observation>div{display:grid;grid-template-columns:1fr auto;gap:12px;padding:8px 0;border-top:1px solid var(--line)}:is([data-page="situations"]) .aiops-situation-observation>div:first-child{border-top:0}:is([data-page="situations"]) .aiops-situation-observation dt{color:var(--muted);font-size:13px}:is([data-page="situations"]) .aiops-situation-observation dd{margin:0;color:var(--ink);font-family:var(--font-data);font-size:12px}
+:is([data-page="situations"]) .aiops-situation-signal{padding:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-raised)}:is([data-page="situations"]) .aiops-situation-signal strong{display:block;overflow:hidden;color:var(--ink);font-family:var(--font-data);font-size:12px;text-overflow:ellipsis;white-space:nowrap}:is([data-page="situations"]) .aiops-situation-signal p{margin:5px 0;color:var(--muted);font-size:13px;line-height:1.5}:is([data-page="situations"]) .aiops-situation-signal time{color:var(--faint);font-size:var(--type-meta)}
+:is([data-page="situations"]) .aiops-situation-action-pane{display:flex;min-width:0;min-height:0;flex-direction:column;background:var(--canvas)}:is([data-page="situations"]) .aiops-situation-action-header{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:68px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--surface)}
+:is([data-page="situations"]) .aiops-situation-mode-switch{display:flex;flex:0 0 auto;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--surface-subtle)}:is([data-page="situations"]) .aiops-situation-mode-switch button{min-height:33px;padding:0 12px;border:0;border-radius:6px;color:var(--muted);background:transparent;font:inherit;font-size:12px;font-weight:700;cursor:pointer}:is([data-page="situations"]) .aiops-situation-mode-switch button.active{color:var(--accent-strong);background:var(--surface-raised);box-shadow:0 2px 7px var(--accent-shadow)}:is([data-page="situations"]) .aiops-situation-mode-switch button:disabled{cursor:not-allowed;opacity:.45}
+:is([data-page="situations"]) .aiops-situation-action-body{min-height:0;flex:1;overflow-y:auto;padding:22px 24px}:is([data-page="situations"]) .aiops-situation-result-view{display:grid;align-content:start;gap:14px;min-height:100%}:is([data-page="situations"]) .aiops-situation-result-summary{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding-bottom:13px;border-bottom:1px solid var(--line)}:is([data-page="situations"]) .aiops-situation-result-summary h4,:is([data-page="situations"]) .aiops-situation-handoff h4{margin:0;color:var(--ink);font-size:15px}:is([data-page="situations"]) .aiops-situation-result-summary p,:is([data-page="situations"]) .aiops-situation-handoff p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.55}:is([data-page="situations"]) .aiops-situation-diagnosis .aiops-turn-result>:last-child{margin-bottom:0}
+:is([data-page="situations"]) .aiops-diagnosis-statuses{display:flex;flex:0 0 auto;justify-content:flex-end;flex-wrap:wrap;gap:6px;max-width:58%}
+:is([data-page="situations"]) .aiops-situation-handoff{position:sticky;bottom:-22px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:18px;margin-top:auto;padding:13px 14px;border:1px solid color-mix(in srgb,var(--accent) 32%,var(--line));border-radius:var(--radius-sm);background:var(--surface-glass-strong);box-shadow:0 -8px 24px rgb(0 0 0 / 8%);backdrop-filter:blur(10px)}:is([data-page="situations"]) .aiops-situation-handoff.waiting{border-color:var(--line)}
+:is([data-page="situations"]) .aiops-continuation-form{align-content:start;min-height:100%;margin:0}:is([data-page="situations"]) .aiops-continuation-context{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-subtle)}:is([data-page="situations"]) .aiops-continuation-context>span{align-self:start;padding:3px 7px;border-radius:999px;color:var(--accent-strong);background:var(--accent-soft);font-size:var(--type-meta);font-weight:700}:is([data-page="situations"]) .aiops-continuation-context strong{color:var(--ink);font-size:14px}:is([data-page="situations"]) .aiops-continuation-context p{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.55}:is([data-page="situations"]) .aiops-continuation-actions{position:sticky;bottom:-22px;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line);background:var(--canvas)}:is([data-page="situations"]) .aiops-continuation-actions>span{color:var(--faint);font-size:12px}:is([data-page="situations"]) .aiops-continuation-actions>div{display:flex;gap:9px}
+@media(max-width:820px){:is([data-page="situations"]) .aiops-situation-workspace{grid-template-columns:1fr;grid-template-rows:minmax(190px,34vh) minmax(0,1fr)}:is([data-page="situations"]) .aiops-situation-facts{border-right:0;border-bottom:1px solid var(--line)}:is([data-page="situations"]) .aiops-situation-action-header{align-items:flex-start;flex-direction:column}:is([data-page="situations"]) .aiops-situation-action-body{padding:18px}:is([data-page="situations"]) .aiops-situation-handoff,:is([data-page="situations"]) .aiops-continuation-actions{bottom:-18px}}
+@media(max-width:560px){:is([data-page="situations"]) .aiops-situation-kicker{align-items:flex-start;flex-direction:column;gap:6px}:is([data-page="situations"]) .aiops-situation-action-header{padding:12px 16px}:is([data-page="situations"]) .aiops-situation-mode-switch{width:100%}:is([data-page="situations"]) .aiops-situation-mode-switch button{flex:1}:is([data-page="situations"]) .aiops-situation-result-summary{flex-direction:column}:is([data-page="situations"]) .aiops-diagnosis-statuses{justify-content:flex-start;max-width:100%}:is([data-page="situations"]) .aiops-situation-handoff{align-items:stretch;grid-template-columns:1fr}:is([data-page="situations"]) .aiops-situation-handoff button{width:100%}:is([data-page="situations"]) .aiops-continuation-actions{align-items:stretch;flex-direction:column}:is([data-page="situations"]) .aiops-continuation-actions>div,:is([data-page="situations"]) .aiops-continuation-actions button{width:100%}}
+
+/* business/AIOpsTurnResultView.vue */
+:is([data-page="situations"]) .ops-analysis, :is([data-page="situations"]) .ops-solution, :is([data-page="situations"]) .ops-fact-confirmation, :is([data-page="situations"]) .ops-html-report-readonly, :is([data-page="situations"]) .ops-proposal-readonly {
+  margin: 0 0 16px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+:is([data-page="situations"]) .ops-analysis header, :is([data-page="situations"]) .ops-solution header, :is([data-page="situations"]) .ops-fact-confirmation header, :is([data-page="situations"]) .ops-html-report-readonly header, :is([data-page="situations"]) .ops-proposal-readonly header {
+  margin-bottom: 10px;
+}
+:is([data-page="situations"]) .ops-analysis header strong, :is([data-page="situations"]) .ops-solution header strong, :is([data-page="situations"]) .ops-fact-confirmation header strong, :is([data-page="situations"]) .ops-html-report-readonly header strong, :is([data-page="situations"]) .ops-proposal-readonly header strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+:is([data-page="situations"]) .ops-html-report-readonly ul {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+:is([data-page="situations"]) .ops-proposal-readonly p, :is([data-page="situations"]) .ops-fact-confirmation p {
+  color: var(--muted);
+}
+:is([data-page="situations"]) .ops-turn-result-empty {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* business/AIOpsFindingList.vue */
+:is([data-page="situations"]) .ops-findings {
+  overflow: hidden;
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+:is([data-page="situations"]) .ops-findings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+:is([data-page="situations"]) .ops-findings-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+:is([data-page="situations"]) .ops-findings-header strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+
+:is([data-page="situations"]) .ops-findings-header p,
+:is([data-page="situations"]) .ops-findings-overview {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+:is([data-page="situations"]) .ops-findings-overview {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+:is([data-page="situations"]) .ops-finding-list {
+  background: var(--surface);
+}
+
+:is([data-page="situations"]) .ops-finding-row + .ops-finding-row {
+  border-top: 1px solid var(--line);
+}
+
+:is([data-page="situations"]) .ops-finding-row > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(78px, auto);
+  align-items: center;
+  min-height: 66px;
+  gap: 12px;
+  padding: 9px 14px;
+  cursor: pointer;
+  list-style: none;
+  transition: background-color .15s ease;
+}
+
+:is([data-page="situations"]) .ops-finding-row > summary::-webkit-details-marker {
+  display: none;
+}
+
+:is([data-page="situations"]) .ops-finding-row > summary:hover {
+  background: var(--surface-subtle);
+}
+
+:is([data-page="situations"]) .ops-finding-row > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+:is([data-page="situations"]) .ops-finding-row.is-critical > summary,
+:is([data-page="situations"]) .ops-finding-row.is-high > summary {
+  background: color-mix(in srgb, var(--danger-soft) 38%, var(--surface));
+}
+
+:is([data-page="situations"]) .ops-finding-row.is-medium > summary {
+  background: color-mix(in srgb, var(--warning-soft) 34%, var(--surface));
+}
+
+:is([data-page="situations"]) .ops-finding-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+:is([data-page="situations"]) .ops-finding-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+:is([data-page="situations"]) .ops-finding-title strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:is([data-page="situations"]) .ops-finding-title span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+:is([data-page="situations"]) .ops-finding-copy > p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+:is([data-page="situations"]) .ops-finding-row[open] .ops-finding-copy > p {
+  display: block;
+  overflow: visible;
+}
+
+:is([data-page="situations"]) .ops-finding-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+:is([data-page="situations"]) .ops-finding-toggle::after {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform .15s ease;
+}
+
+:is([data-page="situations"]) .ops-finding-row[open] .ops-finding-toggle::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+:is([data-page="situations"]) .ops-finding-detail {
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+:is([data-page="situations"]) .ops-finding-empty,
+:is([data-page="situations"]) .ops-finding-gaps {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+:is([data-page="situations"]) .ops-finding-gaps {
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 720px) {
+  :is([data-page="situations"]) .ops-findings-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  :is([data-page="situations"]) .ops-findings-overview {
+    white-space: normal;
+  }
+
+  :is([data-page="situations"]) .ops-finding-row > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  :is([data-page="situations"]) .ops-finding-toggle {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is([data-page="situations"]) .ops-finding-row > summary,
+  :is([data-page="situations"]) .ops-finding-toggle::after {
+    transition: none;
+  }
+}

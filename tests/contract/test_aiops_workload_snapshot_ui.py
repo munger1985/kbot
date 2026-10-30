@@ -12,6 +12,9 @@ class WorkloadSnapshotUiTest(unittest.TestCase):
     def test_node_behaviour(self):
         subprocess.run(["node", str(ROOT / "tests/contract/aiops_workload_snapshot.mjs")], check=True, cwd=ROOT)
 
+    def test_publication_behaviour(self):
+        subprocess.run(["node", str(ROOT / "tests/contract/aiops_workspace_publication.mjs")], check=True, cwd=ROOT)
+
     def test_workspace_requires_target_manage_permission(self):
         shell = (ROOT / "ui/aiops/js/aiops-shell.js").read_text(encoding="utf-8")
         self.assertIn('"business-system-workspace": "aiops:target_manage"', shell)

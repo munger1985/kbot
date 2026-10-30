@@ -8,6 +8,7 @@
   let selected = null;
   let candidates = [];
   let confirmResolver = null;
+  let saving = false;
 
   const values = (value) => Array.isArray(value) ? value : [];
   const candidateName = (userId) => {
@@ -17,13 +18,9 @@
 
   function renderGroups() {
     const body = document.getElementById("groups-body");
-    body.innerHTML = groups.map((group) => `<tr>
-      <td><strong>${shell.escape(group.name)}</strong><small>${shell.escape(group.description || "—")}</small></td>
-      <td>${shell.badge(group.status)}</td>
-      <td>${shell.escape(group.lead_user_id || "未设置")}</td>
-      <td>${Number(group.active_member_count || 0)}</td>
-      <td><span class="ops-actions"><button type="button" data-edit-group="${shell.escape(group.responsibility_group_id)}">修改</button><button type="button" data-members-group="${shell.escape(group.responsibility_group_id)}">人员</button><button type="button" class="danger" data-delete-group="${shell.escape(group.responsibility_group_id)}" ${group.status === "INACTIVE" ? "disabled title=\"责任组已停用\"" : ""}>删除</button></span></td>
-    </tr>`).join("") || '<tr><td colspan="5" class="ops-empty">尚未创建责任组</td></tr>';
+    const keyword = document.getElementById("group-search").value.trim().toLocaleLowerCase();
+    const visible = groups.filter((group) => !keyword || [group.name, group.description].some((value) => String(value || "").toLocaleLowerCase().includes(keyword)));
+    body.innerHTML = visible.map((group) => `<article class="management-catalog-card"><header><div><p class="eyebrow">DBA ROUTING</p><h3>${shell.escape(group.name)}</h3></div><span class="status-pill ${group.status === "ACTIVE" ? "status-success" : "status-muted"}">${group.status === "ACTIVE" ? "启用" : "停用"}</span></header><p>${shell.escape(group.description || "尚未填写责任组说明。")}</p><dl><div><dt>组长</dt><dd>${shell.escape(group.lead_user_id ? candidateName(group.lead_user_id) : "未设置")}</dd></div><div><dt>有效成员</dt><dd>${Number(group.active_member_count || 0)} 人</dd></div></dl><footer class="management-catalog-action-bar"><div class="management-catalog-primary-actions"><button class="row-action" type="button" data-edit-group="${shell.escape(group.responsibility_group_id)}">修改</button><button class="row-action" type="button" data-members-group="${shell.escape(group.responsibility_group_id)}">人员</button></div><details class="management-catalog-overflow"><summary class="row-action management-catalog-more">更多⌄</summary><div class="management-catalog-menu"><button type="button" class="danger-row-action" data-delete-group="${shell.escape(group.responsibility_group_id)}" ${group.status === "INACTIVE" ? "disabled title=\"责任组已停用\"" : ""}>删除责任组</button></div></details></footer></article>`).join("");
     body.querySelectorAll("[data-edit-group]").forEach((button) => {
       button.addEventListener("click", () => openEditor(groups.find((item) => item.responsibility_group_id === button.dataset.editGroup)));
     });
@@ -38,12 +35,12 @@
   function renderMembers() {
     if (!selected) return;
     document.getElementById("group-members-title").textContent = `${selected.name} · 人员`;
-    document.getElementById("group-members-status").textContent = selected.status === "ACTIVE" ? "当前可承接新工作项" : "已停用，不再承接新工作项";
+    document.getElementById("group-members-status").textContent = selected.status === "ACTIVE" ? "当前可承接新工作项。" : "责任组已停用，不能添加或调整人员。";
     const memberContainer = document.getElementById("group-members");
-    memberContainer.innerHTML = values(selected.members).map((member) => `<div class="ops-responsibility-group-member">
-      <span><strong>${shell.escape(candidateName(member.user_id))}</strong><small>${member.member_role === "LEAD" ? "组长" : "成员"} · ${Number(member.active_work_item_count || 0)} 个活动工作项${member.status === "ACTIVE" ? "" : " · 已停用"}</small></span>
-      <span class="ops-actions">${member.member_role === "LEAD" || member.status !== "ACTIVE" ? "" : `<button type="button" data-lead-user="${shell.escape(member.user_id)}">设为组长</button>`}<button type="button" class="danger" data-remove-user="${shell.escape(member.user_id)}" ${Number(member.active_work_item_count || 0) > 0 || member.status !== "ACTIVE" ? "disabled" : ""}>移出</button></span>
-    </div>`).join("") || '<p class="ops-empty">尚未添加人员</p>';
+    memberContainer.innerHTML = values(selected.members).map((member) => `<div class="member-row">
+      <span><strong>${shell.escape(candidateName(member.user_id))}</strong><small>${member.member_role === "LEAD" ? "组长" : "成员"} · ${Number(member.active_work_item_count || 0)} 个活动事项</small></span>
+      <span class="member-actions">${selected.status !== 'ACTIVE' || member.member_role === "LEAD" || member.status !== "ACTIVE" ? "" : `<button class="row-action" type="button" data-lead-user="${shell.escape(member.user_id)}">设为组长</button>`}<button type="button" class="danger-row-action" data-remove-user="${shell.escape(member.user_id)}" ${Number(member.active_work_item_count || 0) > 0 || member.status !== "ACTIVE" ? "disabled" : ""}>移出</button></span>
+    </div>`).join("") || '<p class="responsibility-empty">尚未添加人员。</p>';
     memberContainer.querySelectorAll("[data-lead-user]").forEach((button) => {
       button.addEventListener("click", () => void setLead(button.dataset.leadUser));
     });
@@ -52,7 +49,14 @@
     });
     const memberSelect = document.getElementById("group-member-form").elements.user_id;
     const activeUserIds = new Set(values(selected.members).filter((member) => member.status === "ACTIVE").map((member) => String(member.user_id)));
-    memberSelect.innerHTML = '<option value="">请选择人员</option>' + candidates.filter((candidate) => !activeUserIds.has(String(candidate.user_id))).map((candidate) => `<option value="${shell.escape(candidate.user_id)}">${shell.escape(candidate.display_name || candidate.username || candidate.user_id)}</option>`).join("");
+    memberSelect.innerHTML = '<option value="" disabled selected>请选择人员</option>' + candidates.filter((candidate) => !activeUserIds.has(String(candidate.user_id))).map((candidate) => `<option value="${shell.escape(candidate.user_id)}">${shell.escape(candidate.display_name || candidate.username || candidate.user_id)}</option>`).join("");
+    memberSelect.disabled = selected.status !== 'ACTIVE';
+    updateMemberSubmit();
+  }
+
+  function updateMemberSubmit() {
+    const form = document.getElementById('group-member-form');
+    form.querySelector('button[type="submit"]').disabled = selected?.status !== 'ACTIVE' || !form.elements.user_id.value;
   }
 
   async function load() {
@@ -60,9 +64,10 @@
     try {
       const page = await KBotAIOpsAuth.request(api);
       groups = values(page.items).filter((item) => item.status === "ACTIVE");
+      candidates = groups.length ? values((await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(groups[0].responsibility_group_id)}/member-candidates`)).items) : [];
       renderGroups();
     } catch (error) {
-      body.innerHTML = `<tr><td colspan="5" class="ops-empty">${shell.escape(error.message)}</td></tr>`;
+      body.innerHTML = `<p class="resource-list-empty">${shell.escape(error.message)}</p>`;
     }
   }
 
@@ -73,17 +78,22 @@
     form.elements.name.value = editing?.name || "";
     form.elements.description.value = editing?.description || "";
     document.getElementById("group-editor-title").textContent = editing ? "修改责任组" : "新增责任组";
-    document.getElementById("group-editor-hint").textContent = editing ? "修改责任组名称或说明；既有工作项历史不会改变。" : "建立 DBA 工作路由边界，创建后再添加具体人员。";
+    document.getElementById("group-editor-hint").textContent = editing ? "修改责任组名称或说明，既有工作项历史不会改变。" : "建立 DBA 工作路由边界，创建后再添加具体人员。";
     document.getElementById("group-editor-submit").textContent = editing ? "保存修改" : "创建责任组";
     document.getElementById("group-editor-dialog").showModal();
   }
 
   async function saveEditor(form) {
+    if (saving) return;
     const fields = Object.fromEntries(new FormData(form));
     const payload = { name: fields.name.trim(), description: fields.description.trim() || null };
+    if (!payload.name) return;
     if (editing) {
       payload.expected_row_version = editing.row_version;
     }
+    saving = true;
+    document.querySelectorAll('#group-editor-dialog button').forEach(button => { button.disabled = true; });
+    document.getElementById('group-editor-submit').textContent = '保存中…';
     try {
       await KBotAIOpsAuth.request(editing ? `${api}/${encodeURIComponent(editing.responsibility_group_id)}` : api, {
         method: editing ? "PATCH" : "POST",
@@ -95,6 +105,10 @@
       await load();
     } catch (error) {
       shell.toast(error.message);
+    } finally {
+      saving = false;
+      document.querySelectorAll('#group-editor-dialog button').forEach(button => { button.disabled = false; });
+      document.getElementById('group-editor-submit').textContent = editing ? '保存修改' : '创建责任组';
     }
   }
 
@@ -120,7 +134,7 @@
   }
 
   async function addMember(form) {
-    if (!selected) return;
+    if (!selected || selected.status !== 'ACTIVE' || !form.elements.user_id.value) return;
     const fields = Object.fromEntries(new FormData(form));
     try {
       await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(selected.responsibility_group_id)}/members/${encodeURIComponent(fields.user_id)}`, {
@@ -155,6 +169,7 @@
     document.getElementById("group-confirm-message").textContent = message;
     document.getElementById("group-confirm-submit").textContent = confirmLabel;
     document.getElementById("group-confirm-dialog").showModal();
+    document.querySelector('[data-cancel-group-confirm]').focus();
     return new Promise((resolve) => { confirmResolver = resolve; });
   }
 
@@ -209,10 +224,13 @@
   }
 
   shell.ready.then(() => {
+    document.getElementById("group-search").addEventListener("input", renderGroups);
     document.getElementById("groups-refresh").addEventListener("click", () => void load());
     document.getElementById("group-create-open").addEventListener("click", () => openEditor());
-    document.querySelectorAll("[data-close-group-editor]").forEach((button) => button.addEventListener("click", () => document.getElementById("group-editor-dialog").close()));
-    document.querySelectorAll("[data-close-group-members]").forEach((button) => button.addEventListener("click", () => document.getElementById("group-members-dialog").close()));
+    document.querySelectorAll("[data-close-group-editor]").forEach((button) => button.addEventListener("click", () => { if (!saving) document.getElementById("group-editor-dialog").close(); }));
+    document.getElementById('group-editor-dialog').addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+    document.querySelectorAll("[data-close-group-members]").forEach((button) => button.addEventListener("click", () => { document.getElementById("group-members-dialog").close(); selected = null; }));
+    document.getElementById('group-member-form').elements.user_id.addEventListener('change', updateMemberSubmit);
     document.getElementById("group-editor-form").addEventListener("submit", (event) => {
       event.preventDefault();
       void saveEditor(event.currentTarget);

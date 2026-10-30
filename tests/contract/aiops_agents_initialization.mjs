@@ -46,9 +46,9 @@ function setup({ session = true, accessResult = access, responses = {} } = {}) {
   ]);
   const document = {
     body: {
-      dataset: { page: "agents" }, classList: { contains: () => false }, append() {},
+      dataset: { page: "agents" }, classList: { contains: () => false, add() {} }, append() {},
       insertAdjacentHTML() {
-        for (const id of ["ops-logout", "ops-domain", "ops-user"]) elements.set(id, element());
+        for (const id of ["ops-logout", "ops-domain", "ops-user", "ops-nav-trigger", "ops-nav-scrim", "business-app-navigation", "ops-account-toggle", "ops-account-menu"]) elements.set(id, element());
       },
     },
     getElementById(id) { return elements.get(id) || null; },
@@ -96,7 +96,7 @@ test("公共 Shell 就绪前不加载目录、不开放新增", async () => {
   pending.resolve(access);
   await flush();
   assert.equal(app.requests.length, 6);
-  assert.match(app.elements.get("agent-rows").innerHTML, /暂无 Agent/);
+  assert.equal(app.elements.get("agent-rows").innerHTML, "", "空目录只保留页面中的新增卡片");
   assert.equal(app.elements.get("create-agent").disabled, false);
 });
 
@@ -137,7 +137,7 @@ test("目录未全部返回前保留加载态并禁用新增", async () => {
   assert.equal(app.elements.get("create-agent").disabled, true);
   pending.resolve([]);
   await flush();
-  assert.match(app.elements.get("agent-rows").innerHTML, /暂无 Agent/);
+  assert.equal(app.elements.get("agent-rows").innerHTML, "", "空目录只保留页面中的新增卡片");
   assert.equal(app.elements.get("create-agent").disabled, false);
 });
 
@@ -192,6 +192,6 @@ test("目录加载失败后可原地刷新恢复", async () => {
   responses[paths[2]] = [];
   await app.elements.get("refresh-agents").onclick();
   assert.equal(app.elements.get("agent-page-error").hidden, true);
-  assert.match(app.elements.get("agent-rows").innerHTML, /暂无 Agent/);
+  assert.equal(app.elements.get("agent-rows").innerHTML, "", "空目录只保留页面中的新增卡片");
   assert.equal(app.elements.get("create-agent").disabled, false);
 });

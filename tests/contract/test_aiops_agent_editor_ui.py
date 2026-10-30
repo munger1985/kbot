@@ -36,8 +36,8 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.css?v=20261029-six-tabs-1", page)
-        self.assertIn("aiops-agents.js?v=20261029-six-tabs-1", page)
+        self.assertIn("aiops-agents.css?v=20261030_1", page)
+        self.assertIn("aiops-agents.js?v=20261030_1", page)
 
     def test_automation_only_keeps_actionable_sections_with_contiguous_numbers(self) -> None:
         page = PAGE.read_text(encoding="utf-8")

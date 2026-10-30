@@ -1,0 +1,32 @@
+{
+  "reference": "ammolite_cube/apps/portal-web/src/features/aiops",
+  "policy": "页面结构、控件位置和交互以来源组件为准；样式同步不等于页面验收通过。",
+  "pages": {
+    "dashboard": { "route": "", "sources": ["business/AIOpsOverviewView.vue", "business/AIOpsWorkItemsView.vue", "business/AIOpsTurnResultView.vue", "business/AIOpsFindingList.vue"] },
+    "chat": { "route": "diagnosis", "sources": ["business/AIOpsDiagnosisView.vue", "business/AIOpsFindingList.vue", "business/AIOpsEffectVerification.vue", "business/AIOpsSqlPlanView.vue"] },
+    "monitoring": { "route": "monitoring", "sources": ["business/AIOpsMonitoringView.vue", "business/AIOpsMonitoringPanelChart.vue"] },
+    "situations": { "route": "situations", "sources": ["business/AIOpsSituationsView.vue", "business/AIOpsTurnResultView.vue", "business/AIOpsFindingList.vue"] },
+    "inspections": { "route": "inspections?tab=reports", "sources": ["business/AIOpsRecordsView.vue", "business/AIOpsInspectionReportResult.vue", "business/AIOpsTurnResultView.vue", "business/AIOpsFindingList.vue"] },
+    "inspection-plans": { "route": "inspections?tab=plans", "sources": ["business/AIOpsRecordsView.vue", "management/AIOpsInspectionPlansView.vue", "management/InspectionPlanForm.vue"] },
+    "inspection-plan-detail": { "route": "inspections?tab=plans", "presentation": "计划编辑抽屉", "sources": ["business/AIOpsRecordsView.vue", "management/AIOpsInspectionPlansView.vue", "management/InspectionPlanForm.vue"] },
+    "recovery-drills": { "route": "recovery-drills", "sources": ["business/AIOpsRecoveryDrillsView.vue"] },
+    "reports": { "route": "reports", "sources": ["business/AIOpsRecordsView.vue"] },
+    "report-detail": { "route": "reports/:reportId", "sources": ["business/AIOpsReportDetailView.vue"] },
+    "cases": { "route": "cases", "sources": ["business/AIOpsDiagnosisCasesView.vue"] },
+    "operations-knowledge": { "route": "knowledge", "sources": ["business/AIOpsOperationsKnowledgeView.vue"] },
+    "business-systems": { "route": "manage/business-systems", "sources": ["management/AIOpsBusinessSystemsView.vue"] },
+    "business-system-workspace": { "route": "manage/business-systems/:businessSystemId", "sources": ["management/BusinessSystemWorkspace.vue", "management/BusinessSystemTopology.vue", "management/WorkloadSnapshotSettings.vue"] },
+    "diagnostic-sources": { "route": "manage/diagnostic-sources", "sources": ["management/AIOpsConfigurationView.vue"] },
+    "diagnostic-source-detail": { "route": "manage/diagnostic-sources", "presentation": "监控源编辑抽屉", "sources": ["management/AIOpsConfigurationView.vue"] },
+    "responsibility-groups": { "route": "responsibility-groups", "sources": ["management/AIOpsResponsibilityGroupsView.vue"] },
+    "knowledge-bases": { "route": "manage/knowledge-bases", "sources": ["management/AIOpsKnowledgeBasesView.vue"] },
+    "knowledge-tags": { "route": "/tenant/apps/aiops/settings", "sources": ["management/AIOpsKnowledgeTagsView.vue"] },
+    "agents": { "route": "manage/agents", "sources": ["management/AIOpsAgentsView.vue"] },
+    "report-templates": { "route": "manage/report-templates", "sources": ["management/AIOpsReportTemplatesView.vue"] },
+    "runs": { "route": "manage/runs", "sources": ["business/AIOpsRunsView.vue", "business/AIOpsReadonlyLifecycleView.vue", "business/AIOpsObservationSeriesView.vue", "business/AIOpsTurnResultView.vue", "business/AIOpsFindingList.vue"] },
+    "run-detail": { "route": "manage/runs", "presentation": "运行详情抽屉", "sources": ["business/AIOpsRunsView.vue", "business/AIOpsReadonlyLifecycleView.vue", "business/AIOpsObservationSeriesView.vue", "business/AIOpsTurnResultView.vue", "business/AIOpsFindingList.vue"] },
+    "api-clients": { "route": null, "platform_difference": "KBot 的平台 API 客户端入口，不在 Ammolite AIOps 导航中", "sources": [] },
+    "work-item-detail": { "route": "work-items/:workItemId", "sources": ["business/AIOpsWorkItemDetailView.vue"] },
+    "login": { "route": null, "platform_difference": "使用 KBot 平台登录流程，不复制 Ammolite SSO", "sources": [] }
+  }
+}

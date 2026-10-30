@@ -1,0 +1,15 @@
+/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* business/AIOpsDiagnosisCasesView.vue */
+:is([data-page="cases"]) .case-overview-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; margin-bottom:var(--page-section-gap); }
+:is([data-page="cases"]) .case-overview-grid article { display:grid; min-height:96px; align-content:start; gap:8px; padding:18px; border:1px solid var(--line); border-radius:var(--card-radius); background:var(--surface-raised); box-shadow:var(--shadow-soft); }
+:is([data-page="cases"]) .case-overview-grid span { display:block; color:var(--muted); font-size:13px; }
+:is([data-page="cases"]) .case-overview-grid strong { display:block; color:var(--ink); font-family:var(--font-data); font-size:28px; font-weight:650; line-height:1; font-variant-numeric:tabular-nums; }
+:is([data-page="cases"]) .case-detail-drawer { width:min(860px,94vw); }
+:is([data-page="cases"]) .case-detail-body { display:grid; gap:16px; }
+:is([data-page="cases"]) .case-edit-form { display:grid; gap:14px; }
+:is([data-page="cases"]) .case-edit-form label { display:grid; gap:7px; color:var(--muted); font-size:13px; }
+:is([data-page="cases"]) .case-edit-form input,:is([data-page="cases"]) .case-edit-form textarea { width:100%; }
+:is([data-page="cases"]) .case-edit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+@media (max-width:900px) { :is([data-page="cases"]) .case-overview-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:560px) { :is([data-page="cases"]) .case-overview-grid,:is([data-page="cases"]) .case-edit-grid { grid-template-columns:1fr; } }

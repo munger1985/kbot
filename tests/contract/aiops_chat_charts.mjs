@@ -1,0 +1,43 @@
+// 工作台图表必须保留原始序列、单位、覆盖边界和同源数据表，不伪造缺失点。
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {runInNewContext} from "node:vm";
+
+const escape=value=>String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+const context={KBotAIOpsShell:{escape},document:{documentElement:{}},getComputedStyle:()=>({getPropertyValue:()=>''}),addEventListener:()=>{}};
+runInNewContext(readFileSync(new URL('../../ui/aiops/js/aiops-chat-charts.js',import.meta.url),'utf8'),context);
+const chart=context.AIOpsChatCharts;
+const spec={schema_version:'CHART_SPEC.v1',chart_type:'LINE',intent:'TREND',title:'<监控趋势>',layout:'OVERLAY',x_axis:{axis_type:'TIME',label:'采集时间'},y_axis:{axis_type:'VALUE',unit:'%'},series:[{series_key:'cpu',name:'CPU 使用率',unit:'%',points:[{x:'2026-10-30T00:00:00Z',y:0,display_value:'0%'},{x:'2026-10-30T00:01:00Z',y:50}]}],metadata:{coverage_ratio:0.5,coverage_warning:'<覆盖不足>'}};
+const plain=value=>JSON.parse(JSON.stringify(value));
+const option=chart.option(spec);
+assert.deepEqual(plain(option.series[0].data),[['2026-10-30T00:00:00Z',0],['2026-10-30T00:01:00Z',50]]);
+assert.equal(option.xAxis[0].type,'time');
+assert.equal(option.series[0].lineStyle.width,2);
+assert.equal(option.tooltip.appendTo,'body');
+assert.equal(option.tooltip.confine,false);
+assert.ok(option.tooltip.formatter([{axisValueLabel:'<时间>',seriesName:'CPU 使用率',value:[0,50],marker:'●'}]).includes('CPU 使用率：50 %'));
+assert.ok(option.tooltip.formatter([{axisValueLabel:'<时间>',seriesName:'CPU 使用率',value:[0,50]}]).includes('&lt;时间&gt;'));
+const html=chart.html(spec);
+assert.ok(html.includes('&lt;监控趋势&gt;'));
+assert.ok(!html.includes('<覆盖不足>'));
+assert.ok(html.includes('监控采样覆盖率 50.0%'));
+assert.ok(html.includes('height:280px'));
+assert.ok(html.includes('<td>0%</td>'));
+assert.ok(html.includes('data-chart-data-toggle'));
+assert.equal(chart.html({...spec,schema_version:'UNKNOWN'}),'');
+assert.equal(chart.html({...spec,series:[]}),'');
+
+const comparison={...spec,chart_type:'BAR',layout:'OVERLAY',series:[{series_key:'a',name:'结果 A',points:[{x:'分类一',y:1}]},{series_key:'b',name:'结果 B',points:[{x:'分类二',y:2}]}]};
+const bars=chart.option(comparison);
+assert.deepEqual(plain(bars.yAxis.data),['分类一','分类二']);
+assert.deepEqual(plain(bars.series.map(series=>series.data)),[[1,0],[0,2]]);
+assert.ok(chart.html(comparison).includes('<td>分类一</td><td>1</td><td>—</td>'));
+const stacked=chart.option({...comparison,chart_type:'STACKED_BAR',layout:'NORMALIZED',series:comparison.series.map(series=>({...series,stack:'capacity'}))});
+assert.equal(stacked.xAxis.max,100);
+assert.equal(stacked.series[0].stack,'capacity');
+const multiples=chart.option({...spec,layout:'SMALL_MULTIPLES',series:[...spec.series,{...spec.series[0],series_key:'other',name:'另一序列'}]});
+assert.equal(multiples.grid.length,2);
+assert.equal(multiples.series[1].xAxisIndex,1);
+assert.equal(multiples.legend,undefined);
+assert.ok(chart.html({...spec,layout:'SMALL_MULTIPLES',series:[...spec.series,...spec.series]}).includes('height:330px'));
+console.log('通过：工作台折线、对比、归一化堆叠、分面图和同源数据表合同。');

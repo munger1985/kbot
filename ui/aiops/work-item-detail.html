@@ -1,8 +1,32 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>工作项详情</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"></head>
-<body data-page="work-item-detail"><main class="ops-main ops-work-item-detail-main"><header class="ops-head"><div><h1 id="work-item-title">工作项详情</h1><p id="work-item-summary">详情页仅展示工作项事实、诊断证据、责任记录和处理结果；处理与分派请返回运维总览。</p></div><div class="ops-actions"><span id="work-item-key"></span><a class="ops-button ops-back-link" href="./dashboard.html">← 返回运维总览</a><button id="work-item-detail-refresh" type="button">刷新</button></div></header>
-<section id="work-item-overview" class="ops-work-item-overview"><div class="ops-empty">正在加载工作项…</div></section>
-<section id="work-item-result" class="ops-panel ops-work-item-result" hidden><div class="ops-panel-head"><h2>处理结果</h2></div><div id="work-item-result-body" class="ops-panel-body"></div></section>
-<section class="ops-work-item-detail-grid"><article class="ops-panel"><div class="ops-panel-head"><div><h2>事实与发生记录</h2><p>同一指纹的问题归并展示，不重复制造工单。</p></div></div><div id="work-item-occurrences"><div class="ops-empty">暂无发生记录</div></div></article></section>
-<section class="ops-work-item-bottom"><article class="ops-panel"><div class="ops-panel-head"><h2>关联资源</h2></div><div id="work-item-links"><div class="ops-empty">暂无关联资源</div></div></article><article class="ops-panel"><div class="ops-panel-head"><h2>活动时间线</h2></div><div id="work-item-activities"><div class="ops-empty">暂无活动记录</div></div></article></section></main>
-<script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-work-items.js?v=20261011_3"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>工作项详情 · KBot</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1">
+  <link rel="stylesheet" href="./css/reference-work-item-detail.css?v=20261030_1">
+  <link rel="stylesheet" href="./css/alignment.css?v=20261030_1">
+</head>
+<body data-page="work-item-detail">
+  <main class="ops-main platform-home-page aiops-page aiops-work-item-detail-page">
+    <header class="platform-home-header"><div class="login-brand"><span class="brand-mark">A</span><strong>工作项详情</strong></div><div class="work-item-actions"><a class="secondary-button ops-back-link" href="./dashboard.html">← 返回 AIOps 工作台</a><button id="work-item-detail-refresh" class="secondary-button" type="button">刷新</button></div></header>
+    <section class="platform-home-hero app-page-head"><div><p class="eyebrow">DBA 工作项详情</p><h1 id="work-item-title">工作项详情</h1><p>详情页仅展示工作项事实、诊断证据、责任记录和处理结果；处理与分派请返回 AIOps 工作台。</p></div></section>
+    <section id="work-item-detail-loading" class="loading-card"><span class="loading-orb"></span>正在读取工作项…</section>
+    <div id="work-item-detail-content" style="display:contents" hidden>
+      <section class="key-value-card work-item-heading"><div><p id="work-item-key" class="eyebrow"></p><h2 id="work-item-heading-title"></h2><p id="work-item-summary"></p></div><span id="work-item-heading-status" class="status-pill"></span></section>
+      <div class="work-item-detail-grid"><div class="work-item-main-column">
+        <section class="key-value-card"><h3>处理概览</h3><table class="key-value-table"><tbody id="work-item-overview"></tbody></table></section>
+        <section class="key-value-card"><h3>诊断发生记录</h3><div id="work-item-occurrences" style="display:contents"></div></section>
+        <section class="key-value-card"><h3>关联资源</h3><table class="key-value-table"><tbody id="work-item-links"></tbody></table></section>
+        <section class="key-value-card"><h3>活动时间线</h3><div id="work-item-activities" style="display:contents"></div></section>
+      </div></div>
+    </div>
+  </main>
+  <script src="../runtime-config.js"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js?v=20261030_1"></script>
+  <script src="./js/aiops-work-items.js?v=20261030_1"></script>
+</body>
+</html>

@@ -4,17 +4,21 @@
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
   const request = (path, options) => KBotAIOpsAuth.request(`${api}${path}`, options);
-  const state = { items: [], groupsById: new Map(), status: "", busyId: "", offlineItem: null };
+  const state = { items: [], groupsById: new Map(), status: "", search: "", busyId: "", offlineItem: null };
   const environmentLabels = { PROD: "生产", STG: "预发布", DEV: "开发" };
   const importanceLabels = { 1: "低", 2: "一般", 3: "重要", 4: "关键", 5: "核心" };
   const architectureLabels = {
     SINGLE_INSTANCE: "单实例",
     RAC: "Oracle RAC",
+    DG: "Data Guard",
     DATA_GUARD: "Data Guard",
     RAC_DATA_GUARD: "RAC + Data Guard",
     MYSQL_REPLICATION: "MySQL 主从复制",
     POSTGRES_STREAMING: "PostgreSQL 流复制",
     OGG: "Oracle GoldenGate",
+    DEBEZIUM_CDC: "Debezium CDC",
+    FLINK_CDC: "Flink CDC",
+    DATAX: "DataX 批量同步",
     MIXED_VERSION: "混合版本",
   };
 
@@ -73,25 +77,25 @@
     const workspaceHref = item.draft_id
       ? `./business-system-workspace.html?id=${encodeURIComponent(item.draft_mode === "EDIT" && item.business_system_id ? item.business_system_id : "new")}&draft=${encodeURIComponent(item.draft_id)}`
       : `./business-system-workspace.html?id=${encodeURIComponent(item.business_system_id)}${item.status === "ENABLED" ? "&view=readonly" : ""}`;
-    return `<article class="business-system-directory-card importance-level-${importanceLevel} ${item.draft_id ? "unpublished-draft-card" : ""}">
-      <header><div><small>${shell.escape(item.system_code)}</small><h3>${shell.escape(item.display_name)}</h3></div>${shell.badge(item.status, item.draft_id ? "未发布草稿" : statusLabel(item.status))}</header>
-      <div class="business-architecture-tags">${labels}</div>
+    return `<article class="management-catalog-card business-system-card importance-level-${importanceLevel} ${item.draft_id ? "unpublished-draft-card" : ""}">
+      <header><div><p class="eyebrow">${shell.escape(item.system_code)}</p><h3>${shell.escape(item.display_name)}</h3></div>${shell.badge(item.status, item.draft_id ? "未发布草稿" : statusLabel(item.status))}</header>
+      <div class="architecture-tags">${labels}</div>
       <dl>
         <div><dt>环境 / 重要级</dt><dd class="business-system-context"><span>${shell.escape(environmentLabel(item.environment))}</span><strong class="business-importance">${shell.escape(importanceLabel(importanceLevel))}</strong></dd></div>
         <div><dt>资源构成</dt><dd>${shell.escape(resourceScale(item))}</dd></div>
         <div><dt>业务责任组</dt><dd>${shell.escape(responsibilityGroupName(item.responsibility_group_id, groupsById))}</dd></div>
         <div><dt>${item.draft_id ? "发布状态" : "数据保护"}</dt><dd>${item.draft_id ? "尚未写入生产资源表" : shell.escape(protectionLabel(item.protection_status))}</dd></div>
       </dl>
-      <footer class="business-system-card-actions"><span>更新于 ${shell.escape(shell.fmt(item.updated_at))}</span><div><a href="${workspaceHref}">${workspaceLabel}</a>${lifecycleAction}</div></footer>
+      <footer class="management-catalog-action-bar is-compact business-system-card-actions"><div class="management-catalog-meta"><span class="management-catalog-note">更新于 ${shell.escape(shell.fmt(item.updated_at))}</span></div><div class="management-catalog-primary-actions"><a class="row-action" href="${workspaceHref}">${workspaceLabel}</a>${lifecycleAction}</div></footer>
     </article>`;
   }
 
   function addCard(empty) {
     const help = empty
-      ? "当前暂无业务系统；从业务归属开始建立第一个运维对象"
+      ? "当前暂无业务系统；从业务信息开始建立第一个系统"
       : "登记业务归属，再接入数据库、应用服务、中间件、网络或存储资源";
-    return `<a class="business-system-add-card" href="./business-system-workspace.html?id=new" data-write-ready>
-      <span aria-hidden="true">＋</span><strong>新增业务系统</strong><small>${help}</small>
+    return `<a class="management-catalog-add-card business-system-add-card" href="./business-system-workspace.html?id=new" data-write-ready>
+      <span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新增业务系统</strong><small>${help}</small>
     </a>`;
   }
 
@@ -118,11 +122,14 @@
   }
 
   function render() {
-    const items = state.status ? state.items.filter((item) => item.status === state.status) : state.items;
+    const keyword = state.search.trim().toLocaleLowerCase();
+    const items = state.items.filter((item) => (!state.status || item.status === state.status)
+      && (!keyword || [item.display_name, item.system_code, responsibilityGroupName(item.responsibility_group_id, state.groupsById), ...(item.architecture_labels || []).flatMap((label) => [label, architectureLabel(label)])]
+        .some((value) => String(value || "").toLocaleLowerCase().includes(keyword))));
     document.getElementById("system-count").textContent = `${items.length} 个`;
     document.querySelectorAll("#system-status-filter [data-status]").forEach((button) => button.classList.toggle("active", button.dataset.status === state.status));
     const empty = items.length ? "" : state.items.length ? '<p class="ops-empty">当前筛选条件下没有业务系统。</p>' : "";
-    document.getElementById("system-list").innerHTML = `<div class="business-system-directory-grid">${items.map((item) => card(item, state.groupsById)).join("")}${addCard(!state.items.length)}</div>${empty}`;
+    document.getElementById("system-list").innerHTML = `<div class="management-catalog-grid business-system-grid">${addCard(!state.items.length)}${items.map((item) => card(item, state.groupsById)).join("")}</div>${empty}`;
   }
 
   function itemById(id) {
@@ -218,5 +225,6 @@
   });
 
   document.getElementById("refresh-systems").onclick = load;
+  document.getElementById("system-search").oninput = (event) => { state.search = event.target.value; render(); };
   shell.ready.then(load).catch((error) => shell.toast(error.message));
 })();

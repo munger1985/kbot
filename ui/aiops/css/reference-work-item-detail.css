@@ -1,0 +1,22 @@
+/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* business/AIOpsWorkItemDetailView.vue */
+:is([data-page="work-item-detail"]) .work-item-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+:is([data-page="work-item-detail"]) .work-item-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; }
+:is([data-page="work-item-detail"]) .work-item-heading h2 { margin:4px 0 8px; color:var(--ink); }
+:is([data-page="work-item-detail"]) .work-item-heading p { margin:0; color:var(--muted); line-height:1.65; }
+:is([data-page="work-item-detail"]) .work-item-detail-grid,:is([data-page="work-item-detail"]) .work-item-main-column { display:grid; gap:18px; }
+:is([data-page="work-item-detail"]) .work-item-record-list { display:grid; gap:14px; }
+:is([data-page="work-item-detail"]) .work-item-record-list article { padding:16px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface-subtle); }
+:is([data-page="work-item-detail"]) .work-item-record-list header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+:is([data-page="work-item-detail"]) .work-item-record-list header > div { display:flex; align-items:center; gap:9px; }
+:is([data-page="work-item-detail"]) .work-item-record-list p { color:var(--muted); line-height:1.65; }
+:is([data-page="work-item-detail"]) .work-item-record-list time,:is([data-page="work-item-detail"]) .work-item-record-list small { color:var(--muted); font-size:12px; }
+:is([data-page="work-item-detail"]) .work-item-evidence { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+:is([data-page="work-item-detail"]) .work-item-evidence code { max-width:100%; overflow-wrap:anywhere; padding:4px 7px; border-radius:var(--radius); background:var(--surface); font-size:12px; }
+:is([data-page="work-item-detail"]) .work-item-timeline { display:grid; gap:0; }
+:is([data-page="work-item-detail"]) .work-item-timeline article { display:grid; grid-template-columns:150px 1fr; gap:18px; padding:14px 0; border-bottom:1px solid var(--line); }
+:is([data-page="work-item-detail"]) .work-item-timeline article:last-child { border-bottom:0; }
+:is([data-page="work-item-detail"]) .work-item-timeline time,:is([data-page="work-item-detail"]) .work-item-timeline p,:is([data-page="work-item-detail"]) .work-item-timeline small { color:var(--muted); }
+:is([data-page="work-item-detail"]) .work-item-timeline p { margin:4px 0; }
+@media (max-width:980px) { :is([data-page="work-item-detail"]) .work-item-timeline article { grid-template-columns:1fr; } }

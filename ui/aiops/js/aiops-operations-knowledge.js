@@ -13,6 +13,7 @@
     tags: [],
     selectedTagIds: [],
     knowledgeBases: [],
+    uploading: false,
   };
 
   const escape = (value) => shell.escape(value == null ? "" : value);
@@ -21,7 +22,7 @@
   const tagCategories = [["RESOURCE_CATEGORY", "资源分类"], ["TECHNOLOGY_STACK", "技术栈"], ["VENDOR", "厂商"]];
   const statusLabel = (value) => ({ TAGGING: "标签识别中", TAGGING_FAILED: "标签识别失败", PROCESSING: "解析中", DRAFT: "待发布审核", REVIEW_REQUIRED: "待审批", PUBLISHED: "已发布", RETIRED: "已退役", REJECTED: "已拒绝", FAILED: "解析失败" }[value] || value || "—");
   const statusTone = (value) => ["FAILED", "TAGGING_FAILED", "REJECTED"].includes(value) ? "bad" : ["TAGGING", "PROCESSING", "DRAFT", "REVIEW_REQUIRED"].includes(value) ? "warn" : ["PUBLISHED", "READY"].includes(value) ? "good" : "";
-  const badge = (value, label = statusLabel(value)) => `<span class="ops-badge ${statusTone(value)}">${escape(label)}</span>`;
+  const badge = (value, label = statusLabel(value)) => `<span class="status-pill ${({ good: "status-success", bad: "status-danger", warn: "status-warning" })[statusTone(value)] || "status-muted"}">${escape(label)}</span>`;
   const reviewLabel = (value) => value === "REVIEW_REQUIRED" ? "待审批" : ["TAGGING", "TAGGING_FAILED", "PROCESSING", "PUBLISHED", "RETIRED"].includes(value) ? "已通过" : value === "REJECTED" ? "已拒绝" : value === "DRAFT" ? "待审核" : "—";
   const parseLabel = (value, kind = "MANUAL") => value === "TAGGING" ? "AI 识别中" : value === "TAGGING_FAILED" ? "AI 识别失败" : value === "REVIEW_REQUIRED" || (kind === "MANUAL" && ["DRAFT", "REJECTED"].includes(value)) ? "未开始" : value === "PROCESSING" ? "解析中" : value === "FAILED" ? "解析失败" : ["PUBLISHED", "RETIRED"].includes(value) ? "解析完成" : "—";
   const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB` : `${(bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 1 : 0)} MB`;
@@ -33,21 +34,20 @@
 
   function assetRow(item) {
     const action = item.status === "REVIEW_REQUIRED" ? "审批资料" : ["TAGGING", "PROCESSING"].includes(item.status) ? "查看进度" : ["FAILED", "TAGGING_FAILED"].includes(item.status) ? "处理异常" : item.status === "DRAFT" ? "审核" : "查看";
-    return `<tr><td><button class="knowledge-primary-link" type="button" data-asset-id="${escape(item.asset_id)}">${escape(item.display_name)}</button><small>${escape(kindLabel(item.asset_kind))} · L${escape(item.security_level)} · ${escape(item.asset_id)}</small></td><td>${badge(item.status, reviewLabel(item.status))}</td><td>${badge(item.status, parseLabel(item.status, item.asset_kind))}</td><td><time>${escape(shell.fmt(item.created_at))}</time>${item.updated_at !== item.created_at ? `<small>更新于 ${escape(shell.fmt(item.updated_at))}</small>` : ""}</td><td><button type="button" data-asset-id="${escape(item.asset_id)}">${action}</button></td></tr>`;
+    return `<tr><td><button class="table-primary-button" type="button" data-asset-id="${escape(item.asset_id)}">${escape(item.display_name)}</button><small class="table-secondary">${escape(kindLabel(item.asset_kind))} · L${escape(item.security_level)} · ${escape(item.asset_id)}</small></td><td>${escape(state.knowledgeBases.find(base => base.knowledge_base_id === item.knowledge_base_id)?.display_name || "知识库已不可用")}</td><td>${badge(item.status, reviewLabel(item.status))}</td><td>${badge(item.status, parseLabel(item.status, item.asset_kind))}</td><td><span class="knowledge-submitted-time">${escape(shell.fmt(item.created_at))}</span>${item.updated_at !== item.created_at ? `<small class="table-secondary">更新于 ${escape(shell.fmt(item.updated_at))}</small>` : ""}</td><td><button class="row-action" type="button" data-asset-id="${escape(item.asset_id)}">${action}</button></td></tr>`;
   }
 
   function renderAssets() {
     const keyword = document.getElementById("knowledge-search").value.trim().toLowerCase();
     const items = keyword ? state.assets.filter((item) => [item.display_name, item.asset_id, kindLabel(item.asset_kind)].some((value) => String(value).toLowerCase().includes(keyword))) : state.assets;
     document.getElementById("knowledge-count").textContent = `${items.length} 项`;
-    document.getElementById("knowledge-assets").innerHTML = items.length ? items.map(assetRow).join("") : '<tr><td colspan="5" class="ops-empty">当前条件下没有运维资料。</td></tr>';
+    document.getElementById("knowledge-assets").innerHTML = items.length ? items.map(assetRow).join("") : '<tr><td colspan="6" class="empty-cell">当前条件下没有运维资料。</td></tr>';
   }
 
   async function loadAssets() {
     const knowledgeBaseId = selectedKnowledgeBaseId();
-    if (!knowledgeBaseId) { state.assets = []; renderAssets(); return; }
     const query = new URLSearchParams({ limit: "200", asset_kind: "MANUAL" });
-    query.set("knowledge_base_id", knowledgeBaseId);
+    if (knowledgeBaseId) query.set("knowledge_base_id", knowledgeBaseId);
     const status = document.getElementById("knowledge-status").value;
     if (status) query.set("status", status);
     const result = await KBotAIOpsAuth.request(`${api}/assets?${query}`);
@@ -60,11 +60,13 @@
     state.knowledgeBases = result.items || [];
     const preferred = new URLSearchParams(location.search).get("knowledge_base_id");
     const select = document.getElementById("knowledge-base-filter");
-    select.innerHTML = state.knowledgeBases.length
+    select.innerHTML = '<option value="">全部知识库</option>' + (state.knowledgeBases.length
       ? state.knowledgeBases.map((item) => `<option value="${escape(item.knowledge_base_id)}">${escape(item.display_name)}</option>`).join("")
-      : '<option value="">请先创建运维知识库</option>';
+      : "");
     if (preferred && state.knowledgeBases.some((item) => item.knowledge_base_id === preferred)) select.value = preferred;
-    document.getElementById("open-upload").disabled = !select.value;
+    document.getElementById("upload-knowledge-base").innerHTML = '<option value="" disabled>请选择</option>' + state.knowledgeBases.map(item => `<option value="${escape(item.knowledge_base_id)}">${escape(item.display_name)}</option>`).join("");
+    document.getElementById("upload-no-knowledge-base").hidden = Boolean(state.knowledgeBases.length);
+    document.getElementById("open-upload").disabled = false;
   }
 
   async function loadTags() {
@@ -105,7 +107,7 @@
     const failure = analysis.status === "FAILED" ? `<div class="knowledge-warning knowledge-error"><strong>标签识别失败</strong><p>${escape(analysis.error_summary || analysis.error_code || "未知错误")}</p></div>` : "";
     const warnings = analysis.warnings?.length ? `<div class="knowledge-warning"><strong>识别提示</strong><p>${escape(analysis.warnings.join("；"))}</p></div>` : "";
     const hint = detail.version.status === "REVIEW_REQUIRED" ? "资料审批通过后才会调用 AI 识别标签。" : "展示 AI 根据原文证据自动冻结的标签。";
-    return `<section class="knowledge-form-section knowledge-tag-review"><header><b>02</b><div><strong>受控标签</strong><small>${hint}</small></div></header>${failure}${groups}${warnings}</section>`;
+    return `<section class="drawer-form-section knowledge-tag-review"><header><span>02</span><div><strong>受控标签</strong><small>${hint}</small></div></header>${failure}${groups}${warnings}</section>`;
   }
 
   function renderOverview(detail) {
@@ -114,18 +116,18 @@
     const stages = detail.asset.asset_kind === "MANUAL"
       ? `<section class="knowledge-stage-track"><div class="${stageClass("uploaded", status)}"><span>1</span><strong>上传</strong></div><div class="${stageClass("approved", status)}"><span>2</span><strong>审批</strong></div><div class="${stageClass("tagged", status)}"><span>3</span><strong>标签识别</strong></div><div class="${stageClass("parsed", status)}"><span>4</span><strong>KC 解析</strong></div><div class="${stageClass("published", status)}"><span>5</span><strong>发布</strong></div></section>`
       : `<section class="knowledge-stage-track four-steps"><div class="${stageClass("uploaded", status, "DIAGNOSIS_CASE")}"><span>1</span><strong>生成</strong></div><div class="${stageClass("parsed", status, "DIAGNOSIS_CASE")}"><span>2</span><strong>KC 解析</strong></div><div class="${stageClass("approved", status, "DIAGNOSIS_CASE")}"><span>3</span><strong>审批</strong></div><div class="${stageClass("published", status, "DIAGNOSIS_CASE")}"><span>4</span><strong>发布</strong></div></section>`;
-    return `${stages}<section class="knowledge-form-section"><header><b>01</b><div><strong>资料概览</strong><small>当前资料及其最新知识版本。</small></div></header><dl class="knowledge-summary-grid"><div><dt>资料类型</dt><dd>${escape(kindLabel(detail.asset.asset_kind))}</dd></div><div><dt>安全级</dt><dd>L${escape(detail.asset.security_level)}</dd></div><div><dt>当前版本</dt><dd>v${escape(detail.version.version_no)}</dd></div><div><dt>受控标签</dt><dd>${escape(scope)}</dd></div><div><dt>提交时间</dt><dd>${escape(shell.fmt(detail.asset.created_at))}</dd></div><div><dt>最近更新</dt><dd>${escape(shell.fmt(detail.asset.updated_at))}</dd></div></dl></section>${renderTags(detail)}${detail.version.extraction_warnings?.length ? `<section class="knowledge-warning"><strong>解析提示</strong><ul>${detail.version.extraction_warnings.map((item) => `<li>${escape(item)}</li>`).join("")}</ul></section>` : ""}`;
+    return `${stages}<section class="drawer-form-section"><header><span>01</span><div><strong>资料概览</strong><small>当前资料及其最新知识版本。</small></div></header><dl class="knowledge-summary-grid"><div><dt>资料类型</dt><dd>${escape(kindLabel(detail.asset.asset_kind))}</dd></div><div><dt>安全级</dt><dd>L${escape(detail.asset.security_level)}</dd></div><div><dt>当前版本</dt><dd>v${escape(detail.version.version_no)}</dd></div><div><dt>受控标签</dt><dd>${escape(scope)}</dd></div><div><dt>提交时间</dt><dd>${escape(shell.fmt(detail.asset.created_at))}</dd></div><div><dt>最近更新</dt><dd>${escape(shell.fmt(detail.asset.updated_at))}</dd></div></dl></section>${renderTags(detail)}${detail.version.extraction_warnings?.length ? `<section class="knowledge-warning"><strong>解析提示</strong><ul>${detail.version.extraction_warnings.map((item) => `<li>${escape(item)}</li>`).join("")}</ul></section>` : ""}`;
   }
 
   function renderFiles(detail) {
     const sources = detail.sources?.length ? detail.sources.map((source, index) => `<article class="knowledge-source-card"><span>${Number(source.locator?.ordinal ?? index) + 1}</span><div><strong>${escape(source.external_id || detail.asset.display_name)}</strong><small>${source.locator?.role === "SUPPLEMENT" ? "补充材料" : "正文内容"}${source.locator?.required_flag ? " · 必要成员" : ""}</small><code>${escape(source.content_hash)}</code></div></article>`).join("") : '<p class="ops-empty">尚未登记原始文件。</p>';
     const indexes = detail.indexes?.length ? detail.indexes.map((item) => `<tr><td><code>${escape(item.index_ref_id)}</code></td><td>${badge(item.status, item.status)}</td><td>${escape(item.error_summary || "—")}</td></tr>`).join("") : '<tr><td colspan="3" class="ops-empty">尚未登记索引结果。</td></tr>';
-    return `<section class="knowledge-form-section"><header><b>01</b><div><strong>原始文件</strong><small>展示当前版本包含的文件及其 Bundle 角色。</small></div></header><div class="knowledge-source-list">${sources}</div><div class="knowledge-source-actions"><button type="button" data-download-source>下载正文文件</button></div><dl class="knowledge-technical-list"><dt>Bundle 摘要</dt><dd><code>${escape(detail.version.source_hash)}</code></dd></dl></section><section class="knowledge-form-section"><header><b>02</b><div><strong>索引状态</strong><small>用于判断当前版本是否已经形成可检索知识。</small></div></header><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>索引</th><th>状态</th><th>异常</th></tr></thead><tbody>${indexes}</tbody></table></div></section>${detail.version.profile ? `<section class="knowledge-form-section"><header><b>03</b><div><strong>提炼结果</strong><small>结构化结果仅辅助导航，运维结论仍应以原文为准。</small></div></header><pre class="knowledge-profile">${escape(JSON.stringify(detail.version.profile, null, 2))}</pre></section>` : ""}`;
+    return `<section class="drawer-form-section"><header><span>01</span><div><strong>原始文件</strong><small>展示当前版本包含的文件及其 Bundle 角色。</small></div></header><div class="knowledge-source-list">${sources}</div><div class="knowledge-source-actions"><button type="button" data-download-source>下载正文文件</button></div><dl class="knowledge-technical-list"><dt>Bundle 摘要</dt><dd><code>${escape(detail.version.source_hash)}</code></dd></dl></section><section class="drawer-form-section"><header><span>02</span><div><strong>索引状态</strong><small>用于判断当前版本是否已经形成可检索知识。</small></div></header><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>索引</th><th>状态</th><th>异常</th></tr></thead><tbody>${indexes}</tbody></table></div></section>${detail.version.profile ? `<section class="drawer-form-section"><header><span>03</span><div><strong>提炼结果</strong><small>结构化结果仅辅助导航，运维结论仍应以原文为准。</small></div></header><pre class="knowledge-profile">${escape(JSON.stringify(detail.version.profile, null, 2))}</pre></section>` : ""}`;
   }
 
   function renderHistory(detail) {
     const rows = detail.reviews?.length ? detail.reviews.map((item) => `<li><div><strong>${escape(item.decision)}</strong><small>${escape(item.reviewer_id)}</small></div><time>${escape(shell.fmt(item.created_at))}</time></li>`).join("") : '<p class="ops-empty">当前版本还没有审核记录。</p>';
-    return `<section class="knowledge-form-section"><header><b>01</b><div><strong>处理记录</strong><small>保留当前版本的审核决策与责任人。</small></div></header><ol class="knowledge-timeline">${rows}</ol></section>`;
+    return `<section class="drawer-form-section"><header><span>01</span><div><strong>处理记录</strong><small>保留当前版本的审核决策与责任人。</small></div></header><ol class="knowledge-timeline">${rows}</ol></section>`;
   }
 
   function renderDetailBody() {
@@ -167,18 +169,18 @@
     const ledger = document.getElementById("upload-ledger");
     ledger.hidden = !state.entries.length;
     document.getElementById("upload-total").textContent = `${state.entries.length} 个 · ${formatBytes(totalBytes())}`;
-    document.getElementById("upload-files").innerHTML = state.entries.map((entry, index) => `<article class="knowledge-file-row" data-entry-id="${escape(entry.id)}"><span>${index + 1}</span><div><strong>${escape(entry.file.name)}</strong><small>${escape(entry.file.type || "未知类型")} · ${formatBytes(entry.file.size)}</small></div>${isBundle() ? `<div class="knowledge-file-settings"><label><span>文件角色</span><select data-role><option value="CONTENT" ${entry.role === "CONTENT" ? "selected" : ""}>正文内容</option><option value="SUPPLEMENT" ${entry.role === "SUPPLEMENT" ? "selected" : ""}>补充材料</option></select></label><label class="knowledge-required"><input data-required type="checkbox" ${entry.required ? "checked" : ""}><span>必要成员</span></label></div>` : '<span class="ops-badge">单个文件</span>'}<button type="button" data-remove-file>移除</button></article>`).join("");
-    document.getElementById("submit-upload").disabled = !state.entries.length || totalBytes() > 64 * 1024 * 1024 || state.entries.length > 20;
+    document.getElementById("upload-files").innerHTML = state.entries.map((entry, index) => `<article class="upload-file-row" data-entry-id="${escape(entry.id)}"><span>${index + 1}</span><div><strong>${escape(entry.file.name)}</strong><small>${escape(entry.file.type || "未知类型")} · ${formatBytes(entry.file.size)}</small></div>${isBundle() ? `<div class="upload-file-settings"><label><span>文件角色</span><select data-role><option value="CONTENT" ${entry.role === "CONTENT" ? "selected" : ""}>正文内容</option><option value="SUPPLEMENT" ${entry.role === "SUPPLEMENT" ? "selected" : ""}>补充材料</option></select></label><label class="upload-required-toggle"><input data-required type="checkbox" ${entry.required ? "checked" : ""}><span>必要成员</span></label></div>` : '<span class="ops-badge">单个文件</span>'}<button type="button" data-remove-file>移除</button></article>`).join("");
+    document.getElementById("submit-upload").disabled = state.uploading || !state.entries.length || (!state.uploadAsset && !document.getElementById("upload-knowledge-base").value) || totalBytes() > 64 * 1024 * 1024 || state.entries.length > 20;
   }
 
   function setGroupingMode(mode) {
     state.groupingMode = mode;
     if (mode === "EACH_FILE" && state.entries.length > 1) state.entries = state.entries.slice(0, 1);
-    document.querySelectorAll(".knowledge-mode-picker label").forEach((label) => label.classList.toggle("selected", label.querySelector("input").value === mode));
+    document.querySelectorAll(".upload-mode-picker label").forEach((label) => label.classList.toggle("selected", label.querySelector("input").value === mode));
     document.getElementById("manual-file").multiple = mode === "SINGLE_BUNDLE";
     document.getElementById("manual-name-label").textContent = mode === "SINGLE_BUNDLE" ? "Bundle 名称" : "资料名称";
     document.getElementById("manual-name").placeholder = mode === "SINGLE_BUNDLE" ? "例如：Oracle RAC 故障处置手册包" : "例如：Oracle Data Guard 运维手册";
-    document.getElementById("file-step-help").textContent = mode === "SINGLE_BUNDLE" ? "成员顺序、角色和必要性会一同写入 Bundle。" : "原文会保留，可在详情中下载核验。";
+    document.getElementById("file-step-help").textContent = mode === "SINGLE_BUNDLE" ? "成员顺序、角色和必要性会一同写入 Bundle。" : "上传后可在详情中下载原文核验。";
     document.getElementById("drop-help").textContent = mode === "SINGLE_BUNDLE" ? "可多次选择并追加文件，最多 20 个、总计 64 MB。" : "每次上传一个文件，重新选择会替换当前文件。";
     renderUploadLedger();
   }
@@ -205,20 +207,26 @@
     document.getElementById("manual-security").value = String(asset?.security_level || 1);
     document.getElementById("upload-mode-section").hidden = Boolean(asset);
     document.getElementById("upload-title").textContent = asset ? "上传新版本" : "上传资料";
-    document.getElementById("upload-subtitle").textContent = asset ? "新版本完成人工审批、AI 标签识别与解析前，当前发布版本仍继续参与检索。" : "可上传单个文件，或将多个相互关联的文件组成同一个 Bundle；上传后先等待人工审批。";
-    document.getElementById("file-step").textContent = asset ? "01" : "02";
-    document.getElementById("metadata-step").textContent = asset ? "02" : "03";
+    document.getElementById("upload-subtitle").textContent = asset ? "新版本上传后先等待人工审批；批准后才调用 AI 识别标签并进入 KC 解析，当前发布版本继续参与检索。" : "上传后先进入人工审批；批准后才调用 AI 识别标签并解析。可提交单个文件或由多个关联文件组成的 Bundle。";
+    document.getElementById("upload-knowledge-base-section").hidden = Boolean(asset);
+    document.getElementById("upload-knowledge-base").value = asset?.knowledge_base_id || selectedKnowledgeBaseId() || state.knowledgeBases[0]?.knowledge_base_id || "";
+    document.getElementById("upload-knowledge-base").disabled = Boolean(asset);
+    document.getElementById("file-step").textContent = asset ? "01" : "03";
+    document.getElementById("metadata-step").textContent = asset ? "02" : "04";
     setGroupingMode("EACH_FILE");
   }
 
   async function submitUpload(event) {
     event.preventDefault();
-    if (!state.entries.length) return;
+    if (state.uploading || !state.entries.length || state.entries.length > 20 || totalBytes() > 64 * 1024 * 1024) return;
+    if (!state.uploadAsset && !document.getElementById("upload-knowledge-base").value) throw new Error("请选择运维知识库");
     const name = document.getElementById("manual-name").value.trim();
     if (!name) return;
     const button = document.getElementById("submit-upload");
     const metadata = { display_name: name, security_level: Number(document.getElementById("manual-security").value) };
     button.disabled = true;
+    state.uploading = true;
+    document.querySelectorAll('#upload-drawer [data-close]').forEach(control => { control.disabled = true; });
     document.getElementById("manual-result").textContent = "正在上传原文，完成后将等待人工审批…";
     try {
       if (state.uploadAsset) {
@@ -228,7 +236,7 @@
       } else {
         const declarations = await Promise.all(state.entries.map(async (entry, ordinal) => ({ part_name: `file-${ordinal}`, client_file_id: entry.id, display_name: entry.file.name, declared_mime_type: entry.file.type || "application/octet-stream", byte_size: entry.file.size, content_sha256: await digest(entry.file), ordinal, role: isBundle() ? entry.role : "CONTENT", required_flag: isBundle() ? entry.required : false })));
         const body = new FormData();
-        body.set("knowledge_base_id", selectedKnowledgeBaseId());
+        body.set("knowledge_base_id", document.getElementById("upload-knowledge-base").value);
         body.set("grouping_mode", state.groupingMode);
         body.set("metadata", JSON.stringify(metadata));
         body.set("files", JSON.stringify(declarations));
@@ -242,7 +250,9 @@
       shell.toast(isBundle() ? "Bundle 已上传，等待人工审批" : "资料已上传，等待人工审批");
       await loadAssets();
     } finally {
-      button.disabled = false;
+      state.uploading = false;
+      document.querySelectorAll('#upload-drawer [data-close]').forEach(control => { control.disabled = false; });
+      renderUploadLedger();
     }
   }
 
@@ -291,6 +301,8 @@
   }
 
   shell.ready.then(async () => {
+    document.getElementById("upload-drawer").addEventListener("cancel", event => { if (state.uploading) event.preventDefault(); });
+    document.getElementById("upload-knowledge-base").onchange = renderUploadLedger;
     document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
     document.getElementById("open-upload").onclick = () => { resetUpload(); document.getElementById("upload-drawer").showModal(); };
     document.getElementById("refresh-knowledge").onclick = () => loadAssets().catch((error) => shell.toast(error.message));

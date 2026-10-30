@@ -1,18 +1,24 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>日常巡检</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/workspaces.css?v=20261029_3"><link rel="stylesheet" href="./css/sql-plan-viewer.css?v=20261029_2"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>日常巡检</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-inspections.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="inspections">
-  <main class="ops-main">
-    <header class="ops-head"><div><h1>日常巡检</h1><p>在同一入口查看巡检报告，并管理形成这些报告的执行计划。</p></div><button id="refresh-workspace" type="button">刷新</button></header>
-    <nav class="inspection-tabs" aria-label="日常巡检视图"><a aria-current="page" href="./inspections.html">巡检报告</a><a href="./inspection-plans.html" data-plan-manage hidden>巡检计划</a></nav>
-    <section class="inspection-summary" aria-label="巡检概况">
-      <article><span>当前批次</span><strong id="inspection-total">—</strong></article>
-      <article><span>正在执行</span><strong id="inspection-running">—</strong></article>
-      <article><span>需要关注</span><strong id="inspection-attention">—</strong></article>
-      <article><span>完整完成</span><strong id="inspection-completed">—</strong></article>
-    </section>
-    <section class="ops-master-detail"><article class="ops-panel ops-case-list"><div class="ops-panel-head"><div><h2>巡检报告</h2><p>每次计划触发形成一个报告批次。</p></div></div><div id="case-list"></div></article><article class="ops-panel ops-case-detail"><div class="ops-panel-head"><h2 id="case-title">选择一份巡检报告</h2></div><div id="case-detail" class="ops-case-content"><div class="ops-empty">目标覆盖、巡检结论和证据将在这里展示。</div></div></article></section>
+  <main class="ops-main platform-home-page aiops-page">
+    <header class="platform-home-header"><div class="login-brand"><span class="brand-mark">A</span><strong>日常巡检</strong></div></header>
+    <section class="platform-home-hero app-page-head"><div><p class="eyebrow">计划巡检入口</p><h1>日常巡检</h1><p>查看巡检计划展开的执行批次、运维目标覆盖情况和完成结果。</p></div></section>
+    <section id="inspection-loading" class="loading-card"><span class="loading-orb"></span>正在读取日常巡检…</section>
+      <nav class="inspection-tabs" aria-label="日常巡检视图"><button class="active" type="button" aria-current="page">巡检报告</button><button class="inspection-tab" type="button" data-plan-manage hidden data-inspection-plans>巡检计划</button></nav>
+      <section class="operational-summary-grid inspection-summary-grid" aria-label="巡检概况">
+        <article><span>当前批次</span><strong id="inspection-total">0</strong><small>当前读取范围</small></article>
+        <article><span>正在执行</span><strong id="inspection-running">0</strong><small>等待或运行中</small></article>
+        <article id="inspection-attention-card"><span>需要关注</span><strong id="inspection-attention">0</strong><small>部分完成或失败</small></article>
+        <article><span>完整完成</span><strong id="inspection-completed">0</strong><small>全部目标已结束</small></article>
+      </section>
+      <section class="table-card"><header class="resource-list-header"><div class="resource-list-heading"><h2 id="inspection-list-title">巡检报告</h2><p>每次计划触发形成一个报告批次，进入详情可切换查看全部目标结果。</p></div><div class="resource-list-tools"><span id="inspection-count" class="resource-list-count">0 批</span><button id="inspection-clear-plan" class="secondary-button" type="button" hidden>查看全部</button><button id="refresh-workspace" class="secondary-button" type="button">刷新</button><button class="primary-button" type="button" data-plan-manage hidden data-inspection-plans>管理巡检计划</button></div></header><div class="table-scroll"><table><thead><tr><th>来源计划</th><th>执行时间</th><th>执行状态</th><th>目标覆盖</th><th>完成 / 失败</th><th class="table-action-heading">操作</th></tr></thead><tbody id="inspection-body"></tbody></table></div></section>
+    <dialog id="inspection-drawer" class="reference-drawer admin-drawer admin-drawer-sectioned aiops-detail-drawer inspection-detail-drawer" aria-label="巡检诊断详情">
+      <header class="admin-drawer-header inspection-drawer-header"><div class="inspection-title-block"><div class="inspection-kicker"><span id="inspection-status" class="status-pill"></span><time id="inspection-observed"></time></div><h2 id="inspection-title"></h2><p id="inspection-counts"></p><p id="inspection-error" class="notice notice-error" hidden><strong>巡检未完成</strong><span></span></p></div><button class="icon-button" type="button" aria-label="关闭巡检诊断详情" data-close-inspection>×</button></header>
+      <div class="admin-drawer-body inspection-workspace"><aside class="inspection-facts" aria-label="巡检事实"><header class="inspection-pane-header"><h3>巡检事实</h3><p>深入讨论时持续保留</p></header><div id="inspection-facts" class="inspection-fact-body"></div></aside><section class="inspection-action-pane" aria-label="巡检诊断工作区"><header class="inspection-action-header"><div><h3 id="inspection-mode-title">Agent 巡检结论</h3><p id="inspection-mode-description">阅读 Agent 结论，并与左侧执行和证据事实持续对照。</p></div><div class="inspection-mode-switch" role="tablist" aria-label="巡检详情模式"><button class="active" type="button" role="tab" aria-selected="true" data-inspection-results>巡检诊断结果</button><button type="button" role="tab" aria-selected="false" data-inspection-continue disabled>继续调查</button></div></header><div id="inspection-action-body" class="inspection-action-body"></div></section></div>
+    </dialog>
   </main>
-  <script src="../runtime-config.js"></script><script src="../vendor/marked.umd.js"></script><script src="../vendor/purify.min.js"></script><script src="../shared/kbot-markdown.js?v=20260827_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-effect-verification.js?v=20261028_1"></script><script src="./js/aiops-sql-plan-viewer.js?v=20261029_2"></script><script src="./js/aiops-workspaces.js?v=20261030_1"></script>
+  <script src="../runtime-config.js"></script><script src="../vendor/marked.umd.js"></script><script src="../vendor/purify.min.js"></script><script src="../shared/kbot-markdown.js?v=20260827_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261030_1"></script><script src="../vendor/echarts.min.js"></script><script src="./js/aiops-chat-charts.js?v=20261030_1"></script><script src="./js/aiops-workspaces.js?v=20261030_4"></script><script src="./js/aiops-inspections.js?v=20261030_1"></script>
 </body>
 </html>

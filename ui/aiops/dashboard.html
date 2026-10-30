@@ -7,107 +7,103 @@
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/aiops-forms.css?v=20261011_3">
   <link rel="stylesheet" href="./css/workspaces.css?v=20261029_2">
-</head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-dashboard.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="dashboard">
-  <main class="ops-main ops-dashboard-main ops-action-workbench">
-    <header class="ops-head ops-dashboard-head">
-      <div>
-        <small class="ops-action-eyebrow">行动优先工作台</small>
-        <h1>运维总览</h1>
-        <p>先处理属于你的责任事项，再结合业务空间运行态势研判影响；工作项是唯一承载责任人、SLA、处理和验证的对象。</p>
-      </div>
-      <div class="ops-actions">
-        <a class="ops-button" href="./chat.html">打开 Agent 工作台</a>
-        <label class="ops-dashboard-refresh">态势刷新
-          <select id="dashboard-refresh-interval">
-            <option value="0">关闭</option>
-            <option value="30">30 秒</option>
-            <option value="60" selected>1 分钟</option>
-            <option value="300">5 分钟</option>
-          </select>
-        </label>
-        <button id="refresh-dashboard" type="button">刷新工作台</button>
-      </div>
+  <main class="ops-main platform-home-page aiops-page aiops-action-workbench">
+    <header class="platform-home-header">
+      <div class="login-brand"><span class="brand-mark">A</span><strong>运维总览</strong></div>
+      <div class="workbench-header-actions"><a class="secondary-button" href="./chat.html">打开 Agent 工作台</a><button class="secondary-button" id="refresh-dashboard" type="button">刷新工作台</button></div>
     </header>
-
-    <section class="ops-panel ops-work-item-queue-panel" aria-labelledby="work-item-queue-title">
-      <div class="ops-panel-head">
-        <div><h2 id="work-item-queue-title">我的责任队列</h2><p>选择队列可快速聚焦需要立即处理的事项。</p></div>
-        <button id="work-items-refresh" type="button">刷新队列</button>
-      </div>
-      <div id="work-item-queues" class="ops-work-item-queues"><div class="ops-empty">正在加载队列…</div></div>
-    </section>
-
-    <section class="ops-action-workbench-grid">
-      <div class="ops-action-primary">
-        <section class="ops-panel ops-work-item-filter-panel" aria-labelledby="work-item-filter-title">
-          <div class="ops-panel-head"><div><h2 id="work-item-filter-title">筛选条件</h2><p>按数据库实例、状态、优先级和责任范围缩小队列。</p></div></div>
-          <form id="work-item-filters" class="ops-work-item-filters">
-            <label>数据库实例<select id="work-item-target-filter" name="target_id"><option value="">责任范围内全部实例</option></select></label>
-            <label>状态<select name="status"><option value="">全部活动事项</option><option value="PENDING_TRIAGE">待研判</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="WAITING">等待中</option><option value="PENDING_VERIFICATION">待验证</option><option value="RESOLVED">已解决</option><option value="CLOSED">已关闭</option><option value="CANCELLED">已取消</option></select></label>
-            <label>优先级<select name="priority"><option value="">全部优先级</option><option>P1</option><option>P2</option><option>P3</option><option>P4</option></select></label>
-            <label>责任范围<select name="ownership"><option value="">范围内全部</option><option value="mine">分派给我</option><option value="unassigned">未分派</option></select></label>
-            <label hidden>查看范围<select name="visibility"><option value="SCOPE">我的责任范围</option><option value="ALL">全部工作项</option><option value="EXCEPTIONS">异常归属</option></select></label>
-            <div><button class="primary" type="submit">应用筛选</button><button type="reset">清空</button></div>
-          </form>
-        </section>
-
-        <section class="ops-panel ops-action-work-list">
-          <div class="ops-panel-head"><div><h2>处理队列</h2><p id="work-item-count">按解决 SLA 排序</p></div></div>
-          <div class="ops-table-wrap"><table class="ops-table ops-work-item-table"><thead><tr><th>优先级</th><th>工作项</th><th>数据库实例</th><th>状态 / 阶段</th><th>责任人</th><th>最后发现</th><th>解决 SLA</th><th>发生次数</th><th>操作</th></tr></thead><tbody id="work-item-body"><tr><td colspan="9" class="ops-empty">正在加载工作项…</td></tr></tbody></table></div>
-          <div class="ops-work-item-more"><button id="work-item-more" type="button" hidden>加载更多</button></div>
-        </section>
-      </div>
-
-      <aside class="ops-action-context" aria-label="AIOps 运行态势上下文">
-        <section class="ops-panel ops-action-context-card">
-          <div class="ops-panel-head"><div><small class="ops-action-eyebrow">业务空间</small><h2>运行态势</h2></div><span id="dashboard-freshness" class="ops-dashboard-freshness">正在读取运行态势…</span></div>
-          <p class="ops-action-boundary">以下是系统观测，不代表已形成个人责任；需要处理时以左侧正式工作项为准。</p>
-          <div id="dashboard-summary" class="ops-action-runtime-metrics"><div class="ops-empty">正在读取运行态势…</div></div>
-          <section class="ops-action-attention">
-            <header><h3>需关注目标</h3><a href="./monitoring.html">查看监控</a></header>
-            <div id="dashboard-attention" class="ops-action-attention-list"><div class="ops-empty">正在读取需关注目标…</div></div>
-            <a class="ops-action-context-link" href="./situations.html"><span><strong>告警与诊断上下文</strong><small id="dashboard-attention-count">—</small></span><b>查看 →</b></a>
+    <section class="platform-home-hero app-page-head aiops-action-hero"><div><p class="eyebrow">行动优先工作台</p><h1>运维总览</h1><p>先处理属于你的责任事项，再结合业务空间运行态势研判影响；工作项是唯一承载责任人、SLA、处理和验证的对象。</p></div></section>
+    <p id="dashboard-error" class="notice notice-error" hidden><strong>运行态势加载失败</strong><span></span></p>
+    <section class="aiops-page aiops-work-items-page">
+      <section class="table-card work-item-queue-panel" aria-labelledby="work-item-queue-title">
+        <header class="table-card-header"><div><h2 id="work-item-queue-title">我的责任队列</h2><p>选择队列可快速聚焦需要立即处理的事项。</p></div></header>
+        <div id="work-item-queues" class="operational-summary-grid work-item-queue-grid"></div>
+      </section>
+      <div class="workbench-content-grid has-context">
+        <div class="work-item-primary-column">
+          <section id="work-item-list-loading" class="loading-card"><span class="loading-orb"></span>正在读取工作项…</section>
+          <section class="table-card work-item-list-panel" aria-labelledby="work-item-filter-title" hidden>
+            <header class="resource-list-header work-item-list-header">
+              <div class="resource-list-heading"><h2 id="work-item-filter-title">处理队列</h2><p id="work-item-count">当前显示 0 项 · 按解决 SLA 排序</p></div>
+              <form id="work-item-filters" class="resource-list-tools work-item-toolbar">
+                <label class="resource-list-filter"><span class="visually-hidden">数据库实例</span><select id="work-item-target-filter" name="target_id" aria-label="按数据库实例筛选"><option value="">责任范围内全部实例</option></select></label>
+                <label class="resource-list-filter"><span class="visually-hidden">状态</span><select name="status" aria-label="按状态筛选"><option value="">活动状态</option><option value="PENDING_TRIAGE">待研判</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="WAITING">等待中</option><option value="PENDING_VERIFICATION">处理完成</option><option value="RESOLVED">已解决</option><option value="CLOSED">已关闭</option><option value="CANCELLED">已取消</option></select></label>
+                <label class="resource-list-filter"><span class="visually-hidden">优先级</span><select name="priority" aria-label="按优先级筛选"><option value="">全部优先级</option><option>P1</option><option>P2</option><option>P3</option><option>P4</option></select></label>
+                <label class="resource-list-filter"><span class="visually-hidden">责任范围</span><select name="ownership" aria-label="按责任范围筛选"><option value="">范围内全部</option><option value="mine">我的待办</option><option value="unassigned">未分派</option></select></label>
+                <label class="resource-list-filter" hidden><span class="visually-hidden">查看范围</span><select name="visibility" aria-label="选择查看范围"><option value="SCOPE">我的责任范围</option><option value="ALL">全部工作项</option><option value="EXCEPTIONS">异常归属</option></select></label>
+                <button id="work-item-overdue" class="secondary-button" type="button" aria-pressed="false">仅看超时</button>
+                <button class="secondary-button" type="reset">清空</button>
+                <button id="work-items-refresh" class="secondary-button" type="button">刷新</button>
+                <button id="work-item-create" class="primary-button" type="button" hidden>新建工作项</button>
+              </form>
+            </header>
+            <div class="table-scroll"><table><thead><tr><th>优先级</th><th>事项</th><th>数据库实例</th><th>状态</th><th>责任人</th><th>解决 SLA</th><th>发生次数</th><th class="table-action-heading">操作</th></tr></thead><tbody id="work-item-body"><tr><td colspan="8" class="empty-cell">正在读取工作队列…</td></tr></tbody></table></div>
+            <footer class="work-item-more" hidden><button id="work-item-more" class="secondary-button" type="button">加载更多</button></footer>
           </section>
-        </section>
-
-        <section class="ops-panel ops-action-context-card">
-          <div class="ops-panel-head"><div><small class="ops-action-eyebrow">自动化</small><h2>近 24 小时执行</h2></div></div>
-          <div id="dashboard-automation" class="ops-dashboard-automation"><div class="ops-empty">正在读取执行结果…</div></div>
-        </section>
-
-        <section class="ops-panel ops-action-context-card">
-          <div class="ops-panel-head"><div><small class="ops-action-eyebrow">结果沉淀</small><h2>最新正式报告</h2></div><a href="./reports.html">全部报告</a></div>
-          <div id="dashboard-latest-report" class="ops-action-latest-report"><div class="ops-empty">正在读取最新报告…</div></div>
-        </section>
-      </aside>
+        </div>
+        <aside class="workbench-context-column" aria-label="AIOps 运行态势上下文">
+          <section class="workbench-context-card" aria-labelledby="runtime-context-title">
+            <header><div><p class="eyebrow">业务空间</p><h2 id="runtime-context-title">运行态势</h2></div><span id="dashboard-freshness">—</span></header>
+            <p class="context-boundary-note">以下是系统观测，不代表已形成个人责任；需要处理时以左侧正式工作项为准。</p>
+            <dl id="dashboard-summary" class="runtime-metrics"></dl>
+            <section class="attention-targets"><header><h3>需关注目标</h3><a href="./monitoring.html">查看监控</a></header><div id="dashboard-attention" style="display:contents"></div></section>
+            <a class="context-link" href="./situations.html"><span><strong>告警与诊断上下文</strong><small id="dashboard-attention-count">—</small></span><b>查看 →</b></a>
+          </section>
+          <section class="workbench-context-card compact-context-card">
+            <header><div><p class="eyebrow">自动化</p><h2>近 24 小时执行</h2></div></header>
+            <dl id="dashboard-automation" class="automation-metrics"></dl>
+          </section>
+          <section class="workbench-context-card compact-context-card">
+            <header><div><p class="eyebrow">结果沉淀</p><h2>最新正式报告</h2></div><a href="./reports.html">全部报告</a></header>
+            <div id="dashboard-latest-report" style="display:contents"></div>
+          </section>
+        </aside>
+      </div>
     </section>
   </main>
 
-  <dialog id="work-item-processing-dialog" class="ops-dialog ops-work-item-dialog ops-work-item-processing-dialog">
-    <form id="work-item-processing-form">
-      <header><div><small>当前由你处理</small><h2>处理工作项</h2><p id="work-item-processing-title"></p></div><button type="button" aria-label="关闭处理窗口" data-close-work-item-dialog>关闭</button></header>
-      <div class="ops-dialog-body">
-        <section class="ops-work-item-dialog-summary"><article><span>数据库实例</span><strong id="work-item-processing-target">—</strong></article><article><span>当前状态</span><strong id="work-item-processing-status">—</strong></article><article><span>开始处理时间</span><strong id="work-item-processing-started">—</strong></article></section>
-        <section class="ops-work-item-processing-context"><article class="ops-work-item-context-card"><header><div><small>现场上下文</small><h3>错误 / 告警信息</h3></div></header><div id="work-item-alert-context"></div></article><article class="ops-work-item-context-card"><header><div><small>Agent 结论</small><h3>初步诊断结果</h3></div></header><div id="work-item-agent-diagnosis" class="ops-result-markdown"></div></article></section>
-        <section class="ops-work-item-continue"><header><div><small>继承诊断上下文</small><h3>继续深入诊断</h3></div><p id="work-item-diagnosis-note">正在识别可继承的诊断上下文…</p></header><div class="ops-work-item-continue-fields"><div class="ops-field"><label class="ops-field-label" for="work-item-diagnosis-agent">Agent</label><select id="work-item-diagnosis-agent"><option value="">正在读取可用 Agent…</option></select></div><div class="ops-field"><label class="ops-field-label" for="work-item-diagnosis-prompt">继续追问</label><textarea id="work-item-diagnosis-prompt" maxlength="32000"></textarea></div><button id="work-item-continue-diagnosis" class="primary" type="button" disabled>进入诊断对话</button></div></section>
-        <section class="ops-work-item-completion"><h3>记录处理结果</h3><div class="ops-field"><label class="ops-field-label" for="work-item-resolution-code">处理结论</label><select id="work-item-resolution-code" name="resolution_code"><option value="FIXED">已修复</option><option value="MITIGATED">已缓解</option><option value="OBSERVED_STABLE">观察稳定</option><option value="ACCEPTED_RISK">风险已接受</option><option value="FALSE_POSITIVE">误报</option><option value="DUPLICATE">重复事项</option></select></div><div class="ops-field"><label class="ops-field-label" for="work-item-completion-note">处理结果</label><textarea id="work-item-completion-note" name="completion_note" maxlength="4000" required placeholder="记录采取的措施、结果与后续观察建议"></textarea></div><p class="ops-dialog-note">领取时间由系统自动记录；提交时自动记录完成人和完成时间，并进入待验证状态。</p></section>
-      </div>
-      <footer><button type="button" data-close-work-item-dialog>暂不完成</button><button class="primary" type="submit">标记工作完成</button></footer>
+  <dialog id="work-item-processing-dialog" class="work-item-modal work-item-processing-modal" aria-label="处理工作项">
+    <header><div><p class="eyebrow">当前由你处理</p><h2>处理工作项</h2><p id="work-item-processing-title"></p></div><button class="icon-button" type="button" aria-label="关闭处理窗口" data-close-work-item-dialog>×</button></header>
+    <div class="work-item-modal-summary"><span><small>数据库实例</small><strong id="work-item-processing-target">—</strong></span><span><small>当前状态</small><strong id="work-item-processing-status">—</strong></span><span><small>开始处理时间</small><strong id="work-item-processing-started">—</strong></span></div>
+    <div class="work-item-processing-context"><section class="key-value-card work-item-processing-section"><header><div><p class="eyebrow">现场上下文</p><h3>错误 / 告警信息</h3></div><span id="work-item-processing-severity" class="status-pill status-warning"></span></header><div id="work-item-alert-context" style="display:contents"></div></section><section class="key-value-card work-item-processing-section"><header><div><p class="eyebrow">Agent 结论</p><h3>初步诊断结果</h3></div><button id="work-item-continue-diagnosis" class="secondary-button" type="button" hidden>继续深入诊断</button></header><div id="work-item-agent-diagnosis" class="aiops-turn-result"></div></section></div>
+    <form id="work-item-processing-form" class="work-item-modal-form">
+      <label>处理结论<select id="work-item-resolution-code" name="resolution_code"><option value="FIXED">已修复</option><option value="MITIGATED">已缓解</option><option value="OBSERVED_STABLE">观察稳定</option><option value="ACCEPTED_RISK">风险已接受</option><option value="FALSE_POSITIVE">误报</option><option value="DUPLICATE">重复事项</option></select></label>
+      <label>处理结果<textarea id="work-item-completion-note" name="completion_note" maxlength="4000" rows="6" required placeholder="记录采取的措施、结果与后续观察建议"></textarea></label>
+      <p class="form-help">领取时间由系统自动记录；提交时自动记录完成人和完成时间，并进入待验证状态。</p>
+      <footer><button class="secondary-button" type="button" data-close-work-item-dialog>暂不完成</button><button class="primary-button" type="submit">标记工作完成</button></footer>
     </form>
   </dialog>
 
-  <dialog id="work-item-assignment-dialog" class="ops-dialog ops-work-item-dialog ops-work-item-assignment-dialog">
-    <form id="work-item-assignment-form"><header><div><small>Manager 分派</small><h2>分派工作项</h2><p id="work-item-assignment-title"></p></div><button type="button" aria-label="关闭分派窗口" data-close-work-item-dialog>关闭</button></header><div class="ops-dialog-body"><div class="ops-field"><label class="ops-field-label" for="work-item-assignment-group">责任组</label><input id="work-item-assignment-group" disabled></div><div class="ops-field"><label class="ops-field-label" for="work-item-assignment-user">指派给</label><select id="work-item-assignment-user" required><option value="" disabled>请选择组内其他成员</option></select></div><p class="ops-dialog-note">这里只分派责任，不开始处理；被分派人点击“处理”后，工作项才进入处理中。</p></div><footer><button type="button" data-close-work-item-dialog>取消</button><button class="primary" type="submit">确认分派</button></footer></form>
+  <dialog id="work-item-assignment-dialog" class="work-item-modal work-item-assignment-modal" aria-label="分派工作项">
+    <header><div><p class="eyebrow">Manager 分派</p><h2>分派工作项</h2><p id="work-item-assignment-title"></p></div><button class="icon-button" type="button" aria-label="关闭分派窗口" data-close-work-item-dialog>×</button></header>
+    <form id="work-item-assignment-form" class="work-item-modal-form"><label>责任组<input id="work-item-assignment-group" disabled></label><label>指派给<select id="work-item-assignment-user" required><option value="" disabled>请选择组内其他成员</option></select></label><p class="form-help">这里只分派责任，不开始处理；被分派人点击“处理”后，工作项才进入处理中。</p><footer><button class="secondary-button" type="button" data-close-work-item-dialog>取消</button><button class="primary-button" type="submit" disabled>确认分派</button></footer></form>
   </dialog>
 
+  <dialog id="work-item-create-dialog" class="reference-drawer admin-drawer" aria-labelledby="work-item-create-title">
+    <header class="admin-drawer-header"><div><p class="eyebrow">人工登记</p><h2 id="work-item-create-title">新建工作项</h2><p>用于登记未由告警或巡检自动生成的 DBA 处理事项。</p></div><button class="icon-button" type="button" aria-label="关闭新建工作项" data-close-create>×</button></header>
+    <form id="work-item-create-form" class="work-item-drawer-form">
+      <label class="control-field"><span class="field-label">数据库实例</span><select name="target_id" required><option value="">请选择要处理的数据库实例</option></select><small class="field-help">工作项以数据库实例为核心，责任组和可选责任人均由该实例的责任归属自动确定。</small></label>
+      <label class="control-field"><span class="field-label">事项类型</span><select name="work_type"><option value="INCIDENT_RESPONSE">故障响应</option><option value="RISK_REMEDIATION">风险整改</option><option value="PROBLEM_INVESTIGATION" selected>问题调查</option><option value="OPTIMIZATION">优化事项</option><option value="OBSERVABILITY_GAP">监控缺口</option><option value="RECOVERY_OBSERVATION">恢复观察</option><option value="RECOVERY_DRILL">恢复演练</option></select></label>
+      <label class="control-field"><span class="field-label">标题</span><input name="title" maxlength="512" required></label>
+      <label class="control-field"><span class="field-label">处理说明</span><textarea name="summary" maxlength="4000" rows="5" required></textarea></label>
+      <div class="work-item-form-grid"><label class="control-field"><span class="field-label">严重程度</span><select name="severity"><option>CRITICAL</option><option>HIGH</option><option selected>MEDIUM</option><option>LOW</option></select></label><label class="control-field"><span class="field-label">优先级</span><select name="priority"><option>P1</option><option>P2</option><option selected>P3</option><option>P4</option></select></label></div>
+      <label class="control-field"><span class="field-label">责任组</span><input data-create-group disabled value="未配置有效责任组"><small class="field-help">由 Target 的责任归属自动确定，不允许在工作项中改写。</small></label>
+      <label class="control-field"><span class="field-label">责任人</span><select name="assignee_user_id" disabled><option value="">由组内 DBA 领取</option></select><small class="field-help">建议留空进入责任组队列，由实际处理人领取。</small></label>
+      <footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close-create>取消</button><button class="primary-button" type="submit" disabled>创建工作项</button></footer>
+    </form>
+  </dialog>
   <script src="../runtime-config.js"></script>
   <script src="../vendor/marked.umd.js"></script>
   <script src="../vendor/purify.min.js"></script>
   <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
   <script src="./js/aiops-auth.js"></script>
-  <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-dashboard.js?v=20261013_1"></script>
-  <script src="./js/aiops-work-items.js?v=20261013_1"></script>
+  <script src="./js/aiops-shell.js?v=20261030_1"></script>
+  <script src="../vendor/echarts.min.js"></script>
+  <script src="./js/aiops-chat-charts.js?v=20261030_1"></script>
+  <script src="./js/aiops-workspaces.js?v=20261030_4"></script>
+  <script src="./js/aiops-dashboard.js?v=20261030_1"></script>
+  <script src="./js/aiops-work-items.js?v=20261030_1"></script>
 </body>
 </html>

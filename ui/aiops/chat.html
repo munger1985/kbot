@@ -7,48 +7,58 @@
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/workspaces.css?v=20261029_3">
   <link rel="stylesheet" href="./css/sql-plan-viewer.css?v=20261029_2">
-</head>
+  <link rel="stylesheet" href="./css/chat.css?v=20261030_1">
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-chat.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="chat">
-  <main class="ops-main ops-special-page ops-chat-main">
+  <main class="ops-main ops-chat-main">
     <header class="ops-head">
-      <div><h1>Agent 工作台</h1><p>选择统一 AIOps Agent，用自然语言说明业务系统、资源、问题和时间范围。</p></div>
-      <button id="new-conversation" class="primary" type="button">新建运维对话</button>
+      <div><p class="eyebrow">统一智能运维助手</p><h1>Agent 工作台</h1><p>用一个问答窗口诊断、查知识、看监控告警、巡检报告和业务系统资源。</p></div>
     </header>
 
-    <section id="chat-workspace" class="ops-special-workspace ops-workspace is-rail-collapsed">
-      <aside class="ops-special-rail ops-workspace-list" aria-label="诊断会话与上下文">
-        <button id="chat-rail-toggle" class="ops-special-rail-toggle" type="button" aria-label="展开诊断会话" aria-controls="chat-rail-content" aria-expanded="false">☰</button>
-        <span class="ops-special-rail-collapsed-label">诊断会话</span>
-        <div id="chat-rail-content" class="ops-special-rail-content">
-          <div class="ops-workspace-list-head">
-            <h2>诊断会话</h2>
-            <label for="agent-select">Agent</label>
-            <select id="agent-select" aria-label="选择 Agent"><option value="">正在读取 Agent…</option></select>
-            <p id="agent-target-context" class="ops-composer-hint">每轮会在 Agent 获授权的业务系统中解析资源范围；不明确时会请你确认。</p>
-          </div>
-          <div id="conversation-list" class="ops-workspace-items"></div>
-        </div>
+    <section id="chat-workspace" class="ops-workspace aiops-diagnosis-workspace is-rail-collapsed">
+      <aside id="chat-rail-content" class="aiops-diagnosis-rail" aria-label="诊断会话与上下文">
+        <header class="aiops-diagnosis-rail-head">
+          <div><h2>诊断会话</h2><p>历史记录与本次调查上下文。</p></div>
+          <button id="new-conversation" type="button" aria-label="开始新会话" title="开始新会话">开始新会话</button>
+        </header>
+        <nav id="conversation-list" class="ops-workspace-items" aria-label="历史诊断会话"></nav>
+        <footer class="agent-chat-session-toggle-row"><button id="chat-rail-toggle" class="icon-button" type="button" aria-label="展开会话列表" aria-controls="chat-rail-content" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14 M5 12h14 M5 17h14"/></svg></button></footer>
       </aside>
       <article class="ops-conversation">
-        <header class="ops-conversation-head"><h2 id="conversation-title">开始一次智能运维问答</h2><p id="conversation-context">选择 Agent 后，可以诊断、查知识、看监控告警、巡检报告或资源拓扑。</p></header>
-        <div id="message-list" class="ops-messages"></div>
-        <form id="conversation-form" class="ops-composer">
-          <textarea name="message" maxlength="32000" placeholder="例如：帮我查一下 MES 系统现在为什么变慢；也可以询问手册、告警、巡检报告或系统主机与 IP…"></textarea>
-          <div id="upload-preview" class="ops-composer-hint"></div>
-          <div class="ops-composer-row">
-            <button id="open-starter-menu" class="ops-button" type="button">功能</button>
-            <label class="ops-button">选择诊断材料<input id="evidence-file" type="file" multiple accept="image/png,image/jpeg,image/webp,text/plain,text/html,text/csv,application/json,application/sql,.html,.htm,.txt,.log,.trc,.trace,.out,.lst,.sql" hidden></label>
-            <span class="ops-composer-hint">无需选择 Target；系统会先识别意图和业务范围，必要时在同一轮中请你确认。已选文件将在点击“发送”时上传，支持 AWR/ASH（HTML/TXT）等诊断材料；不要上传密码、密钥或完整连接串。</span>
-            <button class="primary" type="submit">发送</button>
+        <header class="ops-conversation-head agent-chat-conversation-head aiops-diagnosis-conversation-head">
+          <div><p id="conversation-eyebrow" class="eyebrow">新的运维会话</p><h2 id="conversation-title">新运维会话</h2><p id="conversation-context">每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。</p></div>
+          <div class="aiops-diagnosis-head-context">
+            <label class="control-field" for="agent-select"><span class="field-label">AIOps Agent</span><select id="agent-select" aria-label="选择 Agent" aria-describedby="agent-target-context"><option value="">正在读取 Agent…</option></select></label>
+            <span id="agent-target-context" class="visually-hidden"></span>
           </div>
+          <div class="button-row"><button id="chat-session-toggle" type="button" aria-controls="chat-rail-content" aria-expanded="false">会话列表</button><span id="conversation-actions" class="button-row"></span></div>
+        </header>
+        <p id="agent-empty-notice" class="aiops-diagnosis-notice" hidden>暂无已启用的 AIOps Agent。请先配置业务系统、能力与模型角色。</p>
+        <div id="message-list" class="ops-messages agent-chat-transcript aiops-diagnosis-transcript" aria-live="polite"></div>
+        <form id="conversation-form" class="ops-composer agent-chat-composer aiops-diagnosis-composer">
+          <input id="evidence-file" type="file" multiple accept="image/png,image/jpeg,image/webp,text/plain,text/html,text/csv,application/json,application/sql,.html,.htm,.txt,.log,.trc,.trace,.out,.lst,.sql" hidden>
+          <div id="upload-preview" class="attachment-list" aria-live="polite"></div>
+          <div class="ops-composer-row aiops-composer-row">
+            <button id="add-evidence" class="icon-button aiops-composer-attachment" type="button" aria-label="添加诊断材料" title="添加诊断材料"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+            <label class="agent-chat-composer-input"><span class="visually-hidden">运维问题</span><textarea name="message" rows="1" maxlength="32000" placeholder="例如：MES 系统现在为什么变慢？也可以询问手册、告警、巡检报告或主机 IP…"></textarea></label>
+            <button class="primary aiops-composer-send" type="submit" aria-label="开始诊断" title="开始诊断"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4z M22 2 11 13"/></svg><span class="visually-hidden">发送</span></button>
+          </div>
+          <footer class="agent-chat-composer-hint"><span>无需选择 Target；系统只在 Agent 获授权的业务系统中解析范围，不明确时会请求确认。不要提交密码、Token 或完整连接串。</span><small>Enter 发送 · Shift + Enter 换行</small></footer>
         </form>
       </article>
     </section>
   </main>
-  <dialog id="starter-dialog" class="ops-starter-dialog">
-    <form method="dialog" class="ops-starter-dialog-shell">
-      <header><div><strong id="starter-dialog-title">全部功能</strong><p id="starter-dialog-description">选择一个功能开始。</p></div><button value="cancel" aria-label="关闭功能菜单">关闭</button></header>
-      <div id="starter-dialog-content" class="ops-starter-dialog-content"></div>
+  <dialog id="starter-dialog" class="reference-drawer admin-drawer aiops-starter-drawer" aria-labelledby="starter-dialog-title">
+    <form>
+      <header class="admin-drawer-header"><div><p class="eyebrow">智能运维功能</p><h2 id="starter-dialog-title">全部快捷功能</h2><p id="starter-dialog-description">选择一个功能开始。</p></div><button class="icon-button" type="button" data-close-starter aria-label="关闭快捷功能">×</button></header>
+      <div id="starter-dialog-content" class="admin-drawer-body aiops-starter-catalog"></div>
+    </form>
+  </dialog>
+  <dialog id="conversation-confirm-dialog" class="confirm-dialog confirm-dialog--danger" role="alertdialog" aria-labelledby="conversation-confirm-title" aria-describedby="conversation-confirm-message">
+    <form method="dialog">
+      <header class="confirm-dialog-header"><span class="confirm-dialog-mark" aria-hidden="true">!</span><div><p class="confirm-dialog-kicker">请确认此操作</p><h2 id="conversation-confirm-title">删除会话？</h2></div></header>
+      <p id="conversation-confirm-message" class="confirm-dialog-message"></p>
+      <footer class="confirm-dialog-actions"><button class="secondary-button" value="cancel">取消</button><button class="danger-button" value="confirm">删除会话</button></footer>
     </form>
   </dialog>
   <script src="../runtime-config.js"></script>
@@ -56,9 +66,11 @@
   <script src="../vendor/purify.min.js"></script>
   <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
   <script src="./js/aiops-auth.js?v=20260911_1"></script>
-  <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-effect-verification.js?v=20261028_1"></script>
+  <script src="./js/aiops-shell.js?v=20261030_1"></script>
+  <script src="./js/aiops-effect-verification.js?v=20261030_1"></script>
   <script src="./js/aiops-sql-plan-viewer.js?v=20261029_2"></script>
-  <script src="./js/aiops-workspaces.js?v=20261030_1"></script>
+  <script src="../vendor/echarts.min.js"></script>
+  <script src="./js/aiops-chat-charts.js?v=20261030_1"></script>
+  <script src="./js/aiops-workspaces.js?v=20261030_4"></script>
 </body>
 </html>
