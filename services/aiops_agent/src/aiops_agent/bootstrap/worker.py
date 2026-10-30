@@ -102,6 +102,23 @@ async def _resolve_model_snapshot(
     }
 
 
+async def _check_worker_readiness(
+    *,
+    runtime: AIOpsProcessRuntime,
+    background_tasks: dict[str, asyncio.Task],
+    workers: list[AIOpsTaskWorker],
+) -> dict[str, str]:
+    """组合最小数据库连通性与真实后台消费组件状态。"""
+    checks = await runtime.check_database_connection()
+    for name, task in background_tasks.items():
+        checks[f"component:{name}"] = "failed" if task.done() else "ok"
+    for index, worker in enumerate(workers, start=1):
+        key = f"component:task-worker-{index}"
+        if not worker.healthy and checks[key] == "ok":
+            checks[key] = "degraded"
+    return checks
+
+
 def create_aiops_worker_probe(
     settings: AIOpsSettings | None = None,
 ):
@@ -430,12 +447,27 @@ def create_aiops_worker_probe(
         retention_worker = WorkloadRetentionWorker(
             workload_service=workload_service
         )
-        workers.append(retention_worker)
-        components = [*workers, reconciler, dispatcher]
-        background_tasks = [
-            asyncio.create_task(component.run_forever())
-            for component in components
-        ]
+        named_components = {
+            **{
+                f"task-worker-{index + 1}": worker
+                for index, worker in enumerate(workers)
+            },
+            "reconciler": reconciler,
+            "outbox-dispatcher": dispatcher,
+            "workload-retention": retention_worker,
+        }
+        background_tasks = {
+            name: asyncio.create_task(
+                component.run_forever(), name=f"aiops-{name}"
+            )
+            for name, component in named_components.items()
+        }
+        app.state.ready_check = partial(
+            _check_worker_readiness,
+            runtime=runtime,
+            background_tasks=background_tasks,
+            workers=workers,
+        )
         await runtime.start()
         logger.info(
             "正在启动 AIOps Worker：concurrency={}",
@@ -444,10 +476,10 @@ def create_aiops_worker_probe(
         try:
             yield
         finally:
-            for component in components:
+            for component in named_components.values():
                 component.stop()
             await asyncio.gather(
-                *background_tasks, return_exceptions=True
+                *background_tasks.values(), return_exceptions=True
             )
             await client_session.close()
             await runtime.close()

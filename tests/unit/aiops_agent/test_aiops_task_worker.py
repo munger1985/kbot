@@ -3,7 +3,7 @@
 import unittest
 import asyncio
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from aiops_agent.workers.errors import RetryableTaskError
 from aiops_agent.workers.handlers import HandlerManifest, HandlerRegistry
@@ -142,6 +142,106 @@ class AIOpsTaskWorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handler.cleaned)
         self.assertTrue(service.cleaned_before_failure)
         self.assertEqual("HANDLER_TIMEOUT", service.failure.error_code)
+
+
+class AIOpsTaskWorkerLoopTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _worker(service):
+        return AIOpsTaskWorker(
+            runtime_service=service,
+            handler_registry=HandlerRegistry(()),
+            worker_id="worker-loop-test",
+            lease_seconds=30,
+            heartbeat_seconds=10,
+            poll_interval_seconds=0.001,
+        )
+
+    async def test_claim_failure_is_logged_and_next_task_still_executes(self):
+        lease = AIOpsTaskWorkerTest._lease()
+        service = AsyncMock()
+        service.claim_task.side_effect = [
+            NameError("timedelta is not defined"),
+            lease,
+        ]
+        worker = self._worker(service)
+        worker._execute = AsyncMock(side_effect=lambda _: worker.stop())
+
+        with (
+            patch("aiops_agent.workers.task_worker.logger") as logs,
+            patch.object(worker, "_wait_for_next_poll", wraps=worker._wait_for_next_poll) as wait,
+        ):
+            await asyncio.wait_for(worker.run_forever(), timeout=1)
+
+        self.assertEqual(service.claim_task.await_count, 2)
+        worker._execute.assert_awaited_once_with(lease)
+        service.fail_task.assert_not_awaited()
+        self.assertEqual(worker.loop_errors_total, 1)
+        self.assertEqual(worker.consecutive_loop_errors, 0)
+        self.assertTrue(worker.healthy)
+        logs.opt.assert_called_once()
+        logs.opt.return_value.error.assert_called_once()
+        wait.assert_awaited_once()
+
+    async def test_empty_successful_poll_restores_readiness_after_repeated_errors(self):
+        service = AsyncMock()
+        worker = self._worker(service)
+        calls = 0
+
+        async def claim(_command):
+            nonlocal calls
+            calls += 1
+            if calls <= 3:
+                raise RuntimeError("模拟任务领取失败")
+            self.assertFalse(worker.healthy)
+            self.assertEqual(worker.consecutive_loop_errors, 3)
+            worker.stop()
+            return None
+
+        service.claim_task.side_effect = claim
+        with patch("aiops_agent.workers.task_worker.logger"):
+            await asyncio.wait_for(worker.run_forever(), timeout=1)
+
+        self.assertEqual(service.claim_task.await_count, 4)
+        self.assertEqual(worker.loop_errors_total, 3)
+        self.assertEqual(worker.consecutive_loop_errors, 0)
+        self.assertTrue(worker.healthy)
+
+    async def test_stop_interrupts_claim_error_backoff_without_another_claim(self):
+        service = AsyncMock()
+        worker = self._worker(service)
+        worker._poll_interval = 60
+        failed = asyncio.Event()
+
+        async def claim(_command):
+            failed.set()
+            raise RuntimeError("模拟任务领取失败")
+
+        service.claim_task.side_effect = claim
+        with patch("aiops_agent.workers.task_worker.logger"):
+            running = asyncio.create_task(worker.run_forever())
+            try:
+                await asyncio.wait_for(failed.wait(), timeout=1)
+                worker.stop()
+                await asyncio.wait_for(running, timeout=1)
+            finally:
+                running.cancel()
+                await asyncio.gather(running, return_exceptions=True)
+
+        service.claim_task.assert_awaited_once()
+        self.assertEqual(worker.loop_errors_total, 1)
+
+    async def test_cancellation_propagates_without_retry_or_error_log(self):
+        service = AsyncMock()
+        service.claim_task.side_effect = asyncio.CancelledError()
+        worker = self._worker(service)
+
+        with patch("aiops_agent.workers.task_worker.logger") as logs:
+            with self.assertRaises(asyncio.CancelledError):
+                await worker.run_forever()
+
+        service.claim_task.assert_awaited_once()
+        self.assertEqual(worker.loop_errors_total, 0)
+        logs.opt.assert_not_called()
 
 
 if __name__ == "__main__":

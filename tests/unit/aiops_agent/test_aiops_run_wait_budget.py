@@ -438,6 +438,41 @@ class RuntimeWaitBudgetTest(IsolatedAsyncioTestCase):
 
 
 class BudgetRepositoryTest(IsolatedAsyncioTestCase):
+    async def test_first_claim_sets_execution_deadline_and_consumes_one_attempt(self):
+        run = run_entity()
+        task = task_entity(run, status="READY")
+        task.started_at = None
+        task.execution_deadline_at = None
+        task.attempt_count = 0
+        task.lease_owner = None
+        task.lease_token = None
+        task.lease_until = None
+        now = NOW + timedelta(seconds=1)
+        token = uuid7()
+        session = AsyncMock()
+        session.execute.side_effect = [
+            SimpleNamespace(all=lambda: [(task.ops_task_id, run.ops_run_id)]),
+            SimpleNamespace(scalar_one_or_none=lambda: task),
+        ]
+        repo = OpsRunRepository(session)
+        repo.get_run = AsyncMock(return_value=run)
+
+        claimed = await repo.claim_task(
+            now=now, lease_owner="first-worker", lease_token=token,
+            lease_until=now + timedelta(seconds=15),
+        )
+
+        self.assertIs(claimed, task)
+        self.assertEqual(task.status, "RUNNING")
+        self.assertEqual(task.attempt_count, 1)
+        self.assertEqual(task.started_at, now)
+        self.assertEqual(task.execution_deadline_at, now + timedelta(seconds=30))
+        self.assertEqual(task.lease_owner, "first-worker")
+        self.assertEqual(task.lease_token, token)
+        self.assertEqual(task.lease_until, now + timedelta(seconds=15))
+        self.assertEqual(task.heartbeat_at, now)
+        session.flush.assert_awaited_once()
+
     async def test_approval_continuation_can_be_claimed_at_max_attempts_without_free_retry(self):
         run = run_entity()
         task = task_entity(run, status="WAITING_APPROVAL")

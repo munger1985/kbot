@@ -1,7 +1,7 @@
 """AIOps Run 聚合、Task 租约、Artifact 和事件流 Repository。"""
 
 from collections.abc import Callable, Collection
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import Select, func, literal_column, or_, select, update

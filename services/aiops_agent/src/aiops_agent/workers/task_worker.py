@@ -44,6 +44,21 @@ class AIOpsTaskWorker:
         self._heartbeat_seconds = heartbeat_seconds
         self._poll_interval = poll_interval_seconds
         self._stop = asyncio.Event()
+        self._consecutive_loop_errors = 0
+        self._loop_errors_total = 0
+
+    @property
+    def healthy(self) -> bool:
+        """连续领取异常达到阈值时让进程 readiness 失败。"""
+        return self._consecutive_loop_errors < 3
+
+    @property
+    def consecutive_loop_errors(self) -> int:
+        return self._consecutive_loop_errors
+
+    @property
+    def loop_errors_total(self) -> int:
+        return self._loop_errors_total
 
     def stop(self) -> None:
         self._stop.set()
@@ -51,16 +66,38 @@ class AIOpsTaskWorker:
     async def run_forever(self) -> None:
         logger.info("AIOps Task Worker 开始运行：{}", self._worker_id)
         while not self._stop.is_set():
-            worked = await self.run_once()
+            try:
+                worked = await self.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._consecutive_loop_errors += 1
+                self._loop_errors_total += 1
+                logger.opt(exception=exc).error(
+                    "AIOps Task Worker 领取循环异常：worker_id={} "
+                    "consecutive_errors={} type={}",
+                    self._worker_id,
+                    self._consecutive_loop_errors,
+                    type(exc).__name__,
+                )
+                await self._wait_for_next_poll()
+                continue
+            self._consecutive_loop_errors = 0
             if worked:
                 continue
-            try:
-                await asyncio.wait_for(
-                    self._stop.wait(), timeout=self._poll_interval
-                )
-            except TimeoutError:
-                pass
+            await self._wait_for_next_poll()
         logger.info("AIOps Task Worker 已停止：{}", self._worker_id)
+
+    async def _wait_for_next_poll(self) -> None:
+        """等待下一轮，同时允许 stop 立即唤醒。"""
+        if self._stop.is_set():
+            return
+        try:
+            await asyncio.wait_for(
+                self._stop.wait(), timeout=self._poll_interval
+            )
+        except TimeoutError:
+            pass
 
     async def run_once(self) -> bool:
         lease = await self._service.claim_task(
