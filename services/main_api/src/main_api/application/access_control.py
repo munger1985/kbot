@@ -49,6 +49,12 @@ class AccessControlService:
     def __init__(self, *, uow_factory):
         self._uow_factory = uow_factory
 
+    async def domain_name(self, *, domain_id: int) -> str | None:
+        """读取已授权业务上下文对应的当前 Domain 名称。"""
+        async with self._uow_factory() as uow:
+            domain = await uow.domains.get(domain_id=domain_id)
+            return domain.name if domain is not None else None
+
     async def snapshot(
         self, *, app_id: str, domain_id: int, user_id: str
     ) -> AccessSnapshot:

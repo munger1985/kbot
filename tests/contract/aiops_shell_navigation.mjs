@@ -11,7 +11,7 @@ const permissions = [
   "aiops:agent_manage", "aiops:plan_manage", "aiops:api_key_manage",
 ];
 
-function setup(page, allowed = permissions) {
+function setup(page, allowed = permissions, domain = { domain_id: 87, domain_name: "生产运维空间" }) {
   const document = {
     body: { dataset: { page } },
     querySelectorAll: () => [],
@@ -19,7 +19,7 @@ function setup(page, allowed = permissions) {
   const context = { document, addEventListener() {} };
   // 只在隔离 VM 暴露真实函数，生产脚本不增加测试入口。
   runInNewContext(source.replace("globalThis.KBotAIOpsShell = {", "globalThis.navigationContract = { shellMarkup, bindNavigationGroups }; globalThis.KBotAIOpsShell = {"), context);
-  const markup = context.navigationContract.shellMarkup({ permissions: allowed });
+  const markup = context.navigationContract.shellMarkup({ permissions: allowed, ...domain });
   const sections = [...markup.matchAll(/<section class="business-nav-group ([^"]+)" data-group-key="([^"]+)" data-current="(true|false)">([\s\S]*?)<\/section>/g)];
   const groups = sections.map(([, classes, key, current, content]) => {
     const classNames = new Set(classes.split(" "));
@@ -56,6 +56,27 @@ function setup(page, allowed = permissions) {
     },
   };
 }
+
+test("业务空间显示接口返回的真实名称，不显示数字 ID", () => {
+  for (const page of ["chat", "dashboard", "monitoring", "agents", "business-system-workspace"]) {
+    assert.match(setup(page).markup, /id="ops-domain">生产运维空间<\/strong>/);
+    assert.doesNotMatch(setup(page).markup, /Domain 87/);
+  }
+});
+
+test("名称缺失或为空时明确显示不可用，不退回 ID", () => {
+  for (const domain_name of [undefined, null, "", "   "]) {
+    const app = setup("chat", permissions, { domain_id: 87, domain_name });
+    assert.match(app.markup, /id="ops-domain">名称暂不可用<\/strong>/);
+    assert.doesNotMatch(app.markup, /Domain 87/);
+  }
+});
+
+test("业务空间名称按文本转义，不能注入顶部 HTML", () => {
+  const app = setup("chat", permissions, { domain_id: 87, domain_name: '  运维 <img src=x onerror="alert(1)"> & 生产  ' });
+  assert.match(app.markup, /id="ops-domain">运维 &lt;img src=x onerror=&quot;alert\(1\)&quot;&gt; &amp; 生产<\/strong>/);
+  assert.doesNotMatch(app.markup, /<img/);
+});
 
 test("Agent 工作台固定入口默认不展开业务分组，可独立打开并收起非当前组", () => {
   const app = setup("chat");

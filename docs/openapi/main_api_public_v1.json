@@ -1,6 +1,57 @@
 {
   "components": {
     "schemas": {
+      "AIOpsAccessView": {
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "domain_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Name"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id",
+          "domain_id",
+          "domain_name",
+          "user_id",
+          "roles",
+          "permissions"
+        ],
+        "title": "AIOpsAccessView",
+        "type": "object"
+      },
       "AIOpsAgentCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -23404,7 +23455,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AIOpsAccessView"
+                }
               }
             },
             "description": "Successful Response"

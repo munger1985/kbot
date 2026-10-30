@@ -78,7 +78,7 @@ try {
       load: () => ({ access_token: "isolated-shell-fixture" }),
       request: async path => {
         if (path !== "/api/v1/apps/aiops/access") throw new Error(`禁止真实业务请求：${path}`);
-        return { permissions, user_id: "fixture", domain_id: "fixture" };
+        return { permissions, user_id: "fixture", domain_id: 87, domain_name: "生产运维空间" };
       },
     };
   }, permissions);
@@ -140,6 +140,7 @@ try {
     console.log(`侧栏对照：${page}`);
     await kbot.goto(`http://127.0.0.1:${server.address().port}/shell?page=${page}`);
     await kbot.locator(".business-app-sidebar").waitFor({ state: "attached" });
+    assert.equal(await kbot.locator("#ops-domain").textContent(), "生产运维空间", "顶部业务空间须显示名称而不是 Domain ID");
     assert.deepEqual(await kbot.locator(".business-context-icon svg path").evaluateAll(paths => paths.map(path => path.getAttribute("d"))), iconPaths[domainIcon], "业务空间图标须与源端相同");
     await kbot.addStyleTag({ content: "*,*::before,*::after{transition:none!important;animation:none!important}" });
     await reference.evaluate(async suffix => {

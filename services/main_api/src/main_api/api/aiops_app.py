@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from main_api.application import (
+    AccessControlService,
     UserAuthService,
     authorize_app_request,
     require_app_api_agent,
@@ -80,6 +81,15 @@ class _Payload(BaseModel):
 class AIOpsLoginPayload(_Payload):
     user_id: str = Field(min_length=1, max_length=256)
     password: str = Field(min_length=1, max_length=256)
+
+
+class AIOpsAccessView(BaseModel):
+    app_id: str
+    domain_id: int
+    domain_name: str | None
+    user_id: str
+    roles: tuple[str, ...]
+    permissions: list[str]
 
 
 class AIOpsPasswordChangePayload(_Payload):
@@ -858,14 +868,16 @@ async def preview_operations_knowledge_search(payload: OperationsKnowledgeSearch
     )
 
 
-@router.get("/access")
+@router.get("/access", response_model=AIOpsAccessView)
 async def get_access(request: Request):
     _, _, snapshot = await authorize_app_request(
         request, app_id="aiops", permission="aiops:use"
     )
+    service = cast(AccessControlService, request.app.state.access_control_service)
     return {
         "app_id": snapshot.app_id,
         "domain_id": snapshot.domain_id,
+        "domain_name": await service.domain_name(domain_id=snapshot.domain_id),
         "user_id": snapshot.user_id,
         "roles": snapshot.roles,
         "permissions": sorted(snapshot.permissions),
