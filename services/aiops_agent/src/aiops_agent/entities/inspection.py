@@ -314,7 +314,7 @@ class ReportSourceEntity(BaseEntity):
     report_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
     ops_run_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
     source_artifact_id: Mapped[UUID] = mapped_column(
-        UUIDv7Type(), nullable=False
+        UUIDv7Type(), primary_key=True
     )
     source_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)

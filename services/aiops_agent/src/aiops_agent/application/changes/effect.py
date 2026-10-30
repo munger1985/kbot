@@ -387,6 +387,12 @@ class ChangeEffectVerification:
                 "guardrails_passed": result.guardrails_passed,
                 "comparison_result_artifact_id": str(artifact.artifact_id),
                 "comparison_method": result.control_analysis.get("method", "OBSERVATIONAL"),
+                "verification": {
+                    "method": result.control_analysis.get("method", "OBSERVATIONAL"), "result": result.result,
+                    "direct_effect": result.direct_effect, "measured_effect": result.measured_effect,
+                    "symptom_recovered": result.symptom_recovered, "guardrails_passed": result.guardrails_passed,
+                    "attribution_strength": result.attribution_strength,
+                },
             },
             facts=tuple(facts), gaps=tuple({"code": code} for code in result.gap_codes),
             evidence_refs=(*refs, {

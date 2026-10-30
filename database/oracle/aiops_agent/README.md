@@ -29,6 +29,11 @@
 持久化人工等待预算与审批续跑标记。必须先完成或取消旧运行再停机备份；
 不能猜测旧请求的剩余预算，不提供新旧预算双读兼容，也不改变目标库权限。
 
+从 Schema 52 升级时执行 `../operations/apply_aiops_schema_53.sql`，只将报告来源主键
+扩展为 `(REPORT_ID, OPS_RUN_ID, SOURCE_ARTIFACT_ID)`，保留全部既有报告与来源行。
+同一 Run 的调查、计划、执行回执及验证结果须分别保存，不能按 Run 去重吞掉来源。
+停机备份后执行；Oracle DDL 隐式提交，如中断保持停机并重跑同一升级脚本，勿执行重建。
+
 需要丢弃旧 AIOps 数据并重新部署时，停止 AIOps API、Worker、Scheduler，备份
 需要保留的数据，然后用 KBot Schema 所有者执行
 `../generated/aiops_agent/rebuild_aiops_schema.sql`。它会
@@ -40,13 +45,13 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 全部十三份规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 52 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 53 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系以及 `diagnosis-cases` 固定 KC Collection 位于共享平台/KC 表；用户创建的运维知识库各自拥有独立 KC Collection，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 52 / aiops-oracle-v52-run-wait-budget`，再启动 AIOps
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 53 / aiops-oracle-v53-report-artifact-sources`，再启动 AIOps
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与 Entity 对齐的机器可读契约。版本、列和约束只在

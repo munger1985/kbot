@@ -2318,6 +2318,9 @@ BEGIN
             'KBOT_OPS_RUN|ACTOR_ID',
             'KBOT_OPS_RUN|AGENT_ID',
             'KBOT_OPS_RUN|AGENT_VERSION_ID',
+            'KBOT_OPS_RUN|BUDGET_PAUSED_AT',
+            'KBOT_OPS_RUN|BUDGET_REMAINING_MS',
+            'KBOT_OPS_RUN|BUDGET_WAITED_MS',
             'KBOT_OPS_RUN|CANCEL_REQUESTED_AT',
             'KBOT_OPS_RUN|CANCEL_REQUESTED_BY',
             'KBOT_OPS_RUN|COMPLETED_AT',
@@ -2327,6 +2330,7 @@ BEGIN
             'KBOT_OPS_RUN|ERROR_CODE',
             'KBOT_OPS_RUN|ERROR_MESSAGE',
             'KBOT_OPS_RUN|FINAL_ARTIFACT_ID',
+            'KBOT_OPS_RUN|HUMAN_WAIT_UNTIL',
             'KBOT_OPS_RUN|IDEMPOTENCY_KEY',
             'KBOT_OPS_RUN|INSPECTION_FIRE_ID',
             'KBOT_OPS_RUN|INTERACTION_MODE',
@@ -2508,11 +2512,14 @@ BEGIN
             'KBOT_OPS_TARGET|WORKLOAD_SNAPSHOT_POLICY_JSON',
             'KBOT_OPS_TASK|ATTEMPT_COUNT',
             'KBOT_OPS_TASK|AVAILABLE_AT',
+            'KBOT_OPS_TASK|BUDGET_PAUSED_AT',
+            'KBOT_OPS_TASK|BUDGET_REMAINING_MS',
             'KBOT_OPS_TASK|COMPLETED_AT',
             'KBOT_OPS_TASK|CREATED_AT',
             'KBOT_OPS_TASK|DEPENDS_ON_JSON',
             'KBOT_OPS_TASK|ERROR_CODE',
             'KBOT_OPS_TASK|ERROR_MESSAGE',
+            'KBOT_OPS_TASK|EXECUTION_DEADLINE_AT',
             'KBOT_OPS_TASK|HANDLER_ID',
             'KBOT_OPS_TASK|HANDLER_VERSION',
             'KBOT_OPS_TASK|HEARTBEAT_AT',
@@ -2528,6 +2535,7 @@ BEGIN
             'KBOT_OPS_TASK|OUTPUT_SCHEMA_VERSION',
             'KBOT_OPS_TASK|PARENT_TASK_ID',
             'KBOT_OPS_TASK|PRIORITY',
+            'KBOT_OPS_TASK|RESUME_PENDING',
             'KBOT_OPS_TASK|ROW_VERSION',
             'KBOT_OPS_TASK|STARTED_AT',
             'KBOT_OPS_TASK|STATUS',
@@ -3573,6 +3581,9 @@ BEGIN
             'KBOT_OPS_RUN|ACTOR_ID',
             'KBOT_OPS_RUN|AGENT_ID',
             'KBOT_OPS_RUN|AGENT_VERSION_ID',
+            'KBOT_OPS_RUN|BUDGET_PAUSED_AT',
+            'KBOT_OPS_RUN|BUDGET_REMAINING_MS',
+            'KBOT_OPS_RUN|BUDGET_WAITED_MS',
             'KBOT_OPS_RUN|CANCEL_REQUESTED_AT',
             'KBOT_OPS_RUN|CANCEL_REQUESTED_BY',
             'KBOT_OPS_RUN|COMPLETED_AT',
@@ -3582,6 +3593,7 @@ BEGIN
             'KBOT_OPS_RUN|ERROR_CODE',
             'KBOT_OPS_RUN|ERROR_MESSAGE',
             'KBOT_OPS_RUN|FINAL_ARTIFACT_ID',
+            'KBOT_OPS_RUN|HUMAN_WAIT_UNTIL',
             'KBOT_OPS_RUN|IDEMPOTENCY_KEY',
             'KBOT_OPS_RUN|INSPECTION_FIRE_ID',
             'KBOT_OPS_RUN|INTERACTION_MODE',
@@ -3763,11 +3775,14 @@ BEGIN
             'KBOT_OPS_TARGET|WORKLOAD_SNAPSHOT_POLICY_JSON',
             'KBOT_OPS_TASK|ATTEMPT_COUNT',
             'KBOT_OPS_TASK|AVAILABLE_AT',
+            'KBOT_OPS_TASK|BUDGET_PAUSED_AT',
+            'KBOT_OPS_TASK|BUDGET_REMAINING_MS',
             'KBOT_OPS_TASK|COMPLETED_AT',
             'KBOT_OPS_TASK|CREATED_AT',
             'KBOT_OPS_TASK|DEPENDS_ON_JSON',
             'KBOT_OPS_TASK|ERROR_CODE',
             'KBOT_OPS_TASK|ERROR_MESSAGE',
+            'KBOT_OPS_TASK|EXECUTION_DEADLINE_AT',
             'KBOT_OPS_TASK|HANDLER_ID',
             'KBOT_OPS_TASK|HANDLER_VERSION',
             'KBOT_OPS_TASK|HEARTBEAT_AT',
@@ -3783,6 +3798,7 @@ BEGIN
             'KBOT_OPS_TASK|OUTPUT_SCHEMA_VERSION',
             'KBOT_OPS_TASK|PARENT_TASK_ID',
             'KBOT_OPS_TASK|PRIORITY',
+            'KBOT_OPS_TASK|RESUME_PENDING',
             'KBOT_OPS_TASK|ROW_VERSION',
             'KBOT_OPS_TASK|STARTED_AT',
             'KBOT_OPS_TASK|STATUS',
@@ -3999,7 +4015,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1238 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1246 项。');
     END IF;
 
     l_issue_count := 0;
@@ -4091,19 +4107,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 51
-           OR l_contract_version <> 'aiops-oracle-v51-resource-governance' THEN
+           OR l_schema_version <> 53
+           OR l_contract_version <> 'aiops-oracle-v53-report-artifact-sources' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '51/aiops-oracle-v51-resource-governance'
+                || '53/aiops-oracle-v53-report-artifact-sources'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/51/'
-                || 'aiops-oracle-v51-resource-governance'
+                '[通过] Schema 合同：AIOPS/53/'
+                || 'aiops-oracle-v53-report-artifact-sources'
             );
         END IF;
     EXCEPTION
@@ -4132,7 +4148,7 @@ BEGIN
         '验证通过：79 张表、10 个视图、'
         || '1 个属性图、'
         || '301 个命名索引、258 个命名约束、'
-        || '1238 个表列；Schema 与当前规范一致。'
+        || '1246 个表列；Schema 与当前规范一致。'
     );
 END;
 /

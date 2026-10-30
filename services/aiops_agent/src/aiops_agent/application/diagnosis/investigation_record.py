@@ -236,5 +236,10 @@ def investigation_report_source(record):
         "solution": {"long_term_remediations": (solution,) if solution else ()},
         "evidence_refs": refs,
         "investigation_record": record.model_dump(mode="json"),
+        "investigation_goals": ({
+            "record_id": record.record_id, "revision": record.revision, "source_run_id": record.run_id,
+            "task_kind": record.task_kind, "stop_reason": record.stop_reason,
+            "goals": [goal.model_dump(mode="json") for goal in record.goal_assessments],
+        },),
         "implementation_runbook": record.runbook.model_dump(mode="json") if record.runbook else None,
     }

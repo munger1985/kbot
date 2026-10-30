@@ -1392,6 +1392,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         )
         source_result = SimpleNamespace(
             artifact_id=source_result_id,
+            ops_run_id=source_run_id, schema_version="EXECUTION_RESULT.v1", content_hash="d" * 64,
             payload_json={"execution_id": str(uuid7())},
         )
         plan = ComparisonPlan(
@@ -1413,6 +1414,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         )
         plan_artifact = SimpleNamespace(
             artifact_id=plan_artifact_id,
+            ops_run_id=source_run_id,
             schema_version="COMPARISON_PLAN.v1",
             payload_json=plan.model_dump(mode="json"),
             content_hash="a" * 64,
@@ -1433,6 +1435,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         )
         verification_artifact = SimpleNamespace(
             artifact_id=verification_artifact_id,
+            ops_run_id=verification_run_id,
             schema_version="ACTION_VERIFICATION.v1",
             payload_json=verification.model_dump(mode="json"),
             content_hash="c" * 64,
@@ -1460,7 +1463,8 @@ class ComparisonReportPublishingTest(unittest.TestCase):
                 get_proposal=AsyncMock(return_value=proposal)
             ),
             inspections=SimpleNamespace(
-                publish_report=AsyncMock(side_effect=publish_report)
+                publish_report=AsyncMock(side_effect=publish_report),
+                add_report_sources=AsyncMock(),
             ),
             runs=SimpleNamespace(
                 get_run=AsyncMock(return_value=source_run),
@@ -1532,6 +1536,16 @@ class ComparisonReportPublishingTest(unittest.TestCase):
             comparison_artifact.payload_json["result"], "INCONCLUSIVE"
         )
         self.assertEqual(comparison_artifact.payload_json["direct_effect"], "ACHIEVED")
+        self.assertEqual(report.template_id, "system:comparison.standard")
+        self.assertEqual(len(uow.inspections.add_report_sources.await_args.args[0]), 4)
+        from tests.support.aiops_report_sources import assert_report_sources_persist
+        assert_report_sources_persist(uow.inspections.add_report_sources.await_args.args[0])
+        self.assertEqual(len(result.payload_json["evidence_refs"]), 4)
+        from aiops_agent.application.reporting import report_presentation
+        projection = report_presentation(payload=result.payload_json, template=resolve_system_template("system:comparison.standard"))
+        actions = next(item["items"] for item in projection["sections"] if item["kind"] == "ACTIONS")
+        self.assertTrue(any("动作" in item and "已达到" in item for item in actions))
+        self.assertTrue(any("业务效果" in item and "无法判断" in item for item in actions))
         self.assertIsNone(comparison_artifact.payload_json["symptom_recovered"])
         self.assertIsNone(comparison_artifact.payload_json["guardrails_passed"])
 

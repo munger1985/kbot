@@ -215,11 +215,15 @@ def test_effect_recomputes_native_evidence_publishes_report_and_keeps_manual_tru
         assert report_entity.result == "IMPROVED"
         assert report_entity.security_level == 3
         assert len(uow.inspections.add_report_sources.await_args.args[0]) == 6
+        from tests.support.aiops_report_sources import assert_report_sources_persist
+        assert_report_sources_persist(uow.inspections.add_report_sources.await_args.args[0])
         report_artifact = await uow.runs.get_artifact(artifact_id=report_entity.content_artifact_id)
         assert report_artifact.payload_json["provenance"]["template"]["definition"]
         presentation = report_presentation(payload=report_artifact.payload_json, template=resolve_system_template("system:comparison.business"))
         sections = {item["kind"]: item for item in presentation["sections"]}
         assert any("基线 100" in value and "处置后 50" in value for value in sections["FINDINGS"]["items"])
+        assert any("业务效果" in value and "改善" in value for value in sections["ACTIONS"]["items"])
+        assert any("归因有限" in value for value in sections["ACTIONS"]["items"])
         assert len(sections["EVIDENCE_APPENDIX"]["items"]) == 6
         assert render_pdf(presentation).startswith(b"%PDF-")
         await service.evaluate_effect_plan(command=evaluate_command, **kwargs)

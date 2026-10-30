@@ -1296,7 +1296,7 @@ CREATE TABLE KBOT_OPS_REPORT_SOURCE (
     CONTENT_HASH VARCHAR2(64 CHAR) NOT NULL,
     OBSERVED_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
     CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT PK_OPS_REPORT_SOURCE PRIMARY KEY (REPORT_ID, OPS_RUN_ID),
+    CONSTRAINT PK_OPS_REPORT_SOURCE PRIMARY KEY (REPORT_ID, OPS_RUN_ID, SOURCE_ARTIFACT_ID),
     CONSTRAINT FK_OPS_RPT_SOURCE_REPORT FOREIGN KEY (REPORT_ID)
         REFERENCES KBOT_OPS_REPORT (REPORT_ID) ON DELETE CASCADE,
     CONSTRAINT FK_OPS_RPT_SOURCE_RUN FOREIGN KEY (OPS_RUN_ID)
@@ -1935,8 +1935,8 @@ CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    52 AS SCHEMA_VERSION,
-    'aiops-oracle-v52-run-wait-budget' AS CONTRACT_VERSION
+    53 AS SCHEMA_VERSION,
+    'aiops-oracle-v53-report-artifact-sources' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -3625,7 +3625,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 52 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 53 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -3638,8 +3638,8 @@ BEGIN
         raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 52
-       OR l_contract_version <> 'aiops-oracle-v52-run-wait-budget' THEN
+       OR l_schema_version <> 53
+       OR l_contract_version <> 'aiops-oracle-v53-report-artifact-sources' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3649,7 +3649,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：79 张表、10 个视图，Schema Version '
-        || '52，合同 aiops-oracle-v52-run-wait-budget。'
+        || '53，合同 aiops-oracle-v53-report-artifact-sources。'
     );
 END;
 /

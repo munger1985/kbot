@@ -455,7 +455,7 @@ def test_canonical_deployment_initializes_shared_pool_but_runtime_never_creates_
         folder = root / "database/oracle/aiops_agent"
         ddl = (folder / "013_ops_resource_governance.sql").read_text()
         manifest = json.loads((folder / "schema_manifest.json").read_text())
-        assert manifest["schema_version"] == 52
+        assert manifest["schema_version"] == 53
         item = next(item for item in manifest["scripts"] if item["name"] == "013_ops_resource_governance.sql")
         assert item["sha256"] == hashlib.sha256(ddl.encode()).hexdigest()
         assert ddl in (root / "database/oracle/operations/apply_aiops_schema_51.sql").read_text()

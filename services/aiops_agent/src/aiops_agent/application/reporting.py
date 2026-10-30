@@ -963,7 +963,7 @@ SYSTEM_REPORT_TEMPLATES = {
             key="comparison.business", name="业务效果验证报告",
             source_kinds=("CHAT", "ALERT"), periods=("AD_HOC",),
             report_types=("COMPARISON",),
-            sections=("EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS", "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"),
+            sections=("EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS", "ACTIONS", "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"),
         ),
         _system_template(
             key="mysql.workload", name="MySQL Workload Report",
@@ -1093,7 +1093,7 @@ SYSTEM_REPORT_TEMPLATES = {
             source_kinds=("CHAT", "ALERT"), periods=("CUSTOM",),
             report_types=("COMPARISON",),
             sections=(
-                "EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS",
+                "EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS", "ACTIONS",
                 "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
             ),
         ),
@@ -1213,13 +1213,7 @@ def normalize_report_source(
                 "normalized_symptoms", ()
             )),
             "gaps": (),
-            "solution": {
-                "immediate_mitigations": tuple(
-                    str(item.get("summary") or "")
-                    for item in profile.get("actions", ())
-                    if isinstance(item, dict) and item.get("summary")
-                ),
-            },
+            "solution": {},
             "evidence_refs": tuple({"artifact_id": str(item)} for item in (
                 *tuple(root_cause.get("evidence_refs") or ()),
                 *tuple(verification.get("before_refs") or ()),
@@ -1231,6 +1225,7 @@ def normalize_report_source(
                 if isinstance(item, dict) and item.get("summary")
             ),
             "verification": verification,
+            "action_source": "USER_PROVIDED",
             "closure_artifact_id": payload.get("artifact_id"),
             "conversation": {
                 "conversation_id": payload.get("conversation_id"),
@@ -1312,7 +1307,7 @@ def normalize_report_source(
                     scope.get("root_cause_grade") or "INCONCLUSIVE"
                 ),
             },
-            "diagnosis_rationale": str(payload.get("summary") or ""),
+            "diagnosis_rationale": str(scope.get("diagnosis_rationale") or payload.get("summary") or ""),
             "facts": tuple(
                 dict(item) for item in payload.get("facts", ())
                 if isinstance(item, dict)
@@ -1325,6 +1320,10 @@ def normalize_report_source(
             },
             "evidence_refs": tuple(payload.get("evidence_refs", ())),
             "inspection_coverage": scope.get("inspection_coverage"),
+            "investigation_goals": tuple(scope.get("investigation_goals") or ()),
+            "executed_actions": tuple(scope.get("executed_actions") or ()),
+            "action_source": scope.get("action_source"),
+            "verification": dict(scope.get("verification") or {}),
         }
     if schema_version == "DB_DIAGNOSTIC_REPORT.v1" and source_kind == "INSPECTION":
         observation_count = int(payload.get("observation_count") or 0)
@@ -1364,6 +1363,8 @@ def report_presentation(
             body = [str(payload.get("summary") or "未形成摘要")]
         elif kind == "SCOPE":
             body = [f"报告时间窗：{payload.get('period_start')} 至 {payload.get('period_end')}"]
+            from aiops_agent.application.report_lifecycle import report_goal_items
+            body.extend(report_goal_items(scope))
             conversation = dict(scope.get("conversation") or {})
             if conversation:
                 body.append(
@@ -1389,7 +1390,8 @@ def report_presentation(
         elif kind == "RECOMMENDATIONS":
             body = [str(item) for item in recommendations] or ["当前没有可执行建议。"]
         elif kind == "ACTIONS":
-            body = [str(item) for item in list(scope.get("actions") or ())] or ["当前没有已记录的处置或验证动作。"]
+            from aiops_agent.application.report_lifecycle import report_action_items
+            body = report_action_items(scope) or ["当前没有已记录的处置或验证动作。"]
         elif kind == "EVIDENCE_BOUNDARY":
             body = _report_gap_items(gaps) or [
                 "未发现额外的数据缺口。"

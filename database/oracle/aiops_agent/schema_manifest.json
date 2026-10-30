@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 52,
-  "contract_version": "aiops-oracle-v52-run-wait-budget",
+  "schema_version": 53,
+  "contract_version": "aiops-oracle-v53-report-artifact-sources",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -22,7 +22,7 @@
     {
       "name": "004_ops_inspection.sql",
       "statements": 35,
-      "sha256": "8effb3cfc01e94984cbb890fde1922ff93d9a53808a908d21946c71311ee8b8b"
+      "sha256": "fffc4a23d38479bb8d2946b59063228e18b8183bb65b97ffe5054513f4619ab0"
     },
     {
       "name": "005_ops_messaging.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "65ed573433133a340f6dbe7f7797176f23ef578b22a0ece0afb1d52a31fcafbc"
+      "sha256": "1db6a402272a5b54c59c3e2d6524b2a4ae8bb0ee33ec66c5a08317b15feff808"
     },
     {
       "name": "007_ops_agents.sql",

@@ -115,6 +115,7 @@ from aiops_agent.contracts.report import (
     ComparisonResult,
     ReportContent,
 )
+from aiops_agent.application.report_lifecycle import report_input_hash, report_template_for_source
 from aiops_agent.application.reporting import (
     ReportTemplate,
     closed_period_window,
@@ -4736,7 +4737,17 @@ class AIOpsRuntimeService:
             if source_kind == "INSPECTION"
             else "INCIDENT"
         )
+        template = report_template_for_source(template=template, plan=plan, source_kind=source_kind)
         report_key = template.template_ref.removeprefix("system:")
+        subject_ref = dict(
+            dict(plan.get("answer_context") or {}).get("task_frame", {}).get("subject_ref", {})
+        )
+        database_prefix = {"POSTGRESQL_QUERY_ID": "postgresql", "MYSQL_DIGEST": "mysql"}.get(
+            subject_ref.get("subject_type")
+        )
+        if source_kind == "CHAT" and database_prefix:
+            report_type = f"{database_prefix.upper()}_SQL_HEALTHCHECK"
+            report_key = f"{database_prefix}:sql_healthcheck"
         conversation_snapshot = dict(source.get("conversation") or {})
         source_conversation_id = None
         if conversation_snapshot.get("conversation_id"):
@@ -4777,7 +4788,6 @@ class AIOpsRuntimeService:
         status = (
             "READY"
             if source.get("status") == "READY"
-            and (source_kind == "INSPECTION" or grade != "INCONCLUSIVE")
             else "PARTIAL"
         )
         rationale = str(
@@ -4788,10 +4798,7 @@ class AIOpsRuntimeService:
                 else "当前证据不足，尚未确认根因"
             )
         )
-        summary = (
-            rationale if source_kind == "INSPECTION"
-            else f"根因等级：{grade}。{rationale}"
-        )[:2000]
+        summary = rationale[:2000]
         solution = dict(source.get("solution") or {})
         recommendations = tuple(
             dict.fromkeys(
@@ -4847,6 +4854,8 @@ class AIOpsRuntimeService:
                     rationale if source_kind == "INSPECTION" else None,
                 ),
                 "report_period_kind": period_kind,
+                "subject_ref": subject_ref,
+                "report_origin": "AIOPS_GENERATED" if report_type.endswith("_SQL_HEALTHCHECK") else None,
                 **({"sql_plan_assessments": list(dict(source.get("investigation_record") or {}).get("sql_plan_assessments") or ())}
                     if dict(source.get("investigation_record") or {}).get("sql_plan_assessments") else {}),
                 "closure_artifact_id": (
@@ -4855,7 +4864,9 @@ class AIOpsRuntimeService:
                     else source.get("closure_artifact_id")
                 ),
                 "executed_actions": list(source.get("executed_actions") or ()),
+                "action_source": source.get("action_source"),
                 "verification": dict(source.get("verification") or {}),
+                "investigation_goals": list(source.get("investigation_goals") or ()),
                 **({
                     key: source.get(key)
                     for key in (
@@ -4899,6 +4910,10 @@ class AIOpsRuntimeService:
             recommendations=recommendations,
             provenance={
                 "deterministic_report_decision": True,
+                "report_input_hash": report_input_hash(
+                    source_artifact=source_artifact, source=source, template=template,
+                    period_kind=period_kind, period_start=period_start_override, period_end=period_end_override,
+                ),
                 "source_artifact_hash": source_artifact.content_hash,
                 "model_receipt_hashes": list(
                     source.get("model_receipt_hashes") or ()
@@ -4976,19 +4991,21 @@ class AIOpsRuntimeService:
                 observed_at=getattr(run, "completed_at", None) or now,
             )
         ]
-        recorded_source_runs = {run.ops_run_id}
+        recorded_sources = {(run.ops_run_id, source_artifact.artifact_id)}
         for evidence in source.get("evidence_refs", ()):
             if not isinstance(evidence, dict) or not evidence.get("source_run_id"):
                 continue
             try:
                 evidence_run_id = UUID(str(evidence["source_run_id"]))
-                if evidence_run_id in recorded_source_runs:
+                evidence_artifact_id = UUID(str(evidence["artifact_id"]))
+                source_identity = (evidence_run_id, evidence_artifact_id)
+                if source_identity in recorded_sources:
                     continue
-                recorded_source_runs.add(evidence_run_id)
+                recorded_sources.add(source_identity)
                 source_rows.append(ReportSourceEntity(
                     report_id=report.report_id,
                     ops_run_id=evidence_run_id,
-                    source_artifact_id=UUID(str(evidence["artifact_id"])),
+                    source_artifact_id=evidence_artifact_id,
                     source_kind=str(evidence.get("source_kind") or source_kind),
                     content_hash=str(evidence["content_hash"]),
                     observed_at=datetime.fromisoformat(str(evidence["observed_at"])),
@@ -5187,10 +5204,17 @@ class AIOpsRuntimeService:
                 "result_rule_version": (
                     comparison_plan.result_rule_version
                 ),
+                "verification": {
+                    "method": "ACTION_POSTCONDITION", "result": comparison.result,
+                    "direct_effect": comparison.direct_effect, "measured_effect": comparison.measured_effect,
+                    "symptom_recovered": comparison.symptom_recovered, "guardrails_passed": comparison.guardrails_passed,
+                    "attribution_strength": comparison.attribution_strength,
+                },
             },
             facts=(
                 {
                     "kind": "comparison_result",
+                    "summary": summary,
                     "result": result,
                     "primary_signals": comparison.primary_signals,
                     "guardrail_signals": comparison.guardrail_signals,
@@ -5227,6 +5251,11 @@ class AIOpsRuntimeService:
                     "artifact_id": str(comparison_artifact.artifact_id),
                     "content_hash": comparison_hash,
                     "schema_version": "COMPARISON_RESULT.v1",
+                },
+                {
+                    "artifact_id": str(source_result.artifact_id),
+                    "content_hash": source_result.content_hash,
+                    "schema_version": source_result.schema_version,
                 },
             ),
             provenance={
@@ -5327,6 +5356,13 @@ class AIOpsRuntimeService:
             report=report,
             actor_id=source_run.actor_id,
         )
+        await uow.inspections.add_report_sources([
+            ReportSourceEntity(
+                report_id=report.report_id, ops_run_id=source.ops_run_id,
+                source_artifact_id=source.artifact_id, source_kind="COMPARISON",
+                content_hash=source.content_hash, observed_at=now,
+            ) for source in (plan_artifact, verification_artifact, comparison_artifact, source_result)
+        ])
         await self._release_next_action_proposal(
             uow=uow,
             source_run=source_run,
@@ -7809,6 +7845,9 @@ class AIOpsRuntimeService:
                     uow=uow, runs=period_runs, period_kind=period_kind,
                     period_start=period_start, period_end=period_end,
                 )
+            template = report_template_for_source(
+                template=template, plan=dict(run.plan_snapshot_json or {}), source_kind=source_kind,
+            )
             current = await uow.inspections.get_current_report_for_run_template(
                 ops_run_id=run.ops_run_id,
                 template_id=template.template_ref,
@@ -7816,7 +7855,25 @@ class AIOpsRuntimeService:
             if current is not None and (
                 period_start is None or current.period_start == period_start
             ):
-                return GeneratedReportReceipt.from_entity(current)
+                current_artifact = await uow.runs.get_artifact(artifact_id=current.content_artifact_id)
+                normalized_source = source_override or normalize_report_source(
+                    schema_version=source_artifact.schema_version,
+                    payload=dict(source_artifact.payload_json or {}), source_kind=source_kind,
+                )
+                if (
+                    report_content_reference_is_complete(current, current_artifact)
+                    and dict(dict(current_artifact.payload_json or {}).get("provenance") or {}).get("report_input_hash")
+                    == report_input_hash(
+                        source_artifact=source_artifact, source=normalized_source, template=template,
+                        period_kind=period_kind, period_start=period_start, period_end=period_end,
+                    )
+                ):
+                    from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
+                    if not await validate_investigation_sources(uow=uow, run=run,
+                        payload=dict(source_artifact.payload_json or {}),
+                        plan_capture_reader=getattr(self, "_plan_capture_reader", None)):
+                        raise state_conflict("报告原始调查来源失效，不能复用旧报告")
+                    return GeneratedReportReceipt.from_entity(current)
             report = await self._publish_diagnosis_report(
                 uow=uow,
                 run=run,
@@ -8008,6 +8065,7 @@ class AIOpsRuntimeService:
                 source_override["closure_artifact_id"] = str(closure_artifact.artifact_id)
                 source_override["verification"] = closure_source.get("verification", {})
                 source_override["executed_actions"] = closure_source.get("executed_actions", ())
+                source_override["action_source"] = closure_source.get("action_source")
                 source_override["conversation"] = {
                     **dict(source_override.get("conversation") or {}),
                     "title": conversation.title,
@@ -8021,6 +8079,9 @@ class AIOpsRuntimeService:
                         ).get("question_summary") or "").strip()
                     )),
                 }
+            template = report_template_for_source(
+                template=template, plan=dict(report_run.plan_snapshot_json or {}), source_kind="CHAT",
+            )
             get_current_report = getattr(
                 uow.inspections,
                 "get_current_report_for_conversation_template",
@@ -8041,25 +8102,13 @@ class AIOpsRuntimeService:
                 current_artifact = await uow.runs.get_artifact(
                     artifact_id=current_report.content_artifact_id
                 )
-                current_conversation = (
-                    dict(
-                        dict(
-                            dict(current_artifact.payload_json or {}).get(
-                                "scope"
-                            ) or {}
-                        ).get("conversation") or {}
-                    )
-                    if report_content_reference_is_complete(
-                        current_report, current_artifact
-                    )
-                    else {}
-                )
-                requested_conversation = dict(
-                    source_override.get("conversation") or {}
-                )
                 if (
-                    current_conversation.get("snapshot_hash")
-                    == requested_conversation.get("snapshot_hash")
+                    report_content_reference_is_complete(current_report, current_artifact)
+                    and dict(dict(current_artifact.payload_json or {}).get("provenance") or {}).get("report_input_hash")
+                    == report_input_hash(
+                        source_artifact=closure_artifact or anchor_artifact,
+                        source=source_override, template=template,
+                    )
                 ):
                     return GeneratedReportReceipt.from_entity(current_report)
             report = await self._publish_diagnosis_report(
@@ -8097,6 +8146,7 @@ class AIOpsRuntimeService:
         reasons: list[str] = []
         questions: list[str] = []
         root_assessments: list[dict[str, str]] = []
+        investigation_goals: list[dict[str, Any]] = []
         effective_grade = "INCONCLUSIVE"
         ready = not missing_turns
         from aiops_agent.application.diagnosis.revisions import merge_investigation_sources
@@ -8110,6 +8160,9 @@ class AIOpsRuntimeService:
         current_sources, claim_history = merge_investigation_sources(normalized_rows)
         for turn, run, artifact in sorted(source_rows, key=lambda row: int(row[0].turn_no)):
             source = current_sources[str(artifact.artifact_id)]
+            investigation_goals.extend({
+                **item, "turn_id": str(turn.turn_id), "turn_no": int(turn.turn_no),
+            } for item in source.get("investigation_goals", ()))
             facts.extend(source.get("facts") or ())
             turn_rationale = str(
                 source.get("diagnosis_rationale") or ""
@@ -8167,24 +8220,10 @@ class AIOpsRuntimeService:
             rationale += f"；另有 {len(missing_turns)} 个 Turn 未形成可报告终态结果。"
         else:
             rationale += "。"
-        snapshot_hash = sha256_json({
-            "included_turns": [
-                {
-                    "turn_id": str(turn.turn_id),
-                    "turn_no": int(turn.turn_no),
-                    "turn_status": str(getattr(turn, "status", "UNKNOWN")),
-                    "run_id": str(run.ops_run_id),
-                    "run_status": str(getattr(run, "status", "UNKNOWN")),
-                    "artifact_id": str(artifact.artifact_id),
-                    "content_hash": artifact.content_hash,
-                }
-                for turn, run, artifact in source_rows
-            ],
-            "missing_turns": missing_turns,
-        })
         return {
-            "status": "READY" if ready and not gaps else "PARTIAL",
+            "status": "READY" if ready else "PARTIAL",
             "root_cause": {"effective_level": effective_grade, "turn_assessments": root_assessments},
+            "investigation_goals": tuple(investigation_goals),
             "diagnosis_rationale": rationale,
             "facts": tuple(facts),
             "gaps": tuple(gaps),
@@ -8198,7 +8237,6 @@ class AIOpsRuntimeService:
                 "title": conversation.title,
                 "turn_count": len(source_rows) + len(missing_turns),
                 "included_turn_ids": [str(turn.turn_id) for turn, _, _ in source_rows],
-                "snapshot_hash": snapshot_hash,
                 "question_summaries": list(dict.fromkeys(questions)),
                 "claim_revision_history": list(claim_history),
             },

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiops_agent.application.errors import AIOpsApplicationError
+from aiops_agent.application.report_lifecycle import report_input_hash
 from aiops_agent.application.reporting import (
     REPORT_TYPE_SYSTEM_TEMPLATES,
     SYSTEM_REPORT_TEMPLATES,
@@ -656,6 +657,7 @@ class FormalReportingTest(unittest.TestCase):
         run_id = uuid7()
         artifact_id = uuid7()
         report_id = uuid7()
+        report_artifact_id = uuid7()
 
         class ExpiringReport:
             expired = False
@@ -685,18 +687,36 @@ class FormalReportingTest(unittest.TestCase):
             def period_start(self):
                 return self._value(None)
 
+            @property
+            def content_artifact_id(self):
+                return self._value(report_artifact_id)
+
+            @property
+            def content_hash(self):
+                return self._value("b" * 64)
+
         current = ExpiringReport()
         run = SimpleNamespace(
             ops_run_id=run_id,
             trigger_type="ALERT",
             status="COMPLETED",
             final_artifact_id=artifact_id,
+            plan_snapshot_json={},
         )
         artifact = SimpleNamespace(
             artifact_id=artifact_id,
             schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
             provenance_json={},
+            payload_json={"status": "READY", "diagnosis_rationale": "本次证据已核验"},
+            content_hash="a" * 64,
         )
+        report_artifact = SimpleNamespace(schema_version="REPORT_CONTENT.v1", content_hash="b" * 64,
+            payload_json={"provenance": {"report_input_hash": report_input_hash(
+                source_artifact=artifact,
+                source=normalize_report_source(schema_version=artifact.schema_version,
+                    payload=artifact.payload_json, source_kind="ALERT"),
+                template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"],
+            )}})
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
                 get_current_report_for_run_template=AsyncMock(
@@ -705,7 +725,8 @@ class FormalReportingTest(unittest.TestCase):
             ),
             runs=SimpleNamespace(
                 get_run_scoped=AsyncMock(return_value=run),
-                get_artifact=AsyncMock(return_value=artifact),
+                get_artifact=AsyncMock(side_effect=lambda *, artifact_id: artifact
+                    if artifact_id == run.final_artifact_id else report_artifact),
                 list_tasks=AsyncMock(return_value=[SimpleNamespace(
                     output_artifact_id=artifact_id
                 )]),
@@ -921,22 +942,14 @@ class FormalReportingTest(unittest.TestCase):
                 "facts": [],
             },
         )
-        snapshot_hash = sha256_json({
-            "included_turns": [{
-                "turn_id": str(turn_id),
-                "turn_no": 1,
-                "turn_status": "COMPLETED",
-                "run_id": str(run_id),
-                "run_status": "COMPLETED",
-                "artifact_id": str(source_artifact_id),
-                "content_hash": source_hash,
-            }],
-            "missing_turns": [],
-        })
+        projector = AIOpsRuntimeService(uow_factory=AsyncMock(), blueprint_registry=AsyncMock(), handler_registry=AsyncMock())
         report_payload = {
-            "scope": {
-                "conversation": {"snapshot_hash": snapshot_hash}
-            }
+            "provenance": {"report_input_hash": report_input_hash(
+                source_artifact=source_artifact,
+                source=projector._aggregate_conversation_sources(
+                    conversation=conversation, source_rows=[(turn, run, source_artifact)], missing_turns=[],
+                ), template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"],
+            )}
         }
         report_hash = sha256_json(report_payload)
         current_report = SimpleNamespace(
