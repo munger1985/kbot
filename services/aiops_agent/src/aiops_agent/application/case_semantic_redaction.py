@@ -43,7 +43,7 @@ def _fields(title, profile):
     def visit(value, path):
         if isinstance(value, dict):
             for key, item in value.items():
-                if key not in {"source", "redaction", "evidence_refs", "before_refs", "after_refs", "guardrail_refs", "controlled_verification_ref"}:
+                if key not in {"source", "redaction", "evidence_refs", "before_refs", "after_refs", "guardrail_refs", "controlled_verification_ref", "registration_ref"}:
                     visit(item, (*path, key))
         elif isinstance(value, list):
             for index, item in enumerate(value):
@@ -93,7 +93,7 @@ def apply_semantic_redaction(*, title, profile, output, model_ref, prompt_ref):
     return fields["title"], revised
 
 
-async def redact_case_for_index(*, title, profile, collection, structured_model, prompt_registry, model_catalog, model_scope, technical_name_field="model_name"):
+async def redact_case_for_index(*, title, profile, collection, structured_model, prompt_registry, model_catalog, model_scope, technical_name_field="model_name", source_preflight=None):
     """语义扫描不可用时阻断索引，不把规则脱敏误报为完整审阅。"""
     profile = CaseRedactor().profile(profile)
     title = CaseRedactor().text(title)
@@ -112,6 +112,8 @@ async def redact_case_for_index(*, title, profile, collection, structured_model,
             raise ValueError("案例内容超出语义审核预算，应拆分案例后重新提炼")
         model_ref = {"model_id": model_id, "technical_name": technical_name, "revision": model_id, **model_scope}
         digest = shared_content_hash(title, profile)
+        if source_preflight is not None:
+            await source_preflight()
         result = await asyncio.wait_for(structured_model.generate_structured(
             purpose="operations_knowledge.case_semantic_redaction",
             output_model=SemanticRedactionOutput,

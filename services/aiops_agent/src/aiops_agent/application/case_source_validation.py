@@ -7,9 +7,18 @@ from aiops_agent.application.source_authorization import source_scope_is_current
 async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None, plan_capture_reader=None):
     relations = await uow.operations_knowledge.get_version_relations(asset_version_id=version_id)
     sources = relations.get("sources") or ()
+    return await validate_case_source_rows(
+        uow=uow, domain_id=domain_id, sources=sources, agent_id=agent_id,
+        plan_capture_reader=plan_capture_reader,
+    )
+
+
+async def validate_case_source_rows(*, uow, domain_id, sources, agent_id=None, plan_capture_reader=None):
+    """新提炼与既有版本复用同一来源、授权和反证校验，不以幂等命中绕过。"""
     if not sources:
         return False
     for source in sources:
+        report = None
         if source.source_report_id is not None:
             report = await uow.inspections.get_report_scoped(
                 report_id=source.source_report_id, domain_id=domain_id,
@@ -25,6 +34,13 @@ async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None, pl
             or str(artifact.ops_run_id) != str(run.ops_run_id)
             or artifact.content_hash != source.content_hash
             or canonical_hash(artifact.payload_json) != artifact.content_hash
+        ):
+            return False
+        if getattr(artifact, "schema_version", None) == "REPORT_CONTENT.v1" and (
+            report is None or report.content_artifact_id != artifact.artifact_id
+            or report.content_hash != artifact.content_hash
+            or str(report.ops_run_id) != str(run.ops_run_id)
+            or str(report.target_id) != str(run.target_id)
         ):
             return False
         try:
@@ -70,6 +86,16 @@ async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None, pl
             from aiops_agent.contracts.investigation import InvestigationRecord
             try:
                 value = InvestigationRecord.model_validate(record)
+                from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+                value.validate_observations(tuple(
+                    TurnEvidenceFact.model_validate(item) for item in payload.get("evidence", ())
+                ))
+                from aiops_agent.application.diagnosis.investigation_record import validate_diagnosis
+                from aiops_agent.contracts.investigation import DiagnosisAnswerDraft
+                validate_diagnosis(
+                    DiagnosisAnswerDraft(claims=value.claims, recommendations=value.recommendations, goal_satisfied=False),
+                    tuple(TurnEvidenceFact.model_validate(item) for item in payload.get("evidence", ())),
+                )
             except ValueError:
                 return False
             if value.target_id != str(run.target_id) or value.run_id != str(run.ops_run_id):

@@ -13,6 +13,7 @@ from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.case_redaction import CaseRedactor
 from aiops_agent.application.case_semantic_redaction import redact_case_for_index, shared_content_hash
 from aiops_agent.application.case_source_validation import validate_case_sources, validate_case_effect
+from aiops_agent.application.case_report import load_case_report, profile_from_diagnosis_report, rejected_source
 from aiops_agent.application.knowledge_withdrawal import (
     CaseWithdrawalCommand, assert_case_not_withdrawn, invalid_withdrawal,
     queue_case_withdrawals, validate_command_source, validate_receipt, withdrawal_views,
@@ -209,12 +210,12 @@ def _prepare_case_revision(
         summary = str(value.get("summary") or "").strip()
         if not summary:
             continue
-        evidence_refs = []
+        inherited = {"summary": summary, "evidence_refs": [], "source_kind": "USER_PROVIDED"}
         if index < len(base_actions):
             base_summary = str(base_actions[index].get("summary") or "").strip()
             if summary == base_summary:
-                evidence_refs = list(base_actions[index].get("evidence_refs") or ())
-        actions.append({"summary": summary, "evidence_refs": evidence_refs})
+                inherited = dict(base_actions[index])
+        actions.append(inherited)
     verification = dict(base_profile.verification)
     before_refs = {str(item) for item in verification.get("before_refs") or ()}
     after_refs = {str(item) for item in verification.get("after_refs") or ()}
@@ -254,9 +255,23 @@ def _diagnosis_case_markdown(*, title: str, profile: DiagnosisCaseProfile) -> by
     profile = redactor.profile(profile)
     signature = profile.problem_signature
     environment = profile.environment
-    actions = [str(item.get("summary") or "").strip() for item in profile.actions]
+    from aiops_agent.application.report_lifecycle import report_action_items
+    actions = report_action_items({
+        "executed_actions": [str(item.get("summary") or "").strip() for item in profile.actions],
+        "action_source": "USER_PROVIDED" if any(
+            item.get("source_kind") == "USER_PROVIDED" for item in profile.actions
+        ) else None,
+        "verification": profile.verification,
+    })
     lines = [
         f"# {title}",
+        "",
+        "案例用途：" + {
+            "DIAGNOSTIC_REFERENCE": "诊断参考，不代表已验证处置。",
+            "NEGATIVE_EXPERIENCE": "失败或无效经验，不作为推荐措施。",
+            "VERIFIED_OPTIMIZATION": "经受控测量支持的优化案例，复用时仍须核对环境。",
+            "VERIFIED_RESOLUTION": "经受控测量支持的解决案例，复用时仍须核对环境。",
+        }[profile.case_kind],
         "",
         "## 问题特征",
         "",
@@ -276,10 +291,13 @@ def _diagnosis_case_markdown(*, title: str, profile: DiagnosisCaseProfile) -> by
         "",
         *([f"- {item}" for item in actions if item] or ["未记录已执行动作，仅作为诊断参考。"]),
         "",
-        "## 验证结果",
+        "## 结果记录",
         "",
         str(profile.verification.get("result") or "NOT_VERIFIED"),
     ]
+    limits = profile.verification.get("causal_limitations") or ()
+    if limits:
+        lines.extend(["", "## 验证边界", "", *[f"- {item}" for item in limits]])
     if profile.applicability:
         lines.extend(["", "## 适用条件", "", *[f"- {item}" for item in profile.applicability]])
     if profile.contraindications:
@@ -1821,17 +1839,16 @@ class OperationsKnowledgeService:
             )
             if report is None:
                 raise self._not_found()
-            if report.content_artifact_id is None:
+            try:
+                report, content, report_sources = await load_case_report(
+                    uow=uow, domain_id=domain_id, report_id=report_id,
+                    plan_capture_reader=getattr(self, "_plan_capture_reader", None),
+                )
+            except AIOpsApplicationError as exc:
                 return {"eligible": False, "reasons": [{
-                    "code": "REPORT_CONTENT_MISSING", "message": "正式报告内容引用不完整",
+                    "code": exc.code, "message": exc.message,
                 }]}
             artifact = await uow.runs.get_artifact(artifact_id=report.content_artifact_id)
-            if artifact is None or artifact.schema_version != "REPORT_CONTENT.v1":
-                return {"eligible": False, "reasons": [{
-                    "code": "REPORT_CONTENT_INVALID", "message": "正式报告内容合同无效",
-                }]}
-            report_sources = await uow.inspections.list_report_sources(report_id=report_id)
-            content = dict(artifact.payload_json or {})
             evidence_refs = [
                 str(item.get("artifact_id"))
                 for item in content.get("evidence_refs") or ()
@@ -2574,19 +2591,18 @@ class OperationsKnowledgeService:
             )
             if report is None:
                 raise self._not_found()
-            if not report.content_hash or report.content_artifact_id is None:
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
-                    message="该报告不满足诊断案例提炼条件",
-                    status_code=422,
-                )
+            report, report_content, report_sources = await load_case_report(
+                uow=uow, domain_id=domain_id, report_id=report_id,
+                plan_capture_reader=getattr(self, "_plan_capture_reader", None),
+            )
+            frozen_report_hash = str(report.content_hash)
             existing = await uow.operations_knowledge.find_by_source_hash(
                 domain_id=domain_id,
                 asset_kind="DIAGNOSIS_CASE",
-                source_hash=report.content_hash,
+                source_hash=frozen_report_hash,
             )
             if existing is not None:
-                return {"asset": _asset_view(existing[0]), "version": _version_view(existing[1]), "replayed": True}
+                return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=existing)
             previous_case = None
             if report.supersedes_report_id is not None:
                 previous_case = await uow.operations_knowledge.find_case_by_report_id(
@@ -2594,33 +2610,11 @@ class OperationsKnowledgeService:
                 )
             case_asset_id = previous_case[0].asset_id if previous_case is not None else uuid7()
             case_version_no = int(previous_case[1].version_no) + 1 if previous_case is not None else 1
-            report_sources = await uow.inspections.list_report_sources(report_id=report_id)
-            artifact = await uow.runs.get_artifact(
-                artifact_id=report.content_artifact_id
-            )
-            if (
-                artifact is None
-                or artifact.schema_version != "REPORT_CONTENT.v1"
-                or artifact.content_hash != report.content_hash
-            ):
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
-                    message="正式报告内容引用不完整，不能提炼案例",
-                    status_code=422,
-                )
-            report_content = dict(artifact.payload_json or {})
-            from aiops_agent.application.configuration.common import sha256_json
-            if sha256_json(report_content) != artifact.content_hash:
-                raise self._state_conflict("报告原始内容哈希不一致")
             evidence_refs = [
                 str(item.get("artifact_id"))
                 for item in report_content.get("evidence_refs") or ()
                 if isinstance(item, dict) and item.get("artifact_id")
             ] or [str(row.source_artifact_id) for row in report_sources]
-            facts = [
-                dict(item) for item in report_content.get("facts") or ()
-                if isinstance(item, dict)
-            ]
             scope = dict(report_content.get("scope") or {})
             try:
                 closure_artifact_id = UUID(str(scope.get("closure_artifact_id")))
@@ -2631,11 +2625,7 @@ class OperationsKnowledgeService:
                     domain_id=domain_id, artifact_id=closure_artifact_id,
                 )
                 if closure_case is not None:
-                    return {
-                        "asset": _asset_view(closure_case[0]),
-                        "version": _version_view(closure_case[1]),
-                        "replayed": True,
-                    }
+                    return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=closure_case)
             from aiops_agent.application.effect_case import profile_from_effect_report
             effect_profile = await profile_from_effect_report(
                 uow=uow, domain_id=domain_id, report=report,
@@ -2652,66 +2642,29 @@ class OperationsKnowledgeService:
                     message="；".join(item["message"] for item in eligibility["reasons"]),
                     status_code=422,
                 )
-            root_cause_summary = str(effect_profile.root_cause["summary"] if effect_profile is not None else scope["diagnosis_rationale"]).strip()
             target = await uow.targets.get_scoped(
                 target_id=report.target_id, domain_id=domain_id
             )
             if target is None:
                 raise self._not_found()
-            recorded_actions = tuple(
-                {"summary": str(item), "evidence_refs": evidence_refs}
-                for item in (scope.get("executed_actions") or scope.get("actions") or ())
-                if str(item).strip()
+            profile = effect_profile or await profile_from_diagnosis_report(
+                uow=uow, report=report, content=report_content, sources=report_sources, target=target,
             )
-            verification = dict(scope.get("verification") or {})
-            before_refs = tuple(str(item) for item in verification.get("before_refs") or ())
-            after_refs = tuple(str(item) for item in verification.get("after_refs") or ())
-            # 正式报告 READY 和不同引用不足以证明措施有效。
-            case_kind = "DIAGNOSTIC_REFERENCE"
-            profile = DiagnosisCaseProfile(
-                case_kind=case_kind,
-                problem_signature={
-                    "problem_class": report.report_type,
-                    "component": None,
-                    "error_codes": [],
-                    "normalized_symptoms": [
-                        str(item.get("summary"))
-                        for item in facts if item.get("summary")
-                    ] or [report.title],
-                    "signal_names": [],
-                },
-                environment={
-                    "database_type": target.db_type,
-                    "database_version": target.version_code,
-                    "platform": target.environment,
-                    "topology": (target.capabilities_json or {}).get("topology"),
-                },
-                root_cause={
-                    "summary": root_cause_summary,
-                    "confidence": "UNKNOWN",
-                    "effective_level": str(scope.get("root_cause_grade") or "INCONCLUSIVE"),
-                    "evidence_refs": evidence_refs,
-                },
-                actions=recorded_actions,
-                verification={
-                    "result": report.result or "NOT_VERIFIED",
-                    "before_refs": list(before_refs),
-                    "after_refs": list(after_refs),
-                    "guardrail_refs": list(verification.get("guardrail_refs") or ()),
-                },
-                source={
-                    "report_id": str(report.report_id),
-                    "run_ids": sorted({str(row.ops_run_id) for row in report_sources}),
-                    "content_hash": report.content_hash,
-                },
-            )
-            profile = CaseRedactor().profile(effect_profile if effect_profile is not None else profile)
+            profile = CaseRedactor().profile(profile)
+        async def source_preflight():
+            async with self._uow_factory() as uow:
+                await load_case_report(
+                    uow=uow, domain_id=domain_id, report_id=report_id, expected_hash=frozen_report_hash,
+                    plan_capture_reader=getattr(self, "_plan_capture_reader", None),
+                )
         collection = await self._collection(domain_id=domain_id, name=CASE_COLLECTION, context=context)
         display_name, profile = await redact_case_for_index(
             title=report.title, profile=profile, collection=collection,
+            source_preflight=source_preflight,
             structured_model=self._structured_model, prompt_registry=self._prompt_registry,
             model_catalog=self._llm_model_catalog, model_scope={}, technical_name_field="served_model_name",
         )
+        await source_preflight()
         markdown = _diagnosis_case_markdown(title=display_name, profile=profile)
         response = await self._kc.ingest_user_file(
             domain_id=domain_id,
@@ -2721,7 +2674,7 @@ class OperationsKnowledgeService:
             media_type="text/markdown",
             body=markdown,
             content_sha256=hashlib.sha256(markdown).hexdigest(),
-            idempotency_key=f"diagnosis-case:{report.content_hash}",
+            idempotency_key=f"diagnosis-case:{frozen_report_hash}",
             auth_context=context,
         )
         item = next(iter((response.payload or {}).get("items", [])), None)
@@ -2733,18 +2686,10 @@ class OperationsKnowledgeService:
                 retryable=True,
             )
         revision_id = UUID(str(item["bundle_revision_id"]))
-        await self._kc.review_user_intake(
-            domain_id=domain_id,
-            collection_id=UUID(str(collection["collection_id"])),
-            bundle_revision_id=revision_id,
-            decision="APPROVE",
-            comment="AIOps 诊断案例候选进入 KC 索引，仍需业务审核后发布",
-            auth_context=context,
-        )
         version_id = uuid7()
         version = OperationsKnowledgeVersionEntity(
             asset_version_id=version_id, asset_id=case_asset_id, version_no=case_version_no,
-            status="PROCESSING", source_hash=report.content_hash,
+            status="PROCESSING", source_hash=frozen_report_hash,
             profile_schema_version=profile.schema_version,
             profile_json=profile.model_dump(mode="json"),
             extraction_warnings_json=[], created_by=actor,
@@ -2753,7 +2698,7 @@ class OperationsKnowledgeService:
             asset_version_id=version_id, source_kind="REPORT",
             source_report_id=report.report_id, source_run_id=report.ops_run_id,
             source_artifact_id=report.content_artifact_id,
-            content_hash=report.content_hash,
+            content_hash=frozen_report_hash,
             source_locator_json={"report_version": int(report.report_version)},
         ), *[
             OperationsKnowledgeSourceEntity(
@@ -2788,9 +2733,16 @@ class OperationsKnowledgeService:
             collection_id=UUID(str(collection["collection_id"])),
             bundle_id=UUID(str(item["bundle_id"])),
             bundle_revision_id=revision_id,
-            index_status="PROCESSING",
+            index_status="PENDING_APPROVAL",
         )
         async with self._uow_factory() as uow:
+            # 同报告并发提炼在持久化边界串行去重，不重复登记同一 KC Revision。
+            await uow.inspections.get_report_scoped(report_id=report_id, domain_id=domain_id, lock=True)
+            concurrent = await uow.operations_knowledge.find_by_source_hash(
+                domain_id=domain_id, asset_kind="DIAGNOSIS_CASE", source_hash=frozen_report_hash,
+            )
+            if concurrent is not None:
+                return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=concurrent)
             if previous_case is None:
                 asset = OperationsKnowledgeAssetEntity(
                     asset_id=case_asset_id, domain_id=domain_id,
@@ -2838,7 +2790,74 @@ class OperationsKnowledgeService:
                     version=version, scopes=scopes, sources=sources, indexes=[index],
                 )
             await uow.commit()
+        # 外部处理不跨持久化事务；先保存精确版本引用，再审批索引，变化则可靠撤回。
+        if not await self._case_index_source_fence(domain_id=domain_id, version_id=version_id, actor=actor):
+            raise rejected_source()
+        await self._kc.review_user_intake(
+            domain_id=domain_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            bundle_revision_id=revision_id,
+            decision="APPROVE",
+            comment="AIOps 诊断案例候选进入 KC 索引，仍需业务审核后发布",
+            auth_context=context,
+        )
+        if not await self._case_index_source_fence(domain_id=domain_id, version_id=version_id, actor=actor, indexed=True):
+            raise rejected_source()
         return {"asset": _asset_view(asset), "version": _version_view(version), "replayed": False}
+
+    async def _validated_case_replay(self, *, uow, domain_id, case):
+        """返回已提炼版本也必须复核其自身来源，而不只看新请求的报告。"""
+        if not await validate_case_sources(
+            uow=uow, domain_id=domain_id, version_id=case[1].asset_version_id,
+            plan_capture_reader=getattr(self, "_plan_capture_reader", None),
+        ) or not await validate_case_effect(uow=uow, domain_id=domain_id, profile=case[1].profile_json):
+            raise rejected_source()
+        return {"asset": _asset_view(case[0]), "version": _version_view(case[1]), "replayed": True}
+
+    async def _case_index_source_fence(self, *, domain_id, version_id, actor, indexed=False):
+        """索引审批前后再验来源；变化时保留待审核版本并持久化精确撤回命令。"""
+        async with self._uow_factory() as uow:
+            version = await uow.operations_knowledge.get_version(
+                domain_id=domain_id, asset_version_id=version_id, for_update=True,
+            )
+            if version is None:
+                raise self._not_found()
+            asset = await uow.operations_knowledge.get_asset(
+                domain_id=domain_id, asset_id=version.asset_id, for_update=True,
+            )
+            if asset is None:
+                raise self._not_found()
+            try:
+                await load_case_report(
+                    uow=uow, domain_id=domain_id, report_id=UUID(version.profile_json["source"]["report_id"]),
+                    expected_hash=version.source_hash,
+                    plan_capture_reader=getattr(self, "_plan_capture_reader", None),
+                )
+                valid = await validate_case_sources(
+                    uow=uow, domain_id=domain_id, version_id=version_id,
+                    plan_capture_reader=getattr(self, "_plan_capture_reader", None),
+                ) and await validate_case_effect(uow=uow, domain_id=domain_id, profile=version.profile_json)
+            except AIOpsApplicationError:
+                valid = False
+            if not valid:
+                before_status = version.status
+                version.status = "REVIEW_REQUIRED"
+                if asset.current_version_id in {None, version_id}:
+                    asset.current_version_id = None
+                    asset.status = "REVIEW_REQUIRED"
+                await queue_case_withdrawals(uow=uow, asset=asset, version=version)
+                await uow.operations_knowledge.add_review(OperationsKnowledgeReviewEntity(
+                    asset_version_id=version_id, decision="SOURCE_INVALIDATED",
+                    reviewer_id=actor, before_status=before_status, after_status="REVIEW_REQUIRED",
+                    comment_text="提炼期间报告、证据或授权变化；停止索引审批并申请撤回确切版本。",
+                ))
+            if valid and indexed and version.status == "PROCESSING":
+                relations = await uow.operations_knowledge.get_version_relations(asset_version_id=version_id)
+                for index in relations.get("indexes", ()):
+                    if index.index_status == "PENDING_APPROVAL":
+                        index.index_status = "PROCESSING"
+            await uow.commit()
+            return valid
 
     async def reconcile_version(
         self, *, domain_id: int, asset_version_id: UUID, context: AuthContext
@@ -2864,6 +2883,26 @@ class OperationsKnowledgeService:
             and index_payload.get("status") == "PENDING_APPROVAL"
         ):
             return detail
+        if (
+            detail["asset"]["asset_kind"] == "DIAGNOSIS_CASE"
+            and detail["version"]["status"] == "PROCESSING"
+            and index_payload.get("status") == "PENDING_APPROVAL"
+        ):
+            if not await self._case_index_source_fence(
+                domain_id=domain_id, version_id=asset_version_id, actor=self._actor(context),
+            ):
+                raise rejected_source()
+            await self._kc.review_user_intake(
+                domain_id=domain_id,
+                collection_id=UUID(index_payload["collection_id"]),
+                bundle_revision_id=UUID(index_payload["bundle_revision_id"]),
+                decision="APPROVE", comment="恢复诊断案例候选索引审批；业务发布仍须人工审核",
+                auth_context=context,
+            )
+            if not await self._case_index_source_fence(
+                domain_id=domain_id, version_id=asset_version_id, actor=self._actor(context), indexed=True,
+            ):
+                raise rejected_source()
         bundle_id = UUID(index_payload["bundle_id"])
         revision_id = UUID(index_payload["bundle_revision_id"])
         try:
