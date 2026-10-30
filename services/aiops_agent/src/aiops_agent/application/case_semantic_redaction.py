@@ -43,7 +43,7 @@ def _fields(title, profile):
     def visit(value, path):
         if isinstance(value, dict):
             for key, item in value.items():
-                if key not in {"source", "redaction", "evidence_refs", "before_refs", "after_refs", "guardrail_refs", "controlled_verification_ref", "registration_ref"}:
+                if key not in {"source", "redaction", "evidence_refs", "before_refs", "after_refs", "guardrail_refs", "controlled_verification_ref", "effect_result_ref", "registration_ref"}:
                     visit(item, (*path, key))
         elif isinstance(value, list):
             for index, item in enumerate(value):

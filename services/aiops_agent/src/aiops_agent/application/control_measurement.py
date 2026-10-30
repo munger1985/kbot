@@ -5,7 +5,7 @@ from decimal import Decimal, localcontext
 from platform_core.contracts.aiops.effect import EffectControlPlan
 
 from aiops_agent.application.effect_measurement import (
-    calculated_measurement, number, validate_window_report,
+    calculated_measurement, control_causal_limitations, number, validate_window_report,
 )
 
 
@@ -207,7 +207,5 @@ def apply_control_comparison(*, result, frozen, baseline, after, reports,
     result.update(control_analysis=analysis, gap_codes=tuple(sorted(gaps)))
     if supported:
         result["attribution_strength"] = "SUPPORTED"
-    result["causal_limitations"] = (
-        "预登记匹配对照支持本次措施的效果，不等于随机试验或已确认根因；不能完全排除未观测并行变更及共享基础设施影响",
-    )
+    result["causal_limitations"] = control_causal_limitations(supported)
     return result

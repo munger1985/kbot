@@ -158,16 +158,21 @@ async def _case_claims_still_current(*, uow, domain_id, run, artifact, record):
     return True
 
 async def validate_case_effect(*, uow, domain_id, profile):
-    """案例肯定效果必须从权威执行、冻结条件和原始对照窗口完整重放。"""
+    """所有效果案例均重放来源；参考与失败不能绕过完整性，VERIFIED 仍须严格成功。"""
     from uuid import UUID
     from aiops_agent.contracts.knowledge import DiagnosisCaseProfile
-    from aiops_agent.application.changes.effect_replay import replay_supported_effect
+    from aiops_agent.application.changes.effect_replay import is_supported_effect, replay_effect
+    from aiops_agent.application.effect_case import effect_case_kind, effect_case_verification
     try:
         profile = DiagnosisCaseProfile.model_validate(profile)
-        if profile.case_kind not in {"VERIFIED_RESOLUTION", "VERIFIED_OPTIMIZATION"}:
-            return True
-        reference = str(profile.verification.get("controlled_verification_ref") or "")
+        verified = profile.case_kind in {"VERIFIED_RESOLUTION", "VERIFIED_OPTIMIZATION"}
+        reference = str(profile.verification.get("effect_result_ref") or profile.verification.get("controlled_verification_ref") or "")
+        source_id = profile.source.get("effect_result_artifact_id")
+        if not reference:
+            return not verified and not source_id
         if not reference.startswith("artifact:") or "#" in reference:
+            return False
+        if source_id and reference != f"artifact:{source_id}":
             return False
         artifact = await uow.runs.get_artifact(artifact_id=UUID(reference.removeprefix("artifact:")))
         if artifact is None:
@@ -175,9 +180,24 @@ async def validate_case_effect(*, uow, domain_id, profile):
         run = await uow.runs.get_run_scoped(ops_run_id=artifact.ops_run_id, domain_id=domain_id)
         if run is None or str(run.ops_run_id) not in {str(value) for value in profile.source.get("run_ids", ())}:
             return False
-        result = await replay_supported_effect(uow=uow, run=run, artifact=artifact)
+        result = await replay_effect(uow=uow, run=run, artifact=artifact)
         if result is None:
             return False
-        return profile.case_kind != "VERIFIED_RESOLUTION" or result.symptom_recovered is True
+        if verified and not is_supported_effect(result):
+            return False
+        if profile.case_kind == "VERIFIED_RESOLUTION" and result.symptom_recovered is not True:
+            return False
+        if profile.case_kind == "NEGATIVE_EXPERIENCE" and effect_case_kind(result) != "NEGATIVE_EXPERIENCE":
+            return False
+        if profile.verification.get("effect_result_ref"):
+            plan = await uow.runs.get_artifact(artifact_id=result.comparison_plan_artifact_id)
+            if (plan is None or plan.content_hash != result.measurement_artifact_refs[0]["content_hash"]
+                or canonical_hash(plan.payload_json) != plan.content_hash):
+                return False
+            expected = effect_case_verification(result=result, artifact_id=artifact.artifact_id,
+                frozen_plan=plan.payload_json["business_effect"])
+            if any(profile.verification.get(key) != value for key, value in expected.items()):
+                return False
+        return True
     except (KeyError, TypeError, ValueError):
         return False

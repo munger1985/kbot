@@ -16,6 +16,7 @@ SHARED_CONTRACTS = (
     Path("services/aiops_agent/src/aiops_agent/application/case_report.py"),
     Path("services/aiops_agent/src/aiops_agent/application/case_source_validation.py"),
     Path("tests/unit/aiops_agent/test_aiops_report_case_extraction.py"),
+    Path("tests/unit/aiops_agent/test_aiops_effect_case_outcomes.py"),
     Path("services/aiops_agent/src/aiops_agent/application/report_lifecycle.py"),
     Path("tests/unit/aiops_agent/test_aiops_report_lifecycle.py"),
     Path("tests/support/aiops_report_sources.py"),

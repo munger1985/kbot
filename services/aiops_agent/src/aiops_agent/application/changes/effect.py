@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from aiops_agent.application.configuration.common import canonical_json, sha256_json
-from aiops_agent.application.effect_measurement import evaluate_effect, measurement, validate_window_report
+from aiops_agent.application.effect_measurement import apply_action_verification, evaluate_effect, measurement, validate_window_report
 from aiops_agent.application.errors import AIOpsApplicationError, resource_not_found, state_conflict
 from aiops_agent.application.source_authorization import source_scope_is_current
 from aiops_agent.application.reporting import resolve_system_template, template_summary
@@ -17,6 +17,27 @@ from platform_core.identity import uuid7
 
 def _key(proposal_id, suffix):
     return f"comparison:proposal:{proposal_id}:{suffix}:business:v1"
+
+
+def effect_report_facts(result):
+    """报告发布和案例来源核验共用结构化测量投影，不从展示正文反推效果。"""
+    facts = []
+    for name, value in result.measurements.items():
+        outcome = "满足" if value.get("passed") is True else "不满足" if value.get("passed") is False else "证据不足"
+        facts.append({
+            "kind": "effect_measurement", "key": name, **value,
+            "summary": f"{name}（{value['metric']}）：基线 {value.get('baseline', '未知')}，"
+            f"处置后 {value.get('after', '未知')}，单位 {value.get('unit', '未知')}；"
+            f"冻结条件：{outcome}；公式：{value.get('formula', '不可计算')}。",
+        })
+    for name, value in result.control_analysis.get("signals", {}).items():
+        facts.append({
+            "kind": "control_measurement", "key": name, **value,
+            "summary": f"对照 {name}：前值 {value['control_before']}，后值 {value['control_after']}，"
+            f"单位 {value['unit']}；校正相对变化 {value['adjusted_relative_change']}；"
+            f"校正条件是否满足 {value['adjusted_passed']}。",
+        })
+    return tuple(facts)
 
 
 async def effect_source(*, uow, artifact_id, run, schema=None, target_id=None):
@@ -216,13 +237,7 @@ class ChangeEffectVerification:
                 raise state_conflict(str(exc)) from None
             artifacts = (plan_artifact, baseline, after, verification_artifact, receipt, *control_sources)
             refs = tuple({"artifact_id": str(item.artifact_id), "content_hash": item.content_hash, "schema_version": item.schema_version} for item in artifacts)
-            evaluated["gap_codes"] = tuple(sorted(set(evaluated["gap_codes"]) | set(verification.gap_codes)))
-            if verification.gap_codes:
-                # 缺口不能抹掉已经测得的退化；仅阻断肯定效果及恢复结论。
-                if evaluated["result"] != "DEGRADED":
-                    evaluated.update(result="INCONCLUSIVE", attribution_strength="UNKNOWN")
-                if evaluated.get("control_analysis"):
-                    evaluated["control_analysis"]["status"] = "NOT_SUPPORTED"
+            evaluated = apply_action_verification(evaluated, verification)
             after_start, after_end = validate_window_report(after.payload_json)
             result = ComparisonResult(comparison_plan_artifact_id=str(plan_artifact.artifact_id), verification_artifact_id=str(verification_artifact.artifact_id), proposal_id=str(proposal_id), source_run_id=str(run.ops_run_id), source_result_artifact_id=str(receipt.artifact_id), baseline_start=plan.baseline_start, baseline_end=plan.baseline_end, after_start=after_start, after_end=after_end, primary_signals=evaluated["primary_signals"], guardrail_signals=evaluated["guardrail_signals"], load_signals=evaluated["load_signals"], measurements=evaluated["measurements"], measurement_artifact_refs=refs, execution_source=evaluated["execution_source"], gap_codes=evaluated["gap_codes"], evidence_hashes=tuple(item.content_hash for item in artifacts), result=evaluated["result"], rationale_codes=("FROZEN_BUSINESS_EFFECT_RECOMPUTED", "MATCHED_CONTROL_SUPPORT" if evaluated["attribution_strength"] == "SUPPORTED" else "OBSERVATIONAL_ATTRIBUTION_LIMITED"), direct_effect={"VERIFIED": "ACHIEVED", "NOT_ACHIEVED": "NOT_ACHIEVED", "ADVERSE": "ADVERSE"}.get(verification.status, "UNKNOWN"), measured_effect=evaluated["measured_effect"], symptom_recovered=evaluated["symptom_recovered"], guardrails_passed=evaluated["guardrails_passed"], attribution_strength=evaluated["attribution_strength"], causal_limitations=evaluated["causal_limitations"], control_analysis=evaluated.get("control_analysis", {}))
             security = max(int(item.security_level) for item in artifacts)
@@ -357,22 +372,7 @@ class ChangeEffectVerification:
         elif result.control_analysis:
             summary += "；匹配对照未达到支持归因的条件"
         template = resolve_system_template("system:comparison.business")
-        facts = []
-        for name, value in result.measurements.items():
-            outcome = "满足" if value.get("passed") is True else "不满足" if value.get("passed") is False else "证据不足"
-            facts.append({
-                "kind": "effect_measurement", "key": name, **value,
-                "summary": f"{name}（{value['metric']}）：基线 {value.get('baseline', '未知')}，"
-                f"处置后 {value.get('after', '未知')}，单位 {value.get('unit', '未知')}；"
-                f"冻结条件：{outcome}；公式：{value.get('formula', '不可计算')}。",
-            })
-        for name, value in result.control_analysis.get("signals", {}).items():
-            facts.append({
-                "kind": "control_measurement", "key": name, **value,
-                "summary": f"对照 {name}：前值 {value['control_before']}，后值 {value['control_after']}，"
-                f"单位 {value['unit']}；校正相对变化 {value['adjusted_relative_change']}；"
-                f"校正条件是否满足 {value['adjusted_passed']}。",
-            })
+        facts = effect_report_facts(result)
         content = ReportContent(
             report_key=key, report_type="COMPARISON", ops_run_id=str(run.ops_run_id),
             target_id=str(run.target_id), title="业务效果验证报告",

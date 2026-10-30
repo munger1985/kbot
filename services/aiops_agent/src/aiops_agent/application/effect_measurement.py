@@ -119,6 +119,27 @@ def measurement(payload, rule):
     return calculated_measurement(payload, rule, source_ref="window-report")[:3]
 
 
+def control_causal_limitations(supported):
+    """对照失去支持时同步撤下肯定归因文字，不只修改状态字段。"""
+    return (
+        "预登记匹配对照支持本次措施的效果，不等于随机试验或已确认根因；不能完全排除未观测并行变更及共享基础设施影响"
+        if supported else
+        "预登记匹配对照未满足措施效果归因条件；不能将观测的改善、未达阈值或退化归因于本次措施，也不能完全排除并行变更及共享基础设施影响",
+    )
+
+
+def apply_action_verification(evaluated, verification):
+    """生产和来源重放共用动作缺口合并规则；缺口不抹掉已测得的退化。"""
+    evaluated["gap_codes"] = tuple(sorted(set(evaluated["gap_codes"]) | set(verification.gap_codes)))
+    if verification.gap_codes:
+        if evaluated["result"] != "DEGRADED":
+            evaluated.update(result="INCONCLUSIVE", attribution_strength="UNKNOWN")
+        if evaluated.get("control_analysis"):
+            evaluated["control_analysis"]["status"] = "NOT_SUPPORTED"
+            evaluated["causal_limitations"] = control_causal_limitations(False)
+    return evaluated
+
+
 def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, controlled_execution, baseline_ref="baseline", after_ref="after", control_reports=None, control_after_ref=None):
     """完整复算所有冻结条件；保留每项原值、公式与缺口。"""
     rules = tuple(EffectSignalRule.model_validate(item) for item in frozen["signals"])

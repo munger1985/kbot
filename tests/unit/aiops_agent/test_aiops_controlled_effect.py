@@ -131,7 +131,7 @@ def test_control_contract_cannot_change_conditions_or_accept_observed_values():
         EffectPlanCommand.model_validate(raw)
 
 
-async def service_fixture():
+async def service_fixture(*, with_control=True):
     service, uow, run, proposal, command = freeze_fixture()
     from sqlalchemy import Numeric
     from aiops_agent.entities import OpsRunEntity
@@ -141,7 +141,8 @@ async def service_fixture():
     run.tenant_id = uuid7()
     frozen, _, after, reports, control_after_id = comparison_fixture()
     control = EffectControlPlan.model_validate(frozen["controlled_comparison"])
-    command = command.model_copy(update={"controlled_comparison": control})
+    if with_control:
+        command = command.model_copy(update={"controlled_comparison": control})
     control_run = SimpleNamespace(
         ops_run_id=uuid7(), domain_id=run.domain_id, target_id=control.target_id,
         agent_id=run.agent_id, actor_id=run.actor_id, workflow_kind="WORKLOAD_REPORT",
@@ -178,7 +179,7 @@ async def service_fixture():
     ))
     uow.runs.database_now.return_value = NOW + timedelta(hours=1)
     command = EffectEvaluationCommand(expected_row_version=1, after_artifact_id=after_id,
-                                     verification_artifact_id=verification_id, control_after_artifact_id=control_after_id)
+                                     verification_artifact_id=verification_id, control_after_artifact_id=control_after_id if with_control else None)
     return service, uow, run, proposal, command, kwargs
 
 

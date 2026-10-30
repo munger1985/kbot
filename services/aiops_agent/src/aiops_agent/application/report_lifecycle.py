@@ -41,16 +41,19 @@ def report_action_items(scope):
     if not verification:
         return items
     if human:
-        result = {"RESOLVED": "已报告恢复", "IMPROVED": "已报告改善", "NOT_ACHIEVED": "未达到预期",
-            "ADVERSE": "出现不利影响", "NOT_VERIFIED": "未验证"}.get(verification.get("result"), "未确认")
-        items.append(f"人工反馈结果：{result}；不代替受控测量或已验证业务效果。")
-        return items
+        if not verification.get("effect_result_ref"):
+            result = {"RESOLVED": "已报告恢复", "IMPROVED": "已报告改善", "NOT_ACHIEVED": "未达到预期",
+                "ADVERSE": "出现不利影响", "NOT_VERIFIED": "未验证"}.get(verification.get("result"), "未确认")
+            items.append(f"人工反馈结果：{result}；不代替受控测量或已验证业务效果。")
+            return items
+        items.append("动作执行来源为人工登记；以下效果来自独立窗口测量，不等于平台执行或已验证归因。")
     labels = {
         "result": ("验证结果", {"RESOLVED": "症状恢复条件满足", "IMPROVED": "改善条件满足",
-            "UNCHANGED": "未达到改善条件", "DEGRADED": "发生退化", "INCONCLUSIVE": "无法判断"}),
+            "UNCHANGED": "未达到改善条件", "DEGRADED": "发生退化", "INCONCLUSIVE": "无法判断",
+            "NOT_ACHIEVED": "动作未达到预期", "ADVERSE": "动作出现不利影响"}),
         "direct_effect": ("动作后置条件", {"ACHIEVED": "已达到", "NOT_ACHIEVED": "未达到",
             "ADVERSE": "出现不利影响", "UNKNOWN": "无法判断"}),
-        "measured_effect": ("可比窗口业务效果", {"IMPROVED": "改善", "UNCHANGED": "未改善",
+        "measured_effect": ("窗口业务效果（可比性有缺口）" if verification.get("gap_codes") else "可比窗口业务效果", {"IMPROVED": "改善", "UNCHANGED": "未达到改善条件",
             "DEGRADED": "退化", "INCONCLUSIVE": "无法判断"}),
         "attribution_strength": ("措施效果归因", {"SUPPORTED": "有对照证据支持",
             "LIMITED": "观察性关联，归因有限", "UNKNOWN": "无法判断"}),
@@ -62,6 +65,11 @@ def report_action_items(scope):
         if key in verification:
             value = verification[key]
             items.append(f"{label}：{'满足' if value is True else '不满足' if value is False else '未确认'}。")
+    for name, value in (verification.get("measurements") or {}).items():
+        if "baseline" in value and "after" in value:
+            items.append(f"{name}：基线 {value['baseline']} → 处置后 {value['after']} {value.get('unit', '')}。")
+    if verification.get("gap_codes"):
+        items.append("验证缺口：" + "、".join(verification["gap_codes"]) + "。")
     return items
 
 

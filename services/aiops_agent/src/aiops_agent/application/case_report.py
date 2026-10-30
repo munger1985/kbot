@@ -64,12 +64,42 @@ async def load_case_report(*, uow, domain_id, report_id, expected_hash=None, pla
         uow=uow, domain_id=domain_id, sources=rows, plan_capture_reader=plan_capture_reader,
     ):
         raise rejected_source()
+    effect_id = dict(content.get("scope") or {}).get("comparison_result_artifact_id")
+    if report.report_type == "COMPARISON" and effect_id:
+        from aiops_agent.application.changes.effect import effect_report_facts
+        from aiops_agent.application.changes.effect_replay import replay_effect
+        if str(effect_id) not in {str(row.source_artifact_id) for row in sources}:
+            raise rejected_source()
+        try:
+            effect = await uow.runs.get_artifact(artifact_id=UUID(str(effect_id)))
+        except (TypeError, ValueError):
+            raise rejected_source() from None
+        owner = await uow.runs.get_run_scoped(ops_run_id=report.ops_run_id, domain_id=domain_id)
+        result = await replay_effect(uow=uow, run=owner, artifact=effect) if effect is not None and owner is not None else None
+        if result is None:
+            raise rejected_source()
+        registered = {str(row.source_artifact_id): row.content_hash for row in sources}
+        if any(registered.get(ref["artifact_id"]) != ref["content_hash"] for ref in result.measurement_artifact_refs):
+            raise rejected_source()
+        expected_status = "PARTIAL" if result.result == "INCONCLUSIVE" or result.gap_codes else "READY"
+        if (report.status != expected_status or content.get("status") != expected_status
+            or list(content.get("facts") or ()) != list(effect_report_facts(result))):
+            raise rejected_source()
+        scope = dict(content.get("scope") or {})
+        fields = ("attribution_strength", "execution_source", "measured_effect", "symptom_recovered", "guardrails_passed")
+        if (scope.get("proposal_id") != str(result.proposal_id)
+            or any(scope.get(key) != getattr(result, key) for key in fields)
+            or any(dict(scope.get("verification") or {}).get(key) != getattr(result, key)
+                   for key in ("direct_effect", "measured_effect", "symptom_recovered", "guardrails_passed", "attribution_strength", "result"))):
+            raise rejected_source()
     # 报告中的判断必须能逐项回到实际冻结记录，不能只检查几个非空字段。
     from aiops_agent.application.diagnosis.investigation_record import investigation_report_source
     from aiops_agent.contracts.investigation import InvestigationRecord
     originals = {}
     for row in sources:
         source = await uow.runs.get_artifact(artifact_id=row.source_artifact_id)
+        if source is None or source.content_hash != row.content_hash or canonical_hash(source.payload_json) != source.content_hash:
+            raise rejected_source()
         record = dict(source.payload_json or {}).get("investigation_record")
         if record:
             projected = investigation_report_source(InvestigationRecord.model_validate(record))

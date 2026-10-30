@@ -1871,7 +1871,7 @@ class OperationsKnowledgeService:
                         result = {"eligible": True, "reasons": [], "case_kind": profile.case_kind}
                 except AIOpsApplicationError:
                     result = {"eligible": False, "reasons": [{
-                        "code": "EFFECT_SOURCE_INVALID", "message": "效果来源复核未通过，不能生成已验证案例",
+                        "code": "EFFECT_SOURCE_INVALID", "message": "效果来源复核未通过，不能生成案例候选",
                     }]}
             closure_artifact_id = dict(content.get("scope") or {}).get(
                 "closure_artifact_id"
@@ -3567,7 +3567,7 @@ class OperationsKnowledgeService:
                     if scan.get("status") != "SCANNED" or scan.get("output_hash") != shared_content_hash(asset.display_name, profile):
                         raise self._state_conflict("案例语义脱敏未完成或正文已变化，需创建新版本并重新审阅")
                     if not await validate_case_effect(uow=uow, domain_id=domain_id, profile=profile):
-                        raise self._state_conflict("已验证案例缺少可核验的执行、可比效果与护栏产物")
+                        raise self._state_conflict("案例效果来源、执行回执或冻结测量无法核验，必须重新审核")
                     profile.redaction = profile.redaction.model_copy(update={"status": "REVIEWED"})
                     version.profile_json = profile.model_dump(mode="json")
                     report_ids = {
