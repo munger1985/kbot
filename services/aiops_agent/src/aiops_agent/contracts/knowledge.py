@@ -175,6 +175,7 @@ class DiagnosisClosureCommand(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     included_turn_ids: tuple[UUID, ...] = Field(min_length=1, max_length=200)
+    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     display_name: str = Field(min_length=1, max_length=256)
     symptoms: tuple[str, ...] = Field(min_length=1, max_length=64)
     root_cause_summary: str = Field(min_length=1, max_length=4000)
@@ -190,6 +191,21 @@ class DiagnosisClosureCommand(BaseModel):
     contraindications: tuple[str, ...] = Field(default=(), max_length=32)
 
 
+class DiagnosisClosureSource(BaseModel):
+    """收口的不可编辑逐产物来源；调查判断与人工动作引用分别登记。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    turn_id: UUID
+    run_id: UUID
+    artifact_id: UUID
+    schema_version: str
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    security_level: int = Field(ge=1, le=5)
+    observed_at: datetime
+    roles: tuple[Literal["INVESTIGATION", "ACTION", "BEFORE", "AFTER"], ...] = Field(min_length=1, max_length=4)
+    claim_ids: tuple[str, ...] = Field(default=(), max_length=128)
+
+
 class DiagnosisClosure(BaseModel):
     """报告与案例共同读取的不可变诊断事实源。"""
 
@@ -197,6 +213,9 @@ class DiagnosisClosure(BaseModel):
     schema_version: Literal["DIAGNOSIS_CLOSURE.v1"] = "DIAGNOSIS_CLOSURE.v1"
     conversation_id: UUID
     source_turn_ids: tuple[UUID, ...]
+    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_refs: tuple[DiagnosisClosureSource, ...] = Field(min_length=1, max_length=392)
+    target_version: int = Field(ge=1)
     target_id: UUID
     closed_by: str = Field(min_length=1, max_length=256)
     closed_at: datetime

@@ -1214,7 +1214,11 @@ def normalize_report_source(
             )),
             "gaps": (),
             "solution": {},
-            "evidence_refs": tuple({"artifact_id": str(item)} for item in (
+            "evidence_refs": tuple({
+                "artifact_id": str(item["artifact_id"]), "source_run_id": str(item["run_id"]),
+                "schema_version": item["schema_version"], "content_hash": item["content_hash"],
+                "observed_at": item["observed_at"],
+            } for item in payload.get("source_refs", ())) or tuple({"artifact_id": str(item)} for item in (
                 *tuple(root_cause.get("evidence_refs") or ()),
                 *tuple(verification.get("before_refs") or ()),
                 *tuple(verification.get("after_refs") or ()),

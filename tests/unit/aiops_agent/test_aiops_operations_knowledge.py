@@ -74,7 +74,7 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
 
     def test_diagnosis_closure_command_rejects_uncontracted_fields(self):
         payload = {
-            "included_turn_ids": [uuid7()],
+            "included_turn_ids": [uuid7()], "source_fingerprint": "a" * 64,
             "display_name": "连接池故障",
             "symptoms": ["连接池耗尽"],
             "root_cause_summary": "连接未释放",
@@ -89,7 +89,7 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
             uuid7(), uuid7(), uuid7(), uuid7()
         )
         base = {
-            "included_turn_ids": [uuid7()],
+            "included_turn_ids": [uuid7()], "source_fingerprint": "a" * 64,
             "display_name": "连接池故障",
             "symptoms": ["连接池耗尽"],
             "root_cause_summary": "连接未释放",

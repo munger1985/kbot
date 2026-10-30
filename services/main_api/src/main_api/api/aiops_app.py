@@ -113,6 +113,7 @@ class OperationsDiagnosisCaseDraftPayload(_Payload):
 
 class DiagnosisClosurePayload(_Payload):
     included_turn_ids: tuple[UUID, ...] = Field(min_length=1, max_length=200)
+    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     display_name: str = Field(min_length=1, max_length=256)
     symptoms: tuple[str, ...] = Field(min_length=1, max_length=64)
     root_cause_summary: str = Field(min_length=1, max_length=4000)
@@ -757,10 +758,11 @@ async def extract_operations_diagnosis_case(report_id: UUID, request: Request):
 @router.get("/operations-knowledge/conversations/{conversation_id}/case-candidate")
 async def get_conversation_case_candidate(
     conversation_id: UUID, request: Request,
+    turn_ids: list[UUID] | None = Query(default=None, max_length=200),
 ):
     await _conversation_with_access(request, conversation_id)
     return await _client(request).get_conversation_case_candidate(
-        conversation_id, auth_context=request.state.auth_context
+        conversation_id, auth_context=request.state.auth_context, turn_ids=turn_ids,
     )
 
 

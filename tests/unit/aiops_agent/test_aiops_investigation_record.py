@@ -144,70 +144,35 @@ def test_manual_closure_cannot_confirm_root_cause():
 @pytest.mark.parametrize("mode", ["valid", "target_mismatch", "run_mismatch", "latest_refuted", "latest_unstructured", "latest_hypothesis"])
 def test_new_sql_turn_can_form_reference_candidate_without_formal_report(mode):
     async def run():
-        fact = evidence()
-        value = freeze_investigation(draft=draft(), evidence=(fact,), context=context())
-        actor, domain, conversation_id = uuid7(), uuid7(), uuid7()
-        turn_id, run_id, artifact_id = uuid7(), value.run_id, uuid7()
-        target_id = value.target_id
+        from tests.unit.aiops_agent.test_aiops_conversation_case_closure import setup, preview
+        from aiops_agent.playbooks import canonical_hash
+        f = await setup(second=False)
+        record = f.artifact.payload_json["investigation_record"]
         if mode == "target_mismatch":
-            value = value.model_copy(update={"target_id": str(uuid7())})
+            record["target_id"] = str(uuid7())
         elif mode == "run_mismatch":
-            value = value.model_copy(update={"run_id": str(uuid7())})
+            record["run_id"] = str(uuid7())
         elif mode == "latest_refuted":
-            value = value.model_copy(update={
-                "claims": (value.claims[0].model_copy(update={"revision_state": "REFUTED"}),),
-                "recommendations": (),
-                "goal_assessments": (),
-                "stop_reason": "PARTIAL_ANSWER",
-            })
+            record["claims"][0]["revision_state"] = "REFUTED"
+            record["goal_assessments"] = []
+            record["recommendations"] = []
+            record["stop_reason"] = "PARTIAL_ANSWER"
+        elif mode == "latest_unstructured":
+            f.artifact.payload_json.pop("investigation_record")
         elif mode == "latest_hypothesis":
-            value = freeze_investigation(
-                draft=draft(level="HYPOTHESIS", goal_satisfied=False),
-                evidence=(fact,), context=context(),
-            ).model_copy(update={"target_id": target_id, "run_id": run_id})
-        now = datetime.now(timezone.utc)
-        artifact = SimpleNamespace(
-            artifact_id=artifact_id, schema_version="AIOPS_TURN_RESULT.v1",
-            payload_json={"status": "COMPLETED", "investigation_record": value.model_dump(mode="json"),
-                "evidence": [fact.model_dump(mode="json")]},
-            ops_task_id=uuid7(), artifact_key="answer", created_at=now,
-        )
-        if mode == "latest_unstructured":
-            artifact.payload_json.pop("investigation_record")
-        uow = SimpleNamespace(
-            conversations=SimpleNamespace(get_conversation=AsyncMock(return_value=SimpleNamespace(created_by=actor, title="SQL 深入诊断"))),
-            turns=SimpleNamespace(list_all_turns=AsyncMock(return_value=[
-                SimpleNamespace(turn_id=uuid7(), status="COMPLETED"),
-                SimpleNamespace(turn_id=turn_id, status="COMPLETED"),
-            ]),
-                get_run_link=AsyncMock(return_value=SimpleNamespace(ops_run_id=run_id))),
-            runs=SimpleNamespace(
-                get_run_scoped=AsyncMock(return_value=SimpleNamespace(status="COMPLETED", final_artifact_id=artifact_id, target_id=target_id, ops_run_id=run_id)),
-                get_artifact=AsyncMock(return_value=artifact), list_artifacts=AsyncMock(return_value=[artifact]),
-                get_artifact_by_key=AsyncMock(return_value=None)),
-            targets=SimpleNamespace(get_scoped=AsyncMock(return_value=SimpleNamespace(db_type="POSTGRESQL", version_code="16", environment="TEST", capabilities_json={}))),
-        )
-
-        class Uow:
-            async def __aenter__(self):
-                return uow
-
-            async def __aexit__(self, *args):
-                pass
-
-        service = OperationsKnowledgeService.__new__(OperationsKnowledgeService)
-        service._uow_factory = Uow
-        preview = await service._conversation_case_context(domain_id=domain, conversation_id=conversation_id, actor_id=actor)
-        uow.turns.get_run_link.assert_awaited_once()
+            record["claims"][0]["level"] = "HYPOTHESIS"
+        f.artifact.content_hash = canonical_hash(f.artifact.payload_json)
+        f.uow.inspections.get_report_scoped.reset_mock()
+        candidate = await preview(f)
+        f.uow.inspections.get_report_scoped.assert_not_awaited()
         if mode != "valid":
-            assert preview["eligible"] is False
-            assert preview["reasons"][0]["code"] == "INVESTIGATION_RECORD_MISSING"
+            assert candidate["eligible"] is False
+            assert candidate["reasons"][0]["code"] == "INVESTIGATION_RECORD_MISSING"
             return
-        assert preview["eligible"] is True
-        assert preview["root_cause_grade"] == "INCONCLUSIVE"
-        assert preview["included_turn_ids"] == [str(turn_id)]
-        assert preview["_context"]["investigation_record"]["record_id"] == value.record_id
-
+        assert candidate["eligible"] is True
+        assert candidate["root_cause_grade"] == "INCONCLUSIVE"
+        assert candidate["included_turn_ids"] == [str(f.turn_id)]
+        assert candidate["source_fingerprint"]
     asyncio.run(run())
 
 def test_subgoals_cannot_be_hidden_by_global_completed_flag():

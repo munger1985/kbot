@@ -113,6 +113,7 @@ def fixture(*, completed=True):
 
     async def add_artifact(entity):
         entity.artifact_id = entity.artifact_id or uuid7()
+        entity.created_at = entity.created_at or now
         state.artifacts[entity.artifact_id] = entity
         return entity
 
@@ -128,6 +129,7 @@ def fixture(*, completed=True):
             get_artifact=AsyncMock(side_effect=lambda *, artifact_id: state.artifacts.get(artifact_id)),
             list_tasks=AsyncMock(return_value=[task]), database_now=AsyncMock(return_value=now),
             get_artifact_by_key=AsyncMock(side_effect=lambda **_: state.closure),
+            get_latest_artifact_by_prefix=AsyncMock(side_effect=lambda **_: state.closure),
             add_artifact=AsyncMock(side_effect=add_artifact), append_event=AsyncMock()),
         inspections=SimpleNamespace(
             get_current_report_for_run_template=AsyncMock(side_effect=lambda **_: state.current),
@@ -189,20 +191,14 @@ def test_exact_same_report_inputs_are_idempotent_but_changed_result_is_not(conve
 
 def test_closure_after_first_report_creates_new_version_without_adding_turn():
     async def run():
-        f = fixture()
+        from tests.unit.aiops_agent.test_aiops_report_case_extraction import case_fixture
+        f = await case_fixture()
+        f.service = AIOpsRuntimeService(uow_factory=lambda: f.manager, blueprint_registry=AsyncMock(), handler_registry=AsyncMock())
+        f.state.current = None
         first = await generate(f, conversation=True)
-        closure_payload = {
-            "conversation_id": str(f.conversation_id), "source_turn_ids": [str(f.turn_id)],
-            "profile": {"problem_signature": {"normalized_symptoms": ["业务曾有等待"]},
-                "root_cause": {"summary": "人工复盘，不代替数据库证据"},
-                "actions": [{"summary": "业务方已调整调用频率"}],
-                "verification": {"method": "USER_REPORTED", "result": "RESOLVED"}},
-        }
-        closure = SimpleNamespace(artifact_id=uuid7(), ops_run_id=f.run_id, ops_task_id=f.task_id,
-            schema_version="DIAGNOSIS_CLOSURE.v1", payload_json=closure_payload,
-            content_hash=sha256_json(closure_payload), security_level=1)
-        f.state.closure = closure
-        f.state.artifacts[closure.artifact_id] = closure
+        from tests.support.aiops_case_closure import install_closure
+        install_closure(f, action_refs=False)
+        closure = f.state.closure
         second = await generate(f, conversation=True)
         assert second.report_id != first.report_id
         assert second.report_version == 2
@@ -215,7 +211,7 @@ def test_closure_after_first_report_creates_new_version_without_adding_turn():
         actions = next(section["items"] for section in report_presentation(
             payload=content, template=resolve_system_template("system:diagnosis.standard"))["sections"]
             if section["kind"] == "ACTIONS")
-        assert any("业务方已调整调用频率" in item and "人工" in item for item in actions)
+        assert any("调整调用频率" in item and "人工" in item for item in actions)
         assert any("人工" in item and "恢复" in item for item in actions)
         assert not any("没有已记录" in item for item in actions)
         replay = await generate(f, conversation=True)

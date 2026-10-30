@@ -666,11 +666,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
     async def get_conversation_case_candidate(
-        self, conversation_id: UUID, *, auth_context: AuthContext
+        self, conversation_id: UUID, *, auth_context: AuthContext,
+        turn_ids: list[UUID] | None = None,
     ) -> dict[str, Any]:
+        from urllib.parse import urlencode
+        query = "?" + urlencode([("turn_ids", str(value)) for value in turn_ids]) if turn_ids else ""
         return await self._json(
             "GET",
-            f"{INTERNAL_API_V1}/aiops/operations-knowledge/conversations/{conversation_id}/case-candidate",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/conversations/{conversation_id}/case-candidate{query}",
             auth_context=auth_context,
         )
 

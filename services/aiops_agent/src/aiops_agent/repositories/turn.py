@@ -365,13 +365,14 @@ class TurnRepository(AIOpsRepository):
         return list(rows)
 
     async def list_all_turns(
-        self, *, conversation_id: UUID
+        self, *, conversation_id: UUID, limit: int | None = None
     ) -> list[OpsConversationTurnEntity]:
         """按顺序返回会话的全部 Turn，供冻结会话级报告使用。"""
         rows = await self._session.scalars(
             select(OpsConversationTurnEntity)
             .where(OpsConversationTurnEntity.conversation_id == conversation_id)
             .order_by(OpsConversationTurnEntity.turn_no)
+            .limit(limit)
         )
         return list(rows)
 

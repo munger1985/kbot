@@ -8037,15 +8037,30 @@ class AIOpsRuntimeService:
             closure_artifact = None
             report_run = anchor_run
             report_task = task
+            closure_candidates = []
             for _, candidate_run, _ in reversed(source_rows):
-                candidate = await uow.runs.get_artifact_by_key(
+                candidate = await uow.runs.get_latest_artifact_by_prefix(
                     ops_run_id=candidate_run.ops_run_id,
-                    artifact_key=f"diagnosis-closure:{conversation_id}",
+                    artifact_key_prefix=f"diagnosis-closure:{conversation_id}:",
                 )
                 if (
                     candidate is None
                     or candidate.schema_version != "DIAGNOSIS_CLOSURE.v1"
                 ):
+                    continue
+                closure_candidates.append((candidate_run, candidate))
+            # 收口先后以不可变原件登记时间为准，不由所选最后一轮决定。
+            # 最新收口失效时保留缺口，不能退回更早人工判断而掩盖更正。
+            closure_candidates.sort(key=lambda row: (row[1].created_at, str(row[1].artifact_id)), reverse=True)
+            for candidate_run, candidate in closure_candidates[:1]:
+                from aiops_agent.application.case_closure import validate_closure_sources
+                if not await validate_closure_sources(uow=uow, domain_id=domain_id, run=candidate_run,
+                    artifact=candidate, plan_capture_reader=getattr(self, "_plan_capture_reader", None)):
+                    source_override["gaps"] = (*source_override.get("gaps", ()), {
+                        "code": "CLOSURE_SOURCE_INVALIDATED",
+                        "message": "人工收口的来源或授权已变化，未作为报告事实附录。",
+                    })
+                    source_override["status"] = "PARTIAL"
                     continue
                 candidate_tasks = await uow.runs.list_tasks(
                     ops_run_id=candidate_run.ops_run_id
@@ -8055,6 +8070,10 @@ class AIOpsRuntimeService:
                     if item.ops_task_id == candidate.ops_task_id
                 ), None)
                 if candidate_task is None:
+                    source_override["gaps"] = (*source_override.get("gaps", ()), {
+                        "code": "CLOSURE_TASK_MISSING", "message": "最新人工收口缺少生成任务，未作为报告事实附录。",
+                    })
+                    source_override["status"] = "PARTIAL"
                     continue
                 closure_artifact = candidate
                 report_run = candidate_run
@@ -8072,6 +8091,7 @@ class AIOpsRuntimeService:
                 source_override["verification"] = closure_source.get("verification", {})
                 source_override["executed_actions"] = closure_source.get("executed_actions", ())
                 source_override["action_source"] = closure_source.get("action_source")
+                source_override["evidence_refs"] = (*source_override.get("evidence_refs", ()), *closure_source.get("evidence_refs", ()))
                 source_override["conversation"] = {
                     **dict(source_override.get("conversation") or {}),
                     "title": conversation.title,

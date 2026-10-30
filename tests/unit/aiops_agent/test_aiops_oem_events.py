@@ -226,7 +226,7 @@ def test_case_publish_and_retrieval_replay_original_event_without_investigation_
             raw.content_hash = canonical_hash(raw.payload_json)
         final_id = uuid7()
         final = SimpleNamespace(artifact_id=final_id, ops_run_id=current.ops_run_id, payload_json=frozen,
-            content_hash=canonical_hash(frozen), provenance_json={})
+            schema_version="AIOPS_TURN_RESULT.v1", content_hash=canonical_hash(frozen), provenance_json={})
 
         async def get_artifact(*, artifact_id):
             if str(artifact_id) == str(final_id):

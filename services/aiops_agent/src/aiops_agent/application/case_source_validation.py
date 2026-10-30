@@ -14,7 +14,7 @@ async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None, pl
     )
 
 
-async def validate_case_source_rows(*, uow, domain_id, sources, agent_id=None, plan_capture_reader=None):
+async def validate_case_source_rows(*, uow, domain_id, sources, agent_id=None, plan_capture_reader=None, claim_selection=None):
     """新提炼与既有版本复用同一来源、授权和反证校验，不以幂等命中绕过。"""
     if not sources:
         return False
@@ -64,17 +64,12 @@ async def validate_case_source_rows(*, uow, domain_id, sources, agent_id=None, p
         if not await source_scope_is_current(uow=uow, run=run, domain_id=domain_id):
             return False
         payload = dict(artifact.payload_json or {})
-        root_id = dict(getattr(artifact, "provenance_json", None) or {}).get("source_artifact_id")
-        if root_id and payload.get("schema_version") == "DIAGNOSIS_CLOSURE.v1":
-            try:
-                root = await uow.runs.get_artifact(artifact_id=type(source.source_artifact_id)(str(root_id)))
-            except (TypeError, ValueError):
+        if artifact.schema_version == "DIAGNOSIS_CLOSURE.v1":
+            from aiops_agent.application.case_closure import validate_closure_sources
+            if not await validate_closure_sources(uow=uow, domain_id=domain_id, run=run, artifact=artifact,
+                agent_id=agent_id, plan_capture_reader=plan_capture_reader):
                 return False
-            if (root is None or str(root.ops_run_id) != str(run.ops_run_id)
-                or canonical_hash(root.payload_json) != root.content_hash):
-                return False
-            artifact = root
-            payload = dict(root.payload_json or {})
+            continue
         record = payload.get("investigation_record")
         if record or any(item.get("source_id") == "prior_turn.sql_observation" or item.get("followup_run_id") or item.get("pagination") or item.get("sql_plan")
             or item.get("tool_id") in {"evidence.sql_plan.controlled_estimate", "metric.query_range",
@@ -103,25 +98,63 @@ async def validate_case_source_rows(*, uow, domain_id, sources, agent_id=None, p
                 return False
             if not any(item.revision_state == "ACTIVE" and item.level in {"OBSERVED", "SUPPORTED"} for item in value.claims):
                 return False
-            if not await _case_claims_still_current(uow=uow, domain_id=domain_id, run=run, artifact=artifact, record=value):
+            selected_claims = claim_selection.get(str(artifact.artifact_id)) if claim_selection is not None else None
+            if selected_claims is None and report is not None:
+                selected_claims = await _frozen_report_claims(uow=uow, report=report, run=run, record=value)
+                if selected_claims is False:
+                    return False
+            if not await _case_claims_still_current(uow=uow, domain_id=domain_id, run=run, artifact=artifact, record=value,
+                claim_ids=selected_claims):
                 return False
     return True
 
-async def _case_claims_still_current(*, uow, domain_id, run, artifact, record):
+
+async def _frozen_report_claims(*, uow, report, run, record):
+    """报告只为实际纳入且逐字段匹配的判断收窄来源；隐藏反证不能借部分选择保留。"""
+    from aiops_agent.application.diagnosis.investigation_record import investigation_report_source
+    content = await uow.runs.get_artifact(artifact_id=report.content_artifact_id)
+    if (content is None or content.schema_version != "REPORT_CONTENT.v1"
+        or content.content_hash != report.content_hash or canonical_hash(content.payload_json) != report.content_hash):
+        return False
+    originals = {fact["claim_id"]: fact for fact in investigation_report_source(record)["facts"]}
+    selected = set()
+    for fact in content.payload_json.get("facts", ()):
+        if (not isinstance(fact, dict) or fact.get("source_run_id") != str(run.ops_run_id)
+            or fact.get("record_id") != record.record_id or fact.get("record_revision") != record.revision):
+            continue
+        original = originals.get(fact.get("claim_id"))
+        if original is None or any(fact.get(key) != value for key, value in original.items()):
+            return False
+        selected.add(fact["claim_id"])
+    return selected or None
+
+
+async def _case_claims_still_current(*, uow, domain_id, run, artifact, record, claim_ids=None):
+    expected = {claim.claim_id for claim in record.claims if claim.revision_state == "ACTIVE"}
+    if claim_ids is not None:
+        if not set(claim_ids) or not set(claim_ids) <= expected:
+            return False
+        expected = set(claim_ids)
+    current = await current_case_claim_ids(uow=uow, domain_id=domain_id, run=run, artifact=artifact, record=record)
+    return current is not None and expected <= current
+
+
+async def current_case_claim_ids(*, uow, domain_id, run, artifact, record):
     """沿同会话后续的确切修订追踪反证；已知错误不进入新检索。"""
     link = await uow.turns.get_run_link_by_ops_run_id(ops_run_id=run.ops_run_id)
+    current = {claim.claim_id for claim in record.claims if claim.revision_state == "ACTIVE"}
     if link is None:
-        return True
+        return current
     turn = await uow.turns.get_turn(domain_id=domain_id, turn_id=link.turn_id)
     if turn is None:
-        return False
+        return None
     successors = await uow.turns.list_turns(
         conversation_id=turn.conversation_id, after_turn_no=turn.turn_no, limit=101,
     )
     if len(successors) > 100:
-        return False
+        return None
     from aiops_agent.contracts.investigation import InvestigationRecord
-    tracked = {(str(artifact.artifact_id), claim.claim_id) for claim in record.claims if claim.revision_state == "ACTIVE"}
+    tracked = {(str(artifact.artifact_id), claim_id): {claim_id} for claim_id in current}
     for following in successors:
         later_link = await uow.turns.get_run_link(turn_id=following.turn_id, purpose="PRIMARY")
         if later_link is None:
@@ -135,28 +168,29 @@ async def _case_claims_still_current(*, uow, domain_id, run, artifact, record):
         if later_artifact is None or later_artifact.schema_version != "AIOPS_TURN_RESULT.v1":
             continue
         if str(later_artifact.ops_run_id) != str(later_run.ops_run_id):
-            return False
+            return None
         if canonical_hash(later_artifact.payload_json) != later_artifact.content_hash:
-            return False
+            return None
         data = dict(later_artifact.payload_json or {}).get("investigation_record")
         if not data:
             continue
         try:
             later = InvestigationRecord.model_validate(data)
         except ValueError:
-            return False
+            return None
         if later.record_id != record.record_id or later.parent is None:
             continue
         if later.target_id != record.target_id or later.run_id != str(later_run.ops_run_id):
-            return False
+            return None
         for change in later.claim_revisions:
             origin = change.prior_artifact_id or later.parent.artifact_id
             if (origin, change.prior_claim_id) not in tracked:
                 continue
             if change.relation in {"REFUTES", "SUPERSEDES"}:
-                return False
-            tracked.add((str(later_artifact.artifact_id), change.current_claim_id))
-    return True
+                current -= tracked[(origin, change.prior_claim_id)]
+            tracked.setdefault((str(later_artifact.artifact_id), change.current_claim_id), set()).update(
+                tracked[(origin, change.prior_claim_id)])
+    return current
 
 async def validate_case_effect(*, uow, domain_id, profile):
     """所有效果案例均重放来源；参考与失败不能绕过完整性，VERIFIED 仍须严格成功。"""

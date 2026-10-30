@@ -379,13 +379,14 @@ class OpsRunRepository(AIOpsRepository):
         return list((await self._session.execute(statement)).scalars())
 
     async def list_artifacts(
-        self, *, ops_run_id: UUID
+        self, *, ops_run_id: UUID, limit: int | None = None
     ) -> list[OpsArtifactEntity]:
         self._check_active()
         statement = (
             select(OpsArtifactEntity)
             .where(OpsArtifactEntity.ops_run_id == ops_run_id)
             .order_by(OpsArtifactEntity.artifact_key)
+            .limit(limit)
         )
         return list((await self._session.execute(statement)).scalars())
 
@@ -438,6 +439,15 @@ class OpsRunRepository(AIOpsRepository):
             OpsArtifactEntity.ops_run_id == ops_run_id,
             OpsArtifactEntity.schema_version == "COMPARISON_RESULT.v1",
             OpsArtifactEntity.artifact_key.like(f"comparison:proposal:{proposal_id}:result:%:business:v1"),
+        ).order_by(OpsArtifactEntity.created_at.desc(), OpsArtifactEntity.artifact_id.desc()).limit(1)
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_latest_artifact_by_prefix(self, *, ops_run_id, artifact_key_prefix):
+        """读取同一 Run 下确切业务前缀的最新不可变产物，不覆盖既有来源。"""
+        self._check_active()
+        statement = select(OpsArtifactEntity).where(
+            OpsArtifactEntity.ops_run_id == ops_run_id,
+            OpsArtifactEntity.artifact_key.startswith(artifact_key_prefix, autoescape=True),
         ).order_by(OpsArtifactEntity.created_at.desc(), OpsArtifactEntity.artifact_id.desc()).limit(1)
         return (await self._session.execute(statement)).scalar_one_or_none()
 

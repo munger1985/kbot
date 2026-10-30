@@ -508,11 +508,13 @@ async def extract_case(
 async def conversation_case_candidate(
     conversation_id: UUID,
     request: Request,
+    turn_ids: list[UUID] | None = Query(default=None, max_length=200),
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
     domain_id, _ = _use_scope(request, context)
     return await request.app.state.operations_knowledge_service.conversation_case_preview(
         domain_id=domain_id, conversation_id=conversation_id, context=context,
+        included_turn_ids=tuple(turn_ids) if turn_ids is not None else None,
     )
 
 

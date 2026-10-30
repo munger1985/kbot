@@ -5339,6 +5339,11 @@
             "title": "Root Cause Summary",
             "type": "string"
           },
+          "source_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Fingerprint",
+            "type": "string"
+          },
           "symptoms": {
             "items": {
               "type": "string"
@@ -5364,6 +5369,7 @@
         },
         "required": [
           "included_turn_ids",
+          "source_fingerprint",
           "display_name",
           "symptoms",
           "root_cause_summary"
@@ -29059,6 +29065,27 @@
               "format": "uuid",
               "title": "Conversation Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "turn_ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "maxItems": 200,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Turn Ids"
             }
           }
         ],

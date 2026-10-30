@@ -60,11 +60,11 @@ def test_negative_experience_is_traceable_and_is_not_a_recommendation():
 
 def source_uow(failure=None):
     artifact_id, run_id, target_id, agent_id, domain_id, version_id = (str(uuid7()) for _ in range(6))
-    payload = {"schema_version": "DIAGNOSIS_CLOSURE.v1"}
+    payload = {"schema_version": "DBA_TOOL_RESULT.v1"}
     digest = canonical_hash(payload)
     source = SimpleNamespace(source_report_id="report", source_run_id=run_id,
         source_artifact_id=artifact_id, content_hash=digest)
-    artifact = SimpleNamespace(ops_run_id=run_id, payload_json=payload, content_hash=digest)
+    artifact = SimpleNamespace(ops_run_id=run_id, payload_json=payload, content_hash=digest, schema_version="DBA_TOOL_RESULT.v1")
     run = SimpleNamespace(ops_run_id=run_id, target_id=target_id, agent_id=agent_id,
         plan_snapshot_json={"capability_snapshot": {"source_snapshots": [{"source_id": "monitor"}]}})
     if failure == "hash":

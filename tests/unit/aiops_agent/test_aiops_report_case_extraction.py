@@ -51,23 +51,8 @@ async def case_fixture(*, closure=False, result="RESOLVED", action_refs=True):
     f.uow.inspections.list_report_sources = AsyncMock(side_effect=lambda **kw:
         f.uow.inspections.add_report_sources.await_args.args[0])
     if closure:
-        payload = {"schema_version": "DIAGNOSIS_CLOSURE.v1",
-            "conversation_id": str(f.conversation_id), "source_turn_ids": [str(f.turn_id)],
-            "profile": {"problem_signature": {"normalized_symptoms": ["业务曾有等待"]},
-                "root_cause": {"summary": "人工复盘，不代替数据库证据"},
-                "actions": [{"summary": "调整调用频率",
-                    "evidence_refs": [str(f.artifact.artifact_id)] if action_refs else []}],
-                "verification": {"method": "USER_REPORTED", "result": result,
-                    "direct_effect": "UNKNOWN", "measured_effect": "INCONCLUSIVE",
-                    "comparability": "UNKNOWN", "symptom_recovered": True,
-                    "guardrails_passed": None, "attribution_strength": "UNKNOWN",
-                    "causal_limitations": ["人工反馈，未经受控对照验证"]}},
-        }
-        f.state.closure = SimpleNamespace(artifact_id=uuid7(), ops_run_id=f.run_id,
-            ops_task_id=f.task_id, schema_version="DIAGNOSIS_CLOSURE.v1",
-            payload_json=payload, content_hash=sha256_json(payload), security_level=1,
-            provenance_json={"source_artifact_id": str(f.artifact.artifact_id)})
-        f.state.artifacts[f.state.closure.artifact_id] = f.state.closure
+        from tests.support.aiops_case_closure import install_closure
+        install_closure(f, result=result, action_refs=action_refs)
     await generate(f, conversation=closure)
     f.uow.outbox.add.reset_mock()
     f.report = f.state.current
@@ -160,7 +145,7 @@ def test_manual_outcome_keeps_provenance_and_never_becomes_verified(result, acti
         assert profile["verification"] == f.state.closure.payload_json["profile"]["verification"]
         assert profile["actions"][0]["source_kind"] == "USER_PROVIDED"
         assert profile["actions"][0]["evidence_refs"] == (
-            [str(f.artifact.artifact_id)] if action_refs else [])
+            [str(f.action_artifact.artifact_id)] if action_refs else [])
         assert profile["actions"][0]["registration_ref"] == "artifact:" + str(f.state.closure.artifact_id)
         body = f.service._kc.ingest_user_file.await_args.kwargs["body"].decode()
         assert "人工" in body and "不代替" in body

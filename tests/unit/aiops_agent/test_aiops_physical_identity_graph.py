@@ -410,7 +410,7 @@ def test_actual_case_publication_and_retrieval_gate_replays_monitoring_even_with
             payload["investigation_record"]["observations"][1]["source_identity_witnesses"] = []
     final_id, version_id = uuid7(), uuid7()
     final = SimpleNamespace(artifact_id=final_id, ops_run_id=run.ops_run_id, payload_json=payload,
-        content_hash=canonical_hash(payload), provenance_json={})
+        schema_version="AIOPS_TURN_RESULT.v1", content_hash=canonical_hash(payload), provenance_json={})
     raw_lookup = uow.runs.get_artifact
     async def lookup(*, artifact_id):
         return final if str(artifact_id) == str(final_id) else await raw_lookup(artifact_id=artifact_id)
