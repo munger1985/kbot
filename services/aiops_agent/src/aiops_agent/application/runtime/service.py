@@ -10,6 +10,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from loguru import logger
+
 from aiops_agent.domain.operations.budget import (
     ExecutionBudgetError, ensure_run_resumable, pause_task_budget, resume_task_budget,
     sync_run_budget, task_deadline,
@@ -3476,6 +3478,14 @@ class AIOpsRuntimeService:
                 check_status_counts.get(check_status, 0) + 1
             )
         coverage = inspection_evidence_coverage(inspection_checks, gaps)
+        logger.info(
+            "AIOps 巡检证据质量：run_id={} coverage={} check_status_counts={} gap_index={}",
+            run.ops_run_id, coverage, check_status_counts,
+            [
+                {key: item.get(key) for key in ("step_id", "code", "category")}
+                for item in gaps
+            ],
+        )
         monitoring_quality = self._inspection_monitoring_quality(source)
         incomplete_statuses = {"PARTIAL", "GAP", "MISSING"}
         incomplete_check_count = sum(
@@ -3918,6 +3928,8 @@ class AIOpsRuntimeService:
         """区分读取错误、访问限制、能力不支持与真实数据缺口。"""
         source_id = str(gap.get("source_id") or "")
         code = str(gap.get("code") or "").upper()
+        if code == "INSPECTION_FIXED_TOOL_INPUT_INVALID":
+            return "REPORT_CONTRACT"
         product_contract_codes = {
             "FINDING_COLUMN_MISSING",
             "FINDING_VALUE_UNPARSEABLE",
@@ -7302,14 +7314,21 @@ class AIOpsRuntimeService:
             assert uow.runs is not None
             run_summaries = []
             for item in runs:
+                report = await uow.inspections.get_current_inspection_report_for_run(
+                    ops_run_id=item.ops_run_id
+                )
+                artifact_id = (
+                    report.content_artifact_id
+                    if report is not None else item.final_artifact_id
+                )
                 final_artifact = (
                     await uow.runs.get_artifact(
-                        artifact_id=item.final_artifact_id
+                        artifact_id=artifact_id
                     )
-                    if item.final_artifact_id is not None
+                    if artifact_id is not None
                     else None
                 )
-                report_status = None
+                report_status = report.status if report is not None else None
                 evidence_coverage_percent = None
                 evidence_covered_count = None
                 evidence_total_count = None
@@ -7317,7 +7336,7 @@ class AIOpsRuntimeService:
                 if final_artifact is not None:
                     artifact_payload = dict(final_artifact.payload_json or {})
                     artifact_status = str(artifact_payload.get("status") or "")
-                    report_status = {
+                    report_status = report_status or {
                         "COMPLETED": "READY",
                         "READY": "READY",
                         "PARTIAL": "PARTIAL",
@@ -7340,6 +7359,7 @@ class AIOpsRuntimeService:
                         run_id=item.ops_run_id,
                         target_id=item.target_id,
                         status=item.status,
+                        report_id=report.report_id if report is not None else None,
                         report_status=report_status,
                         evidence_coverage_percent=evidence_coverage_percent,
                         evidence_covered_count=evidence_covered_count,

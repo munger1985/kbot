@@ -1,0 +1,21 @@
+/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* business/AIOpsInspectionDetailView.vue */
+:is([data-page="inspection-detail"]) .inspection-detail-page { min-width:0; }
+:is([data-page="inspection-detail"]) .inspection-detail-content { display:contents; }
+:is([data-page="inspection-detail"]) .inspection-page-actions,:is([data-page="inspection-detail"]) .inspection-run-statuses { display:flex; flex-wrap:wrap; gap:10px; }
+:is([data-page="inspection-detail"]) .inspection-batch-summary,:is([data-page="inspection-detail"]) .inspection-target-card,:is([data-page="inspection-detail"]) .inspection-follow-up { padding:24px; min-width:0; }
+:is([data-page="inspection-detail"]) .inspection-batch-summary h1,:is([data-page="inspection-detail"]) .inspection-target-card h3,:is([data-page="inspection-detail"]) .inspection-follow-up h2 { margin:0 0 12px; overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-targets>p,:is([data-page="inspection-detail"]) .inspection-follow-up p,:is([data-page="inspection-detail"]) .inspection-empty { color:var(--muted); line-height:1.65; }
+:is([data-page="inspection-detail"]) .inspection-target-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; margin-top:16px; }
+:is([data-page="inspection-detail"]) .inspection-target-card { display:flex; flex-direction:column; gap:16px; }
+:is([data-page="inspection-detail"]) .inspection-target-card.active { border-color:var(--accent); }
+:is([data-page="inspection-detail"]) .inspection-target-card footer { margin-top:auto; flex-wrap:wrap; }
+:is([data-page="inspection-detail"]) .inspection-observation { margin:0; min-width:0; }
+:is([data-page="inspection-detail"]) .inspection-observation>div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 16px; padding:10px 0; border-bottom:1px solid var(--line); }
+:is([data-page="inspection-detail"]) .inspection-observation dt { color:var(--muted); }
+:is([data-page="inspection-detail"]) .inspection-observation dd { margin:0; color:var(--ink); font-family:var(--font-data); overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-detail-page .status-pill { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-detail-page .notice,:is([data-page="inspection-detail"]) .inspection-detail-page code { min-width:0; overflow-wrap:anywhere; white-space:normal; }
+:is([data-page="inspection-detail"]) .inspection-continuation-form { max-width:760px; margin-top:16px; }
+@media(max-width:600px) { :is([data-page="inspection-detail"]) .inspection-batch-summary,:is([data-page="inspection-detail"]) .inspection-target-card,:is([data-page="inspection-detail"]) .inspection-follow-up { padding:16px; } }

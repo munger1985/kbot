@@ -201,6 +201,10 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 self.assertIn('class="platform-home-hero app-page-head recovery-hero"', page)
             elif path.name in {"inspection-plan-detail.html", "run-detail.html", "diagnostic-source-detail.html"}:
                 self.assertIn("正在打开", page)
+            elif path.name == "inspection-detail.html":
+                self.assertIn('class="platform-home-header"', page)
+                self.assertIn('aria-label="巡检批次操作"', page)
+                self.assertNotIn("<dialog", page)
             elif path.name == "report-detail.html":
                 self.assertIn('class="app-page-head"', page)
             elif path.name == "business-system-workspace.html":
@@ -217,7 +221,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn(".ops-main>.ops-head.agent-page-head>div:first-child{padding-left:0;border-left:0}", stylesheet)
 
     pages = {
-        "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "runs", "run-detail", "report-detail", "reports", "inspections",
+        "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "runs", "run-detail", "report-detail", "reports", "inspections", "inspection-detail",
         "business-systems", "business-system-workspace",
         "recovery-drills",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "cases", "knowledge-bases", "knowledge-tags",
@@ -242,7 +246,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261030_1"
+        expected = "./js/aiops-shell.js?v=20261102_1"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
         for path in pages:
             parser = _Parser()
@@ -260,7 +264,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(28, len(scripts))
+        self.assertEqual(29, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -727,7 +731,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn(f"workspaces.css?v={stylesheet_version}", page)
-            self.assertIn("aiops-shell.js?v=20261030_1", page)
+            self.assertIn("aiops-shell.js?v=20261102_1", page)
             self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
         self.assertIn("reference-inspections.css?v=20261030_1", inspections)
@@ -1494,9 +1498,14 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('class="active" type="button" aria-current="page">巡检计划', plans)
         inspection_script = (AIOPS_ROOT / "js" / "aiops-inspections.js").read_text(encoding="utf-8")
         self.assertIn("plan_display_name", inspection_script)
-        self.assertIn("rows(detail.runs)", inspection_script)
-        self.assertIn("inspection-run-tabs", inspection_script)
-        self.assertIn('aria-label="巡检诊断详情"', inspections)
+        self.assertIn("./inspection-detail.html?id=", inspection_script)
+        self.assertNotIn('id="inspection-drawer"', inspections)
+        inspection_script = (AIOPS_ROOT / "js" / "aiops-inspection-detail.js").read_text(encoding="utf-8")
+        self.assertIn("inspection-target-grid", inspection_script)
+        self.assertIn("run.error_message", inspection_script)
+        self.assertIn("run.error_code", inspection_script)
+        self.assertIn("./report-detail.html?id=", inspection_script)
+        self.assertNotIn("KBotAIOpsTurnResult.inspection", inspection_script)
         self.assertIn('class="operational-summary-grid inspection-summary-grid"', inspections)
         self.assertNotIn("ops-master-detail", inspections)
         business_groups = shell.split('["configuration-governance", "配置与治理"', 1)[0]
@@ -1516,7 +1525,6 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("state.conversation.conversation_id", situation_script)
         self.assertIn("KBotAIOpsTurnResult.html", situation_script)
         self.assertIn('class="aiops-situation-workspace', situations.replace('admin-drawer-body ', ''))
-        self.assertIn("KBotAIOpsTurnResult.inspection", inspection_script)
         self.assertIn("KBotAIOpsTurnResult.html", situation_script)
         self.assertIn("诊断过程", workspace)
         self.assertIn("ops-progress-timeline", workspace)
@@ -1530,7 +1538,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn(': { agent_id: agentId, content }', workspace)
         self.assertNotIn("state.targets", workspace)
         self.assertIn('request("/targets?limit=200")', inspection_script)
-        self.assertIn('source_run_id:state.run.ops_run_id', inspection_script)
+        self.assertIn('source_run_id:state.runId', inspection_script)
         self.assertIn('/conversations?run_id=', inspection_script)
         self.assertIn('state.lookupFailed', inspection_script)
         self.assertIn('state.selection', inspection_script)
@@ -1563,23 +1571,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('block.block_type === "CHART"', workspace)
         self.assertIn('block.block_type === "EVIDENCE_REFERENCES"', workspace)
         self.assertNotIn("tablespaceChartHtml", workspace)
-        self.assertIn("inspection(payload)", workspace)
-        self.assertIn("checks.flatMap(item => records(item.findings))", workspace)
-        self.assertIn('empty_reasons:findings.length ? [] : ["本期未发现达到规则阈值的异常。"]', workspace)
-        self.assertIn('schema_version === "REPORT_CONTENT.v1"', inspection_script)
-        self.assertIn("KBotAIOpsTurnResult.inspection(state.result.payload)", inspection_script)
-        self.assertIn("KBotAIOpsTurnResult.html(state.result?.payload", inspection_script)
         self.assertIn("evidence_coverage_percent", inspection_script)
-        self.assertIn('sufficiency_status === "ANSWERABLE"', inspection_script)
-        self.assertIn("证据有缺口", inspection_script)
-        self.assertIn("证据覆盖", inspection_script)
-        self.assertIn("历史报告未记录覆盖率", inspection_script)
         self.assertIn("function noRunText()", inspection_script)
         self.assertIn("本批次已结束，但未生成目标取证运行，未形成巡检报告", inspection_script)
-        self.assertIn("未执行的批次没有可继承的巡检证据", inspection_script)
-        self.assertIn('state.run ? badge(evidence.label,evidence.tone) + badge(evidence.coverage,evidence.tone) : ""', inspection_script)
-        self.assertIn("数据库检查覆盖率 ${scope.evidence_coverage_percent}%", workspace)
-        self.assertIn('Number.isFinite(scope.evidence_coverage_percent)', inspection_script)
         self.assertIn('block.block_type === "FINDING_CARDS"', workspace)
         self.assertIn("globalThis.KBotAIOpsTurnResult", workspace)
         self.assertIn("bindReportArtifactActions(panel)", workspace)
@@ -1589,15 +1583,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn(".ops-finding-fields", css)
         self.assertIn(".ops-analysis", css)
         self.assertIn(".ops-solution", css)
-        self.assertIn('class="inspection-check-list"', workspace)
-        self.assertIn('class="inspection-observations"', workspace)
-        self.assertIn("未记录数据缺口，全部计划检查均已形成可验证观测。", workspace)
-        self.assertIn("继续按既定周期执行该巡检模板并关注趋势变化。", workspace)
         self.assertNotIn('`**根因等级：**', workspace)
         self.assertIn("answerBlockHtml", workspace)
         self.assertIn("turnEvidenceHtml", workspace)
         self.assertIn("turn.display_dictionary", workspace)
-        self.assertIn("report.display_dictionary", workspace)
+        self.assertNotIn("inspection(payload)", workspace)
         self.assertIn("displayText", workspace)
         self.assertIn(
             'const dataBlocks = blocks.filter((block) => '
@@ -1613,7 +1603,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("investigationPlanHtml", workspace)
         self.assertNotIn("inspectionMarkdown", workspace)
         self.assertNotIn("conversationAnswerHtml", inspection_script)
-        self.assertIn("本次巡检尚未形成可展示结果。", inspection_script)
+        self.assertIn("本目标未生成正式报告，不能展示为空白报告。", inspection_script)
         self.assertIn("showInvestigationPlan", workspace)
         self.assertIn("调查计划与判断依据", workspace)
         progress_rule = css.split(".ops-progress {", 1)[1].split("}", 1)[0]

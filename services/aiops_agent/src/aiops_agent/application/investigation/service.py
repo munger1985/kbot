@@ -981,6 +981,7 @@ class TurnPlanningService:
         }
         actions: list[InvestigationAction] = []
         unavailable: list[str] = []
+        planning_gaps: list[dict] = []
         weekly = schedule_type == "WEEKLY"
         weekly_trend = False
         for step in configured_steps:
@@ -1007,22 +1008,51 @@ class TurnPlanningService:
                 if weekly and trend_required
                 else f"巡检{title}，确认当前状态和异常信号。"
             )
-            actions.append(
-                InvestigationAction(
-                    action_id=f"a{len(actions) + 1}",
-                    question=question,
-                    tool_id=tool_id,
-                    input=dict(step.get("input") or {}),
-                    expected_evidence_kind=str(
-                        step.get("expected_evidence_kind") or "INSPECTION"
+            action = InvestigationAction(
+                action_id=f"a{len(actions) + 1}",
+                question=question,
+                tool_id=tool_id,
+                input=dict(step.get("input") or {}),
+                expected_evidence_kind=str(
+                    step.get("expected_evidence_kind") or "INSPECTION"
+                ),
+                measurement_semantics=MeasurementSemantics(
+                    str(
+                        step.get("measurement_semantics")
+                        or MeasurementSemantics.CURRENT_ACTIVITY
+                    )
+                ),
+                optional=bool(step.get("optional", False)),
+            )
+            try:
+                normalized = self._tool_snapshot_builder.validate_direct_actions(
+                    actions=(action,),
+                    capabilities=context.capabilities,
+                )
+            except (LookupError, ValueError) as exc:
+                # 冻结模板不能猜测对象参数；隔离坏步骤并保留其余巡检证据。
+                unavailable.append(title)
+                planning_gaps.append({
+                    "source_id": "inspection.template",
+                    "step_id": tool_id,
+                    "code": "INSPECTION_FIXED_TOOL_INPUT_INVALID",
+                    "detail": (
+                        f"模板 {template_id}@{template_version} 的检查项"
+                        f"“{title}”未执行：{exc}。请在模板中心核对检查项，"
+                        "不能猜测 schema 或对象名称。"
                     ),
-                    measurement_semantics=MeasurementSemantics(
-                        str(
-                            step.get("measurement_semantics")
-                            or MeasurementSemantics.CURRENT_ACTIVITY
-                        )
-                    ),
-                    optional=bool(step.get("optional", False)),
+                    "retryable": False,
+                })
+                continue
+            actions.append(action.model_copy(update={
+                "input": normalized[action.action_id],
+            }))
+        if not actions:
+            raise InvestigationPlanValidationError(
+                "巡检模板没有可执行的固定取证步骤："
+                + (
+                    planning_gaps[0]["detail"]
+                    if planning_gaps else "、".join(unavailable)
                 )
             )
         display_name = str(
@@ -1120,6 +1150,7 @@ class TurnPlanningService:
         )
         route = {
             "mode": "TEMPLATE_FIXED_INSPECTION",
+            "evidence_gaps": planning_gaps,
             "public_summary": (
                 f"已按勾选检查项建立固定只读取证计划（模板 {template_id}@{template_version}）"
             ),

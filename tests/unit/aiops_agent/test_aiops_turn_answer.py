@@ -659,6 +659,29 @@ def _monitoring_artifact() -> dict:
 
 
 class DbaTurnAnswerTest(unittest.TestCase):
+    def test_inspection_preserves_invalid_template_step_reason_without_duplicate_gap(self):
+        context = _context(artifacts=(_identity_tool_artifact(source_type="TOOL"),))
+        gap = {
+            "source_id": "inspection.template", "step_id": "db.index.health",
+            "code": "INSPECTION_FIXED_TOOL_INPUT_INVALID",
+            "detail": "指定索引缺少 schema_name，不能猜测对象。",
+            "retryable": False,
+        }
+        snapshot = {
+            **context.plan_snapshot,
+            "planning_route": {"evidence_gaps": [gap]},
+            "client_metadata": {"inspection": {"evidence_steps": [
+                {"tool_id": "db.index.health"},
+            ]}},
+        }
+        result = asyncio.run(DbaEvidenceAssessmentHandler().execute(
+            replace(context, trigger_type="SCHEDULE", plan_snapshot=snapshot),
+        ))
+        matching = [item for item in result.gaps if item.step_id == "db.index.health"]
+        self.assertEqual(1, len(matching))
+        self.assertEqual(gap["code"], matching[0].code)
+        self.assertEqual(gap["detail"], matching[0].detail)
+
     def test_assessment_includes_inherited_situation_signals(self) -> None:
         artifact_id = str(uuid7())
         result = asyncio.run(

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         OpsTaskEntity,
         OutboxEntity,
         PolicyEntity,
+        ReportEntity,
         ReportSourceEntity,
         TargetEntity,
         WorkItemEntity,
@@ -113,6 +114,10 @@ class ChangeRepositoryPort(Protocol):
 
 
 class InspectionRepositoryPort(Protocol):
+    async def get_current_inspection_report_for_run(
+        self, *, ops_run_id: UUID
+    ) -> ReportEntity | None: ...
+
     async def add_plan(
         self, entity: InspectionPlanEntity
     ) -> InspectionPlanEntity: ...

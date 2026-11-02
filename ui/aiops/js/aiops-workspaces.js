@@ -1277,37 +1277,6 @@
 
   // 总览、告警与运行详情共享同一份只读结果，不在上下文视图暴露写入操作。
   globalThis.KBotAIOpsTurnResult = {
-    inspection(payload) {
-      const report = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
-      const dictionary = report.display_dictionary || {}, scope = report.scope || {};
-      const records = value => values(value).filter(item => item && typeof item === "object" && !Array.isArray(item));
-      const itemText = item => displayText(typeof item === "string" ? item : item?.fact_summary || item?.summary || item?.detail || item?.title || item?.code || "",dictionary);
-      const facts = records(report.facts), checks = facts.filter(item => item.kind !== "agent_health_inspection"), gaps = records(report.gaps);
-      const recommendations = values(report.recommendations).map(itemText).filter(Boolean);
-      const health = String(scope.health_status || (report.status === "PARTIAL" ? "UNKNOWN" : "NORMAL"));
-      const healthLabels = {NORMAL:"正常",INFO:"提示",LOW:"低风险",MEDIUM:"中风险",HIGH:"高风险",CRITICAL:"严重风险",UNKNOWN:"无法判定"};
-      const healthClass = ["CRITICAL","HIGH"].includes(health) ? "status-danger" : ["MEDIUM","UNKNOWN"].includes(health) ? "status-warning" : ["INFO","LOW"].includes(health) ? "status-info" : "status-success";
-      const checkLabels = {CLEAR:"正常",FINDING:"需关注",OBSERVED:"仅观测",NOT_APPLICABLE:"不适用",PARTIAL:"证据不完整",GAP:"检查未完成",MISSING:"未取证",COMPLIANT:"符合策略",BREACHED:"不符合策略",NOT_OBSERVABLE:"无法验证"};
-      const gapLabels = {PRODUCT_CONTRACT:"产品证据契约",MONITORING:"监控采集",REPORT_CONTRACT:"报告契约",SOURCE_ACCESS:"数据库访问",SOURCE_CAPABILITY:"版本或能力",DATA_SOURCE:"数据源取证"};
-      const pill = (label,tone) => `<span class="status-pill ${tone}">${esc(label)}</span>`;
-      const section = (title,content,extra = "") => `<section class="inspection-report-section${extra}"><h5>${title}</h5>${content}</section>`;
-      const findings = checks.flatMap(item => records(item.findings));
-      const findingBlock = {findings,empty_reasons:findings.length ? [] : ["本期未发现达到规则阈值的异常。"]};
-      const count = scope.check_status_counts || {};
-      const coverage = typeof scope.evidence_coverage_percent === "number" ? `<p class="inspection-coverage">数据库检查覆盖率 ${scope.evidence_coverage_percent}% · ${scope.evidence_covered_count ?? 0}/${scope.evidence_total_count ?? 0} 项${typeof scope.monitoring_sample_coverage_percent === "number" ? ` · 监控采样覆盖率 ${scope.monitoring_sample_coverage_percent}% · 低覆盖 ${scope.monitoring_low_coverage_metric_count ?? 0}/${scope.monitoring_metric_count ?? 0} 项` : ""} · 数据缺口 ${scope.evidence_gap_count ?? gaps.length} 项</p>` : "";
-      const checkContent = checks.length ? `<div class="inspection-check-list">${checks.map(item => {
-        const status = String(item.check_status || "");
-        const tone = ["FINDING","BREACHED"].includes(status) ? "status-danger" : ["PARTIAL","GAP","MISSING","NOT_OBSERVED"].includes(status) ? "status-warning" : ["OBSERVED","NOT_APPLICABLE","NOT_OBSERVABLE"].includes(status) ? "status-info" : "status-success";
-        const observations = records(item.observations);
-        return `<article><header><strong>${esc(displayText(item.title || item.tool_id || "巡检检查项",dictionary))}</strong>${pill(checkLabels[status] || displayText(status || "已记录",dictionary),tone)}</header><p>${esc(itemText(item))}</p>${observations.length ? `<ul class="inspection-observations">${observations.map(row => `<li><code>${esc(Object.entries(row).map(([key,value]) => `${key}=${value ?? "—"}`).join(" · "))}</code></li>`).join("")}</ul>` : ""}</article>`;
-      }).join("")}</div>` : '<p class="empty-cell">正式报告未记录独立检查项。</p>';
-      return `<div class="inspection-report-result"><header class="inspection-report-heading"><div><p class="eyebrow">巡检正式结果</p><h4>${esc(report.title || "数据库巡检报告")}</h4><p>${esc(report.summary || "本次巡检已形成正式结果。")}</p>${coverage}</div><div class="inspection-status-stack">${pill(healthLabels[health] || health,healthClass)}${pill(report.status === "PARTIAL" ? "证据不完整" : "证据完整",report.status === "PARTIAL" ? "status-warning" : "status-success")}</div></header>`
-        + facts.filter(item => item.kind === "agent_health_inspection" && String(item.markdown || "").trim()).map(item => section("巡检结论",`<div class="agent-markdown-content">${markdown.render(displayText(item.markdown,dictionary))}</div>`)).join("")
-        + section("已核验发现",findingCardsHtml(findingBlock,dictionary,true))
-        + section("检查结果",(Object.keys(count).length ? `<p class="inspection-status-summary">正常 ${count.CLEAR ?? 0} 项 · 需关注 ${count.FINDING ?? 0} 项 · 仅观测 ${count.OBSERVED ?? 0} 项 · 不适用 ${count.NOT_APPLICABLE ?? 0} 项 · 不完整 ${(count.PARTIAL ?? 0) + (count.GAP ?? 0) + (count.MISSING ?? 0)} 项</p>` : "") + checkContent)
-        + section("建议",recommendations.length ? `<ul>${recommendations.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : '<p class="empty-cell">继续按既定周期执行该巡检模板并关注趋势变化。</p>')
-        + section("数据缺口",gaps.length ? `<ul>${gaps.map(item => `<li>${pill(gapLabels[item.category || "DATA_SOURCE"] || "数据源取证","status-warning")} ${esc(itemText(item))}</li>`).join("")}</ul>` : '<p class="empty-cell">未记录数据缺口，全部计划检查均已形成可验证观测。</p>',gaps.length ? " has-gaps" : "") + "</div>";
-    },
     html(payload, emptyText = "本次诊断尚未形成可展示的四段结论。") {
       const dictionary = payload?.display_dictionary || {};
       const visible = new Set(["FINDING_CARDS","ANALYSIS_MARKDOWN","CHART","SOLUTION_MARKDOWN","FACT_CONFIRMATION","MARKDOWN","REPORT_ARTIFACT_LINKS","PROPOSAL_SUMMARY"]);

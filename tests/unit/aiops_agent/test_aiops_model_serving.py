@@ -80,9 +80,11 @@ class _SequencedSession:
     def __init__(self, contents: tuple[str, ...]):
         self._contents = list(contents)
         self.payloads = []
+        self.headers = []
 
     def post(self, url, *, headers, json, timeout):
-        del url, headers, timeout
+        del url, timeout
+        self.headers.append(dict(headers))
         self.payloads.append(json)
         index = len(self.payloads)
         return _SequencedResponse(
@@ -204,8 +206,11 @@ class AIOpsStructuredModelClientTest(unittest.IsolatedAsyncioTestCase):
         with patch(
             "aiops_agent.adapters.model_serving."
             "build_internal_auth_headers",
-            return_value={"Authorization": "Bearer test"},
-        ):
+            side_effect=[
+                {"Authorization": "Bearer first-request"},
+                {"Authorization": "Bearer fresh-repair-request"},
+            ],
+        ) as build_headers:
             result = await client.generate_structured(
                 purpose="diagnosis.repair-test",
                 output_model=_StructuredOutput,
@@ -228,6 +233,11 @@ class AIOpsStructuredModelClientTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("已修正", result.output.answer)
         self.assertEqual(2, len(session.payloads))
+        self.assertEqual(2, build_headers.call_count)
+        self.assertEqual(
+            ["Bearer first-request", "Bearer fresh-repair-request"],
+            [headers["Authorization"] for headers in session.headers],
+        )
         repair_messages = session.payloads[1]["messages"]
         self.assertEqual("assistant", repair_messages[-2]["role"])
         self.assertIn("未通过既定输出合同", repair_messages[-1]["content"])

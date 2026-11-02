@@ -824,6 +824,14 @@ class DbaEvidenceAssessmentHandler:
             )
         )
         if context.trigger_type == "SCHEDULE":
+            template_gaps = tuple(
+                TurnEvidenceGap.model_validate(item)
+                for item in dict(
+                    context.plan_snapshot.get("planning_route") or {}
+                ).get("evidence_gaps", ())
+            )
+            gaps.extend(template_gaps)
+            invalid_tool_ids = {item.step_id for item in template_gaps}
             planned_tool_ids = {
                 str(item.get("tool_id") or "")
                 for item in dict(
@@ -835,7 +843,7 @@ class DbaEvidenceAssessmentHandler:
                 if not isinstance(step, dict):
                     continue
                 tool_id = str(step.get("tool_id") or "")
-                if not tool_id or tool_id in planned_tool_ids:
+                if not tool_id or tool_id in planned_tool_ids or tool_id in invalid_tool_ids:
                     continue
                 gaps.append(
                     TurnEvidenceGap(

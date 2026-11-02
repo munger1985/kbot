@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock
 
 from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
+from aiops_agent.repositories.inspection import InspectionRepository
 from aiops_agent.contracts.report import ReportContent
 from aiops_agent.application.reporting import SYSTEM_REPORT_TEMPLATES
 from platform_core.contracts.aiops import ReportSectionEdit
@@ -241,6 +242,20 @@ class ReportQueryTest(unittest.TestCase):
 
 
 class InspectionFireQueryTest(unittest.TestCase):
+    def test_batch_report_lookup_is_current_inspection_and_same_run_only(self):
+        run_id = uuid7()
+        report = SimpleNamespace(report_id=uuid7())
+        session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(
+            scalars=lambda: SimpleNamespace(first=lambda: report),
+        )))
+        repository = InspectionRepository(session)
+        result = asyncio.run(repository.get_current_inspection_report_for_run(ops_run_id=run_id))
+        statement = session.execute.await_args.args[0]
+        self.assertIs(report, result)
+        self.assertIn(run_id, statement.compile().params.values())
+        self.assertIn("inspection.", statement.compile().params.values())
+        self.assertIn("is_current", str(statement.whereclause))
+
     def test_fire_detail_returns_plan_name_and_linked_run_summaries(self) -> None:
         fire_id = uuid7()
         plan_id = uuid7()
@@ -262,7 +277,12 @@ class InspectionFireQueryTest(unittest.TestCase):
         run_ids = (uuid7(), uuid7())
         target_ids = (uuid7(), uuid7())
         artifact_ids = (uuid7(), uuid7())
+        report_id = uuid7()
+        published_artifact_id = uuid7()
         inspections = SimpleNamespace(
+            get_current_inspection_report_for_run=AsyncMock(side_effect=[
+                SimpleNamespace(report_id=report_id, content_artifact_id=published_artifact_id, status="READY"), None,
+            ]),
             get_fire_scoped=AsyncMock(return_value=fire),
             list_runs_for_fire=AsyncMock(
                 return_value=[
@@ -319,6 +339,16 @@ class InspectionFireQueryTest(unittest.TestCase):
         self.assertEqual(result.plan_id, plan_id)
         self.assertEqual(result.plan_display_name, "生产数据库每日巡检")
         self.assertEqual(tuple(item.run_id for item in result.runs), run_ids)
+        self.assertEqual(result.runs[0].report_id, report_id)
+        self.assertIsNone(result.runs[1].report_id)
+        self.assertEqual(
+            [call.kwargs["ops_run_id"] for call in inspections.get_current_inspection_report_for_run.await_args_list],
+            list(run_ids),
+        )
+        self.assertEqual(
+            published_artifact_id,
+            runs.get_artifact.await_args_list[0].kwargs["artifact_id"],
+        )
         self.assertEqual(tuple(item.target_id for item in result.runs), target_ids)
         self.assertEqual(
             tuple(item.report_status for item in result.runs),

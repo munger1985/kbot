@@ -108,10 +108,6 @@ class AIOpsStructuredModelClient:
             },
         ]
         started = time.monotonic()
-        headers = build_internal_auth_headers(
-            audience=self._audience,
-            caller_service=self._caller,
-        )
         prompt_tokens = 0
         completion_tokens = 0
         for attempt in range(2):
@@ -141,6 +137,11 @@ class AIOpsStructuredModelClient:
             )
             # 把本次剩余预算传到模型托管，避免调用方截止后 Provider 仍继续生成长报告。
             request_payload["timeout"] = timeout
+            # 上一次生成可能已耗尽短期令牌寿命，每次 HTTP 请求独立签发。
+            headers = build_internal_auth_headers(
+                audience=self._audience,
+                caller_service=self._caller,
+            )
             try:
                 async with self._session.post(
                     self._url,

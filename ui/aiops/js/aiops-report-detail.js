@@ -4,6 +4,13 @@
   const shell = globalThis.KBotAIOpsShell, esc = shell.escape, api = "/api/v1/apps/aiops";
   const request = (path,init) => KBotAIOpsAuth.request(api + path,init), rows = value => Array.isArray(value) ? value : [];
   const reportId = new URLSearchParams(location.search).get("id") || "";
+  const origin = new URLSearchParams(location.search);
+  const inspectionFireId = origin.get("inspectionFireId");
+  if (inspectionFireId) {
+    const back = document.querySelector('a[href="./reports.html"]');
+    back.href = `./inspection-detail.html?id=${encodeURIComponent(inspectionFireId)}&runId=${encodeURIComponent(origin.get("runId") || "")}`;
+    back.textContent = "← 返回巡检批次";
+  }
   const root = document.getElementById("formal-report");
   const state = {report:null,presentation:null,target:null,eligibility:null,pdfBusy:false,rawBusy:false,extracting:false,observer:null};
   const statusLabel = value => ({PUBLISHED:"已发布",READY:"结论就绪",PARTIAL:"证据不完整",GENERATING:"生成中",FAILED:"生成失败"})[value] || value;

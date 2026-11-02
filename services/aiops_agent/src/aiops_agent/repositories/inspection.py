@@ -766,6 +766,22 @@ class InspectionRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalars().first()
 
+    async def get_current_inspection_report_for_run(
+        self, *, ops_run_id: UUID
+    ) -> ReportEntity | None:
+        """批次入口仅关联本 Run 的正式巡检报告，不串到其他模板报告。"""
+        self._check_active()
+        statement = (
+            select(ReportEntity)
+            .where(
+                ReportEntity.ops_run_id == ops_run_id,
+                ReportEntity.report_key.startswith("inspection.", autoescape=True),
+                ReportEntity.is_current.is_(True),
+            )
+            .order_by(ReportEntity.report_version.desc())
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
     async def get_current_report_for_run_template(
         self, *, ops_run_id: UUID, template_id: str, lock: bool = False
     ) -> ReportEntity | None:

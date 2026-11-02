@@ -40,7 +40,19 @@ PostgreSQL WAL 归档、MySQL Binlog 状态只证明归档链可观测，不能�
 - 完整证据与数据库健康是两个维度：报告 READY 不表示所有检查正常，发现需关注项也可形成完整报告。
 - 摘要中的取证步骤数不冒充勾选的语义检查项数。报告发布后的历史工件保持冻结，查看或下载不会按新代码重算。
 
-本修复不变更 Schema、Prompt 或 API 字段。界面的“版本 1 / 模板 v1”不是部署代码版本，也不能证明不同日期使用相同模板快照、策略及监控窗口。
+本修复不变更 Schema 或 Prompt；公共 API 增加可空的正式报告关联字段。界面的“版本 1 / 模板 v1”不是部署代码版本，也不能证明不同日期使用相同模板快照、策略及监控窗口。
+
+## 统一报告入口与固定步骤隔离
+
+巡检批次使用独立详情页，不再在抽屉内嵌套左右滚动区域。批次页只显示执行事实、三种覆盖率、错误原因与继续调查入口；各目标“查看报告”使用正式报告 ID，进入与运维报告完全相同的详情渲染及 PDF 下载。公共 `InspectionRunSummary.report_id` 为可空新增字段；按当前 Run 的 `inspection.` 报告键查找当前发布版本，不能按目标或最近时间猜测关联，也不能把非巡检模板报告串入批次。报告信息与覆盖率读取该发布版本的冻结工件。
+
+未生成报告的失败运行展示实际 `error_code/error_message`，不展示一份空白“报告”。覆盖率为零不会被显示为成功或无缺口。
+
+固定模板中缺少必填对象参数的单一步骤，记录 `INSPECTION_FIXED_TOOL_INPUT_INVALID` 缺口并继续其余有效步骤；缺口保留模板、工具及缺失参数原因，不能猜测 schema/index 名称，不能通过默认值扩大数据库范围。该步骤在报告中仍为 GAP，不算已执行；全部步骤都不可执行时明确失败。冻结模板和历史运行不被原地改写，坏检查项仍需在模板中心核对后用于新运行。
+
+结构化模型修正重试按每次 HTTP 请求重新签发短期 AuthContext，保留原有幂等键和截止时间，不增加令牌寿命或关闭认证。报告发布日志增加仅含步骤、缺口代码和类别的质量索引，不记录数据库凭据或原始行值。
+
+2026-11-02 10:42 的 Ammolite 在线日志确认索引工具缺少 `schema_name` 导致目标规划失败；10:44 的两次结论修正重试返回 `AUTH_CONTEXT_EXPIRED`。后者不能单独证明 WMS 语义满足率为零的全部原因；必须核对该报告的冻结缺口，不能把“数据库工具执行 100%”替换成“语义证据完整”。
 
 ## 离线回归
 
@@ -57,6 +69,9 @@ python -m unittest \
   tests.unit.aiops_agent.test_aiops_formal_reporting \
   tests.unit.aiops_agent.test_aiops_readiness \
   tests.unit.aiops_agent.test_aiops_dba_playbook_planning \
+  tests.unit.aiops_agent.test_aiops_fixed_inspection_inputs \
+  tests.unit.aiops_agent.test_aiops_model_serving \
+  tests.unit.aiops_agent.test_aiops_report_queries \
   tests.unit.aiops_agent.test_aiops_turn_answer
 ```
 

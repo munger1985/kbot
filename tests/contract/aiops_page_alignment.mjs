@@ -15,7 +15,7 @@ const { chromium } = require("@playwright/test");
 const { createServer: createViteServer } = await import(require.resolve("vite"));
 const vue = (await import(require.resolve("@vitejs/plugin-vue"))).default;
 const manifest = JSON.parse(readFileSync(resolve(root, "ui/aiops/reference-pages.json"), "utf8"));
-const pages = (process.env.AIOPS_PAGES || "business-systems,business-system-workspace,knowledge-bases,responsibility-groups,knowledge-tags,agents,cases,report-templates,monitoring,operations-knowledge,chat,dashboard,work-item-detail,situations,inspections,reports,recovery-drills,inspection-plans,inspection-plan-detail,runs,run-detail,report-detail,diagnostic-sources,diagnostic-source-detail").split(',');
+const pages = (process.env.AIOPS_PAGES || "business-systems,business-system-workspace,knowledge-bases,responsibility-groups,knowledge-tags,agents,cases,report-templates,monitoring,operations-knowledge,chat,dashboard,work-item-detail,situations,inspections,inspection-detail,reports,recovery-drills,inspection-plans,inspection-plan-detail,runs,run-detail,report-detail,diagnostic-sources,diagnostic-source-detail").split(',');
 const eligiblePages = Object.entries(manifest.pages).filter(([, entry]) => entry.sources.length).map(([page]) => page);
 for (const page of pages) assert.ok(eligiblePages.includes(page), `${page} 尚无可验收的生产页面基准`);
 if (!process.env.AIOPS_PAGES) assert.deepEqual([...pages].sort(), eligiblePages.sort(), "默认整套回归不得遗漏已具备基准的页面");
@@ -154,7 +154,7 @@ function installFixture(data) {
     if (suffix.endsWith('/inspection-plans')) return {items:rows({...data.inspectionPlan,status:globalThis.fixturePlanStatus || 'ACTIVE'})};
     if (suffix.endsWith('/inspection-plans/plan-1')) return {...data.inspectionPlan,schedule_type:globalThis.fixturePlanType || 'DAILY',cron_expression:globalThis.fixturePlanCron || '0 2 * * *'};
     if (suffix.endsWith('/runs')) return {items:rows(data.run)};
-    if (suffix.endsWith('/inspection-fires/fire-1')) return {...data.inspectionFire,runs:globalThis.fixtureInspectionMode==='NO_RUN'?[]:[{run_id:'run-1',target_id:'target-1',status:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?fixtureInspectionMode:'COMPLETED',report_status:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?'': 'PARTIAL',evidence_coverage_percent:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?null:75,evidence_covered_count:3,evidence_total_count:4,tool_execution_coverage_percent:100,monitoring_sample_coverage_percent:80,evidence_gap_count:1},{run_id:'run-2',target_id:'target-2',status:'FAILED',error_message:'目标暂时无法连接'}]};
+    if (suffix.endsWith('/inspection-fires/fire-1')) return {...data.inspectionFire,runs:globalThis.fixtureInspectionMode==='NO_RUN'?[]:[{run_id:'run-1',target_id:'target-1',report_id:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?null:'report-1',error_code:globalThis.fixtureInspectionMode==='FAILED'?'AIOPS_INVESTIGATION_PLAN_INVALID':null,error_message:globalThis.fixtureInspectionMode==='FAILED'?'固定工具 db.index.health 缺少 schema_name':null,status:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?fixtureInspectionMode:'COMPLETED',report_status:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?'': 'PARTIAL',evidence_coverage_percent:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?null:75,evidence_covered_count:3,evidence_total_count:4,tool_execution_coverage_percent:100,monitoring_sample_coverage_percent:80,evidence_gap_count:1},{run_id:'run-2',target_id:'target-2',status:'FAILED',error_message:'目标暂时无法连接'}]};
     if (suffix.endsWith('/runs/run-2')) return {ops_run_id:'run-2',target_id:'target-2',status:'FAILED'};
     if (suffix.endsWith('/runs/run-2/result')) {const error=new (globalThis.fixtureApiErrorClass || Error)('目标暂时无法连接');error.status=404;throw error;}
     if (suffix.endsWith('/situations/situation-1')) return {...data.situation,run_ids:globalThis.fixtureSituationState==='NO_RUN'?[]:['run-1'],monitoring_sources:[{diagnostic_source_id:'source-1',display_name:'生产 Prometheus',source_type:'PROMETHEUS',event_count:2,latest_severity:'HIGH',latest_status:'OPEN',last_observed_at:data.situation.last_observed_at}],signal_events:[{signal_event_id:'signal-1',event_class:'LOCK_WAIT',severity:'HIGH',normalized_status:'OPEN',summary:'当前写入事务等待超过阈值。',occurred_at:data.situation.last_observed_at}]};
@@ -236,13 +236,14 @@ const pages = {${pages.map((name) => `${JSON.stringify(name)}: () => import('/sr
 const component = (await pages[page]()).default;
 if(page==='chat') globalThis.fixtureECharts=await import('echarts/core');
 document.querySelector('#reference').classList.toggle('is-viewport-contained',['monitoring','chat','business-system-workspace'].includes(page));
-const router = createRouter({history:createWebHistory(),routes:[{path:page==='business-system-workspace'?'/apps/aiops/:domainCode/business-system-workspace/:businessSystemId':page==='work-item-detail'?'/apps/aiops/:domainCode/work-items/:workItemId':page==='report-detail'?'/apps/aiops/:domainCode/reports/:reportId':'/apps/aiops/:domainCode/:pathMatch(.*)*',component:['diagnostic-sources','diagnostic-source-detail'].includes(page)?{render:()=>h(component,{section:'diagnostic-sources'})}:['inspections','reports','inspection-plans','inspection-plan-detail'].includes(page)?{render:()=>h(component,{kind:page==='reports'?'reports':'inspections'})}:component,meta:{title:page==='knowledge-tags'?'AIOps 知识标签':${JSON.stringify({dashboard:'运维总览',"business-systems":"业务系统","knowledge-bases":"运维知识库","responsibility-groups":"责任组",agents:"Agent 管理", cases:"历史诊断案例", "report-templates":"模板中心",monitoring:"实时监控","operations-knowledge":"运维知识","work-item-detail":"工作项详情"})}[page]}}]});
+const router = createRouter({history:createWebHistory(),routes:[{path:page==='business-system-workspace'?'/apps/aiops/:domainCode/business-system-workspace/:businessSystemId':page==='work-item-detail'?'/apps/aiops/:domainCode/work-items/:workItemId':page==='inspection-detail'?'/apps/aiops/:domainCode/inspections/:fireId':page==='report-detail'?'/apps/aiops/:domainCode/reports/:reportId':'/apps/aiops/:domainCode/:pathMatch(.*)*',component:['diagnostic-sources','diagnostic-source-detail'].includes(page)?{render:()=>h(component,{section:'diagnostic-sources'})}:['inspections','reports','inspection-plans','inspection-plan-detail'].includes(page)?{render:()=>h(component,{kind:page==='reports'?'reports':'inspections'})}:component,meta:{title:page==='knowledge-tags'?'AIOps 知识标签':${JSON.stringify({dashboard:'运维总览',"business-systems":"业务系统","knowledge-bases":"运维知识库","responsibility-groups":"责任组",agents:"Agent 管理", cases:"历史诊断案例", "report-templates":"模板中心",monitoring:"实时监控","operations-knowledge":"运维知识","work-item-detail":"工作项详情"})}[page]}}]});
 if(page==='chat') router.getRoutes()[0].meta.title='Agent 工作台';
 if(page==='situations') router.getRoutes()[0].meta.title='告警诊断';
 if(['inspections','inspection-plans','inspection-plan-detail'].includes(page)) router.getRoutes()[0].meta.title='日常巡检';
 if(page==='reports') router.getRoutes()[0].meta.title='运维报告';
 if(page==='recovery-drills') router.getRoutes()[0].meta.title='恢复演练';
 if(['runs','run-detail'].includes(page)) router.getRoutes()[0].meta.title='运行记录';
+if(page==='inspection-detail') router.getRoutes()[0].meta.title='巡检批次详情';
 if(page==='report-detail') router.getRoutes()[0].meta.title='报告详情';
 if(['diagnostic-sources','diagnostic-source-detail'].includes(page)) router.getRoutes()[0].meta.title='监控源';
 const app=createApp({render:()=>h(Fragment,null,[h(RouterView),h(ConfirmDialog)])}); app.use(router);
@@ -250,7 +251,7 @@ app.provide(businessAppPermissionsKey,computed(()=>Object.fromEntries([...${JSON
 app.provide(businessAppPrincipalKey,computed(()=>({id:'user-1',display_name:'测试用户',username:'fixture'})));
 const initialQuery=new URLSearchParams(location.search);
 const planQuery=['inspection-plans','inspection-plan-detail'].includes(page)?'&tab=plans':'';
-await router.replace('/apps/aiops/fixture/'+(page==='business-system-workspace'?'business-system-workspace/'+(location.search.includes('empty=1')?'new':'system-1'):page==='work-item-detail'?'work-items/item-1':page==='report-detail'?'reports/report-1':page)+'?domainId=domain-1'+(page==='chat'&&!initialQuery.get('sourceType')?'&conversationId=session-1':'')+(location.search.includes('empty=1')?'&empty=1':'')+(location.search.includes('panels=1')?'&panels=1':'')+(location.search.includes('stream=1')?'&stream=1':'')+(initialQuery.get('interaction')?'&interaction='+initialQuery.get('interaction'):'')+(initialQuery.get('sourceType')?'&sourceType='+initialQuery.get('sourceType')+'&sourceId='+initialQuery.get('sourceId'):''));
+await router.replace('/apps/aiops/fixture/'+(page==='business-system-workspace'?'business-system-workspace/'+(location.search.includes('empty=1')?'new':'system-1'):page==='work-item-detail'?'work-items/item-1':page==='inspection-detail'?'inspections/fire-1':page==='report-detail'?'reports/report-1':page)+'?domainId=domain-1'+(page==='chat'&&!initialQuery.get('sourceType')?'&conversationId=session-1':'')+(location.search.includes('empty=1')?'&empty=1':'')+(location.search.includes('panels=1')?'&panels=1':'')+(location.search.includes('stream=1')?'&stream=1':'')+(initialQuery.get('interaction')?'&interaction='+initialQuery.get('interaction'):'')+(initialQuery.get('sourceType')?'&sourceType='+initialQuery.get('sourceType')+'&sourceId='+initialQuery.get('sourceId'):''));
 if(planQuery) await router.replace({query:{...router.currentRoute.value.query,tab:'plans'}});
 if(page==='run-detail'&&initialQuery.get('id')) await router.replace({query:{...router.currentRoute.value.query,runId:initialQuery.get('id')}});
 if(initialQuery.get('reportMode')) await router.replace({query:{...router.currentRoute.value.query,reportMode:initialQuery.get('reportMode')}});
@@ -315,7 +316,7 @@ try {
   await kbot.route("**/aiops-auth.js*", (route) => route.fulfill({ contentType: "text/javascript", body: "" }));
   for (const name of pages) for (const scenario of (name === 'report-detail' ? ['STANDARD','DAILY','MONTHLY','COMPARISON'].flatMap(reportMode=>[{empty:false,reportMode},{empty:true,reportMode}]) : name === 'business-system-workspace' ? [{empty:false},{empty:true},{empty:false,interaction:'offline'},{empty:false,interaction:'rac'}] : name === 'monitoring' ? [{empty:false},{empty:true},{empty:false,panels:true}] : name==='chat'?[{empty:false},{empty:true},{empty:false,stream:true},...['clarification','evidence','proposal'].map(interaction=>({empty:false,interaction})),...['RUN','SITUATION'].map(continuation=>({empty:false,continuation}))]:[{empty:false},{empty:true}])) {
     const {empty, panels = false, stream=false, interaction='',continuation='',reportMode=''} = scenario;
-    const params = new URLSearchParams({...(empty?{empty:'1'}:{}),...(panels?{panels:'1'}:{}),...(name==='chat'&&!continuation?{conversation:'session-1'}:{}),...(stream?{stream:'1'}:{}),...(interaction?{interaction}:{}),...(continuation?{targetId:'target-1',sourceType:continuation,sourceId:'source-1'}:{}),...(name==='work-item-detail'?{id:'item-1'}:{}),...(name==='business-system-workspace'?{id:empty?'new':'system-1'}:{}),...(name==='inspection-plan-detail'&&!empty?{id:'plan-1'}:{}),...(name==='run-detail'&&!empty?{id:'run-1'}:{}),...(name==='diagnostic-source-detail'&&!empty?{id:'source-1'}:{}),...(name==='report-detail'?{id:'report-1',reportMode}:{})});
+    const params = new URLSearchParams({...(empty?{empty:'1'}:{}),...(panels?{panels:'1'}:{}),...(name==='chat'&&!continuation?{conversation:'session-1'}:{}),...(stream?{stream:'1'}:{}),...(interaction?{interaction}:{}),...(continuation?{targetId:'target-1',sourceType:continuation,sourceId:'source-1'}:{}),...(name==='work-item-detail'?{id:'item-1'}:{}),...(name==='business-system-workspace'?{id:empty?'new':'system-1'}:{}),...(name==='inspection-plan-detail'&&!empty?{id:'plan-1'}:{}),...(name==='run-detail'&&!empty?{id:'run-1'}:{}),...(name==='diagnostic-source-detail'&&!empty?{id:'source-1'}:{}),...(name==='inspection-detail'?{id:'fire-1'}:{}),...(name==='report-detail'?{id:'report-1',reportMode}:{})});
     console.log(`对照：${name} / ${interaction || (stream?'流式执行':empty ? "空数据" : "有数据")}`);
     await Promise.all([
       kbot.goto(`http://127.0.0.1:${staticServer.address().port}/ui/aiops/${name}.html?${params}`),
@@ -1157,66 +1158,60 @@ try {
       }
     }
     if(name==='inspections' && !empty) {
-      const regions=['.inspection-detail-drawer','.inspection-drawer-header','.inspection-title-block','.inspection-kicker','.inspection-workspace','.inspection-facts','.inspection-pane-header','.inspection-fact-group','.inspection-observation','.inspection-run-tabs','.inspection-run-tabs button','.inspection-run-statuses','.inspection-action-pane','.inspection-action-header','.inspection-mode-switch','.inspection-action-body','.inspection-result-summary','.inspection-result-statuses','.inspection-diagnosis','.inspection-report-result','.inspection-report-heading','.inspection-status-stack','.inspection-report-section','.inspection-report-section h5','.inspection-check-list','.inspection-check-list article','.inspection-observations','.has-gaps','.ops-findings','.ops-finding-row','.aiops-turn-result','.ops-analysis','.agent-chart','.ops-turn-result-empty','.inspection-handoff'];
-      for(const mode of ['REPORT','TURN','RUNNING','FAILED','NO_RUN']) {
-        await Promise.all([kbot,reference].map(page=>page.evaluate(value=>{fixtureInspectionMode=value;fixtureRequests=[];},mode)));
-        await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'查看报告',exact:true}).click()));
-        await Promise.all([kbot,reference].map(page=>page.locator('.inspection-detail-drawer').waitFor({state:'visible'})));
-        if(mode!=='NO_RUN') {
-          await Promise.all([kbot,reference].map(page=>page.waitForFunction(()=>fixtureRequests.some(row=>row.path.includes('/conversations?run_id=run-1')))));
-          await Promise.all([kbot,reference].map(page=>page.waitForFunction(()=>!document.querySelector('.inspection-handoff')?.textContent.includes('正在检查会话'))));
-        }
-        for(const width of [1440,1024,820,560,420,320]) {
-          await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
-          await compareRegions(kbot,reference,regions,{page:name,width,state:mode});
-          if(width===1440 || width===420) for(const [prefix,page] of [['kbot',kbot],['ammolite',reference]]) await page.screenshot({path:resolve(artifacts,`${prefix}-inspection-${mode}-${width}.png`)});
-        }
-        if(['RUNNING','NO_RUN'].includes(mode)) {
-          for(const page of [kbot,reference]) assert.equal(await page.getByRole('button',{name:'继续深入诊断',exact:true}).isDisabled(),true);
-        } else {
-          if(mode==='REPORT') {
-            await Promise.all([kbot,reference].map(page=>page.locator('.inspection-run-tabs button').nth(1).click()));
-            await Promise.all([kbot,reference].map(page=>page.waitForFunction(()=>fixtureRequests.some(row=>row.path.includes('/conversations?run_id=run-2')))));
-            await Promise.all([kbot,reference].map(page=>page.waitForFunction(()=>document.querySelector('.inspection-result-summary')?.textContent.includes('执行失败'))));
-            await compareRegions(kbot,reference,regions,{page:name,width:320,state:'second-target'});
-            await Promise.all([kbot,reference].map(page=>page.evaluate(()=>{fixtureRequests=[];})));
-            await Promise.all([kbot,reference].map(page=>page.locator('.inspection-run-tabs button').first().click()));
-            await Promise.all([kbot,reference].map(page=>page.waitForFunction(()=>fixtureRequests.some(row=>row.path.includes('/conversations?run_id=run-1')))));
-          }
-          await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'继续深入诊断',exact:true}).click()));
-          await Promise.all([kbot,reference].map(page=>page.locator('.inspection-continuation-form select:not(:disabled)').waitFor()));
-          for(const width of [1440,820,420,320]) {
-            await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
-            await compareRegions(kbot,reference,['.inspection-action-header','.inspection-continuation-form','.inspection-continuation-context','.inspection-continuation-form label','.inspection-continuation-form select','.inspection-continuation-form textarea','.inspection-continuation-actions','.inspection-continuation-actions button'],{page:name,width,state:`${mode}-continue`});
-          }
-          for(const page of [kbot,reference]) {
-            assert.equal(await page.getByRole('button',{name:'进入诊断对话',exact:true}).isDisabled(),true);
-            await page.locator('.inspection-continuation-form select').selectOption('agent-1');
-            await page.locator('.inspection-continuation-form textarea').fill('  请继续核对巡检证据。  ');
-            await page.evaluate(()=>{fixtureHoldWrites=true;});
-            await page.getByRole('button',{name:'进入诊断对话',exact:true}).click();
-            await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));
-            const request=await page.evaluate(()=>fixtureRequests.filter(row=>row.method==='POST').at(-1));
-            const payload=JSON.parse(request.body);
-            if(page===kbot) {assert.equal(payload.source_run_id,'run-1');assert.ok(request.headers['Idempotency-Key']);}
-            else assert.deepEqual(payload.conversation.source,{source_type:'RUN',run_id:'run-1'});
-            assert.deepEqual((payload.first_turn || payload).content,[{content_type:'TEXT',text:'请继续核对巡检证据。'}]);
-            assert.equal(await page.locator('.inspection-continuation-form textarea').isDisabled(),true);
-            assert.equal(await page.getByRole('button',{name:'返回结果',exact:true}).isDisabled(),true);
-            await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});
-            await page.locator('.inspection-continuation-form textarea:not(:disabled)').waitFor();
-            assert.equal(await page.locator('.inspection-continuation-form textarea').inputValue(),'  请继续核对巡检证据。  ');
-          }
-        }
-        await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'关闭巡检诊断详情',exact:true}).click()));
-        await Promise.all([kbot,reference].map(page=>page.locator('.inspection-detail-drawer').waitFor({state:'hidden'})));
-      }
       for(const page of [kbot,reference]) {
-        await page.evaluate(()=>{fixtureInspectionMode='REPORT';fixtureInspectionConversation=true;});
-        await page.getByRole('button',{name:'查看报告',exact:true}).click();
-        await page.getByRole('button',{name:'进入深入诊断会话',exact:true}).waitFor();
-        assert.equal(await page.getByRole('button',{name:'进入深入诊断会话',exact:true}).isEnabled(),true);
-        await page.getByRole('button',{name:'关闭巡检诊断详情',exact:true}).click();
+        const link=page.getByRole('link',{name:'查看批次',exact:true}).first();
+        assert.ok((await link.getAttribute('href')).includes(page===kbot?'inspection-detail.html?id=fire-1':'inspections/fire-1'));
+        assert.equal(await page.locator('.inspection-detail-drawer').count(),0);
+      }
+    }
+    if(name==='inspection-detail') {
+      await Promise.all([kbot,reference].map(page=>page.locator('.inspection-batch-summary').waitFor()));
+      for(const mode of ['REPORT','RUNNING','FAILED','NO_RUN']) {
+        await Promise.all([kbot,reference].map(page=>page.evaluate(value=>{fixtureInspectionMode=value;fixtureRequests=[];},mode)));
+        await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'刷新',exact:true}).click()));
+        await Promise.all([kbot,reference].map(page=>page.locator('.inspection-batch-summary').waitFor()));
+        for(const width of [1440,820,420,320]) {
+          await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
+          await compareRegions(kbot,reference,['.inspection-page-actions','.inspection-batch-summary','.inspection-targets','.inspection-target-grid','.inspection-target-card','.inspection-run-statuses','.inspection-observation','.inspection-follow-up'],{page:name,width,empty,state:mode});
+          for(const page of [kbot,reference]) {
+            const overflow=await page.evaluate(()=>[...document.querySelectorAll('.inspection-batch-summary,.inspection-target-card,.inspection-follow-up')].filter(node=>node.scrollWidth>node.clientWidth+1).map(node=>node.className));
+            assert.deepEqual(overflow,[],`巡检正文不允许横向溢出：${width}`);
+          }
+        }
+        if(mode==='NO_RUN') {
+          for(const page of [kbot,reference]) assert.equal(await page.getByRole('link',{name:'查看报告',exact:true}).count(),0);
+          continue;
+        }
+        if(mode==='FAILED') for(const page of [kbot,reference]) assert.ok(await page.getByText('固定工具 db.index.health 缺少 schema_name',{exact:true}).isVisible());
+        if(mode!=='REPORT' || empty) continue;
+        for(const page of [kbot,reference]) {
+          const reportLink=page.getByRole('link',{name:'查看报告',exact:true}).first();
+          assert.ok((await reportLink.getAttribute('href')).includes(page===kbot?'report-detail.html?id=report-1':'reports/report-1'));
+          await page.waitForFunction(()=>fixtureRequests.some(row=>row.path.includes('/conversations?run_id=run-1')));
+          await page.getByRole('button',{name:'继续深入诊断',exact:true}).click();
+          await page.locator('.inspection-continuation-form select:not(:disabled)').waitFor();
+        }
+        for(const width of [1440,420,320]) {
+          await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
+          await compareRegions(kbot,reference,['.inspection-continuation-form','.inspection-continuation-form label','.inspection-continuation-form select','.inspection-continuation-form textarea','.inspection-continuation-form footer'],{page:name,width,empty,state:'continuation'});
+        }
+        for(const page of [kbot,reference]) {
+          await page.locator('.inspection-continuation-form select').selectOption('agent-1');
+          await page.locator('.inspection-continuation-form textarea').fill('  请继续核对巡检证据。  ');
+          await page.evaluate(()=>{fixtureHoldWrites=true;});
+          await page.getByRole('button',{name:'进入诊断对话',exact:true}).click();
+          await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));
+          const request=await page.evaluate(()=>fixtureRequests.filter(row=>row.method==='POST').at(-1));
+          const payload=JSON.parse(request.body);
+          if(page===kbot) {assert.equal(payload.source_run_id,'run-1');assert.ok(request.headers['Idempotency-Key']);}
+          else assert.deepEqual(payload.conversation.source,{source_type:'RUN',run_id:'run-1'});
+          assert.deepEqual((payload.first_turn || payload).content,[{content_type:'TEXT',text:'请继续核对巡检证据。'}]);
+          assert.equal(await page.locator('.inspection-continuation-form textarea').isDisabled(),true);
+          await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});
+          await page.locator('.inspection-continuation-form textarea:not(:disabled)').waitFor();
+          assert.equal(await page.locator('.inspection-continuation-form textarea').inputValue(),'  请继续核对巡检证据。  ');
+          await page.getByRole('button',{name:'返回结果',exact:true}).click();
+        }
       }
     }
     if (name === 'report-templates') {

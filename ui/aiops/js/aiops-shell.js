@@ -3,7 +3,7 @@
   const pagePermissions = {
     dashboard: "aiops:use", "work-item-detail": "aiops:use", "responsibility-groups": "aiops:work_item_manage", monitoring: "aiops:use", chat: "aiops:use", situations: "aiops:use", inspections: "aiops:use",
     reports: "aiops:use", "report-detail": "aiops:use", cases: "aiops:use",
-    "run-detail": "aiops:use",
+    "run-detail": "aiops:use", "inspection-detail": "aiops:use",
     "business-systems": "aiops:target_manage",
     "business-system-workspace": "aiops:target_manage",
     "recovery-drills": "aiops:work_item_handle",
@@ -104,6 +104,7 @@
       "diagnostic-source-detail": "diagnostic-sources", "run-detail": "runs",
     };
     const detailParents = {
+      "inspection-detail": "inspections",
       "work-item-detail": "dashboard", "business-system-workspace": "business-systems",
       "report-detail": "reports",
     };

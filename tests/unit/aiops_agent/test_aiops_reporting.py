@@ -654,6 +654,29 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertIn("1/1 个取证步骤", summary)
         self.assertIn("所有模板检查均已形成完整证据", summary)
 
+    def test_invalid_frozen_input_is_a_visible_gap_not_a_completed_check(self):
+        source = SimpleNamespace(
+            evidence=[SimpleNamespace(
+                tool_id="db.instance.performance", row_count=1,
+                truncated=False, evidence_ref="artifact:test#performance",
+            )],
+            evidence_gaps=(SimpleNamespace(model_dump=lambda **_: {
+                "source_id": "inspection.template", "step_id": "db.index.health",
+                "code": "INSPECTION_FIXED_TOOL_INPUT_INVALID",
+                "detail": "指定索引缺少 schema_name", "retryable": False,
+            }),),
+        )
+        facts, gaps, _ = AIOpsRuntimeService._inspection_report_projection(
+            inspection={"evidence_steps": [
+                {"tool_id": "db.instance.performance", "title": "实例性能"},
+                {"tool_id": "db.index.health", "title": "指定索引"},
+            ]},
+            source=source, action_tool_ids={},
+        )
+        self.assertEqual(["OBSERVED", "GAP"], [fact["check_status"] for fact in facts])
+        self.assertIn("schema_name", facts[1]["summary"])
+        self.assertEqual("REPORT_CONTRACT", gaps[0]["category"])
+
     def test_daily_inspection_enforces_target_backup_policy(self) -> None:
         source = SimpleNamespace(
             evidence=[SimpleNamespace(
