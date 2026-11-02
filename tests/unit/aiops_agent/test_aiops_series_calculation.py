@@ -181,7 +181,7 @@ def test_capacity_forecast_never_joins_different_units_or_sources():
         assert row["estimated_days_to_limit"] is None
 
 
-@pytest.mark.parametrize("tamper", ["none", "source_value", "source_hash", "source_run", "trace_value", "trace_scope", "missing"])
+@pytest.mark.parametrize("tamper", ["none", "source_value", "source_hash", "source_run", "trace_value", "trace_scope", "trace_step", "missing"])
 def test_report_and_case_recheck_raw_source_not_only_consistent_calculation(tamper):
     artifact = monitoring()
     fact = fact_from(artifact)
@@ -198,6 +198,8 @@ def test_report_and_case_recheck_raw_source_not_only_consistent_calculation(tamp
         stored.ops_run_id = uuid7()
     elif tamper == "trace_value":
         raw_fact["series_computations"][0]["samples"][0][1] = "999"
+    elif tamper == "trace_step":
+        raw_fact["series_computations"][0]["effective_step_seconds"] = 5760
     elif tamper == "trace_scope":
         raw_fact["series_computations"][0]["unit"] = "other"
     uow = SimpleNamespace(runs=SimpleNamespace(get_artifact=AsyncMock(return_value=None if tamper == "missing" else stored)))

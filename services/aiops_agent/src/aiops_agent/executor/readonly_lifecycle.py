@@ -17,12 +17,22 @@ _current = ContextVar("aiops_readonly_termination", default=None)
 @contextmanager
 def collect_termination(db_type):
     # MySQL 子任务继承相同容器；不同请求的 ContextVar 不共享容器。
-    collector = {"db_type": db_type, "observation": None}
+    collector = {"db_type": db_type, "observation": None, "completed_error": None}
     token = _current.set(collector)
     try:
         yield collector
     finally:
         _current.reset(token)
+
+
+def confirm_database_error_completion(db_type, error_code):
+    """仅供已收到数据库错误包且成功回滚的 Driver 标记；不是取消终止回执。"""
+    collector = _current.get()
+    if collector is None:
+        return
+    if collector["db_type"] != db_type:
+        raise RuntimeError("数据库完成确认与当前租约不匹配")
+    collector["completed_error"] = error_code
 
 
 def observe_termination(db_type, status, method):

@@ -181,3 +181,48 @@ def test_tiny_baseline_preserves_absolute_change_without_serializing_infinity():
     assert result["baseline_status"] == "AVAILABLE"
     assert result["deviation_percent"] is None
     assert "超出可表示范围" in result["change_display"]
+
+
+def resampled_metric(*, step=5760):
+    fact = sampled_metric()
+    start = PERIOD_START - timedelta(days=7)
+    fact["effective_step_seconds"] = step
+    fact["sample_points"] = [
+        {"observed_at": (start + timedelta(seconds=offset)).isoformat(),
+         "value": 10 if start + timedelta(seconds=offset) < PERIOD_START else 20}
+        for offset in range(0, 8 * 86400 + 1, step)
+    ]
+    return fact
+
+
+def test_declared_ninety_six_minute_step_supports_current_coverage_and_seven_day_baseline():
+    fact = resampled_metric()
+    assert observation_coverage(fact, observation_start=PERIOD_START, observation_end=END) == 1
+    result = compare(fact)
+    assert result["baseline_status"] == "AVAILABLE"
+    assert result["comparison_value"] == 20
+    assert result["baseline_average"] == 10
+
+
+def test_missing_declared_samples_cannot_redefine_step_to_conceal_gaps():
+    fact = resampled_metric(step=300)
+    fact["sample_points"] = fact["sample_points"][::24]
+    assert observation_coverage(fact, observation_start=PERIOD_START, observation_end=END) < .1
+    assert compare(fact)["baseline_status"] == "INSUFFICIENT"
+
+
+@pytest.mark.parametrize("declared", [None, 0, -1, True, "5760"])
+def test_sparse_samples_without_valid_source_interval_are_not_assumed_complete(declared):
+    fact = resampled_metric()
+    fact["effective_step_seconds"] = declared
+    assert observation_coverage(fact, observation_start=PERIOD_START, observation_end=END) == 0
+    assert compare(fact)["baseline_status"] == "INSUFFICIENT"
+
+
+def test_declared_coarse_step_still_checks_every_history_day():
+    fact = resampled_metric()
+    missing = PERIOD_START - timedelta(days=3)
+    fact["sample_points"] = [point for point in fact["sample_points"]
+        if not missing <= datetime.fromisoformat(point["observed_at"]) < missing + timedelta(days=1)]
+    assert observation_coverage(fact, observation_start=PERIOD_START, observation_end=END) == 1
+    assert compare(fact)["baseline_status"] == "INSUFFICIENT"

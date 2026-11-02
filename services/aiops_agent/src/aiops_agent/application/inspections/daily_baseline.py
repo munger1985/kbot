@@ -38,6 +38,16 @@ def inspection_reference_window(inspection, *, maximum_seconds):
     return (reference_start, end) if (end - reference_start).total_seconds() <= maximum_seconds else None
 
 
+def _sampling_step(fact, stamps):
+    """优先使用经原始来源核验的冻结步长；不能把缺测后的间距当采样规格。"""
+    declared = fact.get("effective_step_seconds")
+    if declared is not None:
+        return declared if type(declared) is int and declared > 0 else None
+    # 未记录规格的历史事实只允许原有的密集采样口径，不据稀疏点猜大步长。
+    inferred = median((b - a).total_seconds() for a, b in zip(stamps, stamps[1:]))
+    return inferred if 0 < inferred <= 3600 else None
+
+
 def observation_coverage(fact, *, observation_start, observation_end):
     """扩展历史后单独计算本期覆盖率，不能因旧历史缺失否定本期检查。"""
     left, right = _time(observation_start), _time(observation_end)
@@ -46,6 +56,8 @@ def observation_coverage(fact, *, observation_start, observation_end):
         return None
     points = {}
     for item in fact.get("sample_points") or ():
+        if not isinstance(item, dict):
+            return 0.0
         stamp, number = _time(item.get("observed_at")), _number(item.get("value"))
         if stamp is None or number is None or not start <= stamp <= end or (stamp in points and points[stamp] != number):
             return 0.0
@@ -53,8 +65,8 @@ def observation_coverage(fact, *, observation_start, observation_end):
     stamps = sorted(points)
     if len(stamps) < 2:
         return 0.0
-    step = median((b - a).total_seconds() for a, b in zip(stamps, stamps[1:]))
-    if not 0 < step <= 3600:
+    step = _sampling_step(fact, stamps)
+    if step is None:
         return 0.0
     slots = {int((stamp - left).total_seconds() // step) for stamp in points if left <= stamp < right}
     return min(1.0, len(slots) / max(1, ceil((right - left).total_seconds() / step)))
@@ -108,8 +120,8 @@ def daily_baseline_comparison(fact, *, observation_start=None, observation_end=N
         stamps = sorted(points)
         if len(stamps) < 2:
             return result
-        step = median((right - left).total_seconds() for left, right in zip(stamps, stamps[1:]))
-        if not 0 < step <= 3600:
+        step = _sampling_step(fact, stamps)
+        if step is None:
             result["baseline_reason"] = "原始样本过于稀疏，暂不计算七天基线。"
             return result
 

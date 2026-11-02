@@ -243,13 +243,13 @@ class MonitoringProfileContractTest(unittest.TestCase):
         ].query_template
 
         self.assertTrue(
-            cpu_query.startswith("kbot_db_container_cpu_utilization_percent")
+            cpu_query.startswith("aiops_db_container_cpu_utilization_percent")
         )
         self.assertIn("node_cpu_seconds_total", cpu_query)
         self.assertNotIn("kbot_db_cpu_utilization_percent", cpu_query)
         self.assertTrue(
             memory_query.startswith(
-                "kbot_db_container_memory_utilization_percent"
+                "aiops_db_container_memory_utilization_percent"
             )
         )
         self.assertIn(" or on() ", memory_query)

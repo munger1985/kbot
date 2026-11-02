@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import ssl
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -10,6 +11,7 @@ from decimal import Decimal
 from typing import Any
 
 import aiomysql
+from loguru import logger
 from sqlglot import Dialect
 from sqlglot.tokens import TokenType
 
@@ -29,6 +31,7 @@ from .base import (
 )
 from .pagination import read_paged_rows
 from .mysql_cancellation import OwnedMySQLExecution
+from aiops_agent.executor.readonly_lifecycle import confirm_database_error_completion
 
 
 @asynccontextmanager
@@ -53,10 +56,14 @@ def _mysql_bound_sql(sql: str) -> str:
     offset = 0
     for index, token in enumerate(tokens[:-1]):
         following = tokens[index + 1]
-        if token.token_type != TokenType.COLON or following.token_type != TokenType.VAR or following.start != token.end + 1:
+        if token.token_type != TokenType.COLON or following.start != token.end + 1:
+            continue
+        # 参数名也可能被词法器识别为 LIMIT 等关键字；原始片段排除字符串/引号标识。
+        name = sql[following.start:following.end + 1]
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name):
             continue
         parts.append(sql[offset:token.start].replace("%", "%%"))
-        parts.append("%(" + following.text + ")s")
+        parts.append("%(" + name + ")s")
         offset = following.end + 1
     parts.append(sql[offset:].replace("%", "%%"))
     return "".join(parts)
@@ -294,18 +301,32 @@ class MySQLDiagnosticDriver:
             code = int(exc.args[0]) if exc.args else 0
             if code in {1044, 1045}:
                 mapped = "AUTH_FAILED"
-            elif code in {1142, 1143, 1227}:
+            elif code in {1142, 1143, 1227, 1356, 1370}:
                 mapped = "PRIVILEGE_MISSING"
-            elif code == 1146:
+            elif code in {1146, 1305}:
                 mapped = "QUERY_OBJECT_UNAVAILABLE"
             elif code == 1054:
                 mapped = "QUERY_COLUMN_INVALID"
+            elif code == 1052:
+                mapped = "QUERY_COLUMN_AMBIGUOUS"
+            elif code == 1064:
+                mapped = "QUERY_SYNTAX_INVALID"
             elif code in {1049, 2003, 2005, 2013}:
                 mapped = "TARGET_UNREACHABLE"
             elif code in {1205, 3024}:
                 mapped = "TIMEOUT"
             else:
                 mapped = "EXECUTOR_INTERNAL_ERROR"
+            if (code in {1142, 1143, 1227, 1356, 1370, 1146, 1305, 1054, 1052, 1064}
+                and connection is not None and not connection.closed and not owner.stopping):
+                try:
+                    async with asyncio.timeout(3):
+                        await connection.rollback()
+                    owner.ensure_active()
+                    confirm_database_error_completion("MYSQL", mapped)
+                except Exception:
+                    logger.warning("MySQL 只读错误后回滚未确认；保留共享额度清理保护")
+            logger.warning("MySQL 只读查询失败：database_error_code={}，code={}", code, mapped)
             raise DiagnosticDriverError(
                 mapped,
                 retryable=mapped in {"TARGET_UNREACHABLE", "TIMEOUT"},

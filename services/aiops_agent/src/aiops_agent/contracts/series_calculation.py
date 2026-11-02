@@ -24,6 +24,7 @@ class SeriesComputation(BaseModel):
     dimensions: tuple[tuple[str, str], ...] = Field(max_length=128)
     window_start: datetime
     window_end: datetime
+    effective_step_seconds: int | None = Field(default=None, ge=1, strict=True)
     samples: tuple[tuple[datetime, Decimal], ...] = Field(min_length=1, max_length=4096)
     forecast_horizon_days: Decimal | None = Field(default=None, gt=0, le=365)
     summary: dict[str, int | float | str | None] = Field(max_length=32)

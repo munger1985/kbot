@@ -448,12 +448,31 @@ class ProfessionalInspectionReportTest(unittest.TestCase):
             rows=(("runtime.cpu.utilization", 10),), evidence_ref="metric-evidence",
             series_computations=(SimpleNamespace(
                 row_index=0, samples=((START, 10), (START + timedelta(hours=1), 20)),
+                effective_step_seconds=3600,
             ),),
         )
         fact = AIOpsRuntimeService._inspection_monitoring_facts(SimpleNamespace(evidence=(evidence,)))[0]
         self.assertEqual("UTC", fact["daily_points_timezone"])
         self.assertEqual(START.isoformat(), fact["sample_points"][0]["observed_at"])
         self.assertEqual("10", fact["sample_points"][0]["value"])
+        self.assertEqual(3600, fact["effective_step_seconds"])
+
+    def test_incomplete_recommendations_follow_error_codes_not_error_text(self):
+        for code, expected in (
+            ("RESOURCE_QUOTA_TARGET_EXHAUSTED", "等待共享只读额度"),
+            ("QUERY_SYNTAX_INVALID", "参数绑定"),
+            ("PRIVILEGE_MISSING", "最小只读权限"),
+            ("EXECUTOR_INTERNAL_ERROR", "执行器"),
+            ("TARGET_UNREACHABLE", "目标连接"),
+        ):
+            policy, checks, _ = full_assessment()
+            check = next(item for item in checks if item.get("required"))
+            check["check_status"] = "MISSING"
+            result = assess_inspection(checks, policy=policy, gaps=[
+                {"step_id": check["tool_id"], "code": code, "detail": "补权限（该文字不参与分类）"},
+            ])
+            self.assertTrue(any(expected in action for action in result["recommendations"]), code)
+            self.assertFalse(any("采集来源或判断规则" in action for action in result["recommendations"]))
 
     def test_monthly_scoped_backup_problem_is_not_filtered(self):
         fact = issue_fact(START+timedelta(days=1))

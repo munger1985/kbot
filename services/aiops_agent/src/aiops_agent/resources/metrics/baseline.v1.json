@@ -663,7 +663,7 @@
       "max_points": 120,
       "max_series": 8,
       "providers": {
-        "PROMETHEUS": {"template_id": "prom.runtime.cpu", "template_version": "1", "query_template": "kbot_db_container_cpu_utilization_percent{target_key=\"${external_target}\"} or on() (100 - (avg(rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\",target_key=\"${host_target}\"}[5m])) * 100))", "required_labels": ["target_key"]},
+        "PROMETHEUS": {"template_id": "prom.runtime.cpu", "template_version": "1", "query_template": "aiops_db_container_cpu_utilization_percent{target_key=\"${external_target}\"} or on() (100 - (avg(rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\",target_key=\"${host_target}\"}[5m])) * 100))", "required_labels": ["target_key"]},
         "ZABBIX": {"template_id": "zabbix.runtime.cpu", "template_version": "1", "exact_item_key": "kbot.runtime.cpu.utilization", "value_type": "FLOAT", "unit": "percent"}
       }
     },
@@ -683,7 +683,7 @@
       "max_points": 120,
       "max_series": 8,
       "providers": {
-        "PROMETHEUS": {"template_id": "prom.runtime.memory", "template_version": "1", "query_template": "kbot_db_container_memory_utilization_percent{target_key=\"${external_target}\"} or on() (100 * (1 - node_memory_MemAvailable_bytes{job=\"node\",target_key=\"${host_target}\"} / node_memory_MemTotal_bytes{job=\"node\",target_key=\"${host_target}\"}))", "required_labels": ["target_key"]},
+        "PROMETHEUS": {"template_id": "prom.runtime.memory", "template_version": "1", "query_template": "aiops_db_container_memory_utilization_percent{target_key=\"${external_target}\"} or on() (100 * (1 - node_memory_MemAvailable_bytes{job=\"node\",target_key=\"${host_target}\"} / node_memory_MemTotal_bytes{job=\"node\",target_key=\"${host_target}\"}))", "required_labels": ["target_key"]},
         "ZABBIX": {"template_id": "zabbix.runtime.memory", "template_version": "1", "exact_item_key": "kbot.runtime.memory.utilization", "value_type": "FLOAT", "unit": "percent"}
       }
     },

@@ -130,6 +130,7 @@ def build_monitoring_rows(*, artifact_id, result, forecast_horizon_days=None):
                     unit=observation.unit, value_kind=observation.value_kind,
                     dimensions=tuple(sorted(series.dimensions.items())),
                     window_start=observation.window_start, window_end=observation.window_end,
+                    effective_step_seconds=observation.effective_step_seconds,
                     samples=tuple(points), forecast_horizon_days=horizon, summary=summary,
                     quality_flags=tuple(dict.fromkeys(flags)),
                 ))
@@ -176,6 +177,8 @@ async def validate_monitoring_trace_sources(*, uow, run, payload):
                     "window_start": observation.window_start, "window_end": observation.window_end,
                 }
                 if any(getattr(trace, key) != value for key, value in expected.items()):
+                    return False
+                if trace.effective_step_seconds is not None and trace.effective_step_seconds != observation.effective_step_seconds:
                     return False
                 original = tuple((point.observed_at, number) for point in series.points
                     if point.quality == "GOOD" and observation.window_start <= point.observed_at <= observation.window_end

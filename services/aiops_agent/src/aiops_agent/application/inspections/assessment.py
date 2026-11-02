@@ -165,6 +165,29 @@ def monitoring_checks(
     return result
 
 
+def _incomplete_action(fact, related_gaps, *, title, status):
+    """按结构化原因给出下一步，不把程序错误或调度限流都归为权限缺失。"""
+    codes = {str(item.get("code") or "") for item in related_gaps}
+    prefix = f"“{title}”"
+    if codes & {"RESOURCE_QUOTA_TARGET_EXHAUSTED", "RESOURCE_QUOTA_SOURCE_EXHAUSTED", "RESOURCE_QUOTA_GLOBAL_EXHAUSTED"}:
+        return f"{prefix}等待共享只读额度释放后重试，并检查失败查询的清理和调度情况；不要直接扩大并发。"
+    if codes & {"PRIVILEGE_MISSING", "SOURCE_PRIVILEGE_MISSING"}:
+        return f"{prefix}核对该检查依赖的视图和函数，授予必要的最小只读权限后重试。"
+    if codes & {"QUERY_SYNTAX_INVALID", "QUERY_COLUMN_INVALID", "QUERY_COLUMN_AMBIGUOUS", "QUERY_OBJECT_UNAVAILABLE"}:
+        return f"{prefix}修复诊断 SQL 模板、参数绑定或数据库版本对象适配后重试；无需扩大数据库权限。"
+    if codes & {"EXECUTOR_INTERNAL_ERROR"}:
+        return f"{prefix}检查受控执行器的对应运行日志并修复执行错误后重试。"
+    if codes & {"TIMEOUT", "EXECUTION_DEADLINE_EXCEEDED", "TARGET_UNREACHABLE", "SOURCE_UNREACHABLE"}:
+        return f"{prefix}核对目标连接、查询耗时及执行器清理结果，恢复取数链路后重试。"
+    if codes & {"AUTH_FAILED", "SOURCE_AUTH_FAILED"}:
+        return f"{prefix}核对目标凭据及来源认证配置，连接验证成功后重试。"
+    if fact.get("kind") == "inspection_metric_check":
+        if status == "PARTIAL":
+            return f"{prefix}核对来源采样间隔、查询窗口和本期有效样本覆盖率，恢复采集后重新检查。"
+        return f"{prefix}核对目标的监控来源绑定、有效样本及冻结阈值规则，补齐后重新检查。"
+    return f"{prefix}核对本项未完成原因及取数链路，修复后重新执行；本次不能据此判定正常。"
+
+
 def assess_inspection(
     facts: tuple[dict[str, Any], ...] | list[dict[str, Any]], *,
     policy: dict[str, Any], gaps: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
@@ -210,16 +233,17 @@ def assess_inspection(
                 for item in thresholds
             ) or str(fact.get("rule_description") or "按冻结检查规则判断；无适用规则时仅展示观测。")
         summary = str(fact.get("summary") or "")
-        related_gaps = [str(item.get("detail") or "") for item in gaps
-                        if item.get("step_id") == fact.get("tool_id") and item.get("detail")]
+        related_gaps = [item for item in gaps
+                        if fact.get("tool_id") and item.get("step_id") == fact["tool_id"]]
+        gap_details = [str(item["detail"]) for item in related_gaps if item.get("detail")]
         complete = status in {"CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED"}
         if required and not complete:
-            detail = f"{title}：{related_gaps[0] if related_gaps else summary or '必要检查未完成'}"
+            detail = f"{title}：{gap_details[0] if gap_details else summary or '必要检查未完成'}"
             limitations.append(detail)
             if fact.get("kind") == "backup_policy_check":
                 actions.append(action_catalog.get("BACKUP_POLICY", "补齐备份成功记录并重新核验。"))
             else:
-                actions.append(f"补齐“{title}”所需的只读权限、采集来源或判断规则，重新执行该检查确认结果。")
+                actions.append(_incomplete_action(fact, related_gaps, title=title, status=status))
         observation_rows = [
             item for item in fact.get("observations") or () if isinstance(item, dict)
         ]

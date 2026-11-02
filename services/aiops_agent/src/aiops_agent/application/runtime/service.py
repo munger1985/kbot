@@ -3838,6 +3838,7 @@ class AIOpsRuntimeService:
                     "value_kind": value_kind,
                     "daily_points": daily_points,
                         "daily_points_timezone": "UTC",
+                        "effective_step_seconds": traces_by_row[row_index].effective_step_seconds if row_index in traces_by_row else None,
                         "series_quality_flags": list(getattr(traces_by_row[row_index], "quality_flags", ())) if row_index in traces_by_row else [],
                         "sample_points": [
                             {"observed_at": stamp.isoformat(), "value": str(value)}

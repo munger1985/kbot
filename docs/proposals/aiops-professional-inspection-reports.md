@@ -107,3 +107,24 @@ Agent 可以解释和组织语言，不能临时猜测阈值、覆盖规则结�
 - 新增双仓一致的 HTTP 回归：四类日报和多库月报经过真实内部端点、窄客户端方法及公开端点序列化；同时验证未声明字段仍被拒绝、公开 Schema 含业务字段。业务数据源和身份边界使用隔离替身，不连接真实数据库。
 - 本次 AIOps 单元回归 Ammolite 1227 项、KBot4 1191 项通过，均包含新增 7 项；OpenAPI 生成与验收分别通过 18/15 个快照，架构边界及双向语义一致性检查通过。
 - 发布时需更新并重启加载共享合同的 Main API 与 AIOps API；不涉及数据库升级、报告数据修改或巡检重跑。本次仅提交推送，未部署或重启线上服务，不能据此声称线上已恢复。
+
+## 9. 取数链路修复约束（2026-11-02）
+
+- 日巡检读取本期加此前七天时，Prometheus 会按查询点数预算自动增大步长；八天、120 点的实际步长为 5760 秒。序列计算必须冻结来源的 `effective_step_seconds`，正式出版时与原始 ObservationSet 复核，本期覆盖率和逐日基线覆盖率均按该规格计算，不再把“一小时以内”作为来源完整的必要条件。未记录规格的历史稀疏样本不猜测为完整，缺测不能通过重新推断大步长被掩盖。
+- MySQL 命名绑定必须支持 `:limit` 等关键字参数，且不改写字符串、注释、引号标识或百分号语义。数据库语法、权限、对象和连接错误必须分类，不能统称内部执行失败。
+- 只有收到明确 SQL 拒绝错误且成功完成只读事务回滚的查询，才允许在保留原错误的同时提前归还共享额度。该确认是请求内生命周期状态，不冒充取消终止回执；超时、外部取消、围栏撤销、网络中断和回滚失败继续保留租约清理宽限，不通过扩大并发解决。
+- 容器 CPU/内存 recording rule 采用两端一致的 `aiops_db_container_cpu_utilization_percent` 和 `aiops_db_container_memory_utilization_percent`，指标目录与部署生成器同步，不依赖另一产品的品牌前缀。主机指标必须绑定数据库真实宿主机的 `host_target_key`，不可用其他服务器的数据替代。
+- 未完成项的建议依据结构化错误码分别提示额度调度、模板/参数修复、最小权限、连接恢复或监控采样；监控缺测应核对实际间隔、本期覆盖、来源绑定和冻结规则。第三方备份核验仍要求策略时效内的真实成功记录，不能用 Binlog、归档链或“未发现错误”替代。
+- 修复只影响后续运行。旧报告、冻结事实与健康结论不重写；新增采集点和新 recording rule 不回填历史，没有足够历史时仍如实说明不足。
+
+### MySQL 阻塞检查的最小函数依赖
+
+MySQL 8.x 的 `sys.innodb_lock_waits` 依赖 `sys.format_statement` 与 `sys.quote_identifier`，前者还调用 `sys.sys_get_config`。在已有必要视图读取权限的前提下，由 DBA 核对实际诊断账号后仅补齐这些依赖：
+
+```sql
+GRANT EXECUTE ON FUNCTION sys.format_statement TO '<diagnostic_user>'@'<allowed_host>';
+GRANT EXECUTE ON FUNCTION sys.quote_identifier TO '<diagnostic_user>'@'<allowed_host>';
+GRANT EXECUTE ON FUNCTION sys.sys_get_config TO '<diagnostic_user>'@'<allowed_host>';
+```
+
+部署验收使用实际只读诊断凭据验证视图和依赖函数，不以管理账号执行成功作为通过，也不授予全库 EXECUTE 或写入权限。首次接入宿主机采集后，应分别验证 Exporter 私网监听、Prometheus Target 的 up、实际 CPU/内存/文件系统序列，以及两端新运行冻结的主机映射。配置加载成功不等于数据已经可用。

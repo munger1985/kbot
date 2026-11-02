@@ -296,3 +296,11 @@ def test_mysql_lexical_binding_does_not_rewrite_strings_comments_or_percent():
     assert "':secret'" in bound and "/* :hidden */" in bound
     assert "5 %% 2" in bound and "PROCESSLIST_ID=%(pid)s" in bound
     assert bound % {"pid": 42} == sql.replace(":pid", "42")
+
+
+@pytest.mark.parametrize("name", ["limit", "offset", "select", "order", "group", "LIMIT", "row_limit"])
+def test_mysql_named_binding_accepts_sql_keywords_without_rewriting_literal_content(name):
+    sql = f"SELECT ':limit', `:offset`, 5 % 2 /* :select */ LIMIT :{name} OFFSET :offset"
+    assert _mysql_bound_sql(sql) % {name: 3, "offset": 3} == (
+        "SELECT ':limit', `:offset`, 5 % 2 /* :select */ LIMIT 3 OFFSET 3"
+    )

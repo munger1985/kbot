@@ -668,8 +668,8 @@ environment = development
     rules = (
         settings.runtime_dir / "prometheus/rules/kbot-observability.yml"
     ).read_text()
-    assert "kbot_db_container_cpu_utilization_percent" in rules
-    assert "kbot_db_container_memory_utilization_percent" in rules
+    assert "aiops_db_container_cpu_utilization_percent" in rules
+    assert "aiops_db_container_memory_utilization_percent" in rules
     assert "container_label_aiops_target_key" in rules
     assert '"target_key", "$1"' in rules
     assert "mysql-aiops-88" not in rules

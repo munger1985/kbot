@@ -665,7 +665,7 @@ def _container_recording_rules() -> str:
   - name: kbot-aiops-container-recording
     interval: 15s
     rules:
-      - record: kbot_db_container_cpu_utilization_percent
+      - record: aiops_db_container_cpu_utilization_percent
         expr: |
           label_replace(
             100 *
@@ -689,7 +689,7 @@ def _container_recording_rules() -> str:
             "target_key", "$1", "container_label_aiops_target_key", "(.+)"
           )
 
-      - record: kbot_db_container_memory_utilization_percent
+      - record: aiops_db_container_memory_utilization_percent
         expr: |
           label_replace(
             100 *
@@ -1080,8 +1080,8 @@ def _prometheus_query_overrides() -> str:
                 "host.filesystem.size_bytes": 'node_filesystem_size_bytes{job="node",fstype!~"tmpfs|overlay|squashfs",target_key="${host_target}"}',
                 "host.disk.io.utilization": 'rate(node_disk_io_time_seconds_total{job="node",target_key="${host_target}"}[5m]) * 100',
                 "host.network.throughput": 'rate(node_network_receive_bytes_total{job="node",device!="lo",target_key="${host_target}"}[5m]) + rate(node_network_transmit_bytes_total{job="node",device!="lo",target_key="${host_target}"}[5m])',
-                "runtime.cpu.utilization": 'kbot_db_container_cpu_utilization_percent{target_key="${external_target}"} or on() (100 - (avg(rate(node_cpu_seconds_total{job="node",mode="idle",target_key="${host_target}"}[5m])) * 100))',
-                "runtime.memory.utilization": 'kbot_db_container_memory_utilization_percent{target_key="${external_target}"} or on() (100 * (1 - node_memory_MemAvailable_bytes{job="node",target_key="${host_target}"} / node_memory_MemTotal_bytes{job="node",target_key="${host_target}"}))',
+                "runtime.cpu.utilization": 'aiops_db_container_cpu_utilization_percent{target_key="${external_target}"} or on() (100 - (avg(rate(node_cpu_seconds_total{job="node",mode="idle",target_key="${host_target}"}[5m])) * 100))',
+                "runtime.memory.utilization": 'aiops_db_container_memory_utilization_percent{target_key="${external_target}"} or on() (100 * (1 - node_memory_MemAvailable_bytes{job="node",target_key="${host_target}"} / node_memory_MemTotal_bytes{job="node",target_key="${host_target}"}))',
             }
         },
         ensure_ascii=False,

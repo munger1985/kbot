@@ -46,19 +46,29 @@ async def readonly_resource(control_plane, *, token, grant, acquire):
                 if datetime.now(timezone.utc) >= receipt.execution_deadline_at:
                     raise DiagnosticDriverError("EXECUTION_DEADLINE_EXCEEDED")
         except BaseException as exc:
+            # 明确 SQL 拒绝且回滚完成不同于超时/取消；仍须匹配原错误并通过围栏。
+            if (isinstance(exc, DiagnosticDriverError) and exc.code == collector["completed_error"]
+                and collector["observation"] is None and not asyncio.current_task().cancelling()
+                and datetime.now(timezone.utc) < receipt.execution_deadline_at):
+                await _release_completed_resource(control_plane, receipt=receipt, trace_id=grant.trace_id)
+                raise
             if collector["observation"] is None:
                 observe_termination(grant.db_type, "TERMINATION_UNKNOWN", "NONE")
             if not isinstance(exc, TimeoutError):
                 raise
             raise DiagnosticDriverError("EXECUTION_DEADLINE_EXCEEDED") from exc
         else:
-            # 正常退出意味着 Driver 已返回并完成其清理；异常/取消保留租约到清理宽限结束。
-            try:
-                async with asyncio.timeout(3):
-                    await control_plane.release_resource(receipt, trace_id=grant.trace_id)
-            except Exception:
-                logger.warning("只读取证租约未确认释放；保留控制面清理宽限")
+            await _release_completed_resource(control_plane, receipt=receipt, trace_id=grant.trace_id)
         finally:
             if collector["observation"] is None and asyncio.current_task().cancelling():
                 observe_termination(grant.db_type, "TERMINATION_UNKNOWN", "NONE")
             await report_termination(control_plane, receipt=receipt, collector=collector, trace_id=grant.trace_id)
+
+
+async def _release_completed_resource(control_plane, *, receipt, trace_id):
+    """释放失败不吞掉原数据库错误，控制面继续持有清理宽限。"""
+    try:
+        async with asyncio.timeout(3):
+            await control_plane.release_resource(receipt, trace_id=trace_id)
+    except Exception:
+        logger.warning("只读取证租约未确认释放；保留控制面清理宽限")

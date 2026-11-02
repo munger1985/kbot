@@ -108,6 +108,49 @@ def test_owned_query_only_cancels_same_server_and_pinned_connection_then_waits_f
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("code,expected", [
+    (1064, "QUERY_SYNTAX_INVALID"), (1356, "PRIVILEGE_MISSING"), (1370, "PRIVILEGE_MISSING"),
+    (1142, "PRIVILEGE_MISSING"), (1052, "QUERY_COLUMN_AMBIGUOUS"), (1054, "QUERY_COLUMN_INVALID"),
+    (1146, "QUERY_OBJECT_UNAVAILABLE"), (1305, "QUERY_OBJECT_UNAVAILABLE"),
+    (2013, "TARGET_UNREACHABLE"), (3024, "TIMEOUT"), (1317, "EXECUTOR_INTERNAL_ERROR"),
+])
+@pytest.mark.parametrize("rollback_fails", [False, True])
+def test_database_error_only_releases_shared_quota_after_successful_rollback(monkeypatch, code, expected, rollback_fails):
+    async def run():
+        connection = Connection()
+        async def execute(sql, *_args):
+            if sql == "SELECT 7 AS value":
+                raise aiomysql.Error(code, "数据库返回明确错误")
+        connection.current_cursor = Cursor(execute=execute)
+        if rollback_fails:
+            connection.rollback.side_effect = OSError("回滚响应丢失")
+        monkeypatch.setattr("aiops_agent.executor.drivers.mysql.aiomysql.connect", AsyncMock(return_value=connection))
+        monkeypatch.setattr("aiops_agent.executor.identity.observe_mysql_connection_identity",
+            AsyncMock(return_value=(("server_uuid", str(uuid4())),)))
+        f = executor_fixture()
+        f.grant.db_type = "MYSQL"
+        with pytest.raises(DiagnosticDriverError, match=expected):
+            async with readonly_credentials(f.control, token="s" * 64, grant=f.grant):
+                await MySQLDiagnosticDriver().execute_dynamic(
+                    profile=SimpleNamespace(host="db.invalid", port=3306, database="demo", tls_enabled=False, tls_profile_ref=None),
+                    secret=SimpleNamespace(values={"username": "readonly", "password": "not-real"}),
+                    sql="SELECT 7 AS value", parameters={},
+                    limits=DiagnosticLimits(statement_timeout_seconds=2, max_result_rows=10,
+                        max_result_bytes=65536, max_cell_chars=1024), trace_id="mysql-error",
+                )
+        if code in {2013, 3024, 1317}:
+            connection.rollback.assert_not_awaited()
+        else:
+            connection.rollback.assert_awaited_once()
+        assert connection.closed
+        if rollback_fails or code in {2013, 3024, 1317}:
+            f.control.release_resource.assert_not_awaited()
+        else:
+            f.control.release_resource.assert_awaited_once()
+            f.control.report_readonly_termination.assert_not_awaited()
+    asyncio.run(run())
+
+
 def test_statement_timeout_wakes_idle_sampling_and_does_not_issue_next_query():
     async def run():
         owner = OwnedMySQLExecution()
