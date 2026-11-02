@@ -743,7 +743,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             self.assertIn("aiops-shell.js?v=20261102_1", page)
             self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
-        self.assertIn("reference-inspections.css?v=20261030_1", inspections)
+        self.assertIn("reference-inspections.css?v=20261102_1", inspections)
         self.assertIn("aiops-workspaces.js?v=20261030_4", inspections)
         self.assertIn("aiops-chat-charts.js?v=20261030_1", inspections)
         self.assertIn("coverage_warning", workspace)
@@ -1483,6 +1483,18 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             check=False, capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_inspection_summary_uses_plain_labels_units_and_static_cards(self):
+        page = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
+        summary = page.split('aria-label="巡检概况">', 1)[1].split('</section>', 1)[0]
+        for label in ("巡检批次", "进行中", "执行异常", "已完成"):
+            self.assertIn(f"<span>{label}</span>", summary)
+        self.assertEqual(4, summary.count('class="operational-summary-card"'))
+        self.assertEqual(4, summary.count('>0 批</strong>'))
+        for old in ("当前读取范围", "等待或运行中", "完整完成", "全部目标已结束"):
+            self.assertNotIn(old, summary)
+        self.assertIn("执行完成不代表数据库正常，请查看报告中的巡检结论。", page)
+        self.assertIn("aiops-inspections.js?v=20261102_3", page)
 
     def test_business_workspace_includes_report_center(self):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(

@@ -5,5 +5,7 @@
 :is([data-page="reports"]) .inspection-tabs button { min-height:36px; padding:7px 16px; border:0; border-radius:7px; color:var(--muted); background:transparent; font-weight:650; }
 :is([data-page="reports"]) .inspection-tabs button.active { color:var(--accent-strong); background:var(--surface); box-shadow:var(--shadow-soft); }
 :is([data-page="reports"]) .inspection-summary-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+:is([data-page="reports"]) .inspection-summary-grid .operational-summary-card { cursor:default; }
+:is([data-page="reports"]) .inspection-summary-grid .operational-summary-card:hover { border-color:var(--line); box-shadow:none; transform:none; }
 :is([data-page="reports"]) .aiops-report-template-filter { min-width:220px; }
 @media (max-width:900px) { :is([data-page="reports"]) .inspection-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
