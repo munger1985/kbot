@@ -237,7 +237,7 @@ class ProfessionalInspectionReportTest(unittest.TestCase):
                         "backup_policy": {"enabled": True, "success_max_age_hours": 24}},
             source=source, database_type="MYSQL", action_tool_ids={},
         )
-        backup_gap = next(item for item in gaps if item["code"] == "BACKUP_SUCCESS_NOT_OBSERVABLE")
+        backup_gap = next(item for item in gaps if item["code"] == "BACKUP_VERIFICATION_FAILED")
         self.assertEqual("inspection.backup-policy", backup_gap["step_id"])
         check = {"tool_id": "db.mysql.binlog.status", "check_ids": ["mysql.binlog.status"],
                  "check_status": "CLEAR", "evidence_refs": ["binlog"]}

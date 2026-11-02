@@ -187,7 +187,7 @@ def test_window_alignment_handles_timezone_day_boundary_and_rejects_empty_interv
     assert prometheus_timestamp(datetime(1970, 1, 1, tzinfo=UTC) - timedelta(milliseconds=1)) == "-0.001000"
 
 
-def test_backup_unverified_does_not_hide_successfully_completed_runtime_checks():
+def test_missing_backup_record_is_a_risk_without_lowering_completed_check_count():
     from tests.unit.aiops_agent.test_aiops_professional_inspection_reports import full_assessment
     from aiops_agent.application.inspections.backup_observations import backup_policy_result
     policy, checks, _ = full_assessment()
@@ -196,9 +196,10 @@ def test_backup_unverified_does_not_hide_successfully_completed_runtime_checks()
         database_type="MYSQL", facts=[], evidence_by_tool={}, reference_time="2026-11-02T12:00:00Z",
     )
     result = assess_inspection([*checks, backup], policy=policy, gaps=gaps)
-    assert result["health_status"] == "INCOMPLETE"
-    assert result["completed_required_count"] == result["required_check_count"] - 1
-    assert len(result["limitations"]) == 1
-    assert "备份成功状态未核验" in result["limitations"][0]
-    assert f"已完成的 {result['completed_required_count']} 项必要检查未发现异常" in result["text"]
+    assert result["health_status"] == "ATTENTION"
+    assert result["completion_status"] == "COMPLETE"
+    assert result["completed_required_count"] == result["required_check_count"]
+    assert not result["limitations"]
+    assert len(result["findings"]) == 1
+    assert "未提供有效备份成功记录" in result["findings"][0]["summary"]
     assert "。；" not in result["text"]

@@ -1,6 +1,6 @@
 {
   "schema_version": "INSPECTION_REPORT_POLICY.v1",
-  "version": "2026-11-02.3",
+  "version": "2026-11-02.4",
   "current_monitoring_window_seconds": 900,
   "maximum_current_sample_age_seconds": 300,
   "baseline": {
@@ -59,6 +59,9 @@
     "FILESYSTEM_UTILIZATION": "核对高占用挂载点及主要增长文件，按保留策略清理或扩容，复查可用空间。",
     "REPLICATION_LAG": "核对复制链路、接收和应用状态及积压原因，修复后复查延迟与链路状态。",
     "BACKUP_POLICY": "接入策略约定的备份成功记录，核对最近成功时间和作业状态，再执行备份核验；不能以归档或 Binlog 正常代替。",
+    "BACKUP_SUCCESS_RECORD_MISSING": "立即核实策略要求的备份作业；未执行则按保护策略安排备份，已执行则补齐有效成功记录并复核时效。不能以归档或 Binlog 正常代替备份成功。",
+    "EXPECTED_RECORD_MISSING": "核对本项应有的状态记录及对应配置，确认记录缺失原因，修复后复查；不要把成功的空查询当作正常数值。",
+    "MONITORING_SAMPLE_MISSING": "核对该数据库的监控绑定、Exporter 和指标规则，恢复有效样本并复查；无样本不等于数值为零或数据库已停止。",
     "AVAILABILITY": "核对实例、监听和数据库错误日志，确认服务中断原因；恢复后验证连接与业务可用性。"
   }
 }

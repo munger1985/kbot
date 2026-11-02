@@ -131,7 +131,9 @@ class TurnEvidenceGap(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_id: str = Field(min_length=1, max_length=128)
-    step_id: str = Field(min_length=1, max_length=128)
+    step_id: str | None = Field(default=None, min_length=1, max_length=128)
+    diagnostic_source_id: str | None = None
+    binding_id: str | None = None
     code: str = Field(min_length=1, max_length=128)
     detail: str = Field(min_length=1, max_length=2000)
     retryable: bool = False

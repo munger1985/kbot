@@ -4040,17 +4040,11 @@ class AIOpsRuntimeService:
                 zero_row_status = str(
                     step.get("zero_row_status") or "CLEAR"
                 )
-                if row_count == 0 and zero_row_status == "GAP":
-                    zero_gap = {
-                        "source_id": "inspection.report",
-                        "step_id": tool_id,
-                        "code": "INSPECTION_EXPECTED_ROWS_MISSING",
-                        "detail": f"{title} 查询成功但未返回预期状态行",
-                        "retryable": True,
-                        "category": "DATA_SOURCE",
-                    }
-                    gaps.append(zero_gap)
-                    step_gaps.append(zero_gap)
+                missing_expected_rows = row_count == 0 and zero_row_status == "FINDING" and not step_gaps and not truncated
+                record_findings = [{
+                    "finding_type": "EXPECTED_RECORD_MISSING", "severity": "MEDIUM",
+                    "impact": f"{title}查询成功但未返回应有记录，存在状态记录缺失风险，需要核实对应配置或记录来源。",
+                }] if missing_expected_rows else []
                 if step_gaps:
                     gap_summary = str(step_gaps[0]["summary"])
                     if gap_summary.startswith(f"{title}："):
@@ -4060,6 +4054,9 @@ class AIOpsRuntimeService:
                         f"{gap_summary}"
                     )
                     check_status = "PARTIAL"
+                elif missing_expected_rows:
+                    summary = record_findings[0]["impact"]
+                    check_status = "FINDING"
                 elif compilation.findings:
                     summary = AIOpsRuntimeService._inspection_finding_summary(
                         title=title,
@@ -4108,7 +4105,7 @@ class AIOpsRuntimeService:
                         "findings": [
                             item.model_dump(mode="json")
                             for item in compilation.findings
-                        ],
+                        ] + record_findings,
                     }
                 )
                 continue
@@ -4159,6 +4156,8 @@ class AIOpsRuntimeService:
             AIOpsRuntimeService._inspection_monitoring_facts(source),
             monitoring=monitoring or {},
         ))
+        from aiops_agent.application.inspections.monitoring_observations import empty_monitoring_facts
+        facts.extend(empty_monitoring_facts(gaps, monitoring=monitoring))
         from aiops_agent.application.inspections.daily_baseline import observation_coverage
         for fact in facts:
             if fact.get("kind") == "inspection_monitoring_metric":
@@ -4175,11 +4174,23 @@ class AIOpsRuntimeService:
             backup_fact, backup_gaps = backup_policy_result(
                 policy=backup_policy, database_type=database_type, facts=facts,
                 evidence_by_tool=evidence_by_tool,
+                source_gaps=gaps, monitoring=monitoring,
                 reference_time=dict((monitoring or {}).get("current_window") or {}).get("end")
                 or inspection.get("period_end"),
             )
             facts.append(backup_fact)
             gaps.extend(backup_gaps)
+
+        # 成功的空查询已形成业务风险，原始空结果仍由事实引用，不重复计作执行缺口。
+        empty_refs = {fact["evidence_ref"] for fact in facts
+                      if fact.get("kind") == "inspection_monitoring_absence" and fact.get("evidence_ref")}
+        if isinstance(backup_policy, dict) and backup_policy.get("enabled"):
+            from aiops_agent.application.inspections.backup_observations import BACKUP_METRIC_CODES
+            empty_refs.update(gap["evidence_ref"] for gap in gaps
+                              if gap.get("code") == "SOURCE_NO_DATA" and gap.get("step_id") in BACKUP_METRIC_CODES
+                              and gap.get("evidence_ref"))
+        gaps = [gap for gap in gaps if not (gap.get("code") == "SOURCE_NO_DATA"
+                                           and gap.get("evidence_ref") in empty_refs)]
 
         if str(inspection.get("schedule_type") or "") == "WEEKLY":
             for trend in extract_metric_trend_rows(source.evidence):

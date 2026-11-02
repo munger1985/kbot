@@ -6896,7 +6896,7 @@
               "CLEAR",
               "OBSERVED",
               "NOT_APPLICABLE",
-              "GAP"
+              "FINDING"
             ],
             "title": "Zero Row Status",
             "type": "string"

@@ -102,6 +102,22 @@ def monitoring_checks(
     result = []
     assessed_roles: set[str] = set()
     for fact in facts:
+        if fact.get("kind") == "inspection_monitoring_absence":
+            code, role = str(fact["metric_code"]), str(fact.get("semantic_role") or "")
+            title = display_metric_name(code)
+            summary = f"{title}查询成功但未返回样本，存在监控盲区；不能据此判定数值为零或数据库异常。"
+            result.append({
+                "kind": "inspection_metric_check", "title": title,
+                "check_status": "FINDING", "required": role in required_roles or role == "AVAILABILITY",
+                "check_ids": [f"metric:{code}:{fact.get('dimensions') or '-'}"],
+                "metric_code": code, "semantic_role": role, "dimensions": fact.get("dimensions"),
+                "tool_id": "metric.query_range", "basis": "监控查询执行成功，应返回有效样本；空结果按监控保障风险报告。",
+                "summary": summary, "observed_at": fact.get("observed_at"),
+                "evidence_refs": [fact["evidence_ref"]] if fact.get("evidence_ref") else [],
+                "findings": [{"finding_type": "MONITORING_SAMPLE_MISSING", "severity": "MEDIUM", "impact": summary}],
+            })
+            assessed_roles.add(role)
+            continue
         if fact.get("kind") != "inspection_monitoring_metric":
             continue
         code = str(fact.get("metric_code") or "")
@@ -230,7 +246,9 @@ def assess_inspection(
         title = str(fact.get("title") or "巡检检查")
         incomplete_reason = str(fact.get("incomplete_reason") or "")
         if required and status in {"CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED"}:
-            if not fact.get("evidence_refs") or fact.get("truncated"):
+            from .backup_observations import backup_record_review_is_complete
+            reviewed_backup = backup_record_review_is_complete(fact)
+            if (not fact.get("evidence_refs") and not reviewed_backup) or fact.get("truncated"):
                 status = "PARTIAL"
                 if not incomplete_reason:
                     incomplete_reason = (

@@ -127,16 +127,28 @@ def test_real_backup_success_is_supported_for_each_engine(source, db_type):
 
 
 @pytest.mark.parametrize("facts", [
-    [], [backup_metric("MYSQL_XTRABACKUP")], [backup_metric(hours=-1)],
-    [backup_metric(latest=float("nan"))], [backup_metric(latest=0)],
+    [backup_metric(hours=-1)], [backup_metric(latest=float("nan"))],
     [backup_metric(evidence_ref="")],
     [backup_metric(sample_points=[])],
 ])
-def test_missing_wrong_source_future_invalid_or_untraceable_backup_cannot_be_compliant(facts):
+def test_future_invalid_or_untraceable_backup_remains_a_technical_limitation(facts):
     fact, gaps = backup_result(facts)
     assert fact["check_status"] == "NOT_OBSERVABLE"
-    assert gaps[0]["code"] == "BACKUP_SUCCESS_NOT_OBSERVABLE"
-    assert "未核验" in fact["summary"]
+    assert gaps[0]["code"] == "BACKUP_VERIFICATION_FAILED"
+    assert "核验未完成" in fact["summary"]
+
+
+@pytest.mark.parametrize("facts", [[], [backup_metric("MYSQL_XTRABACKUP")], [backup_metric(latest=0)]])
+def test_missing_backup_success_is_a_completed_policy_risk(facts):
+    fact, gaps = backup_result(facts)
+    assert fact["check_status"] == "FINDING"
+    assert not gaps
+    result = assess_inspection([fact], policy={})
+    assert result["completion_status"] == "COMPLETE"
+    assert result["health_status"] == "ATTENTION"
+    assert result["completed_required_count"] == result["required_check_count"] == 1
+    assert not result["limitations"]
+    assert "未提供有效备份成功记录" in result["findings"][0]["summary"]
 
 
 def test_backup_overdue_is_real_finding_not_missing_data():
@@ -158,20 +170,20 @@ def test_latest_failed_job_cannot_be_hidden_by_recent_success():
 
 def test_one_success_cannot_cover_another_required_source():
     fact, _ = backup_result([backup_metric()], sources=("MYSQL_LOGICAL_DUMP", "MYSQL_XTRABACKUP"))
-    assert fact["check_status"] == "NOT_OBSERVABLE"
-    assert fact["unverified_source_types"] == ["MYSQL_XTRABACKUP"]
+    assert fact["check_status"] == "FINDING"
+    assert fact["missing_success_source_types"] == ["MYSQL_XTRABACKUP"]
 
 
 def test_known_backup_failure_survives_missing_another_source():
     status = backup_metric(metric_code="backup.last_run.status", semantic_role="BACKUP_LAST_RUN_STATUS", unit="state", latest=0)
     fact, gaps = backup_result([backup_metric(), status], sources=("MYSQL_LOGICAL_DUMP", "MYSQL_XTRABACKUP"))
-    assert gaps[0]["code"] == "BACKUP_SUCCESS_NOT_OBSERVABLE"
+    assert not gaps
     assessment = assess_inspection([fact], policy={})
     assert assessment["health_status"] == "ABNORMAL"
-    assert assessment["completion_status"] == "PARTIAL"
+    assert assessment["completion_status"] == "COMPLETE"
 
 
-def test_binlog_success_without_backup_job_records_remains_unverified():
+def test_binlog_success_without_backup_job_records_is_a_policy_risk():
     source = AIOpsTurnResult.model_validate({
         "status": "COMPLETED", "sufficiency_status": "ANSWERABLE",
         "blocks": [{"block_type": "MARKDOWN", "schema_version": "AIOPS_MARKDOWN_BLOCK.v1",
@@ -182,8 +194,9 @@ def test_binlog_success_without_backup_job_records_remains_unverified():
                     "backup_policy": {"enabled": True, "success_max_age_hours": 26, "source_types": ["MYSQL_LOGICAL_DUMP"]}},
         source=source, database_type="MYSQL", action_tool_ids={}, monitoring=MONITORING,
     )
-    assert next(f for f in facts if f.get("kind") == "backup_policy_check")["check_status"] == "NOT_OBSERVABLE"
-    assert any(g["code"] == "BACKUP_SUCCESS_NOT_OBSERVABLE" for g in gaps)
+    backup = next(f for f in facts if f.get("kind") == "backup_policy_check")
+    assert backup["check_status"] == "FINDING"
+    assert not any(g["step_id"] == "inspection.backup-policy" for g in gaps)
 
 
 @pytest.mark.parametrize("history_failure", [False, True])

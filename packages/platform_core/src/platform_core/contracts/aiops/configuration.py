@@ -939,7 +939,7 @@ class InspectionCheckCatalogItem(AIOpsContract):
     trend_required: bool
     supported_db_types: tuple[DatabaseType, ...] = ("ORACLE",)
     zero_row_status: Literal[
-        "CLEAR", "OBSERVED", "NOT_APPLICABLE", "GAP"
+        "CLEAR", "OBSERVED", "NOT_APPLICABLE", "FINDING"
     ] = "CLEAR"
     report_columns: tuple[str, ...] = ()
 

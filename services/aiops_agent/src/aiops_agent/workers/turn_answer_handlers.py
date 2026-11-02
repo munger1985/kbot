@@ -543,15 +543,18 @@ class DbaEvidenceAssessmentHandler:
                 )
                 if fact is not None:
                     facts.append(fact)
-                for gap in result.gaps:
+                for gap_index, gap in enumerate(result.gaps):
                     monitoring_gap_found = True
                     gaps.append(
                         TurnEvidenceGap(
                             source_id="monitoring.overview",
-                            step_id=gap.metric_code or gap.binding_id,
+                            step_id=gap.metric_code,
+                            diagnostic_source_id=gap.source_id,
+                            binding_id=gap.binding_id or result.binding_id,
                             code=gap.code,
                             detail=gap.detail,
                             retryable=gap.retryable,
+                            evidence_ref=f"artifact:{artifact['artifact_id']}#/gaps/{gap_index}",
                         )
                     )
                 continue
@@ -671,7 +674,9 @@ class DbaEvidenceAssessmentHandler:
             gaps.append(
                 TurnEvidenceGap(
                     source_id="monitoring.overview",
-                    step_id=str(gap.get("binding_id", "source")),
+                    step_id=gap.get("metric_code") or None,
+                    diagnostic_source_id=gap.get("source_id") or None,
+                    binding_id=gap.get("binding_id") or None,
                     code=str(gap.get("code", "MONITORING_UNAVAILABLE")),
                     detail=str(gap.get("detail", "监控源不可用")),
                 )

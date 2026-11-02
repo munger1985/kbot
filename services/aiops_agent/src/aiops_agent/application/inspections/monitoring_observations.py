@@ -68,6 +68,29 @@ def snapshot_is_fresh(fact):
     return snapshot_rejection_reason(fact) is None
 
 
+def empty_monitoring_facts(gaps, *, monitoring):
+    """成功空查询是监控盲区；保留原始空结果引用，不伪造数值或数据库故障。"""
+    from .backup_observations import BACKUP_METRIC_CODES
+
+    definitions = {(str(binding.get("binding_id")), metric["metric_code"]): metric
+                   for binding in (monitoring or {}).get("bindings", ())
+                   for metric in binding.get("metrics", ())}
+    facts = []
+    for gap in gaps:
+        code = str(gap.get("step_id") or "")
+        metric = definitions.get((str(gap.get("binding_id")), code))
+        if gap.get("code") != "SOURCE_NO_DATA" or not metric or code in BACKUP_METRIC_CODES:
+            continue
+        facts.append({
+            "kind": "inspection_monitoring_absence", "metric_code": code,
+            "title": metric.get("name") or code, "semantic_role": metric.get("semantic_role"),
+            "dimensions": "binding:" + str(gap.get("binding_id")),
+            "evidence_ref": gap.get("evidence_ref"),
+            "observed_at": dict((monitoring or {}).get("current_window") or (monitoring or {}).get("window") or {}).get("end"),
+        })
+    return tuple(facts)
+
+
 def monitoring_quality(facts, *, monitoring=None, gaps=()):
     """已请求但无样本的指标进入分母，历史参考不足不污染当前采样质量。"""
     values = {}
