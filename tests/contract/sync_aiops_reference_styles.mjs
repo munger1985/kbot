@@ -1,6 +1,7 @@
 // 从 Ammolite 的真实生产样式生成 KBot AIOps 基线；运行时不依赖另一个仓库。
 // 检查：node tests/contract/sync_aiops_reference_styles.mjs
 // 更新：node tests/contract/sync_aiops_reference_styles.mjs --write
+// 单页更新：node tests/contract/sync_aiops_reference_styles.mjs --write --page=inspection-detail
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
@@ -14,6 +15,8 @@ const require = createRequire(resolve(portal, "package.json"));
 const postcss = require("postcss");
 const read = (path) => readFileSync(path, "utf8");
 const manifest = JSON.parse(read(resolve(root, "ui/aiops/reference-pages.json")));
+const selectedPage = process.argv.find(argument => argument.startsWith("--page="))?.slice(7);
+if (selectedPage) assert.ok(manifest.pages[selectedPage]?.sources.length, "单页样式同步必须指定有生产基准的页面");
 const classes = new Set();
 const sourceFiles = new Set([
   "src/app/BusinessAppShell.vue", "src/shared/ui/ConversationList.vue",
@@ -84,10 +87,11 @@ for (const [page, entry] of Object.entries(manifest.pages)) {
   outputs.push([`css/reference-${page}.css`, css]);
 }
 for (const [file, content] of outputs) {
+  if (selectedPage && file !== `css/reference-${selectedPage}.css`) continue;
   const path = resolve(root, "ui/aiops", file);
   if (process.argv.includes("--write")) writeFileSync(path, content);
   else assert.equal(read(path), content, `${file} 与 Ammolite 基线不同，请重新同步并验证布局`);
 }
 const actual = readdirSync(resolve(root, "ui/aiops")).filter((name) => name.endsWith(".html")).map((name) => name.slice(0, -5)).sort();
 assert.deepEqual(Object.keys(manifest.pages).sort(), actual, "所有页面必须声明 Ammolite 对应页面或平台差异");
-console.log(`AIOps 样式基线：${outputs.length} 份工件，${actual.length} 个页面已登记。`);
+console.log(`AIOps 样式基线：${selectedPage ? 1 : outputs.length} 份工件，${actual.length} 个页面已登记。`);

@@ -1509,6 +1509,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("run.error_code", inspection_script)
         self.assertIn("./report-detail.html?id=", inspection_script)
         self.assertNotIn("KBotAIOpsTurnResult.inspection", inspection_script)
+        for name in ("inspection-batch-metrics", "inspection-results-layout", "inspection-target-grid", "inspection-selected-target", "inspection-quality-grid", "inspection-batch-record"):
+            self.assertIn(name, inspection_script)
+        self.assertIn("state.fire?.system_scope?.resources", inspection_script)
+        self.assertIn("items.has(resource.target_id)", inspection_script)
+        self.assertIn("items.get(run.target_id) || state.targets.find", inspection_script)
+        self.assertIn("但未生成运行记录", inspection_script)
+        self.assertIn('fact.value === null ? "未记录"', inspection_script)
+        self.assertIn('"status-success" : "status-muted"', inspection_script)
+        self.assertIn("不以当前系统资源补造历史清单", inspection_script)
+        self.assertIn('aria-pressed="${state.targetId === item.target_id}"', inspection_script)
         self.assertIn('class="operational-summary-grid inspection-summary-grid"', inspections)
         self.assertNotIn("ops-master-detail", inspections)
         business_groups = shell.split('["configuration-governance", "配置与治理"', 1)[0]

@@ -2,20 +2,65 @@
 
 /* business/AIOpsInspectionDetailView.vue */
 :is([data-page="inspection-detail"]) .inspection-detail-page { min-width:0; }
-:is([data-page="inspection-detail"]) .inspection-detail-content { display:contents; }
+:is([data-page="inspection-detail"]) .inspection-detail-content { display:grid; gap:24px; min-width:0; }
 :is([data-page="inspection-detail"]) .inspection-page-actions,:is([data-page="inspection-detail"]) .inspection-run-statuses { display:flex; flex-wrap:wrap; gap:10px; }
-:is([data-page="inspection-detail"]) .inspection-batch-summary,:is([data-page="inspection-detail"]) .inspection-target-card,:is([data-page="inspection-detail"]) .inspection-follow-up { padding:24px; min-width:0; }
-:is([data-page="inspection-detail"]) .inspection-batch-summary h1,:is([data-page="inspection-detail"]) .inspection-target-card h3,:is([data-page="inspection-detail"]) .inspection-follow-up h2 { margin:0 0 12px; overflow-wrap:anywhere; }
-:is([data-page="inspection-detail"]) .inspection-targets>p,:is([data-page="inspection-detail"]) .inspection-follow-up p,:is([data-page="inspection-detail"]) .inspection-empty { color:var(--muted); line-height:1.65; }
-:is([data-page="inspection-detail"]) .inspection-target-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; margin-top:16px; }
-:is([data-page="inspection-detail"]) .inspection-target-card { display:flex; flex-direction:column; gap:16px; }
-:is([data-page="inspection-detail"]) .inspection-target-card.active { border-color:var(--accent); }
-:is([data-page="inspection-detail"]) .inspection-target-card footer { margin-top:auto; flex-wrap:wrap; }
+:is([data-page="inspection-detail"]) .inspection-batch-summary,:is([data-page="inspection-detail"]) .inspection-selected-target,:is([data-page="inspection-detail"]) .inspection-follow-up { padding:24px; min-width:0; }
+:is([data-page="inspection-detail"]) .inspection-batch-heading,:is([data-page="inspection-detail"]) .inspection-result-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+:is([data-page="inspection-detail"]) .inspection-batch-heading>div,:is([data-page="inspection-detail"]) .inspection-result-heading>div { min-width:0; }
+:is([data-page="inspection-detail"]) .inspection-batch-heading h1 { margin:0; font-size:var(--type-page-title); line-height:1.4; overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-detail-page .eyebrow { margin:0 0 8px; color:var(--muted); }
+:is([data-page="inspection-detail"]) .inspection-system-name { margin:8px 0 0; color:var(--muted); }
+:is([data-page="inspection-detail"]) .inspection-summary-note { margin:16px 0 0; color:var(--muted); line-height:1.7; }
+:is([data-page="inspection-detail"]) .inspection-batch-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin:24px 0; }
+:is([data-page="inspection-detail"]) .inspection-batch-metrics>div { min-width:0; padding-left:16px; border-left:2px solid var(--line); }
+:is([data-page="inspection-detail"]) .inspection-batch-metrics dt { color:var(--muted); font-size:var(--type-supporting); }
+:is([data-page="inspection-detail"]) .inspection-batch-metrics dd { display:flex; align-items:baseline; gap:8px; margin:4px 0 0; font:600 30px/1.4 var(--font-data); }
+:is([data-page="inspection-detail"]) .inspection-batch-metrics small { color:var(--muted); font:400 var(--type-supporting) var(--font-ui); }
+:is([data-page="inspection-detail"]) .inspection-batch-metrics .has-failures { border-color:var(--danger); }
+:is([data-page="inspection-detail"]) .inspection-batch-metrics .has-failures dd { color:var(--danger); }
+:is([data-page="inspection-detail"]) .inspection-batch-times { display:flex; flex-wrap:wrap; gap:8px 24px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:var(--type-supporting); }
+:is([data-page="inspection-detail"]) .inspection-batch-times time { margin-left:8px; color:var(--ink); font-family:var(--font-data); overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-results-layout { display:grid; grid-template-columns:minmax(240px,300px) minmax(0,1fr); align-items:start; gap:24px; }
+:is([data-page="inspection-detail"]) .inspection-targets { min-width:0; padding:20px; }
+:is([data-page="inspection-detail"]) .inspection-section-heading h2,:is([data-page="inspection-detail"]) .inspection-result-heading h2 { margin:0; font-size:var(--type-section-title); overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-section-heading p,:is([data-page="inspection-detail"]) .inspection-result-heading p:not(.eyebrow),:is([data-page="inspection-detail"]) .inspection-quality>p,:is([data-page="inspection-detail"]) .inspection-report-note,:is([data-page="inspection-detail"]) .inspection-list-note,:is([data-page="inspection-detail"]) .inspection-empty { margin:8px 0 0; color:var(--muted); font-size:var(--type-supporting); line-height:1.7; overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-target-grid { display:grid; gap:10px; margin-top:20px; }
+:is([data-page="inspection-detail"]) .inspection-target-card { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:12px; width:100%; padding:16px; border:1px solid var(--line); border-radius:var(--radius); color:var(--ink); background:var(--surface-raised); box-shadow:none; text-align:left; font:inherit; cursor:pointer; }
+:is([data-page="inspection-detail"]) .inspection-target-card:hover { border-color:var(--accent); }
+:is([data-page="inspection-detail"]) .inspection-target-grid .inspection-target-card { box-shadow:none; }
+:is([data-page="inspection-detail"]) .inspection-target-grid .inspection-target-card.active { border-color:var(--accent); background:var(--accent-soft); box-shadow:inset 3px 0 var(--accent); }
+:is([data-page="inspection-detail"]) .inspection-target-card:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+:is([data-page="inspection-detail"]) .inspection-target-identity { display:grid; gap:4px; min-width:0; overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-target-identity small,:is([data-page="inspection-detail"]) .inspection-target-report { color:var(--muted); font-size:var(--type-meta); }
+:is([data-page="inspection-detail"]) .inspection-target-report { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+:is([data-page="inspection-detail"]) .inspection-result-workspace { display:grid; gap:16px; min-width:0; }
+:is([data-page="inspection-detail"]) .inspection-result-heading { margin-bottom:20px; }
+:is([data-page="inspection-detail"]) .inspection-result-heading .primary-button { flex:0 0 auto; }
+:is([data-page="inspection-detail"]) .inspection-selected-target .notice { display:block; margin:20px 0 0; }
+:is([data-page="inspection-detail"]) .inspection-selected-target .notice p { margin:8px 0; }
+:is([data-page="inspection-detail"]) .inspection-quality { margin-top:24px; padding-top:20px; border-top:1px solid var(--line); }
+:is([data-page="inspection-detail"]) .inspection-quality h3 { margin:0; font-size:var(--type-body); }
+:is([data-page="inspection-detail"]) .inspection-quality-grid { display:grid; gap:16px; margin:20px 0 12px; }
+:is([data-page="inspection-detail"]) .inspection-quality-item { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; font-size:var(--type-supporting); }
+:is([data-page="inspection-detail"]) .inspection-quality-item>span { color:var(--muted); }
+:is([data-page="inspection-detail"]) .inspection-quality-item strong { font-family:var(--font-data); }
+:is([data-page="inspection-detail"]) .inspection-coverage-track { grid-column:1 / -1; height:5px; overflow:hidden; border-radius:var(--radius); background:var(--surface-subtle); }
+:is([data-page="inspection-detail"]) .inspection-coverage-track>span { display:block; height:100%; background:var(--accent); }
 :is([data-page="inspection-detail"]) .inspection-observation { margin:0; min-width:0; }
 :is([data-page="inspection-detail"]) .inspection-observation>div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 16px; padding:10px 0; border-bottom:1px solid var(--line); }
-:is([data-page="inspection-detail"]) .inspection-observation dt { color:var(--muted); }
-:is([data-page="inspection-detail"]) .inspection-observation dd { margin:0; color:var(--ink); font-family:var(--font-data); overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-observation dt { color:var(--muted); font-size:var(--type-supporting); }
+:is([data-page="inspection-detail"]) .inspection-observation dd { margin:0; color:var(--ink); font:400 var(--type-supporting) var(--font-data); overflow-wrap:anywhere; }
+:is([data-page="inspection-detail"]) .inspection-report-note { margin-top:20px; }
+:is([data-page="inspection-detail"]) .inspection-continuation>.secondary-button { margin-top:16px; }
+:is([data-page="inspection-detail"]) .inspection-continuation-form { max-width:760px; margin-top:16px; }
+:is([data-page="inspection-detail"]) .inspection-continuation-form label,:is([data-page="inspection-detail"]) .inspection-continuation-form select,:is([data-page="inspection-detail"]) .inspection-continuation-form textarea { min-width:0; max-width:100%; }
+:is([data-page="inspection-detail"]) .inspection-continuation-form footer { flex-wrap:wrap; }
+:is([data-page="inspection-detail"]) .inspection-batch-record { min-width:0; padding:0; }
+:is([data-page="inspection-detail"]) .inspection-batch-record>summary { padding:18px 24px; cursor:pointer; font-weight:600; }
+:is([data-page="inspection-detail"]) .inspection-record-body { padding:0 24px 24px; border-top:1px solid var(--line); }
+:is([data-page="inspection-detail"]) .inspection-record-body h3 { margin:20px 0 8px; font-size:var(--type-body); }
+:is([data-page="inspection-detail"]) .inspection-record-body ul { padding-left:20px; margin:0; color:var(--muted); overflow-wrap:anywhere; }
 :is([data-page="inspection-detail"]) .inspection-detail-page .status-pill { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 :is([data-page="inspection-detail"]) .inspection-detail-page .notice,:is([data-page="inspection-detail"]) .inspection-detail-page code { min-width:0; overflow-wrap:anywhere; white-space:normal; }
-:is([data-page="inspection-detail"]) .inspection-continuation-form { max-width:760px; margin-top:16px; }
-@media(max-width:600px) { :is([data-page="inspection-detail"]) .inspection-batch-summary,:is([data-page="inspection-detail"]) .inspection-target-card,:is([data-page="inspection-detail"]) .inspection-follow-up { padding:16px; } }
+@media(max-width:1000px) { :is([data-page="inspection-detail"]) .inspection-results-layout { grid-template-columns:minmax(0,1fr); } :is([data-page="inspection-detail"]) .inspection-target-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); } }
+@media(max-width:600px) { :is([data-page="inspection-detail"]) .inspection-detail-content,:is([data-page="inspection-detail"]) .inspection-results-layout { gap:16px; } :is([data-page="inspection-detail"]) .inspection-batch-summary,:is([data-page="inspection-detail"]) .inspection-selected-target,:is([data-page="inspection-detail"]) .inspection-follow-up,:is([data-page="inspection-detail"]) .inspection-targets { padding:16px; } :is([data-page="inspection-detail"]) .inspection-batch-heading,:is([data-page="inspection-detail"]) .inspection-result-heading { flex-wrap:wrap; } :is([data-page="inspection-detail"]) .inspection-batch-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; } :is([data-page="inspection-detail"]) .inspection-batch-times { display:grid; } :is([data-page="inspection-detail"]) .inspection-batch-times time { display:block; margin:4px 0 0; } :is([data-page="inspection-detail"]) .inspection-target-grid { grid-template-columns:minmax(0,1fr); } :is([data-page="inspection-detail"]) .inspection-batch-record>summary { padding:16px; } :is([data-page="inspection-detail"]) .inspection-record-body { padding:0 16px 16px; } }

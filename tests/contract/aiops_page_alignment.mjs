@@ -154,7 +154,27 @@ function installFixture(data) {
     if (suffix.endsWith('/inspection-plans')) return {items:rows({...data.inspectionPlan,status:globalThis.fixturePlanStatus || 'ACTIVE'})};
     if (suffix.endsWith('/inspection-plans/plan-1')) return {...data.inspectionPlan,schedule_type:globalThis.fixturePlanType || 'DAILY',cron_expression:globalThis.fixturePlanCron || '0 2 * * *'};
     if (suffix.endsWith('/runs')) return {items:rows(data.run)};
-    if (suffix.endsWith('/inspection-fires/fire-1')) return {...data.inspectionFire,system_scope:{resources:[{resource_id:'resource-1',display_name:'MES 数据库',target_id:'target-1',db_type:'ORACLE'},{resource_id:'resource-2',display_name:'MES 备库',target_id:'target-2',db_type:'ORACLE'}],excluded_resources:[{resource_id:'resource-retired',display_name:'旧备库',reason:'资源已退役'}]},runs:globalThis.fixtureInspectionMode==='NO_RUN'?[]:[{run_id:'run-1',target_id:'target-1',report_id:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?null:'report-1',error_code:globalThis.fixtureInspectionMode==='FAILED'?'AIOPS_INVESTIGATION_PLAN_INVALID':null,error_message:globalThis.fixtureInspectionMode==='FAILED'?'固定工具 db.index.health 缺少 schema_name':null,status:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?fixtureInspectionMode:'COMPLETED',report_status:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?'': 'PARTIAL',evidence_coverage_percent:['RUNNING','FAILED'].includes(globalThis.fixtureInspectionMode)?null:75,evidence_covered_count:3,evidence_total_count:4,tool_execution_coverage_percent:100,monitoring_sample_coverage_percent:80,evidence_gap_count:1},{run_id:'run-2',target_id:'target-2',status:'FAILED',error_message:'目标暂时无法连接'}]};
+    if (suffix.endsWith('/inspection-fires/fire-1')) {
+      const mode = globalThis.fixtureInspectionMode;
+      const detail = {...data.inspectionFire,system_scope:{resources:[{resource_id:'resource-1',display_name:'MES 数据库',target_id:'target-1',db_type:'ORACLE'},{resource_id:'resource-2',display_name:'MES 备库',target_id:'target-2',db_type:'ORACLE'}],excluded_resources:[{resource_id:'resource-retired',display_name:'旧备库',reason:'资源已退役'}]},runs:['NO_RUN','NO_RUN_PENDING'].includes(mode)?[]:[{run_id:'run-1',target_id:'target-1',report_id:['RUNNING','FAILED'].includes(mode)?null:'report-1',error_code:mode==='FAILED'?'AIOPS_INVESTIGATION_PLAN_INVALID':null,error_message:mode==='FAILED'?'固定工具 db.index.health 缺少 schema_name':null,status:['RUNNING','FAILED'].includes(mode)?mode:'COMPLETED',report_status:['RUNNING','FAILED'].includes(mode)?'': 'PARTIAL',evidence_coverage_percent:['RUNNING','FAILED'].includes(mode)?null:75,evidence_covered_count:3,evidence_total_count:4,tool_execution_coverage_percent:100,monitoring_sample_coverage_percent:80,evidence_gap_count:1},{run_id:'run-2',target_id:'target-2',status:'FAILED',error_message:'目标暂时无法连接'}]};
+      if (mode === 'NO_RUN_PENDING') Object.assign(detail,{status:'QUEUED',completed_at:null,completed_count:0,failed_count:0});
+      if (mode === 'DUPLICATE_SCOPE') detail.system_scope.resources.push({...detail.system_scope.resources[0],resource_id:'resource-alias'});
+      if (mode === 'RUNNING') Object.assign(detail,{status:'RUNNING',completed_at:null,completed_count:0});
+      if (mode === 'MISSING_RUN') detail.runs.pop();
+      if (mode === 'ZERO_COVERAGE') Object.assign(detail.runs[0],{evidence_coverage_percent:0,tool_execution_coverage_percent:0,monitoring_sample_coverage_percent:null,evidence_gap_count:0});
+      if (mode === 'UNKNOWN_STATUS') Object.assign(detail.runs[0],{status:'UNKNOWN',report_status:null,report_id:null});
+      if (mode === 'LONG_TEXT') {
+        detail.system_scope.resources[0].display_name='生产数据库_LONG_DATABASE_NAME_'.repeat(8)+'<img src=x onerror=alert(1)>';
+        detail.system_scope.resources[0].db_type='POSTGRESQL';
+        Object.assign(detail.runs[0],{status:'FAILED',report_id:null,report_status:null,error_code:'AIOPS_TARGET_DIAGNOSTIC_FAILURE_'.repeat(8),error_message:'数据库取证失败_LONG_ERROR_DETAIL_'.repeat(16)+'<script>alert(1)</script>'});
+      }
+      if (mode === 'NO_SCOPE') detail.system_scope=null;
+      if (mode === 'COMPLETE') {
+        Object.assign(detail,{status:'COMPLETED',completed_count:2,failed_count:0});
+        Object.assign(detail.runs[1],{status:'COMPLETED',report_id:'report-2',report_status:'READY',error_message:null});
+      }
+      return detail;
+    }
     if (suffix.endsWith('/runs/run-2')) return {ops_run_id:'run-2',target_id:'target-2',status:'FAILED'};
     if (suffix.endsWith('/runs/run-2/result')) {const error=new (globalThis.fixtureApiErrorClass || Error)('目标暂时无法连接');error.status=404;throw error;}
     if (suffix.endsWith('/situations/situation-1')) return {...data.situation,run_ids:globalThis.fixtureSituationState==='NO_RUN'?[]:['run-1'],monitoring_sources:[{diagnostic_source_id:'source-1',display_name:'生产 Prometheus',source_type:'PROMETHEUS',event_count:2,latest_severity:'HIGH',latest_status:'OPEN',last_observed_at:data.situation.last_observed_at}],signal_events:[{signal_event_id:'signal-1',event_class:'LOCK_WAIT',severity:'HIGH',normalized_status:'OPEN',summary:'当前写入事务等待超过阈值。',occurred_at:data.situation.last_observed_at}]};
@@ -1191,25 +1211,67 @@ try {
     }
     if(name==='inspection-detail') {
       await Promise.all([kbot,reference].map(page=>page.locator('.inspection-batch-summary').waitFor()));
-      for(const mode of ['REPORT','RUNNING','FAILED','NO_RUN']) {
+      for(const mode of ['REPORT','RUNNING','FAILED','NO_RUN','NO_RUN_PENDING','MISSING_RUN','ZERO_COVERAGE','UNKNOWN_STATUS','LONG_TEXT','NO_SCOPE','COMPLETE','DUPLICATE_SCOPE']) {
         await Promise.all([kbot,reference].map(page=>page.evaluate(value=>{fixtureInspectionMode=value;fixtureRequests=[];},mode)));
         await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'刷新',exact:true}).click()));
         await Promise.all([kbot,reference].map(page=>page.locator('.inspection-batch-summary').waitFor()));
+        await Promise.all([kbot,reference].map(page=>page.locator('.inspection-target-card').first().click()));
         for(const width of [1440,820,420,320]) {
           await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
-          await compareRegions(kbot,reference,['.inspection-page-actions','.inspection-batch-summary','.inspection-targets','.inspection-target-grid','.inspection-target-card','.inspection-run-statuses','.inspection-observation','.inspection-follow-up'],{page:name,width,empty,state:mode});
+          await compareRegions(kbot,reference,['.inspection-page-actions','.inspection-batch-summary','.inspection-batch-heading','.inspection-batch-metrics','.inspection-batch-times','.inspection-results-layout','.inspection-targets','.inspection-target-grid','.inspection-target-card','.inspection-selected-target','.inspection-result-heading','.inspection-run-statuses','.inspection-quality-grid','.inspection-observation','.inspection-follow-up','.inspection-batch-record'],{page:name,width,empty,state:mode});
           for(const page of [kbot,reference]) {
-            const overflow=await page.evaluate(()=>[...document.querySelectorAll('.inspection-batch-summary,.inspection-target-card,.inspection-follow-up')].filter(node=>node.scrollWidth>node.clientWidth+1).map(node=>node.className));
+            const overflow=await page.evaluate(()=>[...document.querySelectorAll('.inspection-detail-page,.inspection-batch-summary,.inspection-target-card,.inspection-selected-target,.inspection-follow-up')].filter(node=>node.scrollWidth>node.clientWidth+1).map(node=>node.className));
             assert.deepEqual(overflow,[],`巡检正文不允许横向溢出：${width}`);
+            if(!empty && ['REPORT','FAILED','LONG_TEXT'].includes(mode) && [1440,420].includes(width)) await page.screenshot({path:resolve(artifacts,`${page===kbot?'kbot':'ammolite'}-inspection-${mode}-${width}.png`),fullPage:true});
           }
         }
-        if(mode==='NO_RUN') {
-          for(const page of [kbot,reference]) assert.equal(await page.getByRole('link',{name:'查看报告',exact:true}).count(),0);
+        if(['NO_RUN','NO_RUN_PENDING'].includes(mode)) {
+          for(const page of [kbot,reference]) {
+            assert.equal(await page.getByRole('link',{name:'查看报告',exact:true}).count(),0);
+            assert.equal(await page.locator('.inspection-target-card').count(),2,'冻结清单中的无运行数据库不能消失');
+            assert.equal(await page.locator('.inspection-follow-up').count(),0);
+            if(mode==='NO_RUN_PENDING') assert.equal(await page.locator('.inspection-result-workspace .notice-error').count(),0,'等待调度不能显示为执行失败');
+          }
           continue;
         }
+        if(mode==='DUPLICATE_SCOPE') for(const page of [kbot,reference]) assert.equal(await page.locator('.inspection-target-card').count(),2,'同库多资源引用只展示一次目标');
+        if(mode==='MISSING_RUN') {
+          for(const page of [kbot,reference]) {
+            await page.locator('.inspection-target-card').nth(1).click();
+            assert.equal(await page.locator('.inspection-selected-target h2').innerText(),'MES 备库');
+            assert.ok((await page.locator('.inspection-selected-target').innerText()).includes('但未生成运行记录'));
+            assert.equal(await page.locator('.inspection-follow-up').count(),0);
+            assert.equal(await page.getByRole('link',{name:'查看报告',exact:true}).count(),0);
+            assert.equal(new URL(page.url()).searchParams.get('runId'),null);
+            await page.getByRole('button',{name:'刷新',exact:true}).click();
+            await page.waitForFunction(()=>document.querySelector('.inspection-target-card[aria-pressed="true"]')?.textContent.includes('MES 备库'));
+          }
+        }
+        if(mode==='ZERO_COVERAGE') for(const page of [kbot,reference]) {
+          assert.deepEqual(await page.locator('.inspection-quality-item strong').allTextContents(),['0%','0%','未记录']);
+          assert.equal(await page.locator('.inspection-observation dd').first().innerText(),'0 项');
+        }
+        if(mode==='UNKNOWN_STATUS') for(const page of [kbot,reference]) assert.equal(await page.locator('.inspection-run-statuses .status-success').count(),0,'未知状态不能渲染为成功');
+        if(mode==='LONG_TEXT') for(const page of [kbot,reference]) {
+          assert.equal(await page.locator('.inspection-selected-target img,.inspection-selected-target script').count(),0,'名称和错误必须按文本展示');
+          assert.equal(await page.locator('.inspection-target-identity small').first().innerText(),'POSTGRESQL','优先保留冻结范围的数据库类型');
+          assert.ok((await page.locator('.inspection-selected-target h2').innerText()).includes('<img src=x'));
+        }
+        if(mode==='NO_SCOPE') for(const page of [kbot,reference]) {
+          await page.getByText('批次记录与冻结范围',{exact:true}).click();
+          assert.ok(await page.getByText('本批次未记录冻结范围，不以当前系统资源补造历史清单。',{exact:true}).isVisible());
+        }
+        if(mode==='COMPLETE') for(const page of [kbot,reference]) assert.deepEqual((await page.locator('.inspection-batch-metrics dd').allTextContents()).map(value=>value.replace(/\s/g,'')),['2个','2个','0个','2份']);
         if(mode==='FAILED') for(const page of [kbot,reference]) assert.ok(await page.getByText('固定工具 db.index.health 缺少 schema_name',{exact:true}).isVisible());
         if(mode!=='REPORT' || empty) continue;
         for(const page of [kbot,reference]) {
+          await page.locator('.inspection-target-card').nth(1).focus();
+          await page.keyboard.press('Enter');
+          await page.getByText('目标暂时无法连接',{exact:true}).waitFor();
+          assert.equal(await page.locator('.inspection-target-card').nth(1).evaluate(node=>node===document.activeElement),true,'键盘切换后保留目标按钮焦点');
+          assert.equal(new URL(page.url()).searchParams.get('runId'),'run-2');
+          assert.equal(await page.getByRole('link',{name:'查看报告',exact:true}).count(),0);
+          await page.locator('.inspection-target-card').first().click();
           const reportLink=page.getByRole('link',{name:'查看报告',exact:true}).first();
           assert.ok((await reportLink.getAttribute('href')).includes(page===kbot?'report-detail.html?id=report-1':'reports/report-1'));
           await page.waitForFunction(()=>fixtureRequests.some(row=>row.path.includes('/conversations?run_id=run-1')));
