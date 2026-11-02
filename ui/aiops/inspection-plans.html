@@ -7,19 +7,21 @@
     <section class="platform-home-hero app-page-head"><div><p class="eyebrow">计划巡检入口</p><h1>日常巡检</h1><p>查看巡检计划展开的执行批次、运维目标覆盖情况和完成结果。</p></div></section>
     <nav class="inspection-tabs" aria-label="日常巡检视图"><button class="inspection-tab" type="button" data-inspection-reports>巡检报告</button><button class="active" type="button" aria-current="page">巡检计划</button></nav>
     <section class="aiops-page aiops-inspection-plans-page">
-      <header class="page-header app-page-head"><div><p class="eyebrow">自动巡检管理</p><h1>日常巡检</h1><p>选择已启用的 AIOps Agent，按固定时间表解析其授权业务系统中的有效资源并执行巡检。</p></div></header>
+      <header class="page-header app-page-head"><div><p class="eyebrow">自动巡检管理</p><h1>日常巡检</h1><p>先选择业务系统，再选择执行 Agent；每次巡检覆盖该系统全部纳管数据库。</p></div></header>
       <p id="inspection-plan-notice" class="notice notice-warning" hidden></p>
       <section id="inspection-plans-loading" class="loading-card"><span class="loading-orb"></span>正在读取巡检计划…</section>
       <section id="inspection-plan-list" class="resource-list-surface" hidden><header class="resource-list-header"><div class="resource-list-heading"><h2>巡检计划</h2><p>计划负责未来调度；历史巡检报告始终保留当时的执行结果。</p></div><div class="resource-list-tools"><span id="inspection-plan-count" class="resource-list-count">0 个</span><button id="refresh-inspection-plans" class="secondary-button" type="button">刷新</button></div></header><div class="resource-list-body"><div id="inspection-plan-catalog" class="management-catalog-grid"></div></div></section>
     </section>
   </main>
   <dialog id="inspection-plan-dialog" class="reference-drawer admin-drawer aiops-inspection-plan-drawer" aria-labelledby="inspection-plan-title">
-    <header class="admin-drawer-header"><div><p class="eyebrow">巡检调度</p><h2 id="inspection-plan-title">新建巡检计划</h2><p>计划只负责触发时间和运行保护；巡检范围来自 Agent 当前版本授权的业务系统，巡检内容来自冻结的模板版本。</p></div><button class="icon-button" type="button" aria-label="关闭" data-close-plan>×</button></header>
+    <header class="admin-drawer-header"><div><p class="eyebrow">巡检调度</p><h2 id="inspection-plan-title">新建巡检计划</h2><p>计划只负责触发时间和运行保护；巡检范围来自计划所属业务系统的全部纳管数据库，巡检内容来自冻结的模板版本。</p></div><button class="icon-button" type="button" aria-label="关闭" data-close-plan>×</button></header>
     <form id="inspection-plan-form" class="admin-drawer-body">
       <section class="drawer-form-section">
-        <header><span>01</span><div><strong>基本信息</strong><small>选择负责执行巡检的已启用 Agent。</small></div></header>
+        <header><span>01</span><div><strong>基本信息</strong><small>先选业务系统，确认全部数据库，再选择执行 Agent。</small></div></header>
         <label class="control-field"><span class="field-label">计划名称</span><input name="display_name" required maxlength="256" placeholder="例如：生产数据库每日健康巡检"></label>
-        <label class="control-field"><span class="field-label">执行 Agent</span><select name="agent_id" required></select><small class="field-help">执行范围取自 Agent 当前版本允许访问的业务系统，并在执行时解析其中的有效资源。</small></label>
+        <label class="control-field"><span class="field-label">业务系统</span><select name="business_system_id" required></select><small class="field-help">计划只巡检该系统的全部纳管数据库；创建后系统归属不可更改。</small></label>
+        <p id="inspection-system-loading" class="field-help" hidden>正在读取系统数据库范围…</p><p id="inspection-system-error" role="alert" class="notice notice-error" hidden></p><ul id="inspection-system-resources"></ul>
+        <label class="control-field"><span class="field-label">执行 Agent</span><select name="agent_id" required></select><small class="field-help">只显示对所选系统已授权且具备主动诊断能力的 Agent；换 Agent 不改变巡检范围。</small></label>
       </section>
       <section class="drawer-form-section">
         <header><span>02</span><div><strong>执行安排</strong><small>按业务周期设置，系统保存为标准五段 Cron。</small></div></header>
@@ -48,6 +50,6 @@
     </form>
   </dialog>
   <dialog id="inspection-plan-confirm" class="confirm-dialog" aria-labelledby="inspection-plan-confirm-title" aria-describedby="inspection-plan-confirm-message"><header class="confirm-dialog-header"><span class="confirm-dialog-mark" aria-hidden="true">!</span><div><p class="confirm-dialog-kicker">请确认此操作</p><h2 id="inspection-plan-confirm-title"></h2></div></header><p id="inspection-plan-confirm-message" class="confirm-dialog-message"></p><footer class="confirm-dialog-actions"><button class="secondary-button" type="button" data-cancel-plan-confirm>取消</button><button type="button" data-confirm-plan></button></footer></dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261102_1"></script><script src="./js/aiops-inspection-plans.js?v=20261030_1"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261102_1"></script><script src="./js/aiops-inspection-plans.js?v=20261102_2"></script>
 </body>
 </html>

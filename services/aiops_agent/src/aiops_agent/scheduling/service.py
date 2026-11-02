@@ -120,6 +120,7 @@ class AIOpsInspectionScheduler:
                 "domain_id": int(plan.domain_id),
                 "plan_id": str(plan.inspection_plan_id),
                 "display_name": plan.display_name,
+                "business_system_id": str(plan.business_system_id),
                 "agent_id": str(plan.agent_id),
                 "agent_version_id": None,
                 "schedule_type": plan.schedule_type,
@@ -253,20 +254,28 @@ class AIOpsInspectionScheduler:
                 inspection_fire_id=fire.inspection_fire_id
             )
             if not turns:
-                if not all(item.status == "FAILED" for item in request_events):
-                    return False
                 failed_request = next(
-                    item for item in request_events if item.status == "FAILED"
+                    (item for item in request_events if item.status == "FAILED"),
+                    None,
                 )
                 fire.status = "FAILED"
-                fire.error_code = (
-                    failed_request.error_code
-                    or "AIOPS_INSPECTION_AGENT_DISPATCH_FAILED"
-                )
-                fire.error_message = (
-                    failed_request.error_message
-                    or "巡检任务未能提交给所选 Agent"
-                )
+                if failed_request is not None:
+                    fire.error_code = (
+                        failed_request.error_code
+                        or "AIOPS_INSPECTION_AGENT_DISPATCH_FAILED"
+                    )
+                    fire.error_message = (
+                        failed_request.error_message
+                        or "巡检任务未能提交给所选 Agent"
+                    )
+                else:
+                    fire.error_code = "AIOPS_INSPECTION_RUNS_MISSING"
+                    fire.error_message = (
+                        f"{int(fire.target_count)} 个预期目标未生成数据库取证运行；"
+                        "巡检投递已结束，但未形成目标会话，不能算作执行成功"
+                    )
+                fire.run_count = len(runs)
+                fire.failed_count = int(fire.target_count)
                 fire.completed_at = now
                 fire.updated_at = now
                 await uow.commit()
@@ -292,23 +301,24 @@ class AIOpsInspectionScheduler:
                 item.status in {"FAILED", "CANCELLED", "EXPIRED"}
                 for item in runs
             )
-            missing_run_count = max(0, len(turns) - len(runs))
+            expected_count = max(int(fire.target_count), len(turns))
+            missing_run_count = max(0, expected_count - len(runs))
             failed += missing_run_count
             if missing_run_count:
                 fire.error_code = "AIOPS_INSPECTION_RUNS_MISSING"
                 fire.error_message = (
-                    f"{missing_run_count}/{len(turns)} 个目标未生成数据库取证运行；"
+                    f"{missing_run_count}/{expected_count} 个目标未生成数据库取证运行；"
                     "对应目标未执行巡检，也未形成正式报告"
                 )
-            if completed == len(turns):
+            if completed == expected_count:
                 status = "COMPLETED"
-            elif completed or failed < len(turns):
+            elif completed or failed < expected_count:
                 status = "PARTIAL"
             else:
                 status = "FAILED"
             fire.status = status
             fire.run_count = len(runs)
-            fire.target_count = len(turns)
+            fire.target_count = expected_count
             fire.completed_count = completed
             fire.failed_count = failed
             fire.completed_at = now
@@ -334,6 +344,7 @@ class AIOpsInspectionScheduler:
             "inspection_fire_id": str(fire_id),
             "domain_id": snapshot["domain_id"],
             "actor_id": "system:inspection-scheduler",
+            "business_system_id": snapshot["business_system_id"],
             "agent_id": snapshot["agent_id"],
             "plan_display_name": snapshot["display_name"],
             "inspection_template_id": snapshot[

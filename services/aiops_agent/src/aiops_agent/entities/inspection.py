@@ -122,6 +122,9 @@ class InspectionPlanEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    business_system_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), nullable=False, index=True
+    )
     schedule_type: Mapped[str] = mapped_column(String(16), nullable=False)
     cron_expression: Mapped[str] = mapped_column(String(256), nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)

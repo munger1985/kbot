@@ -1140,6 +1140,7 @@ CREATE INDEX IX_OPS_INSP_TPL_CURRENT_VER
 
 CREATE TABLE KBOT_OPS_INSPECTION_PLAN (
     INSPECTION_PLAN_ID RAW(16) PRIMARY KEY,
+    BUSINESS_SYSTEM_ID RAW(16) NOT NULL,
     DOMAIN_ID NUMBER(38) NOT NULL,
     DISPLAY_NAME VARCHAR2(256 CHAR) NOT NULL,
     AGENT_ID RAW(16) NOT NULL,
@@ -1163,6 +1164,8 @@ CREATE TABLE KBOT_OPS_INSPECTION_PLAN (
     UPDATED_BY VARCHAR2(256 CHAR) NOT NULL,
     CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT FK_OPS_INSP_PLAN_SYSTEM FOREIGN KEY (BUSINESS_SYSTEM_ID)
+        REFERENCES KBOT_OPS_BUSINESS_SYSTEM (BUSINESS_SYSTEM_ID),
     CONSTRAINT FK_OPS_INSP_PLAN_DOMAIN
         FOREIGN KEY (DOMAIN_ID)
         REFERENCES KBOT_PLATFORM_DOMAIN (DOMAIN_ID),
@@ -1173,6 +1176,8 @@ CREATE TABLE KBOT_OPS_INSPECTION_PLAN (
         FOREIGN KEY (INSPECTION_TEMPLATE_VERSION_ID)
         REFERENCES KBOT_OPS_INSPECTION_TEMPLATE_VER
             (INSPECTION_TEMPLATE_VERSION_ID));
+
+CREATE INDEX IX_OPS_INSP_PLAN_SYSTEM ON KBOT_OPS_INSPECTION_PLAN (BUSINESS_SYSTEM_ID);
 
 CREATE INDEX IX_OPS_INSP_PLAN_DUE
     ON KBOT_OPS_INSPECTION_PLAN (STATUS, NEXT_RUN_AT);
@@ -1312,7 +1317,7 @@ CREATE INDEX IX_OPS_RPT_SOURCE_ART
 COMMENT ON COLUMN KBOT_OPS_INSPECTION_PLAN.CRON_EXPRESSION IS
     '规范五段 Cron；应用按 IANA 时区预计算 NEXT_RUN_AT';
 COMMENT ON COLUMN KBOT_OPS_INSPECTION_PLAN.AGENT_ID IS
-    '负责执行巡检的 DBA Agent；Target、模型、监控源和策略均由 Agent 当前版本提供';
+    '负责执行巡检的 DBA Agent；执行范围只来自计划所属业务系统，不由 Agent 授权范围扩大';
 COMMENT ON COLUMN KBOT_OPS_INSPECTION_TEMPLATE_VER.DEFINITION_JSON IS
     '冻结的检查项、Check Catalog 哈希和固定取证步骤；计划运行时不得重新编译当前目录';
 COMMENT ON COLUMN KBOT_OPS_INSPECTION_FIRE.PLAN_SNAPSHOT_JSON IS
@@ -1616,6 +1621,13 @@ SELECT
         SUBSTR(RAWTOHEX(p.AGENT_ID), 17, 4) || '-' ||
         SUBSTR(RAWTOHEX(p.AGENT_ID), 21, 12)
     ) AS AGENT_ID,
+    LOWER(
+        SUBSTR(RAWTOHEX(p.BUSINESS_SYSTEM_ID), 1, 8) || '-' ||
+        SUBSTR(RAWTOHEX(p.BUSINESS_SYSTEM_ID), 9, 4) || '-' ||
+        SUBSTR(RAWTOHEX(p.BUSINESS_SYSTEM_ID), 13, 4) || '-' ||
+        SUBSTR(RAWTOHEX(p.BUSINESS_SYSTEM_ID), 17, 4) || '-' ||
+        SUBSTR(RAWTOHEX(p.BUSINESS_SYSTEM_ID), 21, 12)
+    ) AS BUSINESS_SYSTEM_ID,
     p.DOMAIN_ID,
     p.DISPLAY_NAME,
     p.SCHEDULE_TYPE,
@@ -1935,8 +1947,8 @@ CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    53 AS SCHEMA_VERSION,
-    'aiops-oracle-v53-report-artifact-sources' AS CONTRACT_VERSION
+    54 AS SCHEMA_VERSION,
+    'aiops-oracle-v54-system-operations-plans' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -3625,7 +3637,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 53 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 54 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -3638,8 +3650,8 @@ BEGIN
         raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 53
-       OR l_contract_version <> 'aiops-oracle-v53-report-artifact-sources' THEN
+       OR l_schema_version <> 54
+       OR l_contract_version <> 'aiops-oracle-v54-system-operations-plans' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3649,7 +3661,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：79 张表、10 个视图，Schema Version '
-        || '53，合同 aiops-oracle-v53-report-artifact-sources。'
+        || '54，合同 aiops-oracle-v54-system-operations-plans。'
     );
 END;
 /

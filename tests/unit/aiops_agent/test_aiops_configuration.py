@@ -51,11 +51,15 @@ from platform_core.contracts.aiops import (
     DiagnosticSourceConnectionTestResult,
     DiagnosticSourcePatch,
     InspectionPlanCreate,
+    InspectionPlanPatch,
     TargetConnectionTestResult,
     TargetCreate,
     TargetPatch,
 )
 from platform_core.identity import uuid7
+from tests.support.inspection_system import configure_inspection_system
+
+SYSTEM_ID = uuid7()
 
 
 class _CapturedRows:
@@ -444,7 +448,7 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("plain-secret-value", repr(metadata))
 
 
-class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
+class SystemDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
     def _template(self):
         template_id = uuid7()
         version_id = uuid7()
@@ -475,6 +479,7 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
         template, version = self._template()
         return SimpleNamespace(
             inspection_plan_id=uuid7(),
+            business_system_id=SYSTEM_ID,
             domain_id=100,
             display_name="每日巡检",
             agent_id=uuid7(),
@@ -535,6 +540,8 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             session=SimpleNamespace(flush=AsyncMock()),
         )
 
+        configure_inspection_system(uow, [uow.targets.get_scoped.return_value], domain_id=100, business_system_id=SYSTEM_ID)
+
         async def execute_idempotently(**kwargs):
             return await kwargs["handler"](uow, datetime.now(UTC))
 
@@ -549,6 +556,38 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             request_id="request-1",
             trace_id="trace-1",
         )
+
+    async def test_changing_executor_preserves_system_and_complete_database_scope(self) -> None:
+        plan = self._plan(status="ACTIVE")
+        service, uow = self._command_service(plan)
+        replacement_agent_id, replacement_version_id = uuid7(), uuid7()
+        uow.agents.get_active.return_value = SimpleNamespace(binding_id=replacement_version_id)
+        uow.agents.active_version_target_ids = AsyncMock(return_value=[uuid7() for _ in range(7)])
+        configure_inspection_system(
+            uow, [SimpleNamespace(target_id=uuid7(), display_name="ERP 主库", db_type="ORACLE"),
+                  SimpleNamespace(target_id=uuid7(), display_name="ERP 报表库", db_type="POSTGRESQL")],
+            domain_id=100, business_system_id=SYSTEM_ID,
+        )
+        uow.commit = AsyncMock()
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service._uow_factory = lambda: context
+
+        result = await service.patch_inspection_plan(
+            scope=self._scope(),
+            plan_id=plan.inspection_plan_id,
+            request=InspectionPlanPatch(agent_id=replacement_agent_id),
+            expected_version=plan.row_version,
+        )
+
+        self.assertEqual(SYSTEM_ID, result.business_system_id)
+        self.assertEqual(replacement_agent_id, result.agent_id)
+        self.assertEqual(2, result.system_target_count)
+        uow.agents.version_has_business_system.assert_awaited_once_with(
+            agent_version_id=replacement_version_id, business_system_id=SYSTEM_ID,
+        )
+        uow.agents.active_version_target_ids.assert_not_awaited()
+        uow.commit.assert_awaited_once()
 
     async def test_create_plan_selects_agent_and_is_active_immediately(self) -> None:
         service = object.__new__(InspectionConfigurationMixin)
@@ -596,6 +635,8 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             outbox=SimpleNamespace(add=AsyncMock()),
         )
 
+        configure_inspection_system(uow, targets.values(), domain_id=100, business_system_id=SYSTEM_ID)
+
         async def execute_idempotently(**kwargs):
             return await kwargs["handler"](uow, datetime.now(UTC))
 
@@ -609,6 +650,7 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
                 trace_id="trace-1",
             ),
             request=InspectionPlanCreate(
+                business_system_id=SYSTEM_ID,
                 display_name="每日巡检",
                 agent_id=agent_id,
                 schedule_type="DAILY",
@@ -636,11 +678,9 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             default_selected_check_ids("DAILY"),
             result.selected_check_ids,
         )
-        self.assertEqual(2, result.agent_target_count)
-        uow.agents.active_version_target_ids.assert_awaited_once_with(
-            domain_id=100,
-            agent_version_id=agent_version_id,
-        )
+        self.assertEqual(2, result.system_target_count)
+        uow.business_systems.list_system_resource_rows.assert_awaited_once_with(SYSTEM_ID)
+        uow.agents.active_version_target_ids.assert_not_awaited()
 
     async def test_create_plan_rejects_agent_targets_not_covered_by_template(
         self,
@@ -697,6 +737,8 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             outbox=SimpleNamespace(add=AsyncMock()),
         )
 
+        configure_inspection_system(uow, targets.values(), domain_id=100, business_system_id=SYSTEM_ID)
+
         async def execute_idempotently(**kwargs):
             return await kwargs["handler"](uow, datetime.now(UTC))
 
@@ -705,6 +747,7 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             await service.create_inspection_plan(
                 scope=self._scope(),
                 request=InspectionPlanCreate(
+                business_system_id=SYSTEM_ID,
                     display_name="仅 Oracle 的巡检模板",
                     agent_id=uuid7(),
                     schedule_type="DAILY",
@@ -747,6 +790,8 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
                 version_target_ids=AsyncMock(return_value=[]),
             ),
         )
+
+        configure_inspection_system(uow, [], domain_id=100, business_system_id=SYSTEM_ID)
 
         async def execute_idempotently(**kwargs):
             return await kwargs["handler"](uow, datetime.now(UTC))

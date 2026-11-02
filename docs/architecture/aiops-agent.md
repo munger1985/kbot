@@ -129,9 +129,10 @@ Message → Turn Scope → Intent Plan → Skill Plan → Evidence Collection
         → Sufficiency Assessment → Answer / Clarification / Evidence Request / Proposal
 ```
 
-巡检计划到期后只提交一条标准 Agent 任务；Agent 冻结当前发布版本，并针对其负责的
-Target 复用上述 Conversation Turn 链路生成巡检报告。Scheduler 不解析 Target、模型、
-策略或诊断步骤。
+巡检计划到期后只提交一条标准 Agent 任务；计划属于一个业务系统。执行时校验 Agent
+对该系统的授权与主动诊断能力，从该系统解析全部纳管数据库并冻结清单与 Agent 版本，
+逐库复用上述 Conversation Turn 链路生成巡检报告。Agent 的其他系统不进入计划范围，
+切换 Agent 不改变系统范围；Scheduler 不解析 Target、模型、策略或诊断步骤。
 
 自动告警和巡检只能使用已配置的数据源；证据不足时生成不确定结论和后续建议，
 不会等待用户。聊天场景可进入多轮 HITL：当数据库不可直连且监控证据不足时，
@@ -259,9 +260,11 @@ restore/recover、强制 failover 等破坏性动作只展示固定命令供 DBA
 
 ## 巡检与报告
 
-Inspection Plan 选择一名已启用的 DBA Agent，并支持日报、周报和 Cron。Scheduler
-生成不可变 Fire 并提交一次标准 Agent 巡检任务。Agent 接收任务时冻结当前发布版本，
-再复用人工健康检查的理解、规划、工具执行、证据评估和回答链生成巡检报告。
+Inspection Plan 先指定业务系统与全部纳管数据库，再选择取证模板、日报/周报/Cron 调度及
+获该系统授权的已启用 DBA Agent。系统详情提供计划与执行记录入口，日常巡检保留跨系统总览。
+Scheduler 生成 Fire 并提交一次标准 Agent 巡检任务；开始执行时冻结系统、资源、Target 清单与
+当前 Agent 版本，再逐库复用健康检查的工具执行、证据评估和回答链生成标准巡检报告。
+已冻结范围不随重试重新展开，配置缺失和执行失败必须明确呈现。
 报告保存在系统中供前端渲染，包括诊断报告、巡检报告、处理结果和前后
 对比报告。
 
@@ -308,3 +311,7 @@ Performance Schema；PostgreSQL 需要目标数据库已安装且可读取 `pg_s
 只计算窗口内相邻且连续快照的增量，展示实际覆盖区间、缺采与重置等缺口。有限的累计耗时
 候选集可能遗漏窗口热点；新出现或被淘汰的语句也不能按零估算。Oracle 启动时间的时区偏移
 变化会保守地断开连续性。未启用采集、权限不足或数据不足不能解释为数据库没有执行 SQL。
+
+## 业务系统驱动的运维计划（2026-11-02）
+
+巡检计划以业务系统为唯一范围，Agent 仅作为授权执行者。系统入口、动态范围冻结、错误统计、统一报告及未来备份边界以 [业务系统运维计划设计](../proposals/aiops-business-system-operations-plans.md) 为准。

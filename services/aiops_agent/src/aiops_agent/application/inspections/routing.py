@@ -97,15 +97,20 @@ def scheduled_inspection_plan(
 def scheduled_inspection_systems(context: dict[str, Any]) -> list[dict[str, Any]]:
     """从当前授权资源图重新校验冻结目标，不能扩大到其他数据库或请求澄清。"""
     target_id = str(context["focused_target_id"])
+    inspection = dict(context["execution_context"].get("inspection") or {})
+    business_system_id = str(inspection.get("business_system_id") or "")
+    if not business_system_id:
+        raise validation_failed("巡检缺少冻结的业务系统归属")
     matches = [
         (system, resource)
         for system in context["systems"]
+        if str(system["business_system_id"]) == business_system_id
         for resource in system["resources"]
         if str(resource.get("target_id")) == target_id
     ]
     if not matches:
         raise validation_failed("巡检目标已不属于 Agent 当前授权资源范围")
-    # 同一数据库资源可属于多个业务系统，但本目标巡检只允许启动一个 Run。
+    # 同一数据库可以被多个系统引用，只使用计划所属系统的资源上下文。
     system, resource = matches[0]
     if not resource.get("target_ready"):
         raise validation_failed("巡检目标未启用只读取证，不能执行数据库巡检")

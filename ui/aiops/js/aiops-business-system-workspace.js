@@ -1331,6 +1331,10 @@
     const published = isPublishedView();
     const editable = !loading && !published;
     document.querySelector(".workspace-actions").hidden = loading;
+    const plansLink = document.getElementById("system-operations-plans"), historyLink = document.getElementById("system-inspection-history");
+    plansLink.hidden = !published || !operationsPlanAllowed;historyLink.hidden = !published;
+    plansLink.href = `./inspection-plans.html?businessSystemId=${encodeURIComponent(systemId)}`;
+    historyLink.href = `./inspections.html?businessSystemId=${encodeURIComponent(systemId)}`;
     document.getElementById("step-copy").textContent = published ? "业务系统运行中，当前为只读查看" : dirty ? "有未保存修改" : draftId ? "草稿已保存到服务器" : "尚未保存草稿";
     document.getElementById("save-draft").hidden = !editable;
     document.getElementById("save-draft").disabled = saving || Boolean(snapshotState?.mutating);
@@ -1407,5 +1411,6 @@
   document.getElementById("workspace-leave-dialog").addEventListener("cancel", (event) => { event.preventDefault(); pendingLeaveHref = ""; event.currentTarget.close(); });
   addEventListener("beforeunload", (event) => { if (dirty || snapshotState?.mutating) event.preventDefault(); });
   addEventListener("pagehide",() => { KBotAIOpsTopology.dispose();snapshotGeneration += 1;snapshotState = null; });
-  shell.ready.then(load).catch((error) => shell.toast(error.message));
+  let operationsPlanAllowed = false;
+  shell.ready.then(access => {operationsPlanAllowed = (access.permissions || []).includes("aiops:plan_manage");return load();}).catch((error) => shell.toast(error.message));
 })();

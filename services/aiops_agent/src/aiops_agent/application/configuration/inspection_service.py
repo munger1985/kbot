@@ -93,6 +93,11 @@ from .projections import (
 )
 
 
+from aiops_agent.application.inspections.scope import (
+    inspection_system_scope, require_inspection_agent_scope,
+)
+
+
 class InspectionConfigurationMixin:
     async def _active_inspection_agent(self, *, uow, domain_id: int, agent_id: UUID):
         """确认计划引用的是已启用 DBA Agent，不解析其执行资源。"""
@@ -105,20 +110,15 @@ class InspectionConfigurationMixin:
             raise validation_failed("巡检计划必须选择一个已启用的 Agent")
         return binding
 
-    async def _inspection_agent_target_count(
-        self, *, uow, domain_id: int, agent_id: UUID
-    ) -> int:
-        """返回计划所选 Agent 当前版本仍可访问的启用 Target 数。"""
-        assert uow.agents is not None
-        agent = await uow.agents.get(domain_id=domain_id, agent_id=agent_id)
-        if agent is None or agent.current_version_id is None:
-            return 0
-        return len(
-            await uow.agents.active_version_target_ids(
-                domain_id=domain_id,
-                agent_version_id=agent.current_version_id
-            )
-        )
+    async def _inspection_system_target_count(self, *, uow, business_system_id) -> int:
+        """预览系统纳管范围，不因 Agent 授权改变计数，也不阻止暂停/删除坏计划。"""
+        rows = await uow.business_systems.list_system_resource_rows(business_system_id)
+        return len({
+            database.target_id if database is not None and database.target_id else resource.resource_id
+            for membership, resource, database, target in rows
+            if resource.resource_type_key == "DATABASE"
+            and membership.status == "ACTIVE" and resource.lifecycle_status == "ACTIVE"
+        })
 
     async def _validate_inspection_target_coverage(
         self,
@@ -126,35 +126,20 @@ class InspectionConfigurationMixin:
         uow,
         domain_id: int,
         binding,
+        business_system_id,
         template_version,
         schedule_type: str,
     ) -> int:
-        """确保 Agent 当前访问范围内的每个 Target 都有可执行巡检内容。"""
-        assert uow.agents is not None
-        assert uow.targets is not None
-        target_ids = await uow.agents.active_version_target_ids(
-            domain_id=domain_id,
-            agent_version_id=binding.binding_id,
+        """系统定义完整范围；校验 Agent 门禁及每个数据库的模板覆盖。"""
+        await require_inspection_agent_scope(
+            uow=uow, agent_version_id=binding.binding_id, business_system_id=business_system_id,
         )
-        if not target_ids:
-            raise AIOpsApplicationError(
-                code="AIOPS_INSPECTION_AGENT_TARGET_REQUIRED",
-                message="巡检计划所选 Agent 当前没有可访问的启用 Target",
-                status_code=422,
-            )
+        _, targets = await inspection_system_scope(
+            uow=uow, domain_id=domain_id, business_system_id=business_system_id,
+        )
         definition = dict(template_version.definition_json or {})
         uncovered: list[str] = []
-        for target_id in target_ids:
-            target = await uow.targets.get_scoped(
-                target_id=target_id,
-                domain_id=domain_id,
-            )
-            if target is None:
-                raise AIOpsApplicationError(
-                    code="AIOPS_INSPECTION_TARGET_NOT_FOUND",
-                    message="巡检 Agent 访问范围中的 Target 不存在",
-                    status_code=422,
-                )
+        for target in targets:
             if not inspection_template_steps(
                 definition,
                 schedule_type=schedule_type,
@@ -167,12 +152,12 @@ class InspectionConfigurationMixin:
             raise AIOpsApplicationError(
                 code="AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
                 message=(
-                    "巡检模板没有覆盖 Agent 当前访问范围内的 Target："
+                    "巡检模板没有覆盖业务系统中的数据库："
                     + "、".join(uncovered)
                 ),
                 status_code=422,
             )
-        return len(target_ids)
+        return len(targets)
 
     def _validate_plan_definition(
         self,
@@ -234,6 +219,7 @@ class InspectionConfigurationMixin:
                 uow=uow,
                 domain_id=scope.domain_id,
                 binding=binding,
+                business_system_id=request.business_system_id,
                 template_version=template_version,
                 schedule_type=request.schedule_type,
             )
@@ -242,6 +228,7 @@ class InspectionConfigurationMixin:
                 domain_id=scope.domain_id,
                 display_name=request.display_name,
                 agent_id=request.agent_id,
+                business_system_id=request.business_system_id,
                 schedule_type=request.schedule_type,
                 cron_expression=request.cron_expression,
                 timezone=request.timezone,
@@ -271,7 +258,7 @@ class InspectionConfigurationMixin:
             )
             return _inspection_detail(
                 entity,
-                agent_target_count=target_count,
+                system_target_count=target_count,
                 template=template,
                 template_version=template_version,
             )
@@ -297,10 +284,9 @@ class InspectionConfigurationMixin:
             )
             if entity is None:
                 raise resource_not_found("Inspection Plan")
-            target_count = await self._inspection_agent_target_count(
+            target_count = await self._inspection_system_target_count(
                 uow=uow,
-                domain_id=scope.domain_id,
-                agent_id=entity.agent_id,
+                business_system_id=entity.business_system_id,
             )
             template = await uow.inspections.get_inspection_template(
                 domain_id=scope.domain_id,
@@ -315,7 +301,7 @@ class InspectionConfigurationMixin:
                 raise state_conflict("巡检计划引用的模板版本不存在")
             return _inspection_detail(
                 entity,
-                agent_target_count=target_count,
+                system_target_count=target_count,
                 template=template,
                 template_version=template_version,
             )
@@ -437,6 +423,7 @@ class InspectionConfigurationMixin:
                 uow=uow,
                 domain_id=scope.domain_id,
                 binding=binding,
+                business_system_id=entity.business_system_id,
                 template_version=template_version,
                 schedule_type=entity.schedule_type,
             )
@@ -455,7 +442,7 @@ class InspectionConfigurationMixin:
             )
             response = _inspection_detail(
                 entity,
-                agent_target_count=target_count,
+                system_target_count=target_count,
                 template=template,
                 template_version=template_version,
             )
@@ -491,10 +478,9 @@ class InspectionConfigurationMixin:
                 raise state_conflict(
                     "巡检计划已经产生执行记录，必须保留作为审计依据"
                 )
-            target_count = await self._inspection_agent_target_count(
+            target_count = await self._inspection_system_target_count(
                 uow=uow,
-                domain_id=scope.domain_id,
-                agent_id=entity.agent_id,
+                business_system_id=entity.business_system_id,
             )
             template = await uow.inspections.get_inspection_template(
                 domain_id=scope.domain_id,
@@ -509,7 +495,7 @@ class InspectionConfigurationMixin:
                 raise state_conflict("巡检计划引用的模板版本不存在")
             result = _inspection_detail(
                 entity,
-                agent_target_count=target_count,
+                system_target_count=target_count,
                 template=template,
                 template_version=template_version,
             )
@@ -586,6 +572,7 @@ class InspectionConfigurationMixin:
                     uow=uow,
                     domain_id=scope.domain_id,
                     binding=binding,
+                    business_system_id=entity.business_system_id,
                     template_version=template_version,
                     schedule_type=entity.schedule_type,
                 )
@@ -594,10 +581,9 @@ class InspectionConfigurationMixin:
                     timezone=entity.timezone,
                 )
             else:
-                target_count = await self._inspection_agent_target_count(
+                target_count = await self._inspection_system_target_count(
                     uow=uow,
-                    domain_id=scope.domain_id,
-                    agent_id=entity.agent_id,
+                    business_system_id=entity.business_system_id,
                 )
                 entity.next_run_at = None
             entity.status = destination
@@ -614,7 +600,7 @@ class InspectionConfigurationMixin:
             )
             return _inspection_detail(
                 entity,
-                agent_target_count=target_count,
+                system_target_count=target_count,
                 template=template,
                 template_version=template_version,
             )

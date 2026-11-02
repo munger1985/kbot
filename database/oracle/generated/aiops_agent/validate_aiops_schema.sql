@@ -374,6 +374,7 @@ BEGIN
             'IX_OPS_INSP_PLAN_DOMAIN',
             'IX_OPS_INSP_PLAN_DUE',
             'IX_OPS_INSP_PLAN_LEASE',
+            'IX_OPS_INSP_PLAN_SYSTEM',
             'IX_OPS_INSP_PLAN_TEMPLATE',
             'IX_OPS_INSP_PLAN_TEMPLATE_VER',
             'IX_OPS_INSP_TEMPLATE_SCOPE',
@@ -694,6 +695,7 @@ BEGIN
             'IX_OPS_INSP_PLAN_DOMAIN',
             'IX_OPS_INSP_PLAN_DUE',
             'IX_OPS_INSP_PLAN_LEASE',
+            'IX_OPS_INSP_PLAN_SYSTEM',
             'IX_OPS_INSP_PLAN_TEMPLATE',
             'IX_OPS_INSP_PLAN_TEMPLATE_VER',
             'IX_OPS_INSP_TEMPLATE_SCOPE',
@@ -937,7 +939,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 301 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 302 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1011,6 +1013,7 @@ BEGIN
             'FK_OPS_INSP_FIRE_TEMPLATE_VER',
             'FK_OPS_INSP_PLAN_AGENT',
             'FK_OPS_INSP_PLAN_DOMAIN',
+            'FK_OPS_INSP_PLAN_SYSTEM',
             'FK_OPS_INSP_PLAN_TEMPLATE',
             'FK_OPS_INSP_PLAN_TEMPLATE_VER',
             'FK_OPS_INSP_TPL_CURRENT_VER',
@@ -1288,6 +1291,7 @@ BEGIN
             'FK_OPS_INSP_FIRE_TEMPLATE_VER',
             'FK_OPS_INSP_PLAN_AGENT',
             'FK_OPS_INSP_PLAN_DOMAIN',
+            'FK_OPS_INSP_PLAN_SYSTEM',
             'FK_OPS_INSP_PLAN_TEMPLATE',
             'FK_OPS_INSP_PLAN_TEMPLATE_VER',
             'FK_OPS_INSP_TPL_CURRENT_VER',
@@ -1489,7 +1493,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 258 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 259 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1903,6 +1907,7 @@ BEGIN
             'KBOT_OPS_INSPECTION_FIRE|TARGET_COUNT',
             'KBOT_OPS_INSPECTION_FIRE|UPDATED_AT',
             'KBOT_OPS_INSPECTION_PLAN|AGENT_ID',
+            'KBOT_OPS_INSPECTION_PLAN|BUSINESS_SYSTEM_ID',
             'KBOT_OPS_INSPECTION_PLAN|CREATED_AT',
             'KBOT_OPS_INSPECTION_PLAN|CREATED_BY',
             'KBOT_OPS_INSPECTION_PLAN|CRON_EXPRESSION',
@@ -3166,6 +3171,7 @@ BEGIN
             'KBOT_OPS_INSPECTION_FIRE|TARGET_COUNT',
             'KBOT_OPS_INSPECTION_FIRE|UPDATED_AT',
             'KBOT_OPS_INSPECTION_PLAN|AGENT_ID',
+            'KBOT_OPS_INSPECTION_PLAN|BUSINESS_SYSTEM_ID',
             'KBOT_OPS_INSPECTION_PLAN|CREATED_AT',
             'KBOT_OPS_INSPECTION_PLAN|CREATED_BY',
             'KBOT_OPS_INSPECTION_PLAN|CRON_EXPRESSION',
@@ -4015,7 +4021,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1246 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1247 项。');
     END IF;
 
     l_issue_count := 0;
@@ -4107,19 +4113,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 53
-           OR l_contract_version <> 'aiops-oracle-v53-report-artifact-sources' THEN
+           OR l_schema_version <> 54
+           OR l_contract_version <> 'aiops-oracle-v54-system-operations-plans' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '53/aiops-oracle-v53-report-artifact-sources'
+                || '54/aiops-oracle-v54-system-operations-plans'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/53/'
-                || 'aiops-oracle-v53-report-artifact-sources'
+                '[通过] Schema 合同：AIOPS/54/'
+                || 'aiops-oracle-v54-system-operations-plans'
             );
         END IF;
     EXCEPTION
@@ -4147,8 +4153,8 @@ BEGIN
     dbms_output.put_line(
         '验证通过：79 张表、10 个视图、'
         || '1 个属性图、'
-        || '301 个命名索引、258 个命名约束、'
-        || '1246 个表列；Schema 与当前规范一致。'
+        || '302 个命名索引、259 个命名约束、'
+        || '1247 个表列；Schema 与当前规范一致。'
     );
 END;
 /

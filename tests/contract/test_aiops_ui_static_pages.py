@@ -137,7 +137,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 name = uri.split("?", 1)[0].rsplit("/", 1)[-1]
                 if name in assets:
                     referenced.add(name)
-                    self.assertIn("?v=20261030_", uri, f"{path.name} 不能继续引用对齐前的缓存版本")
+                    self.assertRegex(uri, r"\?v=\d{8}_", f"{path.name} 必须带可追溯的缓存版本")
+                    self.assertGreaterEqual(uri.split("?v=", 1)[1], "20261030_", f"{path.name} 不能继续引用对齐前的缓存版本")
         self.assertEqual(assets, referenced)
 
     def test_readonly_lifecycle_preserves_unknown_status_and_bounded_terminal_refresh(self):
@@ -1327,11 +1328,13 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             self.assertIn(f'name="schedule_type" type="radio" value="{mode}"', page)
         self.assertNotIn('value="MONTHLY"', page)
         self.assertNotIn('value="INTERVAL"', page)
-        for text in ("Cron 表达式", "巡检内容模板", "运行策略", "创建并启用"):
+        for text in ("业务系统", "Cron 表达式", "巡检内容模板", "运行策略", "创建并启用"):
             self.assertIn(text, page)
         for field in ("inspection-schedule-summary", "inspection-plan-catalog", "inspection-plan-confirm"):
             self.assertIn(f'id="{field}"', page)
         self.assertIn("management-catalog-card", script)
+        self.assertIn("eligibleAgents()", script)
+        self.assertIn("payload.business_system_id = form.elements.business_system_id.value", script)
         self.assertIn("form.elements.inspection_template_id.value !== current.inspection_template_id", script)
         self.assertIn('payload.schedule_type = form.elements.schedule_type.value', script)
         self.assertIn('input.disabled = Boolean(state.editing)', script)

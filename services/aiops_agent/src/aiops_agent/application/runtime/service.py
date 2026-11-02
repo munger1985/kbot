@@ -7394,6 +7394,7 @@ class AIOpsRuntimeService:
             return InspectionFireView(
                 **summary.model_dump(),
                 runs=tuple(run_summaries),
+                system_scope=dict(fire.plan_snapshot_json).get("system_scope"),
                 created_at=fire.created_at,
             )
 
@@ -8744,6 +8745,8 @@ class AIOpsRuntimeService:
         return InspectionFireSummary(
             fire_id=fire.inspection_fire_id,
             plan_id=fire.inspection_plan_id,
+            business_system_id=dict(fire.plan_snapshot_json).get("business_system_id"),
+            business_system_name=dict(fire.plan_snapshot_json).get("business_system_name"),
             plan_display_name=str(
                 snapshot.get("display_name") or "未命名巡检计划"
             ),

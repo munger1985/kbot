@@ -981,6 +981,7 @@ class InspectionTemplateSummary(AIOpsContract):
 
 
 class InspectionPlanCreate(AIOpsContract):
+    business_system_id: UUIDv7
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str = Field(min_length=1, max_length=256)
     agent_id: UUIDv7
@@ -1006,6 +1007,7 @@ class InspectionPlanPatch(AIOpsContract):
 
 
 class InspectionPlanSummary(AIOpsContract):
+    business_system_id: UUIDv7
     schema_version: str = PUBLIC_SCHEMA_VERSION
     plan_id: UUIDv7
     display_name: str
@@ -1028,7 +1030,7 @@ class InspectionPlanDetail(InspectionPlanSummary):
     timeout_seconds: int
     overlap_policy: str
     misfire_policy: str
-    agent_target_count: int = Field(ge=0)
+    system_target_count: int = Field(ge=0)
     created_at: UtcDatetime
     created_by: str
     updated_by: str

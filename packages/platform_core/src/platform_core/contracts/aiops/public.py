@@ -176,6 +176,8 @@ class InspectionRunSummary(AIOpsContract):
 
 
 class InspectionFireSummary(AIOpsContract):
+    business_system_id: UUIDv7 | None = None
+    business_system_name: str | None = None
     schema_version: str = PUBLIC_SCHEMA_VERSION
     fire_id: UUIDv7
     plan_id: UUIDv7
@@ -191,6 +193,7 @@ class InspectionFireSummary(AIOpsContract):
 
 
 class InspectionFireView(InspectionFireSummary):
+    system_scope: JsonObject | None = None
     runs: tuple[InspectionRunSummary, ...] = ()
     created_at: UtcDatetime
 

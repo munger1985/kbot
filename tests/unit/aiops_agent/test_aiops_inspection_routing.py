@@ -15,6 +15,7 @@ from platform_core.identity import uuid7
 class ScheduledInspectionRoutingTest(unittest.IsolatedAsyncioTestCase):
     def _context(self) -> dict:
         targets = [str(uuid7()) for _ in range(3)]
+        business_system_id = str(uuid7())
         resources = [
             {
                 "system_resource_id": str(uuid7()),
@@ -41,7 +42,7 @@ class ScheduledInspectionRoutingTest(unittest.IsolatedAsyncioTestCase):
             "question": "查看历史巡检结果，不要执行数据库 0，请查看数据库 2",
             "context_hint": {},
             "systems": [{
-                "business_system_id": str(uuid7()),
+                "business_system_id": business_system_id,
                 "system_code": "PROD", "display_name": "生产系统",
                 "environment": "PROD", "resources": resources, "relations": [],
             }],
@@ -51,6 +52,7 @@ class ScheduledInspectionRoutingTest(unittest.IsolatedAsyncioTestCase):
                 "observation_start": "2026-11-01T16:00:00+00:00",
                 "observation_end": "2026-11-02T02:16:00+00:00",
                 "inspection": {
+                    "business_system_id": business_system_id,
                     "template_id": str(uuid7()), "template_hash": "b" * 64,
                     "evidence_steps": [{"tool_id": "db.instance.identity"}],
                 },
@@ -123,14 +125,18 @@ class ScheduledInspectionRoutingTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_shared_target_in_two_systems_still_has_one_execution_target(self) -> None:
         context = self._context()
-        context["systems"].append({
+        context["systems"].insert(0, {
             **context["systems"][0],
             "business_system_id": str(uuid7()),
         })
         planner = TurnPlannerService(uow_factory=AsyncMock())
         plan, _ = await planner._plan(context)
-        _, internal, _ = planner._resolve_scope(context, plan)
+        scope, internal, _ = planner._resolve_scope(context, plan)
         self.assertEqual(1, len(internal["execution_targets"]))
+        self.assertEqual(
+            context["execution_context"]["inspection"]["business_system_id"],
+            str(scope.business_systems[0].business_system_id),
+        )
 
     def test_words_and_follow_up_conversations_do_not_activate_scheduled_route(self) -> None:
         for execution in (

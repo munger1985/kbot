@@ -7498,6 +7498,29 @@
       "InspectionFireSummary": {
         "additionalProperties": false,
         "properties": {
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
+          "business_system_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Name"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -7594,6 +7617,29 @@
       "InspectionFireView": {
         "additionalProperties": false,
         "properties": {
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
+          "business_system_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Name"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -7681,6 +7727,18 @@
             "title": "Status",
             "type": "string"
           },
+          "system_scope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Scope"
+          },
           "target_count": {
             "minimum": 0.0,
             "title": "Target Count",
@@ -7707,6 +7765,11 @@
           "agent_id": {
             "format": "uuid",
             "title": "Agent Id",
+            "type": "string"
+          },
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
             "type": "string"
           },
           "cron_expression": {
@@ -7772,6 +7835,7 @@
           }
         },
         "required": [
+          "business_system_id",
           "display_name",
           "agent_id",
           "schedule_type",
@@ -7791,10 +7855,10 @@
             "title": "Agent Id",
             "type": "string"
           },
-          "agent_target_count": {
-            "minimum": 0.0,
-            "title": "Agent Target Count",
-            "type": "integer"
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -7888,6 +7952,11 @@
             "title": "Status",
             "type": "string"
           },
+          "system_target_count": {
+            "minimum": 0.0,
+            "title": "System Target Count",
+            "type": "integer"
+          },
           "timeout_seconds": {
             "title": "Timeout Seconds",
             "type": "integer"
@@ -7907,6 +7976,7 @@
           }
         },
         "required": [
+          "business_system_id",
           "plan_id",
           "display_name",
           "agent_id",
@@ -7924,7 +7994,7 @@
           "timeout_seconds",
           "overlap_policy",
           "misfire_policy",
-          "agent_target_count",
+          "system_target_count",
           "created_at",
           "created_by",
           "updated_by"
@@ -8095,6 +8165,11 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -8150,6 +8225,7 @@
           }
         },
         "required": [
+          "business_system_id",
           "plan_id",
           "display_name",
           "agent_id",
@@ -8285,6 +8361,18 @@
               }
             ],
             "title": "Monitoring Sample Coverage Percent"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
           },
           "report_status": {
             "anyOf": [

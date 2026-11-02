@@ -22,6 +22,9 @@ from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink
 from platform_core.identity import uuid7
+from tests.support.inspection_system import configure_inspection_system
+
+SYSTEM_ID = uuid7()
 from sqlalchemy.dialects import oracle
 
 
@@ -131,7 +134,7 @@ class InspectionSchedulerTest(unittest.TestCase):
             version_no=1,
         )
         fire = SimpleNamespace(
-            plan_snapshot_json={}, target_count=0, updated_at=None,
+            plan_snapshot_json={"business_system_id": str(SYSTEM_ID)}, target_count=0, updated_at=None,
         )
         uow = SimpleNamespace(
             inspections=SimpleNamespace(get_fire=AsyncMock(return_value=fire)),
@@ -166,9 +169,11 @@ class InspectionSchedulerTest(unittest.TestCase):
             side_effect=lambda *, target_id, **_: targets[target_id],
         )
         service._create_turn = AsyncMock(return_value={"status": "QUEUED"})
+        configure_inspection_system(uow, targets.values(), domain_id=200, business_system_id=SYSTEM_ID, resources=resources)
         payload = {
             **{key: str(value) for key, value in scope.items()},
-            "inspection_fire_id": str(fire_id), "actor_id": actor_id,
+            "inspection_fire_id": str(fire_id),
+            "business_system_id": str(SYSTEM_ID), "actor_id": actor_id,
             "agent_id": str(agent_id), "plan_display_name": "备份策略巡检",
             "inspection_template_id": str(uuid7()),
             "inspection_template_version_id": str(uuid7()),
@@ -186,6 +191,26 @@ class InspectionSchedulerTest(unittest.TestCase):
             "timeout_seconds": 3600, "trace_id": "trace-backup-inspection",
         }
         return service, uow, payload
+
+    def test_agent_other_system_targets_do_not_expand_inspection_and_replay_keeps_snapshot(self):
+        service, uow, payload = self._inspection_with_backup_policies()
+        uow.agents.active_version_target_ids.return_value.append(uuid7())
+        result = asyncio.run(service.start_scheduled_inspection(payload))
+        self.assertEqual(3, result["conversation_count"])
+        uow.agents.active_version_target_ids.assert_not_awaited()
+        fire = uow.inspections.get_fire.return_value
+        frozen = dict(fire.plan_snapshot_json["system_scope"])
+        uow.business_systems.list_system_resource_rows.reset_mock()
+        uow.conversations.list_for_inspection_fire.return_value = [SimpleNamespace() for _ in range(3)]
+        replay = asyncio.run(service.start_scheduled_inspection(payload))
+        self.assertEqual(3, replay["conversation_count"])
+        self.assertEqual(frozen, fire.plan_snapshot_json["system_scope"])
+        self.assertEqual(3, service._create_turn.await_count)
+        uow.business_systems.list_system_resource_rows.assert_not_awaited()
+        uow.agents.version_has_business_system.return_value = False
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            asyncio.run(service.start_scheduled_inspection(payload))
+        self.assertEqual("AIOPS_INSPECTION_SYSTEM_FORBIDDEN", caught.exception.code)
 
     def test_daily_backup_policies_submit_all_three_database_turns(self) -> None:
         service, uow, payload = self._inspection_with_backup_policies()
@@ -303,7 +328,7 @@ class InspectionSchedulerTest(unittest.TestCase):
             ),
         }
         fire = SimpleNamespace(
-            plan_snapshot_json={"agent_version_id": None},
+            plan_snapshot_json={"agent_version_id": None, "business_system_id": str(SYSTEM_ID)},
             target_count=0,
             updated_at=None,
         )
@@ -360,8 +385,10 @@ class InspectionSchedulerTest(unittest.TestCase):
         service._create_turn = AsyncMock(
             return_value={"status": "QUEUED"}
         )
+        configure_inspection_system(uow, targets.values(), domain_id=200, business_system_id=SYSTEM_ID)
         payload = {
             "inspection_fire_id": str(fire_id),
+            "business_system_id": str(SYSTEM_ID),
             "domain_id": 200,
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(agent_id),
@@ -433,7 +460,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         oracle_target_id = uuid7()
         mysql_target_id = uuid7()
         fire = SimpleNamespace(
-            plan_snapshot_json={"agent_version_id": None},
+            plan_snapshot_json={"agent_version_id": None, "business_system_id": str(SYSTEM_ID)},
             target_count=0,
             updated_at=None,
         )
@@ -480,8 +507,10 @@ class InspectionSchedulerTest(unittest.TestCase):
             side_effect=lambda *, target_id, **_: targets[target_id]
         )
         service._create_turn = AsyncMock(return_value={"status": "QUEUED"})
+        configure_inspection_system(uow, targets.values(), domain_id=200, business_system_id=SYSTEM_ID)
         payload = {
             "inspection_fire_id": str(fire_id),
+            "business_system_id": str(SYSTEM_ID),
             "domain_id": 200,
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(agent_id),
@@ -523,7 +552,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         version_id = uuid7()
         target_ids = [uuid7()]
         fire = SimpleNamespace(
-            plan_snapshot_json={"agent_version_id": None},
+            plan_snapshot_json={"agent_version_id": None, "business_system_id": str(SYSTEM_ID)},
             target_count=0,
             updated_at=None,
         )
@@ -573,8 +602,10 @@ class InspectionSchedulerTest(unittest.TestCase):
             "oracle.session.lock_wait",
             "oracle.storage.tablespace_headroom",
         ]
+        configure_inspection_system(uow, [service._require_existing_target.return_value], domain_id=200, business_system_id=SYSTEM_ID)
         payload = {
             "inspection_fire_id": str(fire_id),
+            "business_system_id": str(SYSTEM_ID),
             "domain_id": 200,
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(agent_id),
@@ -635,6 +666,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         template_definition = self._template_definition()
         plan = SimpleNamespace(
             inspection_plan_id=uuid7(),
+            business_system_id=SYSTEM_ID,
             domain_id=200,
             agent_id=agent_id,
             display_name="数据库日报",
@@ -726,6 +758,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         fire = SimpleNamespace(
             inspection_fire_id=uuid7(),
             inspection_plan_id=uuid7(),
+            business_system_id=SYSTEM_ID,
             status="RUNNING",
             target_count=2,
             run_count=0,
@@ -779,17 +812,20 @@ class InspectionSchedulerTest(unittest.TestCase):
         self.assertEqual(fire.run_count, 2)
 
     def test_terminal_targets_without_runs_are_counted_as_execution_failures(self) -> None:
-        for run_statuses, turn_statuses, expected, completed, failed in (
-            ([], ["COMPLETED", "PARTIAL", "WAITING_USER"], "FAILED", 0, 3),
-            (["COMPLETED"], ["COMPLETED", "PARTIAL"], "PARTIAL", 1, 1),
-            (["FAILED"], ["FAILED", "COMPLETED"], "FAILED", 0, 2),
-            (["RUNNING"], ["COMPLETED", "PARTIAL"], "RUNNING", 0, 0),
+        for run_statuses, turn_statuses, target_count, expected, completed, failed in (
+            ([], ["COMPLETED", "PARTIAL", "WAITING_USER"], 3, "FAILED", 0, 3),
+            (["COMPLETED"], ["COMPLETED", "PARTIAL"], 2, "PARTIAL", 1, 1),
+            (["FAILED"], ["FAILED", "COMPLETED"], 2, "FAILED", 0, 2),
+            (["RUNNING"], ["COMPLETED", "PARTIAL"], 2, "RUNNING", 0, 0),
+            (["COMPLETED"], ["COMPLETED"], 3, "PARTIAL", 1, 2),
+            ([], [], 3, "FAILED", 0, 3),
+            ([], [], 0, "FAILED", 0, 0),
         ):
             with self.subTest(run_statuses=run_statuses, turn_statuses=turn_statuses):
                 now = datetime(2026, 11, 2, 2, 16, tzinfo=UTC)
                 fire = SimpleNamespace(
                     inspection_fire_id=uuid7(), status="RUNNING",
-                    target_count=len(turn_statuses), run_count=0,
+                    target_count=target_count, run_count=0,
                     completed_count=0, failed_count=0,
                     error_code=None, error_message=None, completed_at=None,
                     updated_at=now,
@@ -829,6 +865,7 @@ class InspectionSchedulerTest(unittest.TestCase):
                     self.assertIsNone(fire.error_code)
                 else:
                     self.assertEqual(len(run_statuses), fire.run_count)
+                    self.assertEqual(target_count, fire.target_count)
                     self.assertEqual("AIOPS_INSPECTION_RUNS_MISSING", fire.error_code)
                     self.assertIn("未生成数据库取证运行", fire.error_message)
 
@@ -837,6 +874,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         fire = SimpleNamespace(
             inspection_fire_id=uuid7(),
             inspection_plan_id=uuid7(),
+            business_system_id=SYSTEM_ID,
             plan_snapshot_json={"display_name": "跨库日常巡检"},
             scheduled_for=now - timedelta(minutes=1),
             status="RUNNING",
@@ -906,6 +944,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         fire_id = uuid7()
         payload = {
             "inspection_fire_id": str(fire_id),
+            "business_system_id": str(SYSTEM_ID),
             "domain_id": 200,
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(uuid7()),

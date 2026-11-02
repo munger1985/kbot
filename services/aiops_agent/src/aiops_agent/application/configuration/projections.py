@@ -342,6 +342,7 @@ def _inspection_summary(
 ) -> InspectionPlanSummary:
     return InspectionPlanSummary(
         plan_id=entity.inspection_plan_id,
+        business_system_id=entity.business_system_id,
         display_name=entity.display_name,
         agent_id=entity.agent_id,
         schedule_type=entity.schedule_type,
@@ -357,7 +358,7 @@ def _inspection_summary(
 def _inspection_detail(
     entity: InspectionPlanEntity,
     *,
-    agent_target_count: int,
+    system_target_count: int,
     template,
     template_version,
 ) -> InspectionPlanDetail:
@@ -377,7 +378,7 @@ def _inspection_detail(
         timeout_seconds=int(entity.timeout_seconds),
         overlap_policy=entity.overlap_policy,
         misfire_policy=entity.misfire_policy,
-        agent_target_count=agent_target_count,
+        system_target_count=system_target_count,
         created_at=entity.created_at.astimezone(UTC),
         created_by=entity.created_by,
         updated_by=entity.updated_by,

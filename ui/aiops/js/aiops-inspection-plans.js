@@ -7,9 +7,34 @@
   const request = (path, init) => KBotAIOpsAuth.request(api + path, init);
   const rows = value => Array.isArray(value) ? value : [];
   const drawer = document.getElementById("inspection-plan-dialog"), form = document.getElementById("inspection-plan-form");
-  const state = {plans:[],agents:[],templates:[],fires:[],editing:null,busy:false,loading:false,sequence:0,editSequence:0,confirm:null};
+  const systemFilter = new URLSearchParams(location.search).get("businessSystemId") || "";
+  const state = {systems:[],scopeRows:[],scopeLoading:false,scopeError:"",scopeSequence:0,plans:[],agents:[],templates:[],fires:[],editing:null,busy:false,loading:false,sequence:0,editSequence:0,confirm:null};
   const weekdays = [{value:"1",label:"一"},{value:"2",label:"二"},{value:"3",label:"三"},{value:"4",label:"四"},{value:"5",label:"五"},{value:"6",label:"六"},{value:"0",label:"日"}];
   const activeAgents = () => state.agents.filter(item => item.status === "ACTIVE");
+  const eligibleAgents = () => activeAgents().filter(agent => rows(agent.allowed_business_system_ids).includes(form.elements.business_system_id.value) && rows(agent.capabilities).includes("ACTIVE_DIAGNOSIS"));
+  const visiblePlans = () => state.plans.filter(plan => !systemFilter || plan.business_system_id === systemFilter);
+  function populateAgents() {
+    const selected = form.elements.agent_id.value;
+    form.elements.agent_id.innerHTML = '<option value="">请选择已启用 Agent</option>' + eligibleAgents().map(agent => `<option value="${esc(agent.agent_id)}">${esc(agent.display_name)}</option>`).join("");
+    form.elements.agent_id.value = eligibleAgents().some(agent => agent.agent_id === selected) ? selected : "";
+  }
+  async function loadSystemScope() {
+    const sequence = ++state.scopeSequence;
+    state.scopeRows = [];state.scopeError = "";state.scopeLoading = Boolean(form.elements.business_system_id.value);
+    const loading = document.getElementById("inspection-system-loading"), error = document.getElementById("inspection-system-error"), list = document.getElementById("inspection-system-resources");
+    loading.hidden = !state.scopeLoading;error.hidden = true;list.innerHTML = "";populateAgents();updateForm();
+    if (!state.scopeLoading) return;
+    try {
+      const detail = await request(`/business-systems/${encodeURIComponent(form.elements.business_system_id.value)}`);
+      if (sequence !== state.scopeSequence) return;
+      state.scopeRows = rows(detail.resources).filter(row => row.resource.resource_type_key === "DATABASE").map(row => ({
+        resource_id:row.resource.resource_id,display_name:row.resource.display_name,target_id:row.resource.database?.target_id,
+        state:row.status !== "ACTIVE" || row.resource.lifecycle_status !== "ACTIVE" ? "已排除：资源或关联停用" : !row.resource.database?.target_id ? "配置不完整，不能遗漏" : "纳入巡检"
+      }));
+      list.innerHTML = state.scopeRows.length ? state.scopeRows.map(row => `<li>${esc(row.display_name)} · ${esc(row.state)}</li>`).join("") : "<li>该系统没有数据库资源，不能创建巡检计划。</li>";
+    } catch(cause) {if (sequence === state.scopeSequence) {state.scopeError = "无法读取系统数据库范围，请重试。";error.hidden = false;error.textContent = state.scopeError;shell.toast(cause.message);}}
+    finally {if (sequence === state.scopeSequence) {state.scopeLoading = false;loading.hidden = true;updateForm();}}
+  }
   const activeTemplates = () => state.templates.filter(item => item.status === "ACTIVE");
   function cronExpression() {
     if (form.elements.schedule_type.value === "CRON") return form.elements.cron_expression.value.trim();
@@ -20,7 +45,7 @@
   }
   function ready() {
     const timeout = Number(form.elements.timeout_seconds.value);
-    return Boolean(form.elements.display_name.value.trim() && form.elements.agent_id.value && form.elements.timezone.value && form.elements.inspection_template_id.value && Number.isInteger(timeout) && timeout >= 1 && timeout <= 86400 && cronExpression());
+    return Boolean(!state.scopeLoading && !state.scopeError && state.scopeRows.some(row => row.state === "纳入巡检") && !state.scopeRows.some(row => row.state === "配置不完整，不能遗漏") && form.elements.business_system_id.value && eligibleAgents().some(agent => agent.agent_id === form.elements.agent_id.value) && form.elements.display_name.value.trim() && form.elements.agent_id.value && form.elements.timezone.value && form.elements.inspection_template_id.value && Number.isInteger(timeout) && timeout >= 1 && timeout <= 86400 && cronExpression());
   }
   function updateForm() {
     const type = form.elements.schedule_type.value;
@@ -49,35 +74,38 @@
     const notice = document.getElementById("inspection-plan-notice");
     notice.hidden = state.loading || Boolean(activeAgents().length && activeTemplates().length);
     notice.innerHTML = !activeAgents().length ? "<strong>暂无可用 Agent</strong><span>请先在 Agent 管理中启用至少一个已授权业务系统的 Agent，再创建巡检计划。</span>" : "<strong>暂无巡检内容模板</strong><span>请先在模板中心创建并冻结巡检内容模板，再创建巡检计划。</span>";
-    document.getElementById("inspection-plan-count").textContent = `${state.plans.length} 个`;
-    document.getElementById("inspection-plan-catalog").innerHTML = `<button id="create-inspection-plan" class="management-catalog-add-card" type="button"${state.loading || !activeAgents().length || !activeTemplates().length ? " disabled" : ""}><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新建巡检计划</strong><small>选择 Agent、内容模板与固定执行周期</small></button>` + state.plans.map(plan => {
+    document.getElementById("inspection-plan-count").textContent = `${visiblePlans().length} 个`;
+    document.getElementById("inspection-plan-catalog").innerHTML = `<button id="create-inspection-plan" class="management-catalog-add-card" type="button"${state.loading || !activeAgents().length || !activeTemplates().length ? " disabled" : ""}><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新建巡检计划</strong><small>选择业务系统、内容模板与执行 Agent</small></button>` + visiblePlans().map(plan => {
       const status = statusPresentation(plan.status), fire = state.fires.find(item => item.plan_id === plan.plan_id);
       const action = (name,label,kind="row-action") => `<button class="${kind}" type="button" data-plan-action="${name}"${state.busy ? " disabled" : ""}>${label}</button>`;
-      return `<article class="management-catalog-card" data-plan-id="${esc(plan.plan_id)}"><header><div><p class="eyebrow">INSPECTION PLAN</p><h3>${esc(plan.display_name)}</h3></div><span class="status-pill ${status.tone}">${status.label}</span></header><p>最近执行：${fire ? esc(shell.fmt(fire.scheduled_at)) : "尚未执行"} · 下次：${esc(shell.fmt(plan.next_run_at))}</p><dl><div><dt>执行 Agent</dt><dd>${esc(state.agents.find(item => item.agent_id === plan.agent_id)?.display_name || "Agent 已不可用")}</dd></div><div><dt>执行周期</dt><dd>${esc(({DAILY:"每天",WEEKLY:"每周",CRON:"高级规则"})[plan.schedule_type] || plan.schedule_type)} · ${esc(plan.timezone)}</dd></div></dl><footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">${fire ? action("reports","报告") : ""}${action("edit","编辑")}${plan.status === "ACTIVE" ? action("pause","暂停") : action("activate","启用")}</div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" type="button" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden>${plan.status === "DISABLED" ? action("delete","删除计划","danger-row-action") : action("disable","停用计划","danger-row-action")}</div></div></footer></article>`;
+      return `<article class="management-catalog-card" data-plan-id="${esc(plan.plan_id)}"><header><div><p class="eyebrow">INSPECTION PLAN</p><h3>${esc(plan.display_name)}</h3></div><span class="status-pill ${status.tone}">${status.label}</span></header><p>最近执行：${fire ? esc(shell.fmt(fire.scheduled_at)) : "尚未执行"} · 下次：${esc(shell.fmt(plan.next_run_at))}</p><dl><div><dt>业务系统</dt><dd>${esc(state.systems.find(system => system.business_system_id === plan.business_system_id)?.display_name || plan.business_system_id)}</dd></div><div><dt>执行 Agent</dt><dd>${esc(state.agents.find(item => item.agent_id === plan.agent_id)?.display_name || "Agent 已不可用")}</dd></div><div><dt>执行周期</dt><dd>${esc(({DAILY:"每天",WEEKLY:"每周",CRON:"高级规则"})[plan.schedule_type] || plan.schedule_type)} · ${esc(plan.timezone)}</dd></div></dl><footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">${fire ? action("reports","报告") : ""}${action("edit","编辑")}${plan.status === "ACTIVE" ? action("pause","暂停") : action("activate","启用")}</div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" type="button" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden>${plan.status === "DISABLED" ? action("delete","删除计划","danger-row-action") : action("disable","停用计划","danger-row-action")}</div></div></footer></article>`;
     }).join("");
   }
   async function load() {
     const sequence = ++state.sequence;state.loading = true;
     document.getElementById("inspection-plans-loading").hidden = false;document.getElementById("inspection-plan-list").hidden = true;
     try {
-      const [plans,agents,templates,fires] = await Promise.all([request("/inspection-plans?limit=100"),request("/agents"),request("/inspection-templates"),request("/inspection-fires?limit=100")]);
+      const [plans,agents,templates,fires,systems] = await Promise.all([request("/inspection-plans?limit=100"),request("/agents"),request("/inspection-templates"),request("/inspection-fires?limit=100"),request("/business-systems?limit=200")]);
       if (sequence !== state.sequence) return;
-      state.plans = rows(plans.items);state.agents = rows(agents);state.templates = rows(templates);state.fires = rows(fires.items);
+      state.plans = rows(plans.items);state.agents = rows(agents);state.templates = rows(templates);state.fires = rows(fires.items);state.systems = rows(systems.items);
     } catch (error) {if (sequence === state.sequence) shell.toast(error.message || "无法读取巡检计划");}
     finally {if (sequence === state.sequence) {state.loading = false;render();document.getElementById("inspection-plans-loading").hidden = true;document.getElementById("inspection-plan-list").hidden = false;}}
   }
   function populate(plan) {
     form.reset();state.editing = plan || null;
-    form.elements.agent_id.innerHTML = '<option value="">请选择已启用 Agent</option>' + activeAgents().map(agent => `<option value="${esc(agent.agent_id)}">${esc(agent.display_name)} · ${rows(agent.allowed_business_system_ids).length} 个业务系统</option>`).join("");
+    form.elements.business_system_id.innerHTML = '<option value="">请选择业务系统</option>' + state.systems.map(system => `<option value="${esc(system.business_system_id)}"${system.status !== "ENABLED" ? " disabled" : ""}>${esc(system.display_name)}</option>`).join("");
+    form.elements.business_system_id.disabled = Boolean(plan);
+    form.elements.business_system_id.value = plan?.business_system_id || systemFilter;
+    populateAgents();
     form.elements.inspection_template_id.innerHTML = '<option value="">请选择巡检内容模板</option>' + state.templates.map(item => `<option value="${esc(item.inspection_template_id)}"${item.status !== "ACTIVE" ? " disabled" : ""}>${esc(item.display_name)} · v${esc(item.version_no)} · ${rows(item.selected_check_ids).length} 项</option>`).join("");
     if (plan) {
-      for (const key of ["display_name","agent_id","schedule_type","cron_expression","timezone","inspection_template_id","timeout_seconds","overlap_policy","misfire_policy"]) form.elements[key].value = plan[key] ?? "";
+      for (const key of ["display_name","business_system_id","agent_id","schedule_type","cron_expression","timezone","inspection_template_id","timeout_seconds","overlap_policy","misfire_policy"]) form.elements[key].value = plan[key] ?? "";
       const parts = String(plan.cron_expression).split(/\s+/);
       form.elements.execution_time.value = parts.length === 5 ? `${String(Number(parts[1])).padStart(2,"0")}:${String(Number(parts[0])).padStart(2,"0")}` : "02:00";
       if (plan.schedule_type === "WEEKLY") form.querySelectorAll('[name="weekdays"]').forEach(input => {input.checked = parts[4]?.split(",").includes(input.value);});
     } else if (activeTemplates().length === 1) form.elements.inspection_template_id.value = activeTemplates()[0].inspection_template_id;
     document.getElementById("inspection-plan-title").textContent = plan ? "编辑巡检计划" : "新建巡检计划";
-    updateForm();if (!drawer.open) drawer.showModal();drawer.scrollTop = 0;
+    void loadSystemScope();updateForm();if (!drawer.open) drawer.showModal();drawer.scrollTop = 0;
   }
   function openCreate() {
     if (state.busy) return;
@@ -96,7 +124,7 @@
   async function save(event) {
     event.preventDefault();if (state.busy || !ready()) return;
     const current = state.editing, payload = {display_name:form.elements.display_name.value.trim(),agent_id:form.elements.agent_id.value,cron_expression:cronExpression(),timezone:form.elements.timezone.value,timeout_seconds:Number(form.elements.timeout_seconds.value),overlap_policy:form.elements.overlap_policy.value,misfire_policy:form.elements.misfire_policy.value};
-    if (!current) {payload.schedule_type = form.elements.schedule_type.value;payload.inspection_template_id = form.elements.inspection_template_id.value;}
+    if (!current) {payload.business_system_id = form.elements.business_system_id.value;payload.schedule_type = form.elements.schedule_type.value;payload.inspection_template_id = form.elements.inspection_template_id.value;}
     else if (form.elements.inspection_template_id.value !== current.inspection_template_id) payload.inspection_template_id = form.elements.inspection_template_id.value;
     state.busy = true;updateForm();
     try {
@@ -127,7 +155,7 @@
     if (!rows(access.permissions).includes("aiops:plan_manage")) {location.replace("./inspections.html");return;}
     document.querySelector("[data-inspection-reports]").onclick = () => {location.href = "./inspections.html";};
     document.getElementById("refresh-inspection-plans").onclick = load;
-    form.onsubmit = save;form.oninput = updateForm;form.onchange = event => {updateForm();if (event.target.type === "time") event.target.blur();};
+    form.onsubmit = save;form.oninput = updateForm;form.onchange = event => {if (event.target.name === "business_system_id") void loadSystemScope();updateForm();if (event.target.type === "time") event.target.blur();};
     drawer.onclick = event => {if (event.target.closest("[data-close-plan]")) close();};
     drawer.addEventListener("cancel",event => {if (state.busy) event.preventDefault();});drawer.addEventListener("close",close);
     document.getElementById("inspection-plan-catalog").onclick = event => {
@@ -143,6 +171,6 @@
     document.addEventListener("pointerdown",event => {if (!event.target.closest(".management-catalog-overflow")) closeMenus();});
     document.addEventListener("keydown",event => {if (event.key === "Escape") closeMenus();});
     const confirm = document.getElementById("inspection-plan-confirm");confirm.querySelector("[data-cancel-plan-confirm]").onclick = () => settleConfirmation(false);confirm.querySelector("[data-confirm-plan]").onclick = () => settleConfirmation(true);confirm.addEventListener("cancel",event => {event.preventDefault();settleConfirmation(false);});
-    await load();const planId = new URLSearchParams(location.search).get("id");if (planId) await openEdit(planId);
+    await load();const planId = new URLSearchParams(location.search).get("id");if (planId) await openEdit(planId);else if (new URLSearchParams(location.search).get("create") === "1") openCreate();
   }).catch(error => shell.toast(error.message));
 })();

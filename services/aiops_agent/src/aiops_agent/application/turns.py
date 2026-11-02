@@ -14,6 +14,9 @@ from sqlalchemy.exc import IntegrityError
 from aiops_agent.application.inspections.check_catalog import (
     inspection_template_steps,
 )
+from aiops_agent.application.inspections.scope import (
+    inspection_system_scope, require_inspection_agent_scope, scope_error,
+)
 from aiops_agent.application.inspections.backup_policy import (
     compile_backup_policy_steps,
 )
@@ -328,6 +331,9 @@ class ConversationTurnService:
         domain_id = int(payload["domain_id"])
         agent_id = UUID(str(payload["agent_id"]))
         fire_id = UUID(str(payload["inspection_fire_id"]))
+        if not payload.get("business_system_id"):
+            raise scope_error("AIOPS_INSPECTION_SYSTEM_REQUIRED", "巡检计划未指定业务系统，请明确归属后重新执行")
+        business_system_id = UUID(str(payload["business_system_id"]))
         actor_id = str(payload["actor_id"])
         trace_id = str(payload["trace_id"])
         try:
@@ -349,17 +355,11 @@ class ConversationTurnService:
             )
             if fire is None:
                 raise resource_not_found("Inspection Fire")
+            if str(dict(fire.plan_snapshot_json).get("business_system_id") or "") != str(business_system_id):
+                raise scope_error("AIOPS_INSPECTION_SYSTEM_MISMATCH", "巡检任务与批次冻结的业务系统不一致")
             existing = await uow.conversations.list_for_inspection_fire(
                 inspection_fire_id=fire_id
             )
-            if existing:
-                return {
-                    "inspection_fire_id": str(fire_id),
-                    "conversation_count": len(existing),
-                    "agent_version_id": dict(fire.plan_snapshot_json).get(
-                        "agent_version_id"
-                    ),
-                }
             agent = await uow.agents.get(
                 domain_id=domain_id,
                 agent_id=agent_id,
@@ -376,26 +376,31 @@ class ConversationTurnService:
             )
             if version is None:
                 raise resource_not_found("Agent Version")
-            target_ids = await uow.agents.active_version_target_ids(
-                domain_id=domain_id,
-                agent_version_id=version.agent_version_id,
+            await require_inspection_agent_scope(
+                uow=uow, agent_version_id=version.agent_version_id,
+                business_system_id=business_system_id,
             )
-            if not target_ids:
-                raise self._error(
-                    "AIOPS_INSPECTION_AGENT_TARGET_REQUIRED",
-                    "巡检触发时 Agent 当前版本没有已启用的 Target",
-                )
+            if existing:
+                return {
+                    "inspection_fire_id": str(fire_id),
+                    "conversation_count": len(existing),
+                    "agent_version_id": dict(fire.plan_snapshot_json).get(
+                        "agent_version_id"
+                    ),
+                }
+            scope_snapshot, system_targets = await inspection_system_scope(
+                uow=uow, domain_id=domain_id,
+                business_system_id=business_system_id,
+            )
+            targets_by_id = {target.target_id: target for target in system_targets}
+            target_ids = tuple(targets_by_id)
             period_start = datetime.fromisoformat(str(payload["period_start"]))
             period_end = datetime.fromisoformat(str(payload["period_end"]))
             schedule_type = str(payload["schedule_type"])
             target_work: list[tuple[Any, tuple[dict[str, Any], ...]]] = []
             uncovered: list[str] = []
             for target_id in target_ids:
-                target = await self._require_existing_target(
-                    uow=uow,
-                    domain_id=domain_id,
-                    target_id=target_id,
-                )
+                target = targets_by_id[target_id]
                 try:
                     evidence_steps = inspection_template_steps(
                         template_definition,
@@ -415,7 +420,7 @@ class ConversationTurnService:
             if uncovered:
                 raise self._error(
                     "AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
-                    "巡检模板没有覆盖 Agent 当前访问范围内的 Target："
+                    "巡检模板没有覆盖业务系统中的数据库："
                     + "、".join(uncovered),
                 )
             task_text = (
@@ -434,8 +439,11 @@ class ConversationTurnService:
                 recovery_repository = getattr(uow, "recovery", None)
                 business_system_repository = getattr(uow, "business_systems", None)
                 resource = (
-                    await business_system_repository.get_resource_for_target(
-                        target_id=target_id,
+                    await business_system_repository.get_resource_scoped(
+                        resource_id=UUID(next(
+                            item["resource_id"] for item in scope_snapshot["resources"]
+                            if item["target_id"] == str(target_id)
+                        )),
                         domain_id=domain_id,
                     )
                     if business_system_repository is not None
@@ -478,6 +486,7 @@ class ConversationTurnService:
                     context_hint_json=(
                         TrustedContextHint(
                             source_kind="INSPECTION",
+                            business_system_id=business_system_id,
                             resource_ids=(resource.resource_id,),
                             source_resource_id=fire_id,
                         ).model_dump(mode="json")
@@ -523,6 +532,8 @@ class ConversationTurnService:
                             "observation_start": period_start.isoformat(),
                             "observation_end": period_end.isoformat(),
                             "inspection": {
+                                "business_system_id": str(business_system_id),
+                                "business_system_name": scope_snapshot["business_system_name"],
                                 "template_id": payload[
                                     "inspection_template_id"
                                 ],
@@ -557,6 +568,8 @@ class ConversationTurnService:
                 )
             snapshot = dict(fire.plan_snapshot_json)
             snapshot["agent_version_id"] = str(version.agent_version_id)
+            snapshot["system_scope"] = scope_snapshot
+            snapshot["business_system_name"] = scope_snapshot["business_system_name"]
             fire.plan_snapshot_json = snapshot
             fire.target_count = len(receipts)
             fire.updated_at = datetime.now(UTC)
