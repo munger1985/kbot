@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/aiops-forms.css?v=20261011_3">
   <link rel="stylesheet" href="./css/workspaces.css?v=20261029_2">
-<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-dashboard.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261030_1"><link rel="stylesheet" href="./css/reference-dashboard.css?v=20261102_2"><link rel="stylesheet" href="./css/alignment.css?v=20261102_2"></head>
 <body data-page="dashboard">
   <main class="ops-main platform-home-page aiops-page aiops-action-workbench">
     <header class="platform-home-header">
@@ -64,16 +64,17 @@
     </section>
   </main>
 
-  <dialog id="work-item-processing-dialog" class="work-item-modal work-item-processing-modal" aria-label="处理工作项">
-    <header><div><p class="eyebrow">当前由你处理</p><h2>处理工作项</h2><p id="work-item-processing-title"></p></div><button class="icon-button" type="button" aria-label="关闭处理窗口" data-close-work-item-dialog>×</button></header>
-    <div class="work-item-modal-summary"><span><small>数据库实例</small><strong id="work-item-processing-target">—</strong></span><span><small>当前状态</small><strong id="work-item-processing-status">—</strong></span><span><small>开始处理时间</small><strong id="work-item-processing-started">—</strong></span></div>
+  <dialog id="work-item-processing-dialog" class="reference-drawer admin-drawer admin-drawer-wide admin-drawer-sectioned" aria-label="处理工作项">
+    <header class="admin-drawer-header"><div><p id="work-item-processing-eyebrow" class="eyebrow">当前由你处理</p><h2>处理工作项</h2><p id="work-item-processing-title"></p></div><button class="icon-button" type="button" aria-label="关闭处理抽屉" data-close-work-item-dialog>×</button></header>
+    <form id="work-item-processing-form" class="admin-drawer-body work-item-processing-body"><div class="work-item-processing-content">
+    <div id="work-item-processing-notice" class="notice notice-warning" role="status" aria-live="polite" hidden><p id="work-item-processing-notice-text"></p><button id="work-item-processing-refresh" class="secondary-button" type="button">重新读取最新详情</button></div>
+    <div class="drawer-summary-grid"><article><span>数据库实例</span><strong id="work-item-processing-target">—</strong></article><article><span>当前状态</span><strong id="work-item-processing-status">—</strong></article><article><span>开始处理时间</span><strong id="work-item-processing-started">—</strong></article></div>
     <div class="work-item-processing-context"><section class="key-value-card work-item-processing-section"><header><div><p class="eyebrow">现场上下文</p><h3>错误 / 告警信息</h3></div><span id="work-item-processing-severity" class="status-pill status-warning"></span></header><div id="work-item-alert-context" style="display:contents"></div></section><section class="key-value-card work-item-processing-section"><header><div><p class="eyebrow">Agent 结论</p><h3>初步诊断结果</h3></div><button id="work-item-continue-diagnosis" class="secondary-button" type="button" hidden>继续深入诊断</button></header><div id="work-item-agent-diagnosis" class="aiops-turn-result"></div></section></div>
-    <form id="work-item-processing-form" class="work-item-modal-form">
-      <label>处理结论<select id="work-item-resolution-code" name="resolution_code"><option value="FIXED">已修复</option><option value="MITIGATED">已缓解</option><option value="OBSERVED_STABLE">观察稳定</option><option value="ACCEPTED_RISK">风险已接受</option><option value="FALSE_POSITIVE">误报</option><option value="DUPLICATE">重复事项</option></select></label>
-      <label>处理结果<textarea id="work-item-completion-note" name="completion_note" maxlength="4000" rows="6" required placeholder="记录采取的措施、结果与后续观察建议"></textarea></label>
-      <p class="form-help">领取时间由系统自动记录；提交时自动记录完成人和完成时间，并进入待验证状态。</p>
-      <footer><button class="secondary-button" type="button" data-close-work-item-dialog>暂不完成</button><button class="primary-button" type="submit">标记工作完成</button></footer>
-    </form>
+      <label class="control-field"><span class="field-label">处理结论</span><select id="work-item-resolution-code" name="resolution_code"><option value="FIXED">已修复</option><option value="MITIGATED">已缓解</option><option value="OBSERVED_STABLE">观察稳定</option><option value="ACCEPTED_RISK">风险已接受</option><option value="FALSE_POSITIVE">误报</option><option value="DUPLICATE">重复事项</option></select></label>
+      <label class="control-field"><span class="field-label">处理结果</span><textarea id="work-item-completion-note" name="completion_note" maxlength="4000" rows="6" required placeholder="记录采取的措施、结果与后续观察建议"></textarea></label>
+      <p class="field-help">领取时间由系统自动记录；提交时自动记录完成人和完成时间，并进入待验证状态。</p>
+    </div></form>
+    <footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close-work-item-dialog>暂不完成</button><button class="primary-button" type="submit" form="work-item-processing-form">标记工作完成</button></footer>
   </dialog>
 
   <dialog id="work-item-assignment-dialog" class="work-item-modal work-item-assignment-modal" aria-label="分派工作项">
@@ -104,6 +105,6 @@
   <script src="./js/aiops-chat-charts.js?v=20261030_1"></script>
   <script src="./js/aiops-workspaces.js?v=20261030_4"></script>
   <script src="./js/aiops-dashboard.js?v=20261030_1"></script>
-  <script src="./js/aiops-work-items.js?v=20261030_1"></script>
+  <script src="./js/aiops-work-items.js?v=20261102_2"></script>
 </body>
 </html>

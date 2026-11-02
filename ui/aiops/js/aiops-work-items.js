@@ -7,6 +7,7 @@
   const state = {
     access: null, cursor: null, filters: { visibility: "SCOPE" }, item: null,
     items: new Map(), processingItem: null, processingContext: null, assignmentItem: null,
+    processingRefreshing: false, processingRefreshRequired: false,
     scopedTargets: [], people: [], handling: false, assigning: false, suppressReset: false, listRequest: 0,
   };
   const labels = {
@@ -179,12 +180,11 @@
         return;
       }
       const detail = await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(item.work_item_id)}?visibility=SCOPE`);
-      state.processingItem = detail;
-      document.getElementById("work-item-processing-title").textContent = detail.title;
-      document.getElementById("work-item-processing-target").textContent = detail.target_name || "—";
-      document.getElementById("work-item-processing-status").textContent = text(detail.status);
-      document.getElementById("work-item-processing-started").textContent = shell.fmt(detail.assigned_at);
+      renderProcessingItem(detail);
+      state.processingRefreshRequired = false;
+      setProcessingNotice("");
       document.getElementById("work-item-processing-form").reset();
+      syncProcessingControls();
       document.getElementById("work-item-processing-dialog").showModal();
       await loadProcessingContext(detail);
       await loadList();
@@ -193,6 +193,56 @@
       await loadList();
     } finally {
       state.handling = false;
+    }
+  }
+  function canCompleteProcessing() {
+    return state.processingItem?.status === "IN_PROGRESS"
+      && state.processingItem.assignee_user_id === state.access.user_id
+      && !state.processingRefreshRequired;
+  }
+  function renderProcessingItem(item) {
+    state.processingItem = item;
+    document.getElementById("work-item-processing-title").textContent = item.title;
+    document.getElementById("work-item-processing-target").textContent = item.target_name || "—";
+    document.getElementById("work-item-processing-status").textContent = text(item.status);
+    document.getElementById("work-item-processing-started").textContent = shell.fmt(item.assigned_at);
+    document.getElementById("work-item-processing-eyebrow").textContent =
+      item.status === "IN_PROGRESS" && item.assignee_user_id === state.access.user_id ? "当前由你处理" : "工作项处理";
+  }
+  function setProcessingNotice(message) {
+    document.getElementById("work-item-processing-notice").hidden = !message;
+    document.getElementById("work-item-processing-notice-text").textContent = message;
+  }
+  function syncProcessingControls() {
+    const dialog = document.getElementById("work-item-processing-dialog");
+    const busy = Boolean(dialog.dataset.busy) || state.processingRefreshing;
+    dialog.setAttribute("aria-busy", String(busy));
+    dialog.querySelectorAll("button, select, textarea").forEach(control => { control.disabled = busy; });
+    dialog.querySelector('[type="submit"]').disabled = busy || !canCompleteProcessing();
+  }
+  async function refreshProcessing() {
+    const item = state.processingItem;
+    if (!item || state.processingRefreshing) return;
+    state.processingRefreshing = true;
+    state.processingRefreshRequired = true;
+    syncProcessingControls();
+    try {
+      const latest = await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(item.work_item_id)}?visibility=SCOPE`);
+      if (state.processingItem !== item) return;
+      renderProcessingItem(latest);
+      state.processingRefreshRequired = false;
+      setProcessingNotice(latest.status !== "IN_PROGRESS"
+        ? `工作项当前为“${text(latest.status)}”，不能继续标记完成。已保留你填写的处理结果。`
+        : latest.assignee_user_id !== state.access.user_id
+          ? "工作项已改派，不能再由你标记完成。已保留你填写的处理结果。"
+          : "工作项已更新，已载入最新详情并保留你填写的处理结果。请核对最新现场和诊断后，再次点击“标记工作完成”。");
+      await Promise.all([loadProcessingContext(latest), loadList()]);
+    } catch (error) {
+      setProcessingNotice("最新工作项读取失败，已保留你填写的处理结果。请先重新读取最新详情，再提交。");
+      shell.toast(error.message);
+    } finally {
+      state.processingRefreshing = false;
+      syncProcessingControls();
     }
   }
   async function openAssignment(button) {
@@ -382,7 +432,7 @@
       if (assignmentButton) void openAssignment(assignmentButton);
     };
     document.querySelectorAll("[data-close-work-item-dialog]").forEach((button) => {
-      button.onclick = () => {const dialog=button.closest("dialog");if(!dialog.dataset.busy)dialog.close();};
+      button.onclick = () => {const dialog=button.closest("dialog");if(!dialog.dataset.busy && !(dialog.id === "work-item-processing-dialog" && state.processingRefreshing))dialog.close();};
     });
     for (const dialog of document.querySelectorAll("dialog.work-item-modal")) {
       dialog.addEventListener("cancel",event=>{if(dialog.dataset.busy)event.preventDefault();});
@@ -394,7 +444,10 @@
     document.getElementById("work-item-processing-dialog").addEventListener("close", () => {
       state.processingItem = null;
       state.processingContext = null;
+      state.processingRefreshRequired = false;
+      setProcessingNotice("");
     });
+    document.getElementById("work-item-processing-refresh").onclick = () => { void refreshProcessing(); };
     document.getElementById("work-item-assignment-dialog").addEventListener("close", () => { state.assignmentItem = null; });
     document.getElementById("work-item-assignment-user").onchange = event => {document.querySelector('#work-item-assignment-form [type="submit"]').disabled=!event.target.value;};
     document.getElementById("work-item-continue-diagnosis").onclick = (event) => {
@@ -403,12 +456,12 @@
     document.getElementById("work-item-processing-form").onsubmit = async (event) => {
       event.preventDefault();
       const dialog = document.getElementById("work-item-processing-dialog");
-      if (!state.processingItem || dialog.dataset.busy) return;
-      const submit = event.currentTarget.querySelector("button[type=submit]");
+      if (!canCompleteProcessing() || dialog.dataset.busy || state.processingRefreshing) return;
+      const submit = dialog.querySelector("button[type=submit]");
       const values = Object.fromEntries(new FormData(event.currentTarget));
       if (!String(values.completion_note || "").trim()) return shell.toast("请填写处理结果。");
       dialog.dataset.busy = "true";
-      dialog.querySelectorAll('[data-close-work-item-dialog],[type="submit"]').forEach(button=>{button.disabled=true;});
+      syncProcessingControls();
       submit.textContent = "正在提交…";
       try {
         await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(state.processingItem.work_item_id)}:complete`, jsonBody({
@@ -421,8 +474,12 @@
         state.processingItem = null;
         shell.toast("处理结果已记录，工作项已标记完成");
         await loadList();
-      } catch (error) { shell.toast(error.message); }
-      finally { delete dialog.dataset.busy;dialog.querySelectorAll('[data-close-work-item-dialog],[type="submit"]').forEach(button=>{button.disabled=false;});submit.textContent="标记工作完成"; }
+      } catch (error) {
+        const code = error.payload?.code || error.payload?.detail?.code;
+        if (error.status === 412 && code === "OPS_ROW_VERSION_CHANGED") await refreshProcessing();
+        else shell.toast(error.message);
+      }
+      finally { delete dialog.dataset.busy;syncProcessingControls();submit.textContent="标记工作完成"; }
     };
     document.getElementById("work-item-assignment-form").onsubmit = async (event) => {
       event.preventDefault();

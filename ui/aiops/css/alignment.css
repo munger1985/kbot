@@ -174,7 +174,8 @@ body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer)[open] 
 body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer) > form { display: grid; height: auto; flex: none; min-height: 0; overflow: visible; }
 :root body.aiops-static-page dialog.work-item-modal { position: fixed; inset: 0; max-width: none; margin: auto; padding: 0; border: 0; color: var(--ink); }
 :root body.aiops-static-page dialog.work-item-modal::backdrop { background: rgba(15,23,42,.5); }
-:root body.aiops-static-page dialog.work-item-processing-modal { width: min(980px,calc(100vw - 40px)); }
+body.aiops-static-page #work-item-processing-dialog { width: min(1120px,100vw); color: var(--ink); }
+body.aiops-static-page #work-item-processing-form { display: block; height: auto; min-height: 0; flex: 1; overflow-y: auto; }
 :root body.aiops-static-page dialog.work-item-assignment-modal { width: min(560px,calc(100vw - 40px)); }
 body.aiops-static-page #monitoring-instance-drawer { width: min(580px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }
 body.aiops-static-page #monitoring-data-drawer { width: min(1120px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; }

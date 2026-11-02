@@ -66,14 +66,14 @@
 :is([data-page="dashboard"]) .work-item-modal > header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:22px 24px; border-bottom:1px solid var(--line); }
 :is([data-page="dashboard"]) .work-item-modal h2 { margin:4px 0 6px; }
 :is([data-page="dashboard"]) .work-item-modal header p:last-child { margin:0; color:var(--muted); }
-:is([data-page="dashboard"]) .work-item-modal-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); border-bottom:1px solid var(--line); }
-:is([data-page="dashboard"]) .work-item-modal-summary span { display:grid; gap:5px; padding:14px 18px; background:var(--surface); }
-:is([data-page="dashboard"]) .work-item-modal-summary small,:is([data-page="dashboard"]) .work-item-modal-form label { color:var(--muted); font-size:13px; }
+:is([data-page="dashboard"]) .work-item-modal-form label { color:var(--muted); font-size:13px; }
 :is([data-page="dashboard"]) .work-item-modal-form { display:grid; gap:16px; padding:22px 24px 24px; }
 :is([data-page="dashboard"]) .work-item-modal-form label { display:grid; gap:7px; }
 :is([data-page="dashboard"]) .work-item-modal-form footer { display:flex; justify-content:flex-end; gap:10px; padding-top:4px; }
-:is([data-page="dashboard"]) .work-item-processing-modal { width:min(980px,100%); }
-:is([data-page="dashboard"]) .work-item-processing-context { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; padding:20px 24px 0; }
+:is([data-page="dashboard"]) .work-item-processing-body { margin:0; }
+:is([data-page="dashboard"]) .work-item-processing-content { display:grid; gap:18px; padding:24px 28px; }
+:is([data-page="dashboard"]) .work-item-processing-content .drawer-summary-grid { margin-top:0; }
+:is([data-page="dashboard"]) .work-item-processing-context { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
 :is([data-page="dashboard"]) .work-item-processing-section { min-width:0; padding:18px; }
 :is([data-page="dashboard"]) .work-item-processing-section > header { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; }
 :is([data-page="dashboard"]) .work-item-processing-section h3 { margin:3px 0 0; }
@@ -91,7 +91,8 @@
 :is([data-page="dashboard"]) .status-danger-text { color:var(--danger); font-weight:650; }
 @media (max-width:1200px) { :is([data-page="dashboard"]) .workbench-content-grid.has-context { grid-template-columns:1fr; }:is([data-page="dashboard"]) .workbench-context-column { position:static; grid-row:1; } }
 @media (max-width:1100px) { :is([data-page="dashboard"]) .work-item-queue-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:900px) { :is([data-page="dashboard"]) .work-item-form-grid,:is([data-page="dashboard"]) .work-item-modal-summary,:is([data-page="dashboard"]) .work-item-processing-context { grid-template-columns:1fr; } }
+@media (max-width:900px) { :is([data-page="dashboard"]) .work-item-form-grid,:is([data-page="dashboard"]) .work-item-processing-context { grid-template-columns:1fr; } }
+@media (max-width:680px) { :is([data-page="dashboard"]) .work-item-processing-content { padding:18px; } }
 @media (max-width:620px) { :is([data-page="dashboard"]) .work-item-queue-grid { grid-template-columns:1fr; }:is([data-page="dashboard"]) .work-item-toolbar { width:100%; }:is([data-page="dashboard"]) .work-item-toolbar > * { width:100%; } }
 
 /* business/AIOpsTurnResultView.vue */

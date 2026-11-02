@@ -868,10 +868,10 @@ try {
       for (const contextEmpty of [true,false]) {
         await Promise.all([kbot,reference].map(page=>page.evaluate(value=>{fixtureProcessingEmpty=value;},contextEmpty)));
         await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'继续处理',exact:true}).click()));
-        await Promise.all([kbot,reference].map(page=>page.locator('.work-item-processing-modal').waitFor({state:'visible'})));
+        await Promise.all([kbot,reference].map(page=>page.getByRole('dialog',{name:'处理工作项',exact:true}).waitFor({state:'visible'})));
         await Promise.all([kbot,reference].map(page=>page.waitForFunction(()=>!document.querySelector('.aiops-turn-result').textContent.includes('正在读取'))));
         if(process.env.AIOPS_DEBUG) console.log(await kbot.evaluate(()=>{
-          const node=document.querySelector('.work-item-processing-modal');
+          const node=document.querySelector('[aria-label="处理工作项"]');
           const matches=[];
           const walk=rules=>{for(const rule of rules){if(rule.selectorText && node.matches(rule.selectorText))matches.push(rule.cssText);if(rule.cssRules)walk(rule.cssRules);}};
           for(const sheet of document.styleSheets)walk(sheet.cssRules);
@@ -879,26 +879,26 @@ try {
         }));
         for(const width of [1440,1024,900,640,420,320]) {
           await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
-          await Promise.all([kbot,reference].map(page=>page.locator('.work-item-processing-modal').evaluate(node=>{node.scrollTop=0;})));
-          await compareRegions(kbot,reference,['.work-item-processing-modal','.work-item-processing-modal > header','.work-item-modal-summary','.work-item-modal-summary span','.work-item-processing-context','.work-item-processing-section','.work-item-processing-section > header','.work-item-context-summary','.work-item-context-facts','.work-item-context-evidence','.aiops-turn-result','.ops-turn-result-empty','.ops-findings','.ops-finding-row','.ops-analysis','.ops-analysis .agent-markdown-content','.ops-solution','.ops-html-report-readonly','.ops-proposal-readonly','.ops-fact-confirmation','.agent-chart','.agent-chart-canvas','.work-item-modal-form','.work-item-modal-form label','.work-item-modal-form textarea','.work-item-modal-form footer'],{page:name,width,state:contextEmpty?'processing-empty':'processing-results'});
+          await Promise.all([kbot,reference].map(page=>page.locator('.work-item-processing-body').evaluate(node=>{node.scrollTop=0;})));
+          await compareRegions(kbot,reference,['[aria-label="处理工作项"]','[aria-label="处理工作项"] > header','.work-item-processing-body','.work-item-processing-content','.work-item-processing-content .drawer-summary-grid','.work-item-processing-content .drawer-summary-grid article','.work-item-processing-context','.work-item-processing-section','.work-item-processing-section > header','.work-item-context-summary','.work-item-context-facts','.work-item-context-evidence','.aiops-turn-result','.ops-turn-result-empty','.ops-findings','.ops-finding-row','.ops-analysis','.ops-analysis .agent-markdown-content','.ops-solution','.ops-html-report-readonly','.ops-proposal-readonly','.ops-fact-confirmation','.agent-chart','.agent-chart-canvas','.work-item-processing-content > label','.work-item-processing-content textarea','[aria-label="处理工作项"] > footer'],{page:name,width,state:contextEmpty?'processing-empty':'processing-results'});
           if(width===1440 || width===420) for(const [prefix,page] of [['kbot',kbot],['ammolite',reference]]) await page.screenshot({path:resolve(artifacts,`${prefix}-processing-${contextEmpty?'empty':'results'}-${width}.png`)});
         }
         for(const page of [kbot,reference]) {
           assert.equal(await page.getByRole('button',{name:'继续深入诊断',exact:true}).count(),contextEmpty?0:1);
-          await page.locator('.work-item-modal-form textarea').fill('  已核对，持续观察。  ');
+          await page.locator('.work-item-processing-body textarea').fill('  已核对，持续观察。  ');
           await page.evaluate(()=>{fixtureHoldWrites=true;});
           await page.getByRole('button',{name:'标记工作完成',exact:true}).click();
           await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));
           const request=await page.evaluate(()=>fixtureRequests.filter(row=>row.path.includes(':complete')).at(-1));
           assert.deepEqual(JSON.parse(request.body),{expected_row_version:1,resolution_code:'FIXED',completion_note:'已核对，持续观察。',evidence_refs:[]});
           assert.equal(await page.getByRole('button',{name:'暂不完成',exact:true}).isDisabled(),true);
-          assert.equal(await page.getByRole('button',{name:'关闭处理窗口',exact:true}).isDisabled(),true);
+          assert.equal(await page.getByRole('button',{name:'关闭处理抽屉',exact:true}).isDisabled(),true);
           await page.keyboard.press('Escape');
-          assert.equal(await page.locator('.work-item-processing-modal').isVisible(),true);
+          assert.equal(await page.getByRole('dialog',{name:'处理工作项',exact:true}).isVisible(),true);
           await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});
           await page.getByRole('button',{name:'标记工作完成',exact:true}).waitFor();
-          assert.equal(await page.locator('.work-item-modal-form textarea').inputValue(),'  已核对，持续观察。  ');
-          await page.getByRole('button',{name:'关闭处理窗口',exact:true}).click();
+          assert.equal(await page.locator('.work-item-processing-body textarea').inputValue(),'  已核对，持续观察。  ');
+          await page.getByRole('button',{name:'关闭处理抽屉',exact:true}).click();
         }
       }
       await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'分派',exact:true}).click()));
