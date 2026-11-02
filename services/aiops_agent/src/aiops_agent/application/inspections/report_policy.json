@@ -1,6 +1,8 @@
 {
   "schema_version": "INSPECTION_REPORT_POLICY.v1",
-  "version": "2026-11-02",
+  "version": "2026-11-02.2",
+  "current_monitoring_window_seconds": 900,
+  "maximum_current_sample_age_seconds": 300,
   "baseline": {
     "ORACLE": [
       "oracle.storage.tablespace_headroom",

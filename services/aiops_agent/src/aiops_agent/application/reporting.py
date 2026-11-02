@@ -263,7 +263,7 @@ def _number(value: object) -> float | None:
         return None
 
 
-def _daily_metric_projection(fact: dict[str, Any], **window) -> dict[str, Any]:
+def _daily_metric_projection(fact: dict[str, Any], *, reference_fact=None, **window) -> dict[str, Any]:
     """投影当期指标与七天参考比较，明确比较口径。"""
     from aiops_agent.application.inspections.daily_baseline import daily_baseline_comparison
 
@@ -279,7 +279,7 @@ def _daily_metric_projection(fact: dict[str, Any], **window) -> dict[str, Any]:
         "coverage_percent": round(coverage * 100, 2) if coverage is not None else None,
         "window_start": fact.get("window_start"), "window_end": fact.get("window_end"),
         "sample_count": fact.get("sample_count"),
-        **daily_baseline_comparison(fact, **window),
+        **daily_baseline_comparison(reference_fact or fact, **window),
     }
 
 
@@ -291,6 +291,10 @@ def _daily_inspection_presentation(
     target = dict(scope.get("target") or {})
     assessment = dict(scope.get("inspection_assessment") or {})
     facts = [item for item in payload.get("facts") or () if isinstance(item, dict)]
+    references = {
+        (item.get("metric_code"), item.get("dimensions"), item.get("unit"), item.get("evidence_ref")): item
+        for item in facts if item.get("kind") == "inspection_monitoring_reference"
+    }
     metric_results = {
         (str(item.get("metric_code") or ""), str(item.get("dimensions") or "-")): item
         for item in facts if item.get("kind") == "inspection_metric_check"
@@ -299,8 +303,12 @@ def _daily_inspection_presentation(
     for fact in facts:
         if fact.get("kind") != "inspection_monitoring_metric":
             continue
+        if str(fact.get("semantic_role") or "").startswith("BACKUP_"):
+            continue
         metric = _daily_metric_projection(
-            fact, observation_start=payload.get("period_start"),
+            fact, reference_fact=references.get((
+                fact.get("metric_code"), fact.get("dimensions"), fact.get("unit"), fact.get("evidence_ref"),
+            )), observation_start=payload.get("period_start"),
             observation_end=payload.get("period_end"), timezone=str(scope.get("timezone") or "UTC"),
         )
         checked = metric_results.get((str(fact.get("metric_code") or ""), str(fact.get("dimensions") or "-")), {})
@@ -431,7 +439,9 @@ def monthly_inspection_summary(
             continue
         kind = str(raw_fact.get("kind") or "")
         observed_at = str(raw_fact.get("_source_observed_at") or "")
-        if kind == "inspection_monitoring_metric":
+        if kind in {"inspection_monitoring_metric", "inspection_monitoring_reference"}:
+            if str(raw_fact.get("semantic_role") or "").startswith("BACKUP_"):
+                continue
             metric_code = str(raw_fact.get("metric_code") or "")
             semantic_role = str(raw_fact.get("semantic_role") or "")
             dimensions = str(raw_fact.get("dimensions") or "-")

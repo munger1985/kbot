@@ -76,7 +76,7 @@
       : comparison.status_display || "无上月报告";
     const sources = rows(boundary.sources);
     const trace = sources.length ? `<details class="inspection-trace"><summary>技术追溯信息（${sources.length} 条）</summary><p>证据编号用于定位原始记录，内容指纹用于核对记录内容；仅供技术核查，不属于巡检问题。</p>${list(sources,"","inspection-source-list","ul")}</details>` : "";
-    return `<details class="daily-evidence inspection-appendix"><summary>附录：统计方法与技术追溯</summary><div class="inspection-appendix-body"><p>${esc(boundary.methodology)}</p>${monthly ? `<h3>上月对比</h3><p>${esc(compare)}</p>` : `<p>数据库检查证据覆盖率：${esc(coverage(boundary.quality?.evidence_coverage_percent))}；监控采样覆盖率：${esc(coverage(boundary.quality?.monitoring_sample_coverage_percent))}</p>`}${rows(data.gaps).length ? `<h3>数据说明</h3>${list(data.gaps)}` : ""}${trace}</div></details>`;
+    return `<details class="daily-evidence inspection-appendix"><summary>附录：统计方法与技术追溯</summary><div class="inspection-appendix-body"><p>${esc(boundary.methodology)}</p>${monthly ? `<h3>上月对比</h3><p>${esc(compare)}</p>` : `<p>必要检查完成率：${esc(coverage(boundary.quality?.evidence_coverage_percent))}；监控采样完整率：${esc(coverage(boundary.quality?.monitoring_sample_coverage_percent))}</p>`}${rows(data.gaps).length ? `<h3>数据说明</h3>${list(data.gaps)}` : ""}${trace}</div></details>`;
   }
   function dailyHtml(daily) {
     const header = daily.header, conclusion = daily.conclusion, metrics = rows(daily.metrics);

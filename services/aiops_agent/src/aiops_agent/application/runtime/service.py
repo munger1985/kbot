@@ -3445,6 +3445,7 @@ class AIOpsRuntimeService:
         ).strip()
         facts, gaps, coverage_summary = self._inspection_report_projection(
             inspection=inspection,
+            monitoring=dict(plan.get("monitoring") or {}),
             source=source,
             database_type=str(
                 dict(plan.get("target") or {}).get("db_type") or "ORACLE"
@@ -3487,16 +3488,23 @@ class AIOpsRuntimeService:
                 check_status_counts.get(check_status, 0) + 1
             )
         coverage = inspection_evidence_coverage(inspection_checks, gaps)
-        logger.info(
-            "AIOps 巡检证据质量：run_id={} coverage={} check_status_counts={} gap_index={}",
-            run.ops_run_id, coverage, check_status_counts,
-            [
-                {key: item.get(key) for key in ("step_id", "code", "category")}
-                for item in gaps
-            ],
-        )
-        monitoring_quality = self._inspection_monitoring_quality(source)
         assessment = assess_inspection(facts, policy=report_policy, gaps=gaps)
+        # 业务完成率覆盖全部必要检查，不把数据库查询成功率当业务完成率。
+        total = assessment["required_check_count"]
+        completed = assessment["completed_required_count"]
+        coverage.update({
+            "evidence_total_count": total, "evidence_covered_count": completed,
+            "evidence_coverage_percent": round(completed * 100 / total, 2) if total else 0.0,
+        })
+        from aiops_agent.application.inspections.monitoring_observations import monitoring_quality as calculate_monitoring_quality
+        monitoring_quality = calculate_monitoring_quality(
+            facts, monitoring=plan.get("monitoring"), gaps=gaps,
+        )
+        logger.info(
+            "AIOps 巡检检查结果：run_id={} coverage={} monitoring_quality={} check_status_counts={} gap_index={}",
+            run.ops_run_id, coverage, monitoring_quality, check_status_counts,
+            [{key: item.get(key) for key in ("step_id", "code", "category")} for item in gaps],
+        )
         status = "READY" if assessment["completion_status"] == "COMPLETE" else "PARTIAL"
         health_status = assessment["health_status"]
         summary = assessment["text"]
@@ -3513,7 +3521,6 @@ class AIOpsRuntimeService:
         monitoring_profile = dict(
             dict(plan.get("monitoring") or {}).get("monitoring_profile") or {}
         )
-        monitoring_quality = self._inspection_monitoring_quality(source)
         target_snapshot = dict(plan.get("target") or {})
         current_target = None
         target_repository = getattr(uow, "targets", None)
@@ -3819,6 +3826,7 @@ class AIOpsRuntimeService:
                     details.append(f"{sample_count} 个样本")
                 facts.append({
                     "kind": "inspection_monitoring_metric",
+                    "metric_dimensions": dict(traces_by_row[row_index].dimensions) if row_index in traces_by_row else {},
                     "title": metric_name,
                     "summary": f"{metric_name}{dimension_display}：" + "，".join(details) + "。",
                     "check_status": "OBSERVED",
@@ -3922,40 +3930,6 @@ class AIOpsRuntimeService:
             return "REPORT_CONTRACT"
         return "DATA_SOURCE"
 
-    @staticmethod
-    def _inspection_monitoring_quality(
-        source: AIOpsTurnResult,
-    ) -> dict[str, Any]:
-        """把数据库检查覆盖和监控采样覆盖分开统计。"""
-        coverage_values: list[float] = []
-        for evidence in source.evidence:
-            if evidence.tool_id != "metric.query_range":
-                continue
-            indexes = {
-                str(column.get("name") or ""): index
-                for index, column in enumerate(evidence.columns)
-            }
-            coverage_index = indexes.get("coverage_ratio")
-            if coverage_index is None:
-                continue
-            for row in evidence.rows:
-                raw_value = row[coverage_index]
-                if raw_value is None:
-                    continue
-                coverage_values.append(
-                    min(1.0, max(0.0, float(raw_value)))
-                )
-        return {
-            "coverage_percent": (
-                round(min(coverage_values) * 100, 2)
-                if coverage_values
-                else None
-            ),
-            "metric_count": len(coverage_values),
-            "low_coverage_metric_count": sum(
-                value < 0.8 for value in coverage_values
-            ),
-        }
 
     @staticmethod
     def _inspection_report_projection(
@@ -3964,6 +3938,7 @@ class AIOpsRuntimeService:
         source: AIOpsTurnResult,
         action_tool_ids: dict[str, str],
         database_type: str | None = None,
+        monitoring: dict[str, Any] | None = None,
     ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...], str]:
         """把冻结模板的每项检查投影为报告条目，不能因正常零行而省略。"""
         database_type = str(
@@ -4179,102 +4154,32 @@ class AIOpsRuntimeService:
                 }
             )
 
+        from aiops_agent.application.inspections.monitoring_observations import classify_monitoring_facts
+        facts.extend(classify_monitoring_facts(
+            AIOpsRuntimeService._inspection_monitoring_facts(source),
+            monitoring=monitoring or {},
+        ))
+        from aiops_agent.application.inspections.daily_baseline import observation_coverage
+        for fact in facts:
+            if fact.get("kind") == "inspection_monitoring_metric":
+                current_coverage = observation_coverage(
+                    fact, observation_start=inspection.get("period_start"),
+                    observation_end=inspection.get("period_end"),
+                )
+                if current_coverage is not None:
+                    fact["observation_coverage_ratio"] = current_coverage
+
         backup_policy = inspection.get("backup_policy")
         if isinstance(backup_policy, dict) and backup_policy.get("enabled"):
-            backup_tool_id = backup_policy_tool_id(database_type)
-            backup_observations = evidence_by_tool.get(backup_tool_id or "", [])
-            if database_type == "ORACLE":
-                successful_end_times: list[datetime] = []
-                for observation in backup_observations:
-                    indexes = {
-                        str(column.get("name") or "").lower(): index
-                        for index, column in enumerate(observation.columns)
-                    }
-                    status_index = indexes.get("status")
-                    end_time_index = indexes.get("end_time")
-                    if status_index is None or end_time_index is None:
-                        continue
-                    for row in observation.rows:
-                        if not str(row[status_index] or "").upper().startswith("COMPLETED"):
-                            continue
-                        raw_end_time = row[end_time_index]
-                        if isinstance(raw_end_time, datetime):
-                            successful_end_times.append(raw_end_time)
-                        elif raw_end_time:
-                            try:
-                                successful_end_times.append(datetime.fromisoformat(str(raw_end_time).replace("Z", "+00:00")))
-                            except ValueError:
-                                continue
-                if successful_end_times:
-                    latest_success = max(successful_end_times)
-                    if latest_success.tzinfo is None:
-                        latest_success = latest_success.replace(tzinfo=UTC)
-                    reference_time = datetime.fromisoformat(str(inspection.get("period_end")))
-                    compliant = reference_time - latest_success <= timedelta(
-                        hours=int(backup_policy["success_max_age_hours"])
-                    )
-                    facts.append({
-                        "kind": "backup_policy_check",
-                        "title": "备份策略校验",
-                        "summary": f"最近成功 RMAN 备份时间为 {latest_success.isoformat()}，策略要求 {backup_policy['success_max_age_hours']} 小时内成功。",
-                        "check_status": "COMPLIANT" if compliant else "BREACHED",
-                        "tool_id": "inspection.backup-policy",
-                        "source_tool_id": backup_tool_id,
-                        "check_ids": ["backup.policy.success"],
-                        "required": True,
-                        "evidence_refs": [item.evidence_ref for item in backup_observations],
-                        "policy": backup_policy,
-                    })
-                    if not compliant:
-                        gaps.append({
-                            "source_id": "inspection.backup-policy",
-                            "step_id": "inspection.backup-policy",
-                            "code": "BACKUP_SUCCESS_STALE",
-                            "detail": "最近成功 RMAN 备份已超过 Target 备份策略允许时效",
-                            "retryable": False,
-                        })
-                else:
-                    facts.append({
-                        "kind": "backup_policy_check",
-                        "title": "备份策略校验",
-                        "summary": "未取得可解析的成功 RMAN 备份记录，无法证明满足备份策略。",
-                        "check_status": "NOT_OBSERVED",
-                        "tool_id": "inspection.backup-policy",
-                        "source_tool_id": backup_tool_id,
-                        "check_ids": ["backup.policy.success"],
-                        "required": True,
-                        "evidence_refs": [item.evidence_ref for item in backup_observations],
-                        "policy": backup_policy,
-                    })
-                    gaps.append({
-                        "source_id": "inspection.backup-policy",
-                        "step_id": "inspection.backup-policy",
-                        "code": "BACKUP_SUCCESS_NOT_FOUND",
-                        "detail": "RMAN 观测中没有可解析的成功备份记录",
-                        "retryable": False,
-                        "category": "DATA_SOURCE",
-                    })
-            else:
-                facts.append({
-                    "kind": "backup_policy_check",
-                    "title": "备份策略校验",
-                    "summary": "已检查数据库归档链，但当前证据不能证明第三方全量备份在策略时效内成功。",
-                    "check_status": "NOT_OBSERVABLE",
-                    "tool_id": "inspection.backup-policy",
-                    "source_tool_id": backup_tool_id,
-                    "check_ids": ["backup.policy.success"],
-                    "required": True,
-                    "evidence_refs": [item.evidence_ref for item in backup_observations],
-                    "policy": backup_policy,
-                })
-                gaps.append({
-                    "source_id": "inspection.backup-policy",
-                    "step_id": "inspection.backup-policy",
-                    "code": "BACKUP_SUCCESS_NOT_OBSERVABLE",
-                    "detail": "归档链观测不能替代备份平台成功记录，需要接入对应备份来源证据",
-                    "retryable": False,
-                    "category": "DATA_SOURCE",
-                })
+            from aiops_agent.application.inspections.backup_observations import backup_policy_result
+            backup_fact, backup_gaps = backup_policy_result(
+                policy=backup_policy, database_type=database_type, facts=facts,
+                evidence_by_tool=evidence_by_tool,
+                reference_time=dict((monitoring or {}).get("current_window") or {}).get("end")
+                or inspection.get("period_end"),
+            )
+            facts.append(backup_fact)
+            gaps.extend(backup_gaps)
 
         if str(inspection.get("schedule_type") or "") == "WEEKLY":
             for trend in extract_metric_trend_rows(source.evidence):
@@ -4296,17 +4201,6 @@ class AIOpsRuntimeService:
                         **trend,
                     }
                 )
-
-        facts.extend(AIOpsRuntimeService._inspection_monitoring_facts(source))
-        from aiops_agent.application.inspections.daily_baseline import observation_coverage
-        for fact in facts:
-            if fact.get("kind") == "inspection_monitoring_metric":
-                current_coverage = observation_coverage(
-                    fact, observation_start=inspection.get("period_start"),
-                    observation_end=inspection.get("period_end"),
-                )
-                if current_coverage is not None:
-                    fact["observation_coverage_ratio"] = current_coverage
 
         if not steps:
             facts.append(

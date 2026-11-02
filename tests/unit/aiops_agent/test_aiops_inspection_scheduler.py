@@ -30,7 +30,7 @@ from sqlalchemy.dialects import oracle
 
 
 class ScheduleResolverTest(unittest.TestCase):
-    def test_daily_window_is_half_open_previous_business_day(
+    def test_daily_window_is_last_twenty_four_hours_at_scheduled_execution(
         self,
     ) -> None:
         due = datetime(2026, 7, 24, 1, 0, tzinfo=UTC)
@@ -47,7 +47,7 @@ class ScheduleResolverTest(unittest.TestCase):
         self.assertFalse(result.skipped)
         self.assertEqual(
             result.period_end,
-            datetime(2026, 7, 23, 16, 0, tzinfo=UTC),
+            due,
         )
         self.assertEqual(
             result.period_end - result.period_start,

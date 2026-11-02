@@ -151,21 +151,47 @@ def test_large_relative_shift_does_not_override_frozen_normal_health_or_input():
     assert render_pdf(presentation).startswith(b"%PDF-")
 
 
+def test_separate_current_and_reference_facts_keep_both_latest_health_and_seven_day_comparison():
+    policy, checks, assessment = full_assessment()
+    historical = sampled_metric()
+    historical["kind"] = "inspection_monitoring_reference"
+    current = metric(window_start=(END - timedelta(minutes=15)).isoformat(), latest=3, average=4)
+    payload = {"report_type": "INSPECTION_DAILY", "period_start": PERIOD_START.isoformat(),
+               "period_end": END.isoformat(), "scope": {"inspection_assessment": assessment, "report_policy": policy},
+               "facts": [*checks, current, historical], "gaps": [], "evidence_refs": []}
+    daily = report_presentation(payload=payload, template=resolve_system_template("system:inspection.daily"))["daily_inspection"]
+    assert len(daily["metrics"]) == 1
+    result = daily["metrics"][0]
+    assert result["current"] == 3
+    assert result["average_display"] == "4%"
+    assert result["comparison_value"] == 20
+    assert result["baseline_average"] == 10
+    assert result["deviation_percent"] == 100
+    assert daily["conclusion"]["health_status"] == "NORMAL"
+
+
 def test_inspection_monitoring_reads_baseline_but_preserves_report_window():
     async def run():
         inspection = {"schedule_type": "DAILY", "period_start": PERIOD_START.isoformat(), "period_end": END.isoformat()}
         frozen = deepcopy(inspection)
-        builder = SimpleNamespace(build=AsyncMock(return_value={"bindings": [], "initial_gaps": []}))
+        now = END + timedelta(seconds=45)
+        builder = SimpleNamespace(build=AsyncMock(return_value={
+            "bindings": [], "initial_gaps": [],
+            "window": {"start": (now - timedelta(minutes=15)).isoformat(), "end": now.isoformat()},
+        }))
         uow = SimpleNamespace(targets=SimpleNamespace(get_scoped=AsyncMock(return_value=SimpleNamespace())),
                               runs=SimpleNamespace(database_now=AsyncMock(return_value=END + timedelta(seconds=45))))
         manager = AsyncMock()
         manager.__aenter__.return_value = uow
         service = SimpleNamespace(_monitoring_snapshot_builder=builder, _uow_factory=lambda: manager)
         context = SimpleNamespace(inspection=inspection, target_id="sample", domain_id="sample", source_ids=())
-        await TurnPlanningService._prepare_monitoring(service, context, requested_window_seconds=86400)
+        result = await TurnPlanningService._prepare_monitoring(service, context, requested_window_seconds=86400)
         kwargs = builder.build.await_args.kwargs
-        assert kwargs["window_start"] == PERIOD_START - timedelta(days=7)
-        assert kwargs["window_end"] == END
+        assert kwargs["window_start"] == now - timedelta(minutes=15)
+        assert kwargs["window_end"] == now
+        assert result["reference_window"] == {"start": (PERIOD_START - timedelta(days=7)).isoformat(), "end": END.isoformat()}
+        assert result["current_window"] == result["window"]
+        assert result["snapshot_max_age_seconds"] == 300
         assert inspection == frozen
     asyncio.run(run())
 

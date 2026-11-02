@@ -50,6 +50,8 @@ def freeze_inspection_policy(database_type: str) -> dict[str, Any]:
         "database_type": database_type.upper(), "checks": checks,
         "required_metric_roles": dict(policy["required_metric_roles"]),
         "minimum_monitoring_coverage_ratio": policy["minimum_monitoring_coverage_ratio"],
+        "current_monitoring_window_seconds": policy["current_monitoring_window_seconds"],
+        "maximum_current_sample_age_seconds": policy["maximum_current_sample_age_seconds"],
         "recommendations": dict(policy["recommendations"]),
     }
 
@@ -138,7 +140,14 @@ def monitoring_checks(
                     findings = [{"severity": severity, "finding_type": role,
                                  "impact": f"{title}最新样本达到配置阈值。"}]
         coverage = _number(fact.get("observation_coverage_ratio", fact.get("coverage_ratio")))
-        if coverage is not None and coverage < float(policy.get("minimum_monitoring_coverage_ratio", 0.8)):
+        snapshot = fact.get("assessment_mode") == "CURRENT_SNAPSHOT"
+        if snapshot:
+            from .monitoring_observations import snapshot_is_fresh
+            basis += " 本项为当前快照，不代表过去全天连续正常。"
+            if not snapshot_is_fresh(fact):
+                status, findings = "MISSING", []
+                basis += " 未取得策略时效内可追溯的有效样本。"
+        elif coverage is not None and coverage < float(policy.get("minimum_monitoring_coverage_ratio", 0.8)):
             status = "PARTIAL"
             basis += " 观察期采样不足，不能据此判断整个观察区间。"
         if status not in {"MISSING", "GAP", "PARTIAL"}:
@@ -152,7 +161,7 @@ def monitoring_checks(
             "tool_id": "metric.query_range", "basis": basis,
             "summary": f"{title}：{current}。", "findings": findings,
             "evidence_refs": [fact["evidence_ref"]] if fact.get("evidence_ref") else [],
-            "observed_at": fact.get("window_end"),
+            "observed_at": fact.get("observed_at") or fact.get("window_end"),
         })
     for role, title in required_roles.items():
         if role not in assessed_roles and not any(item.get("semantic_role") == role for item in result):

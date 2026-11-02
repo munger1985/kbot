@@ -88,6 +88,10 @@ def resolve_due_schedule(
     )
     days = 7 if schedule_type == "WEEKLY" else 1
     local_start = local_end - timedelta(days=days)
+    if schedule_type == "DAILY":
+        # 日巡检观察最近 24 小时；当前数据库检查另记执行时快照。
+        local_end = selected.astimezone(timezone)
+        local_start = (selected - timedelta(days=1)).astimezone(timezone)
     return ScheduleResolution(
         scheduled_for=selected,
         next_run_at=next_run,

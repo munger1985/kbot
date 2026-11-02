@@ -424,9 +424,12 @@ class InspectionReportPublishingTest(unittest.TestCase):
         )
         self.assertIn("检查未完成", payload["summary"])
         self.assertEqual("INCOMPLETE", payload["scope"]["inspection_assessment"]["health_status"])
-        self.assertEqual(100.0, payload["scope"]["evidence_coverage_percent"])
-        self.assertEqual(3, payload["scope"]["evidence_covered_count"])
-        self.assertEqual(3, payload["scope"]["evidence_total_count"])
+        self.assertEqual(0.0, payload["scope"]["evidence_coverage_percent"])
+        self.assertEqual(0, payload["scope"]["evidence_covered_count"])
+        self.assertEqual(
+            payload["scope"]["inspection_assessment"]["required_check_count"],
+            payload["scope"]["evidence_total_count"],
+        )
         self.assertEqual(100.0, payload["scope"]["tool_execution_coverage_percent"])
         self.assertEqual(2, payload["scope"]["tool_execution_covered_count"])
         self.assertEqual(2, payload["scope"]["tool_execution_total_count"])
@@ -1078,15 +1081,15 @@ class InspectionReportPublishingTest(unittest.TestCase):
         artifact = uow.runs.add_artifact.await_args.args[0]
         self.assertEqual("PARTIAL", artifact.payload_json["status"])
         self.assertEqual(
-            50.0,
+            0.0,
             artifact.payload_json["scope"]["evidence_coverage_percent"],
         )
         self.assertEqual(
-            1,
+            0,
             artifact.payload_json["scope"]["evidence_covered_count"],
         )
         self.assertEqual(
-            2,
+            artifact.payload_json["scope"]["inspection_assessment"]["required_check_count"],
             artifact.payload_json["scope"]["evidence_total_count"],
         )
         self.assertEqual(

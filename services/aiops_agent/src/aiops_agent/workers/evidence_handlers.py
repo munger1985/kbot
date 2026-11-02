@@ -326,12 +326,52 @@ class EvidenceObserveHandler:
                         requested_step_seconds=60,
                         max_response_bytes=monitoring[
                             "max_response_bytes"
-                        ],
+                        ] // (2 if monitoring.get("reference_window") else 1),
                         trace_id=context.trace_id,
                     )
                 )
                 gaps.extend(result.gaps)
                 observations = result.observations
+                reference = monitoring.get("reference_window")
+                if reference:
+                    try:
+                        historical = await adapter.query_metrics(
+                            MetricsEvidenceRequest(
+                                target_id=context.target_id, binding_id=binding_id,
+                                source_locator_key=snapshot["source_locator_key"],
+                                source_locator=dict(snapshot["source_locator"]),
+                                metric_definitions=tuple(
+                                    metric for metric in resolve_metric_definitions(snapshot)
+                                    if metric.semantic_role not in {"BACKUP_LAST_SUCCESS_TIMESTAMP", "BACKUP_LAST_RUN_STATUS"}
+                                ),
+                                window_start=_parse_time(reference["start"]),
+                                window_end=_parse_time(reference["end"]),
+                                requested_step_seconds=60,
+                                max_response_bytes=monitoring["max_response_bytes"] // 2,
+                                trace_id=context.trace_id,
+                            )
+                        )
+                        if any(
+                            str(item.target_id) != str(context.target_id)
+                            or str(item.binding_id) != str(binding_id)
+                            or str(item.source_id) != str(source["source_id"])
+                            or item.window_start != _parse_time(reference["start"])
+                            or item.window_end != _parse_time(reference["end"])
+                            for item in historical.observations
+                        ):
+                            raise SourceResultMismatch("历史参考结果不符合冻结目标、绑定或时间窗")
+                        observations = (*observations, *historical.observations)
+                        gaps.extend(gap.model_copy(update={
+                            "code": "REFERENCE_" + gap.code,
+                            "detail": "历史趋势参考：" + gap.detail,
+                        }) for gap in historical.gaps)
+                    except Exception:
+                        gaps.append(ObservationGap(
+                            source_id=source["source_id"], binding_id=binding_id,
+                            code="REFERENCE_SOURCE_UNREACHABLE",
+                            detail="历史趋势参考本次不可用，不改变当前快照检查结果",
+                            retryable=True,
+                        ))
                 if source["source_type"] == "PROMETHEUS":
                     ad_hoc_observations = []
                     ad_hoc_queries = tuple(

@@ -1528,6 +1528,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('id="inspection-drawer"', inspections)
         inspection_script = (AIOPS_ROOT / "js" / "aiops-inspection-detail.js").read_text(encoding="utf-8")
         self.assertIn("inspection-target-grid", inspection_script)
+        for label in ("必要检查完成率", "数据库查询执行率", "监控采样完整率"):
+            self.assertIn(label, inspection_script)
+        self.assertIn("采样完整率包含无数据指标", inspection_script)
         self.assertIn("run.error_message", inspection_script)
         self.assertIn("run.error_code", inspection_script)
         self.assertIn("./report-detail.html?id=", inspection_script)

@@ -448,7 +448,7 @@ class ProfessionalInspectionReportTest(unittest.TestCase):
             rows=(("runtime.cpu.utilization", 10),), evidence_ref="metric-evidence",
             series_computations=(SimpleNamespace(
                 row_index=0, samples=((START, 10), (START + timedelta(hours=1), 20)),
-                effective_step_seconds=3600,
+                effective_step_seconds=3600, dimensions=(),
             ),),
         )
         fact = AIOpsRuntimeService._inspection_monitoring_facts(SimpleNamespace(evidence=(evidence,)))[0]

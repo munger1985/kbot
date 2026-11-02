@@ -4372,6 +4372,13 @@ class TurnPlanningService:
             reference_window = inspection_reference_window(
                 context.inspection, maximum_seconds=DEFAULT_MONITORING_LOOKBACK_SECONDS,
             )
+            from aiops_agent.application.inspections.monitoring_observations import (
+                current_monitoring_policy,
+            )
+            current_inspection = context.inspection.get("schedule_type") == "DAILY"
+            snapshot_seconds, sample_max_age = current_monitoring_policy(context.inspection) if current_inspection else (0, 0)
+            if current_inspection and requested_metric_codes is not None and dict(context.inspection.get("backup_policy") or {}).get("enabled"):
+                requested_metric_codes = (*requested_metric_codes, "backup.last_success.timestamp", "backup.last_run.status")
             snapshot = await self._monitoring_snapshot_builder.build(
                 uow=uow,
                 domain_id=context.domain_id,
@@ -4379,16 +4386,22 @@ class TurnPlanningService:
                 now=now,
                 allowed_source_ids=context.source_ids,
                 window_start=(
-                    reference_window[0] if reference_window else (
-                        now - timedelta(seconds=monitor_window_seconds)
-                        if monitor_window_seconds is not None else None
-                    )
+                    now - timedelta(seconds=snapshot_seconds) if current_inspection
+                    else now - timedelta(seconds=monitor_window_seconds) if monitor_window_seconds is not None else None
                 ),
                 window_end=(
-                    reference_window[1] if reference_window else now if monitor_window_seconds is not None else None
+                    now if current_inspection or monitor_window_seconds is not None else None
                 ),
                 requested_metric_codes=requested_metric_codes,
             )
+            if current_inspection:
+                snapshot["current_window"] = dict(snapshot["window"])
+                snapshot["snapshot_max_age_seconds"] = sample_max_age
+                if reference_window:
+                    snapshot["reference_window"] = {
+                        "start": reference_window[0].isoformat(),
+                        "end": reference_window[1].isoformat(),
+                    }
             if realtime_profile is not None:
                 snapshot["monitoring_profile"] = realtime_profile.model_dump(
                     mode="json"
