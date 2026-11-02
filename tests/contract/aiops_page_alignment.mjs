@@ -992,14 +992,37 @@ try {
         for(const width of [1440,900,420,320]) {
           await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
           await Promise.all([kbot,reference].map(page=>page.locator(drawer).evaluate(node=>{node.scrollTop=0;})));
-          await compareRegions(kbot,reference,[drawer,'.admin-drawer-header','.admin-drawer-body','.drawer-form-section','.inspection-frequency-options','.inspection-frequency-options label','.inspection-weekday-options','.date-time-picker-control','.inspection-schedule-summary','.inspection-template-summary','.form-grid-two','.admin-drawer-footer'],{page:name,width,state:`create-${type}`});
+          await compareRegions(kbot,reference,[drawer,'.admin-drawer-header','.admin-drawer-body','.drawer-form-section','.inspection-frequency-options','.inspection-frequency-options label','.inspection-weekday-options','.time-picker','.inspection-schedule-summary','.inspection-template-summary','.form-grid-two','.admin-drawer-footer'],{page:name,width,state:`create-${type}`});
+        }
+        if(type==='DAILY') {
+          for(const page of [kbot,reference]) {
+            await page.setViewportSize({width:420,height:1000});
+            await page.locator(drawer).getByRole('button',{name:'选择时间',exact:true}).click();
+            const popup=page.getByRole('dialog',{name:'选择时间',exact:true});
+            assert.equal(await popup.getByRole('listbox',{name:'小时',exact:true}).getByRole('option').count(),24);
+            assert.equal(await popup.getByRole('listbox',{name:'分钟',exact:true}).getByRole('option').count(),60);
+            await popup.getByRole('listbox',{name:'小时',exact:true}).getByRole('option',{name:'04',exact:true}).click();
+            await popup.getByRole('listbox',{name:'分钟',exact:true}).getByRole('option',{name:'17',exact:true}).click();
+            assert.equal(await page.locator('.time-picker-input').inputValue(),'02:00');
+          }
+          await compareRegions(kbot,reference,['.time-picker-panel','.time-picker-heading','.time-picker-columns','.time-picker-list','.time-picker-footer'],{page:name,width:420,state:'time-picker'});
+          for(const page of [kbot,reference]) {
+            await page.getByRole('dialog',{name:'选择时间',exact:true}).getByRole('button',{name:'确定',exact:true}).click();
+            assert.equal(await page.locator('.time-picker-input').inputValue(),'04:17');
+            await page.locator(drawer).getByRole('button',{name:'选择时间',exact:true}).click();
+            await page.keyboard.press('Escape');assert.equal(await page.locator(drawer).isVisible(),true);
+          }
         }
         for(const page of [kbot,reference]) {
           const root=page.locator(drawer);
           await root.getByPlaceholder('例如：生产数据库每日健康巡检').fill('  夜间生产巡检  ');
           await root.getByRole('combobox',{name:/^执行 Agent/}).selectOption('agent-1');
           if(type==='CRON') await root.getByPlaceholder('0 2 * * *').fill('15 4 * * 6');
-          else await root.locator('input[type=time]').fill('04:15');
+          else {
+            await root.locator('.time-picker-input').fill('24:00');
+            assert.equal(await root.getByRole('button',{name:'创建并启用',exact:true}).isDisabled(),true);
+            await root.locator('.time-picker-input').fill('04:15');
+          }
           await page.evaluate(()=>{fixtureHoldWrites=true;});
           await root.getByRole('button',{name:'创建并启用',exact:true}).click();
           await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));

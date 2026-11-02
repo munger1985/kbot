@@ -1,3 +1,5 @@
+import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20261102_1";
+
 (function () {
   "use strict";
   if (document.body.dataset.page === "inspection-plan-detail") {location.replace(`./inspection-plans.html${location.search}`);return;}
@@ -7,6 +9,7 @@
   const request = (path, init) => KBotAIOpsAuth.request(api + path, init);
   const rows = value => Array.isArray(value) ? value : [];
   const drawer = document.getElementById("inspection-plan-dialog"), form = document.getElementById("inspection-plan-form");
+  const timePicker = mountTimePicker(form.querySelector(".time-picker"));
   const systemFilter = new URLSearchParams(location.search).get("businessSystemId") || "";
   const state = {systems:[],scopeRows:[],scopeLoading:false,scopeError:"",scopeSequence:0,plans:[],agents:[],templates:[],fires:[],editing:null,busy:false,loading:false,sequence:0,editSequence:0,confirm:null};
   const weekdays = [{value:"1",label:"一"},{value:"2",label:"二"},{value:"3",label:"三"},{value:"4",label:"四"},{value:"5",label:"五"},{value:"6",label:"六"},{value:"0",label:"日"}];
@@ -38,6 +41,7 @@
   const activeTemplates = () => state.templates.filter(item => item.status === "ACTIVE");
   function cronExpression() {
     if (form.elements.schedule_type.value === "CRON") return form.elements.cron_expression.value.trim();
+    if (normalizeTime(form.elements.execution_time.value) !== form.elements.execution_time.value || !form.elements.execution_time.value) return "";
     const [hour,minute] = form.elements.execution_time.value.split(":");
     if (!hour || !minute) return "";
     const days = weekdays.filter(item => [...form.querySelectorAll('[name="weekdays"]:checked')].some(input => input.value === item.value)).map(item => item.value).join(",");
@@ -55,8 +59,7 @@
     form.elements.execution_time.required = type !== "CRON";form.elements.cron_expression.required = type === "CRON";
     document.getElementById("inspection-plan-type-help").hidden = !state.editing;
     const time = form.elements.execution_time.value, zone = form.elements.timezone.value;
-    form.querySelector(".date-time-picker-display").textContent = time || "选择时间";
-    form.querySelector(".date-time-picker-control").classList.toggle("is-empty",!time);
+    timePicker.sync();if (type === "CRON") timePicker.close();
     const selectedDays = weekdays.filter(item => form.querySelector(`[name="weekdays"][value="${item.value}"]`).checked).map(item => `周${item.label}`).join("、");
     document.getElementById("inspection-schedule-summary").textContent = type === "DAILY" ? `每天 ${time}（${zone}）` : type === "CRON" ? `Cron ${form.elements.cron_expression.value || "尚未填写"}（${zone}）` : `${selectedDays || "尚未选择执行日"} ${time}（${zone}）`;
     const template = state.templates.find(item => item.inspection_template_id === form.elements.inspection_template_id.value), summary = document.getElementById("inspection-template-summary");
@@ -155,7 +158,7 @@
     if (!rows(access.permissions).includes("aiops:plan_manage")) {location.replace("./inspections.html");return;}
     document.querySelector("[data-inspection-reports]").onclick = () => {location.href = "./inspections.html";};
     document.getElementById("refresh-inspection-plans").onclick = load;
-    form.onsubmit = save;form.oninput = updateForm;form.onchange = event => {if (event.target.name === "business_system_id") void loadSystemScope();updateForm();if (event.target.type === "time") event.target.blur();};
+    form.onsubmit = save;form.oninput = updateForm;form.onchange = event => {if (event.target.name === "business_system_id") void loadSystemScope();updateForm();};
     drawer.onclick = event => {if (event.target.closest("[data-close-plan]")) close();};
     drawer.addEventListener("cancel",event => {if (state.busy) event.preventDefault();});drawer.addEventListener("close",close);
     document.getElementById("inspection-plan-catalog").onclick = event => {
