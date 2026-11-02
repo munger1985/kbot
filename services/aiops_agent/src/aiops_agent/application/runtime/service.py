@@ -55,6 +55,8 @@ from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilde
 from aiops_agent.application.target_identity import target_identity_snapshot
 from aiops_agent.application.work_items import route_completed_run_work_items
 from aiops_agent.application.diagnosis.findings import compile_findings
+from aiops_agent.application.inspections.backup_policy import backup_policy_tool_id
+from aiops_agent.application.inspections.coverage import inspection_evidence_coverage
 from aiops_agent.domain.operations import (
     ERROR_CATALOG,
     TASK_TYPE_TO_RUN_PHASE,
@@ -3473,41 +3475,7 @@ class AIOpsRuntimeService:
             check_status_counts[check_status] = (
                 check_status_counts.get(check_status, 0) + 1
             )
-        tool_execution_covered_count = sum(
-            bool(item.get("evidence_refs"))
-            for item in inspection_checks
-        )
-        tool_execution_total_count = len(inspection_checks)
-        tool_execution_coverage_percent = round(
-            tool_execution_covered_count * 100 / tool_execution_total_count,
-            2,
-        ) if tool_execution_total_count else 0.0
-        semantic_check_ids: set[str] = set()
-        unsatisfied_check_ids: set[str] = set()
-        check_ids_by_tool: dict[str, set[str]] = {}
-        for item in inspection_checks:
-            tool_id = str(item.get("tool_id") or "")
-            check_ids = {
-                str(value)
-                for value in item.get("check_ids", ())
-                if str(value)
-            } or ({tool_id} if tool_id else set())
-            semantic_check_ids.update(check_ids)
-            check_ids_by_tool.setdefault(tool_id, set()).update(check_ids)
-            if not item.get("evidence_refs"):
-                unsatisfied_check_ids.update(check_ids)
-        for item in gaps:
-            unsatisfied_check_ids.update(
-                check_ids_by_tool.get(str(item.get("step_id") or ""), set())
-            )
-        evidence_total_count = len(semantic_check_ids)
-        evidence_covered_count = len(
-            semantic_check_ids.difference(unsatisfied_check_ids)
-        )
-        evidence_coverage_percent = round(
-            evidence_covered_count * 100 / evidence_total_count,
-            2,
-        ) if evidence_total_count else 0.0
+        coverage = inspection_evidence_coverage(inspection_checks, gaps)
         monitoring_quality = self._inspection_monitoring_quality(source)
         incomplete_statuses = {"PARTIAL", "GAP", "MISSING"}
         incomplete_check_count = sum(
@@ -3631,16 +3599,7 @@ class AIOpsRuntimeService:
                 ),
                 "health_status": health_status,
                 "check_status_counts": check_status_counts,
-                "evidence_coverage_percent": evidence_coverage_percent,
-                "evidence_covered_count": evidence_covered_count,
-                "evidence_total_count": evidence_total_count,
-                "tool_execution_coverage_percent": (
-                    tool_execution_coverage_percent
-                ),
-                "tool_execution_covered_count": (
-                    tool_execution_covered_count
-                ),
-                "tool_execution_total_count": tool_execution_total_count,
+                **coverage,
                 "monitoring_sample_coverage_percent": monitoring_quality[
                     "coverage_percent"
                 ],
@@ -4251,11 +4210,7 @@ class AIOpsRuntimeService:
 
         backup_policy = inspection.get("backup_policy")
         if isinstance(backup_policy, dict) and backup_policy.get("enabled"):
-            backup_tool_id = {
-                "ORACLE": "db.backup.recent_jobs",
-                "POSTGRESQL": "db.postgresql.archiver.status",
-                "MYSQL": "db.mysql.binlog.status",
-            }.get(database_type)
+            backup_tool_id = backup_policy_tool_id(database_type)
             backup_observations = evidence_by_tool.get(backup_tool_id or "", [])
             if database_type == "ORACLE":
                 successful_end_times: list[datetime] = []

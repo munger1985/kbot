@@ -6,7 +6,7 @@ import asyncio
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from aiops_agent.application.inspections import (
     compile_selected_check_steps,
@@ -104,6 +104,140 @@ class InspectionSchedulerTest(unittest.TestCase):
                 compile_selected_check_steps(check_ids)
             ),
         }
+
+
+    def _inspection_with_backup_policies(self):
+        scope = {"domain_id": 200}
+        actor_id = "system:inspection-scheduler"
+        fire_id, agent_id, version_id = uuid7(), uuid7(), uuid7()
+        target_ids = [uuid7(), uuid7(), uuid7()]
+        targets = {
+            target_id: SimpleNamespace(
+                target_id=target_id, display_name=database_type,
+                db_type=database_type,
+            )
+            for target_id, database_type in zip(
+                target_ids, ("ORACLE", "POSTGRESQL", "MYSQL"), strict=True,
+            )
+        }
+        resources = {
+            target_id: SimpleNamespace(resource_id=uuid7())
+            for target_id in target_ids
+        }
+        profile = SimpleNamespace(
+            backup_policy_enabled=True, backup_frequency_hours=24,
+            backup_success_max_age_hours=26, backup_retention_days=7,
+            required_backup_source_types_json=[], recovery_profile_id=uuid7(),
+            version_no=1,
+        )
+        fire = SimpleNamespace(
+            plan_snapshot_json={}, target_count=0, updated_at=None,
+        )
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(get_fire=AsyncMock(return_value=fire)),
+            conversations=SimpleNamespace(
+                list_for_inspection_fire=AsyncMock(return_value=[]),
+                add_conversation=AsyncMock(),
+            ),
+            agents=SimpleNamespace(
+                get=AsyncMock(return_value=SimpleNamespace(
+                    agent_id=agent_id, status="ACTIVE",
+                    current_version_id=version_id,
+                )),
+                version=AsyncMock(return_value=SimpleNamespace(
+                    agent_version_id=version_id,
+                )),
+                active_version_target_ids=AsyncMock(return_value=target_ids),
+            ),
+            business_systems=SimpleNamespace(
+                get_resource_for_target=AsyncMock(
+                    side_effect=lambda *, target_id, **_: resources[target_id],
+                ),
+            ),
+            recovery=SimpleNamespace(
+                get_active_profile=AsyncMock(return_value=profile),
+            ),
+            commit=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service = ConversationTurnService(uow_factory=lambda: context)
+        service._require_existing_target = AsyncMock(
+            side_effect=lambda *, target_id, **_: targets[target_id],
+        )
+        service._create_turn = AsyncMock(return_value={"status": "QUEUED"})
+        payload = {
+            **{key: str(value) for key, value in scope.items()},
+            "inspection_fire_id": str(fire_id), "actor_id": actor_id,
+            "agent_id": str(agent_id), "plan_display_name": "备份策略巡检",
+            "inspection_template_id": str(uuid7()),
+            "inspection_template_version_id": str(uuid7()),
+            "inspection_template_name": "数据库每日巡检",
+            "inspection_template_version": 1,
+            "inspection_template_hash": "a" * 64,
+            "inspection_template_definition": self._template_definition([
+                "oracle.session.lock_wait", "postgresql.session.blocking",
+                "mysql.session.blocking",
+            ]),
+            "schedule_resolver_version": "1.0.0", "schedule_type": "DAILY",
+            "timezone": "Asia/Shanghai",
+            "period_start": "2026-10-22T16:00:00+00:00",
+            "period_end": "2026-10-23T16:00:00+00:00",
+            "timeout_seconds": 3600, "trace_id": "trace-backup-inspection",
+        }
+        return service, uow, payload
+
+    def test_daily_backup_policies_submit_all_three_database_turns(self) -> None:
+        service, uow, payload = self._inspection_with_backup_policies()
+        original_definition = repr(payload["inspection_template_definition"])
+
+        result = asyncio.run(service.start_scheduled_inspection(payload))
+
+        self.assertEqual(3, result["conversation_count"])
+        self.assertEqual(3, service._create_turn.await_count)
+        expected_tools = {
+            "ORACLE": "db.backup.recent_jobs",
+            "POSTGRESQL": "db.postgresql.archiver.status",
+            "MYSQL": "db.mysql.binlog.status",
+        }
+        for call in service._create_turn.await_args_list:
+            inspection = call.kwargs["execution_context"]["inspection"]
+            tools = [step["tool_id"] for step in inspection["evidence_steps"]]
+            self.assertEqual(1, tools.count(expected_tools[inspection["database_type"]]))
+            self.assertEqual(len(tools), len(set(tools)))
+            self.assertTrue(inspection["backup_policy"]["enabled"])
+        self.assertEqual(original_definition, repr(payload["inspection_template_definition"]))
+        uow.commit.assert_awaited_once()
+
+    def test_invalid_frozen_template_has_non_retryable_safe_stage(self) -> None:
+        service, uow, payload = self._inspection_with_backup_policies()
+        payload["inspection_template_definition"] = {"schema_version": "invalid"}
+
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            asyncio.run(service.start_scheduled_inspection(payload))
+
+        self.assertEqual("AIOPS_INSPECTION_TEMPLATE_INVALID", caught.exception.code)
+        self.assertEqual("INSPECTION_TEMPLATE", caught.exception.stage)
+        self.assertFalse(caught.exception.retryable)
+        uow.conversations.add_conversation.assert_not_awaited()
+        uow.commit.assert_not_awaited()
+
+    def test_invalid_backup_policy_does_not_leak_raw_value_error(self) -> None:
+        service, uow, payload = self._inspection_with_backup_policies()
+
+        with patch(
+            "aiops_agent.application.turns.compile_backup_policy_steps",
+            side_effect=ValueError("private policy input"),
+        ):
+            with self.assertRaises(AIOpsApplicationError) as caught:
+                asyncio.run(service.start_scheduled_inspection(payload))
+
+        self.assertEqual("AIOPS_INSPECTION_BACKUP_POLICY_INVALID", caught.exception.code)
+        self.assertEqual("INSPECTION_BACKUP_POLICY", caught.exception.stage)
+        self.assertFalse(caught.exception.retryable)
+        self.assertNotIn("private policy input", str(caught.exception))
+        uow.conversations.add_conversation.assert_not_awaited()
+        uow.commit.assert_not_awaited()
 
     def test_current_report_query_is_scoped_by_report_target_domain(self) -> None:
         result = SimpleNamespace(scalar_one_or_none=lambda: None)

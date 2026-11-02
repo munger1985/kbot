@@ -5,10 +5,11 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
-from aiops_agent.application.errors import AIOpsApplicationError
+from aiops_agent.application.errors import AIOpsApplicationError, InspectionPreparationError
 from aiops_agent.bootstrap.common import AIOpsProcessRuntime
 from aiops_agent.workers.outbox_dispatcher import AIOpsOutboxDispatcher
 from platform_core.identity import uuid7
@@ -176,6 +177,31 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             "巡检模板没有覆盖 MySQL 订单库",
             uow.outbox.release["error_message"],
         )
+
+    async def test_inspection_preparation_error_is_terminal_and_keeps_safe_detail(self) -> None:
+        for stage in ("INSPECTION_TEMPLATE", "INSPECTION_BACKUP_POLICY"):
+            with self.subTest(stage=stage):
+                error = InspectionPreparationError(stage=stage)
+                uow = _OutboxUow()
+                uow.outbox.message.event_type = "OPS_INSPECTION_AGENT_REQUESTED"
+                uow.outbox.message.max_attempts = 8
+                sink = SimpleNamespace(
+                    publish=AsyncMock(side_effect=error),
+                    on_terminal_failure=AsyncMock(),
+                )
+                dispatcher = AIOpsOutboxDispatcher(
+                    uow_factory=lambda: uow, sink=sink,
+                    dispatcher_id="test-inspection-outbox",
+                    lease_seconds=30, interval_seconds=1,
+                )
+
+                self.assertTrue(await dispatcher.run_once())
+
+                self.assertEqual("FAILED", uow.outbox.release["new_status"])
+                self.assertEqual(error.code, uow.outbox.release["error_code"])
+                self.assertEqual(error.safe_detail, uow.outbox.release["error_message"])
+                sink.publish.assert_awaited_once()
+                sink.on_terminal_failure.assert_awaited_once()
 
     def test_planning_integrity_error_keeps_safe_terminal_semantics(self) -> None:
         error = IntegrityError(

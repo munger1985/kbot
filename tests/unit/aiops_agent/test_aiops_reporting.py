@@ -331,7 +331,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
                     "period_start": "2026-07-22T16:00:00+00:00",
                     "period_end": "2026-07-23T16:00:00+00:00",
                     "evidence_steps": [
-                        {"title": "实例性能指标", "tool_id": "db.instance.performance", "expected_evidence_kind": "INSTANCE_PERFORMANCE"},
+                        {"title": "实例性能指标", "tool_id": "db.instance.performance", "expected_evidence_kind": "INSTANCE_PERFORMANCE", "check_ids": ["performance.cpu", "performance.io"]},
                         {"title": "近期告警日志", "tool_id": "db.alert.recent", "expected_evidence_kind": "ALERT_LOG"},
                     ],
                 }},
@@ -424,8 +424,11 @@ class InspectionReportPublishingTest(unittest.TestCase):
         )
         self.assertIn("共执行 2 项检查", payload["summary"])
         self.assertEqual(100.0, payload["scope"]["evidence_coverage_percent"])
-        self.assertEqual(2, payload["scope"]["evidence_covered_count"])
-        self.assertEqual(2, payload["scope"]["evidence_total_count"])
+        self.assertEqual(3, payload["scope"]["evidence_covered_count"])
+        self.assertEqual(3, payload["scope"]["evidence_total_count"])
+        self.assertEqual(100.0, payload["scope"]["tool_execution_coverage_percent"])
+        self.assertEqual(2, payload["scope"]["tool_execution_covered_count"])
+        self.assertEqual(2, payload["scope"]["tool_execution_total_count"])
         self.assertEqual(
             ["继续按既定周期执行该巡检模板并关注趋势变化。"],
             payload["recommendations"],
@@ -617,6 +620,39 @@ class InspectionReportPublishingTest(unittest.TestCase):
 
         self.assertEqual([], list(gaps))
         self.assertIn("当前没有备份任务记录", facts[0]["summary"])
+
+    def test_inspection_summary_separates_completed_checks_from_report_gaps(self) -> None:
+        source = SimpleNamespace(
+            evidence=[SimpleNamespace(
+                tool_id="db.instance.performance",
+                row_count=6,
+                truncated=False,
+                evidence_ref="artifact:test#performance",
+            )],
+            evidence_gaps=(SimpleNamespace(
+                model_dump=lambda **_: {
+                    "source_id": "investigation.assessment",
+                    "step_id": "remaining-evidence-1",
+                    "code": "INVESTIGATION_EVIDENCE_GAP",
+                    "detail": "仍需补充一项旁证",
+                    "retryable": True,
+                },
+            ),),
+        )
+        _, gaps, summary = AIOpsRuntimeService._inspection_report_projection(
+            inspection={
+                "evidence_steps": [{
+                    "title": "实例性能指标",
+                    "tool_id": "db.instance.performance",
+                    "expected_evidence_kind": "INSTANCE_PERFORMANCE",
+                }],
+            },
+            source=source,
+            action_tool_ids={},
+        )
+        self.assertEqual(0, len(gaps))
+        self.assertIn("1/1 个取证步骤", summary)
+        self.assertIn("所有模板检查均已形成完整证据", summary)
 
     def test_daily_inspection_enforces_target_backup_policy(self) -> None:
         source = SimpleNamespace(

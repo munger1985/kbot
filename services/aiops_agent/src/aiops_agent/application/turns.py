@@ -12,8 +12,10 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.application.inspections.check_catalog import (
-    compile_selected_check_steps,
     inspection_template_steps,
+)
+from aiops_agent.application.inspections.backup_policy import (
+    compile_backup_policy_steps,
 )
 from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
@@ -22,6 +24,7 @@ from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.configuration.projections import _target_fact_view
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
+    InspectionPreparationError,
     resource_not_found,
     state_conflict,
     validation_failed,
@@ -393,11 +396,16 @@ class ConversationTurnService:
                     domain_id=domain_id,
                     target_id=target_id,
                 )
-                evidence_steps = inspection_template_steps(
-                    template_definition,
-                    schedule_type=schedule_type,
-                    database_type=str(target.db_type),
-                )
+                try:
+                    evidence_steps = inspection_template_steps(
+                        template_definition,
+                        schedule_type=schedule_type,
+                        database_type=str(target.db_type),
+                    )
+                except ValueError as exc:
+                    raise InspectionPreparationError(
+                        stage="INSPECTION_TEMPLATE",
+                    ) from exc
                 if not evidence_steps:
                     uncovered.append(
                         f"{target.display_name}（{target.db_type}）"
@@ -452,45 +460,17 @@ class ConversationTurnService:
                         "profile_id": str(recovery_profile.recovery_profile_id),
                         "profile_version": int(recovery_profile.version_no),
                     }
-                if schedule_type == "DAILY" and backup_policy and backup_policy["enabled"]:
-                    backup_check_id = {
-                        "ORACLE": "oracle.backup.recent_jobs",
-                        "POSTGRESQL": "postgresql.backup.archive_chain",
-                        "MYSQL": "mysql.backup.binlog_chain",
-                    }.get(str(target.db_type))
-                    existing_tool_ids = {str(item.get("tool_id") or "") for item in evidence_steps}
-                    if backup_check_id:
-                        backup_steps = compile_selected_check_steps(
-                            (backup_check_id,),
-                            schedule_type=schedule_type,
-                            database_type=str(target.db_type),
-                        )
-                        evidence_steps = tuple(evidence_steps) + tuple(
-                            item for item in backup_steps
-                            if str(item.get("tool_id") or "") not in existing_tool_ids
-                        )
-                    if str(target.db_type) == "ORACLE":
-                        query_days = min(
-                            90,
-                            max(
-                                7,
-                                (int(backup_policy["success_max_age_hours"]) + 23)
-                                // 24
-                                + 1,
-                            ),
-                        )
-                        evidence_steps = tuple(
-                            {
-                                **item,
-                                "input": {
-                                    **dict(item.get("input") or {}),
-                                    "days": query_days,
-                                },
-                            }
-                            if str(item.get("tool_id") or "") == "db.backup.recent_jobs"
-                            else item
-                            for item in evidence_steps
-                        )
+                try:
+                    evidence_steps = compile_backup_policy_steps(
+                        tuple(evidence_steps),
+                        database_type=str(target.db_type),
+                        schedule_type=schedule_type,
+                        backup_policy=backup_policy,
+                    )
+                except ValueError as exc:
+                    raise InspectionPreparationError(
+                        stage="INSPECTION_BACKUP_POLICY",
+                    ) from exc
                 conversation = OpsConversationEntity(
                     domain_id=domain_id,
                     agent_id=agent.agent_id,

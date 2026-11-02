@@ -91,6 +91,25 @@ class AIOpsApplicationError(RuntimeError):
         self.retryable = retryable
 
 
+class InspectionPreparationError(AIOpsApplicationError):
+    """固定巡检模板或策略错误必须可定位，且不应重复投递。"""
+
+    def __init__(self, *, stage: str):
+        details = {
+            "INSPECTION_TEMPLATE": "冻结巡检模板的固定取证步骤无效",
+            "INSPECTION_BACKUP_POLICY": "备份策略所需的固定取证步骤不可用",
+        }
+        self.stage = stage
+        self.safe_detail = details[stage]
+        self.cause_type = "ValueError"
+        super().__init__(
+            code=f"AIOPS_{stage}_INVALID",
+            message=self.safe_detail,
+            status_code=422,
+            retryable=False,
+        )
+
+
 def resource_not_found(resource_name: str) -> AIOpsApplicationError:
     """隐藏跨 Domain 与资源不存在的差异。"""
     return AIOpsApplicationError(
