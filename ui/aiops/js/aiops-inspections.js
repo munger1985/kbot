@@ -13,6 +13,13 @@
   const state = {items:[],targets:[],agents:[],selected:null,run:null,result:null,selection:0,conversation:null,lookupLoading:false,lookupFailed:false,continuation:false,loadingAgents:false,submitting:false,agentId:"",message:"",planId:params.get("planId") || params.get("plan_id") || "",canManage:false,listRequest:0};
   const targetName = id => state.targets.find(target => target.target_id === id)?.display_name || id;
   const canContinue = () => Boolean(state.run && !state.lookupLoading && !state.lookupFailed && (state.conversation || !["CREATED","QUEUED","RUNNING"].includes(state.run.status)));
+  function noRunText() {
+    const fire = state.selected;
+    if (!fire) return "";
+    if (fire.error_message || fire.error_code) return fire.error_message || fire.error_code;
+    if (["QUEUED","RUNNING"].includes(fire.status)) return "巡检尚未生成目标运行，正在等待调度或启动取证。";
+    return "本批次已结束，但未生成目标取证运行，未形成巡检报告。请核对执行日志和来源计划后重新执行。";
+  }
   function quality() {
     const result = state.result, payload = result?.payload || {}, scope = payload.scope || {};
     const summary = rows(state.selected?.runs).find(run => run.run_id === state.run?.ops_run_id);
@@ -56,7 +63,7 @@
     text("inspection-counts",`${detail.target_count} 个目标 · ${detail.completed_count} 个完成 · ${detail.failed_count} 个失败`);
     const error = document.getElementById("inspection-error");error.hidden = !(detail.error_message || detail.error_code);error.querySelector("span").textContent = detail.error_message || detail.error_code || "";
     document.getElementById("inspection-facts").innerHTML = group("批次概况",`${detail.target_count} 个目标`,observation([["执行状态",statusLabel(detail.status)],["计划触发",shell.fmt(detail.scheduled_at)],["完成时间",shell.fmt(detail.completed_at)]]))
-      + group("目标结果",rows(detail.runs).length,`<div class="inspection-run-tabs">${rows(detail.runs).map(run => `<button type="button" class="${run.run_id === state.run?.ops_run_id ? "active" : ""}" data-inspection-run="${esc(run.run_id)}"><strong>${esc(targetName(run.target_id))}</strong><span class="inspection-run-statuses">${badge(`执行${statusLabel(run.status)}`,statusClass(run.status))}${runQuality(run) ? badge(runQuality(run),statusClass(run.report_status)) : ""}</span></button>`).join("")}</div>${rows(detail.runs).length ? "" : '<p class="inspection-empty">本次巡检没有生成目标运行记录。</p>'}`)
+      + group("目标结果",rows(detail.runs).length,`<div class="inspection-run-tabs">${rows(detail.runs).map(run => `<button type="button" class="${run.run_id === state.run?.ops_run_id ? "active" : ""}" data-inspection-run="${esc(run.run_id)}"><strong>${esc(targetName(run.target_id))}</strong><span class="inspection-run-statuses">${badge(`执行${statusLabel(run.status)}`,statusClass(run.status))}${runQuality(run) ? badge(runQuality(run),statusClass(run.report_status)) : ""}</span></button>`).join("")}</div>${rows(detail.runs).length ? "" : `<p class="inspection-empty">${esc(noRunText())}</p>`}`)
       + (state.run ? group("当前目标","质量",observation([["数据库目标",targetName(state.run.target_id)],["Agent 执行",statusLabel(state.run.status)],["报告质量",evidence.label],["证据覆盖",evidence.coverage]])) : "")
       + (state.canManage ? '<section class="inspection-fact-group"><button class="secondary-button inspection-plan-link" type="button" data-inspection-source-plan>查看来源计划</button></section>' : "");
   }
@@ -69,8 +76,8 @@
   }
   function renderResult() {
     const evidence = quality(), ready = Boolean(state.result?.final_artifact);
-    const content = state.result?.final_artifact?.schema_version === "REPORT_CONTENT.v1" ? KBotAIOpsTurnResult.inspection(state.result.payload) : `<div class="aiops-turn-result">${KBotAIOpsTurnResult.html(state.result?.payload,ready ? "本次诊断尚未形成可展示的四段结论。" : "本次巡检尚未形成可展示结果。")}</div>`;
-    body.innerHTML = `<section class="inspection-result-view"><header class="inspection-result-summary"><div><h4>Agent 巡检诊断结果</h4><p>执行完成度与报告质量分别展示，证据缺口不会改变执行结果。</p></div><div class="inspection-result-statuses">${state.run ? badge(`执行${statusLabel(state.run.status)}`,statusClass(state.run.status)) : ""}${badge(evidence.label,evidence.tone)}${badge(evidence.coverage,evidence.tone)}</div></header><div class="inspection-diagnosis">${content}</div><div class="inspection-handoff${canContinue() ? "" : " waiting"}"><div><h4>${state.conversation ? "已有深入诊断会话" : ready ? "对结论或证据存疑？" : "巡检尚未形成可用结果"}</h4><p>${state.conversation ? "直接返回此前从本次巡检发起的会话，继续查看或追问。" : ready ? "带上具体问题继续调查；完整巡检结果会随会话继承。" : "运行结束后可继承巡检上下文继续调查。"}</p></div><button class="primary-button" type="button" data-inspection-continue${canContinue() ? "" : " disabled"}>${state.lookupLoading ? "正在检查会话…" : state.conversation ? "进入深入诊断会话" : "继续深入诊断"}</button></div></section>`;
+    const content = state.result?.final_artifact?.schema_version === "REPORT_CONTENT.v1" ? KBotAIOpsTurnResult.inspection(state.result.payload) : `<div class="aiops-turn-result">${KBotAIOpsTurnResult.html(state.result?.payload,!state.run ? noRunText() : ready ? "本次诊断尚未形成可展示的四段结论。" : "本次巡检尚未形成可展示结果。")}</div>`;
+    body.innerHTML = `<section class="inspection-result-view"><header class="inspection-result-summary"><div><h4>Agent 巡检诊断结果</h4><p>执行完成度与报告质量分别展示，证据缺口不会改变执行结果。</p></div><div class="inspection-result-statuses">${state.run ? badge(`执行${statusLabel(state.run.status)}`,statusClass(state.run.status)) : ""}${state.run ? badge(evidence.label,evidence.tone) + badge(evidence.coverage,evidence.tone) : ""}</div></header><div class="inspection-diagnosis">${content}</div><div class="inspection-handoff${canContinue() ? "" : " waiting"}"><div><h4>${state.conversation ? "已有深入诊断会话" : ready ? "对结论或证据存疑？" : "巡检尚未形成可用结果"}</h4><p>${state.conversation ? "直接返回此前从本次巡检发起的会话，继续查看或追问。" : ready ? "带上具体问题继续调查；完整巡检结果会随会话继承。" : !state.run ? "未执行的批次没有可继承的巡检证据，请先核对执行日志和来源计划。" : "运行结束后可继承巡检上下文继续调查。"}</p></div><button class="primary-button" type="button" data-inspection-continue${canContinue() ? "" : " disabled"}>${state.lookupLoading ? "正在检查会话…" : state.conversation ? "进入深入诊断会话" : "继续深入诊断"}</button></div></section>`;
     KBotAIOpsTurnResult.mount(body);
   }
   function updateControls() {

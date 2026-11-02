@@ -1961,6 +1961,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
     async def test_scheduled_turn_context_reaches_primary_run(self) -> None:
         uow = _Uow()
         _, receipt = await self._start(uow)
+        uow.turns.turns[0].focused_target_id = uow.target.target_id
         fire_id = uuid7()
         created_payload = dict(uow.outbox.rows[0].payload_json)
         created_payload["execution_context"] = {
@@ -1975,6 +1976,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 "template_id": "database_daily",
                 "template_version": "1.0.0",
                 "schedule_type": "DAILY",
+                "evidence_steps": [{"tool_id": "db.instance.identity"}],
                 "timezone": "Asia/Shanghai",
                 "period_start": "2026-07-22T16:00:00+00:00",
                 "period_end": "2026-07-23T16:00:00+00:00",
@@ -1982,11 +1984,13 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         }
         uow.outbox.rows[0].payload_json = created_payload
         queue = TurnQueueService(uow_factory=lambda: uow)
-        planner = _turn_planner(uow)
+        planner = _turn_planner(uow, AIOpsCapability.RESOURCE_CATALOG_QUERY)
 
         await queue.accept_created(created_payload)
         planning_payload = dict(uow.outbox.rows[1].payload_json)
-        await planner.begin(planning_payload)
+        routed = await planner.begin(planning_payload)
+        self.assertEqual("ACTIVE_DIAGNOSIS", routed.get("dispatch"))
+        self.assertEqual([], planner._structured_model.input_payloads)
         await planner.start_active_diagnosis(planning_payload)
 
         run = uow.runs.rows[0]
@@ -1994,6 +1998,11 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.interaction_mode, "AUTONOMOUS")
         self.assertIs(WorkflowKind(run.workflow_kind), WorkflowKind.INSPECTION)
         self.assertEqual(run.inspection_fire_id, fire_id)
+        self.assertEqual(run.target_id, uow.target.target_id)
+        self.assertEqual(
+            "SCHEDULED_INSPECTION",
+            uow.turns.turns[0].orchestration_internal_json["planner_receipt"]["route"],
+        )
         self.assertEqual(
             run.plan_snapshot_json["client_metadata"]["inspection"][
                 "schedule_type"

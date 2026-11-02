@@ -16,6 +16,11 @@ from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
 )
 from aiops_agent.application.turn_replay import pending_diagnosis_dispatch
+from aiops_agent.application.inspections.routing import (
+    is_scheduled_inspection,
+    scheduled_inspection_plan,
+    scheduled_inspection_systems,
+)
 from aiops_agent.application.target_identity import target_identity_snapshot
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
@@ -1202,6 +1207,10 @@ class TurnPlannerService:
                 "turn_id": str(turn_id),
                 "status": turn.status,
                 "question": question,
+                "execution_context": dict(payload.get("execution_context") or {}),
+                "focused_target_id": (
+                    str(turn.focused_target_id) if turn.focused_target_id else None
+                ),
                 "capabilities": tuple(version.capabilities_json or ()),
                 "deadline_at": dict(payload.get("execution_context") or {}).get("deadline_at"),
                 "sql_selection": dict(dict(payload.get("execution_context") or {}).get("sql_selection") or {}),
@@ -1231,6 +1240,8 @@ class TurnPlannerService:
             }
 
     async def _plan(self, context: dict[str, Any]):
+        if is_scheduled_inspection(context):
+            return scheduled_inspection_plan(context)
         if context.get("sql_selection"):
             if AIOpsCapability.ACTIVE_DIAGNOSIS.value not in {str(item) for item in context["capabilities"]}:
                 raise validation_failed("当前 Agent 未授权 SQL 诊断")
@@ -1446,6 +1457,15 @@ class TurnPlannerService:
                 None,
             )
         systems = list(context["systems"])
+        if is_scheduled_inspection(context):
+            scope, internal = self._resolved_scope(
+                scheduled_inspection_systems(context),
+                "",
+                authorization_hash,
+                ("FROZEN_INSPECTION_TARGET",),
+                True,
+            )
+            return scope, internal, None
         if not systems:
             return (
                 ScopeResolutionV1(

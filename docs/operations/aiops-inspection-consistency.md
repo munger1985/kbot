@@ -20,6 +20,16 @@ Ammolite 与 KBot4 使用相同的巡检产品语义。平台数据库差异不�
 
 PostgreSQL WAL 归档、MySQL Binlog 状态只证明归档链可观测，不能替代外部备份平台的成功记录。缺少备份成功证据时仍应报告真实缺口。
 
+## 计划巡检路由与终态
+
+调度创建的内部执行合同为 `trigger_type=SCHEDULE`、`workflow_kind=INSPECTION`。这类任务已有冻结模板、取证步骤、目标与窗口，必须确定性进入 ACTIVE_DIAGNOSIS；不得再让自然语言能力匹配或通用 Turn Router 把它改成历史巡检查询、报告查询或知识问答。后续证据评估仍可使用已配置模型。
+
+路由重新校验 Agent 的主动诊断能力与当前授权资源图，仅处理 Turn 已冻结的 `focused_target_id`。一个目标会话只生成一个目标 Run，不因资源名称匹配扩大到其他数据库；目标权限撤回、资源不可用或执行合同不完整时明确失败，不能降级为无 Run 的查询答案。审计回执标记 `SCHEDULED_INSPECTION`，保留批次、目标、模板 ID 与 Hash。
+
+批次汇总等待目标 Run 进入执行终态。有终态会话却未生成 Run 的目标计为执行失败，并记录 `AIOPS_INSPECTION_RUNS_MISSING`。三个目标均无 Run 时是 0 完成、3 失败，而不是 0 完成、0 失败的 PARTIAL。真实 Run 已成功执行但报告有证据缺口时，仍按执行结果计数。
+
+没有目标 Run 的详情页只显示未执行原因或等待启动提示，不展示“证据有缺口”“历史报告未记录覆盖率”等报告质量标签，也不声称已有可继承证据。已结束的历史空批次不自动补跑、不凭空补造报告。
+
 ## 报告统计与状态
 
 - 检查项证据覆盖率按去重的 `check_ids` 计算；未带检查 ID 的冻结步骤按工具标识计数。
@@ -38,6 +48,8 @@ PostgreSQL WAL 归档、MySQL Binlog 状态只证明归档链可观测，不能�
 
 ```bash
 python -m unittest \
+  tests.unit.aiops_agent.test_aiops_inspection_routing \
+  tests.unit.aiops_agent.test_aiops_turn_application \
   tests.unit.aiops_agent.test_aiops_inspection_policy \
   tests.unit.aiops_agent.test_aiops_inspection_scheduler \
   tests.unit.aiops_agent.test_aiops_check_catalog \

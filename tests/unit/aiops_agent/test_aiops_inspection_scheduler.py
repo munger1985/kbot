@@ -778,6 +778,60 @@ class InspectionSchedulerTest(unittest.TestCase):
         self.assertEqual(fire.target_count, 2)
         self.assertEqual(fire.run_count, 2)
 
+    def test_terminal_targets_without_runs_are_counted_as_execution_failures(self) -> None:
+        for run_statuses, turn_statuses, expected, completed, failed in (
+            ([], ["COMPLETED", "PARTIAL", "WAITING_USER"], "FAILED", 0, 3),
+            (["COMPLETED"], ["COMPLETED", "PARTIAL"], "PARTIAL", 1, 1),
+            (["FAILED"], ["FAILED", "COMPLETED"], "FAILED", 0, 2),
+            (["RUNNING"], ["COMPLETED", "PARTIAL"], "RUNNING", 0, 0),
+        ):
+            with self.subTest(run_statuses=run_statuses, turn_statuses=turn_statuses):
+                now = datetime(2026, 11, 2, 2, 16, tzinfo=UTC)
+                fire = SimpleNamespace(
+                    inspection_fire_id=uuid7(), status="RUNNING",
+                    target_count=len(turn_statuses), run_count=0,
+                    completed_count=0, failed_count=0,
+                    error_code=None, error_message=None, completed_at=None,
+                    updated_at=now,
+                )
+                inspections = SimpleNamespace(
+                    claim_due_plan=AsyncMock(return_value=None),
+                    find_reconcilable_fire=AsyncMock(return_value=fire),
+                    get_fire=AsyncMock(return_value=fire),
+                    list_runs_for_fire=AsyncMock(return_value=[
+                        SimpleNamespace(status=status) for status in run_statuses
+                    ]),
+                    list_agent_request_events_for_fire=AsyncMock(
+                        return_value=[SimpleNamespace(status="PUBLISHED")],
+                    ),
+                    list_turns_for_fire=AsyncMock(return_value=[
+                        SimpleNamespace(status=status) for status in turn_statuses
+                    ]),
+                )
+                uow = SimpleNamespace(
+                    runs=SimpleNamespace(database_now=AsyncMock(return_value=now)),
+                    inspections=inspections, commit=AsyncMock(),
+                )
+                context = AsyncMock()
+                context.__aenter__.return_value = uow
+                scheduler = AIOpsInspectionScheduler(
+                    uow_factory=lambda: context, scheduler_id="scheduler-test",
+                    lease_seconds=120, interval_seconds=30, misfire_grace_seconds=60,
+                )
+
+                asyncio.run(scheduler.run_once())
+
+                self.assertEqual(expected, fire.status)
+                self.assertEqual(completed, fire.completed_count)
+                self.assertEqual(failed, fire.failed_count)
+                if expected == "RUNNING":
+                    self.assertIsNone(fire.completed_at)
+                    self.assertIsNone(fire.error_code)
+                else:
+                    self.assertEqual(len(run_statuses), fire.run_count)
+                    self.assertEqual("AIOPS_INSPECTION_RUNS_MISSING", fire.error_code)
+                    self.assertIn("未生成数据库取证运行", fire.error_message)
+
     def test_failed_agent_request_reason_is_preserved_in_fire_summary(self) -> None:
         now = datetime(2026, 7, 24, 2, 0, tzinfo=UTC)
         fire = SimpleNamespace(

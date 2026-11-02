@@ -280,6 +280,11 @@ class AIOpsInspectionScheduler:
             }
             if any(item.status not in turn_terminal for item in turns):
                 return False
+            if any(
+                item.status not in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED"}
+                for item in runs
+            ):
+                return False
             # Fire 只描述执行完成度；Turn 的证据充分性由报告质量字段表达，
             # 不能因为报告存在数据缺口而把已经成功结束的执行标成 PARTIAL。
             completed = sum(item.status == "COMPLETED" for item in runs)
@@ -287,6 +292,14 @@ class AIOpsInspectionScheduler:
                 item.status in {"FAILED", "CANCELLED", "EXPIRED"}
                 for item in runs
             )
+            missing_run_count = max(0, len(turns) - len(runs))
+            failed += missing_run_count
+            if missing_run_count:
+                fire.error_code = "AIOPS_INSPECTION_RUNS_MISSING"
+                fire.error_message = (
+                    f"{missing_run_count}/{len(turns)} 个目标未生成数据库取证运行；"
+                    "对应目标未执行巡检，也未形成正式报告"
+                )
             if completed == len(turns):
                 status = "COMPLETED"
             elif completed or failed < len(turns):
