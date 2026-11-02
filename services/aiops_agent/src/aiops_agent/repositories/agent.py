@@ -170,6 +170,17 @@ class AIOpsAgentRepository:
         )
         return value is not None
 
+    async def version_capabilities(
+        self, *, agent_version_id: UUID
+    ) -> list[str]:
+        """读取指定冻结版本的显式能力，不切换到 Agent 当前版本。"""
+        capabilities = await self._session.scalar(
+            select(AIOpsAgentVersionEntity.capabilities_json).where(
+                AIOpsAgentVersionEntity.agent_version_id == agent_version_id
+            )
+        )
+        return list(capabilities or ())
+
     async def version_resource_policies(
         self, *, agent_version_id: UUID
     ) -> dict[UUID, dict[str, Any]]:

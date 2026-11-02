@@ -1973,6 +1973,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             "observation_start": "2026-07-22T16:00:00+00:00",
             "observation_end": "2026-07-23T16:00:00+00:00",
             "inspection": {
+                "business_system_id": str(uow.system.business_system_id),
                 "template_id": "database_daily",
                 "template_version": "1.0.0",
                 "schedule_type": "DAILY",
@@ -1999,6 +2000,10 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIs(WorkflowKind(run.workflow_kind), WorkflowKind.INSPECTION)
         self.assertEqual(run.inspection_fire_id, fire_id)
         self.assertEqual(run.target_id, uow.target.target_id)
+        self.assertEqual(
+            str(uow.system.business_system_id),
+            run.plan_snapshot_json["client_metadata"]["inspection"]["business_system_id"],
+        )
         self.assertEqual(
             "SCHEDULED_INSPECTION",
             uow.turns.turns[0].orchestration_internal_json["planner_receipt"]["route"],

@@ -2,10 +2,11 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, create_autospec
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.inspections.scope import inspection_system_scope, require_inspection_agent_scope
+from aiops_agent.repositories.agent import AIOpsAgentRepository
 from platform_core.contracts.aiops import InspectionPlanCreate, InspectionPlanPatch
 from platform_core.identity import uuid7
 from pydantic import ValidationError
@@ -17,7 +18,7 @@ class InspectionSystemScopeTest(unittest.IsolatedAsyncioTestCase):
         self.system_id, self.tenant_id = uuid7(), uuid7()
         self.domain_id = 100
         self.target = SimpleNamespace(target_id=uuid7(), display_name="ERP 主库", db_type="ORACLE")
-        self.uow = SimpleNamespace(agents=SimpleNamespace())
+        self.uow = SimpleNamespace(agents=create_autospec(AIOpsAgentRepository, instance=True, spec_set=True))
         self.rows = configure_inspection_system(
             self.uow, [self.target], domain_id=self.domain_id, business_system_id=self.system_id,
             tenant_id=self.tenant_id,
