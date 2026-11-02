@@ -489,7 +489,8 @@ def test_target_view_can_compare_prometheus_and_zabbix_independently():
     for call in (service.get_view.await_args_list[1], service.get_view.await_args_list[3]):
         assert call.kwargs["reduce_observed_statuses"] is False
         baseline_window = call.kwargs["window_override"]
-        assert baseline_window.end - baseline_window.start == timedelta(days=7)
+        assert timedelta(days=7, milliseconds=-1) <= baseline_window.end - baseline_window.start <= timedelta(days=7)
+        assert baseline_window.start.microsecond % 1000 == baseline_window.end.microsecond % 1000 == 0
 
 
 def test_target_view_rejects_comparing_source_with_itself_before_query():

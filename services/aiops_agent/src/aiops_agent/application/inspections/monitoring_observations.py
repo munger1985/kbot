@@ -37,16 +37,35 @@ def classify_monitoring_facts(facts, *, monitoring):
     return tuple(result)
 
 
-def snapshot_is_fresh(fact):
-    """快照必须具有可追溯且在策略时效内的有效样本，缺覆盖不冒充历史完整。"""
+def snapshot_rejection_reason(fact):
+    """返回快照被拒绝的具体原因，供判定、报告限制和采样质量共用。"""
+    flags = set(fact.get("series_quality_flags") or ())
+    reasons = [
+        text for code, text in (
+            ("TRUNCATED", "采样结果已截断，不能完成当前状态核验"),
+            ("COVERAGE_UNKNOWN", "来源采样口径未知，不能确认当前样本有效性"),
+            ("INVALID_OR_OUTSIDE_SAMPLE", "采样包含无效值、非正常质量或窗口外时间，需要核对来源时间与冻结窗口"),
+            ("SERIES_COMPUTATION_BUDGET_EXCEEDED", "采样计算超过预算，未形成可追溯的当前结果"),
+        ) if code in flags
+    ]
+    if reasons:
+        return "；".join(reasons) + "。"
     observed, captured = _time(fact.get("observed_at")), _time(fact.get("snapshot_at"))
     age = fact.get("max_sample_age_seconds")
-    return bool(observed and captured and type(age) is int and age > 0
-                and captured - timedelta(seconds=age) <= observed <= captured
-                and not set(fact.get("series_quality_flags") or ()) & {
-                    "TRUNCATED", "COVERAGE_UNKNOWN", "INVALID_OR_OUTSIDE_SAMPLE",
-                    "SERIES_COMPUTATION_BUDGET_EXCEEDED",
-                })
+    if not observed or not captured:
+        return "未取得可追溯的有效样本时间或冻结快照时间。"
+    if type(age) is not int or age <= 0:
+        return "冻结的样本时效规则无效，不能完成当前状态核验。"
+    if observed > captured:
+        return "最新样本位于冻结快照之后，需要核对来源时钟与查询窗口。"
+    if observed < captured - timedelta(seconds=age):
+        return f"最新有效样本距快照已超过 {age} 秒，当前样本已过期。"
+    return None
+
+
+def snapshot_is_fresh(fact):
+    """快照必须具有可追溯且在策略时效内的有效样本。"""
+    return snapshot_rejection_reason(fact) is None
 
 
 def monitoring_quality(facts, *, monitoring=None, gaps=()):

@@ -11,6 +11,7 @@ from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
 from aiops_agent.domain.evidence import DEFAULT_BASELINE_METRICS
+from aiops_agent.domain.evidence.metric_time import canonical_metric_window
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_QUERY,
     CAPABILITY_LOG_QUERY,
@@ -56,6 +57,11 @@ class MonitoringSnapshotBuilder:
             seconds=5
         ):
             raise validation_failed("观测窗口无效或结束时间位于未来")
+
+        try:
+            resolved_start, resolved_end = canonical_metric_window(resolved_start, resolved_end)
+        except ValueError as exc:
+            raise validation_failed(str(exc)) from exc
 
         monitors = await uow.targets.list_source_bindings(
             target_id=target.target_id,

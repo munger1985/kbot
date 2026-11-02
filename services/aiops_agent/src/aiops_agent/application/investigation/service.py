@@ -4398,6 +4398,8 @@ class TurnPlanningService:
                 snapshot["current_window"] = dict(snapshot["window"])
                 snapshot["snapshot_max_age_seconds"] = sample_max_age
                 if reference_window:
+                    from aiops_agent.domain.evidence.metric_time import canonical_metric_window
+                    reference_window = canonical_metric_window(*reference_window)
                     snapshot["reference_window"] = {
                         "start": reference_window[0].isoformat(),
                         "end": reference_window[1].isoformat(),

@@ -24,6 +24,7 @@ from aiops_agent.ports.diagnostic_source import (
 )
 
 from aiops_agent.contracts.evidence import DiscoveredMetric, MetricDiscoveryResult, SourceEventQuery
+from aiops_agent.domain.evidence.metric_time import prometheus_timestamp
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
 
@@ -536,8 +537,8 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
             headers=self._headers(),
             params={
                 "query": query,
-                "start": request.window_start.timestamp(),
-                "end": request.window_end.timestamp(),
+                "start": prometheus_timestamp(request.window_start),
+                "end": prometheus_timestamp(request.window_end),
                 "step": step,
             },
             timeout=self._timeout,

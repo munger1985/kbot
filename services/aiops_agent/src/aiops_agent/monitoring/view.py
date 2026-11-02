@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from aiops_agent.contracts.evidence import MetricObservation
+from aiops_agent.domain.evidence.metric_time import canonical_metric_window
 from platform_core.contracts.aiops.monitoring import (
     MonitoringGap,
     MonitoringBaselinePeriod,
@@ -48,10 +49,10 @@ class MonitoringQueryError(ValueError):
 def resolve_monitoring_window(
     window: MonitoringWindowName, *, now: datetime
 ) -> MonitoringWindow:
-    end = now.astimezone(UTC)
+    start, end = canonical_metric_window(now - timedelta(seconds=_WINDOW_SECONDS[window]), now)
     return MonitoringWindow(
         name=window,
-        start=end - timedelta(seconds=_WINDOW_SECONDS[window]),
+        start=start,
         end=end,
     )
 
@@ -59,9 +60,9 @@ def resolve_monitoring_window(
 def resolve_monitoring_baseline_window(
     period: MonitoringBaselinePeriod, *, now: datetime
 ) -> MonitoringWindow:
-    end = now.astimezone(UTC)
+    start, end = canonical_metric_window(now - timedelta(seconds=_BASELINE_SECONDS[period]), now)
     return MonitoringWindow(
-        start=end - timedelta(seconds=_BASELINE_SECONDS[period]),
+        start=start,
         end=end,
     )
 

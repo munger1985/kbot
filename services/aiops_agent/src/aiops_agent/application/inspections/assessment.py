@@ -115,8 +115,10 @@ def monitoring_checks(
         title = str(fact.get("title") or display_metric_name(code))
         current = format_metric_value(value, str(fact.get("unit") or ""))
         findings = []
+        incomplete_reason = ""
         if value is None:
             status, basis = "MISSING", "未取得有效样本，不能完成本项判断。"
+            incomplete_reason = basis
         elif availability:
             status = "CLEAR" if value == 1 else "FINDING"
             basis = "可用性最新有效样本应为 1；不代表全观察期连续可用。"
@@ -128,6 +130,7 @@ def monitoring_checks(
             critical = _number(band.get("critical_value"))
             if warning is None or critical is None or band.get("direction", "ABOVE") != "ABOVE":
                 status, basis = "MISSING", "冻结阈值不完整，不能完成本项判断。"
+                incomplete_reason = basis
             else:
                 severity = "HIGH" if value >= critical else "MEDIUM" if value >= warning else None
                 status = "FINDING" if severity else "CLEAR"
@@ -142,14 +145,17 @@ def monitoring_checks(
         coverage = _number(fact.get("observation_coverage_ratio", fact.get("coverage_ratio")))
         snapshot = fact.get("assessment_mode") == "CURRENT_SNAPSHOT"
         if snapshot:
-            from .monitoring_observations import snapshot_is_fresh
+            from .monitoring_observations import snapshot_rejection_reason
             basis += " 本项为当前快照，不代表过去全天连续正常。"
-            if not snapshot_is_fresh(fact):
+            rejection = snapshot_rejection_reason(fact)
+            if rejection:
                 status, findings = "MISSING", []
-                basis += " 未取得策略时效内可追溯的有效样本。"
+                incomplete_reason = rejection
+                basis += " " + rejection
         elif coverage is not None and coverage < float(policy.get("minimum_monitoring_coverage_ratio", 0.8)):
             status = "PARTIAL"
-            basis += " 观察期采样不足，不能据此判断整个观察区间。"
+            incomplete_reason = "观察期采样不足，不能据此判断整个观察区间。"
+            basis += " " + incomplete_reason
         if status not in {"MISSING", "GAP", "PARTIAL"}:
             assessed_roles.add(role)
         result.append({
@@ -160,6 +166,7 @@ def monitoring_checks(
             "dimensions": fact.get("dimensions") or "-",
             "tool_id": "metric.query_range", "basis": basis,
             "summary": f"{title}：{current}。", "findings": findings,
+            "incomplete_reason": incomplete_reason,
             "evidence_refs": [fact["evidence_ref"]] if fact.get("evidence_ref") else [],
             "observed_at": fact.get("observed_at") or fact.get("window_end"),
         })
@@ -221,9 +228,16 @@ def assess_inspection(
         required = bool(fact.get("required")) or bool(required_ids.intersection(fact.get("check_ids") or ()))
         required = required or fact.get("kind") == "backup_policy_check"
         title = str(fact.get("title") or "巡检检查")
+        incomplete_reason = str(fact.get("incomplete_reason") or "")
         if required and status in {"CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED"}:
             if not fact.get("evidence_refs") or fact.get("truncated"):
                 status = "PARTIAL"
+                if not incomplete_reason:
+                    incomplete_reason = (
+                        "检查结果缺少可追溯的证据引用。" if not fact.get("evidence_refs")
+                        else str(fact.get("summary") or "备份来源未完成核验。") if fact.get("kind") == "backup_policy_check"
+                        else "检查结果不完整或已截断，需要补齐后核验。"
+                    )
         findings = [item for item in fact.get("findings") or () if isinstance(item, dict)]
         if status == "FINDING" and not findings:
             findings = [{"severity": "MEDIUM", "impact": fact.get("summary") or "检查规则报告风险，需复核详细对象。",
@@ -247,7 +261,10 @@ def assess_inspection(
         gap_details = [str(item["detail"]) for item in related_gaps if item.get("detail")]
         complete = status in {"CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED"}
         if required and not complete:
-            detail = f"{title}：{gap_details[0] if gap_details else summary or '必要检查未完成'}"
+            reason = incomplete_reason or (gap_details[0] if gap_details else summary) or "必要检查未完成"
+            if reason.startswith(title + "："):
+                reason = reason[len(title) + 1:]
+            detail = f"{title}：{reason.rstrip('。；; ')}"
             limitations.append(detail)
             if fact.get("kind") == "backup_policy_check":
                 actions.append(action_catalog.get("BACKUP_POLICY", "补齐备份成功记录并重新核验。"))
@@ -294,12 +311,17 @@ def assess_inspection(
     max_severity = max((_SEVERITY.get(item["severity"], 0) for item in issues if item["confirmation"] != "UNKNOWN"), default=0)
     health = "ABNORMAL" if max_severity >= 4 else "ATTENTION" if issues else "INCOMPLETE" if limitations else "NORMAL"
     complete = not limitations
+    completed_required = sum(item["required"] and item["status"] in {
+        "CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED",
+    } for item in checks)
     text = {
         "NORMAL": "数据库运行正常。本次必要检查已完成，未发现异常或需关注风险，无需额外处置。",
         "ATTENTION": f"数据库存在 {len(issues)} 项需关注风险，请按建议复核并处理。",
         "ABNORMAL": f"数据库存在异常，共发现 {len(issues)} 项问题，请优先处理高风险事项。",
         "INCOMPLETE": "本次检查未完成，暂不能形成完整的数据库正常结论。",
     }[health]
+    if health == "INCOMPLETE" and completed_required:
+        text = f"本次检查未完成；已完成的 {completed_required} 项必要检查未发现异常或需关注风险。"
     if limitations:
         text += f" 另有 {len(limitations)} 项必要检查未完成：" + "；".join(limitations[:3]) + "。"
     return {
@@ -311,7 +333,5 @@ def assess_inspection(
         "limitations": list(dict.fromkeys(limitations)),
         "recommendations": list(dict.fromkeys(actions)),
         "required_check_count": sum(item["required"] for item in checks),
-        "completed_required_count": sum(item["required"] and item["status"] in {
-            "CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED",
-        } for item in checks),
+        "completed_required_count": completed_required,
     }
