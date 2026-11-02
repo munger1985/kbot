@@ -1333,6 +1333,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         for field in ("inspection-schedule-summary", "inspection-plan-catalog", "inspection-plan-confirm"):
             self.assertIn(f'id="{field}"', page)
         self.assertIn("management-catalog-card", script)
+        self.assertIn("最近执行：", script)
+        self.assertIn("<br />下次执行：", script)
+        self.assertNotIn(" · 下次：", script)
         self.assertIn("eligibleAgents()", script)
         self.assertIn("payload.business_system_id = form.elements.business_system_id.value", script)
         self.assertIn("form.elements.inspection_template_id.value !== current.inspection_template_id", script)
