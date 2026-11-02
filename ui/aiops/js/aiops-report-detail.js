@@ -66,8 +66,8 @@
     metadata.push(["报告时间",time(header.report_time)],["报告时区",header.timezone || "UTC"],["报告编号",header.report_number+" · v"+header.report_version]);
     return `<header class="daily-report-head${monthly ? " monthly-report-head" : ""}"><div class="daily-report-kicker">KBot AIOps · 正式${monthly ? "月度" : "日常"}巡检报告</div><div class="daily-report-title-row"><div><h1>${esc(header.title)}</h1><p>${esc(monthly ? header.scope_name : dailyTargetName(header))}</p></div>${badge(conclusion.health_status,conclusion.health_status_display || "检查未完成",healthTone(conclusion.health_status))}</div><dl class="daily-report-metadata">${metadata.map(([label,value]) => item(label,esc(value))).join("")}</dl></header>`;
   }
-  function inspectionTable(headers,data) {
-    return dailyTable(headers,data.map(values => `<tr>${values.map((value,index) => `<td data-label="${esc(headers[index])}">${esc(value)}</td>`).join("")}</tr>`).join(""));
+  function inspectionTable(headers,data,cls="") {
+    return dailyTable(headers,data.map(values => `<tr>${values.map((value,index) => `<td data-label="${esc(headers[index])}">${esc(value)}</td>`).join("")}</tr>`).join(""),cls);
   }
   function inspectionAppendix(data,monthly=false) {
     const boundary = data.evidence_boundary || {}, comparison = data.period_comparison || {};
@@ -84,7 +84,7 @@
     if (rows(daily.limitations).length) content += dailySection("LIMITATIONS","检查限制与未完成事项","",list(daily.limitations));
     if (rows(daily.findings).length) content += dailySection("FINDINGS","问题与风险","",`<div class="daily-findings">${daily.findings.map((finding,index) => `<article class="daily-finding"><span>${index+1}</span><div><h3>${esc(finding.title)}</h3><p>${esc(finding.summary)}</p>${finding.object_name ? `<p>影响对象：${esc(finding.object_name)}</p>` : ""}${finding.basis ? `<p>判断依据：${esc(finding.basis)}</p>` : ""}${finding.recommendation ? `<p>建议：${esc(finding.recommendation)}</p>` : ""}</div>${badge(finding.severity,riskLabel(finding.severity),riskClass(finding.severity))}</article>`).join("")}</div>`);
     content += dailySection("CHECKLIST","基础检查明细","正常项目同样列出；当前快照不代表全天未发生异常。",rows(daily.checks).length
-      ? inspectionTable(["检查内容","结果","实测情况","判断依据"],daily.checks.map(check => [check.title+(check.required ? "（必要）" : ""),check.status_display,check.actual_display || check.summary,check.basis]))
+      ? inspectionTable(["检查内容","结果","实测情况","判断依据"],daily.checks.map(check => [check.title+(check.required ? "（必要）" : ""),check.status_display,check.actual_display || check.summary,check.basis]),"daily-checks-table")
       : '<p class="daily-empty">本报告未记录基础检查明细，不能据此补造正常结果。</p>');
     if (metrics.length) content += dailySection("METRICS","关键运行指标","按明确规则判读最新样本；吞吐量相对增长不自动视为异常。",inspectionTable(["指标 / 范围","最新样本","观察期平均 / 最大","判断"],metrics.map(metric => [metric.display_name+" "+metric.dimension_label,metric.current_display,metric.average_display+" / "+metric.maximum_display,metric.status_display])));
     content += dailySection("ACTIONS","处置事项","",list(daily.recommendations,conclusion.health_status === "NORMAL" ? "无额外处置事项。" : "请先完成本报告列明的检查和问题复核。"));

@@ -62,13 +62,21 @@ let browser;
 try {
   browser = await chromium.launch({headless: true});
   for (const product of ["ammolite", "kbot4"]) {
-    for (const [name, presentation] of Object.entries(samples)) {
-      for (const width of [1440, 390]) {
+    for (const [name, original] of Object.entries(samples)) {
+      for (const width of [1440, 900, 390]) {
+        const presentation = structuredClone(original);
         const page = await browser.newPage({viewport: {width, height: 1000}});
         const errors = [];
         page.on("pageerror", error => errors.push(error.message));
         page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
         const monthly = name === "monthly", data = presentation[monthly ? "monthly_inspection" : "daily_inspection"];
+        if (name === "normal") data.checks.push({
+          title: "实例累计统计", required: false, status_display: "仅观测",
+          actual_display: ["sample_app", "sample_test", "sample_admin"].map(database =>
+            `数据库：${database}，后端进程数：4，事务提交：1735503，事务回滚：78，数据块读取：116943，数据块命中：13658818976`
+          ).join("；"),
+          basis: "按冻结检查规则判断；无适用规则时仅展示观测。",
+        });
         const report = {report_id: name, report_type: monthly ? "INSPECTION_MONTHLY" : "INSPECTION_DAILY", status: "READY",
           target_id: "wms", title: data.header.title, report_version: 1, template_ref: "system:inspection.daily",
           template_version: "1", summary: data.conclusion.text, period_start: "2026-11-01T00:00:00Z", period_end: "2026-11-02T00:00:00Z"};
@@ -95,6 +103,20 @@ try {
         assert.equal(await page.locator(".daily-conclusion-copy").textContent(), data.conclusion.text);
         assert.equal(await page.locator(".daily-evidence").getAttribute("open"), null);
         assert.equal(await page.locator(".daily-report-table").count() > 0, true);
+        if (!monthly && width > 760) {
+          const table = page.locator(".daily-checks-table");
+          assert.equal(await table.count(), 1);
+          const columns = await table.locator("thead th").evaluateAll(cells =>
+            cells.map(cell => cell.getBoundingClientRect().width)
+          );
+          const total = columns.reduce((sum, value) => sum + value, 0);
+          assert.ok(columns[1] < total * 0.15, `${product}/${width} 结果列过宽`);
+          assert.ok(columns[2] > total * 0.40, `${product}/${width} 实测列过窄`);
+          assert.ok(columns[2] >= columns[1] * 3, `${product}/${width} 列宽未按内容分配`);
+          assert.equal(await table.locator("tbody td").evaluateAll(cells =>
+            cells.every(cell => getComputedStyle(cell).verticalAlign === "top")
+          ), true, `${product}/${name}/${width} 明细未顶端对齐`);
+        }
         if (product === "kbot4") {
           assert.equal(await page.locator("#formal-report-loading").isVisible(), false);
           assert.equal(await page.locator("#formal-report-error").isVisible(), false);
@@ -112,7 +134,7 @@ try {
       }
     }
   }
-  console.log("PASS 两端各 5 类报告 × 2 个宽度：冻结结论、逐库展示、折叠附录、无表格横向溢出及浏览器异常");
+  console.log("PASS 两端各 5 类报告 × 3 个宽度：检查列宽与顶端对齐、冻结结论、逐库展示、折叠附录、无表格横向溢出及浏览器异常");
 } finally {
   await browser?.close();
   await server.close();

@@ -146,6 +146,15 @@
 .daily-report-table, .monthly-report-table { min-width: 0; width: 100%; table-layout: fixed; }
 .daily-report-table th, .daily-report-table td, .daily-report-metadata dd, .daily-evidence { overflow-wrap: anywhere; }
 .daily-table-wrap { overflow: visible; }
+.monthly-trend-svg { max-width: 100%; }
+/* 基础检查表按内容分配列宽，给较长的实测说明更多空间。 */
+@media (min-width: 761px) {
+  .daily-checks-table th:nth-child(1) { width: 18%; }
+  .daily-checks-table th:nth-child(2) { width: 10%; }
+  .daily-checks-table th:nth-child(3) { width: 46%; }
+  .daily-checks-table th:nth-child(4) { width: 26%; }
+  .daily-report-table.daily-checks-table td { vertical-align: top; }
+}
 .daily-evidence summary { cursor: pointer; font-weight: 600; }
 @media (max-width: 760px) {
   .daily-report-table thead { display: none; }
