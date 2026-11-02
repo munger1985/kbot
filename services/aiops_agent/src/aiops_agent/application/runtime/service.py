@@ -3838,6 +3838,7 @@ class AIOpsRuntimeService:
                     "value_kind": value_kind,
                     "daily_points": daily_points,
                         "daily_points_timezone": "UTC",
+                        "series_quality_flags": list(getattr(traces_by_row[row_index], "quality_flags", ())) if row_index in traces_by_row else [],
                         "sample_points": [
                             {"observed_at": stamp.isoformat(), "value": str(value)}
                             for stamp, value in traces_by_row[row_index].samples
@@ -4296,6 +4297,15 @@ class AIOpsRuntimeService:
                 )
 
         facts.extend(AIOpsRuntimeService._inspection_monitoring_facts(source))
+        from aiops_agent.application.inspections.daily_baseline import observation_coverage
+        for fact in facts:
+            if fact.get("kind") == "inspection_monitoring_metric":
+                current_coverage = observation_coverage(
+                    fact, observation_start=inspection.get("period_start"),
+                    observation_end=inspection.get("period_end"),
+                )
+                if current_coverage is not None:
+                    fact["observation_coverage_ratio"] = current_coverage
 
         if not steps:
             facts.append(

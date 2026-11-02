@@ -105,6 +105,21 @@ try {
         assert.equal(await appendix.getAttribute("open"), null);
         assert.equal(await appendix.locator(".inspection-appendix-body").isVisible(), false);
         assert.equal(await page.locator(".daily-report-table").count() > 0, true);
+        if (!monthly) {
+          const comparisons = data.metrics.filter(metric => metric.baseline_applicable);
+          const table = page.locator(".daily-baseline-table");
+          assert.equal(await table.count(), comparisons.length ? 1 : 0);
+          const metricRows = table.locator("tbody tr");
+          assert.equal(await metricRows.count(), comparisons.length);
+          for (let index = 0; index < comparisons.length; index++) {
+            const metric = comparisons[index], row = metricRows.nth(index);
+            for (const value of [metric.comparison_display, metric.comparison_label, metric.baseline_display, metric.change_display])
+              assert.ok((await row.innerText()).includes(value), `${product}/${name}/${width} 基线字段未保真：${value}`);
+          }
+          assert.ok((await page.locator(".aiops-formal-report").innerText()).includes("不直接决定健康结论"));
+          if (name === "normal") assert.ok(await table.locator("svg").count() > 0);
+          if (name === "incomplete") assert.equal(await table.locator("svg").count(), 0);
+        }
         if (!monthly && width > 760) {
           const table = page.locator(".daily-checks-table");
           assert.equal(await table.count(), 1);
@@ -161,7 +176,7 @@ try {
       }
     }
   }
-  console.log("PASS 两端各 5 类报告 × 3 个宽度：检查列宽、附录标题、技术追溯折叠与字段说明、冻结结论及无横向溢出或浏览器异常");
+  console.log("PASS 两端各 5 类报告 × 3 个宽度：七天基线与趋势、冻结结论、检查列宽及附录，无横向溢出或浏览器异常");
 } finally {
   await browser?.close();
   await server.close();

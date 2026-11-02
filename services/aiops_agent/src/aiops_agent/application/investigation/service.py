@@ -4368,6 +4368,10 @@ class TurnPlanningService:
                 if requested_window_seconds is not None
                 else None
             )
+            from aiops_agent.application.inspections.daily_baseline import inspection_reference_window
+            reference_window = inspection_reference_window(
+                context.inspection, maximum_seconds=DEFAULT_MONITORING_LOOKBACK_SECONDS,
+            )
             snapshot = await self._monitoring_snapshot_builder.build(
                 uow=uow,
                 domain_id=context.domain_id,
@@ -4375,12 +4379,13 @@ class TurnPlanningService:
                 now=now,
                 allowed_source_ids=context.source_ids,
                 window_start=(
-                    now - timedelta(seconds=monitor_window_seconds)
-                    if monitor_window_seconds is not None
-                    else None
+                    reference_window[0] if reference_window else (
+                        now - timedelta(seconds=monitor_window_seconds)
+                        if monitor_window_seconds is not None else None
+                    )
                 ),
                 window_end=(
-                    now if monitor_window_seconds is not None else None
+                    reference_window[1] if reference_window else now if monitor_window_seconds is not None else None
                 ),
                 requested_metric_codes=requested_metric_codes,
             )

@@ -257,99 +257,29 @@ def _number(value: object) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        result = float(value)
+        return result if isfinite(result) else None
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
-def _window_days(start: object, end: object) -> float | None:
-    """计算监控窗口长度；历史报告缺少窗口字段时不伪造七日基线。"""
-    try:
-        left = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
-        right = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-    return max(0.0, (right - left).total_seconds() / 86_400)
+def _daily_metric_projection(fact: dict[str, Any], **window) -> dict[str, Any]:
+    """投影当期指标与七天参考比较，明确比较口径。"""
+    from aiops_agent.application.inspections.daily_baseline import daily_baseline_comparison
 
-
-def _daily_metric_projection(fact: dict[str, Any]) -> dict[str, Any]:
-    """把一条监控事实投影为七日基线、偏离和小倍数序列。"""
-    current = _number(fact.get("latest"))
-    baseline = _number(fact.get("average"))
-    coverage = _number(fact.get("coverage_ratio"))
-    window_days = _window_days(
-        fact.get("window_start"), fact.get("window_end")
-    )
-    value_kind = str(fact.get("value_kind") or "")
-    baseline_available = (
-        value_kind != "STATE"
-        and current is not None
-        and baseline is not None
-        and baseline != 0
-        and coverage is not None
-        and coverage >= 0.8
-        and window_days is not None
-        and window_days >= 6.5
-    )
-    deviation = current - baseline if baseline_available else None
-    deviation_percent = (
-        deviation / baseline * 100
-        if deviation is not None and baseline is not None
-        else None
-    )
-    unit = str(fact.get("unit") or "")
-    dimensions = str(fact.get("dimensions") or "-")
-    points = []
-    for item in fact.get("daily_points") or ():
-        if not isinstance(item, dict):
-            continue
-        value = _number(item.get("value"))
-        date = str(item.get("date") or "")
-        if value is None or not date:
-            continue
-        points.append({
-            "date": date,
-            "value": value,
-            "baseline_index": (
-                round(value / baseline * 100, 2)
-                if baseline_available and baseline is not None else None
-            ),
-        })
-    metric_code = str(fact.get("metric_code") or "")
-    dimension_label = display_metric_dimensions(dimensions).strip()
+    code, dimensions = str(fact.get("metric_code") or ""), str(fact.get("dimensions") or "-")
+    current, coverage = _number(fact.get("latest")), _number(fact.get("coverage_ratio"))
     return {
-        "metric_code": metric_code,
-        "semantic_role": str(fact.get("semantic_role") or ""),
-        "display_name": display_metric_name(metric_code),
-        "dimension_label": dimension_label,
-        "unit": unit,
-        "current": current,
-        "current_display": format_metric_value(current, unit),
-        "baseline_average": baseline if baseline_available else None,
-        "baseline_display": (
-            format_metric_value(baseline, unit)
-            if baseline_available else "基线不足"
-        ),
-        "deviation": deviation,
-        "deviation_display": (
-            format_metric_value(deviation, unit)
-            if deviation is not None else "基线不足"
-        ),
-        "deviation_percent": (
-            round(deviation_percent, 2)
-            if deviation_percent is not None else None
-        ),
-        "baseline_status": (
-            "AVAILABLE" if baseline_available else "INSUFFICIENT"
-        ),
+        "metric_code": code, "semantic_role": str(fact.get("semantic_role") or ""),
+        "display_name": display_metric_name(code),
+        "dimension_label": display_metric_dimensions(dimensions).strip(),
+        "unit": str(fact.get("unit") or ""), "current": current,
+        "current_display": format_metric_value(current, str(fact.get("unit") or "")),
         "coverage_ratio": coverage,
-        "coverage_percent": (
-            round(coverage * 100, 2) if coverage is not None else None
-        ),
-        "window_start": fact.get("window_start"),
-        "window_end": fact.get("window_end"),
+        "coverage_percent": round(coverage * 100, 2) if coverage is not None else None,
+        "window_start": fact.get("window_start"), "window_end": fact.get("window_end"),
         "sample_count": fact.get("sample_count"),
-        "trend_points": points,
+        **daily_baseline_comparison(fact, **window),
     }
 
 
@@ -369,7 +299,10 @@ def _daily_inspection_presentation(
     for fact in facts:
         if fact.get("kind") != "inspection_monitoring_metric":
             continue
-        metric = _daily_metric_projection(fact)
+        metric = _daily_metric_projection(
+            fact, observation_start=payload.get("period_start"),
+            observation_end=payload.get("period_end"), timezone=str(scope.get("timezone") or "UTC"),
+        )
         checked = metric_results.get((str(fact.get("metric_code") or ""), str(fact.get("dimensions") or "-")), {})
         metric.update({
             "average_display": format_metric_value(_number(fact.get("average")), str(fact.get("unit") or "")),

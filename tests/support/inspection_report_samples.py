@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from aiops_agent.application.inspections.monthly import monthly_business_review
@@ -34,6 +34,27 @@ def inspection_samples():
             checks[0]["check_status"] = "MISSING"
             checks[0]["summary"] = "只读权限不足，未完成连接使用率检查。"
         assessment = assess_inspection(checks, policy=policy)
+        metric_rows = metric_facts(cpu)
+        end = datetime.fromisoformat("2026-11-02T02:00:00+00:00")
+        for row in metric_rows:
+            row["value_kind"] = "STATE" if row["semantic_role"] == "AVAILABILITY" else "GAUGE"
+            if name == "incomplete":
+                continue
+            current = row["latest"]
+            baseline = current if row["value_kind"] == "STATE" else 0 if name == "abnormal" else current / 2
+            days = 7 if name == "attention" else 8
+            start = end - timedelta(days=days)
+            row.update(window_start=start.isoformat(), window_end=end.isoformat(),
+                       average=baseline, coverage_ratio=1,
+                       daily_points=[{"date": (end-timedelta(days=day)).date().isoformat(), "value": baseline} for day in range(7, 0, -1)])
+            if name != "attention":
+                row["sample_points"] = [
+                    {"observed_at": (start+timedelta(hours=hour)).isoformat(),
+                     "value": baseline if hour < 168 else current}
+                    for hour in range(193)
+                ]
+                row["average"] = sum(point["value"] for point in row["sample_points"]) / len(row["sample_points"])
+                row["sample_count"] = len(row["sample_points"])
         payload = {
             "report_type": "INSPECTION_DAILY", "title": "数据库日常巡检报告",
             "status": "READY" if not incomplete else "PARTIAL",
@@ -44,7 +65,7 @@ def inspection_samples():
                       "database_type": "MYSQL",
                       "target": {"display_name": "WMS 生产数据库", "target_id": "wms",
                                  "database_type": "MYSQL", "version_code": "8.4", "environment": "PRODUCTION"}},
-            "facts": [*checks, *metric_facts(cpu)], "gaps": [],
+            "facts": [*checks, *metric_rows], "gaps": [],
             "evidence_refs": evidence_refs if name != "attention" else [],
             "summary": assessment["text"], "recommendations": assessment["recommendations"],
         }

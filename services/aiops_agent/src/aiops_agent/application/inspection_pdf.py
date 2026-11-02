@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from reportlab.lib import colors
 from reportlab.lib.units import mm
+from reportlab.graphics.shapes import Drawing, PolyLine
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
 
@@ -24,8 +25,10 @@ def inspection_pdf_story(
     except ZoneInfoNotFoundError:
         timezone = ZoneInfo("UTC")
 
-    def paragraph(value: object, style=body):
-        return Paragraph(escape(str(value if value is not None else "未记录")).replace("\n", "<br/>"), style)
+    def paragraph(value: object, style=body, *, keep_with_next=False):
+        item = Paragraph(escape(str(value if value is not None else "未记录")).replace("\n", "<br/>"), style)
+        item.keepWithNext = keep_with_next
+        return item
 
     def moment(value: object) -> str:
         try:
@@ -34,10 +37,10 @@ def inspection_pdf_story(
             return str(value or "未记录")
 
     def heading(title: str):
-        story.append(paragraph(title, section))
+        story.append(paragraph(title, section, keep_with_next=True))
 
     def table(headers, rows, widths):
-        values = [[paragraph(value) for value in row] for row in [headers, *rows]]
+        values = [[value if isinstance(value, Drawing) else paragraph(value) for value in row] for row in [headers, *rows]]
         item = Table(values, repeatRows=1, colWidths=tuple(value * mm for value in widths), hAlign="LEFT")
         item.setStyle(TableStyle([
             ("FONTNAME", (0, 0), (-1, -1), font_name),
@@ -48,6 +51,27 @@ def inspection_pdf_story(
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]))
         story.extend((item, Spacer(1, 4 * mm)))
+
+    def baseline_trend(metric):
+        """趋势仅连接连续日期，零基线仍可展示真实日均值。"""
+        points = list(metric.get("trend_points") or ())
+        if metric.get("baseline_status") != "AVAILABLE" or len(points) < 2:
+            return "暂无连续趋势"
+        try:
+            dates = [datetime.fromisoformat(point["date"]) for point in points]
+            values = [float(point["value"]) for point in points]
+            if any((right-left).days != 1 for left, right in zip(dates, dates[1:])):
+                return "日期有缺测，未连接趋势线"
+        except (KeyError, ValueError, TypeError):
+            return "暂无连续趋势"
+        width, height = 19*mm, 10*mm
+        drawing = Drawing(width, height)
+        low, span = min(values), max(max(values)-min(values), 1e-9)
+        coordinates = []
+        for index, value in enumerate(values):
+            coordinates.extend((width*index/(len(values)-1), 2+(height-4)*(value-low)/span))
+        drawing.add(PolyLine(coordinates, strokeColor=colors.HexColor("#244C73"), strokeWidth=1))
+        return drawing
 
     story.extend((paragraph(header.get("title") or "数据库巡检报告", cover_title), Spacer(1, 3 * mm)))
     metadata = [
@@ -119,13 +143,24 @@ def inspection_pdf_story(
                 for item in metrics
             ], (44, 29, 29, 45, 23))
         else:
-            table(["指标 / 范围", "最新样本", "观察期平均 / 最大", "判断"], [
+            table(["指标 / 范围", "最新样本", "采集窗口平均 / 最大", "判断"], [
                 [str(item.get("display_name") or "") + " " + str(item.get("dimension_label") or ""),
                  item.get("current_display"),
                  str(item.get("average_display") or "") + " / " + str(item.get("maximum_display") or ""),
                  item.get("status_display")]
                 for item in metrics
             ], (58, 32, 58, 22))
+            comparisons = [item for item in metrics if item.get("baseline_applicable")]
+            if comparisons:
+                heading("七天基线对比")
+                story.append(paragraph("优先比较本期均值；仅有七天汇总时比较最新样本。变化幅度仅供趋势参考，不直接决定健康结论。", keep_with_next=True))
+                table(["指标 / 范围", "对比值", "七天均值", "变化量 / 变化率", "日均趋势"], [
+                    [str(item.get("display_name") or "") + " " + str(item.get("dimension_label") or ""),
+                     str(item.get("comparison_display") or "") + "\n" + str(item.get("comparison_label") or ""),
+                     str(item.get("baseline_display") or "") + "\n" + str(item.get("baseline_window_label") if item.get("baseline_status") == "AVAILABLE" else item.get("baseline_reason") or ""),
+                     item.get("change_display"), baseline_trend(item)]
+                    for item in comparisons
+                ], (37, 25, 43, 43, 22))
     if monthly and data.get("capacity_rows"):
         heading("容量与增长")
         table(["容量 / 数据库", "首个有效日", "末个有效日", "净变化"], [

@@ -147,6 +147,7 @@
 .daily-report-table th, .daily-report-table td, .daily-report-metadata dd, .daily-evidence { overflow-wrap: anywhere; }
 .daily-table-wrap { overflow: visible; }
 .monthly-trend-svg { max-width: 100%; }
+.daily-report-table.daily-baseline-table td small { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 /* 基础检查表按内容分配列宽，给较长的实测说明更多空间。 */
 @media (min-width: 761px) {
   .daily-checks-table th:nth-child(1) { width: 18%; }
@@ -154,6 +155,12 @@
   .daily-checks-table th:nth-child(3) { width: 46%; }
   .daily-checks-table th:nth-child(4) { width: 26%; }
   .daily-report-table.daily-checks-table td { vertical-align: top; }
+  .daily-baseline-table th:nth-child(1) { width: 24%; }
+  .daily-baseline-table th:nth-child(2) { width: 15%; }
+  .daily-baseline-table th:nth-child(3) { width: 22%; }
+  .daily-baseline-table th:nth-child(4) { width: 25%; }
+  .daily-baseline-table th:nth-child(5) { width: 14%; }
+  .daily-report-table.daily-baseline-table td { vertical-align: top; }
 }
 .daily-evidence summary { cursor: pointer; font-weight: 600; }
 .daily-evidence.inspection-appendix { grid-template-columns: minmax(260px, max-content) minmax(0, 1fr); }

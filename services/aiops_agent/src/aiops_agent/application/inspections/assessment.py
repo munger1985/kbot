@@ -137,7 +137,7 @@ def monitoring_checks(
                 if severity:
                     findings = [{"severity": severity, "finding_type": role,
                                  "impact": f"{title}最新样本达到配置阈值。"}]
-        coverage = _number(fact.get("coverage_ratio"))
+        coverage = _number(fact.get("observation_coverage_ratio", fact.get("coverage_ratio")))
         if coverage is not None and coverage < float(policy.get("minimum_monitoring_coverage_ratio", 0.8)):
             status = "PARTIAL"
             basis += " 观察期采样不足，不能据此判断整个观察区间。"

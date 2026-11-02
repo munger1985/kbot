@@ -574,6 +574,14 @@ class DailyInspectionMetric(BaseModel):
     deviation_display: str
     deviation_percent: float | None = None
     baseline_status: Literal["AVAILABLE", "INSUFFICIENT"]
+    baseline_applicable: bool = True
+    baseline_reason: str = ""
+    baseline_window_label: str = ""
+    comparison_basis: Literal["OBSERVATION_MEAN", "LATEST_SAMPLE"] = "LATEST_SAMPLE"
+    comparison_label: str = "最新样本"
+    comparison_value: float | None = None
+    comparison_display: str = ""
+    change_display: str = ""
     coverage_ratio: float | None = None
     coverage_percent: float | None = None
     trend_points: tuple[dict[str, Any], ...] = ()

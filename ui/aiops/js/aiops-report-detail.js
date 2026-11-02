@@ -28,7 +28,7 @@
   const coverage = value => `${value ?? "未记录"}${value == null ? "" : "%"}`;
   const dailySection = (kicker,title,description,body) => `<section class="daily-report-section"><header><div><p class="daily-section-kicker">${kicker}</p><h2>${title}</h2></div>${description ? `<p>${description}</p>` : ""}</header>${body}</section>`;
   const dailyTable = (head,body,cls="") => `<div class="daily-table-wrap"><table class="daily-report-table${cls ? ` ${cls}` : ""}"><thead><tr>${head.map(label => `<th>${label}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`;
-  const metricName = (metric,fallback=true) => `<td><strong>${esc(metric.display_name)}</strong><small>${esc(metric.dimension_label || (fallback ? "全部范围" : ""))}</small></td>`;
+  const metricName = (metric,fallback=true) => `<td data-label="指标 / 范围"><strong>${esc(metric.display_name)}</strong><small>${esc(metric.dimension_label || (fallback ? "全部范围" : ""))}</small></td>`;
   const evidence = boundary => `<section class="daily-evidence"><h2>证据边界</h2><p>${esc(boundary?.methodology)}</p>${rows(boundary?.sources).length ? `<ol>${boundary.sources.map(value => `<li>${esc(value)}</li>`).join("")}</ol>` : ""}</section>`;
   const footer = (header,monthly=false) => `<footer class="daily-report-footer"><span>KBot AIOps · 正式${monthly ? "月度" : ""}运维报告</span><span>${esc(header.report_number)} · v${esc(header.report_version)}</span></footer>`;
   function trendGeometry(values,width,height,baseline=false) {
@@ -88,7 +88,9 @@
     content += dailySection("CHECKLIST","基础检查明细","正常项目同样列出；当前快照不代表全天未发生异常。",rows(daily.checks).length
       ? inspectionTable(["检查内容","结果","实测情况","判断依据"],daily.checks.map(check => [check.title+(check.required ? "（必要）" : ""),check.status_display,check.actual_display || check.summary,check.basis]),"daily-checks-table")
       : '<p class="daily-empty">本报告未记录基础检查明细，不能据此补造正常结果。</p>');
-    if (metrics.length) content += dailySection("METRICS","关键运行指标","按明确规则判读最新样本；吞吐量相对增长不自动视为异常。",inspectionTable(["指标 / 范围","最新样本","观察期平均 / 最大","判断"],metrics.map(metric => [metric.display_name+" "+metric.dimension_label,metric.current_display,metric.average_display+" / "+metric.maximum_display,metric.status_display])));
+    if (metrics.length) content += dailySection("METRICS","关键运行指标","按明确规则判读最新样本；吞吐量相对增长不自动视为异常。",inspectionTable(["指标 / 范围","最新样本","采集窗口平均 / 最大","判断"],metrics.map(metric => [metric.display_name+" "+metric.dimension_label,metric.current_display,metric.average_display+" / "+metric.maximum_display,metric.status_display])));
+    const comparisons = metrics.filter(metric => metric.baseline_applicable);
+    if (comparisons.length) content += dailySection("BASELINE","七天基线对比","优先比较本期均值；仅有七天汇总时比较最新样本。变化幅度仅供趋势参考，不直接决定健康结论。",dailyTable(["指标 / 范围","对比值","七天均值","变化量 / 变化率","采样日均趋势"],comparisons.map(metric => `<tr>${metricName(metric)}<td data-label="对比值">${esc(metric.comparison_display)}<small>${esc(metric.comparison_label)}</small></td><td data-label="七天均值">${esc(metric.baseline_display)}<small>${esc(metric.baseline_status === "AVAILABLE" ? metric.baseline_window_label : metric.baseline_reason)}</small></td><td data-label="变化量 / 变化率">${esc(metric.change_display)}</td><td data-label="采样日均趋势">${metric.baseline_status === "AVAILABLE" ? monthlyTrendSvg({daily_points:rows(metric.trend_points)}) : '<span class="daily-empty">暂无连续趋势</span>'}</td></tr>`).join(""),"daily-baseline-table"));
     content += dailySection("ACTIONS","处置事项","",list(daily.recommendations,conclusion.health_status === "NORMAL" ? "无额外处置事项。" : "请先完成本报告列明的检查和问题复核。"));
     return content + inspectionAppendix(daily) + footer(header);
   }

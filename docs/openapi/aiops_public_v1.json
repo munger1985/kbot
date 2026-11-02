@@ -1315,6 +1315,11 @@
         "additionalProperties": true,
         "description": "当期指标及可复现参考统计，健康结论来自冻结规则。",
         "properties": {
+          "baseline_applicable": {
+            "default": true,
+            "title": "Baseline Applicable",
+            "type": "boolean"
+          },
           "baseline_average": {
             "anyOf": [
               {
@@ -1330,6 +1335,11 @@
             "title": "Baseline Display",
             "type": "string"
           },
+          "baseline_reason": {
+            "default": "",
+            "title": "Baseline Reason",
+            "type": "string"
+          },
           "baseline_status": {
             "enum": [
               "AVAILABLE",
@@ -1337,6 +1347,46 @@
             ],
             "title": "Baseline Status",
             "type": "string"
+          },
+          "baseline_window_label": {
+            "default": "",
+            "title": "Baseline Window Label",
+            "type": "string"
+          },
+          "change_display": {
+            "default": "",
+            "title": "Change Display",
+            "type": "string"
+          },
+          "comparison_basis": {
+            "default": "LATEST_SAMPLE",
+            "enum": [
+              "OBSERVATION_MEAN",
+              "LATEST_SAMPLE"
+            ],
+            "title": "Comparison Basis",
+            "type": "string"
+          },
+          "comparison_display": {
+            "default": "",
+            "title": "Comparison Display",
+            "type": "string"
+          },
+          "comparison_label": {
+            "default": "最新样本",
+            "title": "Comparison Label",
+            "type": "string"
+          },
+          "comparison_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparison Value"
           },
           "coverage_percent": {
             "anyOf": [
