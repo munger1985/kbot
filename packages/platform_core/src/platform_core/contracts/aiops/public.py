@@ -545,6 +545,8 @@ class DailyInspectionHeader(BaseModel):
     report_time: str | None = None
     observation_start: str | None = None
     observation_end: str | None = None
+    timezone: str
+    business_system_name: str
     target_name: str
     target_id: str
     environment: str
@@ -556,7 +558,7 @@ class DailyInspectionHeader(BaseModel):
 
 
 class DailyInspectionMetric(BaseModel):
-    """当前值与过去七日同口径基线的结构化对比。"""
+    """当期指标及可复现参考统计，健康结论来自冻结规则。"""
 
     model_config = ConfigDict(extra="allow")
     metric_code: str
@@ -584,22 +586,25 @@ class DailyInspectionPresentation(BaseModel):
     schema_version: Literal["DAILY_INSPECTION_PRESENTATION.v1"]
     header: DailyInspectionHeader
     conclusion: dict[str, Any]
-    baseline_metrics: tuple[DailyInspectionMetric, ...] = ()
+    checks: tuple[dict[str, Any], ...] = ()
+    metrics: tuple[DailyInspectionMetric, ...] = ()
     capacity_rows: tuple[DailyInspectionMetric, ...] = ()
     findings: tuple[dict[str, Any], ...] = ()
+    limitations: tuple[str, ...] = ()
     recommendations: tuple[str, ...] = ()
     gaps: tuple[str, ...] = ()
     evidence_boundary: dict[str, Any]
 
 
 class MonthlyInspectionHeader(BaseModel):
-    """月度巡检正式报告头，兼容单 Target 和业务系统范围。"""
+    """月度巡检正式报告头，明确数据库或业务系统范围。"""
 
     model_config = ConfigDict(extra="forbid")
     title: str
     report_time: str | None = None
     period_start: str | None = None
     period_end: str | None = None
+    timezone: str
     scope_type: Literal["TARGET", "BUSINESS_SYSTEM"]
     scope_name: str
     target_count: int = Field(ge=1)
@@ -648,10 +653,11 @@ class MonthlyInspectionPresentation(BaseModel):
     metrics: tuple[MonthlyInspectionMetric, ...] = ()
     capacity_rows: tuple[MonthlyInspectionMetric, ...] = ()
     issues: tuple[dict[str, Any], ...] = ()
+    target_results: tuple[dict[str, Any], ...] = ()
+    limitations: tuple[str, ...] = ()
     database_checks: dict[str, Any]
     recommendations: tuple[str, ...] = ()
     gaps: tuple[str, ...] = ()
-    extensions: tuple[dict[str, Any], ...] = ()
     evidence_boundary: dict[str, Any]
 
 

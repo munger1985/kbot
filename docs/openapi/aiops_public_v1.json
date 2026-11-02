@@ -1216,6 +1216,10 @@
         "additionalProperties": false,
         "description": "日常巡检正式报告头。",
         "properties": {
+          "business_system_name": {
+            "title": "Business System Name",
+            "type": "string"
+          },
           "database_type": {
             "title": "Database Type",
             "type": "string"
@@ -1282,6 +1286,10 @@
             "title": "Target Name",
             "type": "string"
           },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -1289,6 +1297,8 @@
         },
         "required": [
           "title",
+          "timezone",
+          "business_system_name",
           "target_name",
           "target_id",
           "environment",
@@ -1303,7 +1313,7 @@
       },
       "DailyInspectionMetric": {
         "additionalProperties": true,
-        "description": "当前值与过去七日同口径基线的结构化对比。",
+        "description": "当期指标及可复现参考统计，健康结论来自冻结规则。",
         "properties": {
           "baseline_average": {
             "anyOf": [
@@ -1439,20 +1449,21 @@
         "additionalProperties": true,
         "description": "日常巡检报告的冻结结构化展示投影。",
         "properties": {
-          "baseline_metrics": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/DailyInspectionMetric"
-            },
-            "title": "Baseline Metrics",
-            "type": "array"
-          },
           "capacity_rows": {
             "default": [],
             "items": {
               "$ref": "#/components/schemas/DailyInspectionMetric"
             },
             "title": "Capacity Rows",
+            "type": "array"
+          },
+          "checks": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checks",
             "type": "array"
           },
           "conclusion": {
@@ -1484,6 +1495,22 @@
           },
           "header": {
             "$ref": "#/components/schemas/DailyInspectionHeader"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
           },
           "recommendations": {
             "default": [],
@@ -6512,7 +6539,7 @@
       },
       "MonthlyInspectionHeader": {
         "additionalProperties": false,
-        "description": "月度巡检正式报告头，兼容单 Target 和业务系统范围。",
+        "description": "月度巡检正式报告头，明确数据库或业务系统范围。",
         "properties": {
           "database_types": {
             "default": [],
@@ -6589,6 +6616,10 @@
             "title": "Target Count",
             "type": "integer"
           },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -6596,6 +6627,7 @@
         },
         "required": [
           "title",
+          "timezone",
           "scope_type",
           "scope_name",
           "target_count",
@@ -6767,15 +6799,6 @@
             "title": "Evidence Boundary",
             "type": "object"
           },
-          "extensions": {
-            "default": [],
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Extensions",
-            "type": "array"
-          },
           "gaps": {
             "default": [],
             "items": {
@@ -6794,6 +6817,14 @@
               "type": "object"
             },
             "title": "Issues",
+            "type": "array"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
             "type": "array"
           },
           "metrics": {
@@ -6821,6 +6852,15 @@
             "const": "MONTHLY_INSPECTION_PRESENTATION.v1",
             "title": "Schema Version",
             "type": "string"
+          },
+          "target_results": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Target Results",
+            "type": "array"
           }
         },
         "required": [
