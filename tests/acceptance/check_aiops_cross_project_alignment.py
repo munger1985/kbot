@@ -13,6 +13,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("services/aiops_agent/src/aiops_agent/application/inspections/assessment.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/inspections/monthly.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/inspections/period_sources.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/inspections/report_policy.json"),
+    Path("services/aiops_agent/src/aiops_agent/application/inspection_pdf.py"),
+    Path("tests/unit/aiops_agent/test_aiops_professional_inspection_reports.py"),
+    Path("tests/support/inspection_report_samples.py"),
+    Path("tests/contract/inspection_report_visual.mjs"),
+    Path("docs/proposals/aiops-professional-inspection-reports.md"),
     Path("services/aiops_agent/src/aiops_agent/application/case_closure.py"),
     Path("tests/unit/aiops_agent/test_aiops_conversation_case_closure.py"),
     Path("tests/unit/aiops_agent/test_aiops_case_closure_api.py"),

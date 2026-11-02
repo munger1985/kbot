@@ -259,7 +259,7 @@ def inspection_template_steps(
     schedule_type: str,
     database_type: str | None = None,
 ) -> tuple[dict[str, Any], ...]:
-    """从冻结模板定义生成本次步骤，不再读取当前 Check Catalog。"""
+    """保留模板专项，并把独立版本的标准基础集纳入本次冻结执行。"""
     if not isinstance(definition, dict):
         raise ValueError("巡检模板定义无效")
     if definition.get("schema_version") != "INSPECTION_TEMPLATE.v1":
@@ -315,4 +315,11 @@ def inspection_template_steps(
                 weekly=weekly,
                 trend_required=True,
             )
+    if normalized_db_type:
+        from .assessment import compile_standard_steps, freeze_inspection_policy
+
+        return compile_standard_steps(
+            tuple(steps), database_type=normalized_db_type, schedule_type=schedule_type,
+            policy=freeze_inspection_policy(normalized_db_type),
+        )
     return tuple(steps)

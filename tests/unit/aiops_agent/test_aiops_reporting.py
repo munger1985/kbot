@@ -406,7 +406,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
         ))
 
         payload = uow.runs.add_artifact.await_args.args[0].payload_json
-        self.assertEqual("READY", payload["status"])
+        self.assertEqual("PARTIAL", payload["status"])
         self.assertEqual([], payload["gaps"])
         self.assertEqual(
             ["实例性能指标", "近期告警日志"],
@@ -422,17 +422,16 @@ class InspectionReportPublishingTest(unittest.TestCase):
             "未发现达到报告条件的记录",
             payload["facts"][1]["summary"],
         )
-        self.assertIn("共执行 2 项检查", payload["summary"])
+        self.assertIn("检查未完成", payload["summary"])
+        self.assertEqual("INCOMPLETE", payload["scope"]["inspection_assessment"]["health_status"])
         self.assertEqual(100.0, payload["scope"]["evidence_coverage_percent"])
         self.assertEqual(3, payload["scope"]["evidence_covered_count"])
         self.assertEqual(3, payload["scope"]["evidence_total_count"])
         self.assertEqual(100.0, payload["scope"]["tool_execution_coverage_percent"])
         self.assertEqual(2, payload["scope"]["tool_execution_covered_count"])
         self.assertEqual(2, payload["scope"]["tool_execution_total_count"])
-        self.assertEqual(
-            ["继续按既定周期执行该巡检模板并关注趋势变化。"],
-            payload["recommendations"],
-        )
+        self.assertTrue(payload["recommendations"])
+        self.assertTrue(any("补齐" in item for item in payload["recommendations"]))
         report = uow.inspections.publish_report.await_args.args[0]
         self.assertEqual("system:inspection.daily", report.template_id)
         self.assertEqual("1", report.template_version)
@@ -766,6 +765,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
                     row_count=1,
                     truncated=False,
                     evidence_ref="artifact:test#trend",
+                    series_computations=(),
                     columns=tuple(
                         {"name": name}
                         for name in (

@@ -165,7 +165,7 @@
           "availability": "READY",
           "tool_id": "db.resource.session_utilization",
           "playbook_id": "oracle.instance.performance",
-          "finding_types": [],
+          "finding_types": ["CONNECTION_USAGE"],
           "default_for": [
             "DAILY",
             "WEEKLY"

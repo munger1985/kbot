@@ -76,7 +76,7 @@ class FormalReportingTest(unittest.TestCase):
         self.assertNotIn("current", presentation["monthly_inspection"]["metrics"][0])
         self.assertGreater(len(render_pdf(presentation)), 1_000)
 
-    def test_monthly_summary_deduplicates_days_and_excludes_backup(self) -> None:
+    def test_monthly_summary_deduplicates_days_and_includes_scoped_backup(self) -> None:
         start = datetime(2026, 1, 31, 16, tzinfo=UTC)
         end = datetime(2026, 2, 28, 16, tzinfo=UTC)
         base = {
@@ -85,6 +85,7 @@ class FormalReportingTest(unittest.TestCase):
             "semantic_role": "STORAGE_USED",
             "dimensions": "tablespace=USERS",
             "unit": "bytes",
+            "daily_points_timezone": "Asia/Shanghai",
         }
         facts = [
             {**base, "_source_observed_at": "2026-02-03T00:00:00+00:00", "daily_points": [
@@ -96,7 +97,8 @@ class FormalReportingTest(unittest.TestCase):
             {"kind": "inspection_check", "tool_id": "db.oracle.tablespace", "title": "表空间检查", "check_status": "FINDING", "_source_observed_at": "2026-02-03T00:00:00+00:00", "findings": [
                 {"finding_id": "TABLESPACE_GROWTH", "severity": "MEDIUM", "summary": "增长较快"},
             ]},
-            {"kind": "inspection_check", "tool_id": "db.oracle.rman_backup", "check_status": "FINDING", "findings": [
+            {"kind": "inspection_check", "tool_id": "db.oracle.rman_backup", "check_status": "FINDING",
+             "_source_target_id": "erp", "_source_observed_at": "2026-02-03T00:00:00+00:00", "findings": [
                 {"finding_id": "BACKUP", "finding_type": "BACKUP_FAILED", "severity": "HIGH"},
             ]},
         ]
@@ -109,7 +111,8 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual(3, metric["effective_days"])
         self.assertEqual(28, metric["expected_days"])
         self.assertEqual(40, metric["net_change"])
-        self.assertEqual(["TABLESPACE_GROWTH"], [item["finding_id"] for item in summary["issues"]])
+        self.assertEqual({"TABLESPACE_GROWTH", "BACKUP"}, {item["source_finding_id"] for item in summary["issues"]})
+        self.assertEqual(2, len({item["finding_id"] for item in summary["issues"]}))
         self.assertEqual(
             "NO_PREVIOUS_REPORT",
             compare_monthly_inspection_summaries(summary, None)["status"],
@@ -405,7 +408,7 @@ class FormalReportingTest(unittest.TestCase):
         daily = presentation["daily_inspection"]
         metrics = {
             item["metric_code"]: item
-            for item in daily["baseline_metrics"]
+            for item in daily["metrics"]
         }
         self.assertAlmostEqual(
             35.71,
@@ -427,7 +430,7 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual(1, len(daily["capacity_rows"]))
         self.assertNotIn(
             "instance=oracle-1",
-            daily["baseline_metrics"][0]["dimension_label"],
+            daily["metrics"][0]["dimension_label"],
         )
         pdf = render_pdf(presentation)
         self.assertTrue(pdf.startswith(b"%PDF-"))

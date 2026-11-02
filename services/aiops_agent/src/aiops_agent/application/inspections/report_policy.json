@@ -1,0 +1,62 @@
+{
+  "schema_version": "INSPECTION_REPORT_POLICY.v1",
+  "version": "2026-11-02",
+  "baseline": {
+    "ORACLE": [
+      "oracle.storage.tablespace_headroom",
+      "oracle.session.count",
+      "oracle.session.long_transaction",
+      "oracle.session.lock_wait",
+      "oracle.log.archive_generation",
+      "oracle.performance.critical_waits"
+    ],
+    "MYSQL": [
+      "mysql.instance.connections",
+      "mysql.session.blocking",
+      "mysql.transaction.long_running",
+      "mysql.replication.lag",
+      "mysql.binlog.status"
+    ],
+    "POSTGRESQL": [
+      "postgresql.instance.connections",
+      "postgresql.session.blocking",
+      "postgresql.transaction.long_running",
+      "postgresql.replication.lag",
+      "postgresql.wal.archive"
+    ]
+  },
+  "supplemental": {
+    "ORACLE": [
+      "oracle.session.long_running",
+      "oracle.object.invalid"
+    ],
+    "MYSQL": [
+      "mysql.storage.capacity",
+      "mysql.sql.top",
+      "mysql.io.summary"
+    ],
+    "POSTGRESQL": [
+      "postgresql.storage.capacity",
+      "postgresql.maintenance.freeze",
+      "postgresql.instance.statistics"
+    ]
+  },
+  "minimum_monitoring_coverage_ratio": 0.8,
+  "required_metric_roles": {
+    "AVAILABILITY": "实例可用性",
+    "CPU_UTILIZATION": "CPU 负载",
+    "MEMORY_UTILIZATION": "内存负载",
+    "FILESYSTEM_UTILIZATION": "文件系统容量"
+  },
+  "recommendations": {
+    "LOCK_WAIT": "确认阻塞源会话及业务归属，优先协调事务提交或回滚；未经审批不终止会话，处置后复查阻塞链。",
+    "LONG_TRANSACTION": "核对长事务对应业务及持续时间，协调结束或缩短事务，复查事务时长和锁影响。",
+    "TABLESPACE": "核对高占用空间及主要增长对象，评估清理或扩容；处置后复查空间余量。",
+    "CPU_UTILIZATION": "核对高负载时段及主要耗时 SQL，确认是否与业务峰值一致；调整后复查 CPU 负载。",
+    "MEMORY_UTILIZATION": "核对数据库与主机内存分配及主要使用者，确认是否存在内存压力，调整后复查。",
+    "FILESYSTEM_UTILIZATION": "核对高占用挂载点及主要增长文件，按保留策略清理或扩容，复查可用空间。",
+    "REPLICATION_LAG": "核对复制链路、接收和应用状态及积压原因，修复后复查延迟与链路状态。",
+    "BACKUP_POLICY": "接入策略约定的备份成功记录，核对最近成功时间和作业状态，再执行备份核验；不能以归档或 Binlog 正常代替。",
+    "AVAILABILITY": "核对实例、监听和数据库错误日志，确认服务中断原因；恢复后验证连接与业务可用性。"
+  }
+}

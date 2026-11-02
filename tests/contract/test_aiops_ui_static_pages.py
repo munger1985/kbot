@@ -1710,8 +1710,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
     def test_daily_and_monthly_inspection_reports_match_structured_reference_layout(self):
         script = (AIOPS_ROOT / "js" / "aiops-report-detail.js").read_text(encoding="utf-8")
         css = (AIOPS_ROOT / "css" / "reference-report-detail.css").read_text(encoding="utf-8")
-        for text in ("关键指标与过去 7 日基线偏离", "七日趋势 · 小倍数", "七日趋势与容量明细", "无数据不等于异常", "frozenTargetIsIdentifier", "上月对比", "月度关键指标", "容量与增长", "问题台账", "扩展接口状态"):
+        for text in ("巡检结论", "必要检查完成", "基础检查明细", "关键运行指标", "检查限制与未完成事项", "frozenTargetIsIdentifier", "上月对比", "月度运行结论", "系统与数据库概况", "容量与增长", "问题闭环台账", "附录：统计方法与技术追溯"):
             self.assertIn(text, script)
+        for text in ("关键指标与过去 7 日基线偏离", "七日趋势 · 小倍数", "扩展接口状态"):
+            self.assertNotIn(text, script)
         for selector in (".daily-report-table", ".daily-trend-svg", ".monthly-report-table", ".daily-conclusion-ledger"):
             self.assertIn(selector, css)
 

@@ -140,3 +140,17 @@
   :is([data-page="report-detail"]) .report-chapter { break-before: page; }
   :is([data-page="report-detail"]) .report-chapter:first-child { break-before: auto; }
 }
+
+/* 巡检正文自然排版；窄屏切换带标签的明细卡片，不嵌套横向滚动。 */
+.aiops-report-detail-page [hidden] { display: none !important; }
+.daily-report-table, .monthly-report-table { min-width: 0; width: 100%; table-layout: fixed; }
+.daily-report-table th, .daily-report-table td, .daily-report-metadata dd, .daily-evidence { overflow-wrap: anywhere; }
+.daily-table-wrap { overflow: visible; }
+.daily-evidence summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 760px) {
+  .daily-report-table thead { display: none; }
+  .daily-report-table, .daily-report-table tbody, .daily-report-table tr { display: block; width: 100%; }
+  .daily-report-table tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .daily-report-table td { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; padding: 8px; border: 0; }
+  .daily-report-table td::before { content: attr(data-label); color: var(--muted); }
+}

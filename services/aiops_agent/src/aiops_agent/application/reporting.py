@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from io import BytesIO
 import json
+from math import isfinite
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -34,6 +35,7 @@ from aiops_agent.application.display_dictionary import (
     format_metric_value,
 )
 from aiops_agent.application.leadership import project_leadership_briefing
+from aiops_agent.application.inspections.monthly import monthly_business_review
 
 
 @dataclass(frozen=True)
@@ -352,151 +354,102 @@ def _daily_metric_projection(fact: dict[str, Any]) -> dict[str, Any]:
 
 
 def _daily_inspection_presentation(
-    *,
-    payload: dict[str, Any],
-    report_context: dict[str, Any],
+    *, payload: dict[str, Any], report_context: dict[str, Any],
 ) -> dict[str, Any]:
-    """生成日常巡检专用的正式报告结构，文字编辑不能覆盖指标证据。"""
+    """正式日报以冻结业务判定为主，技术质量只进入附录。"""
     scope = dict(payload.get("scope") or {})
     target = dict(scope.get("target") or {})
-    overrides = dict(payload.get("presentation_overrides") or {})
-    metrics = [
-        _daily_metric_projection(item)
-        for item in payload.get("facts") or ()
-        if isinstance(item, dict)
-        and item.get("kind") == "inspection_monitoring_metric"
-    ]
-    metrics.sort(key=lambda item: (
-        item["baseline_status"] != "AVAILABLE",
-        -abs(item["deviation_percent"] or 0),
-        item["display_name"],
-    ))
-    capacity_roles = {
-        "STORAGE_UTILIZATION", "STORAGE_USED", "STORAGE_FREE",
-        "STORAGE_MAX", "DATABASE_SIZE", "FILESYSTEM_UTILIZATION",
+    assessment = dict(scope.get("inspection_assessment") or {})
+    facts = [item for item in payload.get("facts") or () if isinstance(item, dict)]
+    metric_results = {
+        (str(item.get("metric_code") or ""), str(item.get("dimensions") or "-")): item
+        for item in facts if item.get("kind") == "inspection_metric_check"
     }
-    capacity_rows = [
-        item for item in metrics
-        if item.get("semantic_role") in capacity_roles
-    ]
-    attention_statuses = {"FINDING", "PARTIAL", "GAP", "MISSING", "BREACHED"}
-    finding_rows = []
-    for fact in payload.get("facts") or ():
-        if not isinstance(fact, dict):
+    metrics = []
+    for fact in facts:
+        if fact.get("kind") != "inspection_monitoring_metric":
             continue
-        status = str(fact.get("check_status") or "")
-        if status not in attention_statuses:
-            continue
-        severities = [
-            str(item.get("severity") or "")
-            for item in fact.get("findings") or ()
-            if isinstance(item, dict)
-        ]
-        finding_rows.append({
-            "finding_id": f"F{len(finding_rows) + 1:02d}",
-            "title": str(fact.get("title") or "巡检发现"),
-            "status": status,
-            "severity": severities[0] if severities else "INFO",
-            "summary": _report_display_text(
-                fact.get("summary") or "已记录需复核的巡检发现。"
+        metric = _daily_metric_projection(fact)
+        checked = metric_results.get((str(fact.get("metric_code") or ""), str(fact.get("dimensions") or "-")), {})
+        metric.update({
+            "average_display": format_metric_value(_number(fact.get("average")), str(fact.get("unit") or "")),
+            "maximum_display": format_metric_value(_number(fact.get("maximum")), str(fact.get("unit") or "")),
+            "status_display": "异常" if any(
+                item.get("severity") in {"HIGH", "CRITICAL"} for item in checked.get("findings") or ()
+            ) else {"CLEAR": "正常", "FINDING": "需关注", "MISSING": "未完成", "PARTIAL": "未完成"}.get(
+                str(checked.get("check_status") or ""), "仅观测"
             ),
+            "basis": str(checked.get("basis") or "辅助观测，不以相对增长自动判定异常。"),
         })
-    gaps = _report_gap_items(list(payload.get("gaps") or ()))
-    available_metrics = [
-        item for item in metrics if item["baseline_status"] == "AVAILABLE"
-    ]
-    top_deviation = available_metrics[0] if available_metrics else None
-    health_status = str(scope.get("health_status") or "UNKNOWN")
-    conclusion = str(payload.get("summary") or "本次日常巡检已完成。")
-    if top_deviation is not None:
-        sign = "+" if float(top_deviation["deviation_percent"]) >= 0 else ""
-        conclusion += (
-            f" 最大可计算偏离为{top_deviation['display_name']}"
-            f"{top_deviation['dimension_label']} {sign}"
-            f"{top_deviation['deviation_percent']:.2f}%，"
-            "该偏离只表示相对七日基线的变化，需结合指标方向和业务时段复核。"
-        )
-    elif metrics:
-        conclusion += " 当前监控证据不足以形成可靠的过去七日基线偏离。"
-    edited_conclusion = overrides.get("EXECUTIVE_SUMMARY")
-    if isinstance(edited_conclusion, (list, tuple)) and edited_conclusion:
-        conclusion = " ".join(str(item) for item in edited_conclusion)
-    environment = _report_display_text(target.get("environment") or "未记录")
-    database_type = str(
-        target.get("database_type") or scope.get("database_type") or "未记录"
-    )
-    database_version = str(target.get("version_code") or "未记录")
-    db_role = _report_display_text(target.get("db_role") or "数据库运维")
+        metrics.append(metric)
+    metrics.sort(key=lambda item: (
+        {"异常": 0, "需关注": 1, "未完成": 2, "正常": 3}.get(item["status_display"], 4),
+        item["display_name"], item["dimension_label"],
+    ))
+    identity = next((item for item in facts if item.get("kind") == "inspection_identity"), {})
+    identity_rows = list(identity.get("observations") or ())
+    identity_row = identity_rows[0] if identity_rows and isinstance(identity_rows[0], dict) else {}
+    health = str(assessment.get("health_status") or scope.get("health_status") or "INCOMPLETE")
+    label = str(assessment.get("health_status_display") or {
+        "NORMAL": "正常", "ATTENTION": "需关注", "ABNORMAL": "异常",
+    }.get(health, "检查未完成"))
     report_id = str(report_context.get("report_id") or "")
     report_date = str(payload.get("period_end") or "")[:10].replace("-", "")
-    report_number = (
-        f"AIOPS-DI-{report_date}-{report_id[-8:].upper()}"
-        if report_id and report_date else str(payload.get("report_key") or "inspection.daily")
-    )
-    check_counts = dict(scope.get("check_status_counts") or {})
-    total_checks = int(scope.get("evidence_total_count") or sum(check_counts.values()))
+    number = f"AIOPS-DI-{report_date}-{report_id[-8:].upper()}" if report_id else str(payload.get("report_key") or "")
+    gaps = _report_gap_items(list(payload.get("gaps") or ()))
     return {
         "schema_version": "DAILY_INSPECTION_PRESENTATION.v1",
         "header": {
             "title": str(payload.get("title") or "数据库日常巡检报告"),
             "report_time": report_context.get("created_at") or payload.get("period_end"),
-            "observation_start": (
-                metrics[0].get("window_start") if metrics else payload.get("period_start")
-            ),
-            "observation_end": (
-                metrics[0].get("window_end") if metrics else payload.get("period_end")
-            ),
+            "observation_start": payload.get("period_start"),
+            "observation_end": payload.get("period_end"),
+            "timezone": scope.get("timezone") or "UTC",
+            "business_system_name": scope.get("business_system_name") or "",
             "target_name": _target_name_for_presentation(
                 stored_name=target.get("display_name"),
                 target_id=target.get("target_id") or payload.get("target_id"),
                 report_context=report_context,
             ),
             "target_id": str(target.get("target_id") or payload.get("target_id") or ""),
-            "environment": environment,
-            "database_type": database_type,
-            "database_version": database_version,
+            "environment": _report_display_text(target.get("environment") or "未记录"),
+            "database_type": str(target.get("database_type") or scope.get("database_type") or "未记录"),
+            "database_version": str(target.get("version_code") or identity_row.get("version") or "未记录"),
             "report_version": int(report_context.get("report_version") or 1),
-            "report_number": report_number,
-            "responsibility_domain": f"数据库平台 / {db_role} / {environment}运维",
+            "report_number": number, "responsibility_domain": "数据库运维",
         },
         "conclusion": {
-            "text": conclusion,
-            "health_status": health_status,
-            "health_status_display": _report_display_text(health_status),
-            "total_checks": total_checks,
-            "attention_count": len(finding_rows),
-            "gap_count": len(gaps),
-            "evidence_coverage_percent": scope.get("evidence_coverage_percent"),
-            "monitoring_coverage_percent": scope.get(
-                "monitoring_sample_coverage_percent"
-            ),
+            "text": str(assessment.get("text") or payload.get("summary") or "本次未形成完整检查结论。"),
+            "health_status": health, "health_status_display": label,
+            "completion_display": assessment.get("completion_display") or "未记录",
+            "required_check_count": assessment.get("required_check_count"),
+            "completed_required_count": assessment.get("completed_required_count"),
+            "attention_count": len(assessment.get("findings") or ()),
+            "incomplete_count": len(assessment.get("limitations") or ()),
         },
-        "baseline_metrics": metrics,
-        "capacity_rows": capacity_rows,
-        "findings": finding_rows,
-        "finding_notes": [
-            _report_display_text(item)
-            for item in overrides.get("FINDINGS") or ()
-        ],
-        "recommendations": [
-            _report_display_text(item)
-            for item in (
-                overrides.get("RECOMMENDATIONS")
-                or payload.get("recommendations")
-                or ()
-            )
-        ],
+        "checks": list(assessment.get("checks") or ()),
+        "metrics": metrics,
+        "capacity_rows": [item for item in metrics if item.get("semantic_role") in _CAPACITY_METRIC_ROLES],
+        "findings": list(assessment.get("findings") or ()),
+        "limitations": list(assessment.get("limitations") or ()),
+        "recommendations": list(assessment.get("recommendations") or ()),
         "gaps": gaps,
         "evidence_boundary": {
             "methodology": (
-                "当前值取七日监控窗口内最新有效样本；基线取同一窗口、同一维度和同一口径的样本均值。"
-                "采样覆盖率低于 80%、窗口不足 6.5 天、基线为零或状态类指标均不计算偏离。"
+                "数据库检查按冻结规则判断；当前快照只说明检查时状态，不证明全天未发生异常。"
+                "监控按冻结 Profile 阈值判读最新有效样本，单点超限不等于持续故障。"
+                "采样质量和覆盖率不代替数据库健康结论。"
             ),
             "sources": [
                 f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
-                for item in payload.get("evidence_refs") or ()
-                if isinstance(item, dict)
+                for item in payload.get("evidence_refs") or () if isinstance(item, dict)
             ],
+            "quality": {
+                key: scope.get(key) for key in (
+                    "evidence_coverage_percent", "tool_execution_coverage_percent",
+                    "monitoring_sample_coverage_percent", "evidence_gap_count",
+                )
+            },
         },
     }
 
@@ -504,9 +457,6 @@ def _daily_inspection_presentation(
 _CAPACITY_METRIC_ROLES = {
     "STORAGE_UTILIZATION", "STORAGE_USED", "STORAGE_FREE", "STORAGE_MAX",
     "DATABASE_SIZE", "FILESYSTEM_UTILIZATION",
-}
-_BACKUP_RECOVERY_FINDING_TYPES = {
-    "BACKUP_MISSING", "BACKUP_FAILED", "RECOVERY_CONFIGURATION",
 }
 
 
@@ -524,24 +474,7 @@ def _percentile_95(values: list[float]) -> float | None:
     return ordered[lower] * (1 - weight) + ordered[upper] * weight
 
 
-def is_monthly_backup_recovery_item(value: object) -> bool:
-    """识别由未来备份恢复模块接管、不得进入本期月报正文的内容。"""
-    fact = value if isinstance(value, dict) else {}
-    finding_types = {
-        str(item.get("finding_type") or "").upper()
-        for item in fact.get("findings") or () if isinstance(item, dict)
-    }
-    if finding_types & _BACKUP_RECOVERY_FINDING_TYPES:
-        return True
-    identity = " ".join(str(fact.get(key) or "") for key in (
-        "tool_id", "code", "finding_type", "extension_key",
-    )).lower()
-    if any(token in identity for token in ("backup", "recovery", "rman")):
-        return True
-    if isinstance(value, str):
-        text = value.lower()
-        return any(token in text for token in ("rman", "备份", "恢复演练"))
-    return False
+
 
 
 def monthly_inspection_summary(
@@ -558,11 +491,10 @@ def monthly_inspection_summary(
     end_date = period_end.astimezone(report_timezone).date()
     expected_days = max(0, (end_date - start_date).days)
     metric_groups: dict[str, dict[str, Any]] = {}
-    issues: dict[str, dict[str, Any]] = {}
-    check_counts: dict[str, int] = {}
+    metric_limitations: list[str] = []
 
     for raw_fact in facts:
-        if not isinstance(raw_fact, dict) or is_monthly_backup_recovery_item(raw_fact):
+        if not isinstance(raw_fact, dict):
             continue
         kind = str(raw_fact.get("kind") or "")
         observed_at = str(raw_fact.get("_source_observed_at") or "")
@@ -591,7 +523,34 @@ def monthly_inspection_summary(
                 "unit": unit,
                 "value_kind": str(raw_fact.get("value_kind") or ""),
                 "days": {},
+                "samples": {},
+                "conflicts": set(),
             })
+            sample_points = raw_fact.get("sample_points") or ()
+            if sample_points:
+                for point in sample_points:
+                    if not isinstance(point, dict):
+                        continue
+                    value = _number(point.get("value"))
+                    try:
+                        moment = datetime.fromisoformat(str(point.get("observed_at") or "").replace("Z", "+00:00"))
+                    except ValueError:
+                        continue
+                    if moment.tzinfo is None or value is None or not isfinite(value):
+                        continue
+                    if not period_start <= moment < period_end:
+                        continue
+                    stamp = moment.astimezone(UTC)
+                    previous = group["samples"].get(stamp)
+                    if previous is not None and previous != value:
+                        group["conflicts"].add(stamp)
+                    group["samples"][stamp] = value
+                continue
+            if raw_fact.get("daily_points") and raw_fact.get("daily_points_timezone") != timezone:
+                metric_limitations.append(
+                    f'{source_target_name or "数据库"} · {group["display_name"]}：仅有其他时区或时区未记录的日聚合，未纳入本月指标统计。'
+                )
+                continue
             for point in raw_fact.get("daily_points") or ():
                 if not isinstance(point, dict):
                     continue
@@ -601,7 +560,7 @@ def monthly_inspection_summary(
                     point_date = datetime.fromisoformat(date_text).date()
                 except ValueError:
                     continue
-                if value is None or not start_date <= point_date < end_date:
+                if value is None or not isfinite(value) or not start_date <= point_date < end_date:
                     continue
                 previous = group["days"].get(date_text)
                 if previous is None or observed_at >= previous[0]:
@@ -612,44 +571,24 @@ def monthly_inspection_summary(
                         "minimum": _number(point.get("minimum")),
                         "maximum": _number(point.get("maximum")),
                     })
-        elif kind == "inspection_check":
-            status = str(raw_fact.get("check_status") or "UNKNOWN")
-            check_counts[status] = check_counts.get(status, 0) + 1
-            tool_id = str(raw_fact.get("tool_id") or "")
-            for finding in raw_fact.get("findings") or ():
-                if not isinstance(finding, dict):
-                    continue
-                finding_type = str(finding.get("finding_type") or "")
-                if finding_type.upper() in _BACKUP_RECOVERY_FINDING_TYPES:
-                    continue
-                fingerprint = str(
-                    finding.get("finding_id")
-                    or f"{finding_type or 'FINDING'}:{tool_id or raw_fact.get('title') or 'unknown'}"
-                )
-                issue = issues.setdefault(fingerprint, {
-                    "finding_id": fingerprint,
-                    "title": str(finding.get("title") or raw_fact.get("title") or "巡检发现"),
-                    "summary": str(finding.get("summary") or raw_fact.get("summary") or "已记录巡检发现。"),
-                    "severity": str(finding.get("severity") or "INFO"),
-                    "occurrence_count": 0,
-                    "dates": set(),
-                })
-                issue["occurrence_count"] += 1
-                severity_rank = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}
-                severity = str(finding.get("severity") or "INFO")
-                if severity_rank.get(severity, 0) > severity_rank.get(issue["severity"], 0):
-                    issue["severity"] = severity
-                try:
-                    issue["dates"].add(
-                        datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
-                        .astimezone(report_timezone).date().isoformat()
-                    )
-                except ValueError:
-                    pass
-
     metrics: list[dict[str, Any]] = []
     for group in metric_groups.values():
-        points = [item[1] for _, item in sorted(group["days"].items())]
+        if group["samples"]:
+            days: dict[str, list[float]] = {}
+            for stamp, value in sorted(group["samples"].items()):
+                if stamp not in group["conflicts"]:
+                    days.setdefault(stamp.astimezone(report_timezone).date().isoformat(), []).append(value)
+            points = [
+                {"date": date, "value": sum(values) / len(values),
+                 "sample_count": len(values), "minimum": min(values), "maximum": max(values)}
+                for date, values in sorted(days.items())
+            ]
+        else:
+            points = [item[1] for _, item in sorted(group["days"].items())]
+        if group["conflicts"]:
+            metric_limitations.append(
+                f'{group["target_name"] or "数据库"} · {group["display_name"]}：存在同刻不同值的冲突采样，已排除，不据此推导峰值。'
+            )
         values = [float(item["value"]) for item in points]
         if not values:
             continue
@@ -660,15 +599,17 @@ def monthly_inspection_summary(
         coverage_ratio = len(values) / expected_days if expected_days else None
         unit = str(group["unit"])
         metrics.append({
-            **{key: value for key, value in group.items() if key != "days"},
+            **{key: value for key, value in group.items() if key not in {"days", "samples", "conflicts"}},
+            "statistic_basis": "DAILY_AGGREGATES",
+            "statistic_basis_display": "日均值分布，非原始采样分布",
             "monthly_average": round(average, 6),
-            "monthly_average_display": format_metric_value(average, unit),
+            "monthly_average_display": ("状态日均 " if group["value_kind"] == "STATE" else "") + format_metric_value(average, unit),
             "p95": round(_percentile_95(values) or 0.0, 6),
-            "p95_display": format_metric_value(_percentile_95(values), unit),
+            "p95_display": format_metric_value(round(_percentile_95(values) or 0.0, 6), unit),
             "minimum": min(values),
-            "minimum_display": format_metric_value(min(values), unit),
+            "minimum_display": "日均最小 " + format_metric_value(min(values), unit),
             "maximum": max(values),
-            "maximum_display": format_metric_value(max(values), unit),
+            "maximum_display": "日均最大 " + format_metric_value(max(values), unit),
             "first": first,
             "first_display": format_metric_value(first, unit),
             "last": last,
@@ -687,17 +628,9 @@ def monthly_inspection_summary(
         item["coverage_percent"] is None or item["coverage_percent"] < 80,
         -abs(item.get("change_percent") or 0), item["display_name"],
     ))
-    issue_rows = []
-    for issue in issues.values():
-        dates = sorted(issue.pop("dates"))
-        issue_rows.append({
-            **issue,
-            "affected_days": len(dates),
-            "first_seen": dates[0] if dates else None,
-            "last_seen": dates[-1] if dates else None,
-            "lifecycle": "REPEATED" if len(dates) > 1 else "NEW",
-        })
-    issue_rows.sort(key=lambda item: (-item["affected_days"], item["finding_id"]))
+    review = monthly_business_review(
+        facts=facts, period_start=period_start, period_end=period_end, timezone=timezone,
+    )
     effective_metric_days = len({
         point["date"] for metric in metrics for point in metric["daily_points"]
     })
@@ -707,11 +640,9 @@ def monthly_inspection_summary(
         "period_end": period_end.isoformat(),
         "timezone": timezone,
         "metrics": metrics,
-        "issues": issue_rows,
-        "database_checks": {
-            "status_counts": check_counts,
-            "observation_count": sum(check_counts.values()),
-        },
+        **review,
+        "metric_limitations": list(dict.fromkeys(metric_limitations)),
+        "limitations": list(dict.fromkeys((*review["limitations"], *metric_limitations))),
         "coverage": {
             "expected_days": expected_days,
             "effective_metric_days": effective_metric_days,
@@ -749,7 +680,10 @@ def compare_monthly_inspection_summaries(
     metric_changes = []
     for metric in current.get("metrics") or ():
         before = previous_metrics.get(str(metric.get("metric_key")))
-        if not before:
+        if not before or (
+            metric.get("statistic_basis") != before.get("statistic_basis")
+            or metric.get("unit") != before.get("unit")
+        ):
             continue
         current_average = _number(metric.get("monthly_average"))
         previous_average = _number(before.get("monthly_average"))
@@ -776,11 +710,20 @@ def compare_monthly_inspection_summaries(
     }
     return {
         "status": "AVAILABLE",
-        "status_display": "已完成上月环比",
+        "status_display": "已完成上月环比" if metric_changes else "问题台账已对照；无同口径可比指标",
+        "metric_comparison_status": "AVAILABLE" if metric_changes else "INCOMPARABLE",
         "metric_changes": metric_changes,
         "new_issues": [current_issues[key] for key in sorted(current_issues.keys() - previous_issues.keys())],
         "persistent_issues": [current_issues[key] for key in sorted(current_issues.keys() & previous_issues.keys())],
-        "resolved_issues": [previous_issues[key] for key in sorted(previous_issues.keys() - current_issues.keys())],
+        "resolved_issues": [
+            item for item in current_issues.values()
+            if item.get("lifecycle") == "VERIFIED_RESOLVED"
+        ],
+        "pending_verification_issues": [
+            {**previous_issues[key], "lifecycle": "PENDING_VERIFICATION", "lifecycle_display": "待验证"}
+            for key in sorted(previous_issues.keys() - current_issues.keys())
+            if previous_issues[key].get("lifecycle") != "VERIFIED_RESOLVED"
+        ],
     }
 
 
@@ -815,16 +758,11 @@ def _monthly_inspection_presentation(
         if scope_type == "TARGET"
         else str(stored_scope_name or "未记录")
     )
-    conclusion = (
-        f"本月覆盖 {coverage.get('completed_run_count', 0)} 次已完成巡检，"
-        f"形成 {len(metrics)} 组可统计指标和 {len(issues)} 项问题。"
-    )
-    if comparison.get("status") == "AVAILABLE":
-        conclusion += (
-            f" 环比新增问题 {len(comparison.get('new_issues') or ())} 项，"
-            f"持续问题 {len(comparison.get('persistent_issues') or ())} 项，"
-            f"已解决 {len(comparison.get('resolved_issues') or ())} 项。"
-        )
+    conclusion = dict(summary.get("conclusion") or {})
+    if not conclusion:
+        conclusion = {"text": "本月未形成完整基础检查结论。", "health_status_display": "检查未完成"}
+
+    conclusion["issue_count"] = len(issues)
     return {
         "schema_version": "MONTHLY_INSPECTION_PRESENTATION.v1",
         "header": {
@@ -832,6 +770,7 @@ def _monthly_inspection_presentation(
             "report_time": report_context.get("created_at") or payload.get("period_end"),
             "period_start": payload.get("period_start"),
             "period_end": payload.get("period_end"),
+            "timezone": scope.get("timezone") or "UTC",
             "scope_type": scope_type,
             "scope_name": scope_name,
             "target_count": int(scope.get("target_count") or 1),
@@ -845,32 +784,24 @@ def _monthly_inspection_presentation(
                 scope.get("responsibility_domain") or "数据库平台 / 月度运维"
             ),
         },
-        "conclusion": {
-            "text": conclusion,
-            "issue_count": len(issues),
-            "metric_count": len(metrics),
-            "coverage_percent": coverage.get("metric_day_coverage_percent"),
-        },
+        "conclusion": conclusion,
         "period_comparison": comparison,
         "coverage": coverage,
         "metrics": metrics,
         "capacity_rows": [item for item in metrics if item.get("is_capacity")],
         "issues": issues,
+        "target_results": list(summary.get("target_results") or ()),
+        "limitations": list(summary.get("limitations") or ()),
         "database_checks": dict(summary.get("database_checks") or {}),
         "recommendations": [
-            _report_display_text(item) for item in payload.get("recommendations") or ()
+            _report_display_text(item) for item in summary.get("recommendations") or ()
         ],
         "gaps": _report_gap_items(list(payload.get("gaps") or ())),
-        "extensions": list(scope.get("monthly_report_extensions") or ({
-            "schema_version": "MONTHLY_REPORT_EXTENSION.v1",
-            "extension_key": "backup_recovery",
-            "status": "RESERVED",
-            "items": [],
-        },)),
         "evidence_boundary": {
             "methodology": (
-                "指标按自然月、同一指标与维度逐日去重后统计月均值、P95、峰谷和变化；"
-                "覆盖不足和口径不可比较项单独标记。生成日瞬时值不进入月度结论。"
+                "指标按数据库、指标、维度及单位隔离，逐日去重；日均值的平均和百分位不等于原始采样统计。"
+                "快照状态日均值不代表精确月度可用率；未再发现问题不等于已验证恢复。"
+                "生成日瞬时值不进入月度结论。"
             ),
             "sources": [
                 f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
@@ -1324,6 +1255,12 @@ def normalize_report_source(
             },
             "evidence_refs": tuple(payload.get("evidence_refs", ())),
             "inspection_coverage": scope.get("inspection_coverage"),
+            **{key: scope[key] for key in (
+                "target", "scope_type", "scope_name", "target_count", "database_types",
+                "monthly_summary", "previous_month_summary", "previous_month_comparison",
+                "business_system_id", "business_system_name", "timezone", "health_status",
+                "inspection_assessment", "report_policy", "member_targets",
+            ) if key in scope},
             "investigation_goals": tuple(scope.get("investigation_goals") or ()),
             "executed_actions": tuple(scope.get("executed_actions") or ()),
             "action_source": scope.get("action_source"),
@@ -1485,7 +1422,8 @@ def _report_page_chrome(canvas: Canvas, document: SimpleDocTemplate) -> None:
     canvas.line(20 * mm, height - 16 * mm, width - 20 * mm, height - 16 * mm)
     canvas.setFont(_pdf_report_font_name(), 7.5)
     canvas.setFillColor(colors.HexColor("#466274"))
-    canvas.drawString(20 * mm, height - 12 * mm, "KBot AIOps  ·  正式诊断报告")
+    report_label = "正式巡检报告" if getattr(document, "inspection_report", False) else "正式诊断报告"
+    canvas.drawString(20 * mm, height - 12 * mm, f"KBot AIOps  ·  {report_label}")
     canvas.drawRightString(width - 20 * mm, 12 * mm, f"第 {document.page} 页")
     canvas.setStrokeColor(colors.HexColor("#CAD4DB"))
     canvas.line(20 * mm, 16 * mm, width - 20 * mm, 16 * mm)
@@ -1526,279 +1464,30 @@ def _pdf_trend_chart(metric: dict[str, Any]) -> Drawing:
 
 
 def _daily_pdf_story(
-    *,
-    presentation: dict[str, Any],
-    font_name: str,
-    body: ParagraphStyle,
-    section: ParagraphStyle,
-    cover_title: ParagraphStyle,
+    *, presentation: dict[str, Any], font_name: str, body: ParagraphStyle,
+    section: ParagraphStyle, cover_title: ParagraphStyle,
 ) -> list[Any]:
-    """按正式日常巡检版式生成表格和图形化 PDF story。"""
-    daily = dict(presentation.get("daily_inspection") or {})
-    header = dict(daily.get("header") or {})
-    conclusion = dict(daily.get("conclusion") or {})
-    story: list[Any] = [
-        Paragraph(_pdf_paragraph(header.get("title") or presentation.get("title")), cover_title),
-        Paragraph("数据库日常巡检 · 正式运维报告", body),
-        Spacer(1, 5 * mm),
-    ]
-    metadata = [
-        ["报告时间", header.get("report_time") or "未记录", "报告编号", header.get("report_number") or "未记录"],
-        ["观测范围", f"{header.get('observation_start') or '未记录'} 至 {header.get('observation_end') or '未记录'}", "报告版本", f"v{header.get('report_version') or 1}"],
-        ["巡检目标", header.get("target_name") or "未记录", "运行环境", header.get("environment") or "未记录"],
-        ["数据库", f"{header.get('database_type') or '未记录'} {header.get('database_version') or ''}".strip(), "责任域", header.get("responsibility_domain") or "数据库运维"],
-    ]
-    metadata_table = Table(
-        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in metadata],
-        colWidths=(23 * mm, 61 * mm, 23 * mm, 63 * mm),
-    )
-    metadata_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEF1F2")),
-        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EEF1F2")),
-        ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#52616A")),
-        ("TEXTCOLOR", (2, 0), (2, -1), colors.HexColor("#52616A")),
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#C6CDD1")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    story.extend((metadata_table, Spacer(1, 7 * mm)))
-    story.append(Paragraph("报告结论", section))
-    story.append(Paragraph(_pdf_paragraph(conclusion.get("text") or "未形成结论"), body))
-    ledger = [
-        ["整体健康", conclusion.get("health_status_display") or "未判定"],
-        ["数据库检查覆盖率", f"{conclusion.get('evidence_coverage_percent') if conclusion.get('evidence_coverage_percent') is not None else '未记录'}%"],
-        ["监控采样覆盖率", f"{conclusion.get('monitoring_coverage_percent') if conclusion.get('monitoring_coverage_percent') is not None else '未记录'}%"],
-        ["需关注 / 数据缺口", f"{conclusion.get('attention_count') or 0} / {conclusion.get('gap_count') or 0}"],
-    ]
-    ledger_table = Table(
-        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in ledger],
-        colWidths=(48 * mm, 122 * mm),
-        hAlign="LEFT",
-    )
-    ledger_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#9BA8AF")),
-        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D3D9DC")),
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7F8F7")),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    story.extend((ledger_table, Spacer(1, 6 * mm)))
+    """日报 PDF 与网页复用同一业务投影。"""
+    from aiops_agent.application.inspection_pdf import inspection_pdf_story
 
-    metrics = list(daily.get("baseline_metrics") or ())
-    story.append(Paragraph("关键指标与过去 7 日基线偏离", section))
-    metric_rows: list[list[Any]] = [[
-        "指标", "范围", "当前值", "七日均值", "偏离", "覆盖率", "七日趋势",
-    ]]
-    for metric in metrics:
-        deviation = (
-            f"{float(metric['deviation_percent']):+.2f}%"
-            if metric.get("deviation_percent") is not None else "基线不足"
-        )
-        metric_rows.append([
-            Paragraph(_pdf_paragraph(metric.get("display_name") or "指标"), body),
-            Paragraph(_pdf_paragraph(metric.get("dimension_label") or "全部"), body),
-            Paragraph(_pdf_paragraph(metric.get("current_display") or "无有效值"), body),
-            Paragraph(_pdf_paragraph(metric.get("baseline_display") or "基线不足"), body),
-            Paragraph(_pdf_paragraph(deviation), body),
-            Paragraph(_pdf_paragraph(
-                f"{metric.get('coverage_percent')}%" if metric.get("coverage_percent") is not None else "未记录"
-            ), body),
-            _pdf_trend_chart(metric),
-        ])
-    metric_table = Table(
-        metric_rows,
-        repeatRows=1,
-        colWidths=(29 * mm, 27 * mm, 25 * mm, 25 * mm, 19 * mm, 17 * mm, 31 * mm),
+    return inspection_pdf_story(
+        data=dict(presentation.get("daily_inspection") or {}), monthly=False,
+        font_name=font_name, body=body, section=section, cover_title=cover_title,
     )
-    metric_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8ECEE")),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.7, colors.HexColor("#415965")),
-        ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#D0D5D8")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.extend((metric_table, Spacer(1, 5 * mm)))
-
-    capacity = list(daily.get("capacity_rows") or ())
-    if capacity:
-        story.append(Paragraph("七日趋势与容量明细", section))
-        capacity_rows: list[list[Any]] = [["容量指标", "范围", "当前值", "七日均值", "偏离"]]
-        for metric in capacity:
-            capacity_rows.append([
-                metric.get("display_name") or "容量指标",
-                metric.get("dimension_label") or "全部",
-                metric.get("current_display") or "无有效值",
-                metric.get("baseline_display") or "基线不足",
-                (
-                    f"{float(metric['deviation_percent']):+.2f}%"
-                    if metric.get("deviation_percent") is not None else "基线不足"
-                ),
-            ])
-        capacity_table = Table(
-            [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in capacity_rows],
-            repeatRows=1,
-            colWidths=(35 * mm, 46 * mm, 31 * mm, 31 * mm, 27 * mm),
-        )
-        capacity_table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8ECEE")),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#C9D0D4")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        story.extend((capacity_table, Spacer(1, 5 * mm)))
-
-    for title, key, empty in (
-        ("发现问题", "findings", "未发现需要单列的问题。"),
-        ("处置建议", "recommendations", "当前没有新增处置建议。"),
-        ("数据缺口", "gaps", "未发现额外的数据缺口。"),
-    ):
-        story.append(Paragraph(title, section))
-        items = list(daily.get(key) or ())
-        if not items:
-            items = [empty]
-        for item in items:
-            if isinstance(item, dict):
-                value = f"{item.get('finding_id', '')} {item.get('title', '')}：{item.get('summary', '')}".strip()
-            else:
-                value = str(item)
-            story.append(Paragraph(_pdf_paragraph(value), body, bulletText="•"))
-    boundary = dict(daily.get("evidence_boundary") or {})
-    story.append(Paragraph("证据边界", section))
-    story.append(Paragraph(_pdf_paragraph(boundary.get("methodology") or "以冻结证据为准。"), body))
-    for item in boundary.get("sources") or ():
-        story.append(Paragraph(_pdf_paragraph(item), body, bulletText="•"))
-    return story
 
 
 def _monthly_pdf_story(
-    *, presentation: dict[str, Any], font_name: str,
-    body: ParagraphStyle, section: ParagraphStyle,
-    cover_title: ParagraphStyle,
+    *, presentation: dict[str, Any], font_name: str, body: ParagraphStyle,
+    section: ParagraphStyle, cover_title: ParagraphStyle,
 ) -> list[Any]:
-    """按日报出版物骨架输出月度统计、环比与问题台账。"""
-    monthly = dict(presentation.get("monthly_inspection") or {})
-    header = dict(monthly.get("header") or {})
-    conclusion = dict(monthly.get("conclusion") or {})
-    comparison = dict(monthly.get("period_comparison") or {})
-    coverage = dict(monthly.get("coverage") or {})
-    story: list[Any] = [
-        Paragraph(_pdf_paragraph(header.get("title") or "数据库月度巡检报告"), cover_title),
-        Paragraph("数据库月度巡检 · 正式运维报告", body),
-        Spacer(1, 5 * mm),
-    ]
-    metadata = [
-        ["报告时间", header.get("report_time") or "未记录", "报告编号", header.get("report_number") or "未记录"],
-        ["统计周期", f"{header.get('period_start') or '未记录'} 至 {header.get('period_end') or '未记录'}", "报告版本", f"v{header.get('report_version') or 1}"],
-        ["运维范围", header.get("scope_name") or "未记录", "范围类型", header.get("scope_type") or "TARGET"],
-        ["数据库类型", "、".join(header.get("database_types") or ()) or "未记录", "责任域", header.get("responsibility_domain") or "数据库月度运维"],
-    ]
-    metadata_table = Table(
-        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in metadata],
-        colWidths=(23 * mm, 61 * mm, 23 * mm, 63 * mm),
-    )
-    metadata_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEF1F2")),
-        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EEF1F2")),
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#C6CDD1")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    story.extend((metadata_table, Spacer(1, 7 * mm)))
-    story.append(Paragraph("月度结论", section))
-    story.append(Paragraph(_pdf_paragraph(conclusion.get("text") or "未形成结论"), body))
-    ledger = [
-        ["完成巡检", str(coverage.get("completed_run_count") or 0)],
-        ["指标日覆盖率", f"{coverage.get('metric_day_coverage_percent') if coverage.get('metric_day_coverage_percent') is not None else '未记录'}%"],
-        ["问题总数", str(conclusion.get("issue_count") or 0)],
-        ["上月对比", comparison.get("status_display") or "无上月报告"],
-    ]
-    ledger_table = Table(
-        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in ledger],
-        colWidths=(48 * mm, 122 * mm),
-    )
-    ledger_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#9BA8AF")),
-        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D3D9DC")),
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7F8F7")),
-    ]))
-    story.extend((ledger_table, Spacer(1, 6 * mm)))
+    """月报 PDF 与网页复用同一业务投影。"""
+    from aiops_agent.application.inspection_pdf import inspection_pdf_story
 
-    story.append(Paragraph("上月对比", section))
-    if comparison.get("status") == "AVAILABLE":
-        story.append(Paragraph(_pdf_paragraph(
-            f"新增问题 {len(comparison.get('new_issues') or ())} 项；"
-            f"持续问题 {len(comparison.get('persistent_issues') or ())} 项；"
-            f"已解决问题 {len(comparison.get('resolved_issues') or ())} 项。"
-        ), body))
-    else:
-        story.append(Paragraph(_pdf_paragraph(comparison.get("status_display") or "无可比较的上月报告。"), body))
-
-    story.append(Paragraph("月度关键指标", section))
-    rows: list[list[Any]] = [["指标", "范围", "月均值", "P95", "最小 / 最大", "月内变化", "覆盖率"]]
-    for metric in monthly.get("metrics") or ():
-        change = metric.get("change_percent")
-        rows.append([
-            metric.get("display_name") or "指标",
-            metric.get("dimension_label") or "全部",
-            metric.get("monthly_average_display") or "无有效值",
-            metric.get("p95_display") or "无有效值",
-            f"{metric.get('minimum_display') or '-'} / {metric.get('maximum_display') or '-'}",
-            f"{float(change):+.2f}%" if change is not None else "不可计算",
-            f"{metric.get('coverage_percent')}%" if metric.get("coverage_percent") is not None else "未记录",
-        ])
-    metric_table = Table(
-        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in rows],
-        repeatRows=1, colWidths=(27 * mm, 27 * mm, 25 * mm, 22 * mm, 32 * mm, 20 * mm, 19 * mm),
+    return inspection_pdf_story(
+        data=dict(presentation.get("monthly_inspection") or {}), monthly=True,
+        font_name=font_name, body=body, section=section, cover_title=cover_title,
     )
-    metric_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8ECEE")),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#C9D0D4")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.extend((metric_table, Spacer(1, 5 * mm)))
 
-    for title, key, empty in (
-        ("问题台账", "issues", "本月未形成需跟踪的问题。"),
-        ("处置建议与下月重点", "recommendations", "当前没有新增处置建议。"),
-        ("数据缺口", "gaps", "未发现额外的数据缺口。"),
-    ):
-        story.append(Paragraph(title, section))
-        items = list(monthly.get(key) or ()) or [empty]
-        for item in items:
-            if isinstance(item, dict):
-                value = (
-                    f"{item.get('title') or item.get('finding_id') or '问题'}："
-                    f"{item.get('summary') or ''}（影响 {item.get('affected_days') or 0} 天，"
-                    f"出现 {item.get('occurrence_count') or 0} 次）"
-                )
-            else:
-                value = str(item)
-            story.append(Paragraph(_pdf_paragraph(value), body, bulletText="•"))
-    story.append(Paragraph("扩展接口状态", section))
-    for extension in monthly.get("extensions") or ():
-        story.append(Paragraph(_pdf_paragraph(
-            f"{extension.get('extension_key') or '扩展'}：{extension.get('status') or 'RESERVED'}"
-        ), body, bulletText="•"))
-    boundary = dict(monthly.get("evidence_boundary") or {})
-    story.append(Paragraph("证据边界", section))
-    story.append(Paragraph(_pdf_paragraph(boundary.get("methodology") or "以冻结证据为准。"), body))
-    return story
 
 
 def render_pdf(presentation: dict[str, Any]) -> bytes:
@@ -1811,6 +1500,7 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
         title=str(presentation.get("title") or "AIOps 正式报告"),
         author="KBot AIOps",
     )
+    document.inspection_report = bool(presentation.get("daily_inspection") or presentation.get("monthly_inspection"))
     body = ParagraphStyle(
         "报告正文", fontName=font_name, fontSize=9.5, leading=16,
         textColor=colors.HexColor("#263238"), wordWrap="CJK", spaceAfter=4,

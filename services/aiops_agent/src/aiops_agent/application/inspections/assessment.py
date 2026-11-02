@@ -1,0 +1,284 @@
+"""专业巡检业务判定：规则、检查结果和报告结论独立于采集流水。"""
+
+from __future__ import annotations
+
+import json
+import math
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+from aiops_agent.application.display_dictionary import (
+    display_field_name, display_metric_name, display_text, format_metric_value,
+)
+
+
+_STATUS_LABELS = {
+    "CLEAR": "正常", "COMPLIANT": "正常", "NOT_APPLICABLE": "不适用",
+    "FINDING": "需关注", "BREACHED": "异常", "OBSERVED": "仅观测",
+    "PARTIAL": "未完成", "GAP": "未完成", "MISSING": "未完成",
+    "NOT_OBSERVABLE": "未完成", "NOT_OBSERVED": "未完成",
+}
+_HEALTH_LABELS = {
+    "NORMAL": "正常", "ATTENTION": "需关注", "ABNORMAL": "异常",
+    "INCOMPLETE": "检查未完成",
+}
+_SEVERITY = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}
+
+
+@lru_cache(maxsize=1)
+def report_policy() -> dict[str, Any]:
+    """业务规则来自版本化目录，不由模型临时选择。"""
+    return json.loads(Path(__file__).with_name("report_policy.json").read_text(encoding="utf-8"))
+
+
+def freeze_inspection_policy(database_type: str) -> dict[str, Any]:
+    """每次执行冻结适用基础集，模板专项不能取消必检项。"""
+    from .check_catalog import load_check_catalog
+
+    policy = report_policy()
+    required = set(policy["baseline"].get(database_type.upper(), ()))
+    additional = set(policy["supplemental"].get(database_type.upper(), ()))
+    checks = [
+        {"check_id": item.check_id, "title": item.display_name,
+         "tool_id": item.tool_id, "required": item.check_id in required}
+        for group in load_check_catalog().groups for item in group.checks
+        if item.check_id in required | additional
+    ]
+    return {
+        "schema_version": policy["schema_version"], "version": policy["version"],
+        "database_type": database_type.upper(), "checks": checks,
+        "required_metric_roles": dict(policy["required_metric_roles"]),
+        "minimum_monitoring_coverage_ratio": policy["minimum_monitoring_coverage_ratio"],
+        "recommendations": dict(policy["recommendations"]),
+    }
+
+
+def compile_standard_steps(
+    steps: tuple[dict[str, Any], ...], *, database_type: str, schedule_type: str,
+    policy: dict[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    """基础集独立于模板专项，在执行前合并并完整冻结。"""
+    from .check_catalog import compile_selected_check_steps
+
+    baseline = compile_selected_check_steps(
+        [item["check_id"] for item in policy["checks"]],
+        database_type=database_type, schedule_type=schedule_type,
+    )
+    by_tool: dict[str, dict[str, Any]] = {}
+    required_ids = {item["check_id"] for item in policy["checks"] if item["required"]}
+    for raw in (*baseline, *steps):
+        tool_id = str(raw["tool_id"])
+        if tool_id not in by_tool:
+            by_tool[tool_id] = {**raw, "check_ids": list(raw.get("check_ids") or ())}
+        else:
+            step = by_tool[tool_id]
+            step["check_ids"] = list(dict.fromkeys((*step["check_ids"], *raw.get("check_ids", ()))))
+            step["input"] = {**dict(step.get("input") or {}), **dict(raw.get("input") or {})}
+        by_tool[tool_id]["required"] = bool(required_ids.intersection(by_tool[tool_id]["check_ids"]))
+    return tuple(by_tool.values())
+
+
+def _number(value: object) -> float | None:
+    """非数值、布尔值和非有限数均不参与健康判断。"""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def monitoring_checks(
+    facts: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+    *, profile: dict[str, Any], policy: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """按冻结 Profile 阈值判读最新样本，不把相对变化或峰值当持续故障。"""
+    thresholds = dict(profile.get("metric_thresholds") or {})
+    required_roles = dict(policy.get("required_metric_roles") or {})
+    result = []
+    assessed_roles: set[str] = set()
+    for fact in facts:
+        if fact.get("kind") != "inspection_monitoring_metric":
+            continue
+        code = str(fact.get("metric_code") or "")
+        role = str(fact.get("semantic_role") or "")
+        value = _number(fact.get("latest"))
+        band = thresholds.get(code)
+        availability = role == "AVAILABILITY"
+        if not band and not availability:
+            continue
+        required = role in required_roles or availability
+        title = str(fact.get("title") or display_metric_name(code))
+        current = format_metric_value(value, str(fact.get("unit") or ""))
+        findings = []
+        if value is None:
+            status, basis = "MISSING", "未取得有效样本，不能完成本项判断。"
+        elif availability:
+            status = "CLEAR" if value == 1 else "FINDING"
+            basis = "可用性最新有效样本应为 1；不代表全观察期连续可用。"
+            if status == "FINDING":
+                findings = [{"severity": "HIGH", "finding_type": "AVAILABILITY",
+                             "impact": "最新可用性观测未达到正常状态。"}]
+        else:
+            warning = _number(band.get("warning_value"))
+            critical = _number(band.get("critical_value"))
+            if warning is None or critical is None or band.get("direction", "ABOVE") != "ABOVE":
+                status, basis = "MISSING", "冻结阈值不完整，不能完成本项判断。"
+            else:
+                severity = "HIGH" if value >= critical else "MEDIUM" if value >= warning else None
+                status = "FINDING" if severity else "CLEAR"
+                basis = (
+                    f"最新样本达到 {format_metric_value(warning, str(fact.get('unit') or ''))} 时需关注，"
+                    f"达到 {format_metric_value(critical, str(fact.get('unit') or ''))} 时异常；"
+                    "单次样本不证明持续超标。"
+                )
+                if severity:
+                    findings = [{"severity": severity, "finding_type": role,
+                                 "impact": f"{title}最新样本达到配置阈值。"}]
+        coverage = _number(fact.get("coverage_ratio"))
+        if coverage is not None and coverage < float(policy.get("minimum_monitoring_coverage_ratio", 0.8)):
+            status = "PARTIAL"
+            basis += " 观察期采样不足，不能据此判断整个观察区间。"
+        if status not in {"MISSING", "GAP", "PARTIAL"}:
+            assessed_roles.add(role)
+        result.append({
+            "kind": "inspection_metric_check", "title": title,
+            "check_status": status, "required": required,
+            "check_ids": [f"metric:{code}:{fact.get('dimensions') or '-'}"],
+            "metric_code": code, "semantic_role": role,
+            "dimensions": fact.get("dimensions") or "-",
+            "tool_id": "metric.query_range", "basis": basis,
+            "summary": f"{title}：{current}。", "findings": findings,
+            "evidence_refs": [fact["evidence_ref"]] if fact.get("evidence_ref") else [],
+            "observed_at": fact.get("window_end"),
+        })
+    for role, title in required_roles.items():
+        if role not in assessed_roles and not any(item.get("semantic_role") == role for item in result):
+            result.append({
+                "kind": "inspection_metric_check", "title": title, "required": True,
+                "semantic_role": role, "check_ids": [f"metric-role:{role}"],
+                "check_status": "MISSING", "summary": f"{title}未取得可按冻结规则判读的监控样本。",
+                "basis": "标准巡检需要有效样本及明确的指标判断规则。",
+            })
+    return result
+
+
+def assess_inspection(
+    facts: tuple[dict[str, Any], ...] | list[dict[str, Any]], *,
+    policy: dict[str, Any], gaps: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
+) -> dict[str, Any]:
+    """从检查结果形成专业结论，必要检查缺失不掩盖已知异常。"""
+    required_specs = [item for item in policy.get("checks") or () if item.get("required")]
+    required_ids = {item["check_id"] for item in required_specs}
+    raw_checks = [dict(item) for item in facts if item.get("kind") in {
+        "inspection_check", "inspection_metric_check", "backup_policy_check",
+    }]
+    seen_ids = {str(value) for item in raw_checks for value in item.get("check_ids") or ()}
+    for spec in required_specs:
+        if spec["check_id"] not in seen_ids:
+            raw_checks.append({
+                **spec, "check_ids": [spec["check_id"]], "check_status": "MISSING",
+                "summary": f"{spec['title']}未形成检查结果。",
+            })
+    checks, issues, limitations, actions = [], [], [], []
+    action_catalog = dict(policy.get("recommendations") or {})
+    for fact in raw_checks:
+        status = str(fact.get("check_status") or "MISSING")
+        required = bool(fact.get("required")) or bool(required_ids.intersection(fact.get("check_ids") or ()))
+        required = required or fact.get("kind") == "backup_policy_check"
+        title = str(fact.get("title") or "巡检检查")
+        if required and status in {"CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED"}:
+            if not fact.get("evidence_refs") or fact.get("truncated"):
+                status = "PARTIAL"
+        findings = [item for item in fact.get("findings") or () if isinstance(item, dict)]
+        if status == "FINDING" and not findings:
+            findings = [{"severity": "MEDIUM", "impact": fact.get("summary") or "检查规则报告风险，需复核详细对象。",
+                         "finding_type": "INSPECTION_RISK"}]
+        severity = max((str(item.get("severity") or "INFO") for item in findings),
+                       key=lambda value: _SEVERITY.get(value, 0), default="INFO")
+        if status == "BREACHED" and not findings:
+            severity = "HIGH"
+            findings = [{"severity": severity, "impact": fact.get("summary"), "finding_type": "BACKUP_POLICY"}]
+        label = "异常" if findings and _SEVERITY.get(severity, 0) >= 4 else _STATUS_LABELS.get(status, "未完成")
+        basis = str(fact.get("basis") or "")
+        if not basis:
+            thresholds = [item.get("threshold") for item in findings if isinstance(item.get("threshold"), dict)]
+            basis = "；".join(
+                f"{display_field_name(str(item.get('metric') or ''))} {item.get('operator') or ''} {item.get('limit')}"
+                for item in thresholds
+            ) or str(fact.get("rule_description") or "按冻结检查规则判断；无适用规则时仅展示观测。")
+        summary = str(fact.get("summary") or "")
+        related_gaps = [str(item.get("detail") or "") for item in gaps
+                        if item.get("step_id") == fact.get("tool_id") and item.get("detail")]
+        complete = status in {"CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED"}
+        if required and not complete:
+            detail = f"{title}：{related_gaps[0] if related_gaps else summary or '必要检查未完成'}"
+            limitations.append(detail)
+            if fact.get("kind") == "backup_policy_check":
+                actions.append(action_catalog.get("BACKUP_POLICY", "补齐备份成功记录并重新核验。"))
+            else:
+                actions.append(f"补齐“{title}”所需的只读权限、采集来源或判断规则，重新执行该检查确认结果。")
+        observation_rows = [
+            item for item in fact.get("observations") or () if isinstance(item, dict)
+        ]
+        actual = "；".join(
+            "，".join(f"{display_field_name(str(key))}：{value}" for key, value in list(item.items())[:6])
+            for item in observation_rows[:3]
+        )
+        row = {
+            "actual_display": actual or summary,
+            "title": title, "status": status, "status_display": label,
+            "required": required, "summary": summary, "basis": basis,
+            "severity": severity, "check_ids": list(fact.get("check_ids") or ()),
+            "observed_at": fact.get("observed_at"), "tool_id": fact.get("tool_id"),
+            "metric_code": fact.get("metric_code"), "dimensions": fact.get("dimensions"),
+        }
+        checks.append(row)
+        for finding in findings:
+            finding_type = str(finding.get("finding_type") or "")
+            object_ref = dict(finding.get("object_ref") or {})
+            object_name = str(object_ref.get("object_name") or object_ref.get("sql_id") or "")
+            impact = str(finding.get("impact") or summary or "已达到检查规则条件。")
+            recommendation = action_catalog.get(finding_type) or (
+                f"核对“{title}”中{object_name or '对应对象'}的异常原因，按变更流程处理后复查同一对象及规则。"
+            )
+            issue = {
+                "finding_id": str(finding.get("finding_id") or f"F{len(issues) + 1:02d}"),
+                "title": title, "status": "FINDING",
+                "severity": str(finding.get("severity") or severity),
+                "confirmation": str(finding.get("confirmation") or "CONFIRMED"),
+                "summary": impact, "impact": impact, "object_name": object_name,
+                "basis": basis, "recommendation": recommendation,
+                "observed_at": fact.get("observed_at"),
+                "evidence_refs": list(finding.get("evidence_refs") or fact.get("evidence_refs") or ()),
+            }
+            issues.append(issue)
+            actions.append(recommendation)
+    if not checks:
+        limitations.append("本次未形成基础检查结果。")
+    max_severity = max((_SEVERITY.get(item["severity"], 0) for item in issues if item["confirmation"] != "UNKNOWN"), default=0)
+    health = "ABNORMAL" if max_severity >= 4 else "ATTENTION" if issues else "INCOMPLETE" if limitations else "NORMAL"
+    complete = not limitations
+    text = {
+        "NORMAL": "数据库运行正常。本次必要检查已完成，未发现异常或需关注风险，无需额外处置。",
+        "ATTENTION": f"数据库存在 {len(issues)} 项需关注风险，请按建议复核并处理。",
+        "ABNORMAL": f"数据库存在异常，共发现 {len(issues)} 项问题，请优先处理高风险事项。",
+        "INCOMPLETE": "本次检查未完成，暂不能形成完整的数据库正常结论。",
+    }[health]
+    if limitations:
+        text += f" 另有 {len(limitations)} 项必要检查未完成：" + "；".join(limitations[:3]) + "。"
+    return {
+        "schema_version": "INSPECTION_ASSESSMENT.v1", "policy_version": policy.get("version"),
+        "health_status": health, "health_status_display": _HEALTH_LABELS[health],
+        "completion_status": "COMPLETE" if complete else "PARTIAL",
+        "completion_display": "完整" if complete else "部分完成",
+        "text": text, "checks": checks, "findings": issues,
+        "limitations": list(dict.fromkeys(limitations)),
+        "recommendations": list(dict.fromkeys(actions)),
+        "required_check_count": sum(item["required"] for item in checks),
+        "completed_required_count": sum(item["required"] and item["status"] in {
+            "CLEAR", "COMPLIANT", "NOT_APPLICABLE", "FINDING", "BREACHED",
+        } for item in checks),
+    }

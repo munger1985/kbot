@@ -6,6 +6,7 @@
     <header class="ops-head"><div><p class="eyebrow">AIOps 模板中心</p><h1>模板中心</h1><p>分别管理巡检执行内容与智能诊断会话的正式报告结构。</p></div></header>
     <div class="data-toolbar"><label class="search-field"><span aria-hidden="true">⌕</span><input id="template-search" type="search" placeholder="搜索模板名称或报告章节"></label><button id="refresh-templates" class="secondary-button" type="button">刷新目录</button><nav class="segmented-control aiops-template-switch" role="tablist" aria-label="模板类型"><button class="active" data-template-tab="inspection" type="button" role="tab" aria-selected="true">巡检内容模板</button><button data-template-tab="session" type="button" role="tab" aria-selected="false">会话报告模板</button></nav></div>
     <section id="inspection-template-catalog" class="resource-list-surface">
+      <p class="notice">标准基础检查将按数据库类型自动纳入；模板勾选用于追加专项，取消勾选不会移除基础检查。</p>
       <div class="resource-list-body"><div class="management-catalog-grid"><button id="create-inspection-template" class="management-catalog-add-card" type="button"><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新建巡检模板</strong><small>为巡检计划组合检查项与取证步骤</small></button><div id="ops-inspection-template-body" class="catalog-entries"></div></div></div>
     </section>
     <section id="session-template-catalog" class="resource-list-surface" hidden>

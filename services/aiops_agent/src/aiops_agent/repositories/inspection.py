@@ -58,6 +58,31 @@ class InspectionRepository(AIOpsRepository):
     ) -> InspectionPlanEntity:
         return await self._add(entity)
 
+    async def list_system_period_sources(
+        self, *, domain_id, business_system_id: UUID,
+        period_start: datetime, period_end: datetime,
+    ):
+        """读取系统期内批次及运行，外连接保留未生成运行的批次。"""
+        self._check_active()
+        statement = (
+            select(InspectionFireEntity, OpsRunEntity)
+            .join(InspectionPlanEntity,
+                  InspectionPlanEntity.inspection_plan_id == InspectionFireEntity.inspection_plan_id)
+            .outerjoin(OpsRunEntity, and_(
+                OpsRunEntity.inspection_fire_id == InspectionFireEntity.inspection_fire_id,
+                OpsRunEntity.domain_id == domain_id,
+                OpsRunEntity.workflow_kind == "INSPECTION",
+            ))
+            .where(
+                InspectionPlanEntity.domain_id == domain_id,
+                InspectionPlanEntity.business_system_id == business_system_id,
+                InspectionFireEntity.scheduled_for >= period_start,
+                InspectionFireEntity.scheduled_for < period_end,
+            )
+            .order_by(InspectionFireEntity.scheduled_for, OpsRunEntity.ops_run_id)
+        )
+        return list((await self._session.execute(statement)).all())
+
     async def delete_plan(self, entity: InspectionPlanEntity) -> None:
         """删除用例层已经确认可安全移除的未执行巡检计划。"""
         self._check_active()

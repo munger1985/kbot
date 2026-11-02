@@ -12,6 +12,7 @@ from aiops_agent.application.inspections import (
     compile_selected_check_steps,
     default_selected_check_ids,
 )
+from aiops_agent.application.inspections.check_catalog import inspection_template_steps
 from aiops_agent.repositories.inspection import InspectionRepository
 from aiops_agent.scheduling import (
     AIOpsInspectionScheduler,
@@ -433,9 +434,9 @@ class InspectionSchedulerTest(unittest.TestCase):
                 [item["tool_id"] for item in execution["inspection"]["evidence_steps"]],
                 [
                     item["tool_id"]
-                    for item in compile_selected_check_steps(
-                        default_selected_check_ids("DAILY"),
-                        database_type=database_type,
+                    for item in inspection_template_steps(
+                        self._template_definition(),
+                        database_type=database_type, schedule_type="DAILY",
                     )
                 ],
             )
@@ -451,7 +452,7 @@ class InspectionSchedulerTest(unittest.TestCase):
             )
         uow.commit.assert_awaited_once()
 
-    def test_agent_scope_change_is_rejected_before_any_turn_is_created(
+    def test_baseline_covers_mixed_system_without_expanding_specialist_checks(
         self,
     ) -> None:
         fire_id = uuid7()
@@ -532,17 +533,16 @@ class InspectionSchedulerTest(unittest.TestCase):
             "trace_id": "trace-inspection-scope-change",
         }
 
-        with self.assertRaises(AIOpsApplicationError) as caught:
-            asyncio.run(service.start_scheduled_inspection(payload))
-
-        self.assertEqual(
-            "AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
-            caught.exception.code,
-        )
-        self.assertIn("MySQL 订单库（MYSQL）", caught.exception.message)
-        conversations.add_conversation.assert_not_awaited()
-        service._create_turn.assert_not_awaited()
-        uow.commit.assert_not_awaited()
+        result = asyncio.run(service.start_scheduled_inspection(payload))
+        self.assertEqual(2, result["conversation_count"])
+        self.assertEqual(2, service._create_turn.await_count)
+        for call in service._create_turn.await_args_list:
+            inspection = call.kwargs["execution_context"]["inspection"]
+            self.assertTrue(inspection["report_policy"]["checks"])
+            if inspection["database_type"] == "MYSQL":
+                self.assertTrue(any("mysql.instance.connections" in step["check_ids"] for step in inspection["evidence_steps"]))
+                self.assertFalse(any("oracle.session.count" in step["check_ids"] for step in inspection["evidence_steps"]))
+        uow.commit.assert_awaited_once()
 
     def test_weekly_scheduled_inspection_compiles_historical_trend_steps(
         self,
@@ -649,9 +649,9 @@ class InspectionSchedulerTest(unittest.TestCase):
             [item["tool_id"] for item in execution["inspection"]["evidence_steps"]],
             [
                 item["tool_id"]
-                for item in compile_selected_check_steps(
-                    selected,
-                    schedule_type="WEEKLY",
+                for item in inspection_template_steps(
+                    self._template_definition(selected),
+                    schedule_type="WEEKLY", database_type="ORACLE",
                 )
             ],
         )

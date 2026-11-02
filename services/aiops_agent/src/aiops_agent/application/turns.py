@@ -11,6 +11,9 @@ from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
+from aiops_agent.application.inspections.assessment import (
+    freeze_inspection_policy,
+)
 from aiops_agent.application.inspections.check_catalog import (
     inspection_template_steps,
 )
@@ -562,6 +565,7 @@ class ConversationTurnService:
                                 ),
                                 "evidence_steps": evidence_steps,
                                 "backup_policy": backup_policy,
+                                "report_policy": freeze_inspection_policy(str(target.db_type)),
                             },
                         },
                     )

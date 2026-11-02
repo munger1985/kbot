@@ -682,7 +682,7 @@ class SystemDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
         uow.business_systems.list_system_resource_rows.assert_awaited_once_with(SYSTEM_ID)
         uow.agents.active_version_target_ids.assert_not_awaited()
 
-    async def test_create_plan_rejects_agent_targets_not_covered_by_template(
+    async def test_create_plan_includes_baseline_for_mixed_system(
         self,
     ) -> None:
         service = object.__new__(InspectionConfigurationMixin)
@@ -743,7 +743,7 @@ class SystemDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             return await kwargs["handler"](uow, datetime.now(UTC))
 
         service._idempotent = execute_idempotently
-        with self.assertRaises(AIOpsApplicationError) as caught:
+        with self.subTest(database_types="ORACLE,MYSQL"):
             await service.create_inspection_plan(
                 scope=self._scope(),
                 request=InspectionPlanCreate(
@@ -759,12 +759,7 @@ class SystemDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="inspection-create-mixed-database",
             )
 
-        self.assertEqual(
-            "AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
-            caught.exception.code,
-        )
-        self.assertIn("MySQL 订单库（MYSQL）", caught.exception.message)
-        uow.inspections.add_plan.assert_not_awaited()
+        uow.inspections.add_plan.assert_awaited_once()
 
     async def test_delete_plan_requires_disabled_plan_without_execution_history(self) -> None:
         service = object.__new__(AIOpsConfigurationService)

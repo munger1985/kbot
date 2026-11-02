@@ -281,10 +281,9 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             schedule_type="DAILY",
             database_type="MYSQL",
         )
-        self.assertEqual(
-            ["db.mysql.binlog.status"],
-            [item["tool_id"] for item in mysql_steps],
-        )
+        self.assertIn("db.mysql.binlog.status", [item["tool_id"] for item in mysql_steps])
+        self.assertTrue(all(item["supported_db_types"] == ["MYSQL"] for item in mysql_steps))
+        self.assertFalse(any(check.startswith(("oracle.", "postgresql.")) for item in mysql_steps for check in item["check_ids"]))
 
     def test_v1_frozen_steps_without_db_types_keep_oracle_semantics(self) -> None:
         definition = {
@@ -314,11 +313,10 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             database_type="POSTGRESQL",
         )
 
-        self.assertEqual(
-            ["db.session.blocking_chain"],
-            [item["tool_id"] for item in oracle_steps],
-        )
-        self.assertEqual((), postgresql_steps)
+        self.assertIn("db.session.blocking_chain", [item["tool_id"] for item in oracle_steps])
+        self.assertTrue(postgresql_steps)
+        self.assertTrue(all(item["supported_db_types"] == ["POSTGRESQL"] for item in postgresql_steps))
+        self.assertFalse(any(check.startswith("oracle.") for item in postgresql_steps for check in item["check_ids"]))
 
     def test_compile_weekly_trend_required_uses_historical_samples(self) -> None:
         selected = [
