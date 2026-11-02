@@ -276,6 +276,51 @@ class ProfessionalInspectionReportTest(unittest.TestCase):
         self.assertTrue(daily["checks"])
         self.assertTrue(render_pdf(presentation).startswith(b"%PDF-"))
 
+    def test_evidence_appendix_labels_identifiers_without_changing_frozen_values(self):
+        from aiops_agent.application.inspection_pdf import inspection_pdf_story
+        from reportlab.lib.styles import getSampleStyleSheet
+
+        _, _, assessment = full_assessment()
+        artifact_id, content_hash = str(uuid7()), "a" * 64
+        styles = getSampleStyleSheet()
+        for period in ("daily", "monthly"):
+            with self.subTest(period=period):
+                payload = {
+                    "report_type": f"INSPECTION_{period.upper()}",
+                    "period_start": START.isoformat(), "period_end": END.isoformat(),
+                    "scope": {"inspection_assessment": assessment},
+                    "facts": [], "gaps": [],
+                    "evidence_refs": [
+                        {"artifact_id": artifact_id, "content_hash": content_hash},
+                        {"artifact_id": "missing-hash"},
+                        {"content_hash": ""},
+                    ],
+                }
+                frozen = deepcopy(payload)
+                presentation = report_presentation(
+                    payload=payload, template=resolve_system_template(f"system:inspection.{period}"),
+                )
+                data = presentation[f"{period}_inspection"]
+                self.assertEqual([
+                    f"证据编号：{artifact_id}\n内容指纹（Hash）：{content_hash}",
+                    "证据编号：missing-hash\n内容指纹（Hash）：未提供哈希",
+                    "证据编号：未记录\n内容指纹（Hash）：未提供哈希",
+                ], data["evidence_boundary"]["sources"])
+                self.assertEqual(frozen, payload)
+                story = inspection_pdf_story(
+                    data=data, monthly=period == "monthly", font_name="Helvetica",
+                    body=styles["BodyText"], section=styles["Heading2"], cover_title=styles["Title"],
+                )
+                text = " ".join(item.getPlainText() for item in story if hasattr(item, "getPlainText"))
+                for label in ("技术追溯信息", "证据编号用于定位原始记录", "不属于巡检问题", artifact_id, content_hash):
+                    self.assertIn(label, text)
+                self.assertTrue(render_pdf(presentation).startswith(b"%PDF-"))
+                payload["evidence_refs"] = []
+                empty = report_presentation(
+                    payload=payload, template=resolve_system_template(f"system:inspection.{period}"),
+                )
+                self.assertEqual([], empty[f"{period}_inspection"]["evidence_boundary"]["sources"])
+
     def test_monthly_problem_identity_isolated_per_database(self):
         facts = [issue_fact(START+timedelta(days=1), target=target) for target in ("wms", "erp")]
         result = monthly_business_review(facts=facts, period_start=START, period_end=END, timezone="UTC")

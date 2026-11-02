@@ -156,6 +156,19 @@
   .daily-report-table.daily-checks-table td { vertical-align: top; }
 }
 .daily-evidence summary { cursor: pointer; font-weight: 600; }
+.daily-evidence.inspection-appendix { grid-template-columns: minmax(260px, max-content) minmax(0, 1fr); }
+.inspection-appendix > summary { align-self: start; white-space: nowrap; }
+.inspection-appendix-body { grid-column: 2; min-width: 0; display: grid; gap: 12px; }
+.inspection-appendix-body > p, .inspection-appendix-body > h3 { margin: 0; line-height: 1.75; }
+.inspection-trace { min-width: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.inspection-trace > p { margin: 12px 0; line-height: 1.75; }
+.inspection-source-list { list-style: none; margin: 0; padding: 0; }
+.inspection-source-list > li { padding: 12px 0; border-bottom: 1px solid var(--line); font-family: var(--font-data); font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 940px) {
+  .daily-evidence.inspection-appendix { grid-template-columns: minmax(0, 1fr); }
+  .inspection-appendix > summary { white-space: normal; }
+  .inspection-appendix-body { grid-column: 1; }
+}
 @media (max-width: 760px) {
   .daily-report-table thead { display: none; }
   .daily-report-table, .daily-report-table tbody, .daily-report-table tr { display: block; width: 100%; }

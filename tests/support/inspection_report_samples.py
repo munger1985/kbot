@@ -16,6 +16,10 @@ from tests.unit.aiops_agent.test_aiops_professional_inspection_reports import (
 
 def inspection_samples():
     """业务样例只由同一冻结判定与展示函数生成。"""
+    evidence_refs = [{
+        "artifact_id": "01900000-0000-7000-8000-000000000001",
+        "content_hash": "a" * 64,
+    }]
     samples = {}
     for name, cpu, incomplete in (
         ("normal", 10, False), ("attention", 75, False),
@@ -40,7 +44,8 @@ def inspection_samples():
                       "database_type": "MYSQL",
                       "target": {"display_name": "WMS 生产数据库", "target_id": "wms",
                                  "database_type": "MYSQL", "version_code": "8.4", "environment": "PRODUCTION"}},
-            "facts": [*checks, *metric_facts(cpu)], "gaps": [], "evidence_refs": [],
+            "facts": [*checks, *metric_facts(cpu)], "gaps": [],
+            "evidence_refs": evidence_refs if name != "attention" else [],
             "summary": assessment["text"], "recommendations": assessment["recommendations"],
         }
         samples[name] = report_presentation(
@@ -77,7 +82,7 @@ def inspection_samples():
         "scope": {"monthly_summary": summary, "timezone": "UTC", "scope_type": "BUSINESS_SYSTEM",
                   "scope_name": "生产业务系统", "target_count": 3, "database_types": ["MYSQL"],
                   "member_targets": members},
-        "facts": facts, "gaps": [], "evidence_refs": [], "summary": summary["conclusion"]["text"],
+        "facts": facts, "gaps": [], "evidence_refs": evidence_refs, "summary": summary["conclusion"]["text"],
     }
     samples["monthly"] = report_presentation(
         payload=payload, template=resolve_system_template("system:inspection.monthly"),

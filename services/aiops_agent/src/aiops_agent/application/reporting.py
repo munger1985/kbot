@@ -441,7 +441,7 @@ def _daily_inspection_presentation(
                 "采样质量和覆盖率不代替数据库健康结论。"
             ),
             "sources": [
-                f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
+                f"证据编号：{item.get('artifact_id') or '未记录'}\n内容指纹（Hash）：{item.get('content_hash') or '未提供哈希'}"
                 for item in payload.get("evidence_refs") or () if isinstance(item, dict)
             ],
             "quality": {
@@ -804,7 +804,7 @@ def _monthly_inspection_presentation(
                 "生成日瞬时值不进入月度结论。"
             ),
             "sources": [
-                f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
+                f"证据编号：{item.get('artifact_id') or '未记录'}\n内容指纹（Hash）：{item.get('content_hash') or '未提供哈希'}"
                 for item in payload.get("evidence_refs") or () if isinstance(item, dict)
             ],
         },

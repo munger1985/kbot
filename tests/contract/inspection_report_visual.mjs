@@ -101,7 +101,9 @@ try {
         try { await page.locator(".daily-conclusion").waitFor({timeout:15000}); }
         catch (error) { console.error(product,name,width,errors,await page.locator("body").innerText()); throw error; }
         assert.equal(await page.locator(".daily-conclusion-copy").textContent(), data.conclusion.text);
-        assert.equal(await page.locator(".daily-evidence").getAttribute("open"), null);
+        const appendix = page.locator(".inspection-appendix");
+        assert.equal(await appendix.getAttribute("open"), null);
+        assert.equal(await appendix.locator(".inspection-appendix-body").isVisible(), false);
         assert.equal(await page.locator(".daily-report-table").count() > 0, true);
         if (!monthly && width > 760) {
           const table = page.locator(".daily-checks-table");
@@ -126,7 +128,32 @@ try {
           assert.equal(await page.getByText("WMS 生产库", {exact: true}).count() > 0, true);
           assert.equal(await page.getByText("CRM 生产库", {exact: true}).count() > 0, true);
         }
-        const overflowing = await page.evaluate(() => [...document.querySelectorAll(".daily-table-wrap,.aiops-formal-report")].map(el => ({cls:el.className,width:el.clientWidth,scroll:el.scrollWidth})).filter(item=>item.scroll > item.width+2));
+        await appendix.locator(":scope > summary").click();
+        assert.equal(await appendix.locator(".inspection-appendix-body").isVisible(), true);
+        const titleLayout = await appendix.locator(":scope > summary").evaluate(element => ({
+          height: element.getBoundingClientRect().height,
+          lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+        }));
+        assert.ok(titleLayout.height <= titleLayout.lineHeight + 2, `${product}/${name}/${width} 附录标题意外换行`);
+        const sources = data.evidence_boundary.sources || [];
+        const trace = appendix.locator(".inspection-trace");
+        assert.equal(await trace.count(), sources.length ? 1 : 0);
+        if (sources.length) {
+          assert.equal(await trace.getAttribute("open"), null);
+          assert.equal(await trace.locator(".inspection-source-list").isVisible(), false);
+          await page.screenshot({path:path.join(resultDir,`${product}-${name}-${width}-appendix.png`),fullPage:true});
+          await trace.locator(":scope > summary").click();
+          assert.ok((await trace.innerText()).includes("不属于巡检问题"));
+          const items = trace.locator(".inspection-source-list > li");
+          assert.equal(await items.count(), sources.length);
+          for (let index = 0; index < sources.length; index++) {
+            assert.equal(await items.nth(index).textContent(), sources[index]);
+            assert.ok(sources[index].includes("证据编号："));
+            assert.ok(sources[index].includes("内容指纹（Hash）："));
+            assert.equal(await items.nth(index).evaluate(element => getComputedStyle(element, "::before").content), "none");
+          }
+        }
+        const overflowing = await page.evaluate(() => [...document.querySelectorAll(".daily-table-wrap,.aiops-formal-report,.inspection-appendix,.inspection-appendix-body,.inspection-trace")].map(el => ({cls:el.className,width:el.clientWidth,scroll:el.scrollWidth})).filter(item=>item.scroll > item.width+2));
         assert.deepEqual(overflowing, [], `${product}/${name}/${width} 横向溢出`);
         assert.deepEqual(errors, [], `${product}/${name}/${width} 浏览器错误`);
         await page.screenshot({path:path.join(resultDir,`${product}-${name}-${width}.png`),fullPage:true});
@@ -134,7 +161,7 @@ try {
       }
     }
   }
-  console.log("PASS 两端各 5 类报告 × 3 个宽度：检查列宽与顶端对齐、冻结结论、逐库展示、折叠附录、无表格横向溢出及浏览器异常");
+  console.log("PASS 两端各 5 类报告 × 3 个宽度：检查列宽、附录标题、技术追溯折叠与字段说明、冻结结论及无横向溢出或浏览器异常");
 } finally {
   await browser?.close();
   await server.close();

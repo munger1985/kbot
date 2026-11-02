@@ -155,6 +155,10 @@ def inspection_pdf_story(
             ))
     for value in data.get("gaps") or ():
         story.append(paragraph(value))
-    for value in boundary.get("sources") or ():
-        story.append(paragraph(value))
+    sources = list(boundary.get("sources") or ())
+    if sources:
+        heading("技术追溯信息")
+        story.append(paragraph("证据编号用于定位原始记录，内容指纹用于核对记录内容；仅供技术核查，不属于巡检问题。"))
+        for value in sources:
+            story.append(paragraph(value))
     return story
