@@ -39,15 +39,15 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
       const edit=custom && daily && (item.status==="ACTIVE" || !item.version_no);
       const actions='<button class="row-action" data-'+(edit ? 'edit-inspection-template':'view-inspection')+'="'+id+'">'+(!item.version_no ? "继续编辑" : edit ? "编辑模板":"查看模板")+'</button>';
       const more=
-        (item.version_no && daily ? '<button class="row-action" data-copy-inspection="'+id+'">基于此创建</button>':"")+
         (item.version_no && item.status==="ACTIVE" && !item.is_default ? '<button class="row-action" data-template-mutation data-default-inspection="'+id+'">设为新计划默认</button>':"")+
         (custom && item.status!=="ACTIVE" && daily ? '<button class="row-action" data-edit-inspection-template="'+id+'">编辑模板</button>':"")+
         (custom && item.version_no ? '<button class="row-action" data-template-mutation data-toggle-inspection="'+id+'">'+(item.status==="ACTIVE" ? "停用":"启用")+'</button>':"")+
-        (custom && item.has_draft ? '<button class="danger-row-action" data-template-mutation data-discard-inspection="'+id+'">放弃草稿</button>':"");
+        (custom && item.has_draft ? '<button class="danger-row-action" data-template-mutation data-discard-inspection="'+id+'">放弃草稿</button>':"")+
+        (custom && item.can_delete ? '<button class="danger-row-action" data-template-mutation data-delete-inspection="'+id+'">删除模板</button>':"");
       return '<article class="management-catalog-card inspection-template-card"><header><div><p class="eyebrow">'+(custom ? "自定义模板":"系统内置 · 只读")+' · '+(daily ? "日常巡检":"月度巡检")+'</p><h3><button class="row-action" data-view-inspection="'+id+'">'+escape(item.display_name)+'</button></h3></div><span class="status-pill">'+(!item.version_no ? "尚未发布" : item.status==="ACTIVE" ? "已启用":"已停用")+'</span></header>'+
         '<div class="inspection-template-flags">'+(item.is_default ? '<span class="status-pill status-success">新计划默认</span>':"")+(item.has_unpublished_changes ? '<span>有未发布修改</span>':"")+'</div>'+
-        '<dl><div><dt>最新发布</dt><dd>'+(item.version_no ? "v"+escape(item.version_no):"尚未发布")+'</dd></div><div><dt>引用计划</dt><dd>'+Number(item.usage_count || 0)+' 个</dd></div></dl>'+
-        '<footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">'+actions+'</div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" aria-haspopup="menu" aria-expanded="false">更多 ⌄</button><div class="management-catalog-menu" role="menu" hidden>'+more+'</div></div></footer></article>';
+        '<dl><div><dt>最新发布</dt><dd>'+(item.version_no ? "v"+escape(item.version_no):"尚未发布")+'</dd></div><div><dt>引用计划</dt><dd>'+Number(item.usage_count || 0)+' 个</dd></div>'+(item.history_count ? '<div><dt>历史批次引用</dt><dd>'+Number(item.history_count)+' 个</dd></div>':"")+'</dl>'+
+        '<footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">'+actions+'</div>'+(more ? '<div class="management-catalog-overflow"><button class="row-action management-catalog-more" aria-haspopup="menu" aria-expanded="false">更多 ⌄</button><div class="management-catalog-menu" role="menu" hidden>'+more+'</div></div>':"")+'</footer></article>';
     }).join("");
     setActionBusy(actionBusy);
   }
@@ -136,9 +136,10 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
   const detailRoot=document.createElement("section");
   detailRoot.className="ops-main daily-template-editor aiops-page inspection-template-detail";detailRoot.hidden=true;document.querySelector("main.aiops-template-page").after(detailRoot);
   let detailData=null,detailVersions=[],detailPlans=[],detailSeq=0;
-  async function confirmTemplate(title,message) {
+  async function confirmTemplate(title,message,confirmLabel="确认",destructive=false) {
     const dialog=document.createElement("dialog");dialog.className="confirm-dialog";
-    dialog.innerHTML='<h2>'+escape(title)+'</h2><p>'+escape(message)+'</p><footer><button class="secondary-button" data-no>取消</button><button class="primary-button" data-yes>确认</button></footer>';
+    dialog.innerHTML='<h2 id="template-confirm-title">'+escape(title)+'</h2><p>'+escape(message)+'</p><footer><button class="secondary-button" data-no>取消</button><button class="'+(destructive ? "danger-button":"primary-button")+'" data-yes>'+escape(confirmLabel)+'</button></footer>';
+    dialog.setAttribute("aria-labelledby","template-confirm-title");
     document.body.append(dialog);dialog.showModal();dialog.querySelector("[data-no]").focus();
     return await new Promise(resolve=>{const finish=value=>{dialog.close();dialog.remove();resolve(value);};dialog.querySelector("[data-no]").onclick=()=>finish(false);dialog.querySelector("[data-yes]").onclick=()=>finish(true);dialog.oncancel=event=>{event.preventDefault();finish(false);};});
   }
@@ -163,7 +164,7 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
   function renderInspectionDetail() {
     if(!detailData)return;
     const tab=detailTab(),custom=detailData.source_kind==="CUSTOM";
-    detailRoot.innerHTML='<header class="ops-head"><div><p class="eyebrow">巡检模板详情 · 只读发布内容</p><h1>'+escape(detailData.display_name)+'</h1></div><button class="secondary-button" data-back-templates>返回模板中心</button></header><p class="notice">'+(custom ? "自定义模板 · 草稿不影响计划，旧计划不会自动升级。":"系统内置 · 只读，定制请基于此创建。")+'</p><nav class="segmented-control" aria-label="模板详情页签">'+[["content","模板内容"],["versions","版本历史"],["plans","引用计划"]].map(([id,label])=>'<button class="'+(tab===id?"active":"")+'" data-detail-tab="'+id+'">'+label+'</button>').join("")+'</nav><section class="daily-editor-panel" id="inspection-detail-content"></section>';
+    detailRoot.innerHTML='<header class="ops-head"><div><p class="eyebrow">巡检模板详情 · 只读发布内容</p><h1>'+escape(detailData.display_name)+'</h1></div><button class="secondary-button" data-back-templates>返回模板中心</button></header><p class="notice">'+(custom ? "自定义模板 · 草稿不影响计划，旧计划不会自动升级。":"系统内置 · 只读，需要定制时请新建自定义模板。")+'</p><nav class="segmented-control" aria-label="模板详情页签">'+[["content","模板内容"],["versions","版本历史"],["plans","引用计划"]].map(([id,label])=>'<button class="'+(tab===id?"active":"")+'" data-detail-tab="'+id+'">'+label+'</button>').join("")+'</nav><section class="daily-editor-panel" id="inspection-detail-content"></section>';
     const panel=detailRoot.querySelector("#inspection-detail-content");
     if(tab==="versions") {
       panel.innerHTML='<p>历史只读；基于旧版本编辑只替换工作草稿，不改变旧计划。</p>'+detailVersions.map((version,index)=>'<article class="daily-publish-review"><h2>v'+escape(version.version_no)+(version.current ? " · 最新发布":"")+'</h2><p>发布于 '+escape(shell.fmt(version.created_at))+' · 发布人：'+escape(version.created_by)+'</p><p>'+escape(businessDiff(version,detailVersions[index+1]))+'</p><button class="row-action" data-view-version="'+escape(version.template_version_id)+'">查看此版本</button>'+(custom && detailData.template_kind==="DAILY" ? '<button class="row-action" data-edit-version="'+escape(version.template_version_id)+'">基于此版本编辑</button>':"")+'<details><summary>技术定义</summary><pre>'+escape(JSON.stringify(version.definition,null,2))+'</pre></details></article>').join("")+(detailVersions.length?"":"<p>尚无发布版本。</p>");
@@ -281,8 +282,16 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
       if(!item)return;
       if(action.dataset.editInspectionTemplate){await openVersion("inspection",item.inspection_template_id);return;}
       if(action.dataset.viewInspection){location.hash=new URLSearchParams({template:item.inspection_template_id,tab:"content"});return;}
-      if(action.dataset.copyInspection){
-        try{const detail=await KBotAIOpsAuth.request(api+"/inspection-templates/"+item.inspection_template_id);KBotDailyTemplateEditor.open(checkCatalog,{...detail,inspection_template_id:"",draft:null,definition:null,display_name:item.display_name+" 副本"},loadTemplates);}catch(error){shell.toast(error.message);}
+      if(action.dataset.deleteInspection){
+        setActionBusy(true);
+        try {
+          if(await confirmTemplate("永久删除模板","将永久删除“"+item.display_name+"”及其全部发布版本和草稿，无法恢复。仅允许删除已停用且无计划或历史批次引用的自定义模板。","永久删除",true)) {
+            await KBotAIOpsAuth.request(api+"/inspection-templates/"+item.inspection_template_id,{method:"DELETE",body:JSON.stringify({expected_row_version:item.row_version})});
+            shell.toast("模板及其全部版本已永久删除");await loadTemplates();
+          }
+        } catch(error) {shell.toast(error.message);
+        } finally {setActionBusy(false);}
+        return;
       }
       if(action.dataset.toggleInspection)await mutateTemplate("/inspection-templates/"+item.inspection_template_id,"PATCH",{expected_row_version:item.row_version,status:item.status==="ACTIVE"?"INACTIVE":"ACTIVE"});
       if(action.dataset.defaultInspection)await mutateTemplate("/inspection-templates/"+item.inspection_template_id+":default","POST",{expected_row_version:item.row_version});

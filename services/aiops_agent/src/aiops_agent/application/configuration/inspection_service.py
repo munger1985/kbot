@@ -179,6 +179,7 @@ class InspectionConfigurationMixin:
         template = await uow.inspections.get_inspection_template(
             domain_id=domain_id,
             inspection_template_id=template_id,
+            lock=True,
         )
         if template is None or template.status != "ACTIVE" or template.current_version_id is None:
             raise validation_failed("巡检计划必须选择一个已启用的巡检模板")

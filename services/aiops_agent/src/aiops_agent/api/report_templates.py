@@ -138,6 +138,13 @@ async def discard_inspection_template(template_id: UUID, request: Request, body:
         domain_id=domain_id, actor_id=actor_id, template_id=template_id, **body.model_dump(mode="json"))
 
 
+@router.delete("/inspection-templates/{template_id}")
+async def delete_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateRevision, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.inspection_template_service.delete(
+        domain_id=domain_id, actor_id=actor_id, template_id=template_id, **body.model_dump(mode="json"))
+
+
 @router.get("/inspection-templates/{template_id}/plans")
 async def plans_inspection_template(template_id: UUID, request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
     domain_id, actor_id = _scope(request, context)

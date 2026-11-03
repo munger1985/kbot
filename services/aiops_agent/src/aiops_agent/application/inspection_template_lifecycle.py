@@ -80,8 +80,20 @@ class InspectionTemplateService:
         if int(row.row_version) != expected_row_version:
             raise state_conflict("模板已被修改，请刷新后重试")
         if custom and metadata(row)["source_kind"] == "BUILTIN":
-            raise state_conflict("系统内置模板只读，请基于此创建自定义模板")
+            raise state_conflict("系统内置模板只读，需要定制时请新建自定义模板")
         return row
+
+    async def _references(self, uow, domain_id, rows):
+        ids = [row.inspection_template_id for row in rows]
+        plans = await uow.inspections.count_plans_by_inspection_templates(domain_id=domain_id, template_ids=ids)
+        fires = await uow.inspections.count_fires_by_inspection_templates(domain_id=domain_id, template_ids=ids)
+        return {row.inspection_template_id: {
+            "usage_count": plans.get(row.inspection_template_id, 0),
+            "history_count": fires.get(row.inspection_template_id, 0),
+            "can_delete": metadata(row)["source_kind"] == "CUSTOM" and row.status == "INACTIVE"
+                and not metadata(row)["is_default"] and not plans.get(row.inspection_template_id, 0)
+                and not fires.get(row.inspection_template_id, 0),
+        } for row in rows}
 
     async def list(self, *, domain_id, actor_id, **entity_scope):
         async with self._uow_factory() as uow:
@@ -108,11 +120,11 @@ class InspectionTemplateService:
                 await uow.inspections.add_inspection_template_version(version)
                 rows.append(row)
                 added[version_id] = version
-            counts = await uow.inspections.count_plans_by_inspection_templates(domain_id=domain_id, template_ids=[row.inspection_template_id for row in rows])
+            references = await self._references(uow, domain_id, rows)
             result = []
             for row in rows:
                 version = added.get(row.current_version_id) or await self._version(uow, row)
-                result.append({**self._summary(row, version), "usage_count": counts.get(row.inspection_template_id, 0)})
+                result.append({**self._summary(row, version), **references[row.inspection_template_id]})
             if added:
                 await uow.commit()
             return result
@@ -123,7 +135,8 @@ class InspectionTemplateService:
             if row is None:
                 raise resource_not_found("InspectionTemplate")
             version = await self._version(uow, row)
-            return {**self._summary(row, version), "definition": dict(version.definition_json) if version else None,
+            references = await self._references(uow, domain_id, [row])
+            return {**self._summary(row, version), **references[row.inspection_template_id], "definition": dict(version.definition_json) if version else None,
                     "draft": metadata(row)["draft"]}
 
     async def create(self, *, domain_id, actor_id, display_name, selected_check_ids, daily_report_layout=None, **entity_scope):
@@ -187,9 +200,9 @@ class InspectionTemplateService:
         async with self._uow_factory() as uow:
             row = await self._locked(uow, domain_id, template_id, expected_row_version, custom=True)
             if row.current_version_id is None:
-                counts = await uow.inspections.count_plans_by_inspection_templates(domain_id=domain_id, template_ids=[template_id])
+                references = (await self._references(uow, domain_id, [row]))[template_id]
                 versions = await uow.inspections.list_inspection_template_versions(inspection_template_id=template_id)
-                if counts.get(template_id, 0) or versions:
+                if references["usage_count"] or references["history_count"] or versions:
                     raise state_conflict("模板仍有引用或发布历史，不能删除")
                 await uow.inspections.delete_inspection_template(row)
             else:
@@ -198,6 +211,20 @@ class InspectionTemplateService:
                 row.updated_at = datetime.now(UTC)
             await uow.commit()
             return {"discarded": True}
+
+    async def delete(self, *, domain_id, actor_id, template_id, expected_row_version):
+        """仅物理删除已停用、无任何计划或历史批次引用的自定义模板。"""
+        async with self._uow_factory() as uow:
+            await uow.inspections.lock_inspection_template_defaults(domain_id=domain_id)
+            row = await self._locked(uow, domain_id, template_id, expected_row_version, custom=True)
+            if row.status != "INACTIVE" or metadata(row)["is_default"]:
+                raise state_conflict("仅允许删除已停用且非默认的自定义模板")
+            references = (await self._references(uow, domain_id, [row]))[template_id]
+            if references["usage_count"] or references["history_count"]:
+                raise state_conflict("模板仍被计划或历史批次引用，不能删除；停用计划也属于引用")
+            await uow.inspections.delete_inspection_template_with_versions(row)
+            await uow.commit()
+            return {"deleted": True}
 
     async def set_default(self, *, domain_id, actor_id, template_id, expected_row_version):
         async with self._uow_factory() as uow:

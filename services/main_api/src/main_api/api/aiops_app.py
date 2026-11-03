@@ -1724,6 +1724,16 @@ async def discard_inspection_template(template_id: UUID, request: Request, body:
     )
 
 
+@router.delete("/inspection-templates/{template_id}")
+async def delete_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateRevisionPayload):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request(
+        "DELETE", f"/{template_id}",
+        payload=body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
 @router.get("/inspection-templates/{template_id}/plans")
 async def plans_inspection_template(template_id: UUID, request: Request):
     await _require(request, "aiops:plan_manage")

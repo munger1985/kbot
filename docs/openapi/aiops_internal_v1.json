@@ -26805,6 +26805,55 @@
       }
     },
     "/internal/v1/aiops/inspection-templates/{template_id}": {
+      "delete": {
+        "operationId": "delete_inspection_template_internal_v1_aiops_inspection_templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionTemplateRevision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      },
       "get": {
         "operationId": "get_inspection_template_internal_v1_aiops_inspection_templates__template_id__get",
         "parameters": [

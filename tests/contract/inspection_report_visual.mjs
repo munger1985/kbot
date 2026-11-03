@@ -27,9 +27,9 @@ const harness = {
   load(id) {
     if (id !== path.join(portal, "__inspection_harness__.js")) return;
     return 'import {createApp,h} from "vue"; import {createRouter,createWebHistory,RouterView} from "vue-router";'
-      + 'import Report from "/src/features/aiops/business/AIOpsReportDetailView.vue"; import Templates from "/src/features/aiops/management/AIOpsReportTemplatesView.vue"; import "/src/shared/ui/styles.css";'
+      + 'import Report from "/src/features/aiops/business/AIOpsReportDetailView.vue"; import Templates from "/src/features/aiops/management/AIOpsReportTemplatesView.vue"; import ConfirmDialog from "/src/shared/ui/ConfirmDialog.vue"; import "/src/shared/ui/styles.css";'
       + 'const router=createRouter({history:createWebHistory(),routes:[{path:"/sample/:domainCode/:reportId",component:Report,meta:{title:"报告详情"}},{path:"/template/:domainCode",component:Templates,meta:{title:"模板中心"}}]});'
-      + 'createApp({render:()=>h(RouterView)}).use(router).mount("#app");';
+      + 'createApp({render:()=>h("div",[h(RouterView),h(ConfirmDialog)])}).use(router).mount("#app");';
   },
   configureServer(server) {
     server.middlewares.use(async (req, res, next) => {
@@ -87,6 +87,9 @@ try {
   // 编辑器通过真实页面操作验收，全部 API 被隔离替身拦截。
   for (const product of ["ammolite", "kbot4"]) {
     for (const width of [1440,1024,390]) {
+      const requestedProduct=process.argv.find(arg=>arg.startsWith("--product="))?.split("=")[1];
+      const requestedWidth=Number(process.argv.find(arg=>arg.startsWith("--width="))?.split("=")[1]);
+      if(requestedProduct && requestedProduct!==product || requestedWidth && requestedWidth!==width) continue;
       const page=await browser.newPage({viewport:{width,height:1000}}), errors=[], writes=[];
       console.log('日报分步编辑器验收：'+product+' / '+width);
       page.setDefaultTimeout(10000);
@@ -97,7 +100,7 @@ try {
       template.definition={display_name:template.display_name,selected_check_ids:ready,daily_report_layout:structuredClone(catalog.daily_report_layout)};
       const drafts=new Map(), draftSaves=[];
       const builtin={...template,inspection_template_id:"builtin-template",display_name:"系统标准日报",source_kind:"BUILTIN",is_default:true};
-      let newDraft=null;
+      let newDraft=null, deletionFixtures=[], deleteRequests=0, failDelete=true;
       let failPreview=false, failPublish=false, publishRequests=0, previewGate=null;
       const previewInputs=[];
       await page.route("**/api/**",async route=>{
@@ -105,6 +108,14 @@ try {
         if (!url.pathname.startsWith("/api/")) return route.continue();
         let result;
         if(url.pathname.endsWith("/inspection-check-catalog")) result=catalog;
+        else if(method==="DELETE" && /\/inspection-templates\/[^/]+$/.test(url.pathname)) {
+          deleteRequests++;
+          const id=url.pathname.split("/").at(-1),row=deletionFixtures.find(row=>row.inspection_template_id===id);
+          assert.equal(id,"inactive-unused");assert.equal(route.request().postDataJSON().expected_row_version,row.row_version);
+          if(failDelete) {failDelete=false;row.row_version++;await route.fulfill({status:409,json:{error:{message:"模板已被修改，请刷新后重试"}}});return;}
+          result={deleted:true};
+          deletionFixtures=deletionFixtures.filter(item=>item.inspection_template_id!==id);
+        }
         else if(url.pathname.endsWith("/inspection-templates:preview")) {
           const input=route.request().postDataJSON(), preview=structuredClone(samples[{NORMAL:"normal",ATTENTION:"attention",INCOMPLETE:"incomplete"}[input.scenario]]);
           previewInputs.push(input);
@@ -134,7 +145,7 @@ try {
           writes.push(structuredClone(drafts.get(id)));
           row.definition=structuredClone(row.draft);row.display_name=row.definition.display_name;row.selected_check_ids=row.definition.selected_check_ids;row.daily_report_layout=row.definition.daily_report_layout;row.draft=null;row.has_draft=false;row.version_no=(row.version_no||0)+1;row.row_version++;
           result=row;
-        } else if(url.pathname.endsWith("/inspection-templates")) result=[template,builtin];
+        } else if(url.pathname.endsWith("/inspection-templates")) result=[template,builtin,...deletionFixtures];
         else if(url.pathname.endsWith("/sample-template")) result=template;
         else if(url.pathname.endsWith("/builtin-template")) result=builtin;
         else if(url.pathname.endsWith("/versions")) result=[{template_version_id:"version-1",version_no:template.version_no,created_by:"template-admin",created_at:"2026-11-03T00:00:00Z",current:true,definition:template.definition}];
@@ -161,10 +172,8 @@ try {
       await page.getByRole("button",{name:"返回模板中心",exact:true}).click();
       await page.screenshot({path:path.join(resultDir,product+"-template-cards-"+width+".png"),fullPage:false});
       const builtinCard=cards.filter({hasText:"系统标准日报"});
-      await builtinCard.getByRole("button",{name:/更多/}).click();
-      assert.ok((await builtinCard.getByRole("menu").innerText()).includes("基于此创建"));
-      assert.equal((await builtinCard.getByRole("menu").innerText()).includes("停用"),false);
-      await page.keyboard.press("Escape");
+      assert.equal(await builtinCard.getByRole("button",{name:/更多/}).count(),0);
+      assert.equal(await page.getByRole("button",{name:"基于此创建",exact:true}).count(),0);
       try { await page.getByRole("button",{name:"编辑模板",exact:true}).click({timeout:10000}); }
       catch(error) { console.error(product,width,errors,await page.locator("body").innerText()); throw error; }
       const editor=page.locator(product==="kbot4" ? "#daily-template-editor" : "main.daily-template-editor");
@@ -305,6 +314,42 @@ try {
       await page.getByRole("button",{name:"引用计划",exact:true}).click();
       await page.getByText(/生产库巡检.*v1/).waitFor();
       await page.getByRole("button",{name:"返回模板中心",exact:true}).click();
+      // 仅停用且无引用的自定义模板出现删除入口；取消、版本冲突及防重使用真实确认交互。
+      deletionFixtures=[
+        {...template,inspection_template_id:"inactive-unused",display_name:"可删除日报",status:"INACTIVE",usage_count:0,history_count:0,can_delete:true,row_version:1,has_draft:true},
+        {...template,inspection_template_id:"inactive-used",display_name:"停用仍被引用",status:"INACTIVE",usage_count:1,can_delete:false},
+        {...template,inspection_template_id:"inactive-history",display_name:"历史批次引用",status:"INACTIVE",usage_count:0,history_count:1,can_delete:false},
+        {...template,inspection_template_id:"inactive-default",display_name:"受保护默认模板",status:"INACTIVE",is_default:true,can_delete:false},
+      ];
+      await page.reload();await page.locator(".management-catalog-card").first().waitFor();
+      const deletable=cards.filter({hasText:"可删除日报"}), confirm=page.locator(".confirm-dialog");
+      for(const label of ["共享日报模板","停用仍被引用","历史批次引用","受保护默认模板"]){
+        const card=cards.filter({hasText:label});await card.getByRole("button",{name:/更多/}).click();
+        assert.equal(await card.getByRole("button",{name:"删除模板",exact:true}).count(),0);
+        await page.keyboard.press("Escape");
+      }
+      async function openDelete(){
+        await deletable.getByRole("button",{name:/更多/}).click();
+        await deletable.getByRole("button",{name:"删除模板",exact:true}).evaluate(button=>{button.click();button.click();});
+        await confirm.waitFor();assert.equal(await confirm.count(),1);
+        assert.ok((await confirm.innerText()).includes("全部发布版本和草稿"));
+      }
+      await openDelete();
+      assert.equal(await confirm.evaluate(node=>node.scrollWidth>node.clientWidth+2),false);
+      await page.screenshot({path:path.join(resultDir,product+"-template-delete-"+width+".png"),fullPage:false});
+      await confirm.getByRole("button",{name:"取消",exact:true}).click();
+      await confirm.waitFor({state:"hidden"});assert.equal(deleteRequests,0);
+      await openDelete();
+      let deleted=page.waitForResponse(response=>response.request().method()==="DELETE");
+      await confirm.getByRole("button",{name:"永久删除",exact:true}).click();await deleted;
+      await confirm.waitFor({state:"hidden"});assert.equal(deleteRequests,1);assert.equal(await deletable.count(),1);
+      await page.reload();await page.locator(".management-catalog-card").first().waitFor();
+      await openDelete();deleted=page.waitForResponse(response=>response.request().method()==="DELETE");
+      await confirm.getByRole("button",{name:"永久删除",exact:true}).evaluate(button=>{button.click();button.click();});
+      await deleted;await deletable.waitFor({state:"detached"});assert.equal(deleteRequests,2);
+      await cards.filter({hasText:"停用仍被引用"}).waitFor();
+      assert.equal(await cards.filter({hasText:"停用仍被引用"}).count(),1);
+      assert.equal(await cards.filter({hasText:"历史批次引用"}).count(),1);
       // 409 是专门注入的版本竞争，不把预期 HTTP 失败算作控制台异常。
       assert.deepEqual(errors.filter(message=>!message.includes("409 (Conflict)")),[]);
       await page.close();

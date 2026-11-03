@@ -10,6 +10,7 @@ from sqlalchemy import (
     and_,
     case,
     column,
+    delete,
     func,
     or_,
     select,
@@ -250,6 +251,16 @@ class InspectionRepository(AIOpsRepository):
         """仅由生命周期服务删除无发布、无引用的草稿根。"""
         await self._session.delete(entity)
 
+    async def delete_inspection_template_with_versions(self, entity):
+        """先解除当前版本指针，再删除本模板的版本和根；事务由 UoW 统一提交。"""
+        entity.current_version_id = None
+        await self._session.flush()
+        await self._session.execute(delete(InspectionTemplateVersionEntity).where(
+            InspectionTemplateVersionEntity.domain_id == entity.domain_id,
+            InspectionTemplateVersionEntity.inspection_template_id == entity.inspection_template_id,
+        ))
+        await self._session.delete(entity)
+
     async def list_plans_by_inspection_template(self, *, domain_id, template_id):
         """引用计划保持业务空间隔离，包含停用计划。"""
         return list(await self._session.scalars(select(InspectionPlanEntity).where(
@@ -278,13 +289,25 @@ class InspectionRepository(AIOpsRepository):
         return list(await self._session.scalars(statement))
 
     async def count_plans_by_inspection_templates(self, *, domain_id, template_ids):
-        """按业务空间统计模板引用计划数，停用计划仍属于有效引用。"""
+        """包含停用计划，同时保护根或任一发布版本的引用。"""
+        return await self._count_inspection_template_references(domain_id, template_ids, InspectionPlanEntity)
+
+    async def count_fires_by_inspection_templates(self, *, domain_id, template_ids):
+        """历史批次仍是引用，不允许删除其冻结模板版本。"""
+        return await self._count_inspection_template_references(domain_id, template_ids, InspectionFireEntity)
+
+    async def _count_inspection_template_references(self, domain_id, template_ids, reference):
+        """根记录限定业务空间；异常跨空间引用也不能被忽略而误删。"""
         if not template_ids:
             return {}
-        statement = select(InspectionPlanEntity.inspection_template_id, func.count()).where(
-            InspectionPlanEntity.domain_id == domain_id,
-            InspectionPlanEntity.inspection_template_id.in_(template_ids),
-        ).group_by(InspectionPlanEntity.inspection_template_id)
+        root, version = InspectionTemplateEntity, InspectionTemplateVersionEntity
+        versions = select(version.inspection_template_version_id).where(
+            version.inspection_template_id == root.inspection_template_id,
+        ).correlate(root)
+        statement = select(root.inspection_template_id, func.count()).select_from(root).join(
+            reference, or_(reference.inspection_template_id == root.inspection_template_id,
+                           reference.inspection_template_version_id.in_(versions)),
+        ).where(root.domain_id == domain_id, root.inspection_template_id.in_(template_ids)).group_by(root.inspection_template_id)
         return {key: int(count) for key, count in (await self._session.execute(statement)).all()}
 
     async def get_inspection_template(
