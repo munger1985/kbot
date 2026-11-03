@@ -64,8 +64,19 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     document.getElementById("inspection-schedule-summary").textContent = type === "DAILY" ? `每天 ${time}（${zone}）` : type === "CRON" ? `Cron ${form.elements.cron_expression.value || "尚未填写"}（${zone}）` : `${selectedDays || "尚未选择执行日"} ${time}（${zone}）`;
     const template = state.templates.find(item => item.inspection_template_id === form.elements.inspection_template_id.value), summary = document.getElementById("inspection-template-summary");
     summary.hidden = !template;document.getElementById("inspection-template-empty").hidden = Boolean(template);
-    document.getElementById("inspection-upgrade-label").hidden = !state.editing;
-    if (template) summary.innerHTML = `<span>${state.editing ? "模板当前可用版本" : "当前模板"}</span><strong>${esc(template.display_name)} · v${esc(template.version_no)}</strong><small>${state.editing ? "默认保留原绑定版本；勾选升级选项才使用所选模板当前版本。" : `${rows(template.selected_check_ids).length} 个检查项；计划创建时会冻结当前模板版本。`}</small>`;
+    const plan = state.editing, sameTemplate = template?.inspection_template_id === plan?.inspection_template_id;
+    const newerVersion = Boolean(sameTemplate && plan && Number(template?.version_no) > plan.inspection_template_version);
+    const canUpgrade = newerVersion && template?.status === "ACTIVE";
+    document.getElementById("inspection-upgrade-label").hidden = !canUpgrade;
+    document.getElementById("inspection-upgrade-copy").textContent = `本次保存升级到 v${template?.version_no}（仅影响后续批次）`;
+    if (!canUpgrade) form.elements.upgrade_template_version.checked = false;
+    if (template) {
+      const note = !sameTemplate ? `保存后改用 ${template.display_name} · v${template.version_no}；仅影响后续批次。`
+        : newerVersion ? `模板最新发布版本：v${template.version_no}。${!canUpgrade ? "模板已停用，保留计划当前版本。" : form.elements.upgrade_template_version.checked ? `保存后升级到 v${template.version_no}；仅影响后续批次。` : `尚未升级；不勾选时继续使用 v${plan.inspection_template_version}。`}`
+        : "已使用当前版本；未来发布新版本时仍需手动升级。";
+      summary.innerHTML = plan ? `<span>计划当前版本</span><strong>${esc(plan.inspection_template_name)} · v${esc(plan.inspection_template_version)}</strong><small>${esc(note)}</small>`
+        : `<span>当前模板</span><strong>${esc(template.display_name)} · v${esc(template.version_no)}</strong><small>${rows(template.selected_check_ids).length} 个检查项；计划创建时会冻结当前模板版本。</small>`;
+    }
     drawer.querySelectorAll("[data-close-plan]").forEach(button => {button.disabled = state.busy;});
     form.querySelectorAll('[name="schedule_type"]').forEach(input => {input.disabled = Boolean(state.editing);});
     document.getElementById("save-inspection-plan").disabled = state.busy || !ready();
@@ -159,7 +170,7 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     if (!rows(access.permissions).includes("aiops:plan_manage")) {location.replace("./inspections.html");return;}
     document.querySelector("[data-inspection-reports]").onclick = () => {location.href = "./inspections.html";};
     document.getElementById("refresh-inspection-plans").onclick = load;
-    form.onsubmit = save;form.oninput = updateForm;form.onchange = event => {if (event.target.name === "business_system_id") void loadSystemScope();updateForm();};
+    form.onsubmit = save;form.oninput = updateForm;form.onchange = event => {if (event.target.name === "business_system_id") void loadSystemScope();if (event.target.name === "inspection_template_id") form.elements.upgrade_template_version.checked = false;updateForm();};
     drawer.onclick = event => {if (event.target.closest("[data-close-plan]")) close();};
     drawer.addEventListener("cancel",event => {if (state.busy) event.preventDefault();});drawer.addEventListener("close",close);
     document.getElementById("inspection-plan-catalog").onclick = event => {
