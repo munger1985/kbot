@@ -35,8 +35,8 @@ def pipeline(sample=SAMPLE, normalized=NORMALIZED, *, count=1):
         rows=tuple(tuple(raw.get(name) for name in names) for _ in range(count)), row_count=count,
         truncated=False, evidence_ref=f"artifact:{uuid7()}#digests",
     ),), evidence_gaps=())
-    inspection = {"evidence_steps": compile_selected_check_steps(
-        ["mysql.sql.top"], database_type="MYSQL", schedule_type="DAILY"),
+    inspection = {"evidence_steps": tuple({**step, "tool_id": "db.mysql.statement.digest.top", "report_columns": list(raw)} for step in compile_selected_check_steps(
+        ["mysql.sql.top"], database_type="MYSQL", schedule_type="DAILY")),
         "period_end": "2026-11-03T10:00:00Z"}
     facts, gaps, _ = AIOpsRuntimeService._inspection_report_projection(
         inspection=inspection, source=source, database_type="MYSQL", action_tool_ids={},
@@ -105,19 +105,10 @@ def test_report_and_pdf_use_same_frozen_sql_and_do_not_mutate_old_report(sample)
     daily = presentation["daily_inspection"]
     assert sample[:400] not in daily["checks"][0]["actual_display"]
     group = daily["sql_details"][0]
-    assert group["shown_count"] == 3 and group["observed_count"] == 4
-    assert len(group["statements"]) == 3
-    for item in group["statements"]:
-        assert item["statement_text"] == sample
-        assert item["statement_preview"] == sample[:400]
-        assert item["statement_truncated"] == (len(sample) > 400)
-        assert item["digest"] == ""
-        assert item["execution_count_display"] == "592,553"
-        assert item["total_latency_display"] == "1,421,368.5 ms"
-        assert item["average_latency_display"] == "2.4 ms"
-        assert item["maximum_latency_display"] == "239.2 ms"
+    assert group["status"] == "NOT_ASSESSED"
+    assert group["statements"] == []
     typed = DailyInspectionPresentation.model_validate(daily)
-    assert typed.sql_details[0].statements[0].statement_text == sample
+    assert typed.sql_details[0].statements == ()
     assert render_pdf(presentation).startswith(b"%PDF-")
     assert payload == original
     old = deepcopy(payload)
@@ -139,7 +130,7 @@ def test_non_sql_observation_format_remains_unchanged():
 
 
 @pytest.mark.parametrize("value,expected", [
-    (1425880197358000, "1,425,880.2 ms"), ("2398109000", "2.4 ms"),
+    (1425880197358000, "23.8 min"), ("2398109000", "2.4 ms"),
     (239177605000, "239.2 ms"), (0, "0.0 ms"), (1, "0.0 ms"),
     (150000000, "0.2 ms"), (None, "未记录"), ("", "未记录"),
     ("invalid", "未记录"), (-1, "未记录"), ("NaN", "未记录"),
@@ -160,11 +151,8 @@ def test_sql_details_preserve_source_order_and_missing_values_without_fabricatio
     original = deepcopy(facts)
     checks, groups = inspection_sql_details(list(facts), result["checks"])
     group = groups[0]
-    assert group["observed_count"] == 5 and group["shown_count"] == 3
-    assert [item["execution_count_display"] for item in group["statements"]] == ["12", "未记录", "未记录"]
-    assert group["statements"][0]["average_latency_display"] == "未记录"
-    assert all(item["statement_text"] == "" and item["digest"] == DIGEST for item in group["statements"])
-    assert "累计" in group["note"]
+    assert group["status"] == "NOT_ASSESSED" and group["statements"] == []
+    assert "重新运行" in group["summary"]
     assert "SQL 文本" not in checks[0]["actual_display"]
     assert facts == original
 
@@ -175,5 +163,6 @@ def test_no_frozen_observations_keeps_old_display_and_does_not_parse_text():
     fact["observations"] = []
     result["checks"][0]["actual_display"] = "SQL 文本：" + SAMPLE + "，平均延迟皮秒：2398719000"
     checks, groups = inspection_sql_details(list(facts), result["checks"])
-    assert groups == []
-    assert checks == result["checks"]
+    assert groups[0]["status"] == "NOT_ASSESSED"
+    assert SAMPLE not in checks[0]["actual_display"]
+    assert result["checks"][0]["actual_display"].startswith("SQL 文本：" + SAMPLE)

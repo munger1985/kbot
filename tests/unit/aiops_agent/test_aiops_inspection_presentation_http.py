@@ -86,8 +86,7 @@ class InspectionPresentationHttpTest(unittest.TestCase):
                 else:
                     self.assertEqual(sample[key]["checks"], body[key]["checks"])
                     self.assertEqual(sample[key]["sql_details"], body[key]["sql_details"])
-                    self.assertEqual(3, len(body[key]["sql_details"][0]["statements"]))
-                    self.assertEqual("1,425,880.2 ms", body[key]["sql_details"][0]["statements"][0]["total_latency_display"])
+                    self.assertEqual(len(sample[key]["sql_details"][0]["statements"]), len(body[key]["sql_details"][0]["statements"]))
                     self.assertNotIn("baseline_metrics", body[key])
                 service.get_report_presentation.assert_awaited_once_with(
                     report_id=report_id, domain_id=domain_id,

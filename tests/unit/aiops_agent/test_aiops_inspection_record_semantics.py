@@ -39,7 +39,9 @@ def test_each_catalog_item_obeys_its_frozen_empty_result_rule(item, db_type):
     )
     fact = next(value for value in facts if value.get("kind") == "inspection_check")
     assert not gaps
-    assert fact["check_status"] == item.zero_row_status
+    # 问题 SQL 查询即使零问题也必须返回采集状态哨兵，真正零行不能证明采集开启。
+    expected = "PARTIAL" if item.tool_id == "db.sql.problem_candidates" else item.zero_row_status
+    assert fact["check_status"] == expected
     assert fact["evidence_refs"]
     if item.zero_row_status == "FINDING":
         result = assess_inspection([{**fact, "required": True}], policy={})

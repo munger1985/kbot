@@ -3467,6 +3467,10 @@ class AIOpsRuntimeService:
         ))
         monitoring_profile = dict(dict(plan.get("monitoring") or {}).get("monitoring_profile") or {})
         facts = (*facts, *monitoring_checks(facts, profile=monitoring_profile, policy=report_policy))
+        if source.inspection_sql_reviews:
+            facts = (*facts, {"kind": "inspection_sql_reviews", "reviews": [
+                dict(review) for review in source.inspection_sql_reviews
+            ]})
         if markdown:
             facts = (
                 *facts,
@@ -4009,6 +4013,7 @@ class AIOpsRuntimeService:
                 report_rows = AIOpsRuntimeService._inspection_observation_rows(
                     observations,
                     report_columns=tuple(step.get("report_columns") or ()),
+                    limit=sum(len(item.rows) for item in observations) if tool_id == "db.sql.problem_candidates" else 5,
                 )
                 compilation = compile_findings(
                     tuple(observations),
@@ -4112,6 +4117,9 @@ class AIOpsRuntimeService:
                         ] + record_findings,
                     }
                 )
+                if tool_id == "db.sql.problem_candidates":
+                    from aiops_agent.application.inspections.sql_problems import freeze_problem_sql_check
+                    facts[-1] = freeze_problem_sql_check(facts[-1], step=step, database_type=database_type)
                 continue
             if step_gaps:
                 detail = str(

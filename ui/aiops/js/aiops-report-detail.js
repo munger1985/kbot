@@ -78,6 +78,18 @@
     const trace = sources.length ? `<details class="inspection-trace"><summary>技术追溯信息（${sources.length} 条）</summary><p>证据编号用于定位原始记录，内容指纹用于核对记录内容；仅供技术核查，不属于巡检问题。</p>${list(sources,"","inspection-source-list","ul")}</details>` : "";
     return `<details class="daily-evidence inspection-appendix"><summary>附录：统计方法与技术追溯</summary><div class="inspection-appendix-body"><p>${esc(boundary.methodology)}</p>${monthly ? `<h3>上月对比</h3><p>${esc(compare)}</p>` : `<p>必要检查完成率：${esc(coverage(boundary.quality?.evidence_coverage_percent))}；监控采样完整率：${esc(coverage(boundary.quality?.monitoring_sample_coverage_percent))}</p>`}${rows(data.gaps).length ? `<h3>数据说明</h3>${list(data.gaps)}` : ""}${trace}</div></details>`;
   }
+  function sqlReviewHtml(statement) {
+    const review = statement.agent_review || {};
+    let html = `<div class="inspection-sql-analysis"><h4>Agent 初步分析${review.status === "COMPLETE" ? "" : "（未完成）"}</h4><p>${esc(review.analysis)}</p>`;
+    if (review.status === "COMPLETE") {
+      html += '<h4>可能原因与验证方向</h4><ul>' + rows(review.possible_causes).map(cause =>
+        `<li>${esc(cause.possible_cause)}<p>验证：${esc(cause.verification)}</p></li>`).join("") + '</ul><h4>初步优化建议</h4><ol>';
+      html += rows(review.recommendations).map(advice =>
+        `<li>${esc(advice.action)}<p>${esc(advice.rationale)}</p><p>验证：${esc(advice.validation)}${advice.requires_approval ? "；实施前须审批。" : ""}</p></li>`).join("") + "</ol>";
+      html += rows(review.limitations).map(value => `<p class="inspection-sql-note">${esc(value)}</p>`).join("");
+    } else html += "<h4>规则复核建议（非 Agent 分析）</h4>" + list(statement.rule_recommendations);
+    return html + "</div>";
+  }
   function dailyHtml(daily) {
     const header = daily.header, conclusion = daily.conclusion, metrics = rows(daily.metrics);
     const ledger = (label,value) => `<div><span>${label}</span><strong>${esc(value)}</strong></div>`;
@@ -89,8 +101,8 @@
       ? inspectionTable(["检查内容","结果","实测情况","判断依据"],daily.checks.map(check => [check.title+(check.required ? "（必要）" : ""),check.status_display,check.actual_display || check.summary,check.basis]),"daily-checks-table")
       : '<p class="daily-empty">本报告未记录基础检查明细，不能据此补造正常结果。</p>');
     rows(daily.sql_details).forEach(group => {
-      const cards = rows(group.statements).map(statement => `<article class="inspection-sql-card"><header><h3>${esc(String(statement.ordinal).padStart(2,"0"))} · Schema：${esc(statement.schema_name || "未记录")}</h3><span>${esc(statement.text_label)}</span></header>${statement.statement_text ? `<pre><code>${esc(statement.statement_preview)}</code></pre>` : '<p>来源未返回 SQL 文本。</p>'}${statement.statement_truncated ? `<details class="inspection-sql-full-text"><summary>预览已截短，展开来源返回的 SQL 全文</summary><pre><code>${esc(statement.statement_text)}</code></pre></details>` : ""}${statement.digest ? `<details class="inspection-sql-full-text"><summary>语句定位信息（Digest）</summary><p>${esc(statement.digest)}</p></details>` : ""}<dl class="inspection-sql-stats">${[["执行次数",statement.execution_count_display],["总耗时",statement.total_latency_display],["平均耗时",statement.average_latency_display],["最大耗时",statement.maximum_latency_display]].map(([label,value]) => `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl></article>`).join("");
-      content += dailySection("SQL",`${group.title}明细`,`展示 ${group.shown_count} / ${group.observed_count} 组语句`,`<p class="inspection-sql-note">${esc(group.note)}</p>${cards}`);
+      const cards = rows(group.statements).map(statement => `<article class="inspection-sql-card"><header><h3>${esc(String(statement.ordinal).padStart(2,"0"))} · ${esc(statement.schema_name || header.target_name)}</h3>${badge(statement.severity,riskLabel(statement.severity),riskClass(statement.severity))}</header><div class="inspection-sql-analysis"><h4>${esc(statement.problem_summary)}</h4><p>判断依据：${esc(statement.basis)}</p><p>${esc(statement.text_label)}</p></div>${statement.statement_text ? `<pre><code>${esc(statement.statement_preview)}</code></pre>` : '<p>来源未返回 SQL 文本。</p>'}${statement.statement_truncated ? `<details class="inspection-sql-full-text"><summary>预览已截短，展开来源返回的 SQL 全文</summary><pre><code>${esc(statement.statement_text)}</code></pre></details>` : ""}<dl class="inspection-sql-stats">${[["执行次数",statement.execution_count_display],["总耗时",statement.total_latency_display],["平均耗时",statement.average_latency_display],["最大耗时",statement.maximum_latency_display]].map(([label,value]) => `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>${sqlReviewHtml(statement)}</article>`).join("");
+      content += dailySection("SQL",group.title,`${rows(group.statements).length} 条已识别问题`,`<p class="inspection-sql-summary">${esc(group.summary)}</p><p class="inspection-sql-note">${esc(group.note)}</p>${cards}`);
     });
     if (metrics.length) content += dailySection("METRICS","关键运行指标","按明确规则判读最新样本；吞吐量相对增长不自动视为异常。",inspectionTable(["指标 / 范围","最新样本","采集窗口平均 / 最大","判断"],metrics.map(metric => [metric.display_name+" "+metric.dimension_label,metric.current_display,metric.average_display+" / "+metric.maximum_display,metric.status_display])));
     const comparisons = metrics.filter(metric => metric.baseline_applicable);

@@ -1508,11 +1508,35 @@ _ACTION_ID_RE = re.compile(r"^a[0-9]+$")
 class DbaAnswerComposeHandler:
     """模型写自然语言，表格和图表由服务端从已验证证据生成。"""
 
-    def __init__(self, *, model_client, prompts) -> None:
+    def __init__(self, *, model_client, prompts, diagnosis_config=None) -> None:
         self._model = model_client
         self._prompts = prompts
+        self._diagnosis_config = diagnosis_config or AIOpsDiagnosisConfig()
 
     async def execute(self, context: TaskExecutionContext) -> AIOpsTurnResult:
+        from aiops_agent.application.inspections.sql_reviews import review_inspection_sql
+        inspection = dict(dict(context.plan_snapshot.get("client_metadata") or {}).get("inspection") or {})
+        if context.trigger_type != "SCHEDULE" or not any(
+            step.get("tool_id") == "db.sql.problem_candidates" for step in inspection.get("evidence_steps") or ()
+        ):
+            return await self._execute(context)
+        assessment = self._assessment(context.input_artifacts)
+        if assessment.status in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
+            return self._waiting_result(assessment, context)
+        reviews = await review_inspection_sql(
+            context=context, result=assessment, model=self._model, prompts=self._prompts,
+            concurrency=self._diagnosis_config.inspection_sql_review_concurrency,
+        )
+        blocks = self._assemble_blocks(context=context, assessment=assessment,
+            markdown="巡检事实按冻结规则形成结论，问题 SQL 的逐条初步分析与建议见正式巡检报告。")
+        return AIOpsTurnResult(
+            status="COMPLETED" if assessment.status == SufficiencyStatus.ANSWERABLE else "PARTIAL",
+            sufficiency_status=assessment.status, blocks=tuple(blocks),
+            evidence=assessment.evidence, evidence_gaps=assessment.gaps,
+            assessment_reasons=assessment.reasons, inspection_sql_reviews=reviews,
+        )
+
+    async def _execute(self, context: TaskExecutionContext) -> AIOpsTurnResult:
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
         task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})

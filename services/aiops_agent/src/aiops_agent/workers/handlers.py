@@ -404,6 +404,7 @@ def create_runtime_handler_registry(
                 implementation=DbaAnswerComposeHandler(
                     model_client=diagnosis_model_client,
                     prompts=diagnosis_prompt_registry,
+                    diagnosis_config=diagnosis_config,
                 ),
             )
         )

@@ -446,7 +446,9 @@ class InspectionSchedulerTest(unittest.TestCase):
             )
             self.assertTrue(
                 all(
-                    item["measurement_semantics"] == "CURRENT_ACTIVITY"
+                    item["measurement_semantics"] == (
+                        "CUMULATIVE_SINCE_LOAD" if item["tool_id"] == "db.sql.problem_candidates" else "CURRENT_ACTIVITY"
+                    )
                     for item in execution["inspection"]["evidence_steps"]
                 )
             )

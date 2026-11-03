@@ -144,6 +144,11 @@
 /* 巡检正文自然排版；窄屏切换带标签的明细卡片，不嵌套横向滚动。 */
 /* SQL 独立成块，全宽换行；统计与正文分离，避免检查单元格内文字堆叠。 */
 .inspection-sql-note { margin: 0 0 20px; color: var(--muted); line-height: 1.75; }
+.inspection-sql-summary { color: var(--ink); font-weight: 600; line-height: 1.75; }
+.inspection-sql-analysis { padding: 16px; border-top: 1px solid var(--line); overflow-wrap: anywhere; line-height: 1.75; }
+.inspection-sql-analysis h4 { margin: 0 0 8px; color: var(--ink); font-size: 14px; }
+.inspection-sql-analysis p { margin: 6px 0 12px; }
+.inspection-sql-analysis ul, .inspection-sql-analysis ol { margin: 0 0 12px; padding-left: 20px; }
 .inspection-sql-card { min-width: 0; margin-top: 20px; border: 1px solid var(--line); }
 .inspection-sql-card > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--surface-subtle); }
 .inspection-sql-card h3 { margin: 0; color: var(--ink); font-size: 14px; overflow-wrap: anywhere; }

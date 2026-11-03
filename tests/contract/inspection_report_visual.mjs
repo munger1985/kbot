@@ -129,8 +129,17 @@ try {
             }
           }
           assert.ok(!(await page.locator(".daily-checks-table").innerText()).includes("皮秒"));
-          if (name === "normal" && statements.length)
+          if (name === "attention" && statements.length)
             await cards.first().locator("..").screenshot({path:path.join(resultDir,`${product}-sql-${width}.png`)});
+          if (name === "normal") {
+            assert.equal(statements.length, 0);
+            assert.ok((await page.locator(".inspection-sql-summary").innerText()).includes("当前没有问题 SQL"));
+          }
+          if (["attention", "abnormal"].includes(name)) {
+            assert.equal(statements.length, 8);
+            assert.ok((await cards.first().innerText()).includes("Agent 初步分析"));
+            assert.ok((await cards.first().innerText()).includes("初步优化建议"));
+          }
           const comparisons = data.metrics.filter(metric => metric.baseline_applicable);
           const table = page.locator(".daily-baseline-table");
           assert.equal(await table.count(), comparisons.length ? 1 : 0);

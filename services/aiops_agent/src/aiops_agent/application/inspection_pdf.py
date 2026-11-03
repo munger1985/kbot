@@ -135,15 +135,18 @@ def inspection_pdf_story(
         else:
             story.append(paragraph("本报告未记录可展示的基础检查明细，不能据此补造正常结果。"))
         for group in data.get("sql_details") or ():
-            heading(str(group.get("title") or "高负载 SQL") + "明细")
-            story.append(paragraph(f"展示 {group['shown_count']} / {group['observed_count']} 组语句。", keep_with_next=True))
-            story.append(paragraph(group.get("note") or "", keep_with_next=True))
+            heading(str(group.get("title") or "问题 SQL"))
+            story.append(paragraph(group.get("summary") or "问题 SQL 检查尚未完成。"))
+            story.append(paragraph(group.get("note") or ""))
             for item in group.get("statements") or ():
                 story.append(paragraph(
                     f"{item['ordinal']:02d} · Schema：{item.get('schema_name') or '未记录'}",
                     section, keep_with_next=True,
                 ))
                 story.append(paragraph(item.get("text_label") or "SQL 文本", keep_with_next=True))
+                story.append(paragraph("高风险" if item.get("severity") == "HIGH" else "需关注", keep_with_next=True))
+                story.append(paragraph(item.get("problem_summary") or ""))
+                story.append(paragraph("判断依据：" + str(item.get("basis") or "")))
                 story.append(paragraph(item.get("statement_preview") or "来源未返回 SQL 文本。"))
                 if item.get("statement_truncated"):
                     story.append(paragraph("SQL 预览已截短；来源返回的完整正文可在网页报告中展开查看。"))
@@ -151,6 +154,24 @@ def inspection_pdf_story(
                     item.get("execution_count_display"), item.get("total_latency_display"),
                     item.get("average_latency_display"), item.get("maximum_latency_display"),
                 ]], (35, 55, 40, 40))
+                review = dict(item.get("agent_review") or {})
+                story.append(paragraph("Agent 初步分析" + ("（未完成）" if review.get("status") != "COMPLETE" else ""),
+                                       section, keep_with_next=True))
+                story.append(paragraph(review.get("analysis") or "Agent 初步分析尚未生成。"))
+                if review.get("status") == "COMPLETE":
+                    for cause in review.get("possible_causes") or ():
+                        story.append(paragraph("可能原因：" + cause["possible_cause"]))
+                        story.append(paragraph("验证：" + cause["verification"]))
+                    for advice in review.get("recommendations") or ():
+                        story.append(paragraph("优化建议：" + advice["action"]))
+                        story.append(paragraph(advice["rationale"]))
+                        story.append(paragraph("验证：" + advice["validation"] + ("；实施前须审批。" if advice["requires_approval"] else "")))
+                    for limitation in review.get("limitations") or ():
+                        story.append(paragraph(limitation))
+                else:
+                    story.append(paragraph("规则复核建议（非 Agent 分析）"))
+                    for advice in item.get("rule_recommendations") or ():
+                        story.append(paragraph(advice))
     metrics = list(data.get("metrics") or ())
     if metrics:
         heading("性能与运行趋势" if monthly else "关键运行指标")

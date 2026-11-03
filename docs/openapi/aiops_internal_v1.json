@@ -7962,6 +7962,16 @@
             "title": "Statements",
             "type": "array"
           },
+          "status": {
+            "default": "UNAVAILABLE",
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -7984,10 +7994,20 @@
       },
       "InspectionSqlStatement": {
         "additionalProperties": false,
-        "description": "巡检 SQL 明细：正文按文本渲染，耗时展示统一为毫秒。",
+        "description": "巡检问题 SQL 明细：正文安全展示，耗时自适应单位，逐条保留 Agent 研判。",
         "properties": {
+          "agent_review": {
+            "additionalProperties": true,
+            "title": "Agent Review",
+            "type": "object"
+          },
           "average_latency_display": {
             "title": "Average Latency Display",
+            "type": "string"
+          },
+          "basis": {
+            "default": "",
+            "title": "Basis",
             "type": "string"
           },
           "digest": {
@@ -8006,8 +8026,31 @@
             "title": "Ordinal",
             "type": "integer"
           },
+          "problem_id": {
+            "default": "",
+            "title": "Problem Id",
+            "type": "string"
+          },
+          "problem_summary": {
+            "default": "",
+            "title": "Problem Summary",
+            "type": "string"
+          },
+          "rule_recommendations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Rule Recommendations",
+            "type": "array"
+          },
           "schema_name": {
             "title": "Schema Name",
+            "type": "string"
+          },
+          "severity": {
+            "default": "",
+            "title": "Severity",
             "type": "string"
           },
           "statement_preview": {

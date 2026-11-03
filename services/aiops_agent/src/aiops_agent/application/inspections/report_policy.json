@@ -1,6 +1,6 @@
 {
   "schema_version": "INSPECTION_REPORT_POLICY.v1",
-  "version": "2026-11-03.1",
+  "version": "2026-11-03.2",
   "current_monitoring_window_seconds": 900,
   "maximum_current_sample_age_seconds": 300,
   "baseline": {
@@ -30,7 +30,8 @@
   "supplemental": {
     "ORACLE": [
       "oracle.session.long_running",
-      "oracle.object.invalid"
+      "oracle.object.invalid",
+      "oracle.sql.problems"
     ],
     "MYSQL": [
       "mysql.storage.capacity",
@@ -38,6 +39,7 @@
       "mysql.io.summary"
     ],
     "POSTGRESQL": [
+      "postgresql.sql.problems",
       "postgresql.storage.capacity",
       "postgresql.maintenance.freeze",
       "postgresql.instance.statistics"

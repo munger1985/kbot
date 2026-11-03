@@ -193,6 +193,7 @@ class AIOpsMonitoringConfig(BaseModel):
 
 
 class AIOpsDiagnosisConfig(BaseModel):
+    inspection_sql_review_concurrency: int = Field(default=2, ge=1, le=8)
     interactive_turn_budget_seconds: int = Field(default=90, ge=30, le=600)
     answer_reserve_seconds: int = Field(default=20, ge=5, le=60)
     sql_selection_ttl_seconds: int = Field(default=86400, ge=60, le=604800)

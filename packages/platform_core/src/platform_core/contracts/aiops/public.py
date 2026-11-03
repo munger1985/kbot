@@ -588,7 +588,7 @@ class DailyInspectionMetric(BaseModel):
 
 
 class InspectionSqlStatement(BaseModel):
-    """巡检 SQL 明细：正文按文本渲染，耗时展示统一为毫秒。"""
+    """巡检问题 SQL 明细：正文安全展示，耗时自适应单位，逐条保留 Agent 研判。"""
 
     model_config = ConfigDict(extra="forbid")
     ordinal: int
@@ -602,6 +602,12 @@ class InspectionSqlStatement(BaseModel):
     total_latency_display: str
     average_latency_display: str
     maximum_latency_display: str
+    problem_id: str = ""
+    severity: str = ""
+    basis: str = ""
+    problem_summary: str = ""
+    rule_recommendations: tuple[str, ...] = ()
+    agent_review: dict[str, Any] = Field(default_factory=dict)
 
 
 class InspectionSqlDetail(BaseModel):
@@ -614,6 +620,8 @@ class InspectionSqlDetail(BaseModel):
     shown_count: int
     note: str
     statements: tuple[InspectionSqlStatement, ...]
+    status: str = "UNAVAILABLE"
+    summary: str = ""
 
 
 class DailyInspectionPresentation(BaseModel):

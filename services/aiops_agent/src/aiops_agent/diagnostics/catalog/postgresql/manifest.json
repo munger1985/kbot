@@ -1,6 +1,578 @@
 {
   "catalog_version": "postgresql-baseline.v1",
   "tools": [
+    {
+      "tool_id": "db.sql.problem_candidates",
+      "description": "巡检问题 SQL 候选：先按单次开销筛选，不按累计调用次数截取；只读累计统计，资源不可测时保留空值。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_12_problem_sql",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 13,
+      "required_capabilities": [
+        "pg_stat_statements"
+      ],
+      "required_entitlements": [],
+      "required_privileges": [
+        "pg_read_all_stats"
+      ],
+      "parameters": [
+        {
+          "name": "average_elapsed_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_cpu_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_io_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_lock_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_reads_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_rows_examined_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_spills_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "resource_minimum_elapsed_ms",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "sql_key",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "schema_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "sql_text",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "text_kind",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "execution_count",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "total_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "maximum_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_cpu_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_io_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_lock_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_reads",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_rows_examined",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_spills",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "collection_status",
+          "logical_type": "STRING"
+        }
+      ],
+      "template_ref": "sql/problem_sql_12.sql",
+      "template_sha256": "48c01e39bec994bf90de9ca2efc535926abe6759f0685f745e7bc858130f8cac",
+      "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+      "timeout_seconds": 30,
+      "max_rows": 10000,
+      "max_bytes": 20971520,
+      "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.sql.problem_candidates",
+      "description": "巡检问题 SQL 候选：先按单次开销筛选，不按累计调用次数截取；只读累计统计，资源不可测时保留空值。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_13_problem_sql",
+      "supported_version_min": 13,
+      "supported_version_max_exclusive": 14,
+      "required_capabilities": [
+        "pg_stat_statements"
+      ],
+      "required_entitlements": [],
+      "required_privileges": [
+        "pg_read_all_stats"
+      ],
+      "parameters": [
+        {
+          "name": "average_elapsed_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_cpu_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_io_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_lock_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_reads_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_rows_examined_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_spills_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "resource_minimum_elapsed_ms",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "sql_key",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "schema_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "sql_text",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "text_kind",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "execution_count",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "total_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "maximum_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_cpu_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_io_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_lock_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_reads",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_rows_examined",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_spills",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "collection_status",
+          "logical_type": "STRING"
+        }
+      ],
+      "template_ref": "sql/problem_sql_13.sql",
+      "template_sha256": "531b38bffde28099b278a9b3589bf6717b9f66bdbfb1bf6f0fca8b5df1092af7",
+      "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+      "timeout_seconds": 30,
+      "max_rows": 10000,
+      "max_bytes": 20971520,
+      "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.sql.problem_candidates",
+      "description": "巡检问题 SQL 候选：先按单次开销筛选，不按累计调用次数截取；只读累计统计，资源不可测时保留空值。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_14_problem_sql",
+      "supported_version_min": 14,
+      "supported_version_max_exclusive": 17,
+      "required_capabilities": [
+        "pg_stat_statements"
+      ],
+      "required_entitlements": [],
+      "required_privileges": [
+        "pg_read_all_stats"
+      ],
+      "parameters": [
+        {
+          "name": "average_elapsed_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_cpu_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_io_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_lock_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_reads_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_rows_examined_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_spills_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "resource_minimum_elapsed_ms",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "sql_key",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "schema_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "sql_text",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "text_kind",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "execution_count",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "total_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "maximum_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_cpu_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_io_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_lock_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_reads",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_rows_examined",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_spills",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "collection_status",
+          "logical_type": "STRING"
+        }
+      ],
+      "template_ref": "sql/problem_sql_14.sql",
+      "template_sha256": "ddc753911d87d87af66e17c2c4a3f2d9820cf49f0944ff8630eb9d4153772784",
+      "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+      "timeout_seconds": 30,
+      "max_rows": 10000,
+      "max_bytes": 20971520,
+      "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.sql.problem_candidates",
+      "description": "巡检问题 SQL 候选：先按单次开销筛选，不按累计调用次数截取；只读累计统计，资源不可测时保留空值。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_17_problem_sql",
+      "supported_version_min": 17,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": [
+        "pg_stat_statements"
+      ],
+      "required_entitlements": [],
+      "required_privileges": [
+        "pg_read_all_stats"
+      ],
+      "parameters": [
+        {
+          "name": "average_elapsed_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_cpu_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_io_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_lock_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_reads_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_rows_examined_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_spills_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "resource_minimum_elapsed_ms",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "sql_key",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "schema_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "sql_text",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "text_kind",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "execution_count",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "total_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "maximum_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_cpu_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_io_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_lock_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_reads",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_rows_examined",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_spills",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "collection_status",
+          "logical_type": "STRING"
+        }
+      ],
+      "template_ref": "sql/problem_sql_17.sql",
+      "template_sha256": "f6cc18e95a795fd1b31ff8c62c3eb347cf2081de68ae3af5c4d2d22e286b9631",
+      "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+      "timeout_seconds": 30,
+      "max_rows": 10000,
+      "max_bytes": 20971520,
+      "cost_level": "MEDIUM"
+    },
     {"tool_id":"db.sql.object_candidates","version":"1.0.0","measurement_semantics":"CURRENT_ACTIVITY","db_type":"POSTGRESQL","variant":"postgresql_object_candidates","description":"按精确对象名在当前连接数据库的可见原生目录中有界发现候选；可指定 Schema。只读目录、不执行业务语句；唯一候选也不能证明历史 search_path 或运行时对象，诊断账号的当前路径不能替代业务解析环境。零行不证明对象不存在。","supported_version_min":12,"supported_version_max_exclusive":20,"allowed_packages":["PG_CATALOG"],"parameters":[{"name":"table_name","type":"string","max_length":63},{"name":"schema_name","type":"string","max_length":63,"required":false,"default":""},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"native_object_id","logical_type":"STRING"}],"template_ref":"sql/object_candidates.sql","template_sha256":"f511417e549113dae1786ee610a739ba7d933d2f8129149e91ade8cb99abfe59","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {"tool_id":"db.sql.object_dependencies","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_object_dependencies","description":"精确读取指定 Schema/视图或物化视图的原生直接依赖；只查 pg_rewrite/pg_depend 等目录，不执行视图或读取业务行。按已核实对象逐层取证，最多四层；零行不证明无依赖，不还原动态 SQL或实际扫描。","supported_version_min":12,"supported_version_max_exclusive":20,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],"parameters":[{"name":"schema_name","type":"string","max_length":63},{"name":"table_name","type":"string","max_length":63},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"dependency_schema_name","logical_type":"STRING"},{"name":"dependency_name","logical_type":"STRING"},{"name":"dependency_kind","logical_type":"STRING"},{"name":"reference_scope","logical_type":"STRING"}],"template_ref":"sql/object_dependencies.sql","template_sha256":"243e1631e21aeb98738dd64b0bac5cf45ee21bdad2f32f29dac303c16f1bc9db","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {

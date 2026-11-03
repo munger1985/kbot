@@ -250,6 +250,13 @@ def compile_selected_check_steps(
         )
     if not steps:
         raise ValueError("勾选检查项没有可执行的取证工具")
+    from .sql_problems import PROBLEM_SQL_TOOL, problem_sql_inputs, problem_sql_policy
+    for step in steps:
+        if step["tool_id"] == PROBLEM_SQL_TOOL:
+            policy = problem_sql_policy()
+            step["input"] = problem_sql_inputs(policy)
+            step["sql_problem_policy"] = policy
+            step["measurement_semantics"] = "CUMULATIVE_SINCE_LOAD"
     return tuple(steps)
 
 

@@ -1,0 +1,70 @@
+{
+  "version": "2026-11-03.2",
+  "high_multiplier": 5,
+  "resource_minimum_elapsed_ms": 10,
+  "rules": [
+    {
+      "code": "LATENCY",
+      "metric": "average_elapsed_ms",
+      "limit": 1000,
+      "unit": "ms/次",
+      "label": "单次平均耗时偏高",
+      "minimum_elapsed_ms": 0,
+      "suggestion": "结合业务响应要求与执行计划检查主要耗时步骤，比较调整前后的单次耗时。"
+    },
+    {
+      "code": "CPU",
+      "metric": "average_cpu_ms",
+      "limit": 200,
+      "unit": "ms/次",
+      "label": "单次 CPU 开销偏高",
+      "minimum_elapsed_ms": 0,
+      "suggestion": "核对执行计划中的扫描、连接与表达式计算，验证减少处理行数或重复计算的候选方案。"
+    },
+    {
+      "code": "IO_WAIT",
+      "metric": "average_io_ms",
+      "limit": 100,
+      "unit": "ms/次",
+      "label": "单次 IO 等待偏高",
+      "minimum_elapsed_ms": 0,
+      "suggestion": "结合执行计划、物理读取和同期存储延迟，区分访问量大与存储响应慢，再验证访问路径或 IO 优化方案。"
+    },
+    {
+      "code": "LOCK_WAIT",
+      "metric": "average_lock_ms",
+      "limit": 100,
+      "unit": "ms/次",
+      "label": "单次锁相关等待偏高",
+      "minimum_elapsed_ms": 0,
+      "suggestion": "核对等待事件、阻塞链及事务边界，确认锁类型与阻塞源；未经审批不终止会话。"
+    },
+    {
+      "code": "PHYSICAL_READS",
+      "metric": "average_reads",
+      "limit": 1000,
+      "unit": "块/次",
+      "label": "单次物理读取开销偏高",
+      "minimum_elapsed_ms": 10,
+      "suggestion": "检查访问路径、过滤选择性与缓存命中，确认是否存在可减少的大范围读取；块数不直接换算为未知大小的字节数。"
+    },
+    {
+      "code": "SCANNED_ROWS",
+      "metric": "average_rows_examined",
+      "limit": 10000,
+      "unit": "行/次",
+      "label": "单次扫描行数偏多",
+      "minimum_elapsed_ms": 10,
+      "suggestion": "结合返回行数及执行计划复核筛选和排序条件与现有索引的匹配，不在未取得索引证据时断言缺少索引。"
+    },
+    {
+      "code": "DISK_SPILL",
+      "metric": "average_spills",
+      "limit": 1,
+      "unit": "次或块/次（依来源）",
+      "label": "单次临时落盘开销偏高",
+      "minimum_elapsed_ms": 10,
+      "suggestion": "核查排序、聚合或连接步骤及临时空间使用，先减少中间结果；内存参数调整需评估并经审批。"
+    }
+  ]
+}

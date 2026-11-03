@@ -13,6 +13,17 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("tests/unit/aiops_agent/test_aiops_problem_sql_inspection.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/inspections/sql_problem_policy.json"),
+    Path("services/aiops_agent/src/aiops_agent/application/inspections/sql_problems.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/inspections/sql_reviews.py"),
+    Path("services/aiops_agent/src/aiops_agent/contracts/inspection_sql_review.py"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/mysql/sql/problem_sql_8.sql"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/oracle/sql/problem_sql_19.sql"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/postgresql/sql/problem_sql_12.sql"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/postgresql/sql/problem_sql_13.sql"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/postgresql/sql/problem_sql_14.sql"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/postgresql/sql/problem_sql_17.sql"),
     Path("tests/unit/aiops_agent/test_aiops_oracle_inspection_capacity.py"),
     Path("services/aiops_agent/src/aiops_agent/application/diagnosis/finding_catalog.json"),
     Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/oracle/sql/storage_capacity.sql"),
@@ -230,6 +241,7 @@ PROMPT_CATALOG = Path(
     "packages/platform_core/src/platform_core/resources/prompts.toml"
 )
 ALIGNED_AIOPS_PROMPTS = {
+    "aiops_agent.inspection_sql_review",
     "aiops_agent.capability_resolver",
     "aiops_agent.turn_router",
     "aiops_agent.compact_planner",

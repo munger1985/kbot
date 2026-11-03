@@ -2,6 +2,149 @@
   "catalog_version": "oracle-baseline.v1",
   "tools": [
     {
+      "tool_id": "db.sql.problem_candidates",
+      "description": "巡检问题 SQL 候选：先按单次开销筛选，不按累计调用次数截取；只读累计统计，资源不可测时保留空值。",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_problem_sql",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": [
+        "dynamic_performance_views"
+      ],
+      "required_entitlements": [],
+      "required_privileges": [
+        "V_$SQLSTATS"
+      ],
+      "parameters": [
+        {
+          "name": "average_elapsed_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_cpu_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_io_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_lock_ms_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_reads_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_rows_examined_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "average_spills_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "resource_minimum_elapsed_ms",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "sql_key",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "schema_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "sql_text",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "text_kind",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "execution_count",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "total_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "maximum_elapsed_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_cpu_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_io_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_lock_ms",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_reads",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_rows_examined",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "average_spills",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "collection_status",
+          "logical_type": "STRING"
+        }
+      ],
+      "template_ref": "sql/problem_sql_19.sql",
+      "template_sha256": "e78ed58e8de48143eb90325342b3a44563097f2e6df04632c296e218175bcf57",
+      "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+      "timeout_seconds": 30,
+      "max_rows": 10000,
+      "max_bytes": 20971520,
+      "cost_level": "MEDIUM"
+    },
+    {
       "version": "1.0.0",
       "db_type": "ORACLE",
       "supported_version_min": 19,

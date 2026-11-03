@@ -196,6 +196,7 @@ class AIOpsTurnResult(BaseModel):
     answer_streamed: bool = False
     model_receipt: dict[str, Any] | None = None
     investigation_record: InvestigationRecord | None = None
+    inspection_sql_reviews: tuple[dict[str, Any], ...] = ()
 
     @model_validator(mode="after")
     def validate_result(self) -> "AIOpsTurnResult":

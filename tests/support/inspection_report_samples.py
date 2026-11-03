@@ -30,20 +30,37 @@ def inspection_samples():
         for check in checks:
             if check.get("kind") == "inspection_check" and not check.get("required"):
                 check.update(check_status="OBSERVED", summary="已取得辅助观测，未设健康判断阈值。")
-            if check.get("tool_id") == "db.mysql.statement.digest.top":
-                check.update(observation_count=3, observations=[
-                    {"schema_name": "aiops_demo", "query_sample_text": sql,
-                     "execution_count": count, "total_latency_picoseconds": total,
-                     "average_latency_picoseconds": average, "maximum_latency_picoseconds": maximum}
-                    for sql, count, total, average, maximum in (
-                        ("COMMIT", 594585, 1425880197358000, 2398109000, 239177605000),
-                        ("SELECT " + ", ".join(f"field_{index}" for index in range(80))
-                         + " FROM wms_warehouse_task WHERE status_code = 'COMPLETED'",
-                         490072, 324033880437000, 661196000, 91959037000),
-                        ("SELECT '<script>alert(1)</script>&' FROM wms_outbound_order WHERE amount < 42",
-                         414696, 314597617375000, 758622000, 9760192000),
-                    )
-                ])
+            if check.get("tool_id") == "db.sql.problem_candidates":
+                from aiops_agent.application.inspections.sql_problems import (
+                    freeze_problem_sql_check, problem_sql_inputs, problem_sql_policy,
+                )
+                from tests.unit.aiops_agent.test_aiops_problem_sql_inspection import observation
+                source_rows = [observation()]
+                if name in {"attention", "abnormal"}:
+                    source_rows.extend(observation(index,
+                        sql_text=("SELECT " + ", ".join(f"field_{field}" for field in range(80)) + " FROM orders"
+                                  if index == 0 else "SELECT '<script>alert(1)</script>&' FROM orders WHERE amount < 42"),
+                        average_elapsed_ms=(1100 if name == "attention" else 5500) + index * 50,
+                    ) for index in range(8))
+                check.update(observation_count=len(source_rows), observations=source_rows, truncated=name == "incomplete")
+                sql_policy = problem_sql_policy()
+                check.update(freeze_problem_sql_check(check, step={
+                    "sql_problem_policy": sql_policy, "input": problem_sql_inputs(sql_policy),
+                }, database_type="MYSQL"))
+        reviews = []
+        for check in checks:
+            for problem in check.get("sql_problems") or ():
+                reviews.append({
+                    "problem_id": problem["problem_id"], "status": "COMPLETE",
+                    "analysis": "隔离样例：单次耗时达到筛查阈值，建议结合执行计划复核访问路径。",
+                    "possible_causes": [{"possible_cause": "可能存在代价较大的扫描或连接。",
+                        "supporting_metrics": ["average_elapsed_ms"], "verification": "取得执行计划与扫描行数验证。"}],
+                    "recommendations": [{"action": "核对过滤与排序条件及现有索引。",
+                        "rationale": "减少不必要的扫描和中间结果。", "validation": "比较相同参数下的耗时及扫描量。",
+                        "requires_approval": False}],
+                    "limitations": ["尚未取得执行计划，不能确认根因。"], "evidence_refs": ["db-evidence"],
+                })
+        checks.append({"kind": "inspection_sql_reviews", "reviews": reviews})
         if incomplete:
             checks[0]["check_status"] = "MISSING"
             checks[0]["summary"] = "只读权限不足，未完成连接使用率检查。"

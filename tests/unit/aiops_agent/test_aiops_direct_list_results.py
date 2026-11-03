@@ -42,6 +42,7 @@ def fact(tool_id, semantics, *, row_count=1):
 
 def context(assessment, *, kind="TOP_SQL_LIST"):
     return SimpleNamespace(
+        trigger_type="USER",
         input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1", "payload": assessment.model_dump(mode="json")},),
         plan_snapshot={"answer_context": {"task_frame": frame(kind)}},
     )

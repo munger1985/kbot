@@ -70,8 +70,14 @@ def compile_standard_steps(
     )
     by_tool: dict[str, dict[str, Any]] = {}
     required_ids = {item["check_id"] for item in policy["checks"] if item["required"]}
+    current_tools = {check_id: item["tool_id"] for item in baseline for check_id in item.get("check_ids") or ()}
     for raw in (*baseline, *steps):
         tool_id = str(raw["tool_id"])
+        selected_ids = set(raw.get("check_ids") or ())
+        # 当前标准集已覆盖的检查以当前工具为准，不重复执行模板中被替代的累计榜单。
+        if (selected_ids and selected_ids <= current_tools.keys()
+                and tool_id not in {current_tools[check_id] for check_id in selected_ids}):
+            continue
         if tool_id not in by_tool:
             by_tool[tool_id] = {**raw, "check_ids": list(raw.get("check_ids") or ())}
         else:
@@ -79,6 +85,12 @@ def compile_standard_steps(
             step["check_ids"] = list(dict.fromkeys((*step["check_ids"], *raw.get("check_ids", ()))))
             step["input"] = {**dict(step.get("input") or {}), **dict(raw.get("input") or {})}
         by_tool[tool_id]["required"] = bool(required_ids.intersection(by_tool[tool_id]["check_ids"]))
+    from .sql_problems import PROBLEM_SQL_TOOL, problem_sql_inputs
+    if PROBLEM_SQL_TOOL in by_tool:
+        # 模板不能以独立查询参数覆盖已冻结策略，避免取数和判定阈值不一致。
+        step = by_tool[PROBLEM_SQL_TOOL]
+        step["input"] = problem_sql_inputs(step["sql_problem_policy"])
+        step["measurement_semantics"] = "CUMULATIVE_SINCE_LOAD"
     return tuple(by_tool.values())
 
 
@@ -336,7 +348,7 @@ def assess_inspection(
             object_ref = dict(finding.get("object_ref") or {})
             object_name = str(object_ref.get("object_name") or object_ref.get("sql_id") or "")
             impact = str(finding.get("impact") or summary or "已达到检查规则条件。")
-            recommendation = action_catalog.get(finding_type) or (
+            recommendation = finding.get("recommendation") or action_catalog.get(finding_type) or (
                 f"核对“{title}”中{object_name or '对应对象'}的异常原因，按变更流程处理后复查同一对象及规则。"
             )
             issue = {
@@ -345,7 +357,7 @@ def assess_inspection(
                 "severity": str(finding.get("severity") or severity),
                 "confirmation": str(finding.get("confirmation") or "CONFIRMED"),
                 "summary": impact, "impact": impact, "object_name": object_name,
-                "basis": basis, "recommendation": recommendation,
+                "basis": finding.get("basis") or basis, "recommendation": recommendation,
                 "observed_at": fact.get("observed_at"),
                 "evidence_refs": list(finding.get("evidence_refs") or fact.get("evidence_refs") or ()),
             }

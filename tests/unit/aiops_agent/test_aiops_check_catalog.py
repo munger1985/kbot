@@ -76,8 +76,8 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         planned = [item for item in items if item.availability == "PLANNED"]
 
         self.assertEqual(9, len(catalog.groups))
-        self.assertEqual(54, len(items))
-        self.assertEqual(48, len(ready))
+        self.assertEqual(56, len(items))
+        self.assertEqual(50, len(ready))
         self.assertEqual(6, len(planned))
         self.assertEqual(
             hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest(),
@@ -238,7 +238,9 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         )
         self.assertEqual(["LOCK_WAIT"], [item["expected_evidence_kind"] for item in subset[1:]])
         self.assertTrue(all(
-            item["measurement_semantics"] == "CURRENT_ACTIVITY"
+            item["measurement_semantics"] == (
+                "CUMULATIVE_SINCE_LOAD" if item["tool_id"] == "db.sql.problem_candidates" else "CURRENT_ACTIVITY"
+            )
             for item in steps
         ))
         postgres_steps = compile_selected_check_steps(
