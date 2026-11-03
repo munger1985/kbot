@@ -953,6 +953,7 @@ class InspectionCheckCatalogGroup(AIOpsContract):
 
 
 class InspectionCheckCatalogView(AIOpsContract):
+    daily_check_policy: JsonObject = Field(default_factory=dict)
     report_sections: tuple[JsonObject, ...] = ()
     daily_report_layout: DailyReportLayout = Field(default_factory=DailyReportLayout)
     schema_version: str = PUBLIC_SCHEMA_VERSION

@@ -24,6 +24,20 @@ from platform_core.identity import uuid7
 IS_KBOT = InspectionTemplateEntity.__tablename__.startswith("KBOT_")
 
 
+def test_editor_foundation_metadata_is_the_readonly_execution_policy():
+    from aiops_agent.application.inspections.assessment import report_policy
+    catalog = load_check_catalog()
+    policy = report_policy()
+    assert catalog.daily_check_policy == {
+        key: policy[key]
+        for key in ("version", "baseline", "supplemental", "required_metric_roles")
+    }
+    known = {item.check_id for group in catalog.groups for item in group.checks}
+    for ids in (*policy["baseline"].values(), *policy["supplemental"].values()):
+        assert set(ids) <= known
+    assert "recommendations" not in catalog.daily_check_policy
+
+
 @pytest.mark.parametrize("engine", ["ORACLE", "MYSQL", "POSTGRESQL", "FUTURE_DATABASE"])
 @pytest.mark.parametrize("scenario", ["NORMAL", "ATTENTION", "INCOMPLETE"])
 def test_all_engines_share_one_section_contract_and_simulation(engine, scenario):

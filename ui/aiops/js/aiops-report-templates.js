@@ -1,3 +1,5 @@
+import "./daily-template-editor.js?v=20261103_2";
+
 (function () {
   "use strict";
 

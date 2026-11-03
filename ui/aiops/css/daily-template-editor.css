@@ -1,25 +1,83 @@
-.daily-template-editor { display:grid; gap:20px; min-width:0; }
-.daily-template-editor > header { display:flex; justify-content:space-between; gap:20px; }
+/* 方案 A：单文档滚动、分步任务与稳定摘要；按钮沿用项目设计系统。 */
+.daily-template-editor { display:grid; gap:24px; min-width:0; font-size:14px; line-height:1.65; }
+.daily-template-editor [hidden], .daily-template-editor[hidden], .aiops-template-page[hidden], .daily-template-history[hidden] { display:none !important; }
+.daily-template-editor > header { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; }
 .daily-template-editor h1 { margin:6px 0; }
-.daily-template-editor h2 { font-size:18px; margin:0 0 16px; }
-.daily-template-checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
-.daily-template-checks > p { grid-column:1/-1; }
-.daily-template-checks fieldset { min-width:0; border:1px solid var(--line); border-radius:var(--radius-sm); padding:16px; display:grid; gap:12px; align-content:start; }
-.daily-template-checks small { display:block; color:var(--muted); font-size:12px; }
-.daily-template-layout { display:grid; grid-template-columns:330px minmax(0,1fr); gap:24px; }
-.daily-template-layout nav, .daily-template-settings { padding:20px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface-raised); min-width:0; }
-.daily-template-layout nav > div { display:flex; gap:4px; }
-.daily-template-layout nav button { border:0; background:transparent; color:var(--ink); padding:9px; cursor:pointer; text-align:left; }
-.daily-template-layout nav button:first-child { flex:1; }
-.daily-template-layout nav button.active { background:var(--accent-soft); color:var(--accent-strong); }
-.daily-template-settings { display:grid; align-content:start; gap:16px; }
-.daily-template-preview { min-width:0; }
-.daily-template-preview .data-toolbar > .secondary-button { display:inline-flex; }
+.daily-template-editor h2 { margin:0 0 8px; font-size:20px; }
+.daily-template-editor h3 { margin:0 0 8px; font-size:16px; }
+.daily-template-editor h4 { margin:0 0 12px; font-size:14px; }
+.daily-template-editor p { overflow-wrap:anywhere; }
+.daily-template-editor small, .daily-editor-muted { color:var(--muted); }
+.daily-template-editor small { font-size:12px; }
+.daily-editor-fields { display:grid; gap:24px; min-width:0; border:0; margin:0; padding:0; }
+.daily-editor-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); background:var(--surface-raised); border:1px solid var(--line); border-radius:var(--radius-sm); }
+.daily-editor-steps button { display:flex; align-items:center; gap:12px; padding:18px 20px; text-align:left; background:transparent; color:var(--muted); border:0; border-bottom:3px solid transparent; cursor:pointer; font:inherit; min-width:0; }
+.daily-editor-steps button + button { border-left:1px solid var(--line); }
+.daily-editor-steps button.active { color:var(--accent-strong); background:var(--accent-soft); border-bottom-color:var(--accent); }
+.daily-editor-steps strong, .daily-editor-steps small { display:block; }
+.daily-step-number { flex:0 0 28px; height:28px; display:grid; place-items:center; border:1px solid currentColor; border-radius:50%; font-family:var(--font-data); }
+.daily-editor-workspace { display:grid; grid-template-columns:minmax(0,1fr) 248px; gap:24px; align-items:start; }
+.daily-editor-main, .daily-editor-panel { min-width:0; }
+.daily-editor-panel { border:1px solid var(--line); background:var(--surface-raised); border-radius:var(--radius-sm); }
+.daily-panel-head { padding:24px; border-bottom:1px solid var(--line); }
+.daily-panel-head p { margin:4px 0; color:var(--muted); }
+.daily-topic-layout { display:grid; grid-template-columns:184px minmax(0,1fr); }
+.daily-topic-nav { padding:12px; background:var(--canvas); border-right:1px solid var(--line); }
+.daily-topic-nav button { display:block; width:100%; background:transparent; border:0; border-radius:var(--radius-sm); padding:11px 10px; color:var(--muted); text-align:left; cursor:pointer; font:inherit; }
+.daily-topic-nav button.active, .daily-layout-outline button.active { background:var(--accent-soft); color:var(--accent-strong); font-weight:600; }
+.daily-topic-body { padding:24px; min-width:0; }
+.daily-check-group { margin-top:24px; }
+.daily-check-group h4 small { display:block; font-weight:400; margin-top:2px; }
+.daily-foundation-list { padding-left:20px; margin:12px 0; }
+.daily-foundation-list li { padding:5px 0; }
+.daily-check-row { display:flex; gap:12px; padding:14px 0; border-top:1px solid var(--line); cursor:pointer; }
+.daily-check-row:last-child { border-bottom:1px solid var(--line); }
+.daily-check-row input { flex:0 0 auto; margin-top:5px; accent-color:var(--accent); width:16px; height:16px; }
+.daily-check-row small { display:block; margin-top:4px; }
+.daily-adaptation { margin-top:24px; border-top:1px solid var(--line); padding-top:16px; }
+.daily-adaptation summary { color:var(--accent-strong); cursor:pointer; padding:6px 0; }
+.daily-adaptation > label { margin-top:16px; }
+.daily-adaptation-row { padding:12px 0; border-bottom:1px solid var(--line); }
+.daily-adaptation-row > small { display:block; overflow-wrap:anywhere; margin-top:4px; }
+.daily-global-settings { display:grid; gap:16px; padding:24px; border-bottom:1px solid var(--line); }
+.daily-field-grid { display:grid; grid-template-columns:1fr 1.2fr; gap:16px; }
+.daily-field-grid label { min-width:0; }
+.daily-template-layout { display:grid; grid-template-columns:280px minmax(0,1fr); min-width:0; }
+.daily-layout-outline { background:var(--canvas); border-right:1px solid var(--line); padding:12px; min-width:0; }
+.daily-layout-outline > div { display:flex; align-items:center; gap:3px; }
+.daily-layout-outline button { border:0; background:transparent; color:var(--ink); padding:10px 6px; cursor:pointer; text-align:left; font:inherit; min-width:0; overflow-wrap:anywhere; }
+.daily-layout-outline button:first-child { flex:1; }
+.daily-layout-outline small { padding:0 4px; }
+.daily-template-settings { display:grid; align-content:start; gap:16px; padding:24px; min-width:0; }
+.daily-template-settings p { margin:0; }
+.daily-template-settings > button { justify-self:start; }
+.daily-structure-example { padding:16px; background:var(--canvas); border:1px solid var(--line); border-radius:var(--radius-sm); }
+.daily-structure-example ul { padding-left:20px; }
+.daily-structure-example p { color:var(--muted); }
+.daily-editor-summary { padding:24px; background:var(--surface-raised); border:1px solid var(--line); border-radius:var(--radius-sm); min-width:0; }
+.daily-editor-summary h2 { font-size:18px; overflow-wrap:anywhere; }
+.daily-editor-summary dl { margin:20px 0; display:grid; gap:16px; }
+.daily-editor-summary dt { font-size:12px; color:var(--muted); }
+.daily-editor-summary dd { margin:4px 0 0; overflow-wrap:anywhere; }
+.daily-editor-summary hr { border:0; border-top:1px solid var(--line); margin:20px 0; }
+.daily-editor-summary p { color:var(--muted); }
+.daily-preview-controls { display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; padding:24px; }
+.daily-preview-controls label { flex:1; min-width:140px; }
+.daily-preview-controls p { flex-basis:100%; color:var(--muted); margin:0; }
+.daily-template-preview > .notice { margin:0 24px 16px; }
+.daily-template-editor .daily-preview-controls > .secondary-button { display:inline-flex; }
+.daily-preview-paper { padding:24px; border-top:1px solid var(--line); min-width:0; }
+.daily-template-editor .daily-document-layout { grid-template-columns:minmax(0,1fr); }
+.daily-template-editor .daily-document-index { position:static; }
+.daily-template-editor .daily-document-index nav { display:flex; flex-wrap:wrap; gap:8px 16px; }
+.daily-template-editor .daily-document-index h2 { flex-basis:100%; }
+.daily-template-editor .daily-document-index a { padding:4px; }
+.daily-publish-review { border-top:1px solid var(--line); padding:24px; }
 .daily-template-footer { display:flex; align-items:center; gap:12px; border-top:1px solid var(--line); padding-top:20px; }
-.daily-template-footer p { flex:1; color:var(--muted); font-size:12px; }
-@media(max-width:850px) { .daily-template-layout,.daily-template-checks { grid-template-columns:1fr; } .daily-template-footer, .daily-template-editor > header { flex-wrap:wrap; } .daily-template-footer p { flex-basis:100%; } }
-
-.daily-template-editor[hidden], .daily-template-editor [hidden] { display:none !important; }
-.aiops-template-page[hidden], .daily-template-history[hidden] { display:none !important; }
-.aiops-version-list pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; font-size:11px; }
-.daily-template-editor > form { display:grid; min-width:0; gap:20px; }
+.daily-template-footer p { flex:1; color:var(--muted); margin:0; }
+.daily-template-editor button:focus-visible, .daily-template-editor summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.daily-template-editor button:disabled { cursor:default; opacity:.55; }
+.daily-template-editor .control-field input, .daily-template-editor .control-field select { max-width:100%; min-width:0; width:100%; }
+@media(max-width:1100px) { .daily-editor-workspace { grid-template-columns:minmax(0,1fr) 220px; gap:16px; } .daily-template-layout { grid-template-columns:1fr; } .daily-layout-outline { border-right:0; border-bottom:1px solid var(--line); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px 12px; } .daily-topic-layout { grid-template-columns:156px minmax(0,1fr); } .daily-topic-body, .daily-panel-head, .daily-editor-summary { padding:20px; } }
+@media(max-width:760px) { .daily-editor-workspace, .daily-topic-layout, .daily-field-grid { grid-template-columns:1fr; } .daily-editor-steps button { padding:12px 7px; gap:6px; align-items:flex-start; } .daily-editor-steps small { display:none; } .daily-editor-steps strong { font-size:12px; } .daily-step-number { flex-basis:22px; height:22px; font-size:12px; } .daily-topic-nav { display:flex; flex-wrap:wrap; border-right:0; border-bottom:1px solid var(--line); } .daily-topic-nav button { width:auto; padding:8px; } .daily-layout-outline { display:block; } .daily-template-footer, .daily-template-editor > header { flex-wrap:wrap; } .daily-template-footer p { flex-basis:100%; } .daily-preview-paper, .daily-preview-controls, .daily-publish-review, .daily-global-settings, .daily-template-settings, .daily-topic-body, .daily-panel-head { padding:16px; } .daily-editor-summary dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.aiops-version-list pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; font-size:12px; }

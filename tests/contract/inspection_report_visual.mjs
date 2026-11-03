@@ -64,25 +64,35 @@ try {
   browser = await chromium.launch({headless: true});
   // 编辑器通过真实页面操作验收，全部 API 被隔离替身拦截。
   for (const product of ["ammolite", "kbot4"]) {
-    for (const width of [1440,390]) {
+    for (const width of [1440,1024,390]) {
       const page=await browser.newPage({viewport:{width,height:1000}}), errors=[], writes=[];
+      console.log('日报分步编辑器验收：'+product+' / '+width);
+      page.setDefaultTimeout(10000);
       page.on("pageerror",error=>errors.push(error.message));
       page.on("console",message=>{if(message.type()==="error")errors.push(message.text());});
       const ready=catalog.groups.flatMap(group=>group.checks).filter(check=>check.availability==="READY").map(check=>check.check_id);
       const template={inspection_template_id:"sample-template",display_name:"共享日报模板",status:"ACTIVE",version_no:1,row_version:1,selected_check_ids:ready,daily_report_layout:catalog.daily_report_layout,usage_count:3};
+      let failPreview=false, failPublish=false, publishRequests=0, previewGate=null;
+      const previewInputs=[];
       await page.route("**/api/**",async route=>{
         const url=new URL(route.request().url()), method=route.request().method();
         if (!url.pathname.startsWith("/api/")) return route.continue();
         let result;
         if(url.pathname.endsWith("/inspection-check-catalog")) result=catalog;
         else if(url.pathname.endsWith("/inspection-templates:preview")) {
-          const input=route.request().postDataJSON(), preview=structuredClone(samples.oracle);
+          const input=route.request().postDataJSON(), preview=structuredClone(samples[{NORMAL:"normal",ATTENTION:"attention",INCOMPLETE:"incomplete"}[input.scenario]]);
+          previewInputs.push(input);
+          if(previewGate) { const gate=previewGate;previewGate=null;gate.started();await gate.promise; }
+          if(failPreview) {failPreview=false;await route.fulfill({json:{error:{message:"模拟预览失败"}}});return;}
+          preview.daily_inspection.preview=true;
           preview.daily_inspection.header.title=input.daily_report_layout.title;
           preview.daily_inspection.header.database_type=input.database_type;
           const byId=Object.fromEntries(preview.daily_inspection.sections.map(region=>[region.section_id,region]));
           preview.daily_inspection.sections=input.daily_report_layout.sections.map((settings,index)=>({...byId[settings.section_id],...settings,ordinal:index+1}));
           result=preview;
-        } else if(method==="POST" && url.pathname.endsWith("/versions")) {
+        } else if(method==="POST" && (url.pathname.endsWith("/versions") || url.pathname.endsWith("/inspection-templates"))) {
+          publishRequests++;
+          if(failPublish) {failPublish=false;await route.fulfill({status:409,json:{message:"版本已变化，请刷新后重试。",error:{code:"ROW_VERSION_CONFLICT",message:"版本已变化，请刷新后重试。"}}});return;}
           writes.push(route.request().postDataJSON());result=template;
         } else if(url.pathname.endsWith("/inspection-templates")) result=[template];
         else if(url.pathname.endsWith("/sample-template")) result=template;
@@ -93,7 +103,7 @@ try {
         await page.addInitScript(()=>{
           const escape=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
           globalThis.KBotAIOpsShell={ready:Promise.resolve(),escape,fmt:value=>value||"未记录",toast:()=>{}};
-          globalThis.KBotAIOpsAuth={request:async(url,init)=>(await fetch(url,init)).json()};
+          globalThis.KBotAIOpsAuth={request:async(url,init)=>{const response=await fetch(url,init),body=await response.json();if(!response.ok)throw new Error(body.error?.message || body.message);return body;}};
         });
         await page.route(/\/(runtime-config|aiops-auth|aiops-shell)\.js(\?.*)?$/,route=>route.fulfill({contentType:"application/javascript",body:""}));
       }
@@ -103,32 +113,120 @@ try {
       const editor=page.locator(".daily-template-editor");
       await editor.waitFor();
       assert.equal(await editor.evaluate(node=>node.tagName==="DIALOG" || Boolean(node.closest("dialog"))),false);
-      await editor.getByRole("button",{name:"日报版式",exact:true}).click();
+      assert.equal(await editor.locator("[data-topic]").count(),9);
+      assert.equal(await editor.locator(".daily-adaptation").getAttribute("open"),null);
+      assert.equal(await editor.getByRole("button",{name:"发布新版本",exact:true}).isVisible(),false);
+      await page.screenshot({path:path.join(resultDir,product+"-template-checks-"+width+".png"),fullPage:false});
+      await editor.locator('[data-topic="PERFORMANCE"]').click();
+      await editor.locator('[data-check-group="实例吞吐与运行线程"]').uncheck();
+      const expected=ready.filter(id=>id!=="mysql.instance.throughput");
+      await editor.locator(".daily-adaptation > summary").click();
+      await editor.getByLabel("查看适配类型").selectOption("MYSQL");
+      await editor.getByLabel("查看适配类型").selectOption("POSTGRESQL");
+      await editor.locator('[data-editor-tab="layout"]').click();
       await editor.getByRole("button",{name:/03 · 系统资源使用/}).click();
       const title=editor.getByLabel("日报标题");
       await title.fill("共享日报 · 版式验收");
-      await editor.getByLabel("正常检查明细").selectOption("SUMMARY");
-      await editor.getByRole("button",{name:"报告预览",exact:true}).click();
-      try { await editor.getByRole("button",{name:"刷新模拟预览",exact:true}).click({timeout:10000}); }
-      catch(error) { console.error(product,width,errors,await page.locator("body").innerText()); throw error; }
+      assert.equal(await editor.getByLabel("日报标题").count(),1);
+      await editor.getByLabel("统一正常明细偏好").selectOption("SUMMARY");
+      await editor.getByLabel("本区域正常明细").selectOption("FULL");
+      assert.equal(await editor.getByLabel("统一正常明细偏好").inputValue(),"CUSTOM");
+      await editor.getByLabel("本区域正常明细").selectOption("SUMMARY");
+      await editor.locator(".daily-layout-outline > div").nth(3).getByRole("button",{name:"上移区域"}).click();
+      await page.evaluate(()=>window.scrollTo(0,0));
+      await page.screenshot({path:path.join(resultDir,product+"-template-layout-"+width+".png"),fullPage:false});
+      await editor.locator('[data-editor-tab="checks"]').click();
+      assert.equal(await editor.locator('[data-check-group="实例吞吐与运行线程"]').isChecked(),false);
+      await editor.locator('[data-editor-tab="layout"]').click();
+      assert.equal(await title.inputValue(),"共享日报 · 版式验收");
+      await editor.locator('[data-editor-tab="preview"]').click();
       await editor.getByRole("heading",{name:"共享日报 · 版式验收",exact:true}).waitFor();
+      await editor.getByText("模拟预览已更新，可核对后发布。",{exact:true}).waitFor();
       assert.equal(await editor.locator("[data-report-section]").count(),12);
       assert.ok((await editor.innerText()).includes("模拟版式预览"));
+      const publish=editor.getByRole("button",{name:"发布新版本",exact:true});
+      assert.equal(await publish.isEnabled(),false);
+      for(const [type,scene] of [["MYSQL","NORMAL"],["POSTGRESQL","INCOMPLETE"],["ORACLE","ATTENTION"]]) {
+        await editor.getByLabel("模拟数据库类型").selectOption(type);
+        await editor.getByLabel("模拟场景").selectOption(scene);
+        assert.equal(await publish.isEnabled(),false);
+        await editor.getByRole("button",{name:"刷新模拟预览",exact:true}).click();
+        await editor.getByText("模拟预览已更新，可核对后发布。",{exact:true}).waitFor();
+        assert.deepEqual(previewInputs.at(-1).selected_check_ids,expected);
+        assert.equal(previewInputs.at(-1).database_type,type);
+        assert.equal(previewInputs.at(-1).scenario,scene);
+      }
+      // 失败和运行中修改都不能把旧样例标成最新，也不能据此发布。
+      failPreview=true;
+      await editor.getByRole("button",{name:"刷新模拟预览",exact:true}).click();
+      await editor.getByRole("alert").filter({hasText:"旧预览不代表当前配置"}).waitFor();
+      assert.equal(await publish.isEnabled(),false);
+      let release,started;
+      const began=new Promise(resolve=>{started=resolve;});
+      previewGate={promise:new Promise(resolve=>{release=resolve;}),started};
+      await editor.getByRole("button",{name:"刷新模拟预览",exact:true}).click();
+      await began;
+      await editor.getByLabel("模拟数据库类型").selectOption("MYSQL");
+      release();
+      await editor.getByRole("button",{name:"刷新模拟预览",exact:true}).waitFor();
+      assert.equal(await publish.isEnabled(),false);
+      await editor.getByRole("button",{name:"刷新模拟预览",exact:true}).click();
+      await editor.getByText("模拟预览已更新，可核对后发布。",{exact:true}).waitFor();
       await page.evaluate(()=>window.scrollTo(0,0));
       await page.screenshot({path:path.join(resultDir,product+"-template-preview-"+width+".png"),fullPage:false});
-      const overflow=await editor.evaluate(node=>node.scrollWidth>node.clientWidth+2);
-      assert.equal(overflow,false);
-      await editor.getByRole("button",{name:"发布新版本",exact:true}).click();
+      const layoutIssues=await editor.evaluate(node=>({
+        overflow:node.scrollWidth>node.clientWidth+2,
+        scrolls:[...node.querySelectorAll("*")].filter(child=>child.clientHeight>0 && child.scrollHeight>child.clientHeight+2 && ["auto","scroll"].includes(getComputedStyle(child).overflowY)).map(child=>child.className),
+      }));
+      assert.deepEqual(layoutIssues,{overflow:false,scrolls:[]});
+      await editor.getByLabel("我已核对预览与变更，确认发布新版本；已有计划不自动升级。").check();
+      failPublish=true;
+      await publish.click();
+      await editor.getByRole("alert").filter({hasText:"版本已变化"}).waitFor();
+      assert.equal(await publish.isEnabled(),false);
+      await editor.getByLabel("我已核对预览与变更，确认发布新版本；已有计划不自动升级。").check();
+      await publish.evaluate(button=>{button.click();button.click();});
       await editor.waitFor({state:"hidden"});
       assert.equal(writes.length,1);
+      assert.equal(publishRequests,2);
       assert.equal(writes[0].daily_report_layout.title,"共享日报 · 版式验收");
       assert.equal(writes[0].daily_report_layout.sections.find(item=>item.section_id==="RESOURCES").normal_detail,"SUMMARY");
-      assert.deepEqual(writes[0].selected_check_ids,ready);
-      assert.deepEqual(errors,[]);
+      assert.equal(writes[0].daily_report_layout.sections[2].section_id,"CAPACITY");
+      assert.deepEqual(writes[0].selected_check_ids,expected);
+      // 关闭并重开后，前一会话迟到的预览不能污染新草稿。
+      await page.getByRole("button",{name:"创建新版本",exact:true}).click();
+      const delayedStarted=new Promise(resolve=>{started=resolve;});
+      previewGate={promise:new Promise(resolve=>{release=resolve;}),started};
+      await editor.locator('[data-editor-tab="preview"]').click();
+      await delayedStarted;
+      await editor.getByRole("button",{name:"返回模板中心",exact:true}).click();
+      await page.getByRole("button",{name:"创建新版本",exact:true}).click();
+      release();
+      await editor.locator('[data-editor-tab="layout"]').click();
+      assert.equal(await editor.getByLabel("日报标题").inputValue(),catalog.daily_report_layout.title);
+      assert.equal(await editor.locator(".daily-report-head").count(),0);
+      await editor.getByRole("button",{name:"返回模板中心",exact:true}).click();
+      await page.locator(".management-catalog-add-card").filter({hasText:"新建巡检模板"}).click();
+      await editor.locator('[data-editor-tab="layout"]').click();
+      assert.equal(await editor.getByLabel("模板名称").isEnabled(),true);
+      await editor.getByLabel("模板名称").fill("通用日报新模板");
+      await editor.locator('[data-editor-tab="preview"]').click();
+      await editor.getByText("模拟预览已更新，可核对后发布。",{exact:true}).waitFor();
+      await editor.getByLabel("我已核对预览与变更，确认发布新版本；已有计划不自动升级。").check();
+      await publish.click();
+      await editor.waitFor({state:"hidden"});
+      assert.equal(writes.length,2);
+      assert.equal(writes[1].display_name,"通用日报新模板");
+      assert.equal("expected_row_version" in writes[1],false);
+      const autoIds=new Set([...Object.values(catalog.daily_check_policy.baseline),...Object.values(catalog.daily_check_policy.supplemental)].flat());
+      assert.ok(writes[1].selected_check_ids.length);
+      assert.ok(writes[1].selected_check_ids.every(id=>autoIds.has(id)));
+      // 409 是专门注入的版本竞争，不把预期 HTTP 失败算作控制台异常。
+      assert.deepEqual(errors.filter(message=>!message.includes("409 (Conflict)")),[]);
       await page.close();
     }
   }
-  for (const product of ["ammolite", "kbot4"]) {
+  if (!process.argv.includes("--templates-only")) for (const product of ["ammolite", "kbot4"]) {
     for (const [name, original] of Object.entries(samples)) {
       for (const width of [1440, 900, 390]) {
         const presentation = structuredClone(original);
@@ -284,7 +382,7 @@ try {
       }
     }
   }
-  console.log("PASS 两端各 "+Object.keys(samples).length+" 类报告 × 3 个宽度，以及完整模板编辑/模拟预览/发布：共享区域、SQL 分析、基线、附录、安全转义与无横向溢出");
+  console.log(process.argv.includes("--templates-only") ? "PASS 两端分步编辑器 × 3 个宽度：选择保留、版式、模拟预览、失败/竞争/会话隔离、确认发布与无横向溢出" : "PASS 两端各 "+Object.keys(samples).length+" 类报告 × 3 个宽度，以及完整模板编辑/模拟预览/发布：共享区域、SQL 分析、基线、附录、安全转义与无横向溢出");
 } finally {
   await browser?.close();
   await server.close();

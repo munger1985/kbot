@@ -105,7 +105,13 @@ def load_check_catalog() -> InspectionCheckCatalogView:
             )
         )
     from .daily_sections import daily_section_catalog, normalize_daily_layout
+    from .assessment import report_policy
+    policy = report_policy()
     return InspectionCheckCatalogView(
+        daily_check_policy={
+            key: policy[key]
+            for key in ("version", "baseline", "supplemental", "required_metric_roles")
+        },
         report_sections=tuple(daily_section_catalog()["sections"]),
         daily_report_layout=normalize_daily_layout(),
         catalog_hash=hashlib.sha256(

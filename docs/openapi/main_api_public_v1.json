@@ -7801,6 +7801,11 @@
             "title": "Catalog Hash",
             "type": "string"
           },
+          "daily_check_policy": {
+            "additionalProperties": true,
+            "title": "Daily Check Policy",
+            "type": "object"
+          },
           "daily_report_layout": {
             "$ref": "#/components/schemas/DailyReportLayout"
           },

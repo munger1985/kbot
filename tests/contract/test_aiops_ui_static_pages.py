@@ -265,7 +265,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(31, len(scripts))
+        self.assertEqual(32, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
