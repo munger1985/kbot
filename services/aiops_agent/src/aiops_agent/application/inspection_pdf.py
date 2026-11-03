@@ -41,7 +41,11 @@ def inspection_pdf_story(
 
     def table(headers, rows, widths):
         values = [[value if isinstance(value, Drawing) else paragraph(value) for value in row] for row in [headers, *rows]]
-        item = Table(values, repeatRows=1, colWidths=tuple(value * mm for value in widths), hAlign="LEFT")
+        # SQL 等长文本允许跨页拆行，避免单项检查高于可用页面时导出失败。
+        item = Table(
+            values, repeatRows=1, splitInRow=1,
+            colWidths=tuple(value * mm for value in widths), hAlign="LEFT",
+        )
         item.setStyle(TableStyle([
             ("FONTNAME", (0, 0), (-1, -1), font_name),
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8EEF1")),

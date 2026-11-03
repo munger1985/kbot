@@ -220,6 +220,35 @@ def _incomplete_action(fact, related_gaps, *, title, status):
     return f"{prefix}核对本项未完成原因及取数链路，修复后重新执行；本次不能据此判定正常。"
 
 
+def _observation_display(rows):
+    """SQL 优先展示同一行来源正文，摘要哈希只用于缺文本时定位；不改变原始观测。"""
+    text_columns = (
+        "query_sample_text", "sql_text", "normalized_statement", "digest_text",
+    )
+    sql_keys = set(text_columns) | {"digest"}
+    formatted = []
+    for row in rows[:3]:
+        text = next(((display_field_name(key), value.strip()) for key in text_columns
+                     if isinstance(value := row.get(key), str) and value.strip()), None)
+        fields, sql_added = [], False
+        for key, value in row.items():
+            if key in sql_keys:
+                if sql_added:
+                    continue
+                sql_added = True
+                if text:
+                    label, statement = text
+                    preview = statement[:400] + "……（展示已截短）" if len(statement) > 400 else statement
+                    fields.append(f"{label}：{preview}")
+                else:
+                    locator = f"（Digest：{row['digest']}）" if row.get("digest") else ""
+                    fields.append("SQL 文本：来源未返回 SQL 文本" + locator)
+            else:
+                fields.append(f"{display_field_name(str(key))}：{value}")
+        formatted.append("，".join(fields[:6]))
+    return "；".join(formatted)
+
+
 def assess_inspection(
     facts: tuple[dict[str, Any], ...] | list[dict[str, Any]], *,
     policy: dict[str, Any], gaps: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
@@ -291,10 +320,7 @@ def assess_inspection(
         observation_rows = [
             item for item in fact.get("observations") or () if isinstance(item, dict)
         ]
-        actual = "；".join(
-            "，".join(f"{display_field_name(str(key))}：{value}" for key, value in list(item.items())[:6])
-            for item in observation_rows[:3]
-        )
+        actual = _observation_display(observation_rows)
         row = {
             "actual_display": actual or summary,
             "title": title, "status": status, "status_display": label,

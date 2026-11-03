@@ -3863,7 +3863,7 @@ class AIOpsRuntimeService:
         report_columns: tuple[str, ...],
         limit: int = 5,
     ) -> tuple[dict[str, Any], ...]:
-        """只按检查目录白名单冻结少量可审计观测，不泄露 SQL 文本等字段。"""
+        """只按冻结目录白名单保留少量可审计观测，SQL 文本也必须显式纳入目录。"""
         if not report_columns:
             return ()
         rows: list[dict[str, Any]] = []

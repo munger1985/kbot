@@ -511,6 +511,10 @@ _HIDDEN_REPORT_DIMENSIONS = {
     "binding_id", "instance", "job", "source_id", "target_key",
 }
 _METRIC_FIELD_DISPLAY_NAMES = {
+    "query_sample_text": "SQL 文本（执行样本）",
+    "sql_text": "SQL 文本",
+    "normalized_statement": "SQL 文本（归一化）",
+    "digest_text": "SQL 文本（归一化）",
     "dimensions": "指标维度",
     "history_resolution": "历史采样粒度",
     "event_id": "事件标识",
