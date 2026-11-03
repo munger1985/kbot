@@ -22,7 +22,7 @@
       ["dashboard", "运维总览"], ["monitoring", "实时监控"], ["situations", "告警诊断"],
     ]],
     ["inspections-drills", "巡检与演练", "audit", [
-      ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"],
+      ["inspections", "数据库巡检"], ["recovery-drills", "恢复演练"],
     ]],
     ["reports-knowledge", "报告与知识", "knowledge", [
       ["reports", "运维报告"], ["cases", "历史诊断案例"], ["operations-knowledge", "运维知识"],

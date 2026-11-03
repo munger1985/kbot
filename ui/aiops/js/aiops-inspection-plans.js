@@ -15,7 +15,7 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
   const weekdays = [{value:"1",label:"一"},{value:"2",label:"二"},{value:"3",label:"三"},{value:"4",label:"四"},{value:"5",label:"五"},{value:"6",label:"六"},{value:"0",label:"日"}];
   const activeAgents = () => state.agents.filter(item => item.status === "ACTIVE");
   const eligibleAgents = () => activeAgents().filter(agent => rows(agent.allowed_business_system_ids).includes(form.elements.business_system_id.value) && rows(agent.capabilities).includes("ACTIVE_DIAGNOSIS"));
-  const visiblePlans = () => state.plans.filter(plan => !systemFilter || plan.business_system_id === systemFilter);
+  const visiblePlans = () => state.plans.filter(plan => (!systemFilter || plan.business_system_id === systemFilter) && (!document.getElementById("inspection-plan-cycle-filter").value || plan.schedule_type === document.getElementById("inspection-plan-cycle-filter").value));
   function populateAgents() {
     const selected = form.elements.agent_id.value;
     form.elements.agent_id.innerHTML = '<option value="">请选择已启用 Agent</option>' + eligibleAgents().map(agent => `<option value="${esc(agent.agent_id)}">${esc(agent.display_name)}</option>`).join("");
@@ -90,6 +90,7 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     notice.hidden = state.loading || Boolean(activeAgents().length && activeTemplates().length);
     notice.innerHTML = !activeAgents().length ? "<strong>暂无可用 Agent</strong><span>请先在 Agent 管理中启用至少一个已授权业务系统的 Agent，再创建巡检计划。</span>" : "<strong>暂无巡检内容模板</strong><span>请先在模板中心创建并冻结巡检内容模板，再创建巡检计划。</span>";
     document.getElementById("inspection-plan-count").textContent = `${visiblePlans().length} 个`;
+    document.getElementById("inspection-plan-filter-empty").hidden = visiblePlans().length > 0 || !document.getElementById("inspection-plan-cycle-filter").value;
     document.getElementById("inspection-plan-catalog").innerHTML = `<button id="create-inspection-plan" class="management-catalog-add-card" type="button"${state.loading || !activeAgents().length || !activeTemplates().length ? " disabled" : ""}><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新建巡检计划</strong><small>选择业务系统、内容模板与执行 Agent</small></button>` + visiblePlans().map(plan => {
       const status = statusPresentation(plan.status), fire = state.fires.find(item => item.plan_id === plan.plan_id);
       const action = (name,label,kind="row-action") => `<button class="${kind}" type="button" data-plan-action="${name}"${state.busy ? " disabled" : ""}>${label}</button>`;
@@ -170,6 +171,7 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     if (!rows(access.permissions).includes("aiops:plan_manage")) {location.replace("./inspections.html");return;}
     document.querySelector("[data-inspection-reports]").onclick = () => {location.href = "./inspections.html";};
     document.getElementById("refresh-inspection-plans").onclick = load;
+    document.getElementById("inspection-plan-cycle-filter").onchange = render;
     form.onsubmit = save;form.oninput = updateForm;form.onchange = event => {if (event.target.name === "business_system_id") void loadSystemScope();if (event.target.name === "inspection_template_id") form.elements.upgrade_template_version.checked = false;updateForm();};
     drawer.onclick = event => {if (event.target.closest("[data-close-plan]")) close();};
     drawer.addEventListener("cancel",event => {if (state.busy) event.preventDefault();});drawer.addEventListener("close",close);

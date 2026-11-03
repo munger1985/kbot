@@ -4,6 +4,7 @@
 :is([data-page="inspection-plans"]) .inspection-tabs { display:flex; gap:4px; width:max-content; padding:4px; border:1px solid var(--line); border-radius:10px; background:var(--surface-subtle); }
 :is([data-page="inspection-plans"]) .inspection-tabs button { min-height:36px; padding:7px 16px; border:0; border-radius:7px; color:var(--muted); background:transparent; font-weight:650; }
 :is([data-page="inspection-plans"]) .inspection-tabs button.active { color:var(--accent-strong); background:var(--surface); box-shadow:var(--shadow-soft); }
+:is([data-page="inspection-plans"]) .inspection-tabs + :is(.aiops-inspection-plans-page,.inspection-summary-grid) { margin-top:var(--page-section-gap); }
 :is([data-page="inspection-plans"]) .inspection-summary-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
 :is([data-page="inspection-plans"]) .inspection-summary-grid .operational-summary-card { cursor:default; }
 :is([data-page="inspection-plans"]) .inspection-summary-grid .operational-summary-card:hover { border-color:var(--line); box-shadow:none; transform:none; }

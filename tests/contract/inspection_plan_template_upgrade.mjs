@@ -17,12 +17,14 @@ const { createServer } = await import(pathToFileURL(require.resolve("vite")));
 const { default: vue } = await import(pathToFileURL(require.resolve("@vitejs/plugin-vue")));
 const artifacts = await mkdtemp(path.join(tmpdir(), "inspection-plan-upgrade-"));
 const entry = `
-import {createApp,h} from "vue";
+import {computed,createApp,h} from "vue";
 import {createRouter,createWebHistory,RouterView} from "vue-router";
+import {businessAppPermissionsKey} from "/src/app/businessAppContext.ts";
+import Records from "/src/features/aiops/business/AIOpsRecordsView.vue";
 import Plans from "/src/features/aiops/management/AIOpsInspectionPlansView.vue";
 import "/src/shared/ui/styles.css";
-const router=createRouter({history:createWebHistory(),routes:[{path:"/plans/:domainCode",component:Plans}]});
-createApp({render:()=>h(RouterView)}).use(router).mount("#app");
+const router=createRouter({history:createWebHistory(),routes:[{path:"/plans/:domainCode",component:Records,props:{kind:"inspections"},meta:{title:"数据库巡检"}},{path:"/plan-only/:domainCode",component:Plans,meta:{title:"巡检计划"}}]});
+createApp({render:()=>h(RouterView)}).use(router).provide(businessAppPermissionsKey,computed(()=>({"aiops:plan_manage":true}))).mount("#app");
 `;
 const server = await createServer({
   root: portal, configFile: false, cacheDir: path.join(artifacts, "vite-cache"),
@@ -43,7 +45,7 @@ const server = await createServer({
           } catch { res.statusCode = 404;res.end(); }
           return;
         }
-        if (!url.pathname.startsWith("/plans/")) return next();
+        if (!url.pathname.startsWith("/plans/") && !url.pathname.startsWith("/plan-only/")) return next();
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.end(await server.transformIndexHtml(req.url, '<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body class="business-app-aiops"><div id="app"></div><script type="module" src="/__plans_fixture__.js"></script></body></html>'));
       });
@@ -72,6 +74,10 @@ try {
       inspection_template_version_id:"daily-v1", selected_check_ids:["availability"], timeout_seconds:1800,
       overlap_policy:"SKIP", misfire_policy:"LATEST_ONLY", system_target_count:1, row_version:1,
     };
+    const otherPlans = [
+      {...plan, plan_id:"weekly-plan", display_name:"每周检查", schedule_type:"WEEKLY"},
+      {...plan, plan_id:"cron-plan", display_name:"自定义检查", schedule_type:"CRON"},
+    ];
     let failSave = false;
     await page.route("**/api/**", async route => {
       const url = new URL(route.request().url()), method = route.request().method();
@@ -95,7 +101,7 @@ try {
         }
         Object.assign(plan, payload);plan.row_version++;result = plan;
       } else if (url.pathname.endsWith("/inspection-plans/plan-1")) result = plan;
-      else if (url.pathname.endsWith("/inspection-plans")) result = {items:[plan]};
+      else if (url.pathname.endsWith("/inspection-plans")) result = {items:[plan, ...otherPlans]};
       else if (url.pathname.endsWith("/inspection-templates")) result = templates;
       else if (url.pathname.endsWith("/agents")) result = [{agent_id:"agent-1", display_name:"巡检 Agent", status:"ACTIVE", capabilities:["ACTIVE_DIAGNOSIS"], allowed_business_system_ids:["system-1"]}];
       else if (url.pathname.endsWith("/business-systems/system-1")) result = {resources:[{status:"ACTIVE", resource:{resource_id:"resource-1", display_name:"ERP", resource_type_key:"DATABASE", lifecycle_status:"ACTIVE", database:{target_id:"target-1"}}}]};
@@ -125,13 +131,37 @@ try {
     const upgrade = page.getByRole("checkbox", {name:/本次保存升级到/});
     const save = page.getByRole("button", {name:"保存修改", exact:true});
     const open = async () => {
-      await page.getByRole("button", {name:"编辑", exact:true}).click();
+      await page.locator(".management-catalog-card").filter({has:page.getByRole("heading", {name:"生产库巡检", exact:true})}).getByRole("button", {name:"编辑", exact:true}).click();
       await summary.waitFor();
       await page.waitForFunction(() => !document.querySelector('button[type="submit"]').disabled);
     };
     const saveClose = async () => {await save.click();await summary.waitFor({state:"hidden"});};
-    const reload = async () => {await page.reload();await page.getByRole("button", {name:"编辑", exact:true}).waitFor();};
-    await page.goto(origin + (product === "ammolite" ? "/plans/test?domainId=test" : "/kbot/aiops/inspection-plans.html"));
+    const reload = async () => {await page.reload();await page.getByRole("button", {name:"编辑", exact:true}).first().waitFor();};
+    await page.goto(origin + (product === "ammolite" ? "/plans/test?domainId=test" : "/kbot/aiops/inspections.html"));
+    await page.getByRole("heading", {name:"数据库巡检", exact:true, level:1}).waitFor();
+    assert.equal(await page.getByRole("heading", {level:1}).count(), 1);
+    await page.getByRole("button", {name:"巡检计划", exact:true}).click();
+    await page.getByRole("button", {name:"编辑", exact:true}).first().waitFor();
+    assert.equal(await page.getByRole("heading", {level:1}).count(), 1, "内嵌计划不能重复渲染页头");
+    assert.equal(await page.getByRole("heading", {name:"数据库巡检", exact:true, level:1}).count(), 1);
+    assert.equal(await page.locator('.inspection-tabs[aria-label="数据库巡检视图"]').count(), 1);
+    const contentGap = await page.locator(".inspection-tabs").evaluate(node => node.nextElementSibling.getBoundingClientRect().top - node.getBoundingClientRect().bottom);
+    assert.ok(contentGap >= 12, "标签栏与计划正文应保留项目标准间距");
+    const cycle = page.getByRole("combobox", {name:"按执行周期筛选"});
+    assert.equal(await cycle.locator("option").count(), 4, "不提前展示未实现的月度选项");
+    for (const [value, name] of [["DAILY","生产库巡检"],["WEEKLY","每周检查"],["CRON","自定义检查"]]) {
+      await cycle.selectOption(value);
+      assert.equal(await page.locator(".management-catalog-card").count(), 1);
+      assert.equal(await page.locator(".management-catalog-card h3").innerText(), name);
+    }
+    await cycle.selectOption("");assert.equal(await page.locator(".management-catalog-card").count(), 3);
+    assert.equal(writes.length, 0, "标题与周期筛选不得改写计划");
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
+      await page.screenshot({path:path.join(artifacts, product + "-" + width + "-plans-" + theme + ".png"), fullPage:true, animations:"disabled"});
+      assert.equal(await page.locator(".resource-list-header").evaluate(node => node.scrollWidth > node.clientWidth + 1), false);
+    }
+    await page.evaluate(() => document.documentElement.dataset.theme = "light");
     await open();
     assert.match(await summary.innerText(), /标准日报 · v1/);
     assert.match(await summary.innerText(), /最新发布版本：v2/);
@@ -175,8 +205,20 @@ try {
     await page.getByRole("button", {name:/新建巡检计划/}).click();
     await summary.waitFor();assert.match(await summary.innerText(), /标准日报 · v3/);
     assert.equal(await upgrade.isVisible(), false);
+    // 独立使用同一组件仍有自身页头；筛选空态保留创建入口。
+    if (product === "ammolite") await page.goto(origin + "/plan-only/test?domainId=test");
+    else await page.getByRole("button", {name:"取消", exact:true}).click();
+    await page.getByRole("button", {name:"编辑", exact:true}).first().waitFor();
+    assert.equal(await page.getByRole("heading", {level:1}).count(), 1);
+    otherPlans.length = 0;
+    await page.getByRole("button", {name:"刷新", exact:true}).click();
+    await page.getByRole("button", {name:"编辑", exact:true}).waitFor();
+    await cycle.selectOption("WEEKLY");
+    assert.equal(await page.locator(".management-catalog-card").count(), 0);
+    assert.match(await page.locator(".resource-list-body").innerText(), /当前执行周期下没有巡检计划/);
+    assert.equal(await page.getByRole("button", {name:/新建巡检计划/}).isVisible(), true);
     assert.deepEqual(errors, []);
-    await page.close();cases++;console.log(product + " / " + width + "：保存、失败重试、重开回显、后续发布、切换与停用场景通过");
+    await page.close();cases++;console.log(product + " / " + width + "：单一页头、周期筛选、明暗布局、升级保存及重开回显通过");
   }
   console.log(cases + " 组真实页面回归通过；截图：" + artifacts);
 } finally {await browser?.close();await server.close();}

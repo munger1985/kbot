@@ -1,16 +1,15 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>日常巡检</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261103_1"><link rel="stylesheet" href="./css/reference-inspection-plans.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"><link rel="stylesheet" href="../shared/time-picker.css?v=20261102_1"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>数据库巡检</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261103_1"><link rel="stylesheet" href="./css/reference-inspection-plans.css?v=20261103_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"><link rel="stylesheet" href="../shared/time-picker.css?v=20261102_1"></head>
 <body data-page="inspection-plans">
   <main class="ops-main platform-home-page aiops-page">
-    <header class="platform-home-header"><div class="login-brand"><span class="brand-mark">A</span><strong>日常巡检</strong></div></header>
-    <section class="platform-home-hero app-page-head"><div><p class="eyebrow">计划巡检入口</p><h1>日常巡检</h1><p>查看巡检计划展开的执行批次、运维目标覆盖情况和完成结果。</p></div></section>
-    <nav class="inspection-tabs" aria-label="日常巡检视图"><button class="inspection-tab" type="button" data-inspection-reports>巡检报告</button><button class="active" type="button" aria-current="page">巡检计划</button></nav>
+    <header class="platform-home-header"><div class="login-brand"><span class="brand-mark">A</span><strong>数据库巡检</strong></div></header>
+    <section class="platform-home-hero app-page-head"><div><p class="eyebrow">计划巡检</p><h1>数据库巡检</h1><p>统一管理巡检计划与执行报告；按执行周期安排巡检，每次覆盖所选业务系统的全部纳管数据库。</p></div></section>
+    <nav class="inspection-tabs" aria-label="数据库巡检视图"><button class="inspection-tab" type="button" data-inspection-reports>巡检报告</button><button class="active" type="button" aria-current="page">巡检计划</button></nav>
     <section class="aiops-page aiops-inspection-plans-page">
-      <header class="page-header app-page-head"><div><p class="eyebrow">自动巡检管理</p><h1>日常巡检</h1><p>先选择业务系统，再选择执行 Agent；每次巡检覆盖该系统全部纳管数据库。</p></div></header>
       <p id="inspection-plan-notice" class="notice notice-warning" hidden></p>
       <section id="inspection-plans-loading" class="loading-card"><span class="loading-orb"></span>正在读取巡检计划…</section>
-      <section id="inspection-plan-list" class="resource-list-surface" hidden><header class="resource-list-header"><div class="resource-list-heading"><h2>巡检计划</h2><p>计划负责未来调度；历史巡检报告始终保留当时的执行结果。</p></div><div class="resource-list-tools"><span id="inspection-plan-count" class="resource-list-count">0 个</span><button id="refresh-inspection-plans" class="secondary-button" type="button">刷新</button></div></header><div class="resource-list-body"><div id="inspection-plan-catalog" class="management-catalog-grid"></div></div></section>
+      <section id="inspection-plan-list" class="resource-list-surface" hidden><header class="resource-list-header"><div class="resource-list-heading"><h2>巡检计划</h2><p>按执行周期统一管理；调整计划只影响后续批次，历史报告保持不变。</p></div><div class="resource-list-tools"><label class="resource-list-filter"><span>执行周期</span><select id="inspection-plan-cycle-filter" aria-label="按执行周期筛选"><option value="">全部周期</option><option value="DAILY">每天</option><option value="WEEKLY">每周</option><option value="CRON">高级规则</option></select></label><span id="inspection-plan-count" class="resource-list-count">0 个</span><button id="refresh-inspection-plans" class="secondary-button" type="button">刷新</button></div></header><div class="resource-list-body"><p id="inspection-plan-filter-empty" class="field-help" hidden>当前执行周期下没有巡检计划，可切换周期或新建计划。</p><div id="inspection-plan-catalog" class="management-catalog-grid"></div></div></section>
     </section>
   </main>
   <dialog id="inspection-plan-dialog" class="reference-drawer admin-drawer aiops-inspection-plan-drawer" aria-labelledby="inspection-plan-title">
@@ -26,7 +25,7 @@
       <section class="drawer-form-section">
         <header><span>02</span><div><strong>执行安排</strong><small>按业务周期设置，系统保存为标准五段 Cron。</small></div></header>
         <fieldset class="inspection-frequency-options"><legend>巡检频率</legend><label><input name="schedule_type" type="radio" value="DAILY" checked><span><strong>每天</strong><small>每日固定时间</small></span></label><label><input name="schedule_type" type="radio" value="WEEKLY"><span><strong>每周</strong><small>指定星期执行</small></span></label><label><input name="schedule_type" type="radio" value="CRON"><span><strong>高级规则</strong><small>直接填写 Cron</small></span></label></fieldset>
-        <p id="inspection-plan-type-help" class="field-help" hidden>计划类型创建后保持不变；如需切换类型，请新建计划。</p>
+        <p id="inspection-plan-type-help" class="field-help" hidden>执行周期创建后保持不变；如需切换周期，请新建计划。</p>
         <fieldset id="inspection-plan-weekdays" class="inspection-weekday-options" hidden><legend>执行日</legend><label><input name="weekdays" type="checkbox" value="1" checked><span>周一</span></label><label><input name="weekdays" type="checkbox" value="2" checked><span>周二</span></label><label><input name="weekdays" type="checkbox" value="3" checked><span>周三</span></label><label><input name="weekdays" type="checkbox" value="4" checked><span>周四</span></label><label><input name="weekdays" type="checkbox" value="5" checked><span>周五</span></label><label><input name="weekdays" type="checkbox" value="6"><span>周六</span></label><label><input name="weekdays" type="checkbox" value="0"><span>周日</span></label></fieldset>
         <div id="inspection-plan-time" class="control-field"><label for="inspection-execution-time" class="field-label">执行时间</label><span class="time-picker"><input id="inspection-execution-time" class="time-picker-input" name="execution_time" type="text" inputmode="numeric" autocomplete="off" placeholder="HH:mm" maxlength="5" aria-label="执行时间" value="02:00" required><button class="icon-button time-picker-trigger" type="button" aria-label="选择时间"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg></button></span></div>
         <label id="inspection-plan-cron" class="control-field" hidden><span class="field-label">Cron 表达式</span><input name="cron_expression" maxlength="256" placeholder="0 2 * * *" value="0 2 * * *"><small class="field-help">使用分、时、日、月、星期五段格式。</small></label>
@@ -51,6 +50,6 @@
     </form>
   </dialog>
   <dialog id="inspection-plan-confirm" class="confirm-dialog" aria-labelledby="inspection-plan-confirm-title" aria-describedby="inspection-plan-confirm-message"><header class="confirm-dialog-header"><span class="confirm-dialog-mark" aria-hidden="true">!</span><div><p class="confirm-dialog-kicker">请确认此操作</p><h2 id="inspection-plan-confirm-title"></h2></div></header><p id="inspection-plan-confirm-message" class="confirm-dialog-message"></p><footer class="confirm-dialog-actions"><button class="secondary-button" type="button" data-cancel-plan-confirm>取消</button><button type="button" data-confirm-plan></button></footer></dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261102_1"></script><script type="module" src="./js/aiops-inspection-plans.js?v=20261103_2"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261103_1"></script><script type="module" src="./js/aiops-inspection-plans.js?v=20261103_3"></script>
 </body>
 </html>

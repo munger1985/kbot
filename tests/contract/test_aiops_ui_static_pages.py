@@ -247,7 +247,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261102_1"
+        expected = "./js/aiops-shell.js?v=20261103_1"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
         for path in pages:
             parser = _Parser()
@@ -740,10 +740,10 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn(f"workspaces.css?v={stylesheet_version}", page)
-            self.assertIn("aiops-shell.js?v=20261102_1", page)
+            self.assertIn("aiops-shell.js?v=20261103_1", page)
             self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
-        self.assertIn("reference-inspections.css?v=20261102_1", inspections)
+        self.assertIn("reference-inspections.css?v=20261103_1", inspections)
         self.assertIn("aiops-workspaces.js?v=20261030_4", inspections)
         self.assertIn("aiops-chat-charts.js?v=20261030_1", inspections)
         self.assertIn("coverage_warning", workspace)
@@ -1449,7 +1449,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             '["configuration-governance", "配置与治理", "settings"',
             '["dashboard", "运维总览"]',
             '["monitoring", "实时监控"]', '["situations", "告警诊断"]',
-            '["inspections", "日常巡检"]',
+            '["inspections", "数据库巡检"]',
             '["recovery-drills", "恢复演练"]', '["reports", "运维报告"]',
             '["operations-knowledge", "运维知识"]',
             '["business-systems", "业务系统"]', '["diagnostic-sources", "监控源"]',
@@ -1494,7 +1494,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         for old in ("当前读取范围", "等待或运行中", "完整完成", "全部目标已结束"):
             self.assertNotIn(old, summary)
         self.assertIn("执行完成不代表数据库正常，请查看报告中的巡检结论。", page)
-        self.assertIn("aiops-inspections.js?v=20261102_3", page)
+        self.assertIn("aiops-inspections.js?v=20261103_1", page)
 
     def test_business_workspace_includes_report_center(self):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
@@ -1514,12 +1514,12 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         )
         self.assertIn('["chat", "Agent 工作台", "agents"]', shell)
         self.assertIn('["situations", "告警诊断"]', shell)
-        self.assertIn('["inspections", "日常巡检"]', shell)
+        self.assertIn('["inspections", "数据库巡检"]', shell)
         self.assertNotIn('["inspection-plans", "巡检计划"]', shell)
         self.assertIn('["runs", "运行记录"]', shell)
         self.assertIn('["reports", "运维报告"]', shell)
         self.assertIn('["report-templates", "模板中心"]', shell)
-        self.assertIn('aria-label="日常巡检视图"', inspections)
+        self.assertIn('aria-label="数据库巡检视图"', inspections)
         self.assertIn('data-plan-manage hidden', inspections)
         self.assertIn('class="active" type="button" aria-current="page">巡检计划', plans)
         inspection_script = (AIOPS_ROOT / "js" / "aiops-inspections.js").read_text(encoding="utf-8")

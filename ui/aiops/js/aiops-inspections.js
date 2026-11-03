@@ -21,7 +21,7 @@
     const sequence = ++state.sequence;
     document.getElementById("inspection-loading").hidden = false;
     try {const fires = await request("/inspection-fires?limit=100");if (sequence === state.sequence) {state.items = rows(fires.items);renderList();}}
-    catch(error) {shell.toast(error.message || "无法读取日常巡检");}
+    catch(error) {shell.toast(error.message || "无法读取数据库巡检");}
     finally {if (sequence === state.sequence) document.getElementById("inspection-loading").hidden = true;}
   }
   shell.ready.then(access => {
