@@ -36,6 +36,7 @@ from aiops_agent.application.display_dictionary import (
 )
 from aiops_agent.application.leadership import project_leadership_briefing
 from aiops_agent.application.inspections.monthly import monthly_business_review
+from aiops_agent.application.inspections.sql_observations import inspection_sql_details
 
 
 @dataclass(frozen=True)
@@ -338,6 +339,7 @@ def _daily_inspection_presentation(
     report_date = str(payload.get("period_end") or "")[:10].replace("-", "")
     number = f"AIOPS-DI-{report_date}-{report_id[-8:].upper()}" if report_id else str(payload.get("report_key") or "")
     gaps = _report_gap_items(list(payload.get("gaps") or ()))
+    checks, sql_details = inspection_sql_details(facts, list(assessment.get("checks") or ()))
     return {
         "schema_version": "DAILY_INSPECTION_PRESENTATION.v1",
         "header": {
@@ -368,7 +370,8 @@ def _daily_inspection_presentation(
             "attention_count": len(assessment.get("findings") or ()),
             "incomplete_count": len(assessment.get("limitations") or ()),
         },
-        "checks": list(assessment.get("checks") or ()),
+        "checks": checks,
+        "sql_details": sql_details,
         "metrics": metrics,
         "capacity_rows": [item for item in metrics if item.get("semantic_role") in _CAPACITY_METRIC_ROLES],
         "findings": list(assessment.get("findings") or ()),

@@ -134,6 +134,23 @@ def inspection_pdf_story(
             ], (31, 18, 61, 60))
         else:
             story.append(paragraph("本报告未记录可展示的基础检查明细，不能据此补造正常结果。"))
+        for group in data.get("sql_details") or ():
+            heading(str(group.get("title") or "高负载 SQL") + "明细")
+            story.append(paragraph(f"展示 {group['shown_count']} / {group['observed_count']} 组语句。", keep_with_next=True))
+            story.append(paragraph(group.get("note") or "", keep_with_next=True))
+            for item in group.get("statements") or ():
+                story.append(paragraph(
+                    f"{item['ordinal']:02d} · Schema：{item.get('schema_name') or '未记录'}",
+                    section, keep_with_next=True,
+                ))
+                story.append(paragraph(item.get("text_label") or "SQL 文本", keep_with_next=True))
+                story.append(paragraph(item.get("statement_preview") or "来源未返回 SQL 文本。"))
+                if item.get("statement_truncated"):
+                    story.append(paragraph("SQL 预览已截短；来源返回的完整正文可在网页报告中展开查看。"))
+                table(["执行次数", "总耗时", "平均耗时", "最大耗时"], [[
+                    item.get("execution_count_display"), item.get("total_latency_display"),
+                    item.get("average_latency_display"), item.get("maximum_latency_display"),
+                ]], (35, 55, 40, 40))
     metrics = list(data.get("metrics") or ())
     if metrics:
         heading("性能与运行趋势" if monthly else "关键运行指标")

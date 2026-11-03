@@ -85,6 +85,9 @@ class InspectionPresentationHttpTest(unittest.TestCase):
                     self.assertEqual(sample[key]["target_results"], body[key]["target_results"])
                 else:
                     self.assertEqual(sample[key]["checks"], body[key]["checks"])
+                    self.assertEqual(sample[key]["sql_details"], body[key]["sql_details"])
+                    self.assertEqual(3, len(body[key]["sql_details"][0]["statements"]))
+                    self.assertEqual("1,425,880.2 ms", body[key]["sql_details"][0]["statements"][0]["total_latency_display"])
                     self.assertNotIn("baseline_metrics", body[key])
                 service.get_report_presentation.assert_awaited_once_with(
                     report_id=report_id, domain_id=domain_id,
@@ -120,7 +123,7 @@ class InspectionPresentationHttpTest(unittest.TestCase):
         self.assertIn("timezone", definitions["DailyInspectionHeader"]["properties"])
         self.assertIn("business_system_name", definitions["DailyInspectionHeader"]["properties"])
         self.assertIn("timezone", definitions["MonthlyInspectionHeader"]["properties"])
-        for field in ("metrics", "checks", "limitations"):
+        for field in ("metrics", "checks", "limitations", "sql_details"):
             self.assertIn(field, definitions["DailyInspectionPresentation"]["properties"])
         for field in ("target_results", "limitations"):
             self.assertIn(field, definitions["MonthlyInspectionPresentation"]["properties"])

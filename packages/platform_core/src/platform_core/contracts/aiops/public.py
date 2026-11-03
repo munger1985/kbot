@@ -587,6 +587,35 @@ class DailyInspectionMetric(BaseModel):
     trend_points: tuple[dict[str, Any], ...] = ()
 
 
+class InspectionSqlStatement(BaseModel):
+    """巡检 SQL 明细：正文按文本渲染，耗时展示统一为毫秒。"""
+
+    model_config = ConfigDict(extra="forbid")
+    ordinal: int
+    schema_name: str
+    text_label: str
+    statement_text: str
+    statement_preview: str
+    statement_truncated: bool
+    digest: str
+    execution_count_display: str
+    total_latency_display: str
+    average_latency_display: str
+    maximum_latency_display: str
+
+
+class InspectionSqlDetail(BaseModel):
+    """与检查表对应的独立 SQL 阅读区域，数值只来自冻结观测。"""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str
+    tool_id: str
+    observed_count: int
+    shown_count: int
+    note: str
+    statements: tuple[InspectionSqlStatement, ...]
+
+
 class DailyInspectionPresentation(BaseModel):
     """日常巡检报告的冻结结构化展示投影。"""
 
@@ -595,6 +624,7 @@ class DailyInspectionPresentation(BaseModel):
     header: DailyInspectionHeader
     conclusion: dict[str, Any]
     checks: tuple[dict[str, Any], ...] = ()
+    sql_details: tuple[InspectionSqlDetail, ...] = ()
     metrics: tuple[DailyInspectionMetric, ...] = ()
     capacity_rows: tuple[DailyInspectionMetric, ...] = ()
     findings: tuple[dict[str, Any], ...] = ()

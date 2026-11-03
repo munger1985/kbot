@@ -18,6 +18,7 @@ SHARED_CONTRACTS = (
     Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/oracle/sql/storage_capacity.sql"),
     Path("services/aiops_agent/src/aiops_agent/application/display_dictionary.py"),
     Path("tests/unit/aiops_agent/test_aiops_inspection_sql_display.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/inspections/sql_observations.py"),
     Path("tests/unit/aiops_agent/test_aiops_inspection_record_semantics.py"),
     Path("tests/smoke/check_aiops_inspection_current_metrics.py"),
     Path("services/aiops_agent/src/aiops_agent/domain/evidence/metric_time.py"),

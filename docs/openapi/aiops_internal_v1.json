@@ -3536,6 +3536,14 @@
             "const": "DAILY_INSPECTION_PRESENTATION.v1",
             "title": "Schema Version",
             "type": "string"
+          },
+          "sql_details": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InspectionSqlDetail"
+            },
+            "title": "Sql Details",
+            "type": "array"
           }
         },
         "required": [
@@ -7929,6 +7937,114 @@
           "status"
         ],
         "title": "InspectionRunSummary",
+        "type": "object"
+      },
+      "InspectionSqlDetail": {
+        "additionalProperties": false,
+        "description": "与检查表对应的独立 SQL 阅读区域，数值只来自冻结观测。",
+        "properties": {
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "observed_count": {
+            "title": "Observed Count",
+            "type": "integer"
+          },
+          "shown_count": {
+            "title": "Shown Count",
+            "type": "integer"
+          },
+          "statements": {
+            "items": {
+              "$ref": "#/components/schemas/InspectionSqlStatement"
+            },
+            "title": "Statements",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tool_id": {
+            "title": "Tool Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "tool_id",
+          "observed_count",
+          "shown_count",
+          "note",
+          "statements"
+        ],
+        "title": "InspectionSqlDetail",
+        "type": "object"
+      },
+      "InspectionSqlStatement": {
+        "additionalProperties": false,
+        "description": "巡检 SQL 明细：正文按文本渲染，耗时展示统一为毫秒。",
+        "properties": {
+          "average_latency_display": {
+            "title": "Average Latency Display",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "execution_count_display": {
+            "title": "Execution Count Display",
+            "type": "string"
+          },
+          "maximum_latency_display": {
+            "title": "Maximum Latency Display",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "schema_name": {
+            "title": "Schema Name",
+            "type": "string"
+          },
+          "statement_preview": {
+            "title": "Statement Preview",
+            "type": "string"
+          },
+          "statement_text": {
+            "title": "Statement Text",
+            "type": "string"
+          },
+          "statement_truncated": {
+            "title": "Statement Truncated",
+            "type": "boolean"
+          },
+          "text_label": {
+            "title": "Text Label",
+            "type": "string"
+          },
+          "total_latency_display": {
+            "title": "Total Latency Display",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ordinal",
+          "schema_name",
+          "text_label",
+          "statement_text",
+          "statement_preview",
+          "statement_truncated",
+          "digest",
+          "execution_count_display",
+          "total_latency_display",
+          "average_latency_display",
+          "maximum_latency_display"
+        ],
+        "title": "InspectionSqlStatement",
         "type": "object"
       },
       "InstanceDiscoveryCandidate": {

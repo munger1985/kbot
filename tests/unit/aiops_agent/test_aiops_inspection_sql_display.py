@@ -7,10 +7,12 @@ import pytest
 
 from aiops_agent.application.inspections.assessment import assess_inspection
 from aiops_agent.application.inspections.check_catalog import compile_selected_check_steps
+from aiops_agent.application.inspections.sql_observations import format_picoseconds, inspection_sql_details
 from aiops_agent.application.reporting import report_presentation, render_pdf, resolve_system_template
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from platform_core.identity import uuid7
+from platform_core.contracts.aiops.public import DailyInspectionPresentation
 
 
 DIGEST = "f2b9be5f0f32ca7507e4ddf133cd2fad0993a1c26fde9caa6f067b1af2b7603c"
@@ -51,11 +53,13 @@ def test_mysql_sql_sample_survives_real_catalog_and_report_projection():
     assert NORMALIZED not in check["actual_display"]
     assert DIGEST not in check["actual_display"]
     assert "592553" in check["actual_display"]
-    assert "239177605000" in check["actual_display"]
+    assert "239.2 ms" in check["actual_display"]
+    assert "皮秒" not in check["actual_display"]
     assert not gaps
     fact = next(item for item in facts if item.get("kind") == "inspection_check")
     assert fact["observations"][0]["digest"] == raw["digest"]
     assert fact["observations"][0]["query_sample_text"] == SAMPLE
+    assert fact["observations"][0]["maximum_latency_picoseconds"] == raw["maximum_latency_picoseconds"]
     assert result["completion_status"] == "COMPLETE"
 
 
@@ -98,13 +102,31 @@ def test_report_and_pdf_use_same_frozen_sql_and_do_not_mutate_old_report(sample)
                "scope": {"inspection_assessment": result}, "facts": list(facts), "gaps": list(gaps)}
     original = deepcopy(payload)
     presentation = report_presentation(payload=payload, template=resolve_system_template("system:inspection.daily"))
-    assert presentation["daily_inspection"]["checks"][0]["actual_display"].count(sample[:400]) == 3
+    daily = presentation["daily_inspection"]
+    assert sample[:400] not in daily["checks"][0]["actual_display"]
+    group = daily["sql_details"][0]
+    assert group["shown_count"] == 3 and group["observed_count"] == 4
+    assert len(group["statements"]) == 3
+    for item in group["statements"]:
+        assert item["statement_text"] == sample
+        assert item["statement_preview"] == sample[:400]
+        assert item["statement_truncated"] == (len(sample) > 400)
+        assert item["digest"] == ""
+        assert item["execution_count_display"] == "592,553"
+        assert item["total_latency_display"] == "1,421,368.5 ms"
+        assert item["average_latency_display"] == "2.4 ms"
+        assert item["maximum_latency_display"] == "239.2 ms"
+    typed = DailyInspectionPresentation.model_validate(daily)
+    assert typed.sql_details[0].statements[0].statement_text == sample
     assert render_pdf(presentation).startswith(b"%PDF-")
     assert payload == original
     old = deepcopy(payload)
     old["scope"]["inspection_assessment"]["checks"][0]["actual_display"] = "旧报告保留冻结的摘要内容"
+    old_original = deepcopy(old)
     frozen = report_presentation(payload=old, template=resolve_system_template("system:inspection.daily"))
-    assert frozen["daily_inspection"]["checks"][0]["actual_display"] == "旧报告保留冻结的摘要内容"
+    assert frozen["daily_inspection"]["checks"] == daily["checks"]
+    assert frozen["daily_inspection"]["conclusion"] == daily["conclusion"]
+    assert old == old_original
 
 
 def test_non_sql_observation_format_remains_unchanged():
@@ -114,3 +136,44 @@ def test_non_sql_observation_format_remains_unchanged():
         "evidence_refs": ["original"],
     }], policy={})
     assert result["checks"][0]["actual_display"] == "当前使用率：4，上限值：100"
+
+
+@pytest.mark.parametrize("value,expected", [
+    (1425880197358000, "1,425,880.2 ms"), ("2398109000", "2.4 ms"),
+    (239177605000, "239.2 ms"), (0, "0.0 ms"), (1, "0.0 ms"),
+    (150000000, "0.2 ms"), (None, "未记录"), ("", "未记录"),
+    ("invalid", "未记录"), (-1, "未记录"), ("NaN", "未记录"),
+    ("Infinity", "未记录"), (True, "未记录"), (False, "未记录"),
+    ("1e999999999", "未记录"),
+])
+def test_picoseconds_are_displayed_as_milliseconds(value, expected):
+    assert format_picoseconds(value) == expected
+
+
+def test_sql_details_preserve_source_order_and_missing_values_without_fabrication():
+    _, facts, _, result = pipeline(sample=None, normalized=None, count=5)
+    fact = next(item for item in facts if item.get("kind") == "inspection_check")
+    fact["observations"][0]["execution_count"] = 12
+    fact["observations"][1]["execution_count"] = None
+    fact["observations"][2]["execution_count"] = -1
+    fact["observations"][0]["average_latency_picoseconds"] = None
+    original = deepcopy(facts)
+    checks, groups = inspection_sql_details(list(facts), result["checks"])
+    group = groups[0]
+    assert group["observed_count"] == 5 and group["shown_count"] == 3
+    assert [item["execution_count_display"] for item in group["statements"]] == ["12", "未记录", "未记录"]
+    assert group["statements"][0]["average_latency_display"] == "未记录"
+    assert all(item["statement_text"] == "" and item["digest"] == DIGEST for item in group["statements"])
+    assert "累计" in group["note"]
+    assert "SQL 文本" not in checks[0]["actual_display"]
+    assert facts == original
+
+
+def test_no_frozen_observations_keeps_old_display_and_does_not_parse_text():
+    _, facts, _, result = pipeline()
+    fact = next(item for item in facts if item.get("kind") == "inspection_check")
+    fact["observations"] = []
+    result["checks"][0]["actual_display"] = "SQL 文本：" + SAMPLE + "，平均延迟皮秒：2398719000"
+    checks, groups = inspection_sql_details(list(facts), result["checks"])
+    assert groups == []
+    assert checks == result["checks"]

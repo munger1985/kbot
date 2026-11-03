@@ -30,6 +30,20 @@ def inspection_samples():
         for check in checks:
             if check.get("kind") == "inspection_check" and not check.get("required"):
                 check.update(check_status="OBSERVED", summary="已取得辅助观测，未设健康判断阈值。")
+            if check.get("tool_id") == "db.mysql.statement.digest.top":
+                check.update(observation_count=3, observations=[
+                    {"schema_name": "aiops_demo", "query_sample_text": sql,
+                     "execution_count": count, "total_latency_picoseconds": total,
+                     "average_latency_picoseconds": average, "maximum_latency_picoseconds": maximum}
+                    for sql, count, total, average, maximum in (
+                        ("COMMIT", 594585, 1425880197358000, 2398109000, 239177605000),
+                        ("SELECT " + ", ".join(f"field_{index}" for index in range(80))
+                         + " FROM wms_warehouse_task WHERE status_code = 'COMPLETED'",
+                         490072, 324033880437000, 661196000, 91959037000),
+                        ("SELECT '<script>alert(1)</script>&' FROM wms_outbound_order WHERE amount < 42",
+                         414696, 314597617375000, 758622000, 9760192000),
+                    )
+                ])
         if incomplete:
             checks[0]["check_status"] = "MISSING"
             checks[0]["summary"] = "只读权限不足，未完成连接使用率检查。"

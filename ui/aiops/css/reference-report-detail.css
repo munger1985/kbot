@@ -142,10 +142,27 @@
 }
 
 /* 巡检正文自然排版；窄屏切换带标签的明细卡片，不嵌套横向滚动。 */
+/* SQL 独立成块，全宽换行；统计与正文分离，避免检查单元格内文字堆叠。 */
+.inspection-sql-note { margin: 0 0 20px; color: var(--muted); line-height: 1.75; }
+.inspection-sql-card { min-width: 0; margin-top: 20px; border: 1px solid var(--line); }
+.inspection-sql-card > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--surface-subtle); }
+.inspection-sql-card h3 { margin: 0; color: var(--ink); font-size: 14px; overflow-wrap: anywhere; }
+.inspection-sql-card > header > span { color: var(--muted); font-size: 12px; }
+.inspection-sql-card pre { min-width: 0; max-width: 100%; margin: 0; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); font-family: var(--font-data); font-size: 12px; line-height: 1.75; }
+.inspection-sql-card code { white-space: inherit; overflow-wrap: inherit; font: inherit; }
+.inspection-sql-card > p, .inspection-sql-full-text { margin: 0; padding: 12px 16px; overflow-wrap: anywhere; }
+.inspection-sql-full-text summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.inspection-sql-full-text pre { padding-inline: 0; }
+.inspection-sql-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border-top: 1px solid var(--line); }
+.inspection-sql-stats > div { min-width: 0; padding: 12px 16px; }
+.inspection-sql-stats dt { color: var(--muted); font-size: 11px; }
+.inspection-sql-stats dd { margin: 6px 0 0; color: var(--ink); font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 14px; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .inspection-sql-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media print { .inspection-sql-full-text { display: none; } }
 .aiops-report-detail-page [hidden] { display: none !important; }
-.daily-report-table, .monthly-report-table { min-width: 0; width: 100%; table-layout: fixed; }
+:is([data-page="report-detail"]) :is(.daily-report-table, .monthly-report-table) { min-width: 0; width: 100%; table-layout: fixed; }
 .daily-report-table th, .daily-report-table td, .daily-report-metadata dd, .daily-evidence { overflow-wrap: anywhere; }
-.daily-table-wrap { overflow: visible; }
+:is([data-page="report-detail"]) .daily-table-wrap { overflow: visible; }
 .monthly-trend-svg { max-width: 100%; }
 .daily-report-table.daily-baseline-table td small { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 /* 基础检查表按内容分配列宽，给较长的实测说明更多空间。 */

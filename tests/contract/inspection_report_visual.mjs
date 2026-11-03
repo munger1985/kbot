@@ -106,6 +106,31 @@ try {
         assert.equal(await appendix.locator(".inspection-appendix-body").isVisible(), false);
         assert.equal(await page.locator(".daily-report-table").count() > 0, true);
         if (!monthly) {
+          const statements = (data.sql_details || []).flatMap(group => group.statements);
+          const cards = page.locator(".inspection-sql-card");
+          assert.equal(await cards.count(), statements.length);
+          for (let index = 0; index < statements.length; index++) {
+            const statement = statements[index], card = cards.nth(index);
+            assert.equal(await card.locator(":scope > pre > code").textContent(), statement.statement_preview);
+            for (const value of [statement.execution_count_display, statement.total_latency_display,
+              statement.average_latency_display, statement.maximum_latency_display])
+              assert.ok((await card.innerText()).includes(value));
+            assert.equal(await card.locator("script").count(), 0);
+            const columns = await card.locator(".inspection-sql-stats").evaluate(element =>
+              getComputedStyle(element).gridTemplateColumns.split(" ").length
+            );
+            assert.equal(columns, width <= 760 ? 2 : 4);
+            if (statement.statement_truncated) {
+              const full = card.locator(".inspection-sql-full-text");
+              assert.equal(await full.getAttribute("open"), null);
+              await full.locator("summary").click();
+              assert.equal(await full.locator("code").textContent(), statement.statement_text);
+              await full.locator("summary").click();
+            }
+          }
+          assert.ok(!(await page.locator(".daily-checks-table").innerText()).includes("皮秒"));
+          if (name === "normal" && statements.length)
+            await cards.first().locator("..").screenshot({path:path.join(resultDir,`${product}-sql-${width}.png`)});
           const comparisons = data.metrics.filter(metric => metric.baseline_applicable);
           const table = page.locator(".daily-baseline-table");
           assert.equal(await table.count(), comparisons.length ? 1 : 0);
@@ -168,15 +193,18 @@ try {
             assert.equal(await items.nth(index).evaluate(element => getComputedStyle(element, "::before").content), "none");
           }
         }
-        const overflowing = await page.evaluate(() => [...document.querySelectorAll(".daily-table-wrap,.aiops-formal-report,.inspection-appendix,.inspection-appendix-body,.inspection-trace")].map(el => ({cls:el.className,width:el.clientWidth,scroll:el.scrollWidth})).filter(item=>item.scroll > item.width+2));
+        const overflowing = await page.evaluate(() => [...document.querySelectorAll(".daily-table-wrap,.aiops-formal-report,.inspection-appendix,.inspection-appendix-body,.inspection-trace,.inspection-sql-card,.inspection-sql-card pre,.inspection-sql-stats")].map(el => ({cls:el.className,width:el.clientWidth,scroll:el.scrollWidth})).filter(item=>item.scroll > item.width+2));
         assert.deepEqual(overflowing, [], `${product}/${name}/${width} 横向溢出`);
+        assert.ok(await page.locator(".aiops-formal-report").evaluate(element =>
+          element.getBoundingClientRect().right <= innerWidth + 2
+        ), `${product}/${name}/${width} 报告超出视口`);
         assert.deepEqual(errors, [], `${product}/${name}/${width} 浏览器错误`);
         await page.screenshot({path:path.join(resultDir,`${product}-${name}-${width}.png`),fullPage:true});
         await page.close();
       }
     }
   }
-  console.log("PASS 两端各 5 类报告 × 3 个宽度：七天基线与趋势、冻结结论、检查列宽及附录，无横向溢出或浏览器异常");
+  console.log("PASS 两端各 5 类报告 × 3 个宽度：SQL 毫秒统计、独立排版、全文展开及安全转义；基线、冻结结论与附录，无横向溢出或浏览器异常");
 } finally {
   await browser?.close();
   await server.close();

@@ -11,6 +11,7 @@ from typing import Any
 from aiops_agent.application.display_dictionary import (
     display_field_name, display_metric_name, display_text, format_metric_value,
 )
+from .sql_observations import SQL_TEXT_COLUMNS, observation_field, select_sql_text
 
 
 _STATUS_LABELS = {
@@ -222,14 +223,10 @@ def _incomplete_action(fact, related_gaps, *, title, status):
 
 def _observation_display(rows):
     """SQL 优先展示同一行来源正文，摘要哈希只用于缺文本时定位；不改变原始观测。"""
-    text_columns = (
-        "query_sample_text", "sql_text", "normalized_statement", "digest_text",
-    )
-    sql_keys = set(text_columns) | {"digest"}
+    sql_keys = set(SQL_TEXT_COLUMNS) | {"digest"}
     formatted = []
     for row in rows[:3]:
-        text = next(((display_field_name(key), value.strip()) for key in text_columns
-                     if isinstance(value := row.get(key), str) and value.strip()), None)
+        text = select_sql_text(row)
         fields, sql_added = [], False
         for key, value in row.items():
             if key in sql_keys:
@@ -244,7 +241,7 @@ def _observation_display(rows):
                     locator = f"（Digest：{row['digest']}）" if row.get("digest") else ""
                     fields.append("SQL 文本：来源未返回 SQL 文本" + locator)
             else:
-                fields.append(f"{display_field_name(str(key))}：{value}")
+                fields.append(observation_field(str(key), value))
         formatted.append("，".join(fields[:6]))
     return "；".join(formatted)
 
