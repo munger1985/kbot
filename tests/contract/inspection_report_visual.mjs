@@ -26,10 +26,10 @@ const harness = {
   },
   load(id) {
     if (id !== path.join(portal, "__inspection_harness__.js")) return;
-    return 'import {createApp,h} from "vue"; import {createRouter,createWebHistory,RouterView} from "vue-router";'
-      + 'import Report from "/src/features/aiops/business/AIOpsReportDetailView.vue"; import Templates from "/src/features/aiops/management/AIOpsReportTemplatesView.vue"; import ConfirmDialog from "/src/shared/ui/ConfirmDialog.vue"; import "/src/shared/ui/styles.css";'
-      + 'const router=createRouter({history:createWebHistory(),routes:[{path:"/sample/:domainCode/:reportId",component:Report,meta:{title:"报告详情"}},{path:"/template/:domainCode",component:Templates,meta:{title:"模板中心"}}]});'
-      + 'createApp({render:()=>h("div",[h(RouterView),h(ConfirmDialog)])}).use(router).mount("#app");';
+    return 'import {computed,createApp,h} from "vue"; import {createRouter,createWebHistory,RouterView} from "vue-router";'
+      + 'import {businessAppPermissionsKey} from "/src/app/businessAppContext.ts"; import Batch from "/src/features/aiops/business/AIOpsInspectionDetailView.vue"; import Report from "/src/features/aiops/business/AIOpsReportDetailView.vue"; import Templates from "/src/features/aiops/management/AIOpsReportTemplatesView.vue"; import ConfirmDialog from "/src/shared/ui/ConfirmDialog.vue"; import "/src/shared/ui/styles.css";'
+      + 'const router=createRouter({history:createWebHistory(),routes:[{path:"/batch/:domainCode/:fireId",component:Batch,meta:{title:"巡检批次详情"}},{path:"/sample/:domainCode/:reportId",component:Report,meta:{title:"报告详情"}},{path:"/template/:domainCode",component:Templates,meta:{title:"模板中心"}}]});'
+      + 'createApp({render:()=>h("div",[h(RouterView),h(ConfirmDialog)])}).use(router).provide(businessAppPermissionsKey,computed(()=>({"aiops:plan_manage":true}))).mount("#app");';
   },
   configureServer(server) {
     server.middlewares.use(async (req, res, next) => {
@@ -45,7 +45,7 @@ const harness = {
         } catch { res.statusCode = 404; res.end(); }
         return;
       }
-      if (!url.pathname.startsWith("/sample/") && !url.pathname.startsWith("/template/")) return next();
+      if (!url.pathname.startsWith("/sample/") && !url.pathname.startsWith("/template/") && !url.pathname.startsWith("/batch/")) return next();
       const html = '<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/__inspection_harness__.js"></script></body></html>';
       res.setHeader("Content-Type", "text/html");
       res.end(await server.transformIndexHtml(req.url, html));
@@ -59,6 +59,19 @@ const server = await createServer({
 });
 await server.listen();
 const port = server.httpServer.address().port;
+async function verifyAppendixNavigation(root, product, width, context) {
+  const link=root.locator('.daily-document-index a[href="#daily-appendix"]');
+  const layout=await link.evaluate(node=>{
+    const style=getComputedStyle(node);
+    return {display:style.display,column:style.gridColumn,height:node.getBoundingClientRect().height,
+      lineHeight:parseFloat(style.lineHeight),padding:parseFloat(style.paddingTop)+parseFloat(style.paddingBottom),
+      overflow:node.scrollWidth>node.clientWidth+1};
+  });
+  assert.equal(layout.display,"block","无编号的附录链接不能继续使用编号/标题两列布局");
+  assert.equal(layout.column,"1 / -1","附录链接应占满目录可用宽度");
+  assert.ok(layout.height<=layout.lineHeight*2+layout.padding+2,product+"/"+context+"/"+width+" 附录目录文字被挤成竖排");
+  assert.equal(layout.overflow,false);
+}
 async function verifyTemplateDetail(page, product, width, entry) {
   const detail = page.locator(".inspection-template-detail:visible");
   await detail.locator(".template-content-head h2").waitFor();
@@ -111,17 +124,17 @@ async function verifyCatalogFacts(page, product, width) {
   await page.evaluate(()=>document.documentElement.dataset.theme="light");
 }
 
-let browser;
+let browser, templateCases=0, reportCases=0, batchCases=0;
 try {
   browser = await chromium.launch({headless: true});
   // 编辑器通过真实页面操作验收，全部 API 被隔离替身拦截。
-  for (const product of ["ammolite", "kbot4"]) {
+  if (!process.argv.includes("--batches-only")) for (const product of ["ammolite", "kbot4"]) {
     for (const width of [1440,1024,390]) {
       const requestedProduct=process.argv.find(arg=>arg.startsWith("--product="))?.split("=")[1];
       const requestedWidth=Number(process.argv.find(arg=>arg.startsWith("--width="))?.split("=")[1]);
       if(requestedProduct && requestedProduct!==product || requestedWidth && requestedWidth!==width) continue;
       const page=await browser.newPage({viewport:{width,height:1000}}), errors=[], writes=[];
-      console.log('日报分步编辑器验收：'+product+' / '+width);
+      templateCases++;console.log('日报分步编辑器验收：'+product+' / '+width);
       page.setDefaultTimeout(10000);
       page.on("pageerror",error=>errors.push(error.message));
       page.on("console",message=>{if(message.type()==="error")errors.push(message.text());});
@@ -233,11 +246,13 @@ try {
       const fixedHeader=await drawer.locator(".admin-drawer-header").boundingBox();
       for(const theme of ["light","dark"]){
         await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+        await verifyAppendixNavigation(drawer,product,width,"preview-"+theme);
         assert.equal(await drawer.evaluate(node=>node.scrollWidth>node.clientWidth+2),false);
         assert.equal(await drawer.locator(".admin-drawer-body").evaluate(node=>node.scrollWidth>node.clientWidth+2),false);
         await page.screenshot({path:path.join(resultDir,product+"-template-preview-drawer-"+theme+"-"+width+".png"),animations:"disabled"});
       }
       await page.evaluate(()=>document.documentElement.dataset.theme="light");
+      await drawer.locator('.daily-document-index a[href="#daily-appendix"]').screenshot({path:path.join(resultDir,product+"-preview-appendix-link-"+width+".png")});
       const requestsBeforeNavigation=previewInputs.length;
       await drawer.locator('[data-section-link="SQL"]').click();
       assert.equal(page.url(),originalUrl,"报告目录不得改变详情路由");
@@ -459,10 +474,10 @@ try {
       await page.close();
     }
   }
-  if (!process.argv.includes("--templates-only")) for (const product of ["ammolite", "kbot4"]) {
+  if (!process.argv.includes("--templates-only") && !process.argv.includes("--batches-only")) for (const product of ["ammolite", "kbot4"]) {
     for (const [name, original] of Object.entries(samples)) {
       for (const width of [1440, 900, 390]) {
-        const presentation = structuredClone(original);
+        reportCases++;const presentation = structuredClone(original);
         const page = await browser.newPage({viewport: {width, height: 1000}});
         const errors = [];
         page.on("pageerror", error => errors.push(error.message));
@@ -504,6 +519,7 @@ try {
         assert.equal(await appendix.locator(".inspection-appendix-body").isVisible(), false);
         assert.equal(await page.locator(".daily-report-table").count() > 0, true);
         if (!monthly) {
+          await verifyAppendixNavigation(page,product,width,name);
           assert.deepEqual(await page.locator("[data-report-section]").evaluateAll(nodes=>nodes.map(node=>node.dataset.reportSection)),data.sections.map(region=>region.section_id));
           assert.equal(await page.locator(".daily-document-index [data-section-link]").count(),data.sections.length);
           assert.equal(await page.locator(".daily-document-content #daily-sql").count(),1);
@@ -615,7 +631,61 @@ try {
       }
     }
   }
-  console.log(process.argv.includes("--templates-only") ? "PASS 两端分步编辑器 × 3 个宽度：选择保留、版式、模拟预览、失败/竞争/会话隔离、确认发布与无横向溢出" : "PASS 两端各 "+Object.keys(samples).length+" 类报告 × 3 个宽度，以及完整模板编辑/模拟预览/发布：共享区域、SQL 分析、基线、附录、安全转义与无横向溢出");
+  if (!process.argv.includes("--templates-only")) for(const product of ["ammolite","kbot4"]){
+    for(const width of [1440,1024,390]){
+      batchCases++;console.log("巡检批次页间距验收："+product+" / "+width);
+      const page=await browser.newPage({viewport:{width,height:1000}}), errors=[];
+      page.on("pageerror",error=>errors.push(error.message));page.setDefaultTimeout(10000);
+      const fire={fire_id:"sample-batch",plan_id:"sample-plan",plan_display_name:"WMS系统巡检计划",business_system_name:"WMS (demo)",status:"PARTIAL",
+        target_count:1,completed_count:1,failed_count:0,scheduled_at:"2026-11-03T08:00:00Z",completed_at:"2026-11-03T08:01:00Z",
+        system_scope:{resources:[{resource_id:"wms-resource",target_id:"wms",display_name:"WMS",db_type:"MYSQL"}],excluded_resources:[]},
+        runs:[{run_id:"wms-run",target_id:"wms",status:"COMPLETED",report_id:"wms-report",report_status:"READY",evidence_coverage_percent:100,tool_execution_coverage_percent:100,monitoring_sample_coverage_percent:100,evidence_gap_count:0}]};
+      let releaseBatch, failBatch=false;
+      const gate=new Promise(resolve=>{releaseBatch=resolve;});
+      await page.route("**/api/**",async route=>{
+        const url=new URL(route.request().url());
+        if(!url.pathname.startsWith("/api/"))return route.continue();
+        if(url.pathname.includes("/inspection-fires/")){
+          await gate;
+          if(failBatch)return route.fulfill({status:503,json:{error:{message:"模拟批次读取失败"}}});
+          return route.fulfill({json:fire});
+        }
+        return route.fulfill({json:url.pathname.endsWith("/targets") ? {items:[{target_id:"wms",display_name:"WMS",db_type:"MYSQL"}]}:[]});
+      });
+      if(product==="kbot4"){
+        await page.addInitScript(()=>{
+          const escape=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
+          const ready=new Promise(resolve=>document.addEventListener("DOMContentLoaded",()=>{
+            document.body.classList.add("aiops-static-page","business-app-aiops");resolve({permissions:["aiops:plan_manage"]});
+          },{once:true}));
+          globalThis.KBotAIOpsShell={ready,escape,fmt:value=>value||"未记录",toast:()=>{}};
+          globalThis.KBotAIOpsAuth={request:async(url,init)=>{const response=await fetch(url,init),body=await response.json();if(!response.ok)throw new Error(body.error?.message);return body;}};
+        });
+        await page.route(/\/(runtime-config|aiops-auth|aiops-shell)\.js(\?.*)?$/,route=>route.fulfill({contentType:"application/javascript",body:""}));
+      }
+      await page.goto("http://127.0.0.1:"+port+(product==="ammolite" ? "/batch/test/sample-batch?domainId=test":"/kbot/aiops/inspection-detail.html?id=sample-batch"));
+      const actions=page.locator(".inspection-page-actions");
+      async function verifyGap(selector){
+        const next=page.locator(selector);await next.waitFor();
+        const a=await actions.boundingBox(),b=await next.boundingBox(),gap=b.y-a.y-a.height;
+        assert.ok(Math.abs(gap-(width<=600 ? 16:24))<2,product+"/"+width+" 操作栏和正文间距错误："+gap);
+      }
+      await verifyGap(".loading-card:visible");
+      releaseBatch();await page.locator(".inspection-batch-summary").waitFor();
+      await verifyGap(".inspection-batch-summary");
+      assert.equal(await actions.getByText("查看来源计划",{exact:true}).isVisible(),true);
+      for(const theme of ["light","dark"]){
+        await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+        await verifyGap(".inspection-batch-summary");
+        assert.equal(await page.locator(".inspection-detail-page").evaluate(node=>node.scrollWidth>node.clientWidth+2),false);
+        await page.screenshot({path:path.join(resultDir,product+"-batch-actions-gap-"+theme+"-"+width+".png")});
+      }
+      failBatch=true;await actions.getByRole("button",{name:"刷新",exact:true}).click();
+      await verifyGap(".inspection-detail-page > [role=alert]:visible");
+      assert.deepEqual(errors,[]);await page.close();
+    }
+  }
+  console.log(`PASS 模板编辑/预览 ${templateCases} 组，正式报告 ${reportCases} 组，批次详情 ${batchCases} 组：目录排版、模拟预览、操作间距与无横向溢出`);
 } finally {
   await browser?.close();
   await server.close();

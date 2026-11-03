@@ -43,3 +43,20 @@ def test_preview_uses_project_drawer_pinned_version_and_no_new_browser_tab():
     for value in ["admin-drawer-wide", "admin-drawer-sectioned", "inspection-template-preview-drawer",
                   "admin-drawer-header", "admin-drawer-body", "关闭模拟报告预览", "不代表实际巡检结果"]:
         assert value in markup
+
+
+def test_report_appendix_navigation_does_not_use_narrow_number_column():
+    renderer = ROOT / ("ui/aiops/js/daily-inspection-report.js" if IS_KBOT else "apps/portal-web/src/features/aiops/business/DailyInspectionReport.vue")
+    styles = ROOT / ("ui/aiops/css/daily-inspection-report.css" if IS_KBOT else "apps/portal-web/src/features/aiops/business/daily-inspection-report.css")
+    assert '<a class="daily-document-appendix" href="#daily-appendix">' in renderer.read_text(encoding="utf-8")
+    rules = styles.read_text(encoding="utf-8").split(".daily-document-index a.daily-document-appendix {", 1)[1].split("}", 1)[0]
+    assert "display:block" in rules and "grid-column:1/-1" in rules
+
+
+def test_inspection_batch_actions_have_page_level_spacing():
+    path = ROOT / ("ui/aiops/css/reference-inspection-detail.css" if IS_KBOT else "apps/portal-web/src/features/aiops/business/AIOpsInspectionDetailView.vue")
+    styles = path.read_text(encoding="utf-8")
+    rules = styles.split(".inspection-detail-page {", 1)[1].split("}", 1)[0]
+    assert "gap:24px" in rules
+    mobile = styles.split("@media(max-width:600px)", 1)[1]
+    assert ".inspection-detail-page" in mobile and "gap:16px" in mobile
