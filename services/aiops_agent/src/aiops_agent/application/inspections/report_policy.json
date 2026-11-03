@@ -1,6 +1,6 @@
 {
   "schema_version": "INSPECTION_REPORT_POLICY.v1",
-  "version": "2026-11-02.4",
+  "version": "2026-11-03.1",
   "current_monitoring_window_seconds": 900,
   "maximum_current_sample_age_seconds": 300,
   "baseline": {
@@ -53,7 +53,7 @@
   "recommendations": {
     "LOCK_WAIT": "确认阻塞源会话及业务归属，优先协调事务提交或回滚；未经审批不终止会话，处置后复查阻塞链。",
     "LONG_TRANSACTION": "核对长事务对应业务及持续时间，协调结束或缩短事务，复查事务时长和锁影响。",
-    "TABLESPACE": "核对高占用空间及主要增长对象，评估清理或扩容；处置后复查空间余量。",
+    "TABLESPACE": "核对各数据文件的自动扩展设置、配置上限及文件系统或 ASM 实际可用空间，结合增长情况评估清理或调整容量；不能仅因已分配空间使用率高就扩容。处置后复查距配置上限的剩余空间。",
     "CPU_UTILIZATION": "核对高负载时段及主要耗时 SQL，确认是否与业务峰值一致；调整后复查 CPU 负载。",
     "MEMORY_UTILIZATION": "核对数据库与主机内存分配及主要使用者，确认是否存在内存压力，调整后复查。",
     "FILESYSTEM_UTILIZATION": "核对高占用挂载点及主要增长文件，按保留策略清理或扩容，复查可用空间。",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -256,8 +257,8 @@ def _apply_parses(
                 derived[parsed_field.lower()] = None
                 values[parsed_field.lower()] = None
                 continue
-            if denom is None or denom == 0:
-                if den_raw not in {None, ""}:
+            if denom is None or denom <= 0:
+                if denominator.lower() in values:
                     gaps.append(
                         FindingColumnGap(
                             finding_type=finding_type,
@@ -265,14 +266,14 @@ def _apply_parses(
                             column=denominator,
                             code=(
                                 "FINDING_RATIO_UNDEFINED"
-                                if denom == 0 else "FINDING_VALUE_UNPARSEABLE"
+                                if denom is not None and denom <= 0 else "FINDING_VALUE_UNPARSEABLE"
                             ),
                             detail=f"{denominator} 无法作为比率分母：{den_raw}",
                             evidence_ref=fact.evidence_ref,
                         )
                     )
             elif number is None:
-                if num_raw not in {None, ""}:
+                if numerator.lower() in values:
                     gaps.append(
                         FindingColumnGap(
                             finding_type=finding_type,
@@ -417,6 +418,9 @@ def _impact(spec: dict[str, Any], fields: dict[str, Any]) -> str:
     rendered = template
     for key, value in fields.items():
         display = "未知" if value in {None, ""} else str(value)
+        numeric_format = dict(spec.get("field_formats") or {}).get(key)
+        if numeric_format and (number := _as_number(value)) is not None:
+            display = format(number, numeric_format)
         rendered = rendered.replace("{" + key + "}", display)
     return rendered[:500]
 
@@ -461,8 +465,10 @@ def _as_number(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else None
     try:
-        return float(str(value).strip())
+        number = float(str(value).strip())
+        return number if math.isfinite(number) else None
     except (TypeError, ValueError):
         return None

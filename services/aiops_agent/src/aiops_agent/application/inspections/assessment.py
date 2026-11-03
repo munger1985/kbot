@@ -298,10 +298,14 @@ def assess_inspection(
         basis = str(fact.get("basis") or "")
         if not basis:
             thresholds = [item.get("threshold") for item in findings if isinstance(item.get("threshold"), dict)]
-            basis = "；".join(
+            basis = "；".join(dict.fromkeys(
                 f"{display_field_name(str(item.get('metric') or ''))} {item.get('operator') or ''} {item.get('limit')}"
                 for item in thresholds
-            ) or str(fact.get("rule_description") or "按冻结检查规则判断；无适用规则时仅展示观测。")
+            )) or str(fact.get("rule_description") or (
+                "检查查询成功，未发现符合本项异常判定条件的记录。" if status == "CLEAR"
+                else "本项仅展示观测结果，未进行异常判定。" if status == "OBSERVED"
+                else "依据本项检查的查询条件与判定规则。"
+            ))
         summary = str(fact.get("summary") or "")
         related_gaps = [item for item in gaps
                         if fact.get("tool_id") and item.get("step_id") == fact["tool_id"]]

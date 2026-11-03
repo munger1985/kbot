@@ -511,6 +511,11 @@ _HIDDEN_REPORT_DIMENSIONS = {
     "binding_id", "instance", "job", "source_id", "target_key",
 }
 _METRIC_FIELD_DISPLAY_NAMES = {
+    "used_percent": "已分配空间使用率（%）",
+    "maximum_mb": "配置容量上限（MiB）",
+    "maximum_headroom_mb": "距配置上限剩余空间（MiB）",
+    "autoextensible_file_count": "自动扩展文件数",
+    "capacity_used_percent": "配置容量上限使用率（%）",
     "query_sample_text": "SQL 文本（执行样本）",
     "sql_text": "SQL 文本",
     "normalized_statement": "SQL 文本（归一化）",

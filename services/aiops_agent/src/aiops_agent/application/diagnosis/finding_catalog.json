@@ -7,8 +7,8 @@
       "source_tool_id": "db.session.blocking_chain",
       "playbook_id": "oracle.session.blocking_chain",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前未观察到会话阻塞链，不等于未取证。",
-      "no_match_reason": "当前阻塞链均未达到报告条件，不等于未取证。",
+      "empty_reason": "未发现会话阻塞。",
+      "no_match_reason": "当前阻塞链均未达到报告条件。",
       "severity": "HIGH",
       "object_kind": "SESSION_LOCK",
       "identity_fields": [
@@ -73,8 +73,8 @@
       "source_tool_id": "db.session.active",
       "playbook_id": "oracle.session.active",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有活动会话，不等于未取证。",
-      "no_match_reason": "当前活动会话均未达到长会话阈值，不等于未取证。",
+      "empty_reason": "当前没有活动会话。",
+      "no_match_reason": "当前活动会话均未达到长会话阈值。",
       "severity": "HIGH",
       "object_kind": "SESSION",
       "identity_fields": [
@@ -129,8 +129,8 @@
       "source_tool_id": "db.replication.lag",
       "playbook_id": "oracle.replication.status",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 Data Guard 延迟指标，不等于未取证。",
-      "no_match_reason": "当前 apply/transport lag 未达到 30 秒阈值，不等于未取证。",
+      "empty_reason": "当前没有 Data Guard 延迟指标。",
+      "no_match_reason": "当前 apply/transport lag 未达到 30 秒阈值。",
       "severity": "HIGH",
       "object_kind": "DATAGUARD",
       "identity_fields": [
@@ -184,8 +184,8 @@
       "source_tool_id": "db.wait.class_summary",
       "playbook_id": "oracle.instance.wait_summary",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有等待类统计，不等于未取证。",
-      "no_match_reason": "当前非 Idle 等待类均未达到前台等待阈值，不等于未取证。",
+      "empty_reason": "当前没有等待类统计。",
+      "no_match_reason": "当前非 Idle 等待类均未达到前台等待阈值。",
       "severity": "MEDIUM",
       "object_kind": "WAIT_CLASS",
       "identity_fields": [
@@ -235,8 +235,9 @@
       "source_tool_id": "db.storage.capacity",
       "playbook_id": "oracle.storage.tablespace",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有表空间容量数据，不等于未取证。",
-      "no_match_reason": "当前表空间使用率均未达到 85% 阈值，不等于未取证。",
+      "empty_reason": "当前没有表空间容量数据。",
+      "no_match_reason": "各表空间按自动扩展设置计算的配置容量上限使用率均低于 85%。",
+      "rule_description": "按各文件实际自动扩展设置计算配置容量上限；上限使用率达到 85% 时报告容量风险。底层文件系统或 ASM 可用空间需另行核对。",
       "severity": "HIGH",
       "object_kind": "TABLESPACE",
       "identity_fields": [
@@ -245,6 +246,8 @@
       "required_columns": [
         "tablespace_name",
         "used_percent",
+        "used_mb",
+        "maximum_mb",
         "free_mb",
         "maximum_headroom_mb",
         "file_count",
@@ -261,7 +264,9 @@
         "file_count",
         "storage_type",
         "asm_diskgroups",
-        "datafile_directories"
+        "datafile_directories",
+        "autoextensible_file_count",
+        "capacity_used_percent"
       ],
       "object_ref": {
         "object_name": "tablespace_name"
@@ -269,17 +274,22 @@
       "predicates": [
         {
           "op": "gte",
-          "column": "used_percent",
+          "column": "capacity_used_percent",
+          "parse": "ratio_percent",
+          "numerator": "used_mb",
+          "denominator": "maximum_mb",
+          "parsed_field": "capacity_used_percent",
           "value": 85
         }
       ],
       "threshold": {
-        "metric": "used_percent",
+        "metric": "capacity_used_percent",
         "operator": ">=",
         "limit": 85,
-        "current_column": "used_percent"
+        "current_column": "capacity_used_percent"
       },
-      "impact_template": "表空间 {tablespace_name} 使用率 {used_percent}%。"
+      "field_formats": {"capacity_used_percent": ".2f", "used_percent": ".2f"},
+      "impact_template": "表空间 {tablespace_name} 配置容量上限使用率 {capacity_used_percent}%（已分配空间使用率 {used_percent}%，自动扩展文件 {autoextensible_file_count} 个）；已用 {used_mb} MiB，配置容量上限 {maximum_mb} MiB，距上限剩余 {maximum_headroom_mb} MiB。"
     },
     {
       "finding_type": "SQL_STATS_STALE",
@@ -288,8 +298,8 @@
       "playbook_id": "oracle.sql.healthcheck",
       "confirmation": "LIKELY",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "上传的 SQLHC 报告没有对象统计行，不等于未取证。",
-      "no_match_reason": "上传的 SQLHC 报告未发现过期统计，不等于未取证。",
+      "empty_reason": "上传的 SQLHC 报告没有对象统计行。",
+      "no_match_reason": "上传的 SQLHC 报告未发现过期统计。",
       "severity": "MEDIUM",
       "object_kind": "SQL_OBJECT",
       "identity_fields": [
@@ -335,8 +345,8 @@
       "playbook_id": null,
       "confirmation": "LIKELY",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "上传的 ExaCheck 报告没有检查行，不等于未取证。",
-      "no_match_reason": "上传的 ExaCheck 报告未发现 FAIL 项，不等于未取证。",
+      "empty_reason": "上传的 ExaCheck 报告没有检查行。",
+      "no_match_reason": "上传的 ExaCheck 报告未发现 FAIL 项。",
       "severity": "HIGH",
       "object_kind": "EXADATA_CHECK",
       "identity_fields": [
@@ -378,8 +388,8 @@
       "playbook_id": null,
       "confirmation": "LIKELY",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "上传的 ExaCheck 报告没有检查行，不等于未取证。",
-      "no_match_reason": "上传的 ExaCheck 报告未发现 WARNING 项，不等于未取证。",
+      "empty_reason": "上传的 ExaCheck 报告没有检查行。",
+      "no_match_reason": "上传的 ExaCheck 报告未发现 WARNING 项。",
       "severity": "MEDIUM",
       "object_kind": "EXADATA_CHECK",
       "identity_fields": [
@@ -420,8 +430,8 @@
       "source_tool_id": "db.mysql.replication.lag",
       "playbook_id": "mysql.replication.lag",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 MySQL 复制延迟指标，不等于未取证。",
-      "no_match_reason": "当前 MySQL 复制延迟未达到 30 秒阈值，不等于未取证。",
+      "empty_reason": "当前没有 MySQL 复制延迟指标。",
+      "no_match_reason": "当前 MySQL 复制延迟未达到 30 秒阈值。",
       "severity": "HIGH",
       "object_kind": "REPLICATION",
       "identity_fields": [
@@ -459,8 +469,8 @@
       "source_tool_id": "db.postgresql.replication.lag",
       "playbook_id": "postgresql.replication.status",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 PostgreSQL 复制延迟指标，不等于未取证。",
-      "no_match_reason": "当前 PostgreSQL 复制延迟未达到 30 秒阈值，不等于未取证。",
+      "empty_reason": "当前没有 PostgreSQL 复制延迟指标。",
+      "no_match_reason": "当前 PostgreSQL 复制延迟未达到 30 秒阈值。",
       "severity": "HIGH",
       "object_kind": "REPLICATION",
       "identity_fields": [
@@ -499,8 +509,8 @@
       "source_tool_id": "db.storage.dead_tuples",
       "playbook_id": "postgresql.storage.health",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有死元组统计，不等于未取证。",
-      "no_match_reason": "当前表死元组占比均未达到 20% 阈值，不等于未取证。",
+      "empty_reason": "当前没有死元组统计。",
+      "no_match_reason": "当前表死元组占比均未达到 20% 阈值。",
       "severity": "MEDIUM",
       "object_kind": "TABLE",
       "identity_fields": [
@@ -546,8 +556,8 @@
       "source_tool_id": "db.maintenance.autovacuum",
       "playbook_id": "postgresql.maintenance.autovacuum",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有需要关注的 Autovacuum 冻结年龄，不等于未取证。",
-      "no_match_reason": "当前表冻结 XID 年龄均未达到 1.5 亿阈值，不等于未取证。",
+      "empty_reason": "当前没有需要关注的 Autovacuum 冻结年龄。",
+      "no_match_reason": "当前表冻结 XID 年龄均未达到 1.5 亿阈值。",
       "severity": "HIGH",
       "object_kind": "TABLE",
       "identity_fields": [
@@ -588,8 +598,8 @@
       "source_tool_id": "db.session.idle",
       "playbook_id": "mysql.session.idle",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有空闲事务会话，不等于未取证。",
-      "no_match_reason": "当前空闲事务均未达到 300 秒阈值，不等于未取证。",
+      "empty_reason": "当前没有空闲事务会话。",
+      "no_match_reason": "当前空闲事务均未达到 300 秒阈值。",
       "severity": "HIGH",
       "object_kind": "SESSION",
       "identity_fields": [
@@ -634,8 +644,8 @@
       "source_tool_id": "db.session.idle",
       "playbook_id": "postgresql.transaction.long_running",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有空闲事务会话，不等于未取证。",
-      "no_match_reason": "当前空闲事务均未达到 300 秒阈值，不等于未取证。",
+      "empty_reason": "当前没有空闲事务会话。",
+      "no_match_reason": "当前空闲事务均未达到 300 秒阈值。",
       "severity": "HIGH",
       "object_kind": "SESSION",
       "identity_fields": ["session_id", "username"],
@@ -678,8 +688,8 @@
       "source_tool_id": "db.mysql.connection.utilization",
       "playbook_id": "mysql.connection.utilization",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 MySQL 连接使用率数据，不等于未取证。",
-      "no_match_reason": "当前 MySQL 连接使用率未达到 85% 阈值，不等于未取证。",
+      "empty_reason": "当前没有 MySQL 连接使用率数据。",
+      "no_match_reason": "当前 MySQL 连接使用率未达到 85% 阈值。",
       "severity": "HIGH",
       "object_kind": "RESOURCE",
       "identity_fields": [
@@ -721,8 +731,8 @@
       "source_tool_id": "db.postgresql.connection.utilization",
       "playbook_id": "postgresql.instance.performance",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 PostgreSQL 连接使用率数据，不等于未取证。",
-      "no_match_reason": "当前 PostgreSQL 连接使用率未达到 85% 阈值，不等于未取证。",
+      "empty_reason": "当前没有 PostgreSQL 连接使用率数据。",
+      "no_match_reason": "当前 PostgreSQL 连接使用率未达到 85% 阈值。",
       "severity": "HIGH",
       "object_kind": "RESOURCE",
       "identity_fields": [
@@ -764,8 +774,8 @@
       "source_tool_id": "db.mysql.instance.throughput",
       "playbook_id": "mysql.instance.throughput",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 MySQL 吞吐指标，不等于未取证。",
-      "no_match_reason": "当前 MySQL 运行线程数未达到 32 阈值，不等于未取证。",
+      "empty_reason": "当前没有 MySQL 吞吐指标。",
+      "no_match_reason": "当前 MySQL 运行线程数未达到 32 阈值。",
       "severity": "MEDIUM",
       "object_kind": "INSTANCE",
       "identity_fields": [
@@ -805,8 +815,8 @@
       "source_tool_id": "db.postgresql.instance.throughput",
       "playbook_id": "postgresql.instance.performance",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 PostgreSQL 吞吐指标，不等于未取证。",
-      "no_match_reason": "当前 PostgreSQL 回滚率未达到 20% 阈值，不等于未取证。",
+      "empty_reason": "当前没有 PostgreSQL 吞吐指标。",
+      "no_match_reason": "当前 PostgreSQL 回滚率未达到 20% 阈值。",
       "severity": "MEDIUM",
       "object_kind": "DATABASE",
       "identity_fields": [
@@ -848,8 +858,8 @@
       "source_tool_id": "db.objects.invalid_summary",
       "playbook_id": "oracle.maintenance.health",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有无效对象汇总，不等于未取证。",
-      "no_match_reason": "当前没有需要报告的无效对象，不等于未取证。",
+      "empty_reason": "未发现无效对象。",
+      "no_match_reason": "未发现无效对象。",
       "severity": "MEDIUM",
       "object_kind": "OBJECT",
       "identity_fields": [
@@ -901,8 +911,8 @@
       "source_tool_id": "db.archive.status",
       "playbook_id": "oracle.instance.archive",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有归档/FRA 状态，不等于未取证。",
-      "no_match_reason": "当前 FRA 使用率未达到 80% 阈值，不等于未取证。",
+      "empty_reason": "当前没有归档/FRA 状态。",
+      "no_match_reason": "当前 FRA 使用率未达到 80% 阈值。",
       "severity": "HIGH",
       "object_kind": "FRA",
       "identity_fields": [
@@ -992,8 +1002,8 @@
       "source_tool_id": "db.backup.recent_jobs",
       "playbook_id": "oracle.maintenance.health",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有备份任务记录，不等于未取证。",
-      "no_match_reason": "当前备份任务均未失败或带警告完成，不等于未取证。",
+      "empty_reason": "当前没有备份任务记录。",
+      "no_match_reason": "当前备份任务均未失败或带警告完成。",
       "severity": "HIGH",
       "object_kind": "BACKUP_JOB",
       "identity_fields": [
@@ -1039,8 +1049,8 @@
       "source_tool_id": "db.transaction.long_running",
       "playbook_id": "oracle.transaction.long_running",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有长事务，不等于未取证。",
-      "no_match_reason": "当前事务均未达到 300 秒阈值，不等于未取证。",
+      "empty_reason": "未发现长事务。",
+      "no_match_reason": "当前事务均未达到 300 秒阈值。",
       "severity": "HIGH",
       "object_kind": "TRANSACTION",
       "identity_fields": [
@@ -1087,8 +1097,8 @@
       "source_tool_id": "db.sql.top_current",
       "playbook_id": "oracle.sql.top_current",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 Top SQL 统计，不等于未取证。",
-      "no_match_reason": "当前 SQL 均未达到 10 秒耗时阈值，不等于未取证。",
+      "empty_reason": "当前没有 Top SQL 统计。",
+      "no_match_reason": "当前 SQL 均未达到 10 秒耗时阈值。",
       "severity": "MEDIUM",
       "object_kind": "SQL",
       "identity_fields": [
@@ -1131,7 +1141,7 @@
     },
     {
       "finding_type": "LOCK_WAIT", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.lock.tree", "playbook_id": "postgresql.session.blocking_chain",
-      "zero_row_policy": "NO_FINDING", "empty_reason": "当前未观察到 PostgreSQL 阻塞树，不等于未取证。", "no_match_reason": "当前未观察到 PostgreSQL 阻塞树，不等于未取证。",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "当前未观察到 PostgreSQL 阻塞树。", "no_match_reason": "当前未观察到 PostgreSQL 阻塞树。",
       "severity": "HIGH", "object_kind": "SESSION_LOCK", "identity_fields": ["waiting_session_id", "blocking_session_id", "chain_depth"],
       "required_columns": ["waiting_session_id", "blocking_session_id", "chain_depth"],
       "field_columns": ["waiting_session_id", "waiting_username", "waiting_database", "wait_event_type", "wait_event", "blocking_session_id", "blocking_username", "blocking_database", "blocking_state", "chain_depth"],
@@ -1140,7 +1150,7 @@
     },
     {
       "finding_type": "LONG_TRANSACTION", "database_types": ["POSTGRESQL"], "source_tool_id": "db.transaction.long_running", "playbook_id": "postgresql.transaction.long_running",
-      "zero_row_policy": "NO_FINDING", "empty_reason": "当前没有超过阈值的 PostgreSQL 长事务，不等于未取证。", "no_match_reason": "当前没有超过阈值的 PostgreSQL 长事务，不等于未取证。",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "当前没有超过阈值的 PostgreSQL 长事务。", "no_match_reason": "当前没有超过阈值的 PostgreSQL 长事务。",
       "severity": "HIGH", "object_kind": "TRANSACTION", "identity_fields": ["session_id", "transaction_started_at"],
       "required_columns": ["session_id", "elapsed_seconds", "transaction_started_at"],
       "field_columns": ["session_id", "username", "database_name", "transaction_started_at", "elapsed_seconds", "transaction_state", "backend_xid", "backend_xmin", "wait_event_type", "wait_event"],

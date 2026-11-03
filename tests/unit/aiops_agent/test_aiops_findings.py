@@ -318,7 +318,7 @@ def _tablespace_fact(**overrides) -> TurnEvidenceFact:
             "maximum_headroom_mb",
             "file_count",
         ),
-        "rows": (("USERS", 1000.0, 900.0, 100.0, 90.0, 2000.0, 1100.0, 2),),
+        "rows": (("USERS", 10000.0, 9900.0, 100.0, 99.0, 11000.0, 1100.0, 2),),
         "evidence_ref": "artifact:capacity#fact",
     }
     payload.update(overrides)
@@ -535,7 +535,7 @@ class FindingCompilerTest(unittest.TestCase):
         )
         self.assertEqual((), compilation.findings)
         self.assertEqual(
-            ("当前未观察到会话阻塞链，不等于未取证。",),
+            ("未发现会话阻塞。",),
             compilation.empty_reasons,
         )
         self.assertEqual((), compilation.gaps)
@@ -639,7 +639,7 @@ class FindingCompilerTest(unittest.TestCase):
         )
         self.assertEqual((), compilation.findings)
         self.assertEqual(
-            ("上传的 SQLHC 报告未发现过期统计，不等于未取证。",),
+            ("上传的 SQLHC 报告未发现过期统计。",),
             compilation.empty_reasons,
         )
 
@@ -681,11 +681,11 @@ class FindingCompilerTest(unittest.TestCase):
         )
         self.assertEqual((), compilation.findings)
         self.assertIn(
-            "上传的 ExaCheck 报告未发现 FAIL 项，不等于未取证。",
+            "上传的 ExaCheck 报告未发现 FAIL 项。",
             compilation.empty_reasons,
         )
         self.assertIn(
-            "上传的 ExaCheck 报告未发现 WARNING 项，不等于未取证。",
+            "上传的 ExaCheck 报告未发现 WARNING 项。",
             compilation.empty_reasons,
         )
 
@@ -710,7 +710,7 @@ class FindingCompilerTest(unittest.TestCase):
         )
         self.assertEqual((), compilation.findings)
         self.assertEqual(
-            ("当前活动会话均未达到长会话阈值，不等于未取证。",),
+            ("当前活动会话均未达到长会话阈值。",),
             compilation.empty_reasons,
         )
 
@@ -755,7 +755,7 @@ class FindingCompilerTest(unittest.TestCase):
         )
         self.assertEqual((), compilation.findings)
         self.assertEqual(
-            ("当前表死元组占比均未达到 20% 阈值，不等于未取证。",),
+            ("当前表死元组占比均未达到 20% 阈值。",),
             compilation.empty_reasons,
         )
 

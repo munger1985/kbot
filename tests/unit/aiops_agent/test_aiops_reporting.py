@@ -413,13 +413,13 @@ class InspectionReportPublishingTest(unittest.TestCase):
             [item["title"] for item in payload["facts"][:2]],
         )
         self.assertTrue(all(
-            ("检查已完成" in item["summary"] or "查询成功" in item["summary"])
+            ("检查已完成" in item["summary"] or "未发现异常" in item["summary"])
             and "结果正常" not in item["summary"]
             for item in payload["facts"][:2]
         ))
         self.assertIn("采集 1 条可验证观测", payload["facts"][0]["summary"])
         self.assertIn(
-            "未发现达到报告条件的记录",
+            "未发现异常",
             payload["facts"][1]["summary"],
         )
         self.assertIn("检查未完成", payload["summary"])
@@ -518,7 +518,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual([], list(gaps))
         self.assertIn("所有模板检查均已形成完整证据", summary)
         self.assertEqual(
-            "近期告警日志：查询成功，未发现达到报告条件的记录。",
+            "近期告警日志：未发现异常。",
             facts[0]["summary"],
         )
         self.assertEqual(

@@ -76,7 +76,7 @@
           ],
           "trend_required": true,
           "zero_row_status": "FINDING",
-          "report_columns": ["tablespace_name", "allocated_mb", "used_mb", "free_mb", "used_percent", "maximum_mb", "maximum_headroom_mb", "file_count", "storage_type"]
+          "report_columns": ["tablespace_name", "used_percent", "autoextensible_file_count", "maximum_mb", "capacity_used_percent", "maximum_headroom_mb", "allocated_mb", "used_mb", "free_mb", "file_count", "storage_type"]
         },
         {
           "check_id": "oracle.storage.datafile_count",
@@ -93,7 +93,7 @@
           ],
           "trend_required": true,
           "zero_row_status": "FINDING",
-          "report_columns": ["tablespace_name", "allocated_mb", "used_mb", "free_mb", "used_percent", "maximum_mb", "maximum_headroom_mb", "file_count", "storage_type"]
+          "report_columns": ["tablespace_name", "used_percent", "autoextensible_file_count", "maximum_mb", "capacity_used_percent", "maximum_headroom_mb", "allocated_mb", "used_mb", "free_mb", "file_count", "storage_type"]
         },
         {
           "check_id": "oracle.storage.growth",
@@ -110,7 +110,7 @@
           ],
           "trend_required": true,
           "zero_row_status": "FINDING",
-          "report_columns": ["tablespace_name", "allocated_mb", "used_mb", "free_mb", "used_percent", "maximum_mb", "maximum_headroom_mb", "file_count", "storage_type"]
+          "report_columns": ["tablespace_name", "used_percent", "autoextensible_file_count", "maximum_mb", "capacity_used_percent", "maximum_headroom_mb", "allocated_mb", "used_mb", "free_mb", "file_count", "storage_type"]
         },
         {
           "check_id": "oracle.storage.undo",

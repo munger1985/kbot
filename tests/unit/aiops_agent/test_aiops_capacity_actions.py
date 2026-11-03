@@ -158,11 +158,11 @@ def _fact(
 def _tablespace_fact(
     row: tuple[object, ...] = (
         "USERS",
-        1000.0,
-        900.0,
+        10000.0,
+        9900.0,
         100.0,
-        90.0,
-        2000.0,
+        99.0,
+        11000.0,
         1100.0,
         2,
     ),
@@ -329,7 +329,7 @@ class CapacityDecisionTest(unittest.TestCase):
                 "datafile_directories",
             ),
             rows=((
-                "USERS", 1000.0, 900.0, 100.0, 90.0, 2000.0, 1100.0,
+                "USERS", 10000.0, 9900.0, 100.0, 99.0, 11000.0, 1100.0,
                 2, "ASM", "DATA", None,
             ),),
         )
@@ -403,7 +403,7 @@ class CapacityDecisionTest(unittest.TestCase):
         )
         self.assertFalse(allows_capacity_action(plan, "db.storage.tempfile.add"))
 
-    def test_missing_maximum_uses_headroom_minus_free(self) -> None:
+    def test_missing_capacity_inputs_do_not_compile_growth_action(self) -> None:
         fact = _fact(
             tool_id="db.storage.capacity",
             columns=(
@@ -420,8 +420,9 @@ class CapacityDecisionTest(unittest.TestCase):
             findings=compilation.findings,
             target_facts=({"fact_type": "ASM_DISKGROUP", "status": "ACTIVE"},),
         )
-        self.assertEqual("AUTOEXTEND", plan.decisions[0].kind)
-        self.assertEqual(1000.0, plan.decisions[0].autoextend_headroom_mb)
+        self.assertFalse(compilation.findings)
+        self.assertTrue(compilation.gaps)
+        self.assertFalse(plan.decisions)
 
     def test_missing_or_retired_facts_observe_without_grow_or_add(self) -> None:
         compilation = compile_findings((_tablespace_fact(),), target_id="tgt-1")

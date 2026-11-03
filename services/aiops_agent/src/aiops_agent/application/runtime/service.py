@@ -56,7 +56,7 @@ from aiops_agent.application.runtime.dashboard import (
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
 from aiops_agent.application.target_identity import target_identity_snapshot
 from aiops_agent.application.work_items import route_completed_run_work_items
-from aiops_agent.application.diagnosis.findings import compile_findings
+from aiops_agent.application.diagnosis.findings import compile_findings, load_finding_catalog
 from aiops_agent.application.inspections.monthly import monthly_business_review, merge_monthly_comparison
 from aiops_agent.application.inspections.period_sources import inspection_period_sources
 from aiops_agent.application.inspections.assessment import (
@@ -4073,7 +4073,7 @@ class AIOpsRuntimeService:
                     summary = f"{title}：{compilation.empty_reasons[0]}"
                     check_status = "CLEAR"
                 elif row_count == 0 and zero_row_status == "CLEAR":
-                    summary = f"{title}：查询成功，未发现达到报告条件的记录。"
+                    summary = f"{title}：未发现异常。"
                     check_status = "CLEAR"
                 else:
                     summary = AIOpsRuntimeService._inspection_observed_summary(
@@ -4098,7 +4098,11 @@ class AIOpsRuntimeService:
                         "evidence_refs": [
                             item.evidence_ref for item in observations
                         ],
-                        "rule_description": "；".join(compilation.empty_reasons),
+                        "rule_description": "；".join(dict.fromkeys(
+                            str(spec["rule_description"]) for spec in load_finding_catalog()
+                            if spec["source_tool_id"] == tool_id and database_type in spec["database_types"]
+                            and spec.get("rule_description")
+                        )),
                         "observation_count": row_count,
                         "observations": report_rows,
                         "truncated": truncated,

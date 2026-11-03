@@ -2514,10 +2514,19 @@
           "name": "datafile_directories",
           "logical_type": "STRING",
           "nullable": true
+        },
+        {
+          "name": "autoextensible_file_count",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "capacity_used_percent",
+          "logical_type": "DECIMAL"
         }
       ],
       "template_ref": "sql/storage_capacity.sql",
-      "template_sha256": "798488f35e88c5f617e714188ffe5fbb9748b25956412ea3dfbd5b42503ed76b",
+      "template_sha256": "0a52eb120dca078ff2ac44ed5b6a5bf5dff94355d810751a931aab4b541b6a4c",
       "timeout_seconds": 20,
       "max_rows": 200,
       "max_bytes": 1048576,

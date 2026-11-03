@@ -3,6 +3,7 @@ WITH data_file_detail AS (
         tablespace_name,
         bytes,
         maxbytes,
+        autoextensible,
         CASE
             WHEN file_name LIKE '+%' THEN 'ASM'
             ELSE 'FILESYSTEM'
@@ -21,7 +22,11 @@ data_files AS (
     SELECT
         tablespace_name,
         SUM(bytes) AS allocated_bytes,
-        SUM(GREATEST(bytes, maxbytes)) AS maximum_bytes,
+        SUM(CASE
+            WHEN autoextensible = 'YES' THEN GREATEST(bytes, NVL(maxbytes, bytes))
+            ELSE bytes
+        END) AS maximum_bytes,
+        SUM(CASE WHEN autoextensible = 'YES' THEN 1 ELSE 0 END) AS autoextensible_file_count,
         COUNT(*) AS file_count,
         CASE
             WHEN MIN(storage_type) = MAX(storage_type) THEN MIN(storage_type)
@@ -68,7 +73,13 @@ SELECT
     data_files.file_count,
     data_files.storage_type,
     data_files.asm_diskgroups,
-    data_files.datafile_directories
+    data_files.datafile_directories,
+    data_files.autoextensible_file_count,
+    ROUND(
+        (data_files.allocated_bytes - NVL(free_space.free_bytes, 0))
+        / NULLIF(data_files.maximum_bytes, 0) * 100,
+        2
+    ) AS capacity_used_percent
 FROM data_files
 LEFT JOIN free_space
     ON free_space.tablespace_name = data_files.tablespace_name
