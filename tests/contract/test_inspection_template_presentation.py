@@ -1,4 +1,4 @@
-"""巡检卡片共享网格和独立模拟报告页的两端静态回归。"""
+"""巡检卡片共享网格和项目风格模拟报告抽屉的两端静态回归。"""
 
 from pathlib import Path
 
@@ -18,15 +18,28 @@ def test_catalog_facts_have_complete_grid_lines_and_full_width_odd_tail():
     assert ".management-catalog-card dl > div + div" not in STYLES
 
 
-def test_preview_opens_separate_page_pins_version_and_has_no_inline_report():
-    assert "window.open(" in SOURCE and "noopener,noreferrer" in SOURCE
-    assert "inspection-template-preview" in SOURCE and "所选发布版本不存在" in SOURCE
-    assert "重试预览" in SOURCE and "返回模板详情" in SOURCE
-    assert "不代表实际巡检结果" in SOURCE
+def test_preview_uses_project_drawer_pinned_version_and_no_new_browser_tab():
+    assert "window.open(" not in SOURCE and "templatePreview" not in SOURCE
+    assert "重试预览" in SOURCE
     assert "template-readonly-preview" not in SOURCE and "inspection-readonly-preview" not in SOURCE
+    assert "previewVersion" in SOURCE and "previewSequence" in SOURCE
+    assert "seq===previewSequence" in SOURCE.replace(" ", "")
+    assert "document.body.style.overflow" in SOURCE
     if IS_KBOT:
-        assert 'url.searchParams.set("version",version)' in SOURCE
-        assert 'if(!previewParameters())showInspectionDetail()' in SOURCE
+        markup = (ROOT / "ui/aiops/report-templates.html").read_text(encoding="utf-8")
+        assert "previewVersion=version" in SOURCE
+        assert "previewDrawer.showModal()" in SOURCE
+        assert 'addEventListener("cancel"' in SOURCE
+        assert 'addEventListener("close"' in SOURCE
+        assert "closeInspectionPreview(false)" in SOURCE
+        assert 'anchor.getAttribute("href").slice(1)' in SOURCE
     else:
-        assert "templateVersionId:selectedVersion.value.template_version_id" in SOURCE
-        assert "window.open(url, '_blank'" in SOURCE
+        markup = SOURCE
+        assert "previewVersion.value = selectedVersion.value" in SOURCE
+        assert 'Teleport to="body"' in SOURCE
+        assert ":inert=" in SOURCE and "previewKeydown" in SOURCE
+        assert "onBeforeUnmount" in SOURCE and "previewTrigger" in SOURCE
+        assert "event.preventDefault()" in SOURCE and "scrollIntoView" in SOURCE
+    for value in ["admin-drawer-wide", "admin-drawer-sectioned", "inspection-template-preview-drawer",
+                  "admin-drawer-header", "admin-drawer-body", "关闭模拟报告预览", "不代表实际巡检结果"]:
+        assert value in markup

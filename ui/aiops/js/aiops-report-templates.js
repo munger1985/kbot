@@ -69,7 +69,7 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
         KBotAIOpsAuth.request(`${api}/session-report-templates`),
       ]);
       renderInspectionTemplates(); renderSessionTemplates();
-      if(previewParameters() || new URLSearchParams(location.hash.slice(1)).get('template')) await showInspectionDetail();
+      if(new URLSearchParams(location.hash.slice(1)).get('template')) await showInspectionDetail();
     } catch (error) { shell.toast(error.message); }
     finally { refresh.disabled = false; refresh.textContent = "刷新目录"; }
   }
@@ -149,10 +149,10 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
     return "检查项新增 "+a.selected_check_ids.filter(id=>!b.selected_check_ids.includes(id)).length+"，移除 "+b.selected_check_ids.filter(id=>!a.selected_check_ids.includes(id)).length+"；日报版式"+(JSON.stringify(a.daily_report_layout)!==JSON.stringify(b.daily_report_layout) ? "有变化":"未变化")+(a.display_name!==b.display_name ? "；模板名称有变化":"");
   }
   function detailTab() {return new URLSearchParams(location.hash.slice(1)).get("tab") || "content";}
-  function previewParameters() {const params=new URLSearchParams(location.search);return params.get("templatePreview")==="report" ? params:null;}
   function setDetailTab(tab) {window.scrollTo(0,0);const params=new URLSearchParams(location.hash.slice(1));params.set("tab",tab);history.replaceState(null,"","#"+params);renderInspectionDetail();}
   async function showInspectionDetail() {
-    const params=previewParameters() || new URLSearchParams(location.hash.slice(1)),id=params.get("template"),seq=++detailSeq;
+    closeInspectionPreview(false);
+    const params=new URLSearchParams(location.hash.slice(1)),id=params.get("template"),seq=++detailSeq;
     if(!id){detailRoot.hidden=true;document.querySelector("main.aiops-template-page").hidden=false;return;}
     detailRoot.hidden=false;document.querySelector("main.aiops-template-page").hidden=true;
     detailRoot.innerHTML='<button class="secondary-button" data-back-templates>返回模板中心</button><p role="status">正在读取模板详情…</p>';
@@ -160,26 +160,78 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
       const [detail,versions,plans]=await Promise.all(["/"+id,"/"+id+"/versions","/"+id+"/plans"].map(suffix=>KBotAIOpsAuth.request(api+"/inspection-templates"+suffix)));
       if(seq!==detailSeq)return;
       detailData=detail;detailVersions=versions;detailPlans=plans;
-      if(previewParameters()){await renderInspectionPreview(seq);return;}
-      detailRoot.classList.remove("inspection-template-preview");
       renderInspectionDetail();window.scrollTo(0,0);
     }catch(error){if(seq===detailSeq)detailRoot.innerHTML='<button class="secondary-button" data-back-templates>返回模板中心</button><p class="notice notice-error" role="alert">'+escape(error.message)+'</p>';}
   }
-  async function renderInspectionPreview(seq) {
-    detailRoot.classList.add("inspection-template-preview");
-    const params=previewParameters(),version=detailVersions.find(item=>item.template_version_id===params?.get("version"));
-    const back=new URL(location.href);["templatePreview","template","version"].forEach(key=>back.searchParams.delete(key));back.hash=new URLSearchParams({template:detailData.inspection_template_id,tab:"content",...(version ? {version:version.template_version_id}:{})}).toString();
-    detailRoot.innerHTML='<header class="ops-head"><div><p class="eyebrow">模拟报告预览</p><h1>'+escape(detailData.display_name)+(version ? ' · v'+escape(version.version_no):'')+'</h1></div><a class="secondary-button" href="'+escape(back.href)+'">返回模板详情</a></header><p class="notice">模拟样例 · 使用所选发布版本的冻结定义，不访问目标数据库，不执行真实巡检，不代表实际巡检结果。</p><section id="inspection-preview-report"><p role="status">正在生成模拟报告…</p></section>';
-    const output=detailRoot.querySelector("#inspection-preview-report");
-    if(!version){output.innerHTML='<p class="notice notice-error" role="alert">所选发布版本不存在，无法生成模拟报告。</p>';return;}
+  const previewDrawer=document.getElementById("inspection-template-preview-drawer");
+  const previewOutput=previewDrawer.querySelector("#inspection-preview-report");
+  let previewVersion=null,previewSequence=0,previewBusy=false,previewActive=false,previewTrigger=null,previewPreviousOverflow="";
+  function openInspectionPreview() {
+    if(previewActive)return;
+    const selected=detailRoot.querySelector("#inspection-version-select")?.value;
+    const version=detailVersions.find(item=>item.template_version_id===selected);
+    if(!version)return;
+    previewVersion=version;
+    previewTrigger=document.activeElement;
+    previewPreviousOverflow=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    previewActive=true;
+    document.getElementById("inspection-preview-title").textContent=detailData.display_name+" · v"+version.version_no;
+    // 脱离已隐藏的模板目录容器，沿用站内抽屉的顶层模态和主题边界。
+    document.body.append(previewDrawer);
+    previewDrawer.showModal();
+    previewDrawer.querySelector("[data-close-inspection-preview]").focus({preventScroll:true});
+    previewDrawer.querySelector(".admin-drawer-body").scrollTop=0;
+    void loadInspectionPreview();
+  }
+  function closeInspectionPreview(restoreFocus=true) {
+    if(!previewActive)return;
+    previewSequence++;previewActive=false;previewBusy=false;previewVersion=null;
+    previewOutput.innerHTML="";
+    previewDrawer.querySelector(".admin-drawer-body").setAttribute("aria-busy","false");
+    document.body.style.overflow=previewPreviousOverflow;
+    const trigger=previewTrigger;previewTrigger=null;
+    if(previewDrawer.open)previewDrawer.close();
+    if(restoreFocus && trigger?.isConnected)trigger.focus({preventScroll:true});
+  }
+  async function loadInspectionPreview() {
+    if(!previewActive || !previewVersion || previewBusy)return;
+    const seq=++previewSequence,definition=previewVersion.definition;
+    previewBusy=true;
+    const body=previewDrawer.querySelector(".admin-drawer-body");body.setAttribute("aria-busy","true");
+    previewOutput.innerHTML='<p role="status">正在生成模拟报告…</p>';
     try {
-      const report=await KBotAIOpsAuth.request(api+"/inspection-templates:preview",{method:"POST",body:JSON.stringify({selected_check_ids:version.definition.selected_check_ids,daily_report_layout:version.definition.daily_report_layout,database_type:"ORACLE",scenario:"ATTENTION"})});
+      const report=await KBotAIOpsAuth.request(api+"/inspection-templates:preview",{method:"POST",body:JSON.stringify({selected_check_ids:definition.selected_check_ids,daily_report_layout:definition.daily_report_layout,database_type:"ORACLE",scenario:"ATTENTION"})});
       if(!report.daily_inspection)throw new Error(report.error?.message || "模拟报告未返回有效内容");
-      if(seq===detailSeq && output.isConnected)output.innerHTML=KBotDailyInspectionReport.render(report.daily_inspection);
+      if(seq===previewSequence && previewDrawer.open)previewOutput.innerHTML=KBotDailyInspectionReport.render(report.daily_inspection);
     } catch(error) {
-      if(seq===detailSeq && output.isConnected)output.innerHTML='<p class="notice notice-error" role="alert">'+escape(error.message)+'</p><button class="secondary-button" data-retry-preview>重试预览</button>';
+      if(seq===previewSequence && previewDrawer.open)previewOutput.innerHTML='<p class="notice notice-error" role="alert">'+escape(error.message)+'</p><button class="secondary-button" data-retry-preview>重试预览</button>';
+    } finally {
+      if(seq===previewSequence){
+        previewBusy=false;body.setAttribute("aria-busy","false");
+        if(previewDrawer.open && !previewDrawer.contains(document.activeElement))previewDrawer.querySelector("[data-close-inspection-preview]").focus({preventScroll:true});
+      }
     }
   }
+  previewDrawer.querySelector("[data-close-inspection-preview]").onclick=()=>closeInspectionPreview();
+  previewDrawer.addEventListener("cancel",event=>{event.preventDefault();closeInspectionPreview();});
+  previewDrawer.addEventListener("close",()=>{if(!previewDrawer.open)closeInspectionPreview();});
+  previewDrawer.addEventListener("keydown",event=>{
+    if(event.key!=="Tab")return;
+    const items=[...previewDrawer.querySelectorAll('button:not([disabled]),a[href],summary,input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(item=>item.tabIndex>=0 && item.getClientRects().length);
+    const first=items[0],last=items.at(-1);
+    if(event.shiftKey && document.activeElement===first){event.preventDefault();last?.focus();}
+    else if(!event.shiftKey && document.activeElement===last){event.preventDefault();first?.focus();}
+  });
+  previewDrawer.addEventListener("click",event=>{
+    if(event.target===previewDrawer){
+      const box=previewDrawer.getBoundingClientRect();
+      if(event.clientX<box.left || event.clientX>box.right || event.clientY<box.top || event.clientY>box.bottom)closeInspectionPreview();
+    }
+    if(event.target.closest("[data-retry-preview]")){void loadInspectionPreview();return;}
+    const anchor=event.target.closest('a[href^="#"]');
+    if(anchor){event.preventDefault();previewDrawer.querySelector("#"+CSS.escape(anchor.getAttribute("href").slice(1)))?.scrollIntoView({block:"start"});}
+  });
   function renderInspectionDetail() {
     if(!detailData)return;
     const tab=detailTab(),custom=detailData.source_kind==="CUSTOM";
@@ -207,7 +259,6 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
   detailRoot.onclick=async event=>{
     const button=event.target.closest("button");if(!button)return;
     if(button.hasAttribute("data-back-templates")){location.hash="";return;}
-    if(button.hasAttribute("data-retry-preview")){await renderInspectionPreview(++detailSeq);return;}
     if(button.dataset.detailTab){setDetailTab(button.dataset.detailTab);return;}
     if(button.dataset.viewVersion){setDetailTab("content");renderReadonlyVersion(button.dataset.viewVersion);return;}
     if(button.dataset.editVersion){
@@ -221,14 +272,11 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
       }catch(error){shell.toast(error.message);}finally{setActionBusy(false);button.disabled=false;}
     }
     if(button.hasAttribute("data-preview-inspection")){
-      const version=detailRoot.querySelector("#inspection-version-select").value;
-      const url=new URL(location.href);
-      url.searchParams.set("templatePreview","report");url.searchParams.set("template",detailData.inspection_template_id);url.searchParams.set("version",version);url.hash="";
-      window.open(url.href,"_blank","noopener,noreferrer");
+      openInspectionPreview();
     }
   };
-  globalThis.KBotInspectionTemplates=Object.freeze({confirm:confirmTemplate,hideDetail:()=>{detailSeq++;detailRoot.hidden=true;}});
-  window.addEventListener("hashchange",()=>{if(!previewParameters())showInspectionDetail();});
+  globalThis.KBotInspectionTemplates=Object.freeze({confirm:confirmTemplate,hideDetail:()=>{closeInspectionPreview(false);detailSeq++;detailRoot.hidden=true;}});
+  window.addEventListener("hashchange",showInspectionDetail);
 
   function bindEditor(kind) {
     const dialog = document.getElementById("session-report-template-dialog");
