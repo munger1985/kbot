@@ -59,6 +59,28 @@ const server = await createServer({
 });
 await server.listen();
 const port = server.httpServer.address().port;
+async function verifyTemplateDetail(page, product, width, entry) {
+  const detail = page.locator(".inspection-template-detail:visible");
+  await detail.locator(".template-content-head h2").waitFor();
+  assert.equal(await detail.evaluate(node => node.scrollWidth > node.clientWidth + 2), false);
+  const picker = detail.locator(".template-version-control");
+  const pickerLimit = width <= 480 ? (await detail.locator(".template-content-head").boundingBox()).width : 260;
+  assert.ok((await picker.boundingBox()).width <= pickerLimit + 1, "桌面版本选择限宽，窄屏不能超出内容区");
+  assert.ok(await detail.locator(".template-directory li").count());
+  assert.ok(await detail.locator(".template-check-topic").count());
+  assert.equal(await detail.locator(".template-check-topics").evaluate(node => getComputedStyle(node).gridTemplateColumns.split(" ").length), 1, "主题必须单列自然高度，不能使用等高大卡片");
+  for (const topic of await detail.locator(".template-check-topic").all()) {
+    assert.equal(await topic.locator("ul").evaluate(node => getComputedStyle(node).display), "flex");
+    assert.ok(await topic.locator("li").count());
+    if (width >= 1024) assert.ok((await topic.boundingBox()).height < 240, "主题行不能因卡片等高而产生大片空白");
+  }
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
+    await page.screenshot({path: path.join(resultDir, `${product}-template-detail-${entry}-${theme}-${width}.png`), fullPage: true, animations: "disabled"});
+    assert.equal(await detail.evaluate(node => node.scrollWidth > node.clientWidth + 2), false);
+  }
+  await page.evaluate(() => document.documentElement.dataset.theme = "light");
+}
 let browser;
 try {
   browser = await chromium.launch({headless: true});
@@ -133,6 +155,10 @@ try {
       const cards=page.locator(".management-catalog-card");
       assert.equal(await cards.count(),2);
       for(const card of await cards.all())assert.equal(await card.locator(".management-catalog-primary-actions > button").count(),1);
+      // 首次进入详情也必须完整排版，不能依赖先打开编辑器带入样式。
+      await page.getByRole("button",{name:"查看模板",exact:true}).click();
+      await verifyTemplateDetail(page, product, width, "direct");
+      await page.getByRole("button",{name:"返回模板中心",exact:true}).click();
       await page.screenshot({path:path.join(resultDir,product+"-template-cards-"+width+".png"),fullPage:false});
       const builtinCard=cards.filter({hasText:"系统标准日报"});
       await builtinCard.getByRole("button",{name:/更多/}).click();
@@ -265,6 +291,7 @@ try {
       await page.screenshot({path:path.join(resultDir,product+"-template-detail-"+width+".png"),fullPage:false});
       const detailPage=product==="kbot4" ? page.locator("section.daily-template-editor").last() : page.locator("main.daily-template-editor");
       assert.equal(await detailPage.evaluate(node=>node.scrollWidth>node.clientWidth+2),false);
+      await verifyTemplateDetail(page, product, width, "after-edit");
       await page.getByRole("button",{name:"版本历史",exact:true}).click();
       await page.getByText(/发布人：.*template-admin/).waitFor();
       assert.equal(await page.getByRole("button",{name:"基于此版本编辑",exact:true}).count(),0);
