@@ -140,6 +140,9 @@ def inspection_samples():
         payload=payload, template=resolve_system_template("system:inspection.monthly"),
         report_context={"report_id": "sample-monthly", "report_version": 1},
     )
+    from aiops_agent.application.inspections.daily_preview import daily_preview
+    for engine in ("ORACLE", "POSTGRESQL", "FUTURE_DATABASE"):
+        samples[engine.lower()] = daily_preview(database_type=engine, scenario="ATTENTION")
     return samples
 
 
@@ -150,6 +153,8 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     samples = inspection_samples()
+    from aiops_agent.application.inspections.check_catalog import load_check_catalog
+    (args.output / "catalog.json").write_text(load_check_catalog().model_dump_json(), encoding="utf-8")
     (args.output / "samples.json").write_text(json.dumps(samples, ensure_ascii=False), encoding="utf-8")
     for name, presentation in samples.items():
         (args.output / f"{name}.pdf").write_bytes(render_pdf(presentation))

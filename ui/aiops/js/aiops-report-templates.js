@@ -35,7 +35,7 @@
     document.getElementById("inspection-template-checks").innerHTML = (checkCatalog?.groups || []).map(group => `<fieldset class="aiops-template-check-group"><legend>${escape(group.display_name)}</legend>${(group.checks || []).map(check => `<label class="check-field"><input type="checkbox" name="check_id" value="${escape(check.check_id)}" ${selectedIds.includes(check.check_id) ? "checked" : ""} ${check.availability !== "READY" ? "disabled" : ""}><span class="check-field-copy"><strong>${escape(check.display_name)}</strong><small>${escape(check.check_id)}${check.trend_required ? " · 需要历史趋势" : ""}${check.availability !== "READY" ? " · 尚未可用" : ""}</small></span></label>`).join("")}</fieldset>`).join("");
   }
   function renderInspectionTemplates() {
-    document.getElementById("ops-inspection-template-body").innerHTML = inspectionTemplates.filter(item => matchesSearch(item)).map(item => `<article class="management-catalog-card"><header><div><p class="eyebrow">INSPECTION TEMPLATE</p><h3>${escape(item.display_name)}</h3></div><span class="status-pill ${item.status === "ACTIVE" ? "status-success" : "status-muted"}">${item.status === "ACTIVE" ? "已启用" : "已停用"}</span></header><dl><div><dt>当前版本</dt><dd>v${escape(item.version_no)}</dd></div><div><dt>检查项目</dt><dd>${(item.selected_check_ids || []).length} 项</dd></div></dl><footer class="management-catalog-actions"><span class="management-catalog-note">更新于 ${escape(shell.fmt(item.updated_at))}</span><button class="row-action" type="button" data-edit-inspection-template="${escape(item.inspection_template_id)}">创建新版本</button></footer></article>`).join("");
+    document.getElementById("ops-inspection-template-body").innerHTML = inspectionTemplates.filter(item => matchesSearch(item)).map(item => `<article class="management-catalog-card"><header><div><p class="eyebrow">INSPECTION TEMPLATE</p><h3>${escape(item.display_name)}</h3></div><span class="status-pill ${item.status === "ACTIVE" ? "status-success" : "status-muted"}">${item.status === "ACTIVE" ? "已启用" : "已停用"}</span></header><dl><div><dt>当前版本</dt><dd>v${escape(item.version_no)}</dd></div><div><dt>检查项目 / 引用计划</dt><dd>${(item.selected_check_ids || []).length} 项 / ${Number(item.usage_count || 0)} 个</dd></div></dl><footer class="management-catalog-actions"><span class="management-catalog-note">更新于 ${escape(shell.fmt(item.updated_at))}</span><button class="row-action" type="button" data-edit-inspection-template="${escape(item.inspection_template_id)}">创建新版本</button><button class="row-action" type="button" data-copy-inspection="${escape(item.inspection_template_id)}">复制</button><button class="row-action" type="button" data-history-inspection="${escape(item.inspection_template_id)}">版本与差异</button><button class="row-action" type="button" data-toggle-inspection="${escape(item.inspection_template_id)}">${item.status === "ACTIVE" ? "停用" : "启用"}</button></footer></article>`).join("");
   }
   function renderSessionTemplates() {
     document.getElementById("ops-session-report-template-body").innerHTML = sessionTemplates.filter(item => matchesSearch(item, true)).map(item => {
@@ -87,7 +87,8 @@
     button.disabled = busy || !canSave(form, kind); button.textContent = busy ? "保存中…" : "保存";
   }
   function openEditor(kind, editing = null, clone = null) {
-    const isInspection = kind === "inspection";
+    if (kind === "inspection") { KBotDailyTemplateEditor.open(checkCatalog,editing,loadTemplates); return; }
+    const isInspection = false;
     const dialog = document.getElementById(isInspection ? "inspection-template-dialog" : "session-report-template-dialog");
     const form = dialog.querySelector("form");
     if (isInspection) editingInspectionTemplate = editing;
@@ -121,6 +122,18 @@
       document.getElementById("template-history-list").innerHTML = versions.map(item => `<article><header><strong>v${escape(item.version_no)}</strong>${item.current ? '<span class="status-pill status-success">当前版本</span>' : ""}<time>${escape(shell.fmt(item.created_at))}</time></header><p>${escape((item.definition?.sections || []).map(section => sectionLabel(section.kind)).join(" → "))}</p><small class="technical-meta">${escape(item.content_hash)}</small></article>`).join("");
       document.getElementById("template-history-drawer").showModal();
     } catch (error) { shell.toast(error.message); }
+  }
+  async function showInspectionHistory(template) {
+    try {
+      const versions = await KBotAIOpsAuth.request(api+"/inspection-templates/"+encodeURIComponent(template.inspection_template_id)+"/versions");
+      document.getElementById("template-history-title").textContent = template.display_name + " · 版本与差异";
+      document.getElementById("template-history-list").innerHTML = '<p>已有计划绑定的版本不自动升级；停用不删除既有运行。</p>' + versions.map((version,index) => {
+        const a=version.definition,b=versions[index+1]?.definition;
+        const change=b ? "检查项新增 "+a.selected_check_ids.filter(id=>!b.selected_check_ids.includes(id)).length+"，移除 "+b.selected_check_ids.filter(id=>!a.selected_check_ids.includes(id)).length+"；日报版式"+(JSON.stringify(a.daily_report_layout)!==JSON.stringify(b.daily_report_layout) ? "有变化" : "未变化") : "初始版本";
+        return '<article><header><strong>v'+escape(version.version_no)+'</strong>'+(version.current ? '<span class="status-pill status-success">当前版本</span>' : "")+'<time>'+escape(shell.fmt(version.created_at))+'</time></header><p>'+escape(change)+'</p><details><summary>查看冻结定义</summary><pre>'+escape(JSON.stringify(version.definition,null,2))+'</pre></details></article>';
+      }).join("");
+      document.getElementById("template-history-drawer").showModal();
+    } catch(error) {shell.toast(error.message);}
   }
   function bindEditor(kind) {
     const isInspection = kind === "inspection";
@@ -187,6 +200,12 @@
     document.getElementById("ops-inspection-template-body").onclick = event => {
       const button = event.target.closest("[data-edit-inspection-template]");
       if (button) openVersion("inspection", button.dataset.editInspectionTemplate);
+      const action = event.target.closest("button"); if (!action) return;
+      const item = inspectionTemplates.find(item => item.inspection_template_id === (action.dataset.copyInspection || action.dataset.historyInspection || action.dataset.toggleInspection));
+      if (!item) return;
+      if (action.dataset.copyInspection) KBotDailyTemplateEditor.open(checkCatalog,{...item,inspection_template_id:"",display_name:item.display_name+" 副本"},loadTemplates);
+      if (action.dataset.toggleInspection) mutateTemplate("/inspection-templates/"+encodeURIComponent(item.inspection_template_id),"PATCH",{expected_row_version:item.row_version,status:item.status==="ACTIVE" ? "INACTIVE" : "ACTIVE"});
+      if (action.dataset.historyInspection) showInspectionHistory(item);
     };
     document.getElementById("ops-session-report-template-body").onclick = event => {
       const button = event.target.closest("button"); if (!button) return;
@@ -205,7 +224,7 @@
     };
     document.addEventListener("pointerdown", event => { if (!event.target.closest(".management-catalog-overflow")) closeMenus(); });
     document.addEventListener("keydown", event => { if (event.key === "Escape") closeMenus(); });
-    bindEditor("inspection"); bindEditor("session");
+    bindEditor("session");
     await loadTemplates();
   });
 })();

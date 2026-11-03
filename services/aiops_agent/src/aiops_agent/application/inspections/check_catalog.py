@@ -65,6 +65,7 @@ def load_check_catalog() -> InspectionCheckCatalogView:
             if not isinstance(item_payload, dict):
                 raise ValueError("Check Catalog 检查项必须是对象")
             item = InspectionCheckCatalogItem(
+                report_section=str(item_payload["report_section"]),
                 check_id=str(item_payload.get("check_id") or ""),
                 display_name=str(item_payload.get("display_name") or ""),
                 availability=item_payload.get("availability"),
@@ -103,7 +104,10 @@ def load_check_catalog() -> InspectionCheckCatalogView:
                 checks=tuple(checks),
             )
         )
+    from .daily_sections import daily_section_catalog, normalize_daily_layout
     return InspectionCheckCatalogView(
+        report_sections=tuple(daily_section_catalog()["sections"]),
+        daily_report_layout=normalize_daily_layout(),
         catalog_hash=hashlib.sha256(
             _canonical_json(payload).encode("utf-8")
         ).hexdigest(),
@@ -233,6 +237,7 @@ def compile_selected_check_steps(
         steps.append(
             {
                 "title": item.display_name,
+                "report_section": item.report_section,
                 "tool_id": tool_id,
                 "input": {},
                 "expected_evidence_kind": evidence_kind,

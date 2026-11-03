@@ -14,6 +14,7 @@ const { createServer } = await import(pathToFileURL(require.resolve("vite")));
 const { default: vue } = await import(pathToFileURL(require.resolve("@vitejs/plugin-vue")));
 const { chromium } = require("@playwright/test");
 const sampleDir = process.argv[2] || "/tmp/inspection-report-ammolite-20261102";
+const catalog = JSON.parse(await fs.readFile(path.join(sampleDir, "catalog.json"), "utf8"));
 const samples = JSON.parse(await fs.readFile(path.join(sampleDir, "samples.json"), "utf8"));
 const resultDir = path.join(sampleDir, "browser");
 await fs.mkdir(resultDir, { recursive: true });
@@ -26,8 +27,8 @@ const harness = {
   load(id) {
     if (id !== path.join(portal, "__inspection_harness__.js")) return;
     return 'import {createApp,h} from "vue"; import {createRouter,createWebHistory,RouterView} from "vue-router";'
-      + 'import Report from "/src/features/aiops/business/AIOpsReportDetailView.vue"; import "/src/shared/ui/styles.css";'
-      + 'const router=createRouter({history:createWebHistory(),routes:[{path:"/sample/:domainCode/:reportId",component:Report,meta:{title:"报告详情"}}]});'
+      + 'import Report from "/src/features/aiops/business/AIOpsReportDetailView.vue"; import Templates from "/src/features/aiops/management/AIOpsReportTemplatesView.vue"; import "/src/shared/ui/styles.css";'
+      + 'const router=createRouter({history:createWebHistory(),routes:[{path:"/sample/:domainCode/:reportId",component:Report,meta:{title:"报告详情"}},{path:"/template/:domainCode",component:Templates,meta:{title:"模板中心"}}]});'
       + 'createApp({render:()=>h(RouterView)}).use(router).mount("#app");';
   },
   configureServer(server) {
@@ -44,7 +45,7 @@ const harness = {
         } catch { res.statusCode = 404; res.end(); }
         return;
       }
-      if (!url.pathname.startsWith("/sample/")) return next();
+      if (!url.pathname.startsWith("/sample/") && !url.pathname.startsWith("/template/")) return next();
       const html = '<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/__inspection_harness__.js"></script></body></html>';
       res.setHeader("Content-Type", "text/html");
       res.end(await server.transformIndexHtml(req.url, html));
@@ -61,6 +62,72 @@ const port = server.httpServer.address().port;
 let browser;
 try {
   browser = await chromium.launch({headless: true});
+  // 编辑器通过真实页面操作验收，全部 API 被隔离替身拦截。
+  for (const product of ["ammolite", "kbot4"]) {
+    for (const width of [1440,390]) {
+      const page=await browser.newPage({viewport:{width,height:1000}}), errors=[], writes=[];
+      page.on("pageerror",error=>errors.push(error.message));
+      page.on("console",message=>{if(message.type()==="error")errors.push(message.text());});
+      const ready=catalog.groups.flatMap(group=>group.checks).filter(check=>check.availability==="READY").map(check=>check.check_id);
+      const template={inspection_template_id:"sample-template",display_name:"共享日报模板",status:"ACTIVE",version_no:1,row_version:1,selected_check_ids:ready,daily_report_layout:catalog.daily_report_layout,usage_count:3};
+      await page.route("**/api/**",async route=>{
+        const url=new URL(route.request().url()), method=route.request().method();
+        if (!url.pathname.startsWith("/api/")) return route.continue();
+        let result;
+        if(url.pathname.endsWith("/inspection-check-catalog")) result=catalog;
+        else if(url.pathname.endsWith("/inspection-templates:preview")) {
+          const input=route.request().postDataJSON(), preview=structuredClone(samples.oracle);
+          preview.daily_inspection.header.title=input.daily_report_layout.title;
+          preview.daily_inspection.header.database_type=input.database_type;
+          const byId=Object.fromEntries(preview.daily_inspection.sections.map(region=>[region.section_id,region]));
+          preview.daily_inspection.sections=input.daily_report_layout.sections.map((settings,index)=>({...byId[settings.section_id],...settings,ordinal:index+1}));
+          result=preview;
+        } else if(method==="POST" && url.pathname.endsWith("/versions")) {
+          writes.push(route.request().postDataJSON());result=template;
+        } else if(url.pathname.endsWith("/inspection-templates")) result=[template];
+        else if(url.pathname.endsWith("/sample-template")) result=template;
+        else result=[];
+        await route.fulfill({json:result});
+      });
+      if(product==="kbot4") {
+        await page.addInitScript(()=>{
+          const escape=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
+          globalThis.KBotAIOpsShell={ready:Promise.resolve(),escape,fmt:value=>value||"未记录",toast:()=>{}};
+          globalThis.KBotAIOpsAuth={request:async(url,init)=>(await fetch(url,init)).json()};
+        });
+        await page.route(/\/(runtime-config|aiops-auth|aiops-shell)\.js(\?.*)?$/,route=>route.fulfill({contentType:"application/javascript",body:""}));
+      }
+      await page.goto("http://127.0.0.1:"+port+(product==="ammolite" ? "/template/test?domainId=test" : "/kbot/aiops/report-templates.html"));
+      try { await page.getByRole("button",{name:"创建新版本",exact:true}).click({timeout:10000}); }
+      catch(error) { console.error(product,width,errors,await page.locator("body").innerText()); throw error; }
+      const editor=page.locator(".daily-template-editor");
+      await editor.waitFor();
+      assert.equal(await editor.evaluate(node=>node.tagName==="DIALOG" || Boolean(node.closest("dialog"))),false);
+      await editor.getByRole("button",{name:"日报版式",exact:true}).click();
+      await editor.getByRole("button",{name:/03 · 系统资源使用/}).click();
+      const title=editor.getByLabel("日报标题");
+      await title.fill("共享日报 · 版式验收");
+      await editor.getByLabel("正常检查明细").selectOption("SUMMARY");
+      await editor.getByRole("button",{name:"报告预览",exact:true}).click();
+      try { await editor.getByRole("button",{name:"刷新模拟预览",exact:true}).click({timeout:10000}); }
+      catch(error) { console.error(product,width,errors,await page.locator("body").innerText()); throw error; }
+      await editor.getByRole("heading",{name:"共享日报 · 版式验收",exact:true}).waitFor();
+      assert.equal(await editor.locator("[data-report-section]").count(),12);
+      assert.ok((await editor.innerText()).includes("模拟版式预览"));
+      await page.evaluate(()=>window.scrollTo(0,0));
+      await page.screenshot({path:path.join(resultDir,product+"-template-preview-"+width+".png"),fullPage:false});
+      const overflow=await editor.evaluate(node=>node.scrollWidth>node.clientWidth+2);
+      assert.equal(overflow,false);
+      await editor.getByRole("button",{name:"发布新版本",exact:true}).click();
+      await editor.waitFor({state:"hidden"});
+      assert.equal(writes.length,1);
+      assert.equal(writes[0].daily_report_layout.title,"共享日报 · 版式验收");
+      assert.equal(writes[0].daily_report_layout.sections.find(item=>item.section_id==="RESOURCES").normal_detail,"SUMMARY");
+      assert.deepEqual(writes[0].selected_check_ids,ready);
+      assert.deepEqual(errors,[]);
+      await page.close();
+    }
+  }
   for (const product of ["ammolite", "kbot4"]) {
     for (const [name, original] of Object.entries(samples)) {
       for (const width of [1440, 900, 390]) {
@@ -106,6 +173,10 @@ try {
         assert.equal(await appendix.locator(".inspection-appendix-body").isVisible(), false);
         assert.equal(await page.locator(".daily-report-table").count() > 0, true);
         if (!monthly) {
+          assert.deepEqual(await page.locator("[data-report-section]").evaluateAll(nodes=>nodes.map(node=>node.dataset.reportSection)),data.sections.map(region=>region.section_id));
+          assert.equal(await page.locator(".daily-document-index [data-section-link]").count(),data.sections.length);
+          assert.equal(await page.locator(".daily-document-content #daily-sql").count(),1);
+          for (const issue of data.finding_index || []) assert.equal(await page.locator('[id="'+issue.anchor+'"]').count(),1);
           const statements = (data.sql_details || []).flatMap(group => group.statements);
           const cards = page.locator(".inspection-sql-card");
           assert.equal(await cards.count(), statements.length);
@@ -121,14 +192,14 @@ try {
             );
             assert.equal(columns, width <= 760 ? 2 : 4);
             if (statement.statement_truncated) {
-              const full = card.locator(".inspection-sql-full-text");
+              const full = card.locator(".inspection-sql-full-text").filter({has:page.locator("code")});
               assert.equal(await full.getAttribute("open"), null);
               await full.locator("summary").click();
               assert.equal(await full.locator("code").textContent(), statement.statement_text);
               await full.locator("summary").click();
             }
           }
-          assert.ok(!(await page.locator(".daily-checks-table").innerText()).includes("皮秒"));
+          assert.ok(!(await page.locator(".daily-checks-table").allTextContents()).join(" ").includes("皮秒"));
           if (name === "attention" && statements.length)
             await cards.first().locator("..").screenshot({path:path.join(resultDir,`${product}-sql-${width}.png`)});
           if (name === "normal") {
@@ -155,8 +226,8 @@ try {
           if (name === "incomplete") assert.equal(await table.locator("svg").count(), 0);
         }
         if (!monthly && width > 760) {
-          const table = page.locator(".daily-checks-table");
-          assert.equal(await table.count(), 1);
+          const table = page.locator(".daily-report-section .daily-checks-table").first();
+          assert.ok(await table.count() > 0);
           const columns = await table.locator("thead th").evaluateAll(cells =>
             cells.map(cell => cell.getBoundingClientRect().width)
           );
@@ -192,7 +263,7 @@ try {
           assert.equal(await trace.locator(".inspection-source-list").isVisible(), false);
           await page.screenshot({path:path.join(resultDir,`${product}-${name}-${width}-appendix.png`),fullPage:true});
           await trace.locator(":scope > summary").click();
-          assert.ok((await trace.innerText()).includes("不属于巡检问题"));
+          assert.ok((await trace.innerText()).includes("仅供技术核查"));
           const items = trace.locator(".inspection-source-list > li");
           assert.equal(await items.count(), sources.length);
           for (let index = 0; index < sources.length; index++) {
@@ -213,7 +284,7 @@ try {
       }
     }
   }
-  console.log("PASS 两端各 5 类报告 × 3 个宽度：SQL 毫秒统计、独立排版、全文展开及安全转义；基线、冻结结论与附录，无横向溢出或浏览器异常");
+  console.log("PASS 两端各 "+Object.keys(samples).length+" 类报告 × 3 个宽度，以及完整模板编辑/模拟预览/发布：共享区域、SQL 分析、基线、附录、安全转义与无横向溢出");
 } finally {
   await browser?.close();
   await server.close();

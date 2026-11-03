@@ -19,6 +19,7 @@ from aiops_agent.application.inspections.check_catalog import (
     load_check_catalog,
     normalize_selected_check_ids,
 )
+from aiops_agent.application.inspections.daily_sections import normalize_daily_layout
 from aiops_agent.application.reporting import (
     ReportTemplate,
     resolve_system_template,
@@ -77,12 +78,13 @@ class InspectionTemplateService:
 
     @staticmethod
     def _definition(
-        *, display_name: str, selected_check_ids: tuple[str, ...]
+        *, display_name: str, selected_check_ids: tuple[str, ...],
+        schedule_type: str = "DAILY", daily_report_layout: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         catalog = load_check_catalog()
         steps = compile_selected_check_steps(
             selected_check_ids,
-            schedule_type="DAILY",
+            schedule_type=schedule_type,
         )
         return {
             "schema_version": "INSPECTION_TEMPLATE.v1",
@@ -90,6 +92,7 @@ class InspectionTemplateService:
             "catalog_hash": catalog.catalog_hash,
             "selected_check_ids": list(selected_check_ids),
             "evidence_steps": list(steps),
+            **({"daily_report_layout": normalize_daily_layout(daily_report_layout)} if schedule_type != "MONTHLY" else {}),
         }
 
     @staticmethod
@@ -103,6 +106,7 @@ class InspectionTemplateService:
             "selected_check_ids": list(
                 definition.get("selected_check_ids") or ()
             ),
+            "daily_report_layout": definition.get("daily_report_layout"),
             "content_hash": version.content_hash,
             "row_version": int(row.row_version),
             "updated_at": row.updated_at.isoformat(),
@@ -113,6 +117,9 @@ class InspectionTemplateService:
             rows = await uow.inspections.list_inspection_templates(
                 domain_id=domain_id
             )
+            usage_counts = await uow.inspections.count_plans_by_inspection_templates(
+                domain_id=domain_id, template_ids=[row.inspection_template_id for row in rows],
+            )
             result = []
             for row in rows:
                 version = await uow.inspections.get_inspection_template_version(
@@ -120,7 +127,7 @@ class InspectionTemplateService:
                 )
                 if version is None:
                     raise state_conflict("巡检模板当前版本不存在")
-                result.append(self._summary(row, version))
+                result.append({**self._summary(row, version), "usage_count": usage_counts.get(row.inspection_template_id, 0)})
             return result
 
     async def get(self, *, domain_id: int, template_id: UUID) -> dict[str, Any]:
@@ -151,6 +158,7 @@ class InspectionTemplateService:
         actor_id: str,
         display_name: str,
         selected_check_ids: tuple[str, ...],
+        daily_report_layout: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         display_name = display_name.strip()
         if not display_name:
@@ -160,6 +168,7 @@ class InspectionTemplateService:
             definition = self._definition(
                 display_name=display_name,
                 selected_check_ids=selected,
+                daily_report_layout=daily_report_layout,
             )
         except ValueError as exc:
             raise validation_failed(str(exc)) from exc
@@ -197,6 +206,7 @@ class InspectionTemplateService:
         template_id: UUID,
         expected_row_version: int,
         selected_check_ids: tuple[str, ...],
+        daily_report_layout: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
             selected = normalize_selected_check_ids(selected_check_ids)
@@ -216,6 +226,7 @@ class InspectionTemplateService:
                 definition = self._definition(
                     display_name=row.display_name,
                     selected_check_ids=selected,
+                    daily_report_layout=daily_report_layout,
                 )
             except ValueError as exc:
                 raise validation_failed(str(exc)) from exc
@@ -236,6 +247,34 @@ class InspectionTemplateService:
             row.current_version_id = version.inspection_template_version_id
             row.updated_by = actor_id
             row.updated_at = datetime.now(UTC)
+            await uow.commit()
+            return self._summary(row, version)
+
+
+    async def list_versions(self, *, domain_id: int, template_id: UUID):
+        async with self._uow_factory() as uow:
+            row = await uow.inspections.get_inspection_template(domain_id=domain_id, inspection_template_id=template_id)
+            if row is None:
+                raise resource_not_found("InspectionTemplate")
+            versions = await uow.inspections.list_inspection_template_versions(inspection_template_id=template_id)
+            return [{"template_version_id": str(version.inspection_template_version_id),
+                     "version_no": int(version.version_no), "content_hash": version.content_hash,
+                     "definition": dict(version.definition_json), "created_at": version.created_at.isoformat(),
+                     "current": version.inspection_template_version_id == row.current_version_id}
+                    for version in versions]
+
+    async def update(self, *, domain_id: int, actor_id: str, template_id: UUID, expected_row_version: int, status: str):
+        if status not in {"ACTIVE", "INACTIVE"}:
+            raise validation_failed("巡检模板状态无效")
+        async with self._uow_factory() as uow:
+            row = await uow.inspections.get_inspection_template(domain_id=domain_id, inspection_template_id=template_id, lock=True)
+            if row is None:
+                raise resource_not_found("InspectionTemplate")
+            if int(row.row_version) != expected_row_version:
+                raise state_conflict("巡检模板版本已变化")
+            row.status = status
+            row.updated_by = actor_id
+            version = await uow.inspections.get_inspection_template_version(inspection_template_version_id=row.current_version_id)
             await uow.commit()
             return self._summary(row, version)
 

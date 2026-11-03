@@ -624,11 +624,41 @@ class InspectionSqlDetail(BaseModel):
     summary: str = ""
 
 
+class DailyInspectionSection(BaseModel):
+    """不包含数据库类型分支的共享日报区域。"""
+    model_config = ConfigDict(extra="forbid")
+    section_id: str
+    title: str
+    description: str
+    semantic_roles: tuple[str, ...] = ()
+    ordinal: int
+    anchor: str
+    status: str
+    status_display: str
+    summary: str
+    visibility: str
+    normal_detail: str
+    show_statistics: bool
+    show_trend: bool
+    expanded: bool
+    checks: tuple[dict[str, Any], ...] = ()
+    metrics: tuple[DailyInspectionMetric, ...] = ()
+    findings: tuple[dict[str, Any], ...] = ()
+    sql_details: tuple[InspectionSqlDetail, ...] = ()
+    comparisons: tuple[DailyInspectionMetric, ...] = ()
+    actions: tuple[dict[str, Any], ...] = ()
+
+
 class DailyInspectionPresentation(BaseModel):
     """日常巡检报告的冻结结构化展示投影。"""
 
     model_config = ConfigDict(extra="allow")
     schema_version: Literal["DAILY_INSPECTION_PRESENTATION.v1"]
+    sections: tuple[DailyInspectionSection, ...] = ()
+    layout: dict[str, Any] = Field(default_factory=dict)
+    section_catalog_version: str = ""
+    finding_index: tuple[dict[str, Any], ...] = ()
+    actions: tuple[dict[str, Any], ...] = ()
     header: DailyInspectionHeader
     conclusion: dict[str, Any]
     checks: tuple[dict[str, Any], ...] = ()

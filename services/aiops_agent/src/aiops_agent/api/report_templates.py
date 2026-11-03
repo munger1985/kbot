@@ -17,13 +17,19 @@ from platform_core.contracts import AuthContext
 router = APIRouter(prefix="/internal/v1/aiops", tags=["AIOps Templates"])
 
 
+from platform_core.contracts.aiops.daily_report import DailyReportLayout
+from platform_core.contracts.aiops.public import ReportPresentation
+
+
 class CreateInspectionTemplate(BaseModel):
+    daily_report_layout: DailyReportLayout | None = None
     model_config = ConfigDict(extra="forbid")
     display_name: str = Field(min_length=1, max_length=256)
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
 
 class CreateInspectionTemplateVersion(BaseModel):
+    daily_report_layout: DailyReportLayout | None = None
     model_config = ConfigDict(extra="forbid")
     expected_row_version: int = Field(ge=1)
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
@@ -33,6 +39,14 @@ class CreateSessionReportTemplate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display_name: str = Field(min_length=1, max_length=256)
     definition: dict[str, Any]
+
+
+class PreviewDailyTemplate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    daily_report_layout: DailyReportLayout = Field(default_factory=DailyReportLayout)
+    selected_check_ids: tuple[str, ...] = ()
+    database_type: str = Field(default="ORACLE", pattern=r"^[A-Z][A-Z0-9_]{0,31}$")
+    scenario: str = Field(default="NORMAL", pattern="^(NORMAL|ATTENTION|INCOMPLETE)$")
 
 
 class CreateSessionReportTemplateVersion(BaseModel):
@@ -108,6 +122,25 @@ async def create_inspection_template_version(
         template_id=template_id,
         **body.model_dump(),
     )
+
+
+@router.post("/inspection-templates:preview", response_model=ReportPresentation)
+async def preview_daily_template(body: PreviewDailyTemplate, request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    _scope(request, context)
+    from aiops_agent.application.inspections.daily_preview import daily_preview
+    return daily_preview(**body.model_dump(mode="json"))
+
+
+@router.get("/inspection-templates/{template_id}/versions")
+async def inspection_template_versions(template_id: UUID, request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.inspection_template_service.list_versions(domain_id=domain_id, template_id=template_id)
+
+
+@router.patch("/inspection-templates/{template_id}")
+async def update_inspection_template(template_id: UUID, body: UpdateSessionReportTemplate, request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.inspection_template_service.update(domain_id=domain_id, actor_id=actor_id, template_id=template_id, **body.model_dump())
 
 
 @router.get("/session-report-templates")

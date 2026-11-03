@@ -42,7 +42,7 @@ def freeze_inspection_policy(database_type: str) -> dict[str, Any]:
     additional = set(policy["supplemental"].get(database_type.upper(), ()))
     checks = [
         {"check_id": item.check_id, "title": item.display_name,
-         "tool_id": item.tool_id, "required": item.check_id in required}
+         "tool_id": item.tool_id, "required": item.check_id in required, "report_section": item.report_section}
         for group in load_check_catalog().groups for item in group.checks
         if item.check_id in required | additional
     ]
@@ -343,6 +343,9 @@ def assess_inspection(
         ]
         actual = _observation_display(observation_rows)
         row = {
+            "kind": fact.get("kind"), "report_section": fact.get("report_section"),
+            "semantic_role": fact.get("semantic_role"),
+            "observations": observation_rows,
             "actual_display": actual or summary,
             "title": title, "status": status, "status_display": label,
             "required": required, "summary": summary, "basis": basis,
@@ -360,6 +363,8 @@ def assess_inspection(
                 f"核对“{title}”中{object_name or '对应对象'}的异常原因，按变更流程处理后复查同一对象及规则。"
             )
             issue = {
+                "report_section": fact.get("report_section"),
+                "check_ids": list(fact.get("check_ids") or ()), "tool_id": fact.get("tool_id"),
                 "finding_id": str(finding.get("finding_id") or f"F{len(issues) + 1:02d}"),
                 "title": title, "status": "FINDING",
                 "severity": str(finding.get("severity") or severity),

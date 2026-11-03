@@ -260,6 +260,16 @@ class InspectionRepository(AIOpsRepository):
         )
         return list(rows)
 
+    async def count_plans_by_inspection_templates(self, *, domain_id, template_ids):
+        """按业务空间统计模板引用计划数，停用计划仍属于有效引用。"""
+        if not template_ids:
+            return {}
+        statement = select(InspectionPlanEntity.inspection_template_id, func.count()).where(
+            InspectionPlanEntity.domain_id == domain_id,
+            InspectionPlanEntity.inspection_template_id.in_(template_ids),
+        ).group_by(InspectionPlanEntity.inspection_template_id)
+        return {key: int(count) for key, count in (await self._session.execute(statement)).all()}
+
     async def get_inspection_template(
         self, *, domain_id: int, inspection_template_id: UUID,
         lock: bool = False,
@@ -280,6 +290,12 @@ class InspectionRepository(AIOpsRepository):
             InspectionTemplateVersionEntity,
             inspection_template_version_id,
         )
+
+    async def list_inspection_template_versions(self, *, inspection_template_id: UUID):
+        rows = await self._session.scalars(select(InspectionTemplateVersionEntity).where(
+            InspectionTemplateVersionEntity.inspection_template_id == inspection_template_id,
+        ).order_by(InspectionTemplateVersionEntity.version_no.desc()))
+        return list(rows)
 
     async def next_inspection_template_version(
         self, *, inspection_template_id: UUID,

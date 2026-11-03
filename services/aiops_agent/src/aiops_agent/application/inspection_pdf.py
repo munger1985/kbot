@@ -1,4 +1,4 @@
-"""日常与月度巡检的专业报告排版，消费与网页相同的冻结投影。"""
+"""巡检 PDF 出版入口；日报使用共享分区，月报保持原排版。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,9 @@ def inspection_pdf_story(
     *, data: dict[str, Any], monthly: bool, font_name, body, section, cover_title,
 ) -> list[Any]:
     """业务结论在前，正常明细可核查，原始来源和质量进入附录。"""
+    if not monthly:
+        from .daily_inspection_pdf import daily_inspection_pdf_story
+        return daily_inspection_pdf_story(data=data, font_name=font_name, body=body, section=section, cover_title=cover_title)
     header = dict(data.get("header") or {})
     conclusion = dict(data.get("conclusion") or {})
     story: list[Any] = []
@@ -56,27 +59,6 @@ def inspection_pdf_story(
         ]))
         story.extend((item, Spacer(1, 4 * mm)))
 
-    def baseline_trend(metric):
-        """趋势仅连接连续日期，零基线仍可展示真实日均值。"""
-        points = list(metric.get("trend_points") or ())
-        if metric.get("baseline_status") != "AVAILABLE" or len(points) < 2:
-            return "暂无连续趋势"
-        try:
-            dates = [datetime.fromisoformat(point["date"]) for point in points]
-            values = [float(point["value"]) for point in points]
-            if any((right-left).days != 1 for left, right in zip(dates, dates[1:])):
-                return "日期有缺测，未连接趋势线"
-        except (KeyError, ValueError, TypeError):
-            return "暂无连续趋势"
-        width, height = 19*mm, 10*mm
-        drawing = Drawing(width, height)
-        low, span = min(values), max(max(values)-min(values), 1e-9)
-        coordinates = []
-        for index, value in enumerate(values):
-            coordinates.extend((width*index/(len(values)-1), 2+(height-4)*(value-low)/span))
-        drawing.add(PolyLine(coordinates, strokeColor=colors.HexColor("#244C73"), strokeWidth=1))
-        return drawing
-
     story.extend((paragraph(header.get("title") or "数据库巡检报告", cover_title), Spacer(1, 3 * mm)))
     metadata = [
         ["运维范围", header.get("scope_name") if monthly else header.get("target_name")],
@@ -85,9 +67,6 @@ def inspection_pdf_story(
         ["报告时区", header.get("timezone") or "UTC"],
         ["报告编号", header.get("report_number")],
     ]
-    if not monthly:
-        metadata.insert(1, ["业务系统", header.get("business_system_name") or "未记录"])
-        metadata.insert(2, ["数据库", str(header.get("database_type") or "") + " " + str(header.get("database_version") or "")])
     table(["项目", "内容"], metadata, (30, 140))
     heading("月度运行结论" if monthly else "巡检结论")
     story.append(paragraph(conclusion.get("health_status_display") or "检查未完成", section))
@@ -119,59 +98,6 @@ def inspection_pdf_story(
                     f"观测 {item.get('observation_count') or 0} 次；状态：{item.get('lifecycle_display') or '待验证'}。"
                     + (f"已确认事件 {item['occurrence_count']} 次。" if item.get("occurrence_count") is not None else "观测次数不等于事故次数。")
                 ))
-            else:
-                for label, key in (("判断依据", "basis"), ("影响对象", "object_name"), ("处置建议", "recommendation")):
-                    if item.get(key):
-                        story.append(paragraph(f"{label}：{item[key]}"))
-    if not monthly:
-        checks = list(data.get("checks") or ())
-        heading("基础检查明细")
-        if checks:
-            table(["检查内容", "结果", "实测情况", "判断依据"], [
-                [item.get("title"), item.get("status_display"),
-                 item.get("actual_display") or item.get("summary"), item.get("basis")]
-                for item in checks
-            ], (31, 18, 61, 60))
-        else:
-            story.append(paragraph("本报告未记录可展示的基础检查明细，不能据此补造正常结果。"))
-        for group in data.get("sql_details") or ():
-            heading(str(group.get("title") or "问题 SQL"))
-            story.append(paragraph(group.get("summary") or "问题 SQL 检查尚未完成。"))
-            story.append(paragraph(group.get("note") or ""))
-            for item in group.get("statements") or ():
-                story.append(paragraph(
-                    f"{item['ordinal']:02d} · Schema：{item.get('schema_name') or '未记录'}",
-                    section, keep_with_next=True,
-                ))
-                story.append(paragraph(item.get("text_label") or "SQL 文本", keep_with_next=True))
-                story.append(paragraph("高风险" if item.get("severity") == "HIGH" else "需关注", keep_with_next=True))
-                story.append(paragraph(item.get("problem_summary") or ""))
-                story.append(paragraph("判断依据：" + str(item.get("basis") or "")))
-                story.append(paragraph(item.get("statement_preview") or "来源未返回 SQL 文本。"))
-                if item.get("statement_truncated"):
-                    story.append(paragraph("SQL 预览已截短；来源返回的完整正文可在网页报告中展开查看。"))
-                table(["执行次数", "总耗时", "平均耗时", "最大耗时"], [[
-                    item.get("execution_count_display"), item.get("total_latency_display"),
-                    item.get("average_latency_display"), item.get("maximum_latency_display"),
-                ]], (35, 55, 40, 40))
-                review = dict(item.get("agent_review") or {})
-                story.append(paragraph("Agent 初步分析" + ("（未完成）" if review.get("status") != "COMPLETE" else ""),
-                                       section, keep_with_next=True))
-                story.append(paragraph(review.get("analysis") or "Agent 初步分析尚未生成。"))
-                if review.get("status") == "COMPLETE":
-                    for cause in review.get("possible_causes") or ():
-                        story.append(paragraph("可能原因：" + cause["possible_cause"]))
-                        story.append(paragraph("验证：" + cause["verification"]))
-                    for advice in review.get("recommendations") or ():
-                        story.append(paragraph("优化建议：" + advice["action"]))
-                        story.append(paragraph(advice["rationale"]))
-                        story.append(paragraph("验证：" + advice["validation"] + ("；实施前须审批。" if advice["requires_approval"] else "")))
-                    for limitation in review.get("limitations") or ():
-                        story.append(paragraph(limitation))
-                else:
-                    story.append(paragraph("规则复核建议（非 Agent 分析）"))
-                    for advice in item.get("rule_recommendations") or ():
-                        story.append(paragraph(advice))
     metrics = list(data.get("metrics") or ())
     if metrics:
         heading("性能与运行趋势" if monthly else "关键运行指标")
@@ -184,25 +110,6 @@ def inspection_pdf_story(
                  f"{item.get('effective_days') or 0}/{item.get('expected_days') or 0}"]
                 for item in metrics
             ], (44, 29, 29, 45, 23))
-        else:
-            table(["指标 / 范围", "最新样本", "采集窗口平均 / 最大", "判断"], [
-                [str(item.get("display_name") or "") + " " + str(item.get("dimension_label") or ""),
-                 item.get("current_display"),
-                 str(item.get("average_display") or "") + " / " + str(item.get("maximum_display") or ""),
-                 item.get("status_display")]
-                for item in metrics
-            ], (58, 32, 58, 22))
-            comparisons = [item for item in metrics if item.get("baseline_applicable")]
-            if comparisons:
-                heading("七天基线对比")
-                story.append(paragraph("优先比较本期均值；仅有七天汇总时比较最新样本。变化幅度仅供趋势参考，不直接决定健康结论。", keep_with_next=True))
-                table(["指标 / 范围", "对比值", "七天均值", "变化量 / 变化率", "日均趋势"], [
-                    [str(item.get("display_name") or "") + " " + str(item.get("dimension_label") or ""),
-                     str(item.get("comparison_display") or "") + "\n" + str(item.get("comparison_label") or ""),
-                     str(item.get("baseline_display") or "") + "\n" + str(item.get("baseline_window_label") if item.get("baseline_status") == "AVAILABLE" else item.get("baseline_reason") or ""),
-                     item.get("change_display"), baseline_trend(item)]
-                    for item in comparisons
-                ], (37, 25, 43, 43, 22))
     if monthly and data.get("capacity_rows"):
         heading("容量与增长")
         table(["容量 / 数据库", "首个有效日", "末个有效日", "净变化"], [

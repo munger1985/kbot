@@ -99,6 +99,9 @@ def build_default_template_seeds() -> tuple[DefaultInspectionTemplateSeed, ...]:
                 )
             ),
         }
+        if schedule_type == "DAILY":
+            from aiops_agent.application.inspections.daily_sections import normalize_daily_layout
+            definition["daily_report_layout"] = normalize_daily_layout()
         seeds.append(
             DefaultInspectionTemplateSeed(
                 display_name=display_name,

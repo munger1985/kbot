@@ -1499,6 +1499,15 @@
         "additionalProperties": true,
         "description": "日常巡检报告的冻结结构化展示投影。",
         "properties": {
+          "actions": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
           "capacity_rows": {
             "default": [],
             "items": {
@@ -1526,6 +1535,15 @@
             "title": "Evidence Boundary",
             "type": "object"
           },
+          "finding_index": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Finding Index",
+            "type": "array"
+          },
           "findings": {
             "default": [],
             "items": {
@@ -1545,6 +1563,11 @@
           },
           "header": {
             "$ref": "#/components/schemas/DailyInspectionHeader"
+          },
+          "layout": {
+            "additionalProperties": true,
+            "title": "Layout",
+            "type": "object"
           },
           "limitations": {
             "default": [],
@@ -1575,6 +1598,19 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "section_catalog_version": {
+            "default": "",
+            "title": "Section Catalog Version",
+            "type": "string"
+          },
+          "sections": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionSection"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
           "sql_details": {
             "default": [],
             "items": {
@@ -1591,6 +1627,214 @@
           "evidence_boundary"
         ],
         "title": "DailyInspectionPresentation",
+        "type": "object"
+      },
+      "DailyInspectionSection": {
+        "additionalProperties": false,
+        "description": "不包含数据库类型分支的共享日报区域。",
+        "properties": {
+          "actions": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "anchor": {
+            "title": "Anchor",
+            "type": "string"
+          },
+          "checks": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "comparisons": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Comparisons",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expanded": {
+            "title": "Expanded",
+            "type": "boolean"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "normal_detail": {
+            "title": "Normal Detail",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "section_id": {
+            "title": "Section Id",
+            "type": "string"
+          },
+          "semantic_roles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Semantic Roles",
+            "type": "array"
+          },
+          "show_statistics": {
+            "title": "Show Statistics",
+            "type": "boolean"
+          },
+          "show_trend": {
+            "title": "Show Trend",
+            "type": "boolean"
+          },
+          "sql_details": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InspectionSqlDetail"
+            },
+            "title": "Sql Details",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "status_display": {
+            "title": "Status Display",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "visibility": {
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_id",
+          "title",
+          "description",
+          "ordinal",
+          "anchor",
+          "status",
+          "status_display",
+          "summary",
+          "visibility",
+          "normal_detail",
+          "show_statistics",
+          "show_trend",
+          "expanded"
+        ],
+        "title": "DailyInspectionSection",
+        "type": "object"
+      },
+      "DailyReportLayout": {
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "DAILY_REPORT_LAYOUT.v1",
+            "default": "DAILY_REPORT_LAYOUT.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/DailySectionLayout"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "title": {
+            "default": "数据库日常巡检报告",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "DailyReportLayout",
+        "type": "object"
+      },
+      "DailySectionLayout": {
+        "additionalProperties": false,
+        "properties": {
+          "expanded": {
+            "default": true,
+            "title": "Expanded",
+            "type": "boolean"
+          },
+          "normal_detail": {
+            "default": "FULL",
+            "enum": [
+              "FULL",
+              "SUMMARY"
+            ],
+            "title": "Normal Detail",
+            "type": "string"
+          },
+          "section_id": {
+            "title": "Section Id",
+            "type": "string"
+          },
+          "show_statistics": {
+            "default": true,
+            "title": "Show Statistics",
+            "type": "boolean"
+          },
+          "show_trend": {
+            "default": true,
+            "title": "Show Trend",
+            "type": "boolean"
+          },
+          "visibility": {
+            "default": "ALWAYS",
+            "enum": [
+              "ALWAYS",
+              "WHEN_RELEVANT"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_id"
+        ],
+        "title": "DailySectionLayout",
         "type": "object"
       },
       "DashboardActivityItem": {
@@ -4017,6 +4261,11 @@
             "title": "Report Columns",
             "type": "array"
           },
+          "report_section": {
+            "default": "PERFORMANCE",
+            "title": "Report Section",
+            "type": "string"
+          },
           "supported_db_types": {
             "default": [
               "ORACLE"
@@ -4074,12 +4323,24 @@
             "title": "Catalog Hash",
             "type": "string"
           },
+          "daily_report_layout": {
+            "$ref": "#/components/schemas/DailyReportLayout"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/InspectionCheckCatalogGroup"
             },
             "minItems": 1,
             "title": "Groups",
+            "type": "array"
+          },
+          "report_sections": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Report Sections",
             "type": "array"
           },
           "schema_version": {

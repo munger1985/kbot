@@ -1,0 +1,25 @@
+.daily-template-editor { display:grid; gap:20px; min-width:0; }
+.daily-template-editor > header { display:flex; justify-content:space-between; gap:20px; }
+.daily-template-editor h1 { margin:6px 0; }
+.daily-template-editor h2 { font-size:18px; margin:0 0 16px; }
+.daily-template-checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.daily-template-checks > p { grid-column:1/-1; }
+.daily-template-checks fieldset { min-width:0; border:1px solid var(--line); border-radius:var(--radius-sm); padding:16px; display:grid; gap:12px; align-content:start; }
+.daily-template-checks small { display:block; color:var(--muted); font-size:12px; }
+.daily-template-layout { display:grid; grid-template-columns:330px minmax(0,1fr); gap:24px; }
+.daily-template-layout nav, .daily-template-settings { padding:20px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface-raised); min-width:0; }
+.daily-template-layout nav > div { display:flex; gap:4px; }
+.daily-template-layout nav button { border:0; background:transparent; color:var(--ink); padding:9px; cursor:pointer; text-align:left; }
+.daily-template-layout nav button:first-child { flex:1; }
+.daily-template-layout nav button.active { background:var(--accent-soft); color:var(--accent-strong); }
+.daily-template-settings { display:grid; align-content:start; gap:16px; }
+.daily-template-preview { min-width:0; }
+.daily-template-preview .data-toolbar > .secondary-button { display:inline-flex; }
+.daily-template-footer { display:flex; align-items:center; gap:12px; border-top:1px solid var(--line); padding-top:20px; }
+.daily-template-footer p { flex:1; color:var(--muted); font-size:12px; }
+@media(max-width:850px) { .daily-template-layout,.daily-template-checks { grid-template-columns:1fr; } .daily-template-footer, .daily-template-editor > header { flex-wrap:wrap; } .daily-template-footer p { flex-basis:100%; } }
+
+.daily-template-editor[hidden], .daily-template-editor [hidden] { display:none !important; }
+.aiops-template-page[hidden], .daily-template-history[hidden] { display:none !important; }
+.aiops-version-list pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; font-size:11px; }
+.daily-template-editor > form { display:grid; min-width:0; gap:20px; }

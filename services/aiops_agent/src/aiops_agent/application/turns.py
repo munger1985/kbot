@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from aiops_agent.application.inspections.assessment import (
     freeze_inspection_policy,
 )
+from aiops_agent.application.inspections.daily_sections import daily_section_catalog, normalize_daily_layout
 from aiops_agent.application.inspections.check_catalog import (
     inspection_template_steps,
 )
@@ -566,6 +567,8 @@ class ConversationTurnService:
                                 "evidence_steps": evidence_steps,
                                 "backup_policy": backup_policy,
                                 "report_policy": freeze_inspection_policy(str(target.db_type)),
+                                "daily_report_layout": normalize_daily_layout(dict(payload["inspection_template_definition"]).get("daily_report_layout")),
+                                "daily_section_catalog": daily_section_catalog(),
                             },
                         },
                     )

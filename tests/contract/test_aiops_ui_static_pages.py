@@ -265,7 +265,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(29, len(scripts))
+        self.assertEqual(31, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -1735,8 +1735,12 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
 
     def test_daily_and_monthly_inspection_reports_match_structured_reference_layout(self):
         script = (AIOPS_ROOT / "js" / "aiops-report-detail.js").read_text(encoding="utf-8")
+        daily = (AIOPS_ROOT / "js" / "daily-inspection-report.js").read_text(encoding="utf-8")
         css = (AIOPS_ROOT / "css" / "reference-report-detail.css").read_text(encoding="utf-8")
-        for text in ("巡检结论", "必要检查完成", "基础检查明细", "关键运行指标", "检查限制与未完成事项", "frozenTargetIsIdentifier", "上月对比", "月度运行结论", "系统与数据库概况", "容量与增长", "问题闭环台账", "附录：统计方法与技术追溯"):
+        self.assertIn("KBotDailyInspectionReport.render", script)
+        for text in ("OVERVIEW", "必要检查完成", "完整检查索引", "检查限制与未完成事项", "daily-document-index", "附录：统计方法与技术追溯"):
+            self.assertIn(text, daily)
+        for text in ("frozenTargetIsIdentifier", "上月对比", "月度运行结论", "系统与数据库概况", "容量与增长", "问题闭环台账", "附录：统计方法与技术追溯"):
             self.assertIn(text, script)
         for text in ("关键指标与过去 7 日基线偏离", "七日趋势 · 小倍数", "扩展接口状态"):
             self.assertNotIn(text, script)

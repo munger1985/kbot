@@ -304,12 +304,18 @@ class AIOpsConversationTurnPayload(_Payload):
         return self
 
 
+from platform_core.contracts.aiops.daily_report import DailyReportLayout
+from platform_core.contracts.aiops.public import ReportPresentation
+
+
 class InspectionTemplateCreatePayload(_Payload):
+    daily_report_layout: DailyReportLayout | None = None
     display_name: str = Field(min_length=1, max_length=256)
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
 
 class InspectionTemplateVersionPayload(_Payload):
+    daily_report_layout: DailyReportLayout | None = None
     expected_row_version: int = Field(ge=1)
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
@@ -1687,6 +1693,41 @@ async def create_inspection_template_version(
         payload=payload.model_dump(mode="json"),
         auth_context=request.state.auth_context,
     )
+
+
+class DailyTemplatePreviewPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    daily_report_layout: DailyReportLayout = Field(default_factory=DailyReportLayout)
+    selected_check_ids: tuple[str, ...] = ()
+    database_type: str = Field(default="ORACLE", pattern=r"^[A-Z][A-Z0-9_]{0,31}$")
+    scenario: str = Field(default="NORMAL", pattern="^(NORMAL|ATTENTION|INCOMPLETE)$")
+
+
+class InspectionTemplateStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_row_version: int = Field(ge=1)
+    status: str = Field(pattern="^(ACTIVE|INACTIVE)$")
+
+
+@router.post("/inspection-templates:preview", response_model=ReportPresentation)
+async def preview_daily_template(body: DailyTemplatePreviewPayload, request: Request):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request("POST", ":preview",
+        payload=body.model_dump(mode="json"), auth_context=request.state.auth_context)
+
+
+@router.get("/inspection-templates/{template_id}/versions")
+async def inspection_template_versions(template_id: UUID, request: Request):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request("GET", f"/{template_id}/versions",
+        auth_context=request.state.auth_context)
+
+
+@router.patch("/inspection-templates/{template_id}")
+async def update_inspection_template(template_id: UUID, body: InspectionTemplateStatusPayload, request: Request):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request("PATCH", f"/{template_id}",
+        payload=body.model_dump(mode="json"), auth_context=request.state.auth_context)
 
 
 @router.get("/session-report-templates")

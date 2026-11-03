@@ -340,7 +340,7 @@ def _daily_inspection_presentation(
     number = f"AIOPS-DI-{report_date}-{report_id[-8:].upper()}" if report_id else str(payload.get("report_key") or "")
     gaps = _report_gap_items(list(payload.get("gaps") or ()))
     checks, sql_details = inspection_sql_details(facts, list(assessment.get("checks") or ()))
-    return {
+    result = {
         "schema_version": "DAILY_INSPECTION_PRESENTATION.v1",
         "header": {
             "title": str(payload.get("title") or "数据库日常巡检报告"),
@@ -396,6 +396,8 @@ def _daily_inspection_presentation(
             },
         },
     }
+    from .inspections.daily_sections import project_daily_sections
+    return project_daily_sections(result, layout=scope.get("daily_report_layout"), catalog=scope.get("daily_section_catalog"))
 
 
 _CAPACITY_METRIC_ROLES = {
@@ -1206,6 +1208,7 @@ def normalize_report_source(
                 "monthly_summary", "previous_month_summary", "previous_month_comparison",
                 "business_system_id", "business_system_name", "timezone", "health_status",
                 "inspection_assessment", "report_policy", "member_targets",
+                "daily_report_layout", "daily_section_catalog",
             ) if key in scope},
             "investigation_goals": tuple(scope.get("investigation_goals") or ()),
             "executed_actions": tuple(scope.get("executed_actions") or ()),

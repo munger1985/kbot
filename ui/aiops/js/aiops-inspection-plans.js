@@ -64,7 +64,8 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     document.getElementById("inspection-schedule-summary").textContent = type === "DAILY" ? `每天 ${time}（${zone}）` : type === "CRON" ? `Cron ${form.elements.cron_expression.value || "尚未填写"}（${zone}）` : `${selectedDays || "尚未选择执行日"} ${time}（${zone}）`;
     const template = state.templates.find(item => item.inspection_template_id === form.elements.inspection_template_id.value), summary = document.getElementById("inspection-template-summary");
     summary.hidden = !template;document.getElementById("inspection-template-empty").hidden = Boolean(template);
-    if (template) summary.innerHTML = `<span>${state.editing ? "模板当前可用版本" : "当前模板"}</span><strong>${esc(template.display_name)} · v${esc(template.version_no)}</strong><small>${state.editing ? "保持当前选择不会升级既有冻结版本；改选其他模板才会绑定其当前版本。" : `${rows(template.selected_check_ids).length} 个检查项；计划创建时会冻结当前模板版本。`}</small>`;
+    document.getElementById("inspection-upgrade-label").hidden = !state.editing;
+    if (template) summary.innerHTML = `<span>${state.editing ? "模板当前可用版本" : "当前模板"}</span><strong>${esc(template.display_name)} · v${esc(template.version_no)}</strong><small>${state.editing ? "默认保留原绑定版本；勾选升级选项才使用所选模板当前版本。" : `${rows(template.selected_check_ids).length} 个检查项；计划创建时会冻结当前模板版本。`}</small>`;
     drawer.querySelectorAll("[data-close-plan]").forEach(button => {button.disabled = state.busy;});
     form.querySelectorAll('[name="schedule_type"]').forEach(input => {input.disabled = Boolean(state.editing);});
     document.getElementById("save-inspection-plan").disabled = state.busy || !ready();
@@ -128,7 +129,7 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     event.preventDefault();if (state.busy || !ready()) return;
     const current = state.editing, payload = {display_name:form.elements.display_name.value.trim(),agent_id:form.elements.agent_id.value,cron_expression:cronExpression(),timezone:form.elements.timezone.value,timeout_seconds:Number(form.elements.timeout_seconds.value),overlap_policy:form.elements.overlap_policy.value,misfire_policy:form.elements.misfire_policy.value};
     if (!current) {payload.business_system_id = form.elements.business_system_id.value;payload.schedule_type = form.elements.schedule_type.value;payload.inspection_template_id = form.elements.inspection_template_id.value;}
-    else if (form.elements.inspection_template_id.value !== current.inspection_template_id) payload.inspection_template_id = form.elements.inspection_template_id.value;
+    else if (form.elements.inspection_template_id.value !== current.inspection_template_id || form.elements.upgrade_template_version.checked) payload.inspection_template_id = form.elements.inspection_template_id.value;
     state.busy = true;updateForm();
     try {
       await request(current ? `/inspection-plans/${encodeURIComponent(current.plan_id)}` : "/inspection-plans",{method:current ? "PATCH" : "POST",headers:{"Content-Type":"application/json",...(current ? {"If-Match":`"rv-${current.row_version}"`} : {"Idempotency-Key":KBotAIOpsAuth.uuid()})},body:JSON.stringify(payload)});

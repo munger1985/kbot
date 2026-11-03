@@ -1,0 +1,108 @@
+{
+  "version": "2026-11-03.1",
+  "sections": [
+    {
+      "section_id": "OVERVIEW",
+      "title": "巡检总览",
+      "description": "先看结论、重要问题和检查边界。",
+      "semantic_roles": []
+    },
+    {
+      "section_id": "AVAILABILITY",
+      "title": "数据库可用性",
+      "description": "核对检查时点的数据库服务状态；不把快照解释为全天可用率。",
+      "semantic_roles": [
+        "AVAILABILITY",
+        "ERROR_RATE"
+      ]
+    },
+    {
+      "section_id": "RESOURCES",
+      "title": "系统资源使用",
+      "description": "按主机、运行环境及实例范围分别展示资源，不混合不同对象的数值。",
+      "semantic_roles": [
+        "CPU_UTILIZATION",
+        "MEMORY_UTILIZATION",
+        "FILESYSTEM_UTILIZATION",
+        "DISK_IO_UTILIZATION",
+        "NETWORK_THROUGHPUT"
+      ]
+    },
+    {
+      "section_id": "CAPACITY",
+      "title": "存储与容量",
+      "description": "结合已分配容量、自动扩展上限和可取得的实际空间判断余量。",
+      "semantic_roles": [
+        "DATABASE_SIZE",
+        "STORAGE_UTILIZATION",
+        "STORAGE_USED",
+        "STORAGE_FREE",
+        "STORAGE_MAX"
+      ]
+    },
+    {
+      "section_id": "SESSIONS",
+      "title": "连接、会话与事务",
+      "description": "连接负载、长事务及阻塞等为检查时点的现场观测。",
+      "semantic_roles": [
+        "ACTIVE_SESSIONS",
+        "ACTIVE_CONNECTIONS",
+        "CONNECTION_UTILIZATION",
+        "LOCK_WAIT_RATE"
+      ]
+    },
+    {
+      "section_id": "PERFORMANCE",
+      "title": "数据库整体性能",
+      "description": "区分吞吐、响应、IO 和等待；累计统计不冒称本日增量。",
+      "semantic_roles": [
+        "TRANSACTION_THROUGHPUT",
+        "RESPONSE_LATENCY",
+        "BUFFER_POOL_HIT_RATIO",
+        "SLOW_QUERY_RATE"
+      ]
+    },
+    {
+      "section_id": "SQL",
+      "title": "问题 SQL",
+      "description": "仅列命中问题规则的 SQL，按严重性排序并逐条保留 Agent 分析。",
+      "semantic_roles": []
+    },
+    {
+      "section_id": "REPLICATION",
+      "title": "复制与日志链",
+      "description": "核对复制、归档及日志链；不以日志链正常代替备份成功。",
+      "semantic_roles": [
+        "REPLICATION_LAG",
+        "REPLICATION_LOG_GAP"
+      ]
+    },
+    {
+      "section_id": "BACKUP",
+      "title": "备份保障",
+      "description": "按启用的保障策略核验真实成功记录及备份时效。",
+      "semantic_roles": [
+        "BACKUP_LAST_SUCCESS_TIMESTAMP",
+        "BACKUP_LAST_RUN_STATUS"
+      ]
+    },
+    {
+      "section_id": "MAINTENANCE",
+      "title": "对象与维护健康",
+      "description": "展示适用于当前数据库的对象、统计信息与维护检查。",
+      "semantic_roles": []
+    },
+    {
+      "section_id": "BASELINE",
+      "title": "七天基线与变化",
+      "description": "变化幅度仅供趋势参考，不直接决定健康结论。",
+      "semantic_roles": []
+    },
+    {
+      "section_id": "ACTIONS",
+      "title": "处置与复查清单",
+      "description": "按问题优先级执行处置，并用同一对象及判断依据复查。",
+      "semantic_roles": []
+    }
+  ]
+}

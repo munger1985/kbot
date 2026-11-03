@@ -3562,6 +3562,8 @@ class AIOpsRuntimeService:
                 "health_status": health_status,
                 "inspection_assessment": assessment,
                 "report_policy": report_policy,
+                "daily_report_layout": inspection.get("daily_report_layout"),
+                "daily_section_catalog": inspection.get("daily_section_catalog"),
                 "business_system_name": inspection.get("business_system_name"),
                 "check_status_counts": check_status_counts,
                 **coverage,
@@ -4097,6 +4099,7 @@ class AIOpsRuntimeService:
                         "check_status": check_status,
                         "tool_id": tool_id,
                         "check_ids": list(step.get("check_ids") or ()),
+                        "report_section": step.get("report_section"),
                         "expected_evidence_kind": str(
                             step.get("expected_evidence_kind") or ""
                         ),
@@ -4137,6 +4140,7 @@ class AIOpsRuntimeService:
                         "check_status": "GAP",
                         "tool_id": tool_id,
                         "check_ids": list(step.get("check_ids") or ()),
+                        "report_section": step.get("report_section"),
                     }
                 )
                 continue
@@ -4160,6 +4164,7 @@ class AIOpsRuntimeService:
                     "check_status": "MISSING",
                     "tool_id": tool_id,
                     "check_ids": list(step.get("check_ids") or ()),
+                    "report_section": step.get("report_section"),
                 }
             )
 
@@ -4739,6 +4744,7 @@ class AIOpsRuntimeService:
                         "previous_month_summary", "previous_month_comparison",
                         "business_system_id", "timezone", "health_status",
                         "inspection_assessment", "report_policy", "business_system_name",
+                        "daily_report_layout", "daily_section_catalog",
                         "member_targets",
                     )
                     if source.get(key) is not None

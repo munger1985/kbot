@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import Field, HttpUrl, model_validator
 
 from .workload import ActivitySamplerPolicy, WorkloadPolicy
+from .daily_report import DailyReportLayout
 from .types import (
     AIOpsContract,
     CursorPage,
@@ -929,6 +930,7 @@ class PolicyPage(CursorPage):
 
 
 class InspectionCheckCatalogItem(AIOpsContract):
+    report_section: str = "PERFORMANCE"
     check_id: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
     display_name: str = Field(min_length=1, max_length=128)
     availability: Literal["READY", "PLANNED"]
@@ -951,24 +953,30 @@ class InspectionCheckCatalogGroup(AIOpsContract):
 
 
 class InspectionCheckCatalogView(AIOpsContract):
+    report_sections: tuple[JsonObject, ...] = ()
+    daily_report_layout: DailyReportLayout = Field(default_factory=DailyReportLayout)
     schema_version: str = PUBLIC_SCHEMA_VERSION
     catalog_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     groups: tuple[InspectionCheckCatalogGroup, ...] = Field(min_length=1)
 
 
 class InspectionTemplateCreate(AIOpsContract):
+    daily_report_layout: DailyReportLayout | None = None
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str = Field(min_length=1, max_length=256)
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
 
 class InspectionTemplateVersionCreate(AIOpsContract):
+    daily_report_layout: DailyReportLayout | None = None
     schema_version: str = PUBLIC_SCHEMA_VERSION
     expected_row_version: int = Field(ge=1)
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
 
 class InspectionTemplateSummary(AIOpsContract):
+    usage_count: int = Field(default=0, ge=0)
+    daily_report_layout: DailyReportLayout | None = None
     schema_version: str = PUBLIC_SCHEMA_VERSION
     inspection_template_id: UUIDv7
     display_name: str

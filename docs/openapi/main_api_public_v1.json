@@ -3912,6 +3912,15 @@
         "additionalProperties": true,
         "description": "日常巡检报告的冻结结构化展示投影。",
         "properties": {
+          "actions": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
           "capacity_rows": {
             "default": [],
             "items": {
@@ -3939,6 +3948,15 @@
             "title": "Evidence Boundary",
             "type": "object"
           },
+          "finding_index": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Finding Index",
+            "type": "array"
+          },
           "findings": {
             "default": [],
             "items": {
@@ -3958,6 +3976,11 @@
           },
           "header": {
             "$ref": "#/components/schemas/DailyInspectionHeader"
+          },
+          "layout": {
+            "additionalProperties": true,
+            "title": "Layout",
+            "type": "object"
           },
           "limitations": {
             "default": [],
@@ -3988,6 +4011,19 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "section_catalog_version": {
+            "default": "",
+            "title": "Section Catalog Version",
+            "type": "string"
+          },
+          "sections": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionSection"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
           "sql_details": {
             "default": [],
             "items": {
@@ -4004,6 +4040,244 @@
           "evidence_boundary"
         ],
         "title": "DailyInspectionPresentation",
+        "type": "object"
+      },
+      "DailyInspectionSection": {
+        "additionalProperties": false,
+        "description": "不包含数据库类型分支的共享日报区域。",
+        "properties": {
+          "actions": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "anchor": {
+            "title": "Anchor",
+            "type": "string"
+          },
+          "checks": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "comparisons": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Comparisons",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expanded": {
+            "title": "Expanded",
+            "type": "boolean"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "normal_detail": {
+            "title": "Normal Detail",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "section_id": {
+            "title": "Section Id",
+            "type": "string"
+          },
+          "semantic_roles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Semantic Roles",
+            "type": "array"
+          },
+          "show_statistics": {
+            "title": "Show Statistics",
+            "type": "boolean"
+          },
+          "show_trend": {
+            "title": "Show Trend",
+            "type": "boolean"
+          },
+          "sql_details": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InspectionSqlDetail"
+            },
+            "title": "Sql Details",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "status_display": {
+            "title": "Status Display",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "visibility": {
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_id",
+          "title",
+          "description",
+          "ordinal",
+          "anchor",
+          "status",
+          "status_display",
+          "summary",
+          "visibility",
+          "normal_detail",
+          "show_statistics",
+          "show_trend",
+          "expanded"
+        ],
+        "title": "DailyInspectionSection",
+        "type": "object"
+      },
+      "DailyReportLayout": {
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "DAILY_REPORT_LAYOUT.v1",
+            "default": "DAILY_REPORT_LAYOUT.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/DailySectionLayout"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "title": {
+            "default": "数据库日常巡检报告",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "DailyReportLayout",
+        "type": "object"
+      },
+      "DailySectionLayout": {
+        "additionalProperties": false,
+        "properties": {
+          "expanded": {
+            "default": true,
+            "title": "Expanded",
+            "type": "boolean"
+          },
+          "normal_detail": {
+            "default": "FULL",
+            "enum": [
+              "FULL",
+              "SUMMARY"
+            ],
+            "title": "Normal Detail",
+            "type": "string"
+          },
+          "section_id": {
+            "title": "Section Id",
+            "type": "string"
+          },
+          "show_statistics": {
+            "default": true,
+            "title": "Show Statistics",
+            "type": "boolean"
+          },
+          "show_trend": {
+            "default": true,
+            "title": "Show Trend",
+            "type": "boolean"
+          },
+          "visibility": {
+            "default": "ALWAYS",
+            "enum": [
+              "ALWAYS",
+              "WHEN_RELEVANT"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_id"
+        ],
+        "title": "DailySectionLayout",
+        "type": "object"
+      },
+      "DailyTemplatePreviewPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_report_layout": {
+            "$ref": "#/components/schemas/DailyReportLayout"
+          },
+          "database_type": {
+            "default": "ORACLE",
+            "pattern": "^[A-Z][A-Z0-9_]{0,31}$",
+            "title": "Database Type",
+            "type": "string"
+          },
+          "scenario": {
+            "default": "NORMAL",
+            "pattern": "^(NORMAL|ATTENTION|INCOMPLETE)$",
+            "title": "Scenario",
+            "type": "string"
+          },
+          "selected_check_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Selected Check Ids",
+            "type": "array"
+          }
+        },
+        "title": "DailyTemplatePreviewPayload",
         "type": "object"
       },
       "DashboardActivityItem": {
@@ -7465,6 +7739,11 @@
             "title": "Report Columns",
             "type": "array"
           },
+          "report_section": {
+            "default": "PERFORMANCE",
+            "title": "Report Section",
+            "type": "string"
+          },
           "supported_db_types": {
             "default": [
               "ORACLE"
@@ -7522,12 +7801,24 @@
             "title": "Catalog Hash",
             "type": "string"
           },
+          "daily_report_layout": {
+            "$ref": "#/components/schemas/DailyReportLayout"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/InspectionCheckCatalogGroup"
             },
             "minItems": 1,
             "title": "Groups",
+            "type": "array"
+          },
+          "report_sections": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Report Sections",
             "type": "array"
           },
           "schema_version": {
@@ -8687,6 +8978,16 @@
       "InspectionTemplateCreatePayload": {
         "additionalProperties": false,
         "properties": {
+          "daily_report_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyReportLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "display_name": {
             "maxLength": 256,
             "minLength": 1,
@@ -8709,9 +9010,40 @@
         "title": "InspectionTemplateCreatePayload",
         "type": "object"
       },
+      "InspectionTemplateStatusPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "pattern": "^(ACTIVE|INACTIVE)$",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "status"
+        ],
+        "title": "InspectionTemplateStatusPayload",
+        "type": "object"
+      },
       "InspectionTemplateVersionPayload": {
         "additionalProperties": false,
         "properties": {
+          "daily_report_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyReportLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "expected_row_version": {
             "minimum": 1.0,
             "title": "Expected Row Version",
@@ -28220,9 +28552,97 @@
         "tags": [
           "AIOps App"
         ]
+      },
+      "patch": {
+        "operationId": "update_inspection_template_api_v1_apps_aiops_inspection_templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionTemplateStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Inspection Template",
+        "tags": [
+          "AIOps App"
+        ]
       }
     },
     "/api/v1/apps/aiops/inspection-templates/{template_id}/versions": {
+      "get": {
+        "operationId": "inspection_template_versions_api_v1_apps_aiops_inspection_templates__template_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspection Template Versions",
+        "tags": [
+          "AIOps App"
+        ]
+      },
       "post": {
         "operationId": "create_inspection_template_version_api_v1_apps_aiops_inspection_templates__template_id__versions_post",
         "parameters": [
@@ -28268,6 +28688,47 @@
           }
         },
         "summary": "Create Inspection Template Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/inspection-templates:preview": {
+      "post": {
+        "operationId": "preview_daily_template_api_v1_apps_aiops_inspection_templates_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DailyTemplatePreviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPresentation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Daily Template",
         "tags": [
           "AIOps App"
         ]
