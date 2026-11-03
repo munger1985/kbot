@@ -16,7 +16,10 @@ PROBLEM_SQL_COLUMNS = (
     "sql_key", "schema_name", "sql_text", "text_kind", "execution_count",
     "total_elapsed_ms", "average_elapsed_ms", "maximum_elapsed_ms",
     "average_cpu_ms", "average_io_ms", "average_lock_ms", "average_reads",
-    "average_rows_examined", "average_spills", "collection_status",
+    "average_rows_examined", "average_spills",
+    "workarea_total_executions", "workarea_multipass_executions",
+    "workarea_multipass_percent", "maximum_workarea_temp_mb",
+    "collection_status",
 )
 
 
@@ -38,6 +41,8 @@ def classify_problem_sql(row: dict[str, Any], *, policy: dict[str, Any], databas
     signals = []
     elapsed = _decimal(row.get("average_elapsed_ms"))
     for rule in policy["rules"]:
+        if rule.get("database_types") and database_type not in rule["database_types"]:
+            continue
         value = _decimal(row.get(rule["metric"]))
         floor = policy["resource_minimum_elapsed_ms"] if rule["minimum_elapsed_ms"] else 0
         if value is None or value < Decimal(str(rule["limit"])):
@@ -89,7 +94,7 @@ def freeze_problem_sql_check(fact: dict[str, Any], *, step: dict[str, Any], data
         (_decimal(row.get("execution_count")) is not None
          and _decimal(row["execution_count"]) > 0
          and _decimal(row.get("average_elapsed_ms")) is not None)
-        if row.get("sql_key") else not any(row.get(key) is not None for key in PROBLEM_SQL_COLUMNS[:-1])
+        if row.get("sql_key") else not any(row.get(key) is not None for key in PROBLEM_SQL_COLUMNS if key != "collection_status")
         for row in rows
     )
     matching_inputs = step.get("input") == problem_sql_inputs(policy)
@@ -115,7 +120,7 @@ def freeze_problem_sql_check(fact: dict[str, Any], *, step: dict[str, Any], data
             f" 已保留 {len(problems)} 条已识别问题。" if problems else ""
         )
     return {
-        **fact, "check_status": ("FINDING" if problems else "CLEAR") if complete else "PARTIAL",
+        **fact, "title": "问题 SQL", "check_status": ("FINDING" if problems else "CLEAR") if complete else "PARTIAL",
         "summary": summary, "findings": findings, "sql_problems": problems,
         "sql_problem_policy": policy, "sql_problem_status": "COMPLETE" if complete else "PARTIAL",
         "rule_description": "按冻结的单次耗时和资源开销阈值筛查；累计执行次数与累计总耗时不能单独触发问题。",

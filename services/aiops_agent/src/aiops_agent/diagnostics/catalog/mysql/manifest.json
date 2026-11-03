@@ -70,6 +70,20 @@
           "required": true,
           "minimum": 1,
           "maximum": 1000000
+        },
+        {
+          "name": "workarea_multipass_percent_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "maximum_workarea_temp_mb_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
         }
       ],
       "output_columns": [
@@ -130,12 +144,28 @@
           "logical_type": "DECIMAL"
         },
         {
+          "name": "workarea_total_executions",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "workarea_multipass_executions",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "workarea_multipass_percent",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "maximum_workarea_temp_mb",
+          "logical_type": "DECIMAL"
+        },
+        {
           "name": "collection_status",
           "logical_type": "STRING"
         }
       ],
       "template_ref": "sql/problem_sql_8.sql",
-      "template_sha256": "896207808d1abf08a1f8f2fe13be3ae2247b8c843b22ef9227542a548b438bdf",
+      "template_sha256": "efb15df6a24164b9f02655d6675f7d2a7a70aaaad5aa531a3012acd6cec150e8",
       "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
       "timeout_seconds": 30,
       "max_rows": 10000,

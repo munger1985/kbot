@@ -14,7 +14,8 @@
       ],
       "required_entitlements": [],
       "required_privileges": [
-        "V_$SQLSTATS"
+        "V_$SQLSTATS",
+        "V_$SQL_WORKAREA"
       ],
       "parameters": [
         {
@@ -72,6 +73,20 @@
           "required": true,
           "minimum": 1,
           "maximum": 1000000
+        },
+        {
+          "name": "workarea_multipass_percent_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        {
+          "name": "maximum_workarea_temp_mb_limit",
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1000000000
         }
       ],
       "output_columns": [
@@ -132,12 +147,28 @@
           "logical_type": "DECIMAL"
         },
         {
+          "name": "workarea_total_executions",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "workarea_multipass_executions",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "workarea_multipass_percent",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "maximum_workarea_temp_mb",
+          "logical_type": "DECIMAL"
+        },
+        {
           "name": "collection_status",
           "logical_type": "STRING"
         }
       ],
       "template_ref": "sql/problem_sql_19.sql",
-      "template_sha256": "e78ed58e8de48143eb90325342b3a44563097f2e6df04632c296e218175bcf57",
+      "template_sha256": "5bba6769f1b63298da550a9ec4cfb1d67357e36ed2ee605fa7e24542f5c5882f",
       "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
       "timeout_seconds": 30,
       "max_rows": 10000,

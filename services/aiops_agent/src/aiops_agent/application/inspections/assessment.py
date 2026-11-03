@@ -63,16 +63,25 @@ def compile_standard_steps(
 ) -> tuple[dict[str, Any], ...]:
     """基础集独立于模板专项，在执行前合并并完整冻结。"""
     from .check_catalog import compile_selected_check_steps
+    from .sql_problems import PROBLEM_SQL_TOOL, problem_sql_inputs
 
     baseline = compile_selected_check_steps(
         [item["check_id"] for item in policy["checks"]],
         database_type=database_type, schedule_type=schedule_type,
     )
+    selected_ids = list(dict.fromkeys(check_id for step in steps for check_id in step.get("check_ids") or ()))
+    selected = compile_selected_check_steps(
+        selected_ids, database_type=database_type, schedule_type=schedule_type,
+    ) if selected_ids else ()
+    canonical = (*baseline, *selected)
     by_tool: dict[str, dict[str, Any]] = {}
     required_ids = {item["check_id"] for item in policy["checks"] if item["required"]}
-    current_tools = {check_id: item["tool_id"] for item in baseline for check_id in item.get("check_ids") or ()}
-    for raw in (*baseline, *steps):
+    current_tools = {check_id: item["tool_id"] for item in canonical for check_id in item.get("check_ids") or ()}
+    for raw in (*canonical, *steps):
         tool_id = str(raw["tool_id"])
+        # 所有巡检 SQL 风险统一取数；旧快照不能以旧 Tool 绕回累计榜单规则。
+        if raw.get("expected_evidence_kind") == "TOP_SQL" and tool_id != PROBLEM_SQL_TOOL:
+            continue
         selected_ids = set(raw.get("check_ids") or ())
         # 当前标准集已覆盖的检查以当前工具为准，不重复执行模板中被替代的累计榜单。
         if (selected_ids and selected_ids <= current_tools.keys()
@@ -85,7 +94,6 @@ def compile_standard_steps(
             step["check_ids"] = list(dict.fromkeys((*step["check_ids"], *raw.get("check_ids", ()))))
             step["input"] = {**dict(step.get("input") or {}), **dict(raw.get("input") or {})}
         by_tool[tool_id]["required"] = bool(required_ids.intersection(by_tool[tool_id]["check_ids"]))
-    from .sql_problems import PROBLEM_SQL_TOOL, problem_sql_inputs
     if PROBLEM_SQL_TOOL in by_tool:
         # 模板不能以独立查询参数覆盖已冻结策略，避免取数和判定阈值不一致。
         step = by_tool[PROBLEM_SQL_TOOL]

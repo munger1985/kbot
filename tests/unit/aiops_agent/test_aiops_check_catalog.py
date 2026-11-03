@@ -227,7 +227,8 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         self.assertIn("db.oracle.backup.space_usage", tool_ids)
         self.assertIn("db.backup.recent_jobs", tool_ids)
         self.assertIn("db.oracle.session.long_running", tool_ids)
-        self.assertIn("db.oracle.performance.heavy_sort_sql", tool_ids)
+        self.assertIn("db.sql.problem_candidates", tool_ids)
+        self.assertNotIn("db.oracle.performance.heavy_sort_sql", tool_ids)
         self.assertNotIn("db.index.health", tool_ids)
         subset = compile_selected_check_steps(
             ["oracle.session.lock_wait", "oracle.storage.tablespace_headroom"]
@@ -361,7 +362,8 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         self.assertIn("db.oracle.backup.space_usage", tool_ids)
         self.assertIn("db.backup.recent_jobs", tool_ids)
         self.assertIn("db.oracle.session.long_running", tool_ids)
-        self.assertIn("db.oracle.performance.heavy_sort_sql", tool_ids)
+        self.assertIn("db.sql.problem_candidates", tool_ids)
+        self.assertNotIn("db.oracle.performance.heavy_sort_sql", tool_ids)
         self.assertNotIn("db.index.health", tool_ids)
 
     def test_template_definition_freezes_catalog_and_evidence_steps(self) -> None:

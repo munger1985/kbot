@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-03.2",
+  "version": "2026-11-03.3",
   "high_multiplier": 5,
   "resource_minimum_elapsed_ms": 10,
   "rules": [
@@ -65,6 +65,30 @@
       "label": "单次临时落盘开销偏高",
       "minimum_elapsed_ms": 10,
       "suggestion": "核查排序、聚合或连接步骤及临时空间使用，先减少中间结果；内存参数调整需评估并经审批。"
+    },
+    {
+      "code": "WORKAREA_MULTIPASS",
+      "metric": "workarea_multipass_percent",
+      "limit": 10,
+      "unit": "%",
+      "label": "工作区多遍处理比例偏高",
+      "minimum_elapsed_ms": 10,
+      "database_types": [
+        "ORACLE"
+      ],
+      "suggestion": "结合实际执行计划核查排序、哈希连接或聚合的工作区处理；比较多遍处理占比和单次耗时，调整 SQL 或内存参数前须审批。"
+    },
+    {
+      "code": "WORKAREA_TEMP",
+      "metric": "maximum_workarea_temp_mb",
+      "limit": 64,
+      "unit": "MiB",
+      "label": "工作区临时空间历史峰值偏高",
+      "minimum_elapsed_ms": 10,
+      "database_types": [
+        "ORACLE"
+      ],
+      "suggestion": "核对工作区临时空间历史峰值对应的访问路径、排序或哈希操作，结合当前临时空间压力复核；历史峰值不等于当前占用，不直接据此扩容。"
     }
   ]
 }

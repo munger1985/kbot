@@ -8,7 +8,8 @@ SELECT CONCAT(COALESCE(schema_name, ''), ':', digest) AS sql_key,
        NULL AS average_cpu_ms, NULL AS average_io_ms,
        sum_lock_time / 1000000000.0 / NULLIF(count_star, 0) AS average_lock_ms,
        NULL AS average_reads, sum_rows_examined / NULLIF(count_star, 0) AS average_rows_examined,
-       sum_created_tmp_disk_tables / NULLIF(count_star, 0) AS average_spills
+       sum_created_tmp_disk_tables / NULLIF(count_star, 0) AS average_spills,
+       NULL AS workarea_total_executions, NULL AS workarea_multipass_executions, NULL AS workarea_multipass_percent, NULL AS maximum_workarea_temp_mb
 FROM performance_schema.events_statements_summary_by_digest
 WHERE digest IS NOT NULL AND count_star > 0
 ), qualified AS (
@@ -20,6 +21,8 @@ WHERE digest IS NOT NULL AND count_star > 0
        OR (average_reads >= :average_reads_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
        OR (average_rows_examined >= :average_rows_examined_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
        OR (average_spills >= :average_spills_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
+       OR (workarea_multipass_percent >= :workarea_multipass_percent_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
+       OR (maximum_workarea_temp_mb >= :maximum_workarea_temp_mb_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
 ), collection AS (
 SELECT CASE WHEN (SELECT COUNT(*) FROM performance_schema.setup_consumers
                   WHERE name IN ('global_instrumentation', 'thread_instrumentation', 'statements_digest')

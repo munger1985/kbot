@@ -38,6 +38,10 @@ async def review_inspection_sql(*, context, result, model, prompts, concurrency:
     if not problems:
         return ()
     answer = dict(context.plan_snapshot.get("answer_context") or {})
+    numeric_fields = {rule["metric"] for rule in step["sql_problem_policy"]["rules"]} | {
+        "execution_count", "total_elapsed_ms", "maximum_elapsed_ms",
+        "workarea_total_executions", "workarea_multipass_executions",
+    }
     semaphore = asyncio.Semaphore(concurrency)
     deadline = datetime.fromisoformat(context.deadline_at.replace("Z", "+00:00")) if context.deadline_at else None
     if deadline is not None and deadline.tzinfo is None:
@@ -68,9 +72,7 @@ async def review_inspection_sql(*, context, result, model, prompts, concurrency:
                 if draft.problem_id != problem["problem_id"] or set(draft.evidence_refs) != set(problem["evidence_refs"]):
                     raise ValueError("Agent 分析的 SQL 身份或证据引用不匹配")
                 fields = {key for key, value in problem["observation"].items()
-                          if value is not None and (key.startswith("average_") or key in {
-                              "execution_count", "total_elapsed_ms", "maximum_elapsed_ms",
-                          })}
+                          if value is not None and key in numeric_fields}
                 if any(not set(cause.supporting_metrics) <= fields for cause in draft.possible_causes):
                     raise ValueError("Agent 引用了该 SQL 不具有的证据字段")
                 record = {**draft.model_dump(mode="json"), "status": "COMPLETE",

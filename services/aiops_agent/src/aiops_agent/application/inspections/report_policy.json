@@ -1,6 +1,6 @@
 {
   "schema_version": "INSPECTION_REPORT_POLICY.v1",
-  "version": "2026-11-03.2",
+  "version": "2026-11-03.3",
   "current_monitoring_window_seconds": 900,
   "maximum_current_sample_age_seconds": 300,
   "baseline": {

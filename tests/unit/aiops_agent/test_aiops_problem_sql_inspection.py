@@ -34,6 +34,8 @@ def observation(index=0, **overrides):
         "average_elapsed_ms": 0.7, "maximum_elapsed_ms": 92,
         "average_cpu_ms": None, "average_io_ms": None, "average_lock_ms": None,
         "average_reads": None, "average_rows_examined": None, "average_spills": None,
+        "workarea_total_executions": None, "workarea_multipass_executions": None,
+        "workarea_multipass_percent": None, "maximum_workarea_temp_mb": None,
         "collection_status": "AVAILABLE", **overrides,
     }
     if isinstance(row["average_elapsed_ms"], (int, float)) and row["average_elapsed_ms"] > 0:
@@ -96,11 +98,12 @@ def test_no_problem_is_a_complete_explicit_empty_state(database_type):
 def test_only_actual_per_execution_breach_enters_problem_list(rule):
     value = observation(average_elapsed_ms=10)
     value[rule["metric"]] = rule["limit"]
-    problem = classify_problem_sql(value, policy=problem_sql_policy(), database_type="MYSQL")
+    database_type = rule.get("database_types", ["MYSQL"])[0]
+    problem = classify_problem_sql(value, policy=problem_sql_policy(), database_type=database_type)
     assert problem is not None
     assert rule["code"] in {signal["code"] for signal in problem["signals"]}
     value[rule["metric"]] = rule["limit"] - 0.001
-    assert classify_problem_sql(value, policy=problem_sql_policy(), database_type="MYSQL") is None
+    assert classify_problem_sql(value, policy=problem_sql_policy(), database_type=database_type) is None
 
 
 @pytest.mark.parametrize("invalid", [None, "", True, -1, "NaN", "Infinity"])
@@ -273,6 +276,9 @@ def test_actual_source_predicate_keeps_all_problem_rows_and_rejects_fast_frequen
              observation(22, average_lock_ms=100), observation(23, average_elapsed_ms=10, average_reads=1000),
              observation(24, average_elapsed_ms=10, average_rows_examined=10000),
              observation(25, average_elapsed_ms=10, average_spills=1)]
+    if database_type == "ORACLE":
+        rows += [observation(26, average_elapsed_ms=10, workarea_multipass_percent=10),
+                 observation(27, average_elapsed_ms=10, maximum_workarea_temp_mb=64)]
     with sqlite3.connect(":memory:") as connection:
         connection.execute("CREATE TABLE metrics (" + ", ".join(columns) + ")")
         connection.executemany("INSERT INTO metrics VALUES (" + ", ".join("?" for _ in columns) + ")",
@@ -280,7 +286,7 @@ def test_actual_source_predicate_keeps_all_problem_rows_and_rejects_fast_frequen
         actual = {row[0] for row in connection.execute(qualified.sql(dialect="sqlite"), problem_sql_inputs(problem_sql_policy()))}
     expected = {row["sql_key"] for row in rows if classify_problem_sql(row, policy=problem_sql_policy(), database_type=database_type)}
     assert actual == expected
-    assert "statement-0" not in actual and len(actual) == 18
+    assert "statement-0" not in actual and len(actual) == (20 if database_type == "ORACLE" else 18)
 
 
 def review_context(steps, source, *, deadline=None):
@@ -362,15 +368,24 @@ def test_deadline_and_configured_concurrency_are_honored(deadline, expired):
     asyncio.run(run())
 
 
-def test_scheduled_composer_publishes_frozen_per_sql_reviews_into_the_actual_report():
+@pytest.mark.parametrize("database_type", ["MYSQL", "ORACLE"])
+def test_scheduled_composer_publishes_frozen_per_sql_reviews_into_the_actual_report(database_type):
     from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler
     async def run():
         rows = [observation(i, average_elapsed_ms=1500+i*1000) for i in range(8)]
-        steps, source, _, _, _ = pipeline(rows=rows)
+        if database_type == "ORACLE":
+            rows = [observation(i, average_elapsed_ms=20, workarea_multipass_percent=20,
+                workarea_total_executions=100, workarea_multipass_executions=20,
+                maximum_workarea_temp_mb=64+i*64) for i in range(8)]
+        steps, source, _, _, _ = pipeline(database_type, rows=rows)
         context = review_context(steps,source)
+        context.plan_snapshot["target"]["db_type"] = database_type
         async def generate(**arguments):
             assert arguments["purpose"] == "aiops.inspection-sql-review"
-            return SimpleNamespace(output=review_output(arguments["input_payload"]["problem"]),
+            output = review_output(arguments["input_payload"]["problem"])
+            if database_type == "ORACLE":
+                output["possible_causes"][0]["supporting_metrics"] = ["workarea_multipass_percent"]
+            return SimpleNamespace(output=output,
                 receipt=SimpleNamespace(model_dump=lambda **_:{"model_id":"agent-selected-model"}))
         model = SimpleNamespace(generate_structured=AsyncMock(side_effect=generate))
         prompt = SimpleNamespace(content="逐条分析",ref=lambda:{"prompt_id":"inspection_sql_review"})

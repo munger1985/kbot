@@ -8,7 +8,11 @@ SELECT CAST(dbid AS text) || ':' || CAST(userid AS text) || ':' || CAST(queryid 
        CAST(NULL AS numeric) AS average_lock_ms,
        (shared_blks_read + local_blks_read) / CAST(NULLIF(calls, 0) AS numeric) AS average_reads,
        CAST(NULL AS numeric) AS average_rows_examined,
-       (temp_blks_read + temp_blks_written) / CAST(NULLIF(calls, 0) AS numeric) AS average_spills
+       (temp_blks_read + temp_blks_written) / CAST(NULLIF(calls, 0) AS numeric) AS average_spills,
+       CAST(NULL AS bigint) AS workarea_total_executions,
+       CAST(NULL AS bigint) AS workarea_multipass_executions,
+       CAST(NULL AS numeric) AS workarea_multipass_percent,
+       CAST(NULL AS numeric) AS maximum_workarea_temp_mb
 FROM pg_stat_statements
 WHERE queryid IS NOT NULL AND calls > 0
   AND dbid = (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database())
@@ -21,6 +25,8 @@ WHERE queryid IS NOT NULL AND calls > 0
        OR (average_reads >= :average_reads_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
        OR (average_rows_examined >= :average_rows_examined_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
        OR (average_spills >= :average_spills_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
+       OR (workarea_multipass_percent >= :workarea_multipass_percent_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
+       OR (maximum_workarea_temp_mb >= :maximum_workarea_temp_mb_limit AND average_elapsed_ms >= :resource_minimum_elapsed_ms)
 ), collection AS (
 SELECT CASE WHEN current_setting('pg_stat_statements.track', true) IN ('top', 'all')
             THEN 'AVAILABLE' ELSE 'DISABLED' END AS collection_status
