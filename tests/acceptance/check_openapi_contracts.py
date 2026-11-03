@@ -50,9 +50,11 @@ def build_contracts() -> dict[str, dict[str, Any]]:
     from main_api.app import create_main_api_app  # noqa: PLC0415
     from main_api.openapi_contracts import (  # noqa: PLC0415
         create_aiops_public_contract_app,
+        create_main_internal_contract_app,
     )
 
     apps = {
+        "main_api_internal_v1.json": create_main_internal_contract_app(),
         "main_api_public_v1.json": create_main_api_app(
             enable_access_log=False
         ),
@@ -92,6 +94,7 @@ def _route_boundary_errors(
         if invalid:
             errors.append(f"{filename} 暴露非公开路径：{invalid}")
     elif filename in {
+        "main_api_internal_v1.json",
         "knowledge_core_internal_v1.json",
         "knowledge_retrieval_app_internal_v1.json",
         "media_studio_app_internal_v1.json",

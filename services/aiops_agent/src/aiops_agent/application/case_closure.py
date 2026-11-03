@@ -1,16 +1,19 @@
 """会话收口的逐轮选择与逐产物血缘，不从人工摘要反推受控诊断或业务效果。"""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
-import hashlib
+from copy import deepcopy
 import json
 from types import SimpleNamespace
+from typing import Literal
 from uuid import UUID
+
+from pydantic import Field
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.diagnosis.investigation_record import investigation_report_source
 from aiops_agent.contracts.investigation import InvestigationRecord
-from aiops_agent.contracts.knowledge import DiagnosisClosure, DiagnosisClosureSource
+from aiops_agent.contracts.knowledge import DiagnosisClosure, DiagnosisClosureSource, DiagnosisCaseProfile
+from platform_core.contracts.aiops.types import AIOpsContract, Sha256Digest, UUIDv7
 from aiops_agent.playbooks import canonical_hash
 
 
@@ -61,9 +64,8 @@ async def validate_closure_sources(*, uow, domain_id, run, artifact, agent_id=No
         conversation = await uow.conversations.get_conversation(domain_id=domain_id, conversation_id=closure.conversation_id)
         if conversation is None or str(conversation.created_by) != closure.closed_by:
             return False
-        turns = await uow.turns.list_all_turns(conversation_id=closure.conversation_id, limit=201)
-        if len(turns) > 200 or any(turn.status not in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"} for turn in turns):
-            return False
+        # 受理时的全会话活动门禁属于预览；重放只检查已冻结来源。
+        # 新增无关轮次不能改变旧案例，后续反证仍由逐 Claim 当前性校验处理。
         roots, claim_refs, rows, selection = [], [], [], {}
         role_ids = {role: set() for role in ("INVESTIGATION", "ACTION", "BEFORE", "AFTER")}
         seen = set()
@@ -222,10 +224,15 @@ async def conversation_case_context(*, uow, domain_id, conversation_id, actor_id
     if reasons:
         return public
     refs, candidates, claim_refs = [], {}, []
+    investigation_steps, unresolved_questions = [], []
+    from aiops_agent.application.case_knowledge_projection import investigation_knowledge
     for turn, owner, artifact, claims, facts in selected:
         ref = closure_reference(turn=turn, run=owner, artifact=artifact, roles=("INVESTIGATION",), claim_ids=claims)
         refs.append(ref)
         claim_refs.extend(closure_claim_refs(artifact, claims))
+        steps, questions = investigation_knowledge(artifact=artifact, claim_ids=claims)
+        investigation_steps.extend(steps)
+        unresolved_questions.extend(questions)
         links = await uow.turns.list_run_links(turn_id=turn.turn_id)
         for link in links:
             linked_run = await uow.runs.get_run_scoped(ops_run_id=link.ops_run_id, domain_id=domain_id)
@@ -260,37 +267,63 @@ async def conversation_case_context(*, uow, domain_id, conversation_id, actor_id
             for key, row in candidates.items()],
         _context={"run_id": selected[-1][1].ops_run_id, "target_id": target_id, "target_version": target.row_version,
             "root_ops_task_id": selected[-1][2].ops_task_id, "source_refs": refs, "claim_refs": claim_refs,
+            "investigation_steps": tuple(investigation_steps),
+            "unresolved_questions": tuple(dict.fromkeys(unresolved_questions)),
             "candidates": {key: closure_reference(turn=row[0], run=row[1], artifact=row[2], roles=("BEFORE",))
                 for key, row in candidates.items()},
             "environment": environment, "security_level": max(ref.security_level for ref in refs)})
     return public
 
 
-async def close_conversation_case(service, *, domain_id, conversation_id, command, context,
-    entity_scope, kc_scope, model_catalog, model_scope, technical_name_field="model_name"):
-    """两平台共用收口事务：先冻结精确外部版本，再审批和重验；人工反馈不升级信任。"""
-    from aiops_agent.application.case_semantic_redaction import redact_case_for_index
-    from aiops_agent.application.operations_knowledge import (
-        CASE_COLLECTION, _asset_view, _version_view, _diagnosis_case_markdown, _normalize,
-        _validate_closure_evidence,
-    )
-    from aiops_agent.application.knowledge_withdrawal import queue_case_withdrawals
-    from aiops_agent.contracts.knowledge import DiagnosisCaseProfile
-    from aiops_agent.entities import (OpsArtifactEntity, OperationsKnowledgeAssetEntity,
-        OperationsKnowledgeVersionEntity, OperationsKnowledgeSourceEntity,
-        OperationsKnowledgeScopeEntity, OperationsKnowledgeIndexEntity, OperationsKnowledgeReviewEntity)
+class FrozenConversationCase(AIOpsContract):
+    """受理时冻结的人工归纳和来源；后台不得重新选择会话轮次。"""
+
+    schema_version: Literal["OPS_FROZEN_CONVERSATION_CASE.v1"] = "OPS_FROZEN_CONVERSATION_CASE.v1"
+    closure_artifact_id: UUIDv7
+    anchor_run_id: UUIDv7
+    root_ops_task_id: UUIDv7
+    title: str = Field(min_length=1, max_length=256)
+    request_hash: Sha256Digest
+    closure: DiagnosisClosure
+
+    @property
+    def source_kind(self): return "CONVERSATION"
+
+    @property
+    def source_id(self): return self.closure.conversation_id
+
+    @property
+    def intake_id(self): return self.closure_artifact_id
+
+    @property
+    def actor_id(self): return self.closure.closed_by
+
+    @property
+    def profile(self): return self.closure.profile
+
+    @property
+    def source_fingerprint(self): return self.closure.source_fingerprint
+
+    def artifact(self, profile=None):
+        value = self.closure.model_copy(update={"profile": profile}) if profile is not None else self.closure
+        payload = value.model_dump(mode="json")
+        return SimpleNamespace(artifact_id=self.closure_artifact_id, ops_run_id=self.anchor_run_id,
+            schema_version=value.schema_version, payload_json=payload,
+            content_hash=canonical_hash(payload), security_level=max(ref.security_level for ref in value.source_refs))
+
+
+async def prepare_conversation_case(*, uow, domain_id, conversation_id, actor_id, command,
+    plan_capture_reader=None) -> FrozenConversationCase:
+    """在受理事务内选定来源和人工归纳，不调用模型或 KC。"""
+    from aiops_agent.application.operations_knowledge import _validate_closure_evidence
     from platform_core.identity import uuid7
-    actor = service._actor(context)
-    preview = await service._conversation_case_context(domain_id=domain_id, conversation_id=conversation_id,
-        actor_id=actor, included_turn_ids=command.included_turn_ids)
+    actor = actor_id
+    preview = await conversation_case_context(uow=uow, domain_id=domain_id, conversation_id=conversation_id,
+        actor_id=actor, included_turn_ids=command.included_turn_ids, plan_capture_reader=plan_capture_reader)
     internal = preview.get("_context")
     if not preview["eligible"] or internal is None or preview["source_fingerprint"] != command.source_fingerprint:
         raise rejected_closure()
     request_hash = canonical_hash(command.model_dump(mode="json"))
-    async with service._uow_factory() as uow:
-        existing = await uow.operations_knowledge.find_case_by_external_id(domain_id=domain_id, external_id=str(conversation_id))
-        if existing and existing[1].profile_json.get("source", {}).get("request_hash") == request_hash:
-            return await service._validated_case_replay(uow=uow, domain_id=domain_id, case=existing)
     candidates = internal["candidates"]
     action_refs, before, after = _validate_closure_evidence(command=command,
         allowed_ids={UUID(key) for key in candidates}, allowed_action_ids={UUID(key)
@@ -302,7 +335,6 @@ async def close_conversation_case(service, *, domain_id, conversation_id, comman
             refs[identity] = (ref.model_copy(update={"roles": (*ref.roles, role)}) if ref
                 else candidates[identity].model_copy(update={"roles": (role,)}))
     source_refs = tuple(refs.values())
-    security_level = max(ref.security_level for ref in source_refs)
     symptoms = tuple(dict.fromkeys(value.strip() for value in command.symptoms if value.strip()))
     actions = tuple(dict.fromkeys(value.strip() for value in command.actions if value.strip()))
     if not command.display_name.strip() or not command.root_cause_summary.strip() or not symptoms:
@@ -315,6 +347,8 @@ async def close_conversation_case(service, *, domain_id, conversation_id, comman
             "effective_level": "INCONCLUSIVE", "trust_level": "USER_PROVIDED",
             "evidence_refs": [str(ref.artifact_id) for ref in source_refs if "INVESTIGATION" in ref.roles]},
         actions=tuple({"summary": summary, "source_kind": "USER_PROVIDED", "evidence_refs": action_refs} for summary in actions),
+        investigation_steps=internal["investigation_steps"],
+        unresolved_questions=internal["unresolved_questions"],
         verification={"result": command.verification_result, "method": "USER_REPORTED",
             "before_refs": sorted(before), "after_refs": sorted(after), "guardrail_refs": []},
         applicability=tuple(value.strip() for value in command.applicability if value.strip()),
@@ -324,113 +358,202 @@ async def close_conversation_case(service, *, domain_id, conversation_id, comman
             "claim_refs": internal["claim_refs"], "source_fingerprint": command.source_fingerprint,
             "request_hash": request_hash},
     )
-    closed_at = datetime.now(UTC)
-    closure_id = uuid7()
-    def freeze(value):
-        closure = DiagnosisClosure(conversation_id=conversation_id,
-            source_turn_ids=tuple(UUID(value) for value in preview["included_turn_ids"]),
-            source_fingerprint=command.source_fingerprint, source_refs=source_refs,
-            target_id=internal["target_id"], target_version=internal["target_version"],
-            closed_by=str(actor), closed_at=closed_at, profile=value)
-        payload = closure.model_dump(mode="json")
-        return SimpleNamespace(artifact_id=closure_id, ops_run_id=internal["run_id"],
-            schema_version=closure.schema_version, payload_json=payload,
-            content_hash=canonical_hash(payload), security_level=security_level)
-    async def source_preflight():
-        current = await service._conversation_case_context(domain_id=domain_id, conversation_id=conversation_id,
-            actor_id=actor, included_turn_ids=command.included_turn_ids)
-        if not current["eligible"] or current["source_fingerprint"] != command.source_fingerprint:
+    closure = DiagnosisClosure(conversation_id=conversation_id,
+        source_turn_ids=tuple(UUID(value) for value in preview["included_turn_ids"]),
+        source_fingerprint=command.source_fingerprint, source_refs=source_refs,
+        target_id=internal["target_id"], target_version=internal["target_version"],
+        closed_by=str(actor), closed_at=await uow.runs.database_now(), profile=profile)
+    prepared = FrozenConversationCase(closure_artifact_id=uuid7(),
+        anchor_run_id=internal["run_id"], root_ops_task_id=internal["root_ops_task_id"],
+        title=command.display_name.strip(), request_hash=request_hash, closure=closure)
+    run = await uow.runs.get_run_scoped(ops_run_id=prepared.anchor_run_id, domain_id=domain_id)
+    if run is None or not await validate_closure_sources(uow=uow, domain_id=domain_id, run=run,
+        artifact=prepared.artifact(), plan_capture_reader=plan_capture_reader):
+        raise rejected_closure()
+    return prepared
+
+
+async def freeze_conversation_case_input(*, prepared: FrozenConversationCase, uow, domain_id):
+    """把受理材料编译为输出任务输入，授权摘要只含来源性质和 Agent 标识。"""
+    from platform_core.contracts.aiops.output_jobs import FrozenOutputInput, OutputJobSource, OutputSourceArtifact
+    agent_ids = []
+    for ref in prepared.closure.source_refs:
+        run = await uow.runs.get_run_scoped(ops_run_id=ref.run_id, domain_id=domain_id)
+        if run is None:
             raise rejected_closure()
-        async with service._uow_factory() as uow:
-            run = await uow.runs.get_run_scoped(ops_run_id=internal["run_id"], domain_id=domain_id)
-            if run is None or not await validate_closure_sources(uow=uow, domain_id=domain_id, run=run,
-                artifact=freeze(profile), plan_capture_reader=getattr(service, "_plan_capture_reader", None)):
-                raise rejected_closure()
-    await source_preflight()
-    collection = await service._collection(**kc_scope, name=CASE_COLLECTION, context=context)
-    title, profile = await redact_case_for_index(title=command.display_name.strip(), profile=profile, collection=collection,
-        structured_model=service._structured_model, prompt_registry=service._prompt_registry,
-        model_catalog=model_catalog, model_scope=model_scope, technical_name_field=technical_name_field,
-        source_preflight=source_preflight)
-    await source_preflight()
-    frozen = freeze(profile)
-    markdown = _diagnosis_case_markdown(title=title, profile=profile)
-    response = await service._kc.ingest_user_file(**kc_scope,
-        collection_id=UUID(str(collection["collection_id"])), file_name=f"diagnosis-case-{conversation_id}.md",
-        display_name=title, media_type="text/markdown", body=markdown,
-        content_sha256=hashlib.sha256(markdown).hexdigest(),
-        idempotency_key=f"diagnosis-closure:{conversation_id}:{request_hash}", auth_context=context)
-    item = next(iter((response.payload or {}).get("items", [])), None)
-    if not item or item.get("status") == "REJECTED":
-        raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_EXTRACTION_FAILED", message="诊断案例候选索引未被受理", status_code=502, retryable=True)
-    revision_id = UUID(str(item["bundle_revision_id"]))
-    replay = None
+        if str(run.agent_id) not in agent_ids:
+            agent_ids.append(str(run.agent_id))
+    return FrozenOutputInput(
+        source=OutputJobSource(kind="CONVERSATION", source_id=prepared.closure.conversation_id),
+        artifacts=tuple(OutputSourceArtifact(run_id=ref.run_id, artifact_id=ref.artifact_id,
+            turn_id=ref.turn_id, schema_version=ref.schema_version,
+            content_hash=ref.content_hash, security_level=ref.security_level)
+            for ref in prepared.closure.source_refs),
+        source_fingerprint=prepared.closure.source_fingerprint,
+        # 受理时钟和将来产物 ID 不是业务输入，不能破坏重复提交幂等。
+        parameters={"case": prepared.model_dump(mode="json", exclude={
+            "closure_artifact_id": True, "closure": {"closed_at"}}),
+            "authority": {"origin": "HUMAN", "source_agent_ids": agent_ids}},
+        frozen_at=prepared.closure.closed_at,
+    )
+
+
+def case_from_frozen_input(frozen, *, closure_artifact_id: UUID) -> FrozenConversationCase:
+    """产物 ID 必须来自 Worker 已持久化的恢复定位；不得每次重试重新分配。"""
+    try:
+        material = deepcopy(frozen.parameters["case"])
+        material["closure_artifact_id"] = closure_artifact_id
+        material["closure"]["closed_at"] = frozen.frozen_at
+        prepared = FrozenConversationCase.model_validate(material)
+        closure = prepared.closure
+        expected = [(str(ref.run_id), str(ref.artifact_id), str(ref.turn_id),
+            ref.schema_version, ref.content_hash, ref.security_level) for ref in closure.source_refs]
+        actual = [(str(ref.run_id), str(ref.artifact_id), str(ref.turn_id),
+            ref.schema_version, ref.content_hash, ref.security_level) for ref in frozen.artifacts]
+        if (frozen.source.kind != "CONVERSATION" or frozen.source.source_id != closure.conversation_id
+            or frozen.source_fingerprint != closure.source_fingerprint or expected != actual
+            or closure.profile.source.get("request_hash") != prepared.request_hash):
+            raise rejected_closure()
+        return prepared
+    except (KeyError, TypeError, ValueError) as exc:
+        raise rejected_closure() from exc
+
+
+async def close_conversation_case(service, *, domain_id, conversation_id, command, context,
+    entity_scope, kc_scope, model_catalog, model_scope, technical_name_field="model_name"):
+    """同步调用方也复用受理／执行拆分，不在执行中重新扩大或重选来源。"""
     async with service._uow_factory() as uow:
-        # 短事务锁定会话，外部审批不跨事务。每个已受理 Revision 都必须有持久化登记。
-        await uow.conversations.get_conversation(domain_id=domain_id, conversation_id=conversation_id, lock=True)
-        latest = await uow.operations_knowledge.find_case_by_external_id(domain_id=domain_id, external_id=str(conversation_id))
-        if latest and latest[1].profile_json.get("source", {}).get("request_hash") == request_hash:
-            relations = await uow.operations_knowledge.get_version_relations(asset_version_id=latest[1].asset_version_id)
-            if any(str(index.bundle_revision_id) == str(revision_id) for index in relations.get("indexes", ())):
-                replay = await service._validated_case_replay(uow=uow, domain_id=domain_id, case=latest)
-                return replay
-            replay = latest
-        asset = latest[0] if latest else OperationsKnowledgeAssetEntity(**entity_scope,
-            domain_id=domain_id, asset_id=uuid7(), asset_kind="DIAGNOSIS_CASE", display_name=title,
-            status="PROCESSING", security_level=security_level, created_by=actor, updated_by=actor)
-        versions = await uow.operations_knowledge.list_versions(domain_id=domain_id, asset_id=asset.asset_id) if latest else []
-        version_id = uuid7()
-        version = OperationsKnowledgeVersionEntity(**entity_scope, **({"domain_id": domain_id} if entity_scope else {}),
-            asset_version_id=version_id, asset_id=asset.asset_id,
-            version_no=max((row.version_no for row in versions), default=0) + 1,
-            status="REVIEW_REQUIRED" if replay else "PROCESSING", source_hash=frozen.content_hash,
-            profile_schema_version=profile.schema_version, profile_json=profile.model_dump(mode="json"),
-            extraction_warnings_json=[], created_by=actor)
-        scope = {**entity_scope, **({"domain_id": domain_id} if entity_scope else {})}
-        artifact_bytes = json.dumps(frozen.payload_json, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
-        await uow.runs.add_artifact(OpsArtifactEntity(artifact_id=closure_id, ops_run_id=internal["run_id"],
-            ops_task_id=internal["root_ops_task_id"], artifact_key=f"diagnosis-closure:{conversation_id}:{frozen.content_hash}",
-            artifact_type="DIAGNOSIS_CLOSURE", schema_version=frozen.schema_version, payload_json=frozen.payload_json,
-            content_hash=frozen.content_hash, byte_size=len(artifact_bytes),
-            provenance_json={"producer": "aiops.diagnosis-closure", "source_fingerprint": command.source_fingerprint},
-            trust_level="USER_PROVIDED", security_level=security_level))
-        source = OperationsKnowledgeSourceEntity(**scope, asset_version_id=version_id, source_kind="DIAGNOSIS_CLOSURE",
-            source_run_id=internal["run_id"], source_artifact_id=closure_id,
-            source_external_id=str(conversation_id) if not replay else f"duplicate:{conversation_id}:{revision_id}",
-            content_hash=frozen.content_hash, source_locator_json={"turn_ids": preview["included_turn_ids"], "request_hash": request_hash})
-        scopes = [OperationsKnowledgeScopeEntity(**scope, asset_version_id=version_id, scope_kind=kind,
-            scope_value=str(value), normalized_value=_normalize(str(value)), source_kind="DIAGNOSIS_CLOSURE",
-            source_locator_json={"conversation_id": str(conversation_id)}) for kind, value in (
-                ("TARGET_ID", internal["target_id"]), ("DATABASE_TYPE", internal["environment"].get("database_type")),
-                ("DATABASE_VERSION", internal["environment"].get("database_version")),
-                ("PLATFORM", internal["environment"].get("platform")), ("PROBLEM_CLASS", "INCIDENT"),
-                ("TOPOLOGY", internal["environment"].get("topology"))) if value]
-        index = OperationsKnowledgeIndexEntity(**scope, asset_version_id=version_id,
-            collection_id=UUID(str(collection["collection_id"])), bundle_id=UUID(str(item["bundle_id"])),
-            bundle_revision_id=revision_id, index_status="PENDING_APPROVAL")
+        prepared = await prepare_conversation_case(uow=uow, domain_id=domain_id,
+            conversation_id=conversation_id, actor_id=service._actor(context), command=command,
+            plan_capture_reader=getattr(service, "_plan_capture_reader", None))
+    return await execute_prepared_conversation_case(service, domain_id=domain_id, prepared=prepared,
+        context=context, entity_scope=entity_scope, kc_scope=kc_scope,
+        model_catalog=model_catalog, model_scope=model_scope, technical_name_field=technical_name_field)
+
+
+async def find_prepared_conversation_case(*, uow, domain_id, prepared):
+    """只重放同一冻结归纳；返回前仍由公共流程核验现时来源。"""
+    exact = await uow.operations_knowledge.find_case_by_artifact_id(
+        domain_id=domain_id, artifact_id=prepared.closure_artifact_id)
+    if exact is not None:
+        if exact[1].profile_json.get("source", {}).get("request_hash") != prepared.request_hash:
+            raise rejected_closure()
+        return exact
+    existing = await uow.operations_knowledge.find_case_by_external_id(
+        domain_id=domain_id, external_id=str(prepared.source_id))
+    if existing and existing[1].profile_json.get("source", {}).get("request_hash") == prepared.request_hash:
+        return existing
+    return None
+
+
+async def validate_prepared_conversation_case(*, uow, domain_id, prepared, plan_capture_reader=None):
+    run = await uow.runs.get_run_scoped(ops_run_id=prepared.anchor_run_id, domain_id=domain_id)
+    if run is None or not await validate_closure_sources(uow=uow, domain_id=domain_id, run=run,
+        artifact=prepared.artifact(), plan_capture_reader=plan_capture_reader):
+        raise rejected_closure()
+
+
+async def execute_prepared_conversation_case(service, *, domain_id, prepared,
+    context, entity_scope, kc_scope, model_catalog, model_scope, technical_name_field="model_name",
+    actor_id=None, recovery=None, checkpoint=None, record_receipt=None, source_preflight_hook=None):
+    """会话来源适配；外部流程与报告案例共用，不在这里另造入库链。"""
+    from aiops_agent.application.case_intake import execute_case_intake
+    return await execute_case_intake(service, domain_id=domain_id, prepared=prepared,
+        source_validator=validate_prepared_conversation_case, replay_finder=find_prepared_conversation_case,
+        register_intake=register_conversation_case_intake, reject=rejected_closure,
+        context=context, entity_scope=entity_scope, kc_scope=kc_scope,
+        model_catalog=model_catalog, model_scope=model_scope, technical_name_field=technical_name_field,
+        actor_id=actor_id, recovery=recovery, checkpoint=checkpoint, record_receipt=record_receipt,
+        source_preflight_hook=source_preflight_hook)
+
+
+async def register_conversation_case_intake(*, uow, domain_id, prepared, recovery, entity_scope, actor):
+    """同事务登记已发生的外部受理；失败清理也可调用，不执行模型或 KC 审批。"""
+    from aiops_agent.application.operations_knowledge import _normalize
+    from aiops_agent.application.case_intake_recovery import CaseIntakeRecovery
+    from aiops_agent.application.knowledge_withdrawal import queue_case_withdrawals
+    from aiops_agent.entities import (OpsArtifactEntity, OperationsKnowledgeAssetEntity,
+        OperationsKnowledgeVersionEntity, OperationsKnowledgeSourceEntity,
+        OperationsKnowledgeScopeEntity, OperationsKnowledgeIndexEntity, OperationsKnowledgeReviewEntity)
+    from platform_core.identity import uuid7
+    recovery = CaseIntakeRecovery.model_validate(recovery)
+    recovery.body(prepared=prepared, collection_id=recovery.collection_id)
+    if recovery.bundle_revision_id is None or prepared.closure.closed_by != str(actor):
+        raise rejected_closure()
+    closure, closure_id = prepared.closure, prepared.closure_artifact_id
+    conversation_id, request_hash = closure.conversation_id, prepared.request_hash
+    profile, title = recovery.profile, recovery.title
+    frozen = prepared.artifact(profile)
+    security_level = max(ref.security_level for ref in closure.source_refs)
+    preview = {"included_turn_ids": [str(value) for value in closure.source_turn_ids]}
+    internal = {"run_id": prepared.anchor_run_id, "root_ops_task_id": prepared.root_ops_task_id,
+        "target_id": closure.target_id, "environment": dict(profile.environment)}
+    collection_id, revision_id, replay = recovery.collection_id, recovery.bundle_revision_id, None
+    # 短事务锁定会话，外部审批不跨事务。每个已受理 Revision 都必须有持久化登记。
+    # 此处只登记已发生的受理事实，不因来源随后撤权而丢弃定位；
+    # 实际会话归属在受理冻结时校验，执行／发布资格由来源围栏另行核验。
+    await uow.conversations.get_conversation(domain_id=domain_id, conversation_id=conversation_id, lock=True)
+    exact = await uow.operations_knowledge.find_case_by_artifact_id(
+        domain_id=domain_id, artifact_id=closure_id)
+    if exact is not None:
+        relations = await uow.operations_knowledge.get_version_relations(
+            asset_version_id=exact[1].asset_version_id)
+        if (exact[1].profile_json.get("source", {}).get("request_hash") != request_hash
+            or not any(str(row.bundle_revision_id) == str(revision_id) for row in relations["indexes"])):
+            raise rejected_closure()
+        return exact[0], exact[1], None, True
+    latest = await uow.operations_knowledge.find_case_by_external_id(domain_id=domain_id, external_id=str(conversation_id))
+    if latest and latest[1].profile_json.get("source", {}).get("request_hash") == request_hash:
+        relations = await uow.operations_knowledge.get_version_relations(asset_version_id=latest[1].asset_version_id)
+        if any(str(index.bundle_revision_id) == str(revision_id) for index in relations.get("indexes", ())):
+            return latest[0], latest[1], None, True
+        replay = latest
+    asset = latest[0] if latest else OperationsKnowledgeAssetEntity(**entity_scope,
+        domain_id=domain_id, asset_id=uuid7(), asset_kind="DIAGNOSIS_CASE", display_name=title,
+        status="PROCESSING", security_level=security_level, created_by=actor, updated_by=actor)
+    versions = await uow.operations_knowledge.list_versions(domain_id=domain_id, asset_id=asset.asset_id) if latest else []
+    version_id = uuid7()
+    version = OperationsKnowledgeVersionEntity(**entity_scope, **({"domain_id": domain_id} if entity_scope else {}),
+        asset_version_id=version_id, asset_id=asset.asset_id,
+        version_no=max((row.version_no for row in versions), default=0) + 1,
+        status="REVIEW_REQUIRED" if replay else "PROCESSING", source_hash=frozen.content_hash,
+        profile_schema_version=profile.schema_version, profile_json=profile.model_dump(mode="json"),
+        extraction_warnings_json=[], created_by=actor)
+    scope = {**entity_scope, **({"domain_id": domain_id} if entity_scope else {})}
+    artifact_bytes = json.dumps(frozen.payload_json, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    await uow.runs.add_artifact(OpsArtifactEntity(artifact_id=closure_id, ops_run_id=internal["run_id"],
+        ops_task_id=internal["root_ops_task_id"], artifact_key=f"diagnosis-closure:{conversation_id}:{frozen.content_hash}",
+        artifact_type="DIAGNOSIS_CLOSURE", schema_version=frozen.schema_version, payload_json=frozen.payload_json,
+        content_hash=frozen.content_hash, byte_size=len(artifact_bytes),
+        provenance_json={"producer": "aiops.diagnosis-closure", "source_fingerprint": closure.source_fingerprint},
+        trust_level="USER_PROVIDED", security_level=security_level))
+    source = OperationsKnowledgeSourceEntity(**scope, asset_version_id=version_id, source_kind="DIAGNOSIS_CLOSURE",
+        source_run_id=internal["run_id"], source_artifact_id=closure_id,
+        source_external_id=str(conversation_id) if not replay else f"duplicate:{conversation_id}:{revision_id}",
+        content_hash=frozen.content_hash, source_locator_json={"turn_ids": preview["included_turn_ids"], "request_hash": request_hash})
+    scopes = [OperationsKnowledgeScopeEntity(**scope, asset_version_id=version_id, scope_kind=kind,
+        scope_value=str(value), normalized_value=_normalize(str(value)), source_kind="DIAGNOSIS_CLOSURE",
+        source_locator_json={"conversation_id": str(conversation_id)}) for kind, value in (
+            ("TARGET_ID", internal["target_id"]), ("DATABASE_TYPE", internal["environment"].get("database_type")),
+            ("DATABASE_VERSION", internal["environment"].get("database_version")),
+            ("PLATFORM", internal["environment"].get("platform")), ("PROBLEM_CLASS", "INCIDENT"),
+            ("TOPOLOGY", internal["environment"].get("topology"))) if value]
+    index = OperationsKnowledgeIndexEntity(**scope, asset_version_id=version_id,
+        collection_id=collection_id, bundle_id=recovery.bundle_id,
+        bundle_revision_id=revision_id, index_status="PENDING_APPROVAL")
+    asset.security_level = max(int(asset.security_level), security_level)
+    asset.updated_by = actor
+    if latest:
+        asset = await uow.operations_knowledge.get_asset(domain_id=domain_id, asset_id=asset.asset_id, for_update=True)
         asset.security_level = max(int(asset.security_level), security_level)
-        asset.updated_by = actor
-        if latest:
-            asset = await uow.operations_knowledge.get_asset(domain_id=domain_id, asset_id=asset.asset_id, for_update=True)
-            asset.security_level = max(int(asset.security_level), security_level)
-            await uow.operations_knowledge.add_version(version=version, scopes=scopes, sources=[source], indexes=[index])
-        else:
-            await uow.operations_knowledge.add_asset_version(asset=asset, version=version, scopes=scopes, sources=[source], indexes=[index])
-        await uow.operations_knowledge.add_review(OperationsKnowledgeReviewEntity(**scope,
-            asset_version_id=version_id, decision="CLOSE_DIAGNOSIS", reviewer_id=actor,
-            comment_text="按所选轮次的有效判断生成人工收口候选，不自动发布或授予已验证等级。",
-            before_status="PROCESSING", after_status=version.status))
-        if replay:
-            await queue_case_withdrawals(uow=uow, asset=asset, version=version)
-        await uow.commit()
+        await uow.operations_knowledge.add_version(version=version, scopes=scopes, sources=[source], indexes=[index])
+    else:
+        await uow.operations_knowledge.add_asset_version(asset=asset, version=version, scopes=scopes, sources=[source], indexes=[index])
+    await uow.operations_knowledge.add_review(OperationsKnowledgeReviewEntity(**scope,
+        asset_version_id=version_id, decision="CLOSE_DIAGNOSIS", reviewer_id=actor,
+        comment_text="按所选轮次的有效判断生成人工收口候选，不自动发布或授予已验证等级。",
+        before_status="PROCESSING", after_status=version.status))
     if replay:
-        # 并发受理了不同 Revision：保留并撤回多余确切版本，不能丢弃外部对象。
-        async with service._uow_factory() as uow:
-            return await service._validated_case_replay(uow=uow, domain_id=domain_id, case=replay)
-    if not await service._case_index_source_fence(domain_id=domain_id, version_id=version_id, actor=actor):
-        raise rejected_closure()
-    await service._kc.review_user_intake(**kc_scope, collection_id=UUID(str(collection["collection_id"])),
-        bundle_revision_id=revision_id, decision="APPROVE", comment="诊断收口候选进入索引，仍须业务审核后发布", auth_context=context)
-    if not await service._case_index_source_fence(domain_id=domain_id, version_id=version_id, actor=actor, indexed=True):
-        raise rejected_closure()
-    return {"asset": _asset_view(asset), "version": _version_view(version), "replayed": False}
+        await queue_case_withdrawals(uow=uow, asset=asset, version=version)
+
+    return asset, version, replay, False

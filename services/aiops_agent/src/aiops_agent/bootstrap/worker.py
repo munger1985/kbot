@@ -48,6 +48,7 @@ from aiops_agent.application.changes import AIOpsChangeService
 from aiops_agent.application.changes.effect_followup import BusinessEffectFollowupService
 from aiops_agent.application.work_items import SituationRecoveryProjector
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
+from aiops_agent.bootstrap.output_jobs import create_output_job_worker
 from aiops_agent.application.configuration.connection_test import (
     test_target_connection,
 )
@@ -107,6 +108,7 @@ async def _check_worker_readiness(
     runtime: AIOpsProcessRuntime,
     background_tasks: dict[str, asyncio.Task],
     workers: list[AIOpsTaskWorker],
+    output_worker=None,
 ) -> dict[str, str]:
     """组合最小数据库连通性与真实后台消费组件状态。"""
     checks = await runtime.check_database_connection()
@@ -115,6 +117,10 @@ async def _check_worker_readiness(
     for index, worker in enumerate(workers, start=1):
         key = f"component:task-worker-{index}"
         if not worker.healthy and checks[key] == "ok":
+            checks[key] = "degraded"
+    if output_worker is not None:
+        key = "component:output-jobs"
+        if not output_worker.healthy and checks.get(key) == "ok":
             checks[key] = "degraded"
     return checks
 
@@ -341,6 +347,11 @@ def create_aiops_worker_probe(
             operations_knowledge_service=operations_knowledge_service,
             caller_service=config.service_name,
         )
+        output_worker = create_output_job_worker(
+            resolved, uow_factory=runtime.uow_factory,
+            knowledge_service=operations_knowledge_service, runtime_service=runtime_service, session=client_session,
+            plan_capture_reader=plan_capture_reader,
+        )
         dispatcher = AIOpsOutboxDispatcher(
             uow_factory=runtime.uow_factory,
             sink=AIOpsDomainOutboxSink(
@@ -348,6 +359,7 @@ def create_aiops_worker_probe(
                 fallback=LoggingOutboxSink(),
                 operations_knowledge_service=operations_knowledge_service,
                 caller_service=config.service_name,
+                output_job_worker=output_worker,
                 business_effect_service=BusinessEffectFollowupService(
                     uow_factory=runtime.uow_factory,
                     change_service=AIOpsChangeService(uow_factory=runtime.uow_factory),
@@ -455,6 +467,7 @@ def create_aiops_worker_probe(
             "reconciler": reconciler,
             "outbox-dispatcher": dispatcher,
             "workload-retention": retention_worker,
+            "output-jobs": output_worker,
         }
         background_tasks = {
             name: asyncio.create_task(
@@ -467,6 +480,7 @@ def create_aiops_worker_probe(
             runtime=runtime,
             background_tasks=background_tasks,
             workers=workers,
+            output_worker=output_worker,
         )
         await runtime.start()
         logger.info(

@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .case_knowledge import CaseActionEffect, CaseInvestigationStep, CaseKnowledgeManifest
+
 
 class KnowledgeScopeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -131,15 +133,25 @@ class DiagnosisCaseProfile(BaseModel):
     problem_signature: dict[str, Any]
     environment: dict[str, Any]
     root_cause: dict[str, Any]
+    investigation_steps: tuple[CaseInvestigationStep, ...] = Field(default=(), max_length=3200)
     actions: tuple[dict[str, Any], ...] = ()
+    action_effects: tuple[CaseActionEffect, ...] = Field(default=(), max_length=64)
+    unresolved_questions: tuple[str, ...] = Field(default=(), max_length=2400)
     verification: dict[str, Any]
     applicability: tuple[str, ...] = ()
     contraindications: tuple[str, ...] = ()
     source: dict[str, Any]
     redaction: CaseRedaction | None = None
+    knowledge_projection: CaseKnowledgeManifest | None = None
 
     @model_validator(mode="after")
     def validate_verified_effect(self):
+        step_ids = [step.step_id for step in self.investigation_steps]
+        if len(step_ids) != len(set(step_ids)):
+            raise ValueError("案例检查条目标识不能重复")
+        ordinals = [effect.action_ordinal for effect in self.action_effects]
+        if len(ordinals) != len(set(ordinals)) or any(ordinal > len(self.actions) for ordinal in ordinals):
+            raise ValueError("措施效果必须逐项关联现有动作且不能重复")
         if self.case_kind in {"VERIFIED_RESOLUTION", "VERIFIED_OPTIMIZATION"}:
             measured = self.verification
             if not (
@@ -242,6 +254,13 @@ class KnowledgeSearchRequest(BaseModel):
     )
     max_results: int = Field(default=8, ge=1, le=20)
     max_security_level: int = Field(default=3, ge=1, le=5)
+
+
+class KnowledgeSearchPreviewRequest(KnowledgeSearchRequest):
+    """以显式选择的 Agent 验证正式检索范围，不把管理用户冒充为 Agent。"""
+
+    agent_id: UUID
+    target_id: UUID | None = None
 
 
 class KnowledgeReviewCommand(BaseModel):

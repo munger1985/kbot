@@ -12,7 +12,7 @@
     back.textContent = "← 返回巡检批次";
   }
   const root = document.getElementById("formal-report");
-  const state = {report:null,presentation:null,target:null,eligibility:null,pdfBusy:false,rawBusy:false,extracting:false,observer:null};
+  const state = {report:null,presentation:null,target:null,eligibility:null,caseOutputJob:null,pdfBusy:false,rawBusy:false,extracting:false,observer:null};
   const statusLabel = value => ({PUBLISHED:"已发布",READY:"结论就绪",PARTIAL:"证据不完整",GENERATING:"生成中",FAILED:"生成失败"})[value] || value;
   const statusClass = value => value === "FAILED" ? "status-danger" : ["PARTIAL","GENERATING"].includes(value) ? "status-warning" : "status-success";
   const riskLabel = value => ({CRITICAL:"严重",HIGH:"高",MEDIUM:"中",LOW:"低",INFO:"提示"})[value] || value || "低";
@@ -43,9 +43,9 @@
   }
   function monthlyTrendSvg(metric) {
     const dates = rows(metric.daily_points).map(point => Date.parse(point.date));
-    if (dates.some((date,index) => !Number.isFinite(date) || (index > 0 && date - dates[index-1] !== 86400000))) return '<span class="daily-no-baseline">日期有缺测，未连接趋势线</span>';
+    if (dates.some((date,index) => !Number.isFinite(date) || (index > 0 && date - dates[index-1] !== 86400000))) return '<span>有效日期不足</span>';
     const geometry = trendGeometry(rows(metric.daily_points).map(point => Number(point.value)).filter(Number.isFinite),150,42);
-    return geometry ? `<svg class="daily-trend-svg monthly-trend-svg" viewBox="0 0 150 42"><polyline points="${geometry.points}"></polyline></svg>` : '<span class="daily-no-baseline">有效天数不足</span>';
+    return geometry ? `<svg class="daily-trend-svg monthly-trend-svg" viewBox="0 0 150 42"><polyline points="${geometry.points}"></polyline></svg>` : '<span>有效日期不足</span>';
   }
   function dailyTargetName(header) {
     const frozenName = String(header.target_name || "").trim(), targetId = String(header.target_id || state.report.target_id || "").trim();
@@ -81,16 +81,17 @@
   function dailyHtml(daily) { return globalThis.KBotDailyInspectionReport.render(daily); }
   function monthlyHtml(monthly) {
     const header = monthly.header, conclusion = monthly.conclusion;
-    let content = inspectionHead(header,true,conclusion)
-      + `<section class="daily-conclusion"><h2>月度运行结论</h2><p class="daily-conclusion-copy">${esc(conclusion.text)}</p><div class="daily-conclusion-ledger"><div><span>月度评价</span><strong>${esc(conclusion.health_status_display)}</strong></div><div><span>检查完整度</span><strong>${esc(conclusion.completion_display)}</strong></div><div><span>问题与风险</span><strong>${esc(conclusion.issue_count ?? 0)} 项</strong></div></div></section>`;
-    if (rows(monthly.limitations).length) content += dailySection("LIMITATIONS","检查限制与未完成事项","",list(monthly.limitations));
-    if (rows(monthly.target_results).length) content += dailySection("DATABASES","系统与数据库概况","月内评价与最近一次巡检状态分别展示，不把期末正常写成全月正常。",inspectionTable(["数据库","月度评价","最近巡检","问题与待办"],monthly.target_results.map(target => [target.target_name,target.health_status_display,target.latest_health_display,`${target.issue_count} 项问题；${rows(target.limitations).join("；")}`])));
-    if (rows(monthly.issues).length) content += dailySection("ISSUES","稳定性与问题闭环台账","未再发现不等于已解决；巡检观测次数不等于事故次数。",`<div class="daily-findings">${monthly.issues.map((issue,index) => `<article class="daily-finding"><span>${index+1}</span><div><h3>${esc(issue.target_name || "")} · ${esc(issue.title)}</h3><p>${esc(issue.summary)}</p><small>首次 ${esc(issue.first_seen || "未记录")} · 最近 ${esc(issue.last_seen || "未记录")} · 观测 ${esc(issue.observation_count ?? 0)} 次 · ${esc(issue.lifecycle_display || "待验证")}</small>${issue.occurrence_count != null ? `<p>已确认事件 ${esc(issue.occurrence_count)} 次</p>` : ""}</div>${badge(issue.severity,riskLabel(issue.severity),riskClass(issue.severity))}</article>`).join("")}</div>`);
-    if (rows(monthly.metrics).length) content += dailySection("PERFORMANCE","性能与运行趋势","统计基于日均值分布，状态日均值不代表精确月度可用率。",inspectionTable(["指标 / 数据库","日均值平均","日均值 P95","日均最小 / 最大","有效日期"],monthly.metrics.map(metric => [metric.display_name+" "+metric.dimension_label,metric.monthly_average_display,metric.p95_display,metric.minimum_display+" / "+metric.maximum_display,`${metric.effective_days} / ${metric.expected_days}`])));
-    if (rows(monthly.metrics).length) content += dailySection("TRENDS","月度日均趋势","不对缺失日期插值；仅有一个有效日时不绘制趋势线。",`<div class="daily-trend-grid">${monthly.metrics.map(metric => `<article class="daily-trend-card"><h3>${esc(metric.display_name)}</h3><p>${esc(metric.dimension_label)}</p>${monthlyTrendSvg(metric)}</article>`).join("")}</div>`);
-    if (rows(monthly.capacity_rows).length) content += dailySection("CAPACITY","容量与增长","首末有效日不一定等于自然月首末日，不对缺失日期插值。",inspectionTable(["容量 / 数据库","首个有效日","末个有效日","净变化"],monthly.capacity_rows.map(metric => [metric.display_name+" "+metric.dimension_label,metric.first_display,metric.last_display,metric.net_change_display])));
-    content += dailySection("ACTIONS","处置建议与下月重点","",list(monthly.recommendations,conclusion.health_status === "NORMAL" ? "无新增整改事项。" : "请先完成本报告列明的问题复核及检查补齐。"));
-    return content + inspectionAppendix(monthly,true) + footer(header,true);
+    const metadata = [["统计周期",inspectionTime(header.period_start,header.timezone)+" 至 "+inspectionTime(header.period_end,header.timezone)],["报告时间",inspectionTime(header.report_time,header.timezone)],["数据库类型",rows(header.database_types).join("、")],["报告编号",header.report_number+" · v"+header.report_version]];
+    const section = (title,description,body,cls="") => `<section class="daily-report-section${cls ? " "+cls : ""}"><header><h2>${title}</h2>${description ? `<p>${description}</p>` : ""}</header>${body}</section>`;
+    let content = `<header class="daily-report-head monthly-report-head"><div class="daily-report-kicker">KBot AIOps · 数据库月度巡检报告</div><div class="daily-report-title-row"><div><h1>${esc(header.title)}</h1><p>${esc(header.scope_name)} · ${esc(header.target_count)} 个数据库</p></div>${badge(conclusion.health_status,conclusion.health_status_display || "检查未完成",healthTone(conclusion.health_status))}</div><dl class="daily-report-metadata">${metadata.map(([label,value]) => item(label,esc(value))).join("")}</dl></header>`
+      + `<section class="daily-conclusion"><div><p class="daily-section-kicker">MONTHLY CONCLUSION</p><h2>月度运行结论</h2></div><p class="daily-conclusion-copy">${esc(conclusion.text)}</p><div class="daily-conclusion-ledger"><div><span>月度评价</span><strong>${esc(conclusion.health_status_display)}</strong></div><div><span>检查完整度</span><strong>${esc(conclusion.completion_display)}</strong></div><div><span>问题与风险</span><strong>${esc(conclusion.issue_count ?? 0)} 项</strong></div></div></section>`;
+    if (rows(monthly.limitations).length) content += section("检查限制与未完成事项","",list(monthly.limitations,"","daily-notes","ul"),"inspection-limitations");
+    if (rows(monthly.target_results).length) content += section("系统与数据库概况","月内评价与最近一次巡检状态分别展示，不把期末正常写成全月正常。",inspectionTable(["数据库","月度评价","最近巡检","问题与待办"],monthly.target_results.map(target => [target.target_name,target.health_status_display,target.latest_health_display,`${target.issue_count} 项问题${rows(target.limitations).length ? "；"+target.limitations.join("；") : ""}`])));
+    if (rows(monthly.issues).length) content += section("稳定性与问题闭环台账","未再发现不等于已解决；巡检观测次数不等于事故次数。",`<div class="daily-findings">${monthly.issues.map((issue,index) => `<article class="daily-finding"><span>${index+1}</span><div><h3>${esc(issue.target_name || "")} · ${esc(issue.title)}</h3><p>${esc(issue.summary)}</p><small>首次 ${esc(issue.first_seen || "未记录")} · 最近 ${esc(issue.last_seen || "未记录")} · 观测 ${esc(issue.observation_count ?? 0)} 次 · ${esc(issue.lifecycle_display || "待验证")}</small>${issue.occurrence_count != null ? `<p>已确认事件 ${esc(issue.occurrence_count)} 次</p>` : ""}</div>${badge(issue.severity,riskLabel(issue.severity),riskClass(issue.severity))}</article>`).join("")}</div>`);
+    if (rows(monthly.metrics).length) content += section("性能与运行趋势","统计基于日均值分布，状态日均值不代表精确月度可用率。",dailyTable(["指标 / 数据库","日均值平均","日均值 P95","日均最小 / 最大","有效日期","趋势"],monthly.metrics.map(metric => `<tr><td data-label="指标 / 数据库"><strong>${esc(metric.display_name)}</strong><small>${esc(metric.dimension_label)}</small></td><td data-label="日均值平均">${esc(metric.monthly_average_display)}</td><td data-label="日均值 P95">${esc(metric.p95_display)}</td><td data-label="日均最小 / 最大">${esc(metric.minimum_display)} / ${esc(metric.maximum_display)}</td><td data-label="有效日期">${esc(metric.effective_days)} / ${esc(metric.expected_days)}</td><td data-label="趋势">${monthlyTrendSvg(metric)}</td></tr>`).join(""),"monthly-report-table"));
+    if (rows(monthly.capacity_rows).length) content += section("容量与增长","首末有效日不一定等于自然月首末日，不对缺失日期插值。",inspectionTable(["容量 / 数据库","首个有效日","末个有效日","净变化"],monthly.capacity_rows.map(metric => [metric.display_name+" "+metric.dimension_label,metric.first_display,metric.last_display,metric.net_change_display])));
+    content += section("处置建议与下月重点","",rows(monthly.recommendations).length ? list(monthly.recommendations) : `<p>${conclusion.health_status === "NORMAL" ? "无新增整改事项。" : "请先完成本报告列明的问题复核及检查补齐。"}</p>`);
+    return content + inspectionAppendix(monthly,true) + `<footer class="daily-report-footer"><span>KBot AIOps · 正式月度巡检报告</span><span>${esc(header.report_number)}</span></footer>`;
   }
   function chaptersFrom(sections) {
     const definitions = [{key:"overview",number:"I",title:"报告概览",description:"结论、范围与本报告的适用边界。",kinds:["EXECUTIVE_SUMMARY","SCOPE"]},{key:"analysis",number:"II",title:"诊断与发现",description:"基于观测事实呈现风险、趋势与根因判断。",kinds:["ALERT_TIMELINE","INSPECTION_COVERAGE","RISK_OVERVIEW","TREND","ROOT_CAUSE","FINDINGS"]},{key:"actions",number:"III",title:"处置与建议",description:"汇总建议、处置动作及其验证结果。",kinds:["RECOMMENDATIONS","ACTIONS"]},{key:"evidence",number:"IV",title:"证据与附录",description:"明确数据缺口，并保留可追溯的证据索引。",kinds:["EVIDENCE_BOUNDARY","EVIDENCE_APPENDIX"]}];
@@ -119,8 +120,10 @@
   function updateActions() {
     const pdf = document.getElementById("download-report-pdf");pdf.disabled = !state.report || state.pdfBusy;pdf.textContent = state.pdfBusy ? "正在生成下载…" : "下载 PDF";
     const raw = document.getElementById("download-raw-report");raw.hidden = !state.presentation?.report?.scope?.raw_report_artifact_id;raw.disabled = state.rawBusy;raw.textContent = state.rawBusy ? "正在下载…" : "下载原始 Artifact";
-    const existing = document.getElementById("report-existing-case"), extract = document.getElementById("extract-report-case");existing.hidden = !state.eligibility?.existing_asset_id;existing.href = `./cases.html?assetId=${encodeURIComponent(state.eligibility?.existing_asset_id || "")}`;
-    extract.hidden = Boolean(state.eligibility?.existing_asset_id) || state.report?.report_type !== "COMPARISON" || !state.eligibility?.eligible;extract.disabled = state.extracting;extract.textContent = state.extracting ? "正在提炼…" : "生成待审核效果案例";
+    const existing = document.getElementById("report-existing-case"), extract = document.getElementById("extract-report-case");existing.hidden = !state.eligibility?.existing_asset_id && !state.caseOutputJob;
+    existing.href = state.caseOutputJob ? `./cases.html?jobId=${encodeURIComponent(state.caseOutputJob.job_id)}` : `./cases.html?assetId=${encodeURIComponent(state.eligibility?.existing_asset_id || "")}`;
+    existing.textContent = state.caseOutputJob ? "查看案例生成记录" : "查看诊断案例";
+    extract.hidden = Boolean(state.eligibility?.existing_asset_id || state.caseOutputJob) || !state.eligibility?.eligible;extract.disabled = state.extracting;extract.textContent = state.extracting ? "正在提交…" : "沉淀案例";
   }
   function observeSections() {
     state.observer?.disconnect();const sections = [...root.querySelectorAll("[data-report-section]")];
@@ -133,7 +136,7 @@
     try {
       if (!reportId) throw new Error("URL 缺少报告 id");
       [state.report,state.presentation] = await Promise.all([request(`/reports/${encodeURIComponent(reportId)}`),request(`/reports/${encodeURIComponent(reportId)}/presentation`)]);
-      if (["INCIDENT","COMPARISON"].includes(state.report.report_type) && state.report.status === "READY") {try {state.eligibility = await request(`/operations-knowledge/reports/${encodeURIComponent(reportId)}/case-eligibility`);} catch (_) {state.eligibility = null;}}
+      if (["INCIDENT","COMPARISON"].includes(state.report.report_type) && ["READY","PARTIAL"].includes(state.report.status)) {try {state.eligibility = await request(`/operations-knowledge/reports/${encodeURIComponent(reportId)}/case-eligibility`);} catch (_) {state.eligibility = null;}}
       try {state.target = await request(`/targets/${encodeURIComponent(state.report.target_id)}`);} catch (_) {state.target = null;}
       root.innerHTML = state.presentation.monthly_inspection ? monthlyHtml(state.presentation.monthly_inspection) : state.presentation.daily_inspection ? dailyHtml(state.presentation.daily_inspection) : standardHtml(state.presentation,state.report);root.hidden = false;observeSections();
     } catch (error) {const notice = document.getElementById("formal-report-error");notice.hidden = false;notice.querySelector("span").textContent = error.message || "无法读取报告内容";shell.toast(error.message || "无法读取报告内容");}
@@ -149,9 +152,9 @@
   shell.ready.then(() => {
     document.getElementById("download-report-pdf").onclick = () => download();document.getElementById("download-raw-report").onclick = () => download(true);
     document.getElementById("extract-report-case").onclick = async () => {
-      if (state.extracting || !state.eligibility?.eligible || state.eligibility?.existing_asset_id) return;state.extracting = true;updateActions();
-      try {const result = await request(`/operations-knowledge/reports/${encodeURIComponent(reportId)}:extract-case`,{method:"POST"});state.eligibility = {eligible:true,reasons:[],existing_asset_id:result.asset.asset_id};shell.toast("效果案例已进入审核流程，尚未发布");}
-      catch (error) {shell.toast(error.message || "无法生成效果案例");}
+      if (state.extracting || state.caseOutputJob || !state.eligibility?.eligible || state.eligibility?.existing_asset_id) return;state.extracting = true;updateActions();
+      try {state.caseOutputJob = await request(`/operations-knowledge/reports/${encodeURIComponent(reportId)}:extract-case`,{method:"POST",headers:{"Idempotency-Key":`report-case:${reportId}:${state.report.report_version}`}});shell.toast("案例任务已提交，可离开页面；草稿就绪后通知，审核发布后才供检索");}
+      catch (error) {shell.toast(error.message || "无法提交案例任务");}
       finally {state.extracting = false;updateActions();}
     };
     addEventListener("pagehide",() => state.observer?.disconnect(),{once:true});return load();

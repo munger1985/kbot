@@ -4,7 +4,7 @@
   const api = "/api/v1/apps/aiops", shell = globalThis.KBotAIOpsShell, esc = shell.escape;
   const request = (path, init) => KBotAIOpsAuth.request(api + path, init);
   const rows = value => Array.isArray(value) ? value : [];
-  const state = {reports:[],targets:[],templates:[],filter:"",downloading:"",mode:"",busy:false,draft:null,sequence:0};
+  const state = {reports:[],targets:[],templates:[],filter:"",category:"",pageIndex:0,cursors:[""],nextCursor:"",listLoading:false,error:"",downloading:"",mode:"",busy:false,draft:null,sequence:0};
   const reportForm = document.getElementById("report-generate-form"), importForm = document.getElementById("report-import-form");
   const workloadTargets = () => state.targets.filter(item => ["ORACLE","MYSQL","POSTGRESQL"].includes(item.db_type));
   const pgTargets = () => state.targets.filter(item => item.db_type === "POSTGRESQL");
@@ -18,12 +18,16 @@
   }
   function updateDate(input) {state.draft[input.name] = input.value;input.previousElementSibling.textContent = input.value ? shell.fmt(input.value) : "请选择日期和时间";input.parentElement.classList.toggle("is-empty",!input.value);}
   function renderList() {
-    const items = state.filter ? state.reports.filter(item => item.template_ref === state.filter) : state.reports;
-    document.getElementById("report-count").textContent = `${items.length} 份`;
+    const items = state.reports;
+    document.getElementById("report-count").textContent = `本页 ${items.length} 份`;
+    document.getElementById("report-page").textContent = `第 ${state.pageIndex + 1} 页 · 每页最多 50 份`;
+    document.getElementById("report-previous").disabled = state.listLoading || state.pageIndex === 0;
+    document.getElementById("report-next").disabled = state.listLoading || !state.nextCursor;
+    if (state.listLoading) {document.getElementById("reports-body").innerHTML = '<tr><td colspan="7" class="empty-cell">正在读取报告…</td></tr>';return;}
     document.getElementById("reports-body").innerHTML = items.length ? items.map(item => {
       const name = state.templates.find(template => template.template_ref === item.template_ref)?.display_name || String(item.template_ref || "").replace(/^system:/,"");
       return `<tr><td><strong class="table-primary">${esc(item.title)}</strong><small class="table-secondary">版本 ${esc(item.report_version)} · ${esc(item.report_key)}</small></td><td>${esc(reportTypeLabel(item.report_type))}</td><td>${esc(name)}<small class="table-secondary">模板 v${esc(item.template_version)}</small></td><td><span class="status-pill ${statusClass(item.status)}">${esc(statusLabel(item.status))}</span></td><td>${esc(shell.fmt(item.published_at))}</td><td class="table-summary">${esc(item.summary)}</td><td><div class="button-row"><a class="row-action" href="./report-detail.html?id=${encodeURIComponent(item.report_id)}">查看报告</a><button class="row-action" type="button" data-download-report="${esc(item.report_id)}"${state.downloading ? " disabled" : ""}>${state.downloading === item.report_id ? "下载中…" : "下载 PDF"}</button></div></td></tr>`;
-    }).join("") : `<tr><td colspan="7" class="empty-cell">${state.reports.length ? "没有符合当前模板筛选的报告。" : "当前业务空间还没有已生成的运维报告。"}</td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="empty-cell">${esc(state.error || (state.category || state.filter ? "没有符合当前分类和模板的报告。" : "当前业务空间还没有已生成的运维报告。"))}</td></tr>`;
   }
   function updateControls() {
     document.getElementById("create-report").disabled = !workloadTargets().length || Boolean(state.mode);
@@ -84,18 +88,36 @@
     } catch (error) {shell.toast(error.message || (mode === "import" ? "无法导入 pgBadger 报告" : "无法生成数据库运维报告"));}
     finally {state.busy = false;updateControls();}
   }
-  async function load() {
-    const sequence = ++state.sequence;document.getElementById("reports-loading").hidden = false;document.getElementById("reports-table").hidden = true;
+  async function load() {await loadPage(0);}
+  async function loadPage(pageIndex) {
+    const sequence = ++state.sequence;
+    if (pageIndex === 0) state.cursors = [""];
+    state.pageIndex = pageIndex;state.listLoading = true;state.error = "";state.reports = [];state.nextCursor = "";
+    const query = new URLSearchParams({limit:"50"});
+    if (state.category) query.set("category",state.category);
+    if (state.filter) query.set("template_ref",state.filter);
+    if (state.cursors[pageIndex]) query.set("cursor",state.cursors[pageIndex]);
+    document.getElementById("reports-loading").hidden = true;document.getElementById("reports-table").hidden = false;renderList();
     try {
-      const [reports,targets,templates] = await Promise.all([request("/reports?limit=100"),request("/targets?limit=200"),request("/session-report-templates")]);
+      const [reports,targets,templates] = await Promise.all([request(`/reports?${query}`),request("/targets?limit=200"),request("/session-report-templates")]);
       if (sequence !== state.sequence) return;state.reports = rows(reports.items);state.targets = rows(targets.items);state.templates = rows(templates);
+      state.nextCursor = reports.has_more ? reports.next_cursor || "" : "";
       const filter = document.getElementById("report-template-filter");filter.innerHTML = '<option value="">全部模板</option>' + state.templates.map(item => `<option value="${esc(item.template_ref)}">${esc(item.display_name)}</option>`).join("");filter.value = state.filter;
-    } catch (error) {if (sequence === state.sequence) shell.toast(error.message || "无法读取运维报告");}
-    finally {if (sequence === state.sequence) {renderList();updateControls();document.getElementById("reports-loading").hidden = true;document.getElementById("reports-table").hidden = false;}}
+    } catch (error) {if (sequence === state.sequence) {state.error = "无法读取报告，请刷新重试。";shell.toast(error.message || "无法读取运维报告");}}
+    finally {if (sequence === state.sequence) {state.listLoading = false;renderList();updateControls();}}
   }
   shell.ready.then(() => {
+    globalThis.KBotAIOpsOutputJobs.mount(document.getElementById("report-output-jobs"), {
+      jobType: "REPORT_GENERATION", onCompleted: load,
+    });
     document.getElementById("refresh-reports").onclick = load;document.getElementById("create-report").onclick = () => open("generate");document.getElementById("import-pgbadger").onclick = () => open("import");
-    document.getElementById("report-template-filter").onchange = event => {state.filter = event.target.value;renderList();};
+    document.getElementById("report-template-filter").onchange = event => {state.filter = event.target.value;void load();};
+    document.getElementById("report-category-filter").onchange = event => {state.category = event.target.value;void load();};
+    document.getElementById("report-previous").onclick = () => {if (!state.listLoading && state.pageIndex > 0) void loadPage(state.pageIndex - 1);};
+    document.getElementById("report-next").onclick = () => {
+      if (state.listLoading || !state.nextCursor) return;
+      state.cursors[state.pageIndex + 1] = state.nextCursor;void loadPage(state.pageIndex + 1);
+    };
     document.getElementById("reports-body").onclick = async event => {
       const button = event.target.closest("[data-download-report]");if (!button || state.downloading) return;
       const item = state.reports.find(item => item.report_id === button.dataset.downloadReport);if (!item) return;

@@ -123,6 +123,24 @@ class AIOpsWorkerReadinessTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"]["checks"]["database"], "not_configured")
 
+    async def test_output_worker_health_and_exit_are_part_of_readiness(self):
+        task = asyncio.create_task(asyncio.Event().wait())
+        self.tasks.append(task)
+        self.background_tasks["output-jobs"] = task
+        output = SimpleNamespace(healthy=False)
+        checks = await _check_worker_readiness(runtime=self.runtime,
+            background_tasks=self.background_tasks, workers=[self.worker], output_worker=output)
+        self.assertEqual(checks["component:output-jobs"], "degraded")
+        output.healthy = True
+        checks = await _check_worker_readiness(runtime=self.runtime,
+            background_tasks=self.background_tasks, workers=[self.worker], output_worker=output)
+        self.assertEqual(checks["component:output-jobs"], "ok")
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        checks = await _check_worker_readiness(runtime=self.runtime,
+            background_tasks=self.background_tasks, workers=[self.worker], output_worker=output)
+        self.assertEqual(checks["component:output-jobs"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()

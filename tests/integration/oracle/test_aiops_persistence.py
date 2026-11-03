@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-import re
 import unittest
 
 from aiops_agent.application.errors import UnitOfWorkStateError
@@ -19,11 +18,13 @@ from aiops_agent.repositories import (
     DiagnosticSourceRepository,
     OpsRunRepository,
     OutboxRepository,
+    OutputJobRepository,
     PolicyRepository,
     TargetRepository,
 )
 from tests.acceptance.check_aiops_entity_schema import AIOPS_ENTITY_CLASSES
 from tests.acceptance.check_oracle_schema import SERVICE_TABLES
+from tools.db.render_aiops_rebuild_schema import _extract_table_columns
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -39,33 +40,16 @@ REPOSITORIES = (
     InspectionRepository,
     InboxRepository,
     OutboxRepository,
+    OutputJobRepository,
 )
 
 
 def _ddl_columns() -> dict[str, set[str]]:
-    sql = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted(SCHEMA_DIR.glob("[0-9][0-9][0-9]_*.sql"))
-    )
-    result: dict[str, set[str]] = {}
-    for table_name, body in re.findall(
-        r"CREATE TABLE\s+([A-Z][A-Z0-9_]*)\s*\((.*?)\n\);",
-        sql,
-        flags=re.DOTALL,
-    ):
-        columns = {
-            match.group(1)
-            for line in body.splitlines()
-            if (
-                match := re.match(
-                    r"\s{4}([A-Z][A-Z0-9_]*)\s+"
-                    r"(?:RAW|NUMBER|VARCHAR2|BLOB|CLOB|JSON|TIMESTAMP)\b",
-                    line,
-                )
-            )
-        }
-        result[table_name] = columns
-    return result
+    sections = [(path.name, path.read_text(encoding="utf-8"))
+        for path in sorted(SCHEMA_DIR.glob("[0-9][0-9][0-9]_*.sql"))]
+    # 复用规范解析器，支持同行闭括号、内联约束和后置 ALTER ADD，不能跨表贪婪匹配。
+    return {table_name: set(_extract_table_columns(sections, table_name))
+        for table_name in SERVICE_TABLES["aiops_agent"]}
 
 
 class _FakeTransaction:

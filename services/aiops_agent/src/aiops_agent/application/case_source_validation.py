@@ -49,7 +49,7 @@ async def validate_case_source_rows(*, uow, domain_id, sources, agent_id=None, p
         except (TypeError, ValueError):
             return False
         active_agent = await uow.agents.get(domain_id=domain_id, agent_id=selected_agent)
-        if active_agent is None or active_agent.current_version_id is None:
+        if active_agent is None or active_agent.status != "ACTIVE" or active_agent.current_version_id is None:
             return False
         if not await uow.agents.version_has_target(
             agent_version_id=active_agent.current_version_id, target_id=run.target_id,
@@ -148,14 +148,9 @@ async def current_case_claim_ids(*, uow, domain_id, run, artifact, record):
     turn = await uow.turns.get_turn(domain_id=domain_id, turn_id=link.turn_id)
     if turn is None:
         return None
-    successors = await uow.turns.list_turns(
-        conversation_id=turn.conversation_id, after_turn_no=turn.turn_no, limit=101,
-    )
-    if len(successors) > 100:
-        return None
     from aiops_agent.contracts.investigation import InvestigationRecord
     tracked = {(str(artifact.artifact_id), claim_id): {claim_id} for claim_id in current}
-    for following in successors:
+    async for following in _case_successor_turns(uow=uow, turn=turn):
         later_link = await uow.turns.get_run_link(turn_id=following.turn_id, purpose="PRIMARY")
         if later_link is None:
             continue
@@ -191,6 +186,25 @@ async def current_case_claim_ids(*, uow, domain_id, run, artifact, record):
             tracked.setdefault((str(later_artifact.artifact_id), change.current_claim_id), set()).update(
                 tracked[(origin, change.prior_claim_id)])
     return current
+
+
+async def _case_successor_turns(*, uow, turn):
+    """分页重放真实修订；无关会话长度不能被当作案例已失效。"""
+    cursor = turn.turn_no
+    while True:
+        page = await uow.turns.list_turns(
+            conversation_id=turn.conversation_id, after_turn_no=cursor, limit=100,
+        )
+        if not page:
+            return
+        for following in page:
+            yield following
+        if len(page) < 100:
+            return
+        next_cursor = page[-1].turn_no
+        if next_cursor <= cursor:
+            raise RuntimeError("案例来源修订分页未前进，不能将读取异常视为来源失效")
+        cursor = next_cursor
 
 async def validate_case_effect(*, uow, domain_id, profile):
     """所有效果案例均重放来源；参考与失败不能绕过完整性，VERIFIED 仍须严格成功。"""

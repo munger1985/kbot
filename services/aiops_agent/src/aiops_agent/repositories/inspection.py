@@ -925,6 +925,14 @@ class InspectionRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalars().first()
 
+    async def get_report_by_content_scoped(self, *, domain_id, content_artifact_id: UUID):
+        """按确切正文原件核验源报告，不按最新版本或报告标题猜测。"""
+        self._check_active()
+        return (await self._session.execute(select(ReportEntity).join(
+            TargetEntity, TargetEntity.target_id == ReportEntity.target_id,
+        ).where(ReportEntity.content_artifact_id == content_artifact_id,
+            TargetEntity.domain_id == domain_id))).scalar_one_or_none()
+
     async def get_report_scoped(
         self,
         *,
@@ -957,6 +965,8 @@ class InspectionRepository(AIOpsRepository):
         before_created_at: datetime | None,
         before_id: UUID | None,
         limit: int,
+        report_types: tuple[str, ...] | None = None,
+        template_ref: str | None = None,
     ) -> list[ReportEntity]:
         self._check_active()
         statement = (
@@ -978,6 +988,10 @@ class InspectionRepository(AIOpsRepository):
             statement = statement.where(
                 ReportEntity.report_type == report_type
             )
+        if report_types is not None:
+            statement = statement.where(ReportEntity.report_type.in_(report_types))
+        if template_ref is not None:
+            statement = statement.where(ReportEntity.template_id == template_ref)
         if before_created_at is not None and before_id is not None:
             statement = statement.where(
                 or_(

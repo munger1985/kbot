@@ -266,6 +266,8 @@ def test_background_revalidation_preserves_layout_but_pauses_technical_correctio
 
 def test_substantive_correction_is_filtered_before_any_remote_knowledge_read():
     from aiops_agent.contracts.knowledge import KnowledgeSearchRequest
+    from tests.support.aiops_knowledge_scope import knowledge_agent_repository, KNOWLEDGE_BASE_ID, active_knowledge_bases_fixture
+    from uuid import UUID
     async def run():
         f = await revision_fixture()
         await extract(f)
@@ -275,12 +277,18 @@ def test_substantive_correction_is_filtered_before_any_remote_knowledge_read():
         asset.current_version_id, asset.status, version.status = version.asset_version_id, "PUBLISHED", "PUBLISHED"
         f.uow.operations_knowledge.list_published_candidates = AsyncMock(return_value=[(asset, version, index)])
         f.service._kc.discover = AsyncMock()
+        authorized = knowledge_agent_repository()
+        active_knowledge_bases_fixture(f.uow.operations_knowledge)
+        f.uow.agents.get = authorized.get
+        f.uow.agents.version_knowledge_policy = authorized.version_knowledge_policy
         kwargs = dict(domain_id=f.domain, agent_id=str(f.run.agent_id),
-            request=KnowledgeSearchRequest(query="问题检查", knowledge_base_ids=(uuid7(),)), context=f.context)
+            request=KnowledgeSearchRequest(query="问题检查", knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),)), context=f.context)
         if "tenant_id" in inspect.signature(f.service.search).parameters:
             kwargs["tenant_id"] = uuid7()
         result = await f.service.search(**kwargs)
         assert not result["results"]
+        assert result["status"] == "NO_APPLICABLE_KNOWLEDGE"
+        f.uow.operations_knowledge.list_published_candidates.assert_awaited_once()
         f.service._kc.discover.assert_not_awaited()
     asyncio.run(run())
 

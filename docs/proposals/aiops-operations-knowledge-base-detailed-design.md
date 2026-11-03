@@ -1,5 +1,32 @@
 # AIOps 运维知识详细设计
 
+## 2026-11-03 已确认的产品分层与实施边界
+
+用户可见页面与异步行为遵循[运维工作、报告与知识资产设计](../product/aiops-work-report-knowledge.md)，
+具体代码缺口与实施顺序见[输出任务修改计划](../operations/aiops-output-jobs-implementation-plan.md)。
+本次异步链路、案例知识投影和检索定制已有代码及本地专项回归；真实测试由用户手动执行。
+
+“诊断案例库”管理经提炼、脱敏和审核的经验；“运维资料库”管理上传手册、SOP 和技术资料。
+二者业务用途分开，继续共用现有 Registry／KC 基础能力。报告是正式工作记录，不自动成为案例；
+历史会话留在 Agent 工作台，不混入案例库。按内容用途而非“上传／生成”来源决定知识类别。
+配置区“运维知识库”及其配置、模型和权限保持不变；内容页不复制配置功能。
+
+会话“沉淀案例”异步保存独立任务并直接引用冻结调查记录，不要求先出报告，也不关闭会话。
+后台核验、脱敏与必要 KC 处理完成后通知发起人并链接确切草稿版本；生成成功不等于审核发布。
+案例来源复核、四类用途、人工反馈不升级 VERIFIED、语义脱敏、精确撤回及检索权限规则继续适用。
+案例专属结构、知识投影、KC 版本与发布闭环、检索候选范围及上下文规则见
+[案例 KC 入库与检索定制设计](aiops-diagnosis-case-knowledge-design.md)。
+当前工作区已接通入口、后台装配、检查／反证、措施效果关系、知识投影及通知；
+交付证据和已知限制以修改计划第 6.23 节为准，不能将本地回归说成真实模型或 KC 验收。
+索引就绪草稿不进入正式检索，人工发布后才可被 Agent 引用。
+资料适配保留规范与操作卡，案例适配保留排查路径、实际效果和适用禁忌；不是两套 KC，
+也不是将报告文件直接上传后即当成案例。案例正文修订须创建新版本并重新投影和索引。
+已有 diagnosis-cases 初始化脚本不等于资源、显式模型和当前 Domain 的完整配置链已验收，
+不得从资料库或 Agent 隐式借用模型；相关核验不新增配置菜单。
+专项设计优先于下文旧候选截断、单一来源等级或简化案例正文描述，不放宽安全和来源门禁。
+字段到检索的定制映射、联合检索和禁忌使用边界见专项设计第 3.2、7.1 节；
+最新工作区交付与已知失败见修改计划第 6.23 节；第 6.9 节仅保留当批历史核对结果。
+
 2026-10-28 后续目标遵循
 [DBA Agent 能力、回答、报告与案例统一设计](aiops-dba-agent-capability-redesign.md)
 第 15、16 节，首批来源与资格修正已实现，但整体尚未完成或通过真实验收。
@@ -16,7 +43,8 @@
 ## 2026-10-30 多轮直接收口的当前合同
 
 候选默认选择最近有效 Target 下的可用轮次，允许显式子集；跨 Target 不合并，
-进行中会话不能收口，最多检查 200 轮和 512 个候选原件。候选查询支持重复参数 `turn_ids`；
+提交时存在进行中轮次不能沉淀案例；新异步合同允许提交后继续会话，不自动吸纳新轮次。
+本基线最多检查 200 轮和 512 个候选原件。候选查询支持重复参数 `turn_ids`；
 提交须携带预览 `source_fingerprint`。后续明确反驳或替代的 Claim 被排除，
 同轮其余有效判断保留，不用历史最高原因等级为人工归纳背书。
 来源冻结 Turn/Run、Artifact Schema/Hash、安全级、时间、角色与确切 Claim；
@@ -57,14 +85,14 @@ Collection、Bundle、Embedding 等 KC 技术概念。
 
 设计结论如下：
 
-- 产品页面名称统一为“运维知识”，不再把页面命名为 “Knowledge Core”；
+- 产品内容入口区分“诊断案例库”和“运维资料库”，不向普通用户暴露 “Knowledge Core”；
 - AIOps 是运维知识资产的业务所有者，KC 只是解析、索引和证据检索依赖；
 - 原始手册始终是手册知识的权威来源，提炼结果只用于定位、过滤和解释；
-- 原始诊断报告继续属于 Report/Artifact 体系，只有符合条件的报告才生成诊断案例；
+- 原始诊断报告继续属于 Report/Artifact 体系；符合条件的调查记录或报告来源可以提炼诊断案例，报告不是前置条件；
 - 历史案例只能提供相似处理经验，不能替代当前 Target 的实时证据和执行前校验；
 - Agent 使用新的 `ops.knowledge.search` 受控工具，不复用只搜索本轮附件的
   `artifact.search`；
-- 逻辑上只有一个运维知识库，物理上使用手册与诊断案例两个固定 KC Collection；
+- 业务上区分案例经验与规范资料，底层共用 Registry／KC；历史固定 Collection 描述不替代当前库配置合同；
 - 技术手册上传时不选择分类；KC 只做有界正文预提取，LLM 只能从受控的资源分类、技术栈和
   厂商标签中选择，并给出逐字原文证据；
 - 用户在批准 KC 正式解析前可以调整 AI 标签。批准后标签随版本冻结，KC 完成常规解析和索引后
@@ -72,7 +100,7 @@ Collection、Bundle、Embedding 等 KC 技术概念。
 - 新增业务表只使用主键、外键和列级 `NOT NULL`。状态、枚举、版本号、去重和字段组合
   关系全部由应用合同、领域服务和事务处理负责，不增加 `CHECK`、`UNIQUE` 或唯一索引。
 
-本文同时作为当前实现合同。Schema 46 已落地 Registry 七张表，产品入口已经切换为“运维知识”，
+下段是 Schema 46 的历史实现记录，不是本次菜单和异步产出目标。Schema 46 已落地 Registry 七张表，当时产品入口切换为“运维知识”，
 手册和诊断案例通过 AIOps 业务 API 登记、对账、审核和发布；Agent 使用
 `ops.knowledge.search@1.0.0` 先做结构化候选筛选，再调用 KC 正文检索。KC 仍是内部基础设施，
 旧 AIOps `knowledge-core` 产品页面和专用路由不再保留。既有手册可以在同一资产下上传新版本，
@@ -125,10 +153,12 @@ Collection、Bundle、Embedding 等 KC 技术概念。
 
 ### 3.3 KC 模型绑定与职责
 
-AIOps 的两个固定 Collection 不在初始化脚本中猜选模型。管理员必须在“运维知识 / 解析模型”
-显式配置 `parser_ocr`、`parser_llm`、`retrieval_llm`、`embedding`，并可选配置
-`parser_vlm`、`visual_embedding`。每个角色必须指向当前 Domain 可用且类别匹配的 Model Catalog
-条目；缺少配置时停止标签识别或解析，并返回明确配置错误。
+AIOps 不在初始化脚本中猜选模型。资料库保留“配置与治理 / 运维知识库”原有模型配置流程，
+必需角色为 `parser_ocr`、`parser_llm`、`retrieval_llm`、`embedding`，视觉增强角色按原规则可选。
+固定案例资源只要求显式绑定 `parser_llm`、`retrieval_llm`、`embedding`，采用 AUTO 原生文本或 TEXT
+策略，不增加 OCR／视觉依赖。案例绑定复用现有管理 API／KC 配置能力，不新增 AIOps 表单；
+固定资源初始化及完整维护路径仍待验收。每个角色必须指向当前 Domain 可用且类别匹配的
+Model Catalog 条目；缺少配置时停止对应处理，明确报错，不借用资料库或 Agent 模型。
 
 职责边界如下：
 
@@ -211,20 +241,23 @@ AIOps Candidate Resolver 只返回 `PUBLISHED` 版本，因此未审核内容即
 
 ### 5.2 KC Collection 规划
 
-逻辑上向用户呈现一个运维知识库，物理上使用两个固定 Collection：
+业务上分别呈现“运维资料库”和“诊断案例库”，共享同一个 KC 底座。
+默认资料库和固定案例资源如下；用户创建的其他资料库使用各自 Collection：
 
 | Collection | 内容 | 原因 |
 | --- | --- | --- |
 | `operations-manuals` | 原始手册、提炼 Profile 和 Procedure Card | 保持正式手册的独立版本、权威性和重建周期 |
-| `diagnosis-cases` | 审核后的诊断案例正文和证据摘要 | 独立控制保留期、召回权重、审核和退役 |
+| `diagnosis-cases` | 脱敏诊断案例正文，包括索引就绪但未发布的草稿 | 独立业务适配、版本与发布白名单，不因索引存在就允许 Agent 检索 |
 
-两个 Collection 都属于 `aiops_portal` Domain，并带有 `owner_app_id=aiops` 和固定资源标记。
+当前规范初始化将这两个固定资源登记在 `aiops_portal` Domain，并带有 `owner_app_id=aiops` 和固定资源标记。
+其他 Domain 须通过受控初始化建立自己的可信绑定，不能按显示名称复用跨 Domain 资源。
 Collection ID、模型和内部处理状态只在管理员诊断界面显示，不进入普通用户的主流程。
 
-手册 Bundle 使用原始文件作为 `CONTENT`，提炼后的 Profile 和 Procedure Card 作为
-`SUPPLEMENT`。生成补充文档时创建新的 Bundle Revision，只有该 Revision 成为 Bundle 当前版本
-后才允许业务发布。诊断案例 Bundle 只保存脱敏后的案例正文和必要的证据摘要，不复制完整报告、
-原始日志或大体积诊断附件；来源报告仍通过 AIOps `KnowledgeSource` 关联。
+每个手册业务版本使用独立 Bundle 身份，原始文件作为 `CONTENT`，提炼后的 Profile 和 Procedure Card
+作为 `SUPPLEMENT`。新版本处理与审核不影响上一发布版本，发布后 Registry 切换确切版本引用。
+诊断案例复用 KC 的 CONTENT、结构 IR 和精确 Revision，正文与关联投影绑定业务版本及哈希，
+不复制完整报告、原始日志或大体积诊断附件；完整来源仍通过 AIOps `KnowledgeSource` 关联。
+正文修订重新投影和索引，不跟随 Bundle 的当前版本指针替换旧发布版本；人工发布前只供授权管理预览。
 
 ## 6. 用户上传手册处理
 
@@ -508,9 +541,10 @@ AIOps 适用性、权威性和验证等级重排
 带引用的手册章节与历史案例
 ```
 
-第一阶段由 AIOps Repository 查询 `PUBLISHED` 当前版本，并按 Domain、安全等级、Target 授权、
-数据库类型、版本、拓扑、问题分类、组件和错误码筛选。第二阶段使用 KC 现有 Evidence API，
-只在候选 Bundle 内检索正文。
+第一阶段由 AIOps Repository 查询 `PUBLISHED` 当前版本，按 Domain、安全等级、Target 授权和
+明确禁忌建立可信精确版本范围；数据库类型、版本、拓扑及问题特征用于适配与排序，不能把未知当匹配。
+第二阶段使用 KC 现有 Discovery／Evidence API，只在授权范围内检索正文；候选预算与最终 Top-K
+分离，按稳定分页／分片处理，不在正文检索前按最终结果数或时间预截断。
 
 ### 9.2 问题指纹
 
@@ -560,14 +594,11 @@ Agent 说明“相似在哪里、差异在哪里”。
 
 ## 10. Agent 工具与使用合同
 
-AIOps 具有两种知识使用入口：诊断状态机通过 `ops.knowledge.search@1.0.0` 获取知识证据；普通用户在
-“运维知识库”内通过正式知识问答 Conversation 提问。两者必须共享同一 Scope Provider、精确 Revision
-范围和 Citation DTO，不能形成两套检索语义。
-
-正式问答使用内部 Knowledge Assistant：`owner_app_id=aiops`、`agent_kind=KNOWLEDGE_RETRIEVAL`、
-`enabled_capabilities=[document]`。它不绑定 Target、不出现在用户 Agent 选择器中，不复用诊断 Agent 或
-用户 ID。浏览器只提交问题与业务上下文；Agent、Collection、Revision、安全级、模型和检索策略均由
-服务端签发并冻结到 Run。
+AIOps 诊断与知识问答统一从 Agent 工作台发起，使用现有 Agent 的知识能力、知识库绑定及来源类型配置，
+不再在“运维知识库”内容页维护固定 Knowledge Assistant 或另建问答会话入口。
+诊断工具 ops.knowledge.search@1.0.0 与共享 Knowledge Answering 能力必须使用同一可信 Scope、
+精确 Revision 和 Citation 合同。浏览器只提交问题与业务上下文；授权知识范围、模型和检索策略由
+服务端解析并冻结，不能以来源开关绕过 Domain、知识库绑定或当前权限。
 
 ### 10.1 新工具
 
@@ -637,8 +668,9 @@ Agent 回答必须区分：
 - “当前环境确认”：引用当前 Run Evidence；
 - “尚未确认”：列出仍需检查的当前环境事实。
 
-当手册和案例冲突时，以适用版本的已批准手册为准，并说明案例可能过期。不同手册互相冲突时，
-不得自行选择一个执行，应展示来源、版本和冲突点。
+召回排序综合相关性、来源质量、环境适配、验证方式和新鲜度，不按资料类型机械压制案例。
+规范操作须核对适用版本的正式手册；手册和案例冲突时展示来源、版本和冲突点，
+说明可能的过期或适用差异，不自行选择一个执行。不同手册冲突亦如此。
 
 ## 11. 持久化设计
 
@@ -879,8 +911,9 @@ Collection ID、Bundle ID、Embedding 模型和 KC 行版本放入管理员诊�
 - 脱敏告警；
 - 发布为诊断参考、发布为已验证解决案例、拒绝或退回操作。
 
-“报告与知识”下按“运维报告 → 历史诊断案例 → 运维知识”编排。历史诊断案例页提供状态概览、
-搜索过滤、结构化详情、来源报告跳转、版本与审核记录，以及“编辑并创建新版本、提交审核、
+按最新产品设计保留单独“报告中心”，在“知识资产”下编排“诊断案例库／运维资料库”，
+配置与治理保持原样。诊断案例库提供提炼任务、状态概览、搜索过滤、结构化详情、
+来源调查／报告跳转、版本与审核记录，以及“编辑并创建新版本、提交审核、
 发布、拒绝、退役、重试”操作。普通用户可查看案例，治理操作需要 `aiops:knowledge_manage`。
 
 审核者不能把没有执行验证的案例提升为 `VERIFIED_RESOLUTION`。该判定由应用根据来源
@@ -982,8 +1015,9 @@ KC Revision `READY` 不是唯一条件。发布前必须同时确认：
    SSE、错误码和 App 扩展合同。
 3. 同步完成 Registry、手册/案例、正式问答、KC 精确 Revision、Runtime 通用 Skill、Main API、AIOps 页面、
    Platform Client、OpenAPI、Oracle canonical DDL/manifest 和全部测试。
-4. 初始化 `operations-manuals`、`diagnosis-cases` 和内部 AIOps Knowledge Assistant。不能可靠确认的旧
-   Bundle 从规范源重新入库，不按文件名猜测绑定，不回填伪造身份。
+4. 按规范初始化知识库／案例资源和可信作用域，Agent 版本绑定是唯一问答配置来源，不再初始化固定
+   Knowledge Assistant。不能可靠确认的旧 Bundle 不按文件名猜测绑定，不回填伪造身份；
+   本轮新增规划不自动迁移、重新入库或回填历史资产。
 5. 删除旧 `knowledge-core` 页面/路由、旧 KC 响应解析、重复 Composer、兼容 DTO、双读写和失效测试；
    KM 删除已在 4.1 前置提交完成，不在后续功能实现中重新引入。
 6. 对历史报告只生成待审核候选，不自动发布；这是新系统的运营数据，不是兼容链路。

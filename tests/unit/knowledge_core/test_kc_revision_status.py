@@ -153,6 +153,7 @@ class RevisionMemberStatusTest(unittest.IsolatedAsyncioTestCase):
             reviewed_at=None,
             review_comment=None,
             accepted_at=None,
+            withdrawn_at=None,
             completed_at=None,
         )
         source_member = SimpleNamespace(

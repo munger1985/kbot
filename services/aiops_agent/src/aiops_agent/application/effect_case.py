@@ -10,6 +10,7 @@ from aiops_agent.application.errors import state_conflict
 from aiops_agent.application.reporting import normalize_report_source
 from aiops_agent.contracts.change import ProposalOutcome
 from aiops_agent.contracts.knowledge import DiagnosisCaseProfile
+from aiops_agent.contracts.case_knowledge import CaseActionEffect
 from aiops_agent.contracts.investigation import InvestigationRecord
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 
@@ -109,6 +110,12 @@ async def profile_from_effect_report(*, uow, domain_id, report, content, sources
     if target is None:
         raise state_conflict("效果案例目标不可见")
     frozen_plan = (await effect_source(uow=uow, artifact_id=result.comparison_plan_artifact_id, run=run)).payload_json["business_effect"]
+    from aiops_agent.application.case_knowledge_projection import investigation_knowledge
+    investigation_steps, unresolved_questions = investigation_knowledge(
+        artifact=root,
+        claim_ids={claim.claim_id for claim in record.claims if claim.revision_state == "ACTIVE"},
+    )
+    verification = effect_case_verification(result=result, artifact_id=artifact.artifact_id, frozen_plan=frozen_plan)
     return DiagnosisCaseProfile(
         case_kind=effect_case_kind(result),
         problem_signature={
@@ -127,7 +134,15 @@ async def profile_from_effect_report(*, uow, domain_id, report, content, sources
                   "action_template_id": snapshot.action_template_id,
                   "source_kind": result.execution_source,
                   "evidence_refs": [str(snapshot_artifact.artifact_id), str(receipt.artifact_id)]},),
-        verification=effect_case_verification(result=result, artifact_id=artifact.artifact_id, frozen_plan=frozen_plan),
+        investigation_steps=investigation_steps,
+        unresolved_questions=unresolved_questions,
+        action_effects=(CaseActionEffect(
+            action_ordinal=1, result=verification["result"], method=verification["method"],
+            summary="该项措施对应冻结效果测量；结果强度和归因仍受原验证条件约束。",
+            evidence_refs=(str(artifact.artifact_id), str(receipt.artifact_id)),
+            limitations=result.causal_limitations,
+        ),),
+        verification=verification,
         applicability=("仅适用于与冻结验证窗口的业务负载、对象和版本可比的环境",),
         contraindications=result.causal_limitations,
         source={"report_id": str(report.report_id), "run_ids": sorted({str(row.ops_run_id) for row in sources}),

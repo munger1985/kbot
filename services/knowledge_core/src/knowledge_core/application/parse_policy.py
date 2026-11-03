@@ -55,6 +55,20 @@ def build_parse_plan(*, collection, version, overrides: dict[str, Any]) -> Parse
     )
     policy["models"] = parser_model_snapshot(collection)
     strategy = str(policy.get("parse_strategy", "AUTO")).upper()
+    # AUTO 按实际文件类型选择处理档；显式 TEXT/VISUAL 仍由管理员策略决定。
+    # 结构化正文沿通用 IR/Evidence 管线解析，不再次 OCR 或生成视觉改写。
+    mime_type = str(getattr(version, "detected_mime_type", "") or "").partition(";")[0].strip().lower()
+    policy["configured_parse_strategy"] = strategy
+    if strategy == "AUTO" and mime_type in {"text/plain", "text/markdown", "text/x-markdown"}:
+        strategy = "TEXT"
+        policy.update(normalize_collection_parse_policy({
+            "parse_strategy": strategy,
+            "image_scale": policy["image_scale"],
+            "detect_table_structure": policy["detect_table_structure"],
+        }))
+        policy["content_profile"] = "NATIVE_STRUCTURED_TEXT"
+    else:
+        policy["content_profile"] = "DOCUMENT"
     if strategy == "AUTO" and not policy["models"].get("parser_ocr"):
         raise ValueError("AUTO 解析策略必须配置 OCR 解析模型")
     supports_page_visual = version.detected_mime_type in {

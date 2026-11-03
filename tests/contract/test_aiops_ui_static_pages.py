@@ -15,11 +15,13 @@ class _Parser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.assets: list[str] = []
+        self.scripts: list[dict[str, str | None]] = []
 
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
         if tag == "script" and values.get("src"):
             self.assets.append(values["src"])
+            self.scripts.append(values)
         if tag == "link" and values.get("href"):
             self.assets.append(values["href"])
 
@@ -247,7 +249,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261103_1"
+        expected = "./js/aiops-shell.js?v=20261103_3"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
         for path in pages:
             parser = _Parser()
@@ -265,7 +267,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(32, len(scripts))
+        self.assertEqual(33, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -732,19 +734,19 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261029_3", "20261030_4"),
-            "situations": ("20261029_3", "20261030_4"),
+            "chat": ("20261029_3", "20261103_3"),
+            "situations": ("20261029_3", "20261103_3"),
         }
         for page_name, (stylesheet_version, script_version) in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
                 encoding="utf-8"
             )
             self.assertIn(f"workspaces.css?v={stylesheet_version}", page)
-            self.assertIn("aiops-shell.js?v=20261103_1", page)
+            self.assertIn("aiops-shell.js?v=20261103_3", page)
             self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
         self.assertIn("reference-inspections.css?v=20261103_1", inspections)
-        self.assertIn("aiops-workspaces.js?v=20261030_4", inspections)
+        self.assertIn("aiops-workspaces.js?v=20261103_3", inspections)
         self.assertIn("aiops-chat-charts.js?v=20261030_1", inspections)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
@@ -838,7 +840,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         )
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(encoding="utf-8")
         self.assertIn('id="manual-form"', page)
-        self.assertIn("<h1>运维知识</h1>", page)
+        self.assertIn("<h1>运维资料库</h1>", page)
         self.assertIn('class="table-card knowledge-table-card"', page)
         self.assertIn('<th>知识库</th>', page)
         self.assertIn('colspan="6"', page)
@@ -862,7 +864,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn('id="knowledge-chat-form"', page)
         self.assertNotIn("loadAnswerConversations", script)
         self.assertIn('"operations-knowledge": "aiops:knowledge_manage"', shell)
-        self.assertIn('["operations-knowledge", "运维知识"]', shell)
+        self.assertIn('["operations-knowledge", "运维资料库"]', shell)
         self.assertIn('["knowledge-bases", "运维知识库"]', shell)
         self.assertNotIn("operations-knowledge-chat", shell)
         self.assertFalse((AIOPS_ROOT / "operations-knowledge-chat.html").exists())
@@ -877,12 +879,12 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("<h1>历史诊断案例</h1>", page)
+        self.assertIn("<h1>诊断案例库</h1>", page)
         self.assertIn('data-action="submit-review"', script)
         self.assertIn('data-action="publish"', script)
         self.assertIn('data-action="save-edit"', script)
         self.assertIn("/cases/", script)
-        self.assertIn('["cases", "历史诊断案例"]', shell)
+        self.assertIn('["cases", "诊断案例库"]', shell)
         self.assertNotIn("Collection", page)
         self.assertNotIn("Embedding", page)
         self.assertNotIn("/api/v1/knowledge", script)
@@ -1329,6 +1331,26 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("KBOT_UI_CONFIG?.mainApiBaseUrl", script)
         self.assertIn("AIOps UI 未加载 Main API 部署配置", script)
 
+    def test_inspection_tabs_distinguish_records_from_formal_reports(self):
+        for name in ("inspections", "inspection-plans"):
+            page = (AIOPS_ROOT / f"{name}.html").read_text(encoding="utf-8")
+            navigation = re.search(r'<nav class="inspection-tabs"[^>]*>(.*?)</nav>', page, re.S)
+            self.assertIsNotNone(navigation, name)
+            labels = re.findall(r'<button\b[^>]*>([^<]+)</button>', navigation[1])
+            self.assertEqual(["巡检记录", "巡检计划"], labels, name)
+
+    def test_inspection_plan_entrypoints_load_shared_script_as_module(self):
+        references = []
+        for name in ("inspection-plans", "inspection-plan-detail"):
+            parser = _Parser()
+            parser.feed((AIOPS_ROOT / f"{name}.html").read_text(encoding="utf-8"))
+            scripts = [item for item in parser.scripts
+                if item["src"].split("?", 1)[0] == "./js/aiops-inspection-plans.js"]
+            self.assertEqual(1, len(scripts), name)
+            self.assertEqual("module", scripts[0].get("type"), name)
+            references.append(scripts[0]["src"])
+        self.assertEqual(references[0], references[1])
+
     def test_inspection_plan_matches_reference_schedule_and_frozen_template(self):
         page = (AIOPS_ROOT / "inspection-plans.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-inspection-plans.js").read_text(encoding="utf-8")
@@ -1443,15 +1465,14 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         navigation = shell.split("const pinnedPages", 1)[1].split("const iconPaths", 1)[0]
         expected = [
             '["chat", "Agent 工作台", "agents"]',
-            '["situations-events", "态势与事件", "data"',
-            '["inspections-drills", "巡检与演练", "audit"',
-            '["reports-knowledge", "报告与知识", "knowledge"',
+            '["operations-work", "运维工作", "data"',
+            '["knowledge-assets", "知识资产", "knowledge"',
             '["configuration-governance", "配置与治理", "settings"',
             '["dashboard", "运维总览"]',
             '["monitoring", "实时监控"]', '["situations", "告警诊断"]',
             '["inspections", "数据库巡检"]',
-            '["recovery-drills", "恢复演练"]', '["reports", "运维报告"]',
-            '["operations-knowledge", "运维知识"]',
+            '["recovery-drills", "恢复演练"]', '["reports", "报告中心", "knowledge"]',
+            '["operations-knowledge", "运维资料库"]',
             '["business-systems", "业务系统"]', '["diagnostic-sources", "监控源"]',
             '["responsibility-groups", "责任组"]', '["knowledge-bases", "运维知识库"]',
             '["agents", "Agent 管理"]', '["report-templates", "模板中心"]',
@@ -1494,7 +1515,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         for old in ("当前读取范围", "等待或运行中", "完整完成", "全部目标已结束"):
             self.assertNotIn(old, summary)
         self.assertIn("执行完成不代表数据库正常，请查看报告中的巡检结论。", page)
-        self.assertIn("aiops-inspections.js?v=20261103_1", page)
+        self.assertIn("aiops-inspections.js?v=20261103_2", page)
 
     def test_business_workspace_includes_report_center(self):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
@@ -1517,7 +1538,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('["inspections", "数据库巡检"]', shell)
         self.assertNotIn('["inspection-plans", "巡检计划"]', shell)
         self.assertIn('["runs", "运行记录"]', shell)
-        self.assertIn('["reports", "运维报告"]', shell)
+        self.assertIn('["reports", "报告中心", "knowledge"]', shell)
         self.assertIn('["report-templates", "模板中心"]', shell)
         self.assertIn('aria-label="数据库巡检视图"', inspections)
         self.assertIn('data-plan-manage hidden', inspections)
@@ -1718,11 +1739,14 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         detail = (AIOPS_ROOT / "report-detail.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-report-detail.js").read_text(encoding="utf-8")
         records = (AIOPS_ROOT / "js" / "aiops-records.js").read_text(encoding="utf-8")
-        self.assertIn("诊断报告中心", page)
+        self.assertIn("<h1>报告中心</h1>", page)
         self.assertIn('id="reports-body"', page)
         self.assertIn("报告生成时间", page)
-        for text in ('request("/reports?limit=100")', "/postgresql/pgbadger-artifacts?", '"Idempotency-Key"', '"X-File-Name"', "state.downloading", "state.busy", "date-time-picker-control"):
+        for text in ('request(`/reports?${query}`)', 'new URLSearchParams({limit:"50"})', 'query.set("category",state.category)', 'query.set("template_ref",state.filter)', 'query.set("cursor",state.cursors[pageIndex])', "/postgresql/pgbadger-artifacts?", '"Idempotency-Key"', '"X-File-Name"', "state.downloading", "state.busy", "date-time-picker-control"):
             self.assertIn(text, records)
+        for text in ('id="report-category-filter"', 'id="report-previous"', 'id="report-next"', "巡检报告", "诊断报告", "专项分析报告"):
+            self.assertIn(text, page)
+        self.assertNotIn("state.reports.filter", records)
         self.assertIn('aria-label="生成数据库运维报告"', page)
         self.assertIn('aria-label="导入 PostgreSQL pgBadger 报告"', page)
         self.assertIn('id="download-report-pdf"', detail)

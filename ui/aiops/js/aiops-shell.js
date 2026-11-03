@@ -18,18 +18,22 @@
   };
   const pinnedPages = [["chat", "Agent 工作台", "agents"]];
   const navigationGroups = [
-    ["situations-events", "态势与事件", "data", [
+    ["operations-work", "运维工作", "data", [
       ["dashboard", "运维总览"], ["monitoring", "实时监控"], ["situations", "告警诊断"],
-    ]],
-    ["inspections-drills", "巡检与演练", "audit", [
       ["inspections", "数据库巡检"], ["recovery-drills", "恢复演练"],
     ]],
-    ["reports-knowledge", "报告与知识", "knowledge", [
-      ["reports", "运维报告"], ["cases", "历史诊断案例"], ["operations-knowledge", "运维知识"],
+    ["knowledge-assets", "知识资产", "knowledge", [
+      ["cases", "诊断案例库"], ["operations-knowledge", "运维资料库"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
       ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
     ]],
+  ];
+  const navigationSections = [
+    { kind: "group", key: "operations-work" },
+    { kind: "link", page: ["reports", "报告中心", "knowledge"] },
+    { kind: "group", key: "knowledge-assets" },
+    { kind: "group", key: "configuration-governance" },
   ];
   const pageIcons = {
     dashboard: "overview", monitoring: "data", situations: "audit", inspections: "data",
@@ -120,9 +124,19 @@
     const pinned = visiblePinned.length
       ? `<section class="business-nav-pinned" aria-label="常用功能"><div class="nav-group-items">${visiblePinned.map(([id, label, itemIcon]) => `<a class="nav-item business-nav-item${id === selectedPage ? " business-route-active" : ""}" href="./${id}.html" ${id === selectedPage ? 'aria-current="page"' : ""}><span class="nav-item-icon">${icon(itemIcon)}</span><span class="nav-item-label">${label}</span></a>`).join("")}</div></section>`
       : "";
-    const navigation = groups.map((group) => {
+    const renderGroup = (group) => {
       const open = group.key === activeGroupKey;
       return `<section class="business-nav-group is-collapsible${open ? " is-open" : ""}" data-group-key="${group.key}" data-current="${open}"><button class="business-nav-group-toggle" type="button" aria-expanded="${open}" aria-controls="ops-nav-group-${group.key}"><span class="business-nav-group-icon">${icon(group.groupIcon)}</span><span class="business-nav-group-copy"><strong>${group.name}</strong></span><span class="business-nav-group-count" aria-label="${group.pages.length} 个功能">${group.pages.length}</span><span class="business-nav-group-chevron">${icon("chevron")}</span></button><div id="ops-nav-group-${group.key}" class="nav-group-items"${open ? "" : " hidden"}>${group.pages.map(([id, label]) => `<a class="nav-item business-nav-item${id === selectedPage ? " business-route-active" : ""}" href="./${id}.html" ${id === selectedPage ? 'aria-current="page"' : ""}><span class="nav-item-icon">${icon(pageIcons[id])}</span><span class="nav-item-label">${label}</span></a>`).join("")}</div></section>`;
+    };
+    const navigation = navigationSections.map((section) => {
+      if (section.kind === "group") {
+        const group = groups.find((item) => item.key === section.key);
+        return group ? renderGroup(group) : "";
+      }
+      const [id, label, itemIcon] = section.page;
+      if (!permissions.has(pagePermissions[id])) return "";
+      const active = id === currentNavigation;
+      return `<section class="business-nav-direct" aria-label="${label}"><a class="nav-item business-nav-item${active ? " business-route-active" : ""}" href="./${id}.html" ${id === selectedPage ? 'aria-current="page"' : active ? 'aria-current="location"' : ""}><span class="nav-item-icon">${icon(itemIcon)}</span><span class="nav-item-label">${label}</span></a></section>`;
     }).join("");
     return `<header class="business-app-topbar"><a class="brand" href="../index.html"><span class="brand-mark">K</span><span class="brand-name">KBot</span><span class="brand-divider"></span><span class="brand-context">AIOps</span></a><button id="ops-nav-trigger" class="icon-button nav-trigger business-nav-trigger" type="button" aria-label="打开 App 导航" aria-controls="business-app-navigation" aria-expanded="false">☰</button><div class="business-context-cluster"><div class="business-context-control ops-current-domain"><span class="business-context-icon">${icon("domains")}</span><span class="business-context-copy"><small>业务空间</small><strong id="ops-domain">${escape(access.domain_name?.trim() || "名称暂不可用")}</strong></span><span class="business-context-action is-static">当前</span></div></div><div class="topbar-actions business-topbar-actions"><div class="account-menu"><button id="ops-account-toggle" class="account-button" type="button" aria-expanded="false" aria-haspopup="menu"><span class="avatar">我</span><span id="ops-user">我的账户</span><span class="muted">⌄</span></button><div id="ops-account-menu" class="account-menu-popover" role="menu" aria-label="账户菜单" hidden><button id="ops-logout" class="account-menu-item account-menu-item-danger" type="button" role="menuitem">退出登录</button></div></div></div></header><div id="ops-shell-layout" class="business-app-layout"><button id="ops-nav-scrim" class="shell-nav-scrim business-nav-scrim" type="button" aria-label="关闭 App 导航" hidden></button><aside id="business-app-navigation" class="business-app-sidebar" aria-label="App 功能导航"><nav>${pinned}${navigation}</nav><div class="nav-footer business-app-nav-footer"><span class="business-app-nav-footer-mark">A</span><span><strong>AIOps</strong><small>Agent-native App</small></span></div></aside><div id="ops-shell-content" class="business-app-content"></div></div>`;
   }
@@ -215,6 +229,15 @@
       mountPage();
       bindNavigationGroups();
       bindShellActions();
+      // 通知沿用共享顶栏能力；加载失败不阻断 App，保留明确的降级提示。
+      const notificationStyle = document.createElement("link");
+      notificationStyle.rel = "stylesheet"; notificationStyle.href = "../shared/kbot-notifications.css?v=20261103_1";
+      document.head.append(notificationStyle);
+      void import("../../shared/kbot-notifications.js?v=20261103_1").then(() => {
+        KBotNotificationCenter.mount(document.querySelector(".business-topbar-actions"), {
+          request: KBotAIOpsAuth.request, domainId: access.domain_id, toast,
+        });
+      }).catch(() => toast("通知中心暂时无法加载，请在对应页面查看生成记录。"));
       document.getElementById("ops-logout").onclick = () => {
         KBotAIOpsAuth.clear();
         location.replace("./login.html");

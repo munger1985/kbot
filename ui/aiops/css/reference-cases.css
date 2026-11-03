@@ -7,6 +7,7 @@
 :is([data-page="cases"]) .case-overview-grid strong { display:block; color:var(--ink); font-family:var(--font-data); font-size:28px; font-weight:650; line-height:1; font-variant-numeric:tabular-nums; }
 :is([data-page="cases"]) .case-detail-drawer { width:min(860px,94vw); }
 :is([data-page="cases"]) .case-detail-body { display:grid; gap:16px; }
+:is([data-page="cases"]) .case-preview-text { white-space:pre-wrap; overflow-wrap:anywhere; }
 :is([data-page="cases"]) .case-edit-form { display:grid; gap:14px; }
 :is([data-page="cases"]) .case-edit-form label { display:grid; gap:7px; color:var(--muted); font-size:13px; }
 :is([data-page="cases"]) .case-edit-form input,:is([data-page="cases"]) .case-edit-form textarea { width:100%; }

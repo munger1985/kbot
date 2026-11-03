@@ -13,6 +13,7 @@ from aiops_agent.application.reporting import normalize_report_source, report_pr
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.contracts.investigation import DiagnosisAnswerDraft
 from aiops_agent.contracts.turn_answer import AIOpsTurnResult, TurnEvidenceFact
+from tests.support.aiops_report_output import render_report_material
 from platform_core.identity import uuid7
 
 
@@ -148,8 +149,8 @@ async def generate(f, *, conversation=False):
     kwargs = dict(domain_id=f.domain, actor_id=f.actor,
         template=resolve_system_template("system:diagnosis.standard"), trace_id="report-regression")
     if conversation:
-        return await f.service.generate_conversation_report(conversation_id=f.conversation_id, **kwargs)
-    return await f.service.generate_user_report(ops_run_id=f.run_id, period_kind="AD_HOC", **kwargs)
+        return await render_report_material(f.service, conversation_id=f.conversation_id, **kwargs)
+    return await render_report_material(f.service, ops_run_id=f.run_id, period_kind="AD_HOC", **kwargs)
 
 
 @pytest.mark.parametrize("conversation", [False, True])
@@ -260,9 +261,9 @@ def test_same_source_different_template_content_creates_new_report(conversation)
         changed = replace(original, definition={**original.definition, "title": "新增验收说明"})
         kwargs = dict(domain_id=f.domain, actor_id=f.actor, template=changed, trace_id="template-correction")
         if conversation:
-            second = await f.service.generate_conversation_report(conversation_id=f.conversation_id, **kwargs)
+            second = await render_report_material(f.service, conversation_id=f.conversation_id, **kwargs)
         else:
-            second = await f.service.generate_user_report(ops_run_id=f.run_id, period_kind="AD_HOC", **kwargs)
+            second = await render_report_material(f.service, ops_run_id=f.run_id, period_kind="AD_HOC", **kwargs)
         assert second.report_id != first.report_id
         assert second.report_version == 2
     asyncio.run(run())

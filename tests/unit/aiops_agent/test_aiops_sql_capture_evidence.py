@@ -360,7 +360,8 @@ def test_actual_formal_report_and_case_replay_preserve_plan_and_refuse_revoked_s
         store.operations_knowledge = SimpleNamespace(get_version_relations=AsyncMock(return_value={"sources": [
             SimpleNamespace(source_report_id=None, source_artifact_id=root.artifact_id,
                 source_run_id=store.current.ops_run_id, content_hash=root.content_hash)]}))
-        store.agents.get = AsyncMock(return_value=SimpleNamespace(current_version_id=store.current.agent_version_id))
+        store.agents.get = AsyncMock(return_value=SimpleNamespace(
+            status="ACTIVE", current_version_id=store.current.agent_version_id))
         store.agents.version_has_target = AsyncMock(return_value=True)
         store.agents.version_source_ids = AsyncMock(return_value=())
         assert await validate_case_sources(uow=store, domain_id=store.current.domain_id,

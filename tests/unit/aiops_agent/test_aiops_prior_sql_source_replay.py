@@ -263,7 +263,8 @@ def test_actual_report_and_case_paths_replay_history_and_reject_revoked_source(e
         fixture.uow.operations_knowledge = SimpleNamespace(get_version_relations=AsyncMock(return_value={"sources": [
             SimpleNamespace(source_report_id=None, source_artifact_id=root.artifact_id,
                 source_run_id=fixture.run.ops_run_id, content_hash=root.content_hash)]}))
-        fixture.uow.agents.get = AsyncMock(return_value=SimpleNamespace(current_version_id=fixture.run.agent_version_id))
+        fixture.uow.agents.get = AsyncMock(return_value=SimpleNamespace(
+            status="ACTIVE", current_version_id=fixture.run.agent_version_id))
         fixture.uow.agents.version_source_ids = AsyncMock(return_value=())
         fixture.uow.turns.list_turns = AsyncMock(return_value=[])
         assert await validate_case_sources(uow=fixture.uow, domain_id=fixture.run.domain_id, version_id=uuid7())

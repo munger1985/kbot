@@ -82,18 +82,18 @@ test("Agent 工作台固定入口默认不展开业务分组，可独立打开�
   const app = setup("chat");
   assert.deepEqual(app.openKeys(), []);
   assert.match(app.markup, /business-nav-pinned[\s\S]*?aria-current="page"/);
-  app.click("situations-events");
-  assert.deepEqual(app.openKeys(), ["situations-events"]);
-  app.click("reports-knowledge");
-  assert.deepEqual(app.openKeys(), ["reports-knowledge"]);
-  app.click("reports-knowledge");
+  app.click("operations-work");
+  assert.deepEqual(app.openKeys(), ["operations-work"]);
+  app.click("knowledge-assets");
+  assert.deepEqual(app.openKeys(), ["knowledge-assets"]);
+  app.click("knowledge-assets");
   assert.deepEqual(app.openKeys(), []);
   app.assertSynchronized();
 });
 
 for (const [page, group] of [
-  ["dashboard", "situations-events"], ["work-item-detail", "situations-events"],
-  ["inspection-plan-detail", "inspections-drills"], ["report-detail", "reports-knowledge"],
+  ["dashboard", "operations-work"], ["work-item-detail", "operations-work"],
+  ["inspection-plan-detail", "operations-work"], ["cases", "knowledge-assets"],
   ["business-system-workspace", "configuration-governance"],
   ["diagnostic-source-detail", "configuration-governance"], ["run-detail", "configuration-governance"],
 ]) {
@@ -102,7 +102,7 @@ for (const [page, group] of [
     assert.deepEqual(app.openKeys(), [group]);
     app.click(group);
     assert.deepEqual(app.openKeys(), [group]);
-    const other = group === "reports-knowledge" ? "situations-events" : "reports-knowledge";
+    const other = group === "knowledge-assets" ? "operations-work" : "knowledge-assets";
     app.click(other);
     assert.deepEqual(app.openKeys(), [other]);
     app.click(other);
@@ -117,7 +117,7 @@ for (const [page, group] of [
 test("导航仅暴露授权功能，未授权分组不显示也不参与展开", () => {
   const app = setup("chat", ["aiops:use"]);
   assert.deepEqual(app.groups.map(group => group.key), [
-    "situations-events", "inspections-drills", "reports-knowledge", "configuration-governance",
+    "operations-work", "knowledge-assets", "configuration-governance",
   ]);
   assert.doesNotMatch(app.markup, /href="\.\/(?:agents|business-systems|recovery-drills|api-clients)\.html"/);
   assert.match(app.markup, /href="\.\/runs\.html"/);
@@ -128,7 +128,7 @@ test("导航仅暴露授权功能，未授权分组不显示也不参与展开",
 });
 
 test("独立详情页仅展开归属分组，目录抽屉入口仍选中目录项", () => {
-  for (const page of ["work-item-detail", "business-system-workspace", "report-detail"]) {
+  for (const page of ["work-item-detail", "business-system-workspace"]) {
     const app = setup(page);
     assert.doesNotMatch(app.markup, /aria-current="page"/);
     assert.equal(app.groups.filter(group => group.dataset.current === "true").length, 1);
@@ -136,6 +136,29 @@ test("独立详情页仅展开归属分组，目录抽屉入口仍选中目录�
   for (const [page, directory] of [["inspection-plan-detail", "inspections"], ["run-detail", "runs"], ["diagnostic-source-detail", "diagnostic-sources"]]) {
     assert.match(setup(page).markup, new RegExp(`href="\\./${directory}\\.html" aria-current="page"`));
   }
+});
+
+test("报告中心独立位于运维工作与知识资产之间，报告详情不展开任何组", () => {
+  for (const page of ["reports", "report-detail"]) {
+    const app = setup(page);
+    assert.deepEqual(app.openKeys(), []);
+    const markers = ['class="business-nav-pinned"', 'data-group-key="operations-work"', 'class="business-nav-direct"', 'data-group-key="knowledge-assets"', 'data-group-key="configuration-governance"'];
+    const positions = markers.map(marker => app.markup.indexOf(marker));
+    assert.ok(positions.every((value, index) => value >= 0 && (!index || value > positions[index - 1])));
+    assert.equal([...app.markup.matchAll(/href="\.\/reports\.html"/g)].length, 1);
+    assert.match(app.markup, /class="business-nav-direct"[^>]*>[\s\S]*?business-route-active[\s\S]*?>报告中心<\/span>/);
+    assert.match(app.markup, page === "reports" ? /reports\.html" aria-current="page"/ : /reports\.html" aria-current="location"/);
+  }
+  assert.doesNotMatch(setup("reports", ["aiops:agent_manage"]).markup, /href="\.\/reports\.html"/);
+});
+
+test("配置与治理的七项名称、顺序、链接不变，知识内容入口使用独立名称", () => {
+  const {markup} = setup("chat");
+  const configuration = markup.split('data-group-key="configuration-governance"')[1].split('</section>')[0];
+  const actual = [...configuration.matchAll(/href="\.\/([^".]+)\.html"[\s\S]*?class="nav-item-label">([^<]+)</g)].map(([,page,label]) => [page,label]);
+  assert.deepEqual(actual, [["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"]]);
+  assert.match(markup, /href="\.\/cases\.html"[\s\S]*?>诊断案例库<\/span>/);
+  assert.match(markup, /href="\.\/operations-knowledge\.html"[\s\S]*?>运维资料库<\/span>/);
 });
 
 test("固定入口与组内链接都保留源模板的图标结构，当前主题决定可见性", () => {

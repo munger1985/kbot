@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from platform_core.http_cache import NoStoreAPIRoute
+from platform_core.contracts.aiops.report_filters import ReportCategory
+from platform_core.contracts.aiops.types import ReportType
 
 from platform_core.contracts.aiops.sql_plan_material import (
     SqlPlanMaterialPage, SqlPlanMaterialView,
@@ -21,6 +23,9 @@ from aiops_agent.api.dependencies import (
 )
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.reporting import resolve_system_template
+from aiops_agent.api.output_jobs import output_job_scope
+from aiops_agent.application.report_output import submit_report_output
+from platform_core.contracts.aiops.output_jobs import OutputJobReceipt
 from aiops_agent.application.configuration.common import ConfigurationScope
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.aiops import (
@@ -367,68 +372,43 @@ async def get_report(
     )
 
 
-@router.post("/reports:generate", status_code=201)
+@router.post("/reports:generate", status_code=202, response_model=OutputJobReceipt)
 async def generate_user_report(
     body: GenerateUserReportRequest,
     request: Request,
     service: Service,
     context: Auth,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
-    """只在用户明确操作后，从完整会话或终态诊断结果创建报告。"""
-    require_service_scope(request, "aiops.run")
-    domain_id = _scope(request, context)
-    actor_id = context.asserted_user_id or context.client_id
+    """冻结既有来源和确切模板，持久化排队后立即返回，不装配报告。"""
+    scope = output_job_scope(request, context)
+    if not idempotency_key or not idempotency_key.strip():
+        raise HTTPException(428, {"code": "AIOPS_OUTPUT_IDEMPOTENCY_REQUIRED",
+            "message": "请提供 Idempotency-Key 后重新提交"})
     if body.conversation_id is not None:
         template = await request.app.state.session_report_template_service.resolve(
-            domain_id=domain_id,
-            template_ref=body.template_ref,
+            domain_id=scope.domain_id, template_ref=body.template_ref,
             template_version_id=body.template_version_id,
         )
         agent_id = await service.get_conversation_source_agent_id(
-            conversation_id=body.conversation_id,
-            domain_id=domain_id,
-            actor_id=actor_id,
+            conversation_id=body.conversation_id, domain_id=scope.domain_id,
+            actor_id=scope.actor_id,
         )
         _ensure_agent_authorized(context, agent_id)
-        report = await service.generate_conversation_report(
-            domain_id=domain_id,
-            actor_id=actor_id,
-            conversation_id=body.conversation_id,
-            template=template,
-            trace_id=request.headers.get(
-                "X-Request-ID", str(body.conversation_id)
-            ),
-        )
     else:
         assert body.ops_run_id is not None
         template = resolve_system_template(body.template_ref)
         if template is None:
-            raise HTTPException(
-                422,
-                {
-                    "code": "AIOPS_REPORT_LAYOUT_INVALID",
-                    "message": "告警和巡检报告只能使用系统报告版式",
-                },
-            )
-        run = await service.get_run(
-            ops_run_id=body.ops_run_id, domain_id=domain_id
-        )
+            raise HTTPException(422, {"code": "AIOPS_REPORT_LAYOUT_INVALID",
+                "message": "告警和巡检报告只能使用系统报告版式"})
+        run = await service.get_run(ops_run_id=body.ops_run_id, domain_id=scope.domain_id)
         _ensure_agent_authorized(context, run.agent_id)
-        report = await service.generate_user_report(
-            domain_id=domain_id,
-            actor_id=actor_id,
-            ops_run_id=body.ops_run_id,
-            template=template,
-            period_kind=body.period_kind,
-            trace_id=request.headers.get("X-Request-ID", str(body.ops_run_id)),
-        )
-    return {
-        "report_id": str(report.report_id),
-        "status": report.status,
-        "template_ref": report.template_id,
-        "report_version": int(report.report_version),
-    }
-
+    return await submit_report_output(
+        runtime_service=service, jobs=request.app.state.output_job_service, scope=scope,
+        conversation_id=body.conversation_id, ops_run_id=body.ops_run_id,
+        template=template, template_version_id=body.template_version_id,
+        period_kind=body.period_kind, idempotency_key=idempotency_key,
+    )
 
 @router.patch("/reports/{report_id}", response_model=ReportView)
 async def edit_report(
@@ -512,7 +492,9 @@ async def list_reports(
     service: Service,
     context: Auth,
     target_id: UUID | None = None,
-    report_type: str | None = None,
+    report_type: ReportType | None = None,
+    category: ReportCategory | None = None,
+    template_ref: str | None = Query(default=None, min_length=1, max_length=128),
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> ReportPage:
@@ -521,6 +503,8 @@ async def list_reports(
         scope=_query_scope(request, context),
         target_id=target_id,
         report_type=report_type,
+        category=category,
+        template_ref=template_ref,
         cursor=cursor,
         limit=limit,
     )

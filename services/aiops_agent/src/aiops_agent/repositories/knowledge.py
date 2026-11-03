@@ -61,6 +61,21 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
+    async def active_knowledge_base_ids(
+        self, *, domain_id: int, knowledge_base_ids: Sequence[UUID],
+    ) -> list[UUID]:
+        """一次查询当前 Domain 的有效绑定，已删除／归档库不能继续作为 Agent 的知识门票。"""
+        self._check_active()
+        if not knowledge_base_ids:
+            return []
+        return list((await self._session.scalars(
+            select(OperationsKnowledgeBaseEntity.knowledge_base_id).where(
+                OperationsKnowledgeBaseEntity.domain_id == domain_id,
+                OperationsKnowledgeBaseEntity.status == "ACTIVE",
+                OperationsKnowledgeBaseEntity.knowledge_base_id.in_(tuple(knowledge_base_ids)),
+            ).order_by(OperationsKnowledgeBaseEntity.knowledge_base_id)
+        )).all())
+
     async def find_knowledge_base_name(
         self, *, domain_id: int, normalized_name: str,
         exclude_knowledge_base_id: UUID | None = None,
@@ -234,11 +249,30 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             )
             .order_by(OperationsKnowledgeVersionEntity.version_no.desc())
         )
+        if asset_kind == "DIAGNOSIS_CASE":
+            statement = statement.where(OperationsKnowledgeVersionEntity.status != "RETIRED")
         if knowledge_base_id is not None:
             statement = statement.where(
                 OperationsKnowledgeAssetEntity.knowledge_base_id
                 == knowledge_base_id
             )
+        return (await self._session.execute(statement)).first()
+
+    async def find_case_by_intake_revision(
+        self, *, domain_id: int, revision_id: UUID
+    ) -> tuple[OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity] | None:
+        """包括已撤回重复项，按确切受理 Revision 恢复登记而不重复创建。"""
+        self._check_active()
+        statement = (
+            select(OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity)
+            .join(OperationsKnowledgeVersionEntity,
+                OperationsKnowledgeVersionEntity.asset_id == OperationsKnowledgeAssetEntity.asset_id)
+            .join(OperationsKnowledgeIndexEntity,
+                OperationsKnowledgeIndexEntity.asset_version_id == OperationsKnowledgeVersionEntity.asset_version_id)
+            .where(OperationsKnowledgeAssetEntity.domain_id == domain_id,
+                OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE",
+                OperationsKnowledgeIndexEntity.bundle_revision_id == revision_id)
+        )
         return (await self._session.execute(statement)).first()
 
     async def find_case_by_report_id(
@@ -262,6 +296,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 OperationsKnowledgeAssetEntity.domain_id == domain_id,
                 OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE",
                 OperationsKnowledgeSourceEntity.source_report_id == report_id,
+                OperationsKnowledgeSourceEntity.source_kind == "REPORT",
             )
             .order_by(OperationsKnowledgeVersionEntity.version_no.desc())
             .limit(1)
@@ -540,113 +575,83 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         return list((await self._session.execute(statement)).scalars())
 
     async def list_published_candidates(
-        self,
-        *,
-        domain_id: int,
-        target_id: UUID | None,
-        source_kinds: Sequence[str],
-        knowledge_base_ids: Sequence[UUID] = (),
-        max_security_level: int,
-        scope_filters: dict[str, Sequence[str]],
-        limit: int,
+        self, *, domain_id: int, target_id: UUID | None,
+        source_kinds: Sequence[str], knowledge_base_ids: Sequence[UUID] = (),
+        max_security_level: int, scope_filters: dict[str, Sequence[str]],
+        limit: int | None, after_index_id: UUID | None = None,
+        asset_version_ids: Sequence[UUID] = (),
+        bundle_revision_ids: Sequence[UUID] = (),
     ) -> list[tuple[OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity, OperationsKnowledgeIndexEntity]]:
-        """先按发布状态和确定性范围筛选，再交给 KC 检索正文。"""
+        """按唯一索引标识做稳定游标分页，正文检索前不用最终 Top-K 截断候选。"""
         self._check_active()
+        if limit is not None and limit < 1:
+            raise ValueError("知识候选分页大小必须大于零")
         statement = (
-            select(
-                OperationsKnowledgeAssetEntity,
-                OperationsKnowledgeVersionEntity,
-                OperationsKnowledgeIndexEntity,
-            )
-            .join(
-                OperationsKnowledgeVersionEntity,
-                OperationsKnowledgeVersionEntity.asset_version_id
-                == OperationsKnowledgeAssetEntity.current_version_id,
-            )
-            .join(
-                OperationsKnowledgeIndexEntity,
-                OperationsKnowledgeIndexEntity.asset_version_id
-                == OperationsKnowledgeVersionEntity.asset_version_id,
-            )
+            select(OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity, OperationsKnowledgeIndexEntity)
+            .join(OperationsKnowledgeVersionEntity,
+                OperationsKnowledgeVersionEntity.asset_version_id == OperationsKnowledgeAssetEntity.current_version_id)
+            .join(OperationsKnowledgeIndexEntity,
+                OperationsKnowledgeIndexEntity.asset_version_id == OperationsKnowledgeVersionEntity.asset_version_id)
             .where(
                 OperationsKnowledgeAssetEntity.domain_id == domain_id,
                 OperationsKnowledgeAssetEntity.status == "PUBLISHED",
                 OperationsKnowledgeVersionEntity.status == "PUBLISHED",
                 OperationsKnowledgeIndexEntity.index_status == "READY",
                 OperationsKnowledgeAssetEntity.security_level <= max_security_level,
-                ~OperationsKnowledgeVersionEntity.asset_version_id.in_(
-                    select(OperationsKnowledgeSourceEntity.asset_version_id)
-                    .join(
-                        ReportEntity,
-                        ReportEntity.report_id
-                        == OperationsKnowledgeSourceEntity.source_report_id,
-                    )
-                    .where(ReportEntity.is_current == 0)
-                ),
             )
         )
-        if source_kinds:
-            statement = statement.where(
-                OperationsKnowledgeAssetEntity.asset_kind.in_(tuple(source_kinds))
-            )
+        if not source_kinds:
+            return []
+        statement = statement.where(OperationsKnowledgeAssetEntity.asset_kind.in_(tuple(source_kinds)))
         if knowledge_base_ids:
             statement = statement.where(
-                (
-                    OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE"
-                )
-                | OperationsKnowledgeAssetEntity.knowledge_base_id.in_(
-                    tuple(knowledge_base_ids)
-                )
+                (OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE")
+                | OperationsKnowledgeAssetEntity.knowledge_base_id.in_(tuple(knowledge_base_ids))
             )
-        statement = statement.order_by(
-            OperationsKnowledgeAssetEntity.asset_id,
-            OperationsKnowledgeVersionEntity.asset_version_id,
+        if after_index_id is not None:
+            statement = statement.where(OperationsKnowledgeIndexEntity.index_ref_id > after_index_id)
+        if asset_version_ids:
+            statement = statement.where(OperationsKnowledgeVersionEntity.asset_version_id.in_(tuple(asset_version_ids)))
+        if bundle_revision_ids:
+            statement = statement.where(OperationsKnowledgeIndexEntity.bundle_revision_id.in_(tuple(bundle_revision_ids)))
+        scope = OperationsKnowledgeScopeEntity
+        version_scope = scope.asset_version_id == OperationsKnowledgeVersionEntity.asset_version_id
+        # 手册的显式目标范围仍是硬边界；案例目标是来源，不等于只能原机复用。
+        # 案例原目标和监控源的当前 Agent 授权由应用层逐原件校验，未授权案例不会交给 KC。
+        has_target = select(scope.asset_version_id).where(version_scope, scope.scope_kind == "TARGET_ID").exists()
+        target_match = select(scope.asset_version_id).where(
+            version_scope, scope.scope_kind == "TARGET_ID",
+            scope.normalized_value == str(target_id).upper(),
+        ).exists()
+        manual_target = ~has_target | target_match if target_id is not None else ~has_target
+        statement = statement.where(
+            (OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE") | manual_target
         )
-        candidate_rows = list((await self._session.execute(statement)).all())
-        if not scope_filters:
-            return candidate_rows[:limit] if limit is not None else candidate_rows
-        result = []
-        for row in candidate_rows:
-            version = row[1]
-            scopes = list((await self._session.execute(
-                select(
-                    OperationsKnowledgeScopeEntity.scope_kind,
-                    OperationsKnowledgeScopeEntity.normalized_value,
-                    OperationsKnowledgeScopeEntity.tag_id,
-                ).where(
-                    OperationsKnowledgeScopeEntity.asset_version_id
-                    == version.asset_version_id
+        for kind, requested in scope_filters.items():
+            wanted = {str(value).strip().upper() for value in requested if str(value).strip()}
+            if kind == "TAG_ID":
+                # 标签是显式选择的范围，每个所选标签均须命中。
+                for value in sorted(wanted):
+                    try:
+                        tag_id = UUID(value)
+                    except ValueError:
+                        return []
+                    statement = statement.where(select(scope.asset_version_id).where(
+                        version_scope, scope.tag_id == tag_id,
+                    ).exists())
+            elif wanted:
+                known = select(scope.asset_version_id).where(version_scope, scope.scope_kind == kind).exists()
+                matched = select(scope.asset_version_id).where(
+                    version_scope, scope.scope_kind == kind, scope.normalized_value.in_(tuple(sorted(wanted))),
+                ).exists()
+                # 案例环境／症状是相关性线索，冲突和未知留给排序解释；不改变手册原有范围。
+                statement = statement.where(
+                    (OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE") | ~known | matched
                 )
-            )).all())
-            by_kind: dict[str, set[str]] = {}
-            tag_ids: set[str] = set()
-            for kind, value, tag_id in scopes:
-                by_kind.setdefault(str(kind), set()).add(str(value))
-                if tag_id is not None:
-                    tag_ids.add(str(tag_id).upper())
-            applicable = True
-            target_scopes = by_kind.get("TARGET_ID", set())
-            if target_scopes and (
-                target_id is None or str(target_id).upper() not in target_scopes
-            ):
-                applicable = False
-            for kind, requested in scope_filters.items():
-                if kind == "TAG_ID":
-                    wanted_ids = {str(value).strip().upper() for value in requested if str(value).strip()}
-                    if wanted_ids and not wanted_ids.issubset(tag_ids):
-                        applicable = False
-                        break
-                    continue
-                known = by_kind.get(kind, set())
-                wanted = {str(value).strip().upper() for value in requested if str(value).strip()}
-                if known and wanted and known.isdisjoint(wanted):
-                    applicable = False
-                    break
-            if applicable:
-                result.append(row)
-            if limit is not None and len(result) >= limit:
-                break
-        return result
+        statement = statement.order_by(OperationsKnowledgeIndexEntity.index_ref_id)
+        if limit is not None:
+            statement = statement.limit(limit)
+        return list((await self._session.execute(statement)).all())
 
     async def overview(self, *, domain_id: int) -> dict[str, int]:
         self._check_active()

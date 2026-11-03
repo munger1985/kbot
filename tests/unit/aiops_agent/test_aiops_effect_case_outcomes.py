@@ -83,10 +83,17 @@ async def outcome_fixture(scenario):
     f.view = await effects.evaluate_effect_plan(command=command, **kwargs)
     f.report = uow.inspections.publish_report.await_args.args[0]
     f.report.is_current = True
+    target.status, target.row_version = "ENABLED", 1
+    for source in uow.inspections.add_report_sources.await_args.args[0]:
+        owner = await uow.runs.get_run_scoped(ops_run_id=source.ops_run_id, domain_id=run.domain_id)
+        owner.status = "COMPLETED"
+        owner.final_artifact_id = getattr(owner, "final_artifact_id", None)
+        owner.plan_snapshot_json = getattr(owner, "plan_snapshot_json", {})
     f.uow.inspections.get_report_scoped.side_effect = lambda **kw: f.report
     f.uow.inspections.list_report_sources.side_effect = lambda **kw: uow.inspections.add_report_sources.await_args.args[0]
     f.uow.runs, f.uow.targets, f.uow.agents, f.uow.changes = uow.runs, uow.targets, uow.agents, uow.changes
     f.uow.agents.version_source_ids = AsyncMock(return_value=[])
+    f.uow.agents.get.return_value.status = "ACTIVE"
     f.domain, f.effect_run, f.after, f.receipt = run.domain_id, run, after, receipt
     return f
 
@@ -219,6 +226,8 @@ def test_effect_source_change_after_intake_queues_withdrawal_without_business_pu
 @pytest.mark.parametrize("scenario", ["unchanged", "degraded", "manual_unchanged", "observational"])
 def test_published_nonverified_case_stops_new_search_when_effect_source_is_lost(scenario):
     from aiops_agent.contracts.knowledge import KnowledgeSearchRequest
+    from tests.support.aiops_knowledge_scope import knowledge_agent_repository, KNOWLEDGE_BASE_ID, active_knowledge_bases_fixture
+    from uuid import UUID
     import inspect
     async def run():
         f = await outcome_fixture(scenario)
@@ -229,14 +238,20 @@ def test_published_nonverified_case_stops_new_search_when_effect_source_is_lost(
         asset.status = version.status = "PUBLISHED"
         f.uow.operations_knowledge.list_published_candidates = AsyncMock(return_value=[(asset, version, index)])
         f.service._kc.discover = AsyncMock()
+        authorized = knowledge_agent_repository()
+        active_knowledge_bases_fixture(f.uow.operations_knowledge)
+        f.uow.agents.get = authorized.get
+        f.uow.agents.version_knowledge_policy = authorized.version_knowledge_policy
         f.receipt.payload_json["status"] = "FAILED"
         f.receipt.content_hash = sha256_json(f.receipt.payload_json)
         kwargs = dict(domain_id=f.domain, agent_id=str(f.effect_run.agent_id),
-            request=KnowledgeSearchRequest(query="查询优化", knowledge_base_ids=(uuid7(),)), context=f.context)
+            request=KnowledgeSearchRequest(query="查询优化", knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),)), context=f.context)
         if "tenant_id" in inspect.signature(f.service.search).parameters:
             kwargs["tenant_id"] = uuid7()
         result = await f.service.search(**kwargs)
         assert not result["results"]
+        assert result["status"] == "NO_APPLICABLE_KNOWLEDGE"
+        f.uow.operations_knowledge.list_published_candidates.assert_awaited_once()
         f.service._kc.discover.assert_not_awaited()
     asyncio.run(run())
 

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>AIOps 运维知识</title>
+  <title>运维资料库</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261103_1"><link rel="stylesheet" href="./css/reference-operations-knowledge.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261103_2"><link rel="stylesheet" href="./css/reference-operations-knowledge.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="operations-knowledge">
   <main class="ops-main knowledge-page">
-    <header class="ops-head"><div><p class="eyebrow">OPERATIONS KNOWLEDGE</p><h1>运维知识</h1><p>上传技术资料后先由人工审批；通过后才调用 AI 识别受控标签并进入 KC 解析，完成后自动发布。</p></div><a class="secondary-button related-page-link" href="./knowledge-bases.html"><span class="related-page-link-copy"><small>关联页面</small><strong>运维知识库管理</strong></span><span class="related-page-link-arrow" aria-hidden="true">→</span></a></header>
+    <header class="ops-head"><div><p class="eyebrow">OPERATIONS KNOWLEDGE</p><h1>运维资料库</h1><p>上传技术资料后先由人工审批；通过后才调用 AI 识别受控标签并进入 KC 解析，完成后自动发布。</p></div><a class="secondary-button related-page-link" href="./knowledge-bases.html"><span class="related-page-link-copy"><small>关联页面</small><strong>运维知识库管理</strong></span><span class="related-page-link-arrow" aria-hidden="true">→</span></a></header>
     <section class="table-card knowledge-table-card">
       <header class="resource-list-header">
         <div class="resource-list-heading"><h2>资料列表</h2><p>查看已上传资料的审批、标签识别、解析与发布状态。</p></div>
@@ -25,7 +25,7 @@
   </main>
 
   <dialog id="upload-drawer" class="reference-drawer admin-drawer admin-drawer-sectioned knowledge-upload-drawer" aria-labelledby="upload-title">
-      <header class="admin-drawer-header"><div><p class="eyebrow">运维知识</p><h2 id="upload-title">上传资料</h2><p id="upload-subtitle">上传后先进入人工审批；批准后才调用 AI 识别标签并解析。可提交单个文件或由多个关联文件组成的 Bundle。</p></div><button class="icon-button" type="button" data-close aria-label="关闭上传抽屉">×</button></header>
+      <header class="admin-drawer-header"><div><p class="eyebrow">运维资料库</p><h2 id="upload-title">上传资料</h2><p id="upload-subtitle">上传后先进入人工审批；批准后才调用 AI 识别标签并解析。可提交单个文件或由多个关联文件组成的 Bundle。</p></div><button class="icon-button" type="button" data-close aria-label="关闭上传抽屉">×</button></header>
     <form id="manual-form" class="admin-drawer-body knowledge-upload-form">
         <section id="upload-mode-section" class="drawer-form-section upload-mode-section"><header><span>01</span><div><strong>选择组织方式</strong><small>组织方式决定本次文件如何形成运维知识对象。</small></div></header><fieldset class="upload-mode-picker"><legend class="sr-only">资料组织方式</legend><label class="upload-mode-option selected"><input name="grouping-mode" type="radio" value="EACH_FILE" checked><span><strong>单个文件</strong><small>一个文件形成一项运维资料，适合独立手册或说明文档。</small></span></label><label class="upload-mode-option"><input name="grouping-mode" type="radio" value="SINGLE_BUNDLE"><span><strong>Bundle</strong><small>多个文件共同形成一项资料，可区分正文与补充材料。</small></span></label></fieldset></section>
         <section id="upload-knowledge-base-section" class="drawer-form-section"><header><span>02</span><div><strong>选择知识库</strong><small>每份运维手册只归属一个知识库，创建后不可移动。</small></div></header><label class="control-field form-span"><span class="field-label">运维知识库</span><select id="upload-knowledge-base" required><option value="" disabled>请选择</option></select></label><p id="upload-no-knowledge-base" class="form-error form-span" hidden>当前 Domain 尚未创建运维知识库。</p></section>
@@ -38,7 +38,7 @@
 
   <dialog id="detail-drawer" class="reference-drawer admin-drawer admin-drawer-sectioned knowledge-detail-drawer" aria-labelledby="detail-title">
     <div class="native-drawer-shell">
-      <header class="admin-drawer-header"><div><span id="detail-eyebrow">运维知识</span><h2 id="detail-title">知识详情</h2><p id="detail-subtitle"></p></div><div class="knowledge-detail-head-actions"><span id="detail-status"></span><button class="icon-button" type="button" data-close aria-label="关闭详情抽屉">×</button></div></header>
+      <header class="admin-drawer-header"><div><span id="detail-eyebrow">运维资料库</span><h2 id="detail-title">知识详情</h2><p id="detail-subtitle"></p></div><div class="knowledge-detail-head-actions"><span id="detail-status"></span><button class="icon-button" type="button" data-close aria-label="关闭详情抽屉">×</button></div></header>
       <nav id="detail-tabs" class="knowledge-detail-tabs" aria-label="知识详情页签"><button class="active" data-tab="overview" type="button">概览与标签</button><button data-tab="files" type="button">文件与解析</button><button data-tab="history" type="button">处理记录</button></nav>
       <div id="detail-body" class="admin-drawer-body"></div><footer id="detail-actions" class="admin-drawer-footer"></footer>
     </div>
@@ -53,6 +53,6 @@
     </form>
   </dialog>
 
-  <script src="../runtime-config.js"></script><script src="../shared/kbot-sha256.js?v=20261019_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261103_1"></script><script src="./js/aiops-operations-knowledge.js?v=20261030_1"></script>
+  <script src="../runtime-config.js"></script><script src="../shared/kbot-sha256.js?v=20261019_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261103_3"></script><script src="./js/aiops-operations-knowledge.js?v=20261030_1"></script>
 </body>
 </html>

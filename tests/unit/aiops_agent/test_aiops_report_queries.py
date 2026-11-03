@@ -97,7 +97,7 @@ class ReportQueryTest(unittest.TestCase):
         cursor_filters = cursor_codec.encode.call_args.kwargs["filters"]
         self.assertEqual(
             cursor_filters,
-            {"target_id": None, "report_type": "INSPECTION_DAILY"},
+            {"target_id": None, "report_type": "INSPECTION_DAILY", "category": None, "template_ref": None},
         )
 
     def test_report_versions_anchor_is_domain_scoped(self) -> None:

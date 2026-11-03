@@ -58,6 +58,7 @@ class AIOpsDomainOutboxSink:
         situation_recovery_projector=None,
         business_effect_service=None,
         operations_knowledge_service=None,
+        output_job_worker=None,
         caller_service: str = "aiops-worker",
     ):
         self._runtime_service = runtime_service
@@ -74,9 +75,15 @@ class AIOpsDomainOutboxSink:
         self._situation_recovery_projector = situation_recovery_projector
         self._business_effect_service = business_effect_service
         self._operations_knowledge_service = operations_knowledge_service
+        self._output_job_worker = output_job_worker
         self._caller_service = caller_service
 
     async def publish(self, event_type: str, payload: dict) -> None:
+        if event_type == "OPS_OUTPUT_JOB_REQUESTED":
+            if self._output_job_worker is None:
+                raise RuntimeError("输出任务消费者未配置，不能以日志投递代替业务受理")
+            await self._output_job_worker.accept_requested(payload)
+            return
         if event_type == "OPS_CASE_WITHDRAWAL_REQUESTED":
             if self._operations_knowledge_service is None:
                 raise RuntimeError("案例撤回服务未配置，不能以日志投递代替接收方确认")

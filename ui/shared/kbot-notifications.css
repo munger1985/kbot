@@ -1,0 +1,5 @@
+.kbot-notifications .kbot-notification-panel { width: min(28rem, calc(100vw - 2rem)); max-height: 70vh; overflow: auto; }
+.kbot-notification-panel header { display: flex; align-items: center; justify-content: space-between; }
+.kbot-notification-panel article { padding-block: 1rem; border-top: 1px solid var(--line); }
+.kbot-notification-panel p { white-space: normal; color: var(--muted); font-size: var(--type-supporting); }
+.kbot-notification-panel article strong { color: var(--ink); }

@@ -3,6 +3,12 @@
 
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
+  let outputTasks = null;
+  shell.ready.then(() => {
+    outputTasks = globalThis.KBotAIOpsOutputJobs?.mount(document.getElementById("conversation-output-jobs"), {
+      requireConversation: true, conversationId: state.conversation?.conversation_id,
+    });
+  });
   const markdown = globalThis.KBotMarkdown;
   const state = {
     agents: [], conversation: null, selectedFiles: [],
@@ -1364,15 +1370,34 @@
     return `${supportingHtml}${citationHtml}${planAcquisition}${gapsHtml}`;
   }
 
+  function conversationOutputUnavailableReason() {
+    if (!state.permissions.has("aiops:use")) return "当前账号没有诊断产出权限。";
+    if (!state.conversation?.conversation_id) return "请先选择诊断会话。";
+    const turns = values(state.turns);
+    if (!turns.length) return "当前会话尚无诊断轮次，完成诊断后可生成报告或沉淀案例。";
+    // WAITING_USER 对会话交互是暂停状态，但来源尚未结束，不能冻结为正式产出。
+    if (turns.some(turn => !["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(turn.status))) {
+      return "会话仍有进行中或等待补充信息的轮次，全部结束后可生成报告或沉淀案例。";
+    }
+    if (!turns.some(turn => ["COMPLETED", "PARTIAL"].includes(turn.status))) {
+      return "当前会话尚无已完成的诊断结果；失败或取消记录不能单独作为产出来源。";
+    }
+    return "";
+  }
+
   function reportAction({ runId, conversationId, sourceKind, periodKind = "AD_HOC" }) {
     if (!runId && !conversationId) return "";
     const source = conversationId
       ? `data-generate-report-conversation="${esc(conversationId)}"`
       : `data-generate-report-run="${esc(runId)}"`;
     const closure = conversationId
-      ? `<button type="button" class="primary" data-close-diagnosis="${esc(conversationId)}">诊断收口</button>`
+      ? `<button type="button" class="primary" data-close-diagnosis="${esc(conversationId)}">沉淀案例</button>`
       : "";
-    if (conversationId && document.body.dataset.page === "chat") return `<button type="button" class="primary-button" data-close-diagnosis="${esc(conversationId)}">诊断收口</button><button type="button" class="secondary-button" ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成会话报告</button>`;
+    if (conversationId && document.body.dataset.page === "chat") {
+      const reason = conversationOutputUnavailableReason();
+      const unavailable = reason ? `disabled title="${esc(reason)}" aria-describedby="conversation-output-unavailable"` : "";
+      return `<button type="button" class="primary-button" ${unavailable} data-close-diagnosis="${esc(conversationId)}">沉淀案例</button><button type="button" class="secondary-button" ${unavailable} ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成报告</button>`;
+    }
     return `<div class="ops-filter-actions ops-conversation-actions">${closure}<button type="button" ${conversationId ? "" : 'class="primary"'} ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成正式报告</button></div>`;
   }
 
@@ -1396,13 +1421,13 @@
       const dialog = document.createElement("dialog");
       dialog.id = "diagnosis-closure-dialog";
       dialog.className = "reference-drawer admin-drawer aiops-case-closure-drawer";
-      dialog.setAttribute("aria-label", "诊断收口");
-      const header = '<header class="admin-drawer-header"><div><p class="eyebrow">DIAGNOSIS CLOSURE</p><h2>诊断收口</h2><p>基于调查记录登记处置与人工结果；仅生成案例候选，仍需审核发布。</p></div><button class="icon-button" type="button" data-close-closure aria-label="关闭诊断收口">×</button></header>';
+      dialog.setAttribute("aria-label", "沉淀案例");
+      const header = '<header class="admin-drawer-header"><div><p class="eyebrow">DIAGNOSIS CLOSURE</p><h2>沉淀案例</h2><p>基于调查记录登记处置与人工结果；仅生成案例候选，仍需审核发布。</p></div><button class="icon-button" type="button" data-close-closure aria-label="关闭沉淀案例">×</button></header>';
       if (!preview.eligible) {
         dialog.innerHTML = `${header}<div class="admin-drawer-body aiops-case-closure-empty"><strong>当前诊断还不能收口</strong><ul>${values(preview.reasons).map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul><p>继续调查并形成可追溯的有效判断后，可提炼诊断参考。</p></div>`;
       } else {
         const environment = [preview.environment?.database_type, preview.environment?.database_version, preview.environment?.platform].filter(Boolean).join(" · ") || "未限定";
-        dialog.innerHTML = `${header}<form class="admin-drawer-body aiops-case-closure-form">${preview.existing_asset_id ? '<p>此范围已有案例候选；相同提交会重用，修改人工内容将形成待审核新版本。</p>' : ""}<section class="aiops-case-closure-summary"><div><span>结论来源</span><strong>人工归纳，待审核</strong></div><div><span>案例类型</span><strong data-closure-kind>诊断参考</strong></div><div><span>目标环境</span><strong data-closure-environment>${esc(environment)}</strong></div></section><label class="control-field"><span class="field-label">案例名称</span><input name="display_name" maxlength="256" required value="${esc(preview.display_name)}"></label><label class="control-field"><span class="field-label">问题现象（每行一条）</span><textarea name="symptoms" rows="4" required>${esc(values(preview.symptoms).join("\n"))}</textarea></label><label class="control-field"><span class="field-label">调查结论与原因判断</span><textarea name="root_cause_summary" rows="4" maxlength="4000" required>${esc(preview.root_cause_summary)}</textarea></label><label class="control-field"><span class="field-label">实际执行动作（每行一条，不填写建议动作）</span><textarea name="actions" rows="4"></textarea></label><section class="aiops-case-evidence-section"><header><strong>动作与验证证据</strong><small>人工登记结果不等于受控效果验证；不同前后证据不能自动证明改善。</small></header><div class="aiops-case-evidence-grid"><fieldset><legend>动作证据</legend>${closureEvidenceOptions(preview, "action_evidence_ids")}</fieldset><fieldset><legend>实施前证据</legend>${closureEvidenceOptions(preview, "before_evidence_ids")}</fieldset><fieldset><legend>实施后证据</legend>${closureEvidenceOptions(preview, "after_evidence_ids")}</fieldset></div></section><label class="control-field"><span class="field-label">验证结果</span><select name="verification_result"><option value="NOT_VERIFIED">未验证</option><option value="RESOLVED">问题已解决</option><option value="IMPROVED">问题已改善</option><option value="NOT_ACHIEVED">未达到预期</option><option value="ADVERSE">出现不利影响</option><option value="INCONCLUSIVE">无法判断</option></select></label><div class="aiops-case-closure-two-column"><label class="control-field"><span class="field-label">适用条件（每行一条）</span><textarea name="applicability" rows="3"></textarea></label><label class="control-field"><span class="field-label">不适用条件（每行一条）</span><textarea name="contraindications" rows="3"></textarea></label></div><footer class="admin-drawer-footer"><span>保存后进入待完善队列，不会自动发布。</span><button class="secondary-button" type="button" data-close-closure>取消</button><button class="primary-button" type="submit">完成收口并生成候选</button></footer></form>`;
+        dialog.innerHTML = `${header}<form class="admin-drawer-body aiops-case-closure-form">${preview.existing_asset_id ? '<p>此范围已有案例候选；相同提交会重用，修改人工内容将形成待审核新版本。</p>' : ""}<section class="aiops-case-closure-summary"><div><span>结论来源</span><strong>人工归纳，待审核</strong></div><div><span>案例类型</span><strong data-closure-kind>诊断参考</strong></div><div><span>目标环境</span><strong data-closure-environment>${esc(environment)}</strong></div></section><label class="control-field"><span class="field-label">案例名称</span><input name="display_name" maxlength="256" required value="${esc(preview.display_name)}"></label><label class="control-field"><span class="field-label">问题现象（每行一条）</span><textarea name="symptoms" rows="4" required>${esc(values(preview.symptoms).join("\n"))}</textarea></label><label class="control-field"><span class="field-label">调查结论与原因判断</span><textarea name="root_cause_summary" rows="4" maxlength="4000" required>${esc(preview.root_cause_summary)}</textarea></label><label class="control-field"><span class="field-label">实际执行动作（每行一条，不填写建议动作）</span><textarea name="actions" rows="4"></textarea></label><section class="aiops-case-evidence-section"><header><strong>动作与验证证据</strong><small>人工登记结果不等于受控效果验证；不同前后证据不能自动证明改善。</small></header><div class="aiops-case-evidence-grid"><fieldset><legend>动作证据</legend>${closureEvidenceOptions(preview, "action_evidence_ids")}</fieldset><fieldset><legend>实施前证据</legend>${closureEvidenceOptions(preview, "before_evidence_ids")}</fieldset><fieldset><legend>实施后证据</legend>${closureEvidenceOptions(preview, "after_evidence_ids")}</fieldset></div></section><label class="control-field"><span class="field-label">验证结果</span><select name="verification_result"><option value="NOT_VERIFIED">未验证</option><option value="RESOLVED">问题已解决</option><option value="IMPROVED">问题已改善</option><option value="NOT_ACHIEVED">未达到预期</option><option value="ADVERSE">出现不利影响</option><option value="INCONCLUSIVE">无法判断</option></select></label><div class="aiops-case-closure-two-column"><label class="control-field"><span class="field-label">适用条件（每行一条）</span><textarea name="applicability" rows="3"></textarea></label><label class="control-field"><span class="field-label">不适用条件（每行一条）</span><textarea name="contraindications" rows="3"></textarea></label></div><footer class="admin-drawer-footer"><span>后台索引就绪后形成草稿，不会自动发布。</span><button class="secondary-button" type="button" data-close-closure>取消</button><button class="primary-button" type="submit">提交案例任务</button></footer></form>`;
         const form = dialog.querySelector("form");
         let previewRequest = 0;
         let savingClosure = false;
@@ -1478,14 +1503,14 @@
           turns.disabled = true;
           const submit = form.querySelector('[type="submit"]');
           submit.disabled = true;
-          submit.textContent = "正在收口…";
+          submit.textContent = "正在提交…";
           try {
             const data = new FormData(form);
-            const result = await KBotAIOpsAuth.request(
+            await KBotAIOpsAuth.request(
               `${api}/operations-knowledge/conversations/${encodeURIComponent(conversationId)}:close-diagnosis`,
               {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", "Idempotency-Key": KBotAIOpsAuth.uuid7() },
                 body: JSON.stringify({
                   included_turn_ids: values(preview.included_turn_ids),
                   source_fingerprint: preview.source_fingerprint,
@@ -1502,16 +1527,19 @@
                 }),
               },
             );
-            shell.toast("诊断已收口，案例候选正在建立索引，审核通过前不会进入 Agent 检索");
-            location.href = `./cases.html?asset_id=${encodeURIComponent(result.asset.asset_id)}`;
+            savingClosure = false;
+            delete dialog.dataset.busy;
+            dialog.close();
+            shell.toast("案例任务已提交，可离开页面；索引就绪后形成草稿，人工发布前不会供 Agent 检索");
+            await outputTasks?.refresh();
           } catch (error) {
             savingClosure = false;
             delete dialog.dataset.busy;
             dialog.querySelectorAll("[data-close-closure]").forEach(close=>{close.disabled=false;});
             turns.disabled = false;
-            shell.toast(error.message || "无法完成诊断收口");
+            shell.toast(error.message || "无法完成沉淀案例");
             submit.disabled = false;
-            submit.textContent = "完成收口并生成候选";
+            submit.textContent = "提交案例任务";
           }
         };
       }
@@ -1525,7 +1553,7 @@
       }, { once: true });
       dialog.showModal();
     } catch (error) {
-      shell.toast(error.message || "无法读取诊断收口信息");
+      shell.toast(error.message || "无法读取沉淀案例信息");
       button.disabled = false;
     }
   }
@@ -1616,7 +1644,7 @@
     dialog.setAttribute("aria-label", "选择报告模板");
     const reportable = values(state.turns).filter(turn=>["COMPLETED","PARTIAL"].includes(turn.status)).length;
     const incomplete = values(state.turns).length - reportable;
-    dialog.innerHTML = `<header class="admin-drawer-header"><div><p class="eyebrow">正式会话报告</p><h2>选择报告模板</h2><p>模板版本和当前会话的诊断证据将在生成时一并冻结。</p></div><button class="icon-button" type="button" aria-label="关闭报告模板选择" data-close-report>×</button></header><form class="admin-drawer-body aiops-report-template-form"><section class="aiops-report-scope"><div><span>会话</span><strong>${esc(state.conversation?.title || "未命名诊断会话")}</strong></div><div><span>纳入报告</span><strong>${reportable} 个终态诊断轮次</strong></div>${incomplete ? `<div><span>证据边界</span><strong>${incomplete} 个轮次将记录为不完整</strong></div>` : ""}</section><div data-report-options><div class="loading-card"><span class="loading-orb"></span>正在读取会话报告模板…</div></div><footer class="admin-drawer-footer"><span>生成后将直接进入报告详情。</span><button class="secondary-button" type="button" data-close-report>取消</button><button class="primary-button" type="submit" disabled>生成报告</button></footer></form>`;
+    dialog.innerHTML = `<header class="admin-drawer-header"><div><p class="eyebrow">正式会话报告</p><h2>选择报告模板</h2><p>模板版本和当前会话的诊断证据将在生成时一并冻结。</p></div><button class="icon-button" type="button" aria-label="关闭报告模板选择" data-close-report>×</button></header><form class="admin-drawer-body aiops-report-template-form"><section class="aiops-report-scope"><div><span>会话</span><strong>${esc(state.conversation?.title || "未命名诊断会话")}</strong></div><div><span>纳入报告</span><strong>${reportable} 个终态诊断轮次</strong></div>${incomplete ? `<div><span>证据边界</span><strong>${incomplete} 个轮次将记录为不完整</strong></div>` : ""}</section><div data-report-options><div class="loading-card"><span class="loading-orb"></span>正在读取会话报告模板…</div></div><footer class="admin-drawer-footer"><span>提交后可离开页面；完成后通知，结果在报告中心查看。</span><button class="secondary-button" type="button" data-close-report>取消</button><button class="primary-button" type="submit" disabled>生成报告</button></footer></form>`;
     document.querySelector("main.ops-main").append(dialog);
     const form = dialog.querySelector("form"), submit = form.querySelector('[type="submit"]');
     dialog.querySelectorAll("[data-close-report]").forEach(close=>{close.onclick=()=>{if(!dialog.dataset.busy)dialog.close();};});
@@ -1634,10 +1662,13 @@
         event.preventDefault();
         const selected = templates.find(item=>item.template_ref===new FormData(form).get("report-template"));
         if (!selected || dialog.dataset.busy) return;
-        dialog.dataset.busy="true"; button.disabled=true; dialog.querySelectorAll("button,input").forEach(control=>{control.disabled=true;});submit.textContent="正在生成…";
+        dialog.dataset.busy="true"; button.disabled=true; dialog.querySelectorAll("button,input").forEach(control=>{control.disabled=true;});submit.textContent="正在提交…";
         try {
-          const result=await KBotAIOpsAuth.request(`${api}/reports:generate`,{method:"POST",headers:{"Idempotency-Key":KBotAIOpsAuth.uuid()},body:JSON.stringify({conversation_id:button.dataset.generateReportConversation,template_ref:selected.template_ref,template_version_id:selected.template_version_id ?? null,period_kind:"AD_HOC"})});
-          location.href=`./report-detail.html?id=${encodeURIComponent(result.report_id)}`;
+          await KBotAIOpsAuth.request(`${api}/reports:generate`,{method:"POST",headers:{"Idempotency-Key":KBotAIOpsAuth.uuid()},body:JSON.stringify({conversation_id:button.dataset.generateReportConversation,template_ref:selected.template_ref,template_version_id:selected.template_version_id ?? null,period_kind:"AD_HOC"})});
+          delete dialog.dataset.busy;
+          dialog.close();
+          shell.toast("报告任务已提交，可离开页面；完成后会通知，并可在报告中心查看。");
+          await outputTasks?.refresh();
         } catch(error) {shell.toast(error.message);}
         finally {delete dialog.dataset.busy;button.disabled=false;dialog.querySelectorAll("button,input").forEach(control=>{control.disabled=false;});submit.textContent="生成报告";}
       };
@@ -1687,14 +1718,15 @@
           const reportSource = conversationId
             ? { conversation_id: conversationId }
             : { ops_run_id: button.dataset.generateReportRun };
-          const result = await KBotAIOpsAuth.request(`${api}/reports:generate`, {
+          await KBotAIOpsAuth.request(`${api}/reports:generate`, {
             method: "POST",
             headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
             body: JSON.stringify({ ...reportSource, template_ref: templateRef, template_version_id: templateVersionId, period_kind: selectedPeriod }),
           });
-          location.href = `./report-detail.html?id=${encodeURIComponent(result.report_id)}`;
+          shell.toast("报告任务已提交，可离开页面；完成后会通知，并可在报告中心查看。");
+          await outputTasks?.refresh();
         } catch (error) { shell.toast(error.message); }
-        finally { dialog.remove(); }
+        finally { dialog.remove(); button.disabled = false; }
       }, { once: true });
       dialog.showModal();
     } catch (error) { shell.toast(error.message); button.disabled = false; }
@@ -1765,6 +1797,7 @@
 
   async function renderConversation(conversation, turns, resume = true) {
     state.conversation = conversation;
+    outputTasks?.setConversation(conversation.conversation_id);
     state.turns = turns;
     document.getElementById("conversation-title").textContent = conversation.title || "诊断对话";
     document.getElementById("conversation-eyebrow").textContent = turns.length ? `第 ${turns.at(-1).turn_no} 轮` : "新的运维会话";
@@ -1786,7 +1819,15 @@
     mountSqlPlanAcquisition(panel, turns);
     const hasCompletedResult = turns.length > 0;
     const hasActiveTurn = turns.some((turn) => !terminalTurnStatuses.has(turn.status));
-    if (hasCompletedResult) {
+    if (document.body.dataset.page === "chat") {
+      headerActions.innerHTML = reportAction({ conversationId: conversation.conversation_id, sourceKind: "CHAT" });
+      const notice = document.getElementById("conversation-output-unavailable");
+      if (notice) {
+        notice.textContent = conversationOutputUnavailableReason();
+        notice.hidden = !notice.textContent;
+      }
+      bindReportActions(headerActions);
+    } else if (hasCompletedResult) {
       const action = reportAction({
         conversationId: conversation.conversation_id,
         sourceKind: "CHAT",
@@ -1794,7 +1835,7 @@
       if (hasActiveTurn && document.body.dataset.page !== "chat") panel.insertAdjacentHTML("beforeend", '<div class="ops-context-banner">会话仍有进行中的 Turn；全部结束后可生成覆盖整个会话的正式报告。</div>');
       else if (!hasActiveTurn) {
         headerActions.innerHTML = action;
-        headerActions.querySelector("[data-generate-report-conversation]").textContent = "生成会话报告";
+        headerActions.querySelector("[data-generate-report-conversation]").textContent = "生成报告";
         bindReportActions(headerActions);
       }
     }
@@ -1877,6 +1918,7 @@
 
   function resetConversationView({ agentSelected = false } = {}) {
     state.conversation = null;
+    outputTasks?.setConversation("");
     state.turns = [];
     document.querySelectorAll(".ops-workspace-item").forEach((button) => button.removeAttribute("aria-current"));
     syncAgentTargetContext();
@@ -1885,6 +1927,8 @@
     document.getElementById("conversation-eyebrow").textContent = source ? "继续深入诊断" : "新的运维会话";
     document.getElementById("conversation-context").textContent = "每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。" + (source ? `已继承来源 ${source.sourceType}。` : "");
     document.getElementById("conversation-actions").innerHTML = "";
+    const outputNotice = document.getElementById("conversation-output-unavailable");
+    if (outputNotice) { outputNotice.hidden = true; outputNotice.textContent = ""; }
     document.getElementById("message-list").innerHTML = starterHomeHtml();
     globalThis.AIOpsChatCharts?.mount(document.getElementById("message-list"));
     bindStarterButtons(document.getElementById("message-list"));

@@ -14,6 +14,7 @@ from aiops_agent.api.monitoring import (
 from aiops_agent.api.operations_knowledge import (
     router as internal_operations_knowledge_router,
 )
+from aiops_agent.api.output_jobs import router as internal_output_jobs_router
 from aiops_agent.api.runtime import router as internal_runtime_router
 from aiops_agent.api.intake import router as internal_intake_router
 from aiops_agent.api.changes import router as internal_changes_router
@@ -64,6 +65,7 @@ def create_internal_contract_app() -> FastAPI:
     app.include_router(internal_executions_router)
     app.include_router(internal_execution_events_router)
     app.include_router(internal_operations_knowledge_router)
+    app.include_router(internal_output_jobs_router)
 
     return app
 

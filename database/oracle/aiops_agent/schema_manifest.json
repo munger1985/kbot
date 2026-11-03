@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 55,
-  "contract_version": "aiops-oracle-v55-inspection-template-lifecycle",
+  "schema_version": 56,
+  "contract_version": "aiops-oracle-v56-output-jobs",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -26,13 +26,13 @@
     },
     {
       "name": "005_ops_messaging.sql",
-      "statements": 8,
-      "sha256": "40cf37ea41079d64d1a2edf07405d2aa3759af20eef1f96f2a5a3ad9eb7867a6"
+      "statements": 16,
+      "sha256": "fa46cf4a28d7b4771609d2d6de908dc6bcba21763402c954c0354f5538991a29"
     },
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "7a34e1e8dc40a25525fbde4704ee95bd04c62244c8b20729917b15de7e0ba042"
+      "sha256": "ca1049f3bef9f61d349dab76151db024b49bd68969155c6ef1ac34b6df782db6"
     },
     {
       "name": "007_ops_agents.sql",
@@ -109,6 +109,8 @@
     "KBOT_OPS_REPORT_SOURCE",
     "KBOT_OPS_INBOX",
     "KBOT_OPS_OUTBOX",
+    "KBOT_OPS_OUTPUT_JOB",
+    "KBOT_OPS_OUTPUT_JOB_ATTEMPT",
     "KBOT_OPS_AGENT",
     "KBOT_OPS_AGENT_VERSION",
     "KBOT_OPS_AGENT_VERSION_SYSTEM",
@@ -190,6 +192,12 @@
     "UX_OPS_TURN_EVENT_KEY"
   ],
   "foreign_key_indexes": [
+    {
+      "constraint": "FK_OPS_OUTPUT_ATTEMPT_JOB",
+      "index": "IX_OPS_OUTPUT_ATTEMPT_JOB",
+      "table": "KBOT_OPS_OUTPUT_JOB_ATTEMPT",
+      "columns": ["JOB_ID", "ATTEMPT_NO"]
+    },
     {
       "constraint": "FK_OPS_TARGET_FACT_OWNER",
       "index": "IX_OPS_TARGET_FACT_OWNER",

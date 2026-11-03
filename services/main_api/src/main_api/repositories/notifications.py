@@ -149,6 +149,51 @@ class NotificationRepository:
         self._session.add(entity)
         await self._session.flush()
 
+    async def operation_event_payload(self, *, outbox_id: UUID) -> dict | None:
+        return await self._session.scalar(select(NotificationOutboxEntity.payload_json).where(
+            NotificationOutboxEntity.outbox_id == outbox_id,
+            NotificationOutboxEntity.producer_service == "aiops"))
+
+    async def output_operation_candidates(self, *, limit: int = 50) -> list[dict]:
+        operation = BackgroundOperationEntity
+        cutoff = _now() - timedelta(minutes=2)
+        rows = await self._session.execute(
+            select(operation.operation_id, operation.domain_id, operation.source_operation_id,
+                operation.initiator_actor_id, operation.status, operation.source_version,
+                operation.row_version, NotificationOutboxEntity.payload_json.label("envelope"))
+            .join(NotificationOutboxEntity, NotificationOutboxEntity.outbox_id == operation.last_outbox_id)
+            .where(operation.producer_service == "aiops", operation.source_version.is_not(None),
+                operation.updated_at < cutoff,
+                or_(operation.last_reconciled_at.is_(None), operation.last_reconciled_at < cutoff))
+            .order_by(func.coalesce(operation.last_reconciled_at, operation.created_at), operation.operation_id)
+            .limit(limit)
+        )
+        return [dict(row) for row in rows.mappings().all()]
+
+    async def reconcile_output_operation(self, *, operation_id: UUID, domain_id: int,
+        source_operation_id: str, expected_row_version: int, source_version: int,
+        source_updated_at: datetime, status: str, summary: str, error_code: str | None) -> bool:
+        operation = BackgroundOperationEntity
+        result = await self._session.execute(update(operation).where(
+            operation.operation_id == operation_id, operation.domain_id == domain_id,
+            operation.producer_service == "aiops",
+            operation.source_operation_id == source_operation_id,
+            operation.row_version == expected_row_version,
+            operation.source_version <= source_version,
+        ).values(status=status, source_version=source_version,
+            last_occurred_at=source_updated_at, last_reconciled_at=_now(),
+            summary=summary, error_code=error_code,
+            row_version=operation.row_version + 1))
+        return bool(result.rowcount)
+
+    async def defer_output_reconciliation(self, *, operation_id: UUID, domain_id: int,
+        expected_row_version: int) -> None:
+        operation = BackgroundOperationEntity
+        await self._session.execute(update(operation).where(
+            operation.operation_id == operation_id, operation.domain_id == domain_id,
+            operation.producer_service == "aiops", operation.row_version == expected_row_version,
+        ).values(last_reconciled_at=_now(), row_version=operation.row_version + 1))
+
     async def watcher_actor_ids(
         self, *, operation_id: UUID, domain_id: int,
     ) -> set[str]:
@@ -271,6 +316,25 @@ class NotificationRepository:
                 statement.order_by(NotificationInboxEntity.event_sequence.desc()).limit(limit)
             )
         ).scalars().all())
+
+    async def inbox_route_payloads(
+        self, *, domain_id: int, actor_id: str, inbox_ids: list[UUID],
+    ) -> dict[UUID, dict]:
+        """只对当前收件人的当前页读取原信封，不复制敏感 safe_data 到 Inbox。"""
+        if not inbox_ids:
+            return {}
+        rows = (await self._session.execute(
+            select(NotificationInboxEntity.inbox_id, NotificationOutboxEntity.payload_json)
+            .join(NotificationOutboxEntity,
+                NotificationOutboxEntity.outbox_id == NotificationInboxEntity.outbox_id)
+            .where(NotificationInboxEntity.inbox_id.in_(inbox_ids),
+                NotificationInboxEntity.domain_id == domain_id,
+                NotificationInboxEntity.recipient_actor_id == actor_id,
+                NotificationInboxEntity.expires_at > _now(),
+                NotificationOutboxEntity.domain_id == domain_id,
+                NotificationOutboxEntity.producer_service == "aiops")
+        )).all()
+        return {row[0]: row[1] for row in rows}
 
     async def stream_inbox(
         self, *, domain_id: int, actor_id: str,

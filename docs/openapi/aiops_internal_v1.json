@@ -1901,6 +1901,336 @@
         "title": "CancelRunCommand",
         "type": "object"
       },
+      "CaseActionEffect": {
+        "additionalProperties": false,
+        "description": "逐项措施的效果映射；不能把案例总结果复制给每一项措施。",
+        "properties": {
+          "action_ordinal": {
+            "minimum": 1.0,
+            "title": "Action Ordinal",
+            "type": "integer"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "method": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Method",
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "NOT_VERIFIED",
+              "RESOLVED",
+              "IMPROVED",
+              "NOT_ACHIEVED",
+              "ADVERSE",
+              "DEGRADED",
+              "UNCHANGED",
+              "INCONCLUSIVE"
+            ],
+            "title": "Result",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 3000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_ordinal",
+          "result",
+          "method",
+          "summary",
+          "evidence_refs"
+        ],
+        "title": "CaseActionEffect",
+        "type": "object"
+      },
+      "CaseClaimSource": {
+        "additionalProperties": false,
+        "description": "精确到冻结调查版本和判断的只读来源。",
+        "properties": {
+          "artifact_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "claim_id": {
+            "pattern": "^c[0-9]+$",
+            "title": "Claim Id",
+            "type": "string"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "counterevidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 24,
+            "title": "Counterevidence Refs",
+            "type": "array"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 24,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "record_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Record Id",
+            "type": "string"
+          },
+          "record_revision": {
+            "minimum": 1.0,
+            "title": "Record Revision",
+            "type": "integer"
+          },
+          "run_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "content_hash",
+          "run_id",
+          "record_id",
+          "record_revision",
+          "claim_id"
+        ],
+        "title": "CaseClaimSource",
+        "type": "object"
+      },
+      "CaseCollectionModels": {
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "title": "CaseCollectionModels",
+        "type": "object"
+      },
+      "CaseInvestigationStep": {
+        "additionalProperties": false,
+        "description": "可读检查结果，而非模型隐藏推理；只从冻结记录确定性投影。",
+        "properties": {
+          "applicable_time": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Applicable Time",
+            "type": "string"
+          },
+          "finding": {
+            "maxLength": 3000,
+            "minLength": 1,
+            "title": "Finding",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "FACT",
+              "CAUSE",
+              "RISK",
+              "PREDICTION",
+              "EXCLUDED",
+              "INTERPRETATION"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "OBSERVED",
+              "SUPPORTED",
+              "HYPOTHESIS",
+              "UNKNOWN"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/CaseClaimSource"
+          },
+          "step_id": {
+            "pattern": "^check-[0-9a-f]{24}$",
+            "title": "Step Id",
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "kind",
+          "subject",
+          "finding",
+          "level",
+          "applicable_time",
+          "source"
+        ],
+        "title": "CaseInvestigationStep",
+        "type": "object"
+      },
+      "CaseKnowledgeManifest": {
+        "additionalProperties": false,
+        "properties": {
+          "body_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Body Sha256",
+            "type": "string"
+          },
+          "offset_unit": {
+            "const": "UNICODE_CHARACTER",
+            "default": "UNICODE_CHARACTER",
+            "title": "Offset Unit",
+            "type": "string"
+          },
+          "profile_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Profile Hash",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "OPS_CASE_KNOWLEDGE_PROJECTION.v1",
+            "default": "OPS_CASE_KNOWLEDGE_PROJECTION.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/CaseKnowledgeUnitLocator"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Units",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "body_sha256",
+          "profile_hash",
+          "units"
+        ],
+        "title": "CaseKnowledgeManifest",
+        "type": "object"
+      },
+      "CaseKnowledgeUnitLocator": {
+        "additionalProperties": false,
+        "properties": {
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "end": {
+            "exclusiveMinimum": 0.0,
+            "title": "End",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "PROBLEM",
+              "CONCLUSION",
+              "INVESTIGATION",
+              "ACTION_EFFECT",
+              "VERIFICATION",
+              "BOUNDARIES",
+              "UNRESOLVED"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "related_unit_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Related Unit Ids",
+            "type": "array"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "unit_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Unit Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit_id",
+          "kind",
+          "start",
+          "end",
+          "content_hash"
+        ],
+        "title": "CaseKnowledgeUnitLocator",
+        "type": "object"
+      },
       "CaseRedaction": {
         "additionalProperties": false,
         "properties": {
@@ -5009,6 +5339,15 @@
       "DiagnosisCaseProfile": {
         "additionalProperties": false,
         "properties": {
+          "action_effects": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CaseActionEffect"
+            },
+            "maxItems": 64,
+            "title": "Action Effects",
+            "type": "array"
+          },
           "actions": {
             "default": [],
             "items": {
@@ -5049,6 +5388,25 @@
             "title": "Environment",
             "type": "object"
           },
+          "investigation_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CaseInvestigationStep"
+            },
+            "maxItems": 3200,
+            "title": "Investigation Steps",
+            "type": "array"
+          },
+          "knowledge_projection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseKnowledgeManifest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "problem_signature": {
             "additionalProperties": true,
             "title": "Problem Signature",
@@ -5079,6 +5437,15 @@
             "additionalProperties": true,
             "title": "Source",
             "type": "object"
+          },
+          "unresolved_questions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2400,
+            "title": "Unresolved Questions",
+            "type": "array"
           },
           "verification": {
             "additionalProperties": true,
@@ -8947,9 +9314,15 @@
         "title": "KnowledgeReviewCommand",
         "type": "object"
       },
-      "KnowledgeSearchRequest": {
+      "KnowledgeSearchPreviewRequest": {
         "additionalProperties": false,
+        "description": "以显式选择的 Agent 验证正式检索范围，不把管理用户冒充为 Agent。",
         "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
           "components": {
             "default": [],
             "items": {
@@ -9080,6 +9453,18 @@
             "title": "Tag Ids",
             "type": "array"
           },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
           "topology": {
             "anyOf": [
               {
@@ -9094,9 +9479,10 @@
           }
         },
         "required": [
-          "query"
+          "query",
+          "agent_id"
         ],
-        "title": "KnowledgeSearchRequest",
+        "title": "KnowledgeSearchPreviewRequest",
         "type": "object"
       },
       "KnowledgeTagStatusCommand": {
@@ -11634,6 +12020,495 @@
         "title": "OracleRecoveryMarker",
         "type": "object"
       },
+      "OutputAuthorityRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "job_type": {
+            "enum": [
+              "REPORT_GENERATION",
+              "CASE_EXTRACTION"
+            ],
+            "title": "Job Type",
+            "type": "string"
+          },
+          "origin": {
+            "const": "HUMAN",
+            "title": "Origin",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OutputJobSource"
+          },
+          "source_agent_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Source Agent Ids",
+            "type": "array"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "required": [
+          "job_id",
+          "job_type",
+          "source",
+          "origin",
+          "actor_id",
+          "domain_id",
+          "source_agent_ids"
+        ],
+        "title": "OutputAuthorityRequest",
+        "type": "object"
+      },
+      "OutputJobList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OutputJobReceipt"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "OutputJobList",
+        "type": "object"
+      },
+      "OutputJobReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_count": {
+            "minimum": 0.0,
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "job_type": {
+            "enum": [
+              "REPORT_GENERATION",
+              "CASE_EXTRACTION"
+            ],
+            "title": "Job Type",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputJobResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OutputJobSource"
+          },
+          "stage": {
+            "enum": [
+              "ACCEPTED",
+              "VALIDATING",
+              "ASSEMBLING",
+              "REDACTING",
+              "INGESTING",
+              "INDEXING",
+              "FINALIZING",
+              "COMPLETED",
+              "FAILED"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "SUCCEEDED",
+              "FAILED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "job_type",
+          "status",
+          "stage",
+          "source",
+          "submitted_at",
+          "attempt_count",
+          "row_version"
+        ],
+        "title": "OutputJobReceipt",
+        "type": "object"
+      },
+      "OutputJobResult": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "asset_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Version Id"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "report_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Version"
+          }
+        },
+        "title": "OutputJobResult",
+        "type": "object"
+      },
+      "OutputJobRetry": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "OutputJobRetry",
+        "type": "object"
+      },
+      "OutputJobSource": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "kind": {
+            "enum": [
+              "CONVERSATION",
+              "RUN",
+              "REPORT"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "source_id"
+        ],
+        "title": "OutputJobSource",
+        "type": "object"
+      },
+      "OutputProjectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "job_type": {
+            "enum": [
+              "REPORT_GENERATION",
+              "CASE_EXTRACTION"
+            ],
+            "title": "Job Type",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "required": [
+          "job_id",
+          "job_type",
+          "actor_id",
+          "domain_id"
+        ],
+        "title": "OutputProjectionRequest",
+        "type": "object"
+      },
+      "OutputProjectionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "authority": {
+            "$ref": "#/components/schemas/OutputAuthorityRequest"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "request": {
+            "$ref": "#/components/schemas/OutputProjectionRequest"
+          },
+          "source_security_level": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Source Security Level",
+            "type": "integer"
+          },
+          "source_updated_at": {
+            "format": "date-time",
+            "title": "Source Updated At",
+            "type": "string"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "stage": {
+            "enum": [
+              "ACCEPTED",
+              "VALIDATING",
+              "ASSEMBLING",
+              "REDACTING",
+              "INGESTING",
+              "INDEXING",
+              "FINALIZING",
+              "COMPLETED",
+              "FAILED"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "SUCCEEDED",
+              "FAILED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request",
+          "authority",
+          "status",
+          "stage",
+          "source_version",
+          "source_updated_at",
+          "source_security_level"
+        ],
+        "title": "OutputProjectionSnapshot",
+        "type": "object"
+      },
       "PendingInputView": {
         "additionalProperties": false,
         "properties": {
@@ -13287,6 +14162,15 @@
         "title": "RelationParticipantView",
         "type": "object"
       },
+      "ReportCategory": {
+        "enum": [
+          "INSPECTION",
+          "DIAGNOSIS",
+          "SPECIAL_ANALYSIS"
+        ],
+        "title": "ReportCategory",
+        "type": "string"
+      },
       "ReportPage": {
         "additionalProperties": false,
         "properties": {
@@ -13585,7 +14469,16 @@
           "INSPECTION_QUARTERLY",
           "INSPECTION_ANNUAL",
           "INSPECTION_CUSTOM",
-          "COMPARISON"
+          "COMPARISON",
+          "MYSQL_WORKLOAD",
+          "MYSQL_WORKLOAD_DIFF",
+          "MYSQL_ACTIVITY",
+          "MYSQL_SQL_HEALTHCHECK",
+          "POSTGRESQL_WORKLOAD",
+          "POSTGRESQL_WORKLOAD_DIFF",
+          "POSTGRESQL_ACTIVITY",
+          "POSTGRESQL_SQL_HEALTHCHECK",
+          "POSTGRESQL_PGBADGER"
         ],
         "title": "ReportType",
         "type": "string"
@@ -27699,6 +28592,62 @@
         ]
       }
     },
+    "/internal/v1/aiops/operations-knowledge/case-collection/models": {
+      "get": {
+        "operationId": "get_case_collection_models_internal_v1_aiops_operations_knowledge_case_collection_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Case Collection Models",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      },
+      "put": {
+        "operationId": "configure_case_collection_models_internal_v1_aiops_operations_knowledge_case_collection_models_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseCollectionModels"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Case Collection Models",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
     "/internal/v1/aiops/operations-knowledge/cases": {
       "get": {
         "operationId": "list_cases_internal_v1_aiops_operations_knowledge_cases_get",
@@ -27789,6 +28738,23 @@
               "format": "uuid",
               "title": "Asset Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "asset_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Asset Version Id"
             }
           }
         ],
@@ -27995,6 +28961,22 @@
               "title": "Conversation Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -28011,7 +28993,9 @@
           "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OutputJobReceipt"
+                }
               }
             },
             "description": "Successful Response"
@@ -28408,13 +29392,31 @@
               "title": "Report Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "responses": {
           "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OutputJobReceipt"
+                }
               }
             },
             "description": "Successful Response"
@@ -28765,6 +29767,47 @@
           }
         },
         "summary": "Get Version",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/versions/{asset_version_id}/preview": {
+      "get": {
+        "operationId": "preview_version_internal_v1_aiops_operations_knowledge_versions__asset_version_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Version",
         "tags": [
           "AIOps Operations Knowledge"
         ]
@@ -29165,7 +30208,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KnowledgeSearchRequest"
+                "$ref": "#/components/schemas/KnowledgeSearchPreviewRequest"
               }
             }
           },
@@ -29194,6 +30237,264 @@
         "summary": "Search",
         "tags": [
           "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/output-jobs": {
+      "get": {
+        "operationId": "list_output_jobs_internal_v1_aiops_output_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "job_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "REPORT_GENERATION",
+                    "CASE_EXTRACTION"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "QUEUED",
+                    "RUNNING",
+                    "SUCCEEDED",
+                    "FAILED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputJobList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Output Jobs",
+        "tags": [
+          "AIOps Output Jobs"
+        ]
+      }
+    },
+    "/internal/v1/aiops/output-jobs/{job_id}": {
+      "get": {
+        "operationId": "get_output_job_internal_v1_aiops_output_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputJobReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Output Job",
+        "tags": [
+          "AIOps Output Jobs"
+        ]
+      }
+    },
+    "/internal/v1/aiops/output-jobs/{job_id}:retry": {
+      "post": {
+        "operationId": "retry_output_job_internal_v1_aiops_output_jobs__job_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutputJobRetry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputJobReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Output Job",
+        "tags": [
+          "AIOps Output Jobs"
+        ]
+      }
+    },
+    "/internal/v1/aiops/output-jobs:projection": {
+      "post": {
+        "operationId": "get_output_projection_internal_v1_aiops_output_jobs_projection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutputProjectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputProjectionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Output Projection",
+        "tags": [
+          "AIOps Output Jobs"
         ]
       }
     },
@@ -29791,13 +31092,47 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ReportType"
                 },
                 {
                   "type": "null"
                 }
               ],
               "title": "Report Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReportCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "template_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Ref"
             }
           },
           {
@@ -30111,8 +31446,26 @@
     },
     "/internal/v1/aiops/reports:generate": {
       "post": {
-        "description": "只在用户明确操作后，从完整会话或终态诊断结果创建报告。",
+        "description": "冻结既有来源和确切模板，持久化排队后立即返回，不装配报告。",
         "operationId": "generate_user_report_internal_v1_aiops_reports_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -30124,10 +31477,12 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OutputJobReceipt"
+                }
               }
             },
             "description": "Successful Response"

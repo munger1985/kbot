@@ -49,6 +49,9 @@ from aiops_agent.api.conversation_starters import (
 )
 from aiops_agent.api.report_templates import router as report_template_router
 from aiops_agent.api.operations_knowledge import router as operations_knowledge_router
+from aiops_agent.api.output_jobs import router as output_jobs_router
+from aiops_agent.application.output_jobs import OutputJobService
+from aiops_agent.application.output_job_sources import OutputJobSourceValidator
 from aiops_agent.api.workload import (
     artifact_router as workload_artifact_router,
     router as workload_router,
@@ -312,6 +315,11 @@ def create_aiops_api(
             timeout_seconds=resolved.clients.knowledge_core.timeout_seconds,
             session=client_session,
         )
+        from aiops_agent.application.output_projection import OutputProjectionService
+        app.state.output_projection_service = OutputProjectionService(
+            uow_factory=runtime.uow_factory, tenant_scoped=False)
+        app.state.output_job_service = OutputJobService(uow_factory=runtime.uow_factory)
+        app.state.output_job_source_validator = OutputJobSourceValidator(plan_capture_reader=plan_capture_reader)
         app.state.operations_knowledge_service = OperationsKnowledgeService(
             plan_capture_reader=plan_capture_reader,
             uow_factory=runtime.uow_factory,
@@ -420,6 +428,7 @@ def create_aiops_api(
                         "aiops.hitl",
                         "aiops.approve",
                         "aiops.monitor.intake",
+                        "aiops.output.reconcile",
                     }
                 ),
                 "kbot-agent-runtime-api": frozenset({"aiops.delegate"}),
@@ -459,6 +468,7 @@ def create_aiops_api(
     app.include_router(conversation_router)
     app.include_router(report_template_router)
     app.include_router(operations_knowledge_router)
+    app.include_router(output_jobs_router)
     app.include_router(runtime_router)
     app.include_router(intake_router)
     app.include_router(changes_router)

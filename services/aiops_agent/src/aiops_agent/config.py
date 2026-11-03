@@ -95,6 +95,9 @@ class AIOpsExecutorConfig(ServiceConfig):
 
 
 class AIOpsDependencyEndpoints(BaseModel):
+    main_api: ServiceDependencyConfig = Field(default_factory=lambda: ServiceDependencyConfig(
+        base_url="http://127.0.0.1:18099", audience="kbot-main-api", timeout_seconds=10,
+    ))
     model_embedding: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18091",

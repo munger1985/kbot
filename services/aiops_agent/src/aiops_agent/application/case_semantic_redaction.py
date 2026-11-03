@@ -33,6 +33,7 @@ def shared_content_hash(title, profile):
     data = profile.model_dump(mode="json")
     data.pop("redaction", None)
     data.pop("source", None)
+    data.pop("knowledge_projection", None)
     return sha256_json({"title": title, "profile": data})
 
 
@@ -43,7 +44,7 @@ def _fields(title, profile):
     def visit(value, path):
         if isinstance(value, dict):
             for key, item in value.items():
-                if key not in {"source", "redaction", "evidence_refs", "before_refs", "after_refs", "guardrail_refs", "controlled_verification_ref", "effect_result_ref", "registration_ref"}:
+                if key not in {"source", "redaction", "knowledge_projection", "evidence_refs", "counterevidence_refs", "before_refs", "after_refs", "guardrail_refs", "controlled_verification_ref", "effect_result_ref", "registration_ref", "step_id", "schema_version", "case_kind", "kind", "level"}:
                     visit(item, (*path, key))
         elif isinstance(value, list):
             for index, item in enumerate(value):

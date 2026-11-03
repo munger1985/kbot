@@ -44,6 +44,8 @@ from aiops_agent.entities import (
     OpsRunEventEntity,
     OpsTaskEntity,
     OutboxEntity,
+    OpsOutputJobEntity,
+    OpsOutputJobAttemptEntity,
     OpsConversationEntity,
     OpsConversationMessageEntity,
     OpsConversationTurnEntity,
@@ -64,6 +66,7 @@ from aiops_agent.entities import (
 from platform_core.config import get_settings
 from platform_core.database.oracle import create_database_runtime
 from platform_core.persistence.orm import (
+    BaseEntity,
     OracleNativeJSON,
     UniversalTimestamp,
     UniversalVector,
@@ -72,61 +75,12 @@ from platform_core.persistence.orm import (
 from tests.support.oracle_preflight import require_oracle_listener
 
 
-AIOPS_ENTITY_CLASSES = (
-    ResourcePoolEntity,
-    ResourceLeaseEntity,
-    AIOpsAgentEntity,
-    AIOpsAgentVersionEntity,
-    NotificationSubscriptionEntity,
-    TargetEntity,
-    PolicyEntity,
-    TargetBindingEntity,
-    DiagnosticSourceEntity,
-    TargetSourceBindingEntity,
-    SignalEventEntity,
-    SituationEntity,
-    SituationEventEntity,
-    OpsRunEntity,
-    OpsTaskEntity,
-    OpsArtifactEntity,
-    OpsRunEventEntity,
-    ChangeProposalEntity,
-    HitlEntity,
-    ApprovalTokenEntity,
-    ExecutionEntity,
-    InspectionPlanEntity,
-    InspectionFireEntity,
-    InspectionTemplateEntity,
-    InspectionTemplateVersionEntity,
-    SessionReportTemplateEntity,
-    SessionReportTemplateVersionEntity,
-    ReportEntity,
-    OpsConversationEntity,
-    OpsConversationTurnEntity,
-    OpsConversationMessageEntity,
-    OpsTurnInputItemEntity,
-    OpsTurnRunEntity,
-    OpsInvestigationRevisionEntity,
-    OpsPlaybookInvocationEntity,
-    OpsToolInvocationEntity,
-    OpsTurnEvidenceEntity,
-    OpsAnswerBlockEntity,
-    OpsAnswerCitationEntity,
-    OpsTurnEventEntity,
-    EvidenceRequestEntity,
-    ImageEvidenceProcessingEntity,
-    InboxEntity,
-    OutboxEntity,
-)
-HITL_STATUSES = {
-    "PENDING",
-    "ANSWERED",
-    "APPROVED",
-    "REJECTED",
-    "SKIPPED",
-    "EXPIRED",
-    "CANCELLED",
-}
+# entities 包登记全部本服务映射，避免人工清单遗漏知识、工作项及新增输出任务。
+AIOPS_ENTITY_CLASSES = tuple(sorted(
+    (mapper.class_ for mapper in BaseEntity.registry.mappers
+        if mapper.local_table.name.startswith("KBOT_OPS_")),
+    key=lambda entity: entity.__tablename__,
+))
 
 
 @dataclass(frozen=True)
@@ -330,18 +284,8 @@ async def check_schema() -> list[str]:
                 f"{key[0]}.{key[1]} 不一致："
                 f"entity={expected[key]} oracle={catalog[key]}"
             )
-    if hitl_status_constraint is None:
-        errors.append("Oracle 缺少约束 CK_OPS_HITL_STATUS")
-    else:
-        actual_statuses = set(
-            re.findall(r"'([A-Z_]+)'", str(hitl_status_constraint))
-        )
-        if actual_statuses != HITL_STATUSES:
-            errors.append(
-                "CK_OPS_HITL_STATUS 不一致："
-                f"expected={sorted(HITL_STATUSES)} "
-                f"oracle={sorted(actual_statuses)}"
-            )
+    if hitl_status_constraint is not None:
+        errors.append("Oracle 仍保留已退役的业务状态 CHECK 约束 CK_OPS_HITL_STATUS")
     return errors
 
 

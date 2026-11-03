@@ -61,6 +61,8 @@ BEGIN
             'KBOT_OPS_REPORT_SOURCE',
             'KBOT_OPS_INBOX',
             'KBOT_OPS_OUTBOX',
+            'KBOT_OPS_OUTPUT_JOB',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT',
             'KBOT_OPS_AGENT',
             'KBOT_OPS_AGENT_VERSION',
             'KBOT_OPS_AGENT_VERSION_SYSTEM',
@@ -157,6 +159,8 @@ BEGIN
             'KBOT_OPS_REPORT_SOURCE',
             'KBOT_OPS_INBOX',
             'KBOT_OPS_OUTBOX',
+            'KBOT_OPS_OUTPUT_JOB',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT',
             'KBOT_OPS_AGENT',
             'KBOT_OPS_AGENT_VERSION',
             'KBOT_OPS_AGENT_VERSION_SYSTEM',
@@ -209,7 +213,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 79 项。');
+        dbms_output.put_line('[通过] AIOps 表: 81 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -406,6 +410,12 @@ BEGIN
             'IX_OPS_OUTBOX_AGGREGATE',
             'IX_OPS_OUTBOX_CLAIM',
             'IX_OPS_OUTBOX_LEASE',
+            'IX_OPS_OUTPUT_ATTEMPT_JOB',
+            'IX_OPS_OUTPUT_JOB_ACTOR',
+            'IX_OPS_OUTPUT_JOB_CONVERSATION',
+            'IX_OPS_OUTPUT_JOB_IDEMPOTENCY',
+            'IX_OPS_OUTPUT_JOB_QUEUE',
+            'IX_OPS_OUTPUT_JOB_SOURCE',
             'IX_OPS_PARTICIPANT_RELATION',
             'IX_OPS_PARTICIPANT_RESOURCE',
             'IX_OPS_PLAY_INV_CATALOG',
@@ -727,6 +737,12 @@ BEGIN
             'IX_OPS_OUTBOX_AGGREGATE',
             'IX_OPS_OUTBOX_CLAIM',
             'IX_OPS_OUTBOX_LEASE',
+            'IX_OPS_OUTPUT_ATTEMPT_JOB',
+            'IX_OPS_OUTPUT_JOB_ACTOR',
+            'IX_OPS_OUTPUT_JOB_CONVERSATION',
+            'IX_OPS_OUTPUT_JOB_IDEMPOTENCY',
+            'IX_OPS_OUTPUT_JOB_QUEUE',
+            'IX_OPS_OUTPUT_JOB_SOURCE',
             'IX_OPS_PARTICIPANT_RELATION',
             'IX_OPS_PARTICIPANT_RESOURCE',
             'IX_OPS_PLAY_INV_CATALOG',
@@ -939,7 +955,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 302 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 308 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1040,6 +1056,7 @@ BEGIN
             'FK_OPS_KNOW_VER_ASSET',
             'FK_OPS_NOTIFY_SUB_DOMAIN',
             'FK_OPS_NOTIFY_SUB_TARGET',
+            'FK_OPS_OUTPUT_ATTEMPT_JOB',
             'FK_OPS_PARTICIPANT_RELATION',
             'FK_OPS_PARTICIPANT_RESOURCE',
             'FK_OPS_PLAY_INV_OUTPUT',
@@ -1318,6 +1335,7 @@ BEGIN
             'FK_OPS_KNOW_VER_ASSET',
             'FK_OPS_NOTIFY_SUB_DOMAIN',
             'FK_OPS_NOTIFY_SUB_TARGET',
+            'FK_OPS_OUTPUT_ATTEMPT_JOB',
             'FK_OPS_PARTICIPANT_RELATION',
             'FK_OPS_PARTICIPANT_RESOURCE',
             'FK_OPS_PLAY_INV_OUTPUT',
@@ -1493,7 +1511,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 259 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 260 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -2098,6 +2116,49 @@ BEGIN
             'KBOT_OPS_OUTBOX|STATUS',
             'KBOT_OPS_OUTBOX|TRACE_ID',
             'KBOT_OPS_OUTBOX|UPDATED_AT',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|ATTEMPT_ID',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|ATTEMPT_NO',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|COMPLETED_AT',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|ERROR_CODE',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|ERROR_MESSAGE',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|JOB_ID',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|LEASE_OWNER',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|LEASE_TOKEN',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|STAGE',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|STARTED_AT',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|STATUS',
+            'KBOT_OPS_OUTPUT_JOB|ACTOR_ID',
+            'KBOT_OPS_OUTPUT_JOB|ANCHOR_RUN_ID',
+            'KBOT_OPS_OUTPUT_JOB|ATTEMPT_COUNT',
+            'KBOT_OPS_OUTPUT_JOB|AVAILABLE_AT',
+            'KBOT_OPS_OUTPUT_JOB|COMPLETED_AT',
+            'KBOT_OPS_OUTPUT_JOB|CONVERSATION_ID',
+            'KBOT_OPS_OUTPUT_JOB|DOMAIN_ID',
+            'KBOT_OPS_OUTPUT_JOB|ERROR_CODE',
+            'KBOT_OPS_OUTPUT_JOB|ERROR_MESSAGE',
+            'KBOT_OPS_OUTPUT_JOB|FAILURE_STAGE',
+            'KBOT_OPS_OUTPUT_JOB|HEARTBEAT_AT',
+            'KBOT_OPS_OUTPUT_JOB|IDEMPOTENCY_KEY_HASH',
+            'KBOT_OPS_OUTPUT_JOB|INPUT_HASH',
+            'KBOT_OPS_OUTPUT_JOB|INPUT_SNAPSHOT_JSON',
+            'KBOT_OPS_OUTPUT_JOB|JOB_ID',
+            'KBOT_OPS_OUTPUT_JOB|JOB_TYPE',
+            'KBOT_OPS_OUTPUT_JOB|LEASE_OWNER',
+            'KBOT_OPS_OUTPUT_JOB|LEASE_TOKEN',
+            'KBOT_OPS_OUTPUT_JOB|LEASE_UNTIL',
+            'KBOT_OPS_OUTPUT_JOB|PROCESSING_REF_JSON',
+            'KBOT_OPS_OUTPUT_JOB|RESULT_JSON',
+            'KBOT_OPS_OUTPUT_JOB|RETRYABLE',
+            'KBOT_OPS_OUTPUT_JOB|ROW_VERSION',
+            'KBOT_OPS_OUTPUT_JOB|SOURCE_ID',
+            'KBOT_OPS_OUTPUT_JOB|SOURCE_JSON',
+            'KBOT_OPS_OUTPUT_JOB|SOURCE_KIND',
+            'KBOT_OPS_OUTPUT_JOB|STAGE',
+            'KBOT_OPS_OUTPUT_JOB|STARTED_AT',
+            'KBOT_OPS_OUTPUT_JOB|STATUS',
+            'KBOT_OPS_OUTPUT_JOB|SUBMITTED_AT',
+            'KBOT_OPS_OUTPUT_JOB|TRACE_ID',
+            'KBOT_OPS_OUTPUT_JOB|UPDATED_AT',
             'KBOT_OPS_PLAYBOOK_INVOCATION|ATTEMPT_COUNT',
             'KBOT_OPS_PLAYBOOK_INVOCATION|COMPLETED_AT',
             'KBOT_OPS_PLAYBOOK_INVOCATION|CREATED_AT',
@@ -2296,7 +2357,6 @@ BEGIN
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|CREATED_AT',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|CREATED_BY',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|MEMBER_ROLE',
-            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|PRIMARY',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|RESPONSIBILITY_GROUP_ID',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|STATUS',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|UPDATED_AT',
@@ -3363,6 +3423,49 @@ BEGIN
             'KBOT_OPS_OUTBOX|STATUS',
             'KBOT_OPS_OUTBOX|TRACE_ID',
             'KBOT_OPS_OUTBOX|UPDATED_AT',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|ATTEMPT_ID',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|ATTEMPT_NO',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|COMPLETED_AT',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|ERROR_CODE',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|ERROR_MESSAGE',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|JOB_ID',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|LEASE_OWNER',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|LEASE_TOKEN',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|STAGE',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|STARTED_AT',
+            'KBOT_OPS_OUTPUT_JOB_ATTEMPT|STATUS',
+            'KBOT_OPS_OUTPUT_JOB|ACTOR_ID',
+            'KBOT_OPS_OUTPUT_JOB|ANCHOR_RUN_ID',
+            'KBOT_OPS_OUTPUT_JOB|ATTEMPT_COUNT',
+            'KBOT_OPS_OUTPUT_JOB|AVAILABLE_AT',
+            'KBOT_OPS_OUTPUT_JOB|COMPLETED_AT',
+            'KBOT_OPS_OUTPUT_JOB|CONVERSATION_ID',
+            'KBOT_OPS_OUTPUT_JOB|DOMAIN_ID',
+            'KBOT_OPS_OUTPUT_JOB|ERROR_CODE',
+            'KBOT_OPS_OUTPUT_JOB|ERROR_MESSAGE',
+            'KBOT_OPS_OUTPUT_JOB|FAILURE_STAGE',
+            'KBOT_OPS_OUTPUT_JOB|HEARTBEAT_AT',
+            'KBOT_OPS_OUTPUT_JOB|IDEMPOTENCY_KEY_HASH',
+            'KBOT_OPS_OUTPUT_JOB|INPUT_HASH',
+            'KBOT_OPS_OUTPUT_JOB|INPUT_SNAPSHOT_JSON',
+            'KBOT_OPS_OUTPUT_JOB|JOB_ID',
+            'KBOT_OPS_OUTPUT_JOB|JOB_TYPE',
+            'KBOT_OPS_OUTPUT_JOB|LEASE_OWNER',
+            'KBOT_OPS_OUTPUT_JOB|LEASE_TOKEN',
+            'KBOT_OPS_OUTPUT_JOB|LEASE_UNTIL',
+            'KBOT_OPS_OUTPUT_JOB|PROCESSING_REF_JSON',
+            'KBOT_OPS_OUTPUT_JOB|RESULT_JSON',
+            'KBOT_OPS_OUTPUT_JOB|RETRYABLE',
+            'KBOT_OPS_OUTPUT_JOB|ROW_VERSION',
+            'KBOT_OPS_OUTPUT_JOB|SOURCE_ID',
+            'KBOT_OPS_OUTPUT_JOB|SOURCE_JSON',
+            'KBOT_OPS_OUTPUT_JOB|SOURCE_KIND',
+            'KBOT_OPS_OUTPUT_JOB|STAGE',
+            'KBOT_OPS_OUTPUT_JOB|STARTED_AT',
+            'KBOT_OPS_OUTPUT_JOB|STATUS',
+            'KBOT_OPS_OUTPUT_JOB|SUBMITTED_AT',
+            'KBOT_OPS_OUTPUT_JOB|TRACE_ID',
+            'KBOT_OPS_OUTPUT_JOB|UPDATED_AT',
             'KBOT_OPS_PLAYBOOK_INVOCATION|ATTEMPT_COUNT',
             'KBOT_OPS_PLAYBOOK_INVOCATION|COMPLETED_AT',
             'KBOT_OPS_PLAYBOOK_INVOCATION|CREATED_AT',
@@ -3561,7 +3664,6 @@ BEGIN
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|CREATED_AT',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|CREATED_BY',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|MEMBER_ROLE',
-            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|PRIMARY',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|RESPONSIBILITY_GROUP_ID',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|STATUS',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|UPDATED_AT',
@@ -4023,7 +4125,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1248 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1290 项。');
     END IF;
 
     l_issue_count := 0;
@@ -4115,19 +4217,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 55
-           OR l_contract_version <> 'aiops-oracle-v55-inspection-template-lifecycle' THEN
+           OR l_schema_version <> 56
+           OR l_contract_version <> 'aiops-oracle-v56-output-jobs' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '55/aiops-oracle-v55-inspection-template-lifecycle'
+                || '56/aiops-oracle-v56-output-jobs'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/55/'
-                || 'aiops-oracle-v55-inspection-template-lifecycle'
+                '[通过] Schema 合同：AIOPS/56/'
+                || 'aiops-oracle-v56-output-jobs'
             );
         END IF;
     EXCEPTION
@@ -4153,10 +4255,10 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：79 张表、10 个视图、'
+        '验证通过：81 张表、10 个视图、'
         || '1 个属性图、'
-        || '302 个命名索引、259 个命名约束、'
-        || '1248 个表列；Schema 与当前规范一致。'
+        || '308 个命名索引、260 个命名约束、'
+        || '1290 个表列；Schema 与当前规范一致。'
     );
 END;
 /

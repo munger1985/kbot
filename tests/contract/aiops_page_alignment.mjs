@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {templateAlignmentFixture,verifyInspectionTemplateEditor} from './aiops_template_alignment.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const portal = resolve(process.env.AMMOLITE_ROOT || resolve(root, "../ammolite_cube"), "apps/portal-web");
@@ -76,6 +77,10 @@ const fixture = {
     ],evidence_gaps:[{code:'HISTORY_NOT_AVAILABLE',detail:'当前没有历史采样证据。',retryable:false}],
   }],
 };
+const templateFixture=templateAlignmentFixture(root);
+fixture.inspectionCatalog=templateFixture.catalog;
+fixture.inspectionTemplate={...fixture.inspectionTemplate,source_kind:'CUSTOM',template_kind:'DAILY',is_default:false,has_draft:false,has_unpublished_changes:false,current_version_id:'template-version-1',daily_report_layout:templateFixture.layout,definition:{display_name:fixture.inspectionTemplate.display_name,selected_check_ids:['availability'],daily_report_layout:templateFixture.layout}};
+fixture.inspectionPreview=templateFixture.preview;
 
 function installFixture(data) {
   const streaming=location.search.includes('stream=1');
@@ -99,6 +104,21 @@ function installFixture(data) {
     fixtureRequests.push({ path, method: init.method || "GET", body:init.body, headers:init.headers });
     if (init.method && init.method !== "GET") {
       if (globalThis.fixtureHoldWrites) await new Promise(resolve=>{globalThis.fixtureReleaseWrite=()=>{delete globalThis.fixtureReleaseWrite;resolve();};});
+      if(path.endsWith('/inspection-templates:preview')) {
+        if(globalThis.fixtureTemplatePreviewFailure) {fixtureTemplatePreviewFailure=false;throw new Error('隔离预览失败');}
+        const body=JSON.parse(init.body);
+        return {daily_inspection:{...data.inspectionPreview,header:{...data.inspectionPreview.header,title:body.daily_report_layout.title,database_type:body.database_type}}};
+      }
+      if(globalThis.fixtureTemplateWrites) {
+        const body=JSON.parse(init.body);
+        if(init.method==='POST'&&path.endsWith('/inspection-templates')) return globalThis.fixtureTemplateDraft={...data.inspectionTemplate,inspection_template_id:'created-template-1',version_no:null,row_version:1,draft:body};
+        if(init.method==='PUT'&&/\/inspection-templates\/(template-1|created-template-1)\/draft$/.test(path)) return globalThis.fixtureTemplateDraft={...(globalThis.fixtureTemplateDraft||data.inspectionTemplate),row_version:body.expected_row_version+1,draft:body};
+        if(init.method==='POST'&&/\/inspection-templates\/(template-1|created-template-1):publish$/.test(path)) {
+          if(globalThis.fixtureTemplatePublishFailure) {fixtureTemplatePublishFailure=false;throw new Error('隔离发布失败');}
+          return {...fixtureTemplateDraft,status:'ACTIVE',has_draft:false,version_no:2,row_version:body.expected_row_version+1};
+        }
+      }
+      if(path.endsWith('/operations-knowledge/reports/report-1:extract-case')) return {job_id:'report-case-job',job_type:'CASE_EXTRACTION',status:'QUEUED',result:null};
       if(globalThis.fixtureWebhookWrites) {
         if(init.method==='PATCH' && path.endsWith('/diagnostic-sources/source-1')) return {...data.source,source_type:fixtureSourceType,row_version:4,webhook_secret:{configured:true}};
         if(path.endsWith('/diagnostic-sources/source-1/webhook-key:rotate')) {
@@ -110,6 +130,9 @@ function installFixture(data) {
     }
     const suffix = new URL(path, "http://fixture").pathname.replace(/\/domains\/[^/]+\/(?:ops|manage)/, "");
     const rows = (item) => location.search.includes("empty=1") ? [] : [item];
+    // 成果列表与后台生成记录独立；通知顶栏不以未知请求静默兜底。
+    if (suffix.endsWith('/output-jobs')) return {items:[],has_more:false,next_cursor:null};
+    if (suffix === '/api/v1/notifications/summary') return {unread:0};
     if (suffix.endsWith('/diagnostic-sources')) return {items:rows({...data.source,source_type:globalThis.fixtureSourceType || 'PROMETHEUS',status:globalThis.fixtureSourceStatus || 'ENABLED'})};
     if (suffix.endsWith('/diagnostic-sources/source-1')) return {...data.source,source_type:globalThis.fixtureSourceType || 'PROMETHEUS',status:globalThis.fixtureSourceStatus || 'ENABLED',webhook_configured:Boolean(globalThis.fixtureSourceWebhook),config:globalThis.fixtureSourceType==='LOKI'?{tenant_id:'fixture-tenant'}:{}};
     if (suffix.endsWith("/access")) return { permissions: [...data.permissions,...(interaction()==='proposal'?['aiops:proposal:approve']:[])], domain_id: "domain-1", user_id: "user-1", display_name: "测试用户" };
@@ -129,7 +152,7 @@ function installFixture(data) {
     if (/\/managed-resources\/resource-[12]\/recovery-drills$/.test(suffix)) return {items:rows({...data.recoveryDrill,status:globalThis.fixtureRecoveryStatus || 'SUBMITTED'})};
     if (suffix.endsWith('/targets')) return {items:location.pathname.includes('reports')&&!location.search.includes('empty=1')?[data.target,{...data.target,target_id:'postgres-1',display_name:'生产 PostgreSQL',db_type:'POSTGRESQL'},{...data.target,target_id:'mysql-1',display_name:'生产 MySQL',db_type:'MYSQL'}]:rows(data.target)};
     if (suffix.endsWith('/dashboard')) return location.search.includes('empty=1')?{generated_at:data.dashboard.generated_at,summary:{},automation:{},targets:[]}:data.dashboard;
-    if (suffix.endsWith('/reports')) return {items:rows(data.report)};
+    if (suffix.endsWith('/reports')) return {items:rows(data.report),has_more:false,next_cursor:null};
     if (suffix.endsWith('/targets/target-1')) return location.pathname.includes('business-system-workspace')?{...data.target,row_version:3,workload_snapshot_policy:{enabled:false,collection_mode:'BOUNDED_CANDIDATES',visible_statement_limit:500,interval_minutes:5,retention_days:30,top_statement_limit:100,round_timeout_seconds:30}}:data.target;
     if (suffix.endsWith('/reports/report-1')) return {...data.report,target_id:'target-1',period_start:'2026-10-30T02:00:00Z',period_end:'2026-10-30T03:00:00Z',report_type:new URLSearchParams(location.search).get('reportMode')==='COMPARISON'?'COMPARISON':'PERFORMANCE'};
     if (suffix.endsWith('/operations-knowledge/reports/report-1/case-eligibility')) return {eligible:true,reasons:[],existing_asset_id:location.search.includes('empty=1')?'case-1':null};
@@ -140,7 +163,7 @@ function installFixture(data) {
       const metrics=rows({metric_key:'cpu',metric_code:'host.cpu',semantic_role:'CPU',display_name:'CPU 使用率',dimension_label:'生产主机',current_display:'35%',baseline_display:'28%',deviation_percent:25,baseline_status:'AVAILABLE',coverage_percent:95,trend_points:[{date:'2026-10-28',value:30,baseline_index:95},{date:'2026-10-29',value:35,baseline_index:125}],monthly_average_display:'30%',p95_display:'40%',minimum_display:'20%',maximum_display:'45%',change_percent:12.5,effective_days:28,expected_days:30,daily_points:[{date:'2026-10-01',value:20},{date:'2026-10-30',value:30}],first_display:'20%',last_display:'30%',net_change_display:'10%'});
       const common={title:'生产数据库诊断报告',status:'PARTIAL',status_display:'证据不完整',template:{display_name:'生产诊断报告',version:'1'},sections:location.search.includes('empty=1')?[]:[{kind:'EXECUTIVE_SUMMARY',items:['当前**归档空间**需要关注。']},{kind:'FINDINGS',human_edited:true,items:['已确认一项容量风险。']},{kind:'RECOMMENDATIONS',items:['请安排复核窗口。']},{kind:'EVIDENCE_BOUNDARY',items:['缺少部分历史采样，不能外推。']},{kind:'EVIDENCE_APPENDIX',items:['证据编号 evidence-1']},{kind:'EXTRA',display_name:'补充核验',items:[]}],leadership_briefing:location.search.includes('empty=1')?null:{risk_level:'HIGH',business_impact:['业务可能受影响。'],risks:['空间余量不足。'],recommendations:['安排维护窗口。']},report:{scope:{report_origin:'EXTERNAL_IMPORTED',database_type:'ORACLE',health_status:'HIGH',evidence_coverage_percent:75,evidence_covered_count:3,evidence_total_count:4,monitoring_sample_coverage_percent:80,monitoring_low_coverage_metric_count:1,monitoring_metric_count:5,evidence_gap_count:1,inspection_coverage:'保留证据边界。',monitoring_profile:{display_name:'生产监控',version:'1'},raw_report_artifact_id:'artifact-1',conversation:location.search.includes('empty=1')?null:{conversation_id:'session-1',title:'生产诊断会话',turn_count:2}}}};
       if(mode==='DAILY') common.daily_inspection={schema_version:'DAILY_INSPECTION_PRESENTATION.v1',header,conclusion:{text:'归档空间需要关注，采样覆盖仍有缺口。',health_status_display:'高风险',evidence_coverage_percent:75,monitoring_coverage_percent:70,attention_count:1,gap_count:1},baseline_metrics:metrics,capacity_rows:metrics,findings:rows({finding_id:'F1',title:'归档空间风险',status:'PARTIAL',severity:'HIGH',summary:'需要确认保留策略。'}),finding_notes:rows('未采样时点不外推。'),recommendations:rows('由责任人核对保留周期。'),gaps:rows('部分历史指标缺失。'),evidence_boundary:boundary};
-      if(mode==='MONTHLY') common.monthly_inspection={schema_version:'MONTHLY_INSPECTION_PRESENTATION.v1',header:{...header,scope_type:'BUSINESS_SYSTEM',scope_name:'MES 生产系统',target_count:2,database_types:['ORACLE','POSTGRESQL'],period_start:'2026-09-01T00:00:00Z',period_end:'2026-10-01T00:00:00Z'},conclusion:{text:'本月部分空间风险仍需跟踪。',issue_count:1},coverage:{completed_run_count:28,metric_day_coverage_percent:95},period_comparison:{status:'AVAILABLE',status_display:'可比较',new_issues:[{}],persistent_issues:[],resolved_issues:[]},metrics,capacity_rows:metrics,database_checks:{status_counts:{CLEAR:3,GAP:1}},issues:rows({finding_id:'F1',title:'归档空间风险',summary:'仍需跟踪空间余量。',severity:'HIGH',affected_days:3,occurrence_count:5,first_seen:'2026-09-01',last_seen:'2026-09-30'}),recommendations:rows('持续观察空间趋势。'),gaps:rows('部分历史指标缺失。'),extensions:rows({extension_key:'SLA',status:'RESERVED'}),evidence_boundary:boundary};
+      if(mode==='MONTHLY') common.monthly_inspection={schema_version:'MONTHLY_INSPECTION_PRESENTATION.v1',header:{...header,scope_type:'BUSINESS_SYSTEM',scope_name:'MES 生产系统',target_count:2,database_types:['ORACLE','POSTGRESQL'],period_start:'2026-09-01T00:00:00Z',period_end:'2026-10-01T00:00:00Z'},conclusion:{text:'本月部分空间风险仍需跟踪。',health_status:'ATTENTION',health_status_display:'需关注',completion_display:'必要检查完成',issue_count:1},coverage:{completed_run_count:28,metric_day_coverage_percent:95},period_comparison:{status:'AVAILABLE',status_display:'可比较',new_issues:[{}],persistent_issues:[],resolved_issues:[]},metrics,capacity_rows:metrics,database_checks:{status_counts:{CLEAR:3,GAP:1}},issues:rows({finding_id:'F1',title:'归档空间风险',summary:'仍需跟踪空间余量。',severity:'HIGH',affected_days:3,occurrence_count:5,first_seen:'2026-09-01',last_seen:'2026-09-30'}),recommendations:rows('持续观察空间趋势。'),gaps:rows('部分历史指标缺失。'),extensions:rows({extension_key:'SLA',status:'RESERVED'}),evidence_boundary:boundary};
       return common;
     }
     if (suffix.endsWith('/work-items')) return {items:rows(data.workItem),queue_summary:{my_open:location.search.includes('empty=1')?0:1,unassigned:0,urgent:location.search.includes('empty=1')?0:1,overdue:0,pending_verification:0},next_cursor:null,has_more:false};
@@ -216,6 +239,22 @@ function installFixture(data) {
     if (suffix.endsWith("/models")) return { models: {} };
     if (suffix.endsWith('/cases/overview')) return { draft: 0, review_required: 0, published: location.search.includes('empty=1') ? 0 : 1, processing: 0, retired: 0 };
     if (suffix.endsWith('/cases')) return { items: rows(data.diagnosisCase) };
+    if (suffix.endsWith('/cases/case-1')) return {
+      asset: {...data.diagnosisCase,row_version:1,asset_kind:'DIAGNOSIS_CASE'},
+      version:{asset_version_id:'case-version-1',version_no:1,row_version:1,
+        status:globalThis.fixtureCaseStatus || 'PUBLISHED',profile:{case_kind:'DIAGNOSTIC_REFERENCE',
+          problem_signature:{normalized_symptoms:['归档空间告警']},environment:{database_type:'ORACLE'},
+          root_cause:{summary:'仍需现场核验'},actions:[],verification:{result:'NOT_VERIFIED'}}},
+      versions:[],scopes:[],sources:[],reviews:[],external_withdrawals:[],
+      indexes:[{index_ref_id:'case-index-1',status:'READY'}],
+    };
+    if (suffix.endsWith('/versions/case-version-1/preview')) return {
+      usage:'MANAGEMENT_PREVIEW_NOT_AGENT_EVIDENCE',asset_version_id:'case-version-1',
+      documents:[{document_version_id:'case-document-1',fragments:[
+        {content:'已脱敏案例正文：措施必须先核对前提、效果和失败警告。'},
+        {content:'<img src=x onerror="globalThis.casePreviewInjected=true">'},
+      ]}],
+    };
     if (suffix.endsWith('/inspection-check-catalog')) return data.inspectionCatalog;
     if (suffix.endsWith('/inspection-templates')) return rows(data.inspectionTemplate);
     if (suffix.endsWith('/inspection-templates/template-1')) return data.inspectionTemplate;
@@ -257,11 +296,11 @@ const pages = {${pages.map((name) => `${JSON.stringify(name)}: () => import('/sr
 const component = (await pages[page]()).default;
 if(page==='chat') globalThis.fixtureECharts=await import('echarts/core');
 document.querySelector('#reference').classList.toggle('is-viewport-contained',['monitoring','chat','business-system-workspace'].includes(page));
-const router = createRouter({history:createWebHistory(),routes:[{path:page==='business-system-workspace'?'/apps/aiops/:domainCode/business-system-workspace/:businessSystemId':page==='work-item-detail'?'/apps/aiops/:domainCode/work-items/:workItemId':page==='inspection-detail'?'/apps/aiops/:domainCode/inspections/:fireId':page==='report-detail'?'/apps/aiops/:domainCode/reports/:reportId':'/apps/aiops/:domainCode/:pathMatch(.*)*',component:['diagnostic-sources','diagnostic-source-detail'].includes(page)?{render:()=>h(component,{section:'diagnostic-sources'})}:['inspections','reports','inspection-plans','inspection-plan-detail'].includes(page)?{render:()=>h(component,{kind:page==='reports'?'reports':'inspections'})}:component,meta:{title:page==='knowledge-tags'?'AIOps 知识标签':${JSON.stringify({dashboard:'运维总览',"business-systems":"业务系统","knowledge-bases":"运维知识库","responsibility-groups":"责任组",agents:"Agent 管理", cases:"历史诊断案例", "report-templates":"模板中心",monitoring:"实时监控","operations-knowledge":"运维知识","work-item-detail":"工作项详情"})}[page]}}]});
+const router = createRouter({history:createWebHistory(),routes:[{path:page==='business-system-workspace'?'/apps/aiops/:domainCode/business-system-workspace/:businessSystemId':page==='work-item-detail'?'/apps/aiops/:domainCode/work-items/:workItemId':page==='inspection-detail'?'/apps/aiops/:domainCode/inspections/:fireId':page==='report-detail'?'/apps/aiops/:domainCode/reports/:reportId':'/apps/aiops/:domainCode/:pathMatch(.*)*',component:['diagnostic-sources','diagnostic-source-detail'].includes(page)?{render:()=>h(component,{section:'diagnostic-sources'})}:['inspections','reports','inspection-plans','inspection-plan-detail'].includes(page)?{render:()=>h(component,{kind:page==='reports'?'reports':'inspections'})}:component,meta:{title:page==='knowledge-tags'?'AIOps 知识标签':${JSON.stringify({dashboard:'运维总览',"business-systems":"业务系统","knowledge-bases":"运维知识库","responsibility-groups":"责任组",agents:"Agent 管理", cases:"诊断案例库", "report-templates":"模板中心",monitoring:"实时监控","operations-knowledge":"运维资料库","work-item-detail":"工作项详情"})}[page]}}]});
 if(page==='chat') router.getRoutes()[0].meta.title='Agent 工作台';
 if(page==='situations') router.getRoutes()[0].meta.title='告警诊断';
 if(['inspections','inspection-plans','inspection-plan-detail'].includes(page)) router.getRoutes()[0].meta.title='日常巡检';
-if(page==='reports') router.getRoutes()[0].meta.title='运维报告';
+if(page==='reports') router.getRoutes()[0].meta.title='报告中心';
 if(page==='recovery-drills') router.getRoutes()[0].meta.title='恢复演练';
 if(['runs','run-detail'].includes(page)) router.getRoutes()[0].meta.title='运行记录';
 if(page==='inspection-detail') router.getRoutes()[0].meta.title='巡检批次详情';
@@ -355,7 +394,15 @@ try {
     if(name==='inspections') await Promise.all([kbot,reference].map(page=>page.locator('.inspection-summary-grid').waitFor({state:'visible'})));
     if(name==='reports') await Promise.all([kbot,reference].map(page=>page.locator('.table-card').first().waitFor({state:'visible'})));
     if(['runs','run-detail'].includes(name)) await Promise.all([kbot,reference].map(page=>page.locator('.table-card').first().waitFor({state:'visible'})));
-    if(name==='report-detail') await Promise.all([kbot,reference].map(page=>page.locator('.aiops-formal-report').waitFor()));
+    if(name==='report-detail') {
+      await Promise.all([kbot,reference].map(page=>page.locator('.aiops-formal-report').waitFor()));
+      // 品牌是明确的平台差异；只统一对照文本，仍比较窄屏换行及全部布局和样式。
+      await reference.locator('.daily-report-kicker,.daily-report-footer').evaluateAll(nodes=>{
+        for(const node of nodes) for(const text of [node,...node.childNodes].filter(item=>item.nodeType===Node.TEXT_NODE)) {
+          text.textContent=text.textContent.replaceAll('AMMOLITE AIOPS','KBot AIOps');
+        }
+      });
+    }
     if(['diagnostic-sources','diagnostic-source-detail'].includes(name)) {
       await Promise.all([kbot,reference].map(page=>page.locator('.management-catalog-add-card').waitFor()));
       if(!empty) await Promise.all([kbot,reference].map(page=>page.locator('.monitor-source-card').waitFor()));
@@ -368,6 +415,9 @@ try {
     if(['inspection-plans','inspection-plan-detail'].includes(name)) {
       await Promise.all([kbot,reference].map(page=>page.locator('.management-catalog-add-card').waitFor()));
       if(name==='inspection-plan-detail'&&!empty) {await reference.getByRole('button',{name:'编辑',exact:true}).click();await Promise.all([kbot,reference].map(page=>page.locator('.aiops-inspection-plan-drawer').waitFor()));}
+    }
+    if(['inspections','inspection-plans','inspection-plan-detail'].includes(name)) {
+      for(const page of [kbot,reference]) assert.deepEqual(await page.locator('.inspection-tabs button').allTextContents(),['巡检记录','巡检计划']);
     }
     if(name==='inspection-plan-detail'&&!empty) {
       for(const width of [1440,900,420,320]) {
@@ -751,7 +801,7 @@ try {
       if(name==='recovery-drills') await compareRegions(kbot,reference,['.recovery-drills-page','.recovery-hero','.recovery-context-card','.table-card-header','.recovery-context-grid','.recovery-context-grid select','.recovery-policy-summary','.recovery-policy-summary div','.recovery-entry-card','.recovery-entry-form','.recovery-form-note','.recovery-entry-form .control-field','.date-time-picker-control','.recovery-entry-form textarea','.recovery-entry-form > footer','.recovery-history-card','.management-catalog-card','.management-catalog-card > header','.management-catalog-card > dl','.management-catalog-action-bar'],{page:name,width,empty,state:'recovery'});
       if(name==='inspection-plans') await compareRegions(kbot,reference,['.platform-home-header','.platform-home-hero','.inspection-tabs','.inspection-tabs button','.aiops-inspection-plans-page','.aiops-inspection-plans-page > .app-page-head','.notice-warning','.resource-list-surface','.management-catalog-grid','.management-catalog-add-card','.management-catalog-card','.management-catalog-card > header','.management-catalog-card > p','.management-catalog-card > dl','.management-catalog-action-bar'],{page:name,width,empty,state:'plan-list'});
       if(['runs','run-detail'].includes(name)) await compareRegions(kbot,reference,['.platform-home-header','.platform-home-hero','.table-card','.resource-list-header','.resource-list-tools','.table-scroll','table','th','td','.status-pill','.table-primary','.technical-value'],{page:name,width,empty,state:'run-list'});
-      if(name==='report-detail') await compareRegions(kbot,reference,['.aiops-report-detail-page','.report-page-actions','.aiops-formal-report','.report-cover','.report-masthead','.report-release-state','.report-cover-heading','.report-cover h1','.report-abstract','.report-cover-folio','.report-leadership-briefing','.report-leadership-grid','.report-metadata','.report-metadata dt','.report-coverage-value','.report-document-body','.report-index','.report-index nav','.report-content','.report-chapter','.report-chapter-header','.report-section','.report-section-content','.report-document-footer','.daily-report-head','.daily-report-title-row','.daily-report-metadata','.daily-report-metadata dd','.daily-conclusion','.daily-conclusion-ledger','.daily-report-section','.daily-deviation-list','.daily-deviation-row','.daily-deviation-track','.daily-trend-grid','.daily-trend-card','.daily-trend-svg','.daily-table-wrap','.daily-report-table','.daily-report-table th','.daily-report-table td','.daily-findings','.daily-finding','.daily-finding > .status-pill','.daily-notes','.daily-evidence','.daily-report-footer','.monthly-comparison-copy'],{page:name,width,empty,state:reportMode});
+      if(name==='report-detail') await compareRegions(kbot,reference,['.aiops-report-detail-page','.report-page-actions','.aiops-formal-report','.report-cover','.report-masthead','.report-release-state','.report-cover-heading','.report-cover h1','.report-abstract','.report-cover-folio','.report-leadership-briefing','.report-leadership-grid','.report-metadata','.report-metadata dt','.report-coverage-value','.report-document-body','.report-index','.report-index nav','.report-content','.report-chapter','.report-chapter-header','.report-section','.report-section-content','.report-document-footer','.daily-report-head','.daily-report-title-row','.daily-report-title-row h1','.daily-report-title-row p','.daily-report-title-row .status-pill','.daily-report-metadata','.daily-report-metadata dd','.daily-conclusion','.daily-conclusion-ledger','.daily-report-section','.daily-deviation-list','.daily-deviation-row','.daily-deviation-track','.daily-trend-grid','.daily-trend-card','.daily-trend-svg','.daily-table-wrap','.daily-report-table','.daily-report-table th','.daily-report-table td','.daily-findings','.daily-finding','.daily-finding > .status-pill','.daily-notes','.daily-evidence','.daily-report-footer','.monthly-comparison-copy'],{page:name,width,empty,state:reportMode});
       if(['diagnostic-sources','diagnostic-source-detail'].includes(name)) await compareRegions(kbot,reference,['.aiops-config-page','.app-page-head','.data-toolbar','.search-field','.resource-list-surface','.management-catalog-grid','.management-catalog-add-card','.monitor-source-card','.monitor-source-card > header','.monitor-source-card-statuses','.monitor-source-card dl','.management-catalog-action-bar','.status-pill',...(name==='diagnostic-source-detail'&&!empty?['.aiops-target-detail-drawer','.admin-drawer-header','.admin-drawer-body','.resource-form','.drawer-form-section','.control-field','.admin-drawer-footer']:[])],{page:name,width,empty,state:'sources'});
       for (let index = 0; index < selectors.length; index++) {
         if (!actual[index] || !expected[index]) {
@@ -834,9 +884,26 @@ try {
       }
       if(reportMode==='COMPARISON') for(const page of [kbot,reference]) {
         if(empty) {assert.ok((await page.getByRole('link',{name:'查看诊断案例',exact:true}).getAttribute('href')).includes('assetId=case-1'));continue;}
-        await page.evaluate(()=>{fixtureHoldWrites=true;});await page.getByRole('button',{name:'生成待审核效果案例',exact:true}).click();await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));
+        await page.evaluate(()=>{fixtureHoldWrites=true;});await page.getByRole('button',{name:'沉淀案例',exact:true}).click();await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));
         const request=await page.evaluate(()=>fixtureRequests.filter(row=>row.method==='POST').at(-1));assert.ok(request.path.endsWith('/operations-knowledge/reports/report-1:extract-case'));
-        assert.equal(await page.getByRole('button',{name:'正在提炼…',exact:true}).isDisabled(),true);await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});await page.getByRole('button',{name:'生成待审核效果案例',exact:true}).waitFor();
+        assert.ok(request.headers['Idempotency-Key']);assert.equal(await page.getByRole('button',{name:'正在提交…',exact:true}).isDisabled(),true);await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});await page.getByRole('link',{name:'查看案例生成记录',exact:true}).waitFor();
+      }
+    }
+    if(name==='cases' && !empty) {
+      for(const status of ['DRAFT','REVIEW_REQUIRED','PUBLISHED']) for(const page of [kbot,reference]) {
+        await page.evaluate(status=>{fixtureCaseStatus=status;},status);
+        await page.getByRole('button',{name:'归档空间告警诊断',exact:true}).click();
+        await page.locator('.case-detail-drawer').waitFor({state:'visible'});
+        await page.getByRole('button',{name:'预览索引正文',exact:true}).click();
+        await page.getByText('已脱敏案例正文：措施必须先核对前提、效果和失败警告。',{exact:true}).waitFor();
+        assert.ok((await page.getByText('草稿可预览不代表已发布或可供 Agent 检索。',{exact:false}).count()) > 0);
+        assert.equal(await page.locator('.case-preview-text img').count(),0,'索引正文不得作为 HTML 执行');
+        assert.equal(await page.evaluate(()=>Boolean(globalThis.casePreviewInjected)),false);
+        const requests=await page.evaluate(()=>fixtureRequests);
+        assert.ok(requests.some(row=>row.path.endsWith('/versions/case-version-1/preview')));
+        assert.ok(!requests.some(row=>row.path.includes('search-preview')),'草稿正文预览不得调用 Agent 正式检索');
+        await page.locator('.case-detail-drawer .admin-drawer-header .icon-button').click();
+        await page.locator('.case-detail-drawer').waitFor({state:'hidden'});
       }
     }
     const editors = {
@@ -1053,11 +1120,17 @@ try {
           await root.getByPlaceholder('例如：生产数据库每日健康巡检').fill('  夜间生产巡检  ');
           await root.getByRole('combobox',{name:/^执行 Agent/}).selectOption('agent-1');
           if(type==='CRON') await root.getByPlaceholder('0 2 * * *').fill('15 4 * * 6');
-          else {
+          // 非默认模板必须由用户明确选择；不能依赖早期表单自动选中首项。
+          const template = root.getByRole('combobox',{name:'巡检内容模板',exact:true});
+          await template.selectOption('');
+          assert.equal(await root.getByRole('button',{name:'创建并启用',exact:true}).isDisabled(),true);
+          await template.selectOption('template-1');
+          if(type!=='CRON') {
             await root.locator('.time-picker-input').fill('24:00');
             assert.equal(await root.getByRole('button',{name:'创建并启用',exact:true}).isDisabled(),true);
             await root.locator('.time-picker-input').fill('04:15');
           }
+          assert.equal(await root.getByRole('button',{name:'创建并启用',exact:true}).isEnabled(),true);
           await page.evaluate(()=>{fixtureHoldWrites=true;});
           await root.getByRole('button',{name:'创建并启用',exact:true}).click();
           await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));
@@ -1322,17 +1395,19 @@ try {
         for (const width of [1440,420]) {
           await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
           await compareRegions(kbot,reference,['.resource-list-surface:not([hidden])','.resource-list-surface:not([hidden]) .management-catalog-grid','.resource-list-surface:not([hidden]) .management-catalog-card','.resource-list-surface:not([hidden]) .management-catalog-action-bar','.resource-list-surface:not([hidden]) .management-catalog-primary-actions','.resource-list-surface:not([hidden]) .management-catalog-more'],{page:name,width,empty,state:`${kind}-catalog`});
-          for (const mode of empty?['create']:['create','version']) {
-            await Promise.all([kbot,reference].map(page=>mode==='create'?page.locator('.resource-list-surface:visible .management-catalog-add-card').click():page.getByRole('button',{name:kind==='inspection'?'创建新版本':'新版本',exact:true}).click()));
+          for (const mode of empty?['create']:kind==='inspection'?['create','edit']:['create','version']) {
+            await Promise.all([kbot,reference].map(page=>mode==='create'?page.locator('.resource-list-surface:visible .management-catalog-add-card').click():page.getByRole('button',{name:kind==='inspection'?'编辑模板':'新版本',exact:true}).click()));
+            if(kind==='inspection') {
+              await verifyInspectionTemplateEditor({kbot,reference,mode,width,empty,compareRegions,artifacts});
+              continue;
+            }
             await Promise.all([kbot,reference].map(page=>page.locator('.aiops-template-editor:visible').waitFor()));
             await compareRegions(kbot,reference,['.aiops-template-editor','.aiops-template-editor .admin-drawer-header','.aiops-template-editor .admin-drawer-body','.aiops-template-editor .drawer-form-section','.aiops-template-editor .control-field','.aiops-template-editor .aiops-template-check-group','.aiops-template-editor .check-field','.aiops-template-editor .aiops-section-editor','.aiops-template-editor .aiops-template-preview','.aiops-template-editor .aiops-template-preview li','.aiops-template-editor .admin-drawer-footer','.aiops-template-editor .primary-button'],{page:name,width,empty,state:`${kind}-${mode}`});
             for (const page of [kbot,reference]) {
               const editor=page.locator('.aiops-template-editor:visible');
-              if(kind==='inspection') assert.equal(await editor.locator('input[value="planned-check"]').isDisabled(),true);
               if(mode==='create') {
                 assert.equal(await editor.getByRole('button',{name:'保存',exact:true}).isDisabled(),true);
                 await editor.locator('input[maxlength="256"]').fill('测试模板');
-                if(kind==='inspection') await editor.locator('input[value="availability"]').check();
               } else assert.equal(await editor.locator('input[maxlength="256"]').isDisabled(),true);
               assert.equal(await editor.getByRole('button',{name:'保存',exact:true}).isEnabled(),true);
               if(kind==='session') {

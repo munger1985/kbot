@@ -6,6 +6,7 @@ from .conversation import ConversationRepository
 from .turn import TurnRepository
 from .inspection import InspectionRepository
 from .messaging import InboxRepository, OutboxRepository
+from .output_jobs import OutputJobRepository
 from .monitoring import SituationRepository, DiagnosticSourceRepository
 from .notification import NotificationSubscriptionRepository
 from .knowledge import OperationsKnowledgeRepository
@@ -18,6 +19,7 @@ from .workload import WorkloadRepository
 from .work_item import WorkItemRepository
 
 __all__ = [
+    "OutputJobRepository",
     "ResourceGovernanceRepository",
     "ConversationRepository",
     "TurnRepository",

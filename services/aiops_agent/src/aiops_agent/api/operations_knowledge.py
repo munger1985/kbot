@@ -3,19 +3,24 @@
 import hashlib
 import json
 from urllib.parse import unquote
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
+from aiops_agent.api.output_jobs import output_job_scope
+from aiops_agent.application.conversation_case_output import submit_conversation_case
+from aiops_agent.application.report_case_output import submit_report_case
 from aiops_agent.contracts.knowledge import (
     DiagnosisClosureCommand,
     DiagnosisCaseDraft,
     KnowledgeBaseWrite,
     KnowledgeReviewCommand,
+    KnowledgeSearchPreviewRequest,
     KnowledgeSearchRequest,
     KnowledgeTagStatusCommand,
     KnowledgeTagWrite,
@@ -23,6 +28,8 @@ from aiops_agent.contracts.knowledge import (
 )
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops.knowledge import KnowledgeReuseFeedback
+from platform_core.contracts.aiops.output_jobs import OutputJobReceipt
+from platform_core.contracts.aiops.case_collection import CaseCollectionModels
 
 
 router = APIRouter(
@@ -170,10 +177,11 @@ async def list_cases(
 
 
 @router.get("/cases/{asset_id}")
-async def get_case(asset_id: UUID, request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+async def get_case(asset_id: UUID, request: Request, asset_version_id: UUID | None = None,
+    context: AuthContext = Depends(get_aiops_auth_context)):
     domain_id, _ = _use_scope(request, context)
     return await request.app.state.operations_knowledge_service.get_case(
-        domain_id=domain_id, asset_id=asset_id,
+        domain_id=domain_id, asset_id=asset_id, asset_version_id=asset_version_id,
     )
 
 
@@ -191,6 +199,22 @@ async def create_case_version(
         command=payload,
         context=context,
     )
+
+
+@router.get("/case-collection/models")
+async def get_case_collection_models(request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.get_case_collection_models(
+        domain_id=domain_id, context=context)
+
+
+@router.put("/case-collection/models")
+async def configure_case_collection_models(payload: CaseCollectionModels, request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.configure_case_collection_models(
+        domain_id=domain_id, models=payload.models, context=context)
 
 
 @router.get("/knowledge-bases/{knowledge_base_id}/models")
@@ -320,6 +344,17 @@ async def get_version(
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.get_version(
         domain_id=domain_id, asset_version_id=asset_version_id
+    )
+
+
+@router.get("/versions/{asset_version_id}/preview")
+async def preview_version(
+    asset_version_id: UUID, request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.preview_version(
+        domain_id=domain_id, asset_version_id=asset_version_id, context=context,
     )
 
 
@@ -492,16 +527,22 @@ async def ingest_manual_version(
     )
 
 
-@router.post("/reports/{report_id}:extract-case", status_code=202)
+@router.post("/reports/{report_id}:extract-case", status_code=202, response_model=OutputJobReceipt)
 async def extract_case(
     report_id: UUID,
     request: Request,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
-    domain_id, _ = _scope(request, context)
-    return await request.app.state.operations_knowledge_service.extract_case(
-        domain_id=domain_id, report_id=report_id, context=context
-    )
+    _scope(request, context)
+    scope = output_job_scope(request, context)
+    idempotency_key = (idempotency_key or request.headers.get("Idempotency-Key", "")).strip()
+    if not idempotency_key:
+        raise HTTPException(428, {"code": "IDEMPOTENCY_KEY_REQUIRED",
+            "message": "缺少 Idempotency-Key Header"})
+    return await submit_report_case(knowledge_service=request.app.state.operations_knowledge_service,
+        jobs=request.app.state.output_job_service, scope=scope,
+        report_id=report_id, idempotency_key=idempotency_key)
 
 
 @router.get("/conversations/{conversation_id}/case-candidate")
@@ -518,19 +559,25 @@ async def conversation_case_candidate(
     )
 
 
-@router.post("/conversations/{conversation_id}:close-diagnosis", status_code=202)
+@router.post("/conversations/{conversation_id}:close-diagnosis", status_code=202, response_model=OutputJobReceipt)
 async def close_conversation_diagnosis(
     conversation_id: UUID,
     payload: DiagnosisClosureCommand,
     request: Request,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
-    domain_id, _ = _use_scope(request, context)
-    return await request.app.state.operations_knowledge_service.close_diagnosis(
-        domain_id=domain_id,
+    scope = output_job_scope(request, context)
+    idempotency_key = (idempotency_key or request.headers.get("Idempotency-Key", "")).strip()
+    if not idempotency_key:
+        raise HTTPException(428, {"code": "IDEMPOTENCY_KEY_REQUIRED",
+            "message": "缺少 Idempotency-Key Header"})
+    return await submit_conversation_case(
+        knowledge_service=request.app.state.operations_knowledge_service,
+        jobs=request.app.state.output_job_service, scope=scope,
         conversation_id=conversation_id,
         command=payload,
-        context=context,
+        idempotency_key=idempotency_key,
     )
 
 
@@ -631,11 +678,13 @@ async def list_reviews(
 
 @router.post(":search")
 async def search(
-    payload: KnowledgeSearchRequest,
+    payload: KnowledgeSearchPreviewRequest,
     request: Request,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
-    domain_id, actor = _scope(request, context)
+    domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.search(
-        domain_id=domain_id, agent_id=actor, request=payload, context=context
+        domain_id=domain_id, agent_id=str(payload.agent_id),
+        request=KnowledgeSearchRequest.model_validate(payload.model_dump(exclude={"agent_id", "target_id"})),
+        target_id=payload.target_id, context=context
     )

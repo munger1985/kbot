@@ -39,6 +39,10 @@ class BackgroundOperationEntity(BaseEntity):
     error_code: Mapped[str | None] = mapped_column(String(128))
     summary: Mapped[str] = mapped_column(String(1000), nullable=False)
     last_outbox_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    source_version: Mapped[int | None] = mapped_column(Numeric(19, 0))
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(
+        UniversalTimestamp(timezone=True)
+    )
     last_occurred_at: Mapped[datetime] = mapped_column(
         UniversalTimestamp(timezone=True), nullable=False
     )

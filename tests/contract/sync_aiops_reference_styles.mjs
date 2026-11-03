@@ -80,10 +80,15 @@ for (const [page, entry] of Object.entries(manifest.pages)) {
       "management/WorkloadSnapshotSettings.vue": ".workload-snapshot-settings",
       "management/BusinessSystemTopology.vue": ".business-system-topology",
     }[source];
+    const excludedChild = source === "business/AIOpsReportDetailView.vue" ? ".daily-regional-report" : null;
     parsed.walkRules((rule) => {
       if (rule.parent.type === "atrule" && /keyframes$/.test(rule.parent.name)) return;
       // 保留 Vue scoped 属性带来的优先级，避免 :root 公共表格规则覆盖页面规格。
-      rule.selectors = rule.selectors.map((selector) => `:is([data-page="${page}"]) ${componentRoot && !selector.startsWith(".") ? `${componentRoot} ` : ""}${selector}`);
+      rule.selectors = rule.selectors.map((selector) => {
+        // Vue 父级 scoped 规则不匹配日报子组件内部；静态页须保留这条边界。
+        const scoped = excludedChild ? selector.replace(/(::[\w-]+(?:\([^)]*\))?)?$/, `:not(:where(${excludedChild} *))$1`) : selector;
+        return `:is([data-page="${page}"]) ${componentRoot && !selector.startsWith(".") ? `${componentRoot} ` : ""}${scoped}`;
+      });
     });
     css += `\n/* ${source} */\n${parsed.toString().trim()}\n`;
   }

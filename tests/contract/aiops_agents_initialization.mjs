@@ -29,6 +29,8 @@ function setup({ session = true, accessResult = access, responses = {} } = {}) {
   const errors = [];
   const requests = [];
   const redirects = [];
+  const stylesheets = [];
+  const notices = [];
   const elements = new Map();
   function element() {
     return { innerHTML: "", textContent: "", value: "", disabled: false, dataset: {}, hidden: false,
@@ -45,8 +47,10 @@ function setup({ session = true, accessResult = access, responses = {} } = {}) {
     ['[name="auto_alert_enabled"]', element()],
   ]);
   const document = {
+    head: { append: (node) => stylesheets.push(node) },
     body: {
-      dataset: { page: "agents" }, classList: { contains: () => false, add() {} }, append() {},
+      dataset: { page: "agents" }, classList: { contains: () => false, add() {} },
+      append: (node) => notices.push(node.textContent),
       insertAdjacentHTML() {
         for (const id of ["ops-logout", "ops-domain", "ops-user", "ops-nav-trigger", "ops-nav-scrim", "business-app-navigation", "ops-account-toggle", "ops-account-menu"]) elements.set(id, element());
       },
@@ -74,10 +78,13 @@ function setup({ session = true, accessResult = access, responses = {} } = {}) {
       },
     },
   };
-  runInNewContext(shellSource, context, { filename: "aiops-shell.js" });
+  runInNewContext(shellSource, context, {
+    filename: "aiops-shell.js",
+    importModuleDynamically: async () => { throw new Error("隔离夹具不加载通知模块"); },
+  });
   runInNewContext(agentSource, context, { filename: "aiops-agents.js" });
   return {
-    requests, redirects, errors, elements,
+    requests, redirects, errors, elements, stylesheets, notices,
     async start() {
       for (const callback of listeners) Promise.resolve(callback()).catch((error) => errors.push(error));
       await flush();
@@ -126,6 +133,10 @@ test("实际 Shell 与页面脚本完成列表渲染和事件绑定", async () =
   assert.equal(app.elements.get("create-agent").disabled, false);
   assert.equal(typeof app.elements.get("create-agent").onclick, "function");
   assert.equal(typeof app.elements.get("agent-form").onsubmit, "function");
+  assert.equal(app.stylesheets.length, 1);
+  assert.equal(app.stylesheets[0].rel, "stylesheet");
+  assert.equal(app.stylesheets[0].href, "../shared/kbot-notifications.css?v=20261103_1");
+  assert.deepEqual(app.notices, ["通知中心暂时无法加载，请在对应页面查看生成记录。"]);
 });
 
 test("目录未全部返回前保留加载态并禁用新增", async () => {

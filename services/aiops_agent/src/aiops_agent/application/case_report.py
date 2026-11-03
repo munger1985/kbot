@@ -161,6 +161,27 @@ async def profile_from_diagnosis_report(*, uow, report, content, sources, target
     conclusions = [item["summary"] for item in facts if item.get("kind") == "CAUSE"] or [
         item["summary"] for item in facts
     ]
+    from aiops_agent.application.case_knowledge_projection import investigation_knowledge
+    investigation_steps, unresolved_questions = [], []
+    seen_artifacts = set()
+    for source in sources:
+        if str(source.source_artifact_id) in seen_artifacts:
+            continue
+        seen_artifacts.add(str(source.source_artifact_id))
+        original = await uow.runs.get_artifact(artifact_id=source.source_artifact_id)
+        if original is None or original.schema_version != "AIOPS_TURN_RESULT.v1":
+            continue
+        record = dict(original.payload_json or {}).get("investigation_record")
+        if not record:
+            continue
+        selected = {item["claim_id"] for item in facts
+            if item["source_run_id"] == record["run_id"]
+            and item["record_id"] == record["record_id"]
+            and item["record_revision"] == record["revision"]}
+        if selected:
+            steps, questions = investigation_knowledge(artifact=original, claim_ids=selected)
+            investigation_steps.extend(steps)
+            unresolved_questions.extend(questions)
     return DiagnosisCaseProfile(
         case_kind="NEGATIVE_EXPERIENCE" if negative else "DIAGNOSTIC_REFERENCE",
         problem_signature={
@@ -175,6 +196,8 @@ async def profile_from_diagnosis_report(*, uow, report, content, sources, target
             "summary": "\n".join(conclusions), "confidence": "UNKNOWN",
             "effective_level": str(scope.get("root_cause_grade") or "INCONCLUSIVE"), "evidence_refs": refs,
         },
+        investigation_steps=tuple(investigation_steps),
+        unresolved_questions=tuple(dict.fromkeys(unresolved_questions)),
         actions=actions, verification=verification,
         source={
             "report_id": str(report.report_id), "content_hash": report.content_hash,

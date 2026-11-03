@@ -27,6 +27,7 @@ from aiops_agent.application.runtime.service import (
     AIOpsRuntimeService,
     sha256_json,
 )
+from tests.support.aiops_report_output import render_report_material
 from platform_core.identity import uuid7
 
 
@@ -664,6 +665,7 @@ class FormalReportingTest(unittest.TestCase):
 
         class ExpiringReport:
             expired = False
+            security_level = 1
 
             def _value(self, value):
                 if self.expired:
@@ -705,6 +707,7 @@ class FormalReportingTest(unittest.TestCase):
             status="COMPLETED",
             final_artifact_id=artifact_id,
             plan_snapshot_json={},
+            created_at=datetime(2026, 9, 1, tzinfo=UTC),
         )
         artifact = SimpleNamespace(
             artifact_id=artifact_id,
@@ -713,7 +716,7 @@ class FormalReportingTest(unittest.TestCase):
             payload_json={"status": "READY", "diagnosis_rationale": "本次证据已核验"},
             content_hash="a" * 64,
         )
-        report_artifact = SimpleNamespace(schema_version="REPORT_CONTENT.v1", content_hash="b" * 64,
+        report_artifact = SimpleNamespace(schema_version="REPORT_CONTENT.v1", content_hash="b" * 64, security_level=1,
             payload_json={"provenance": {"report_input_hash": report_input_hash(
                 source_artifact=artifact,
                 source=normalize_report_source(schema_version=artifact.schema_version,
@@ -721,6 +724,7 @@ class FormalReportingTest(unittest.TestCase):
                 template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"],
             )}})
         uow = SimpleNamespace(
+            platform_notifications=SimpleNamespace(emit_report_ready=AsyncMock()),
             inspections=SimpleNamespace(
                 get_current_report_for_run_template=AsyncMock(
                     return_value=current
@@ -749,7 +753,7 @@ class FormalReportingTest(unittest.TestCase):
             blueprint_registry=AsyncMock(),
             handler_registry=AsyncMock(),
         )
-        receipt = asyncio.run(service.generate_user_report(
+        receipt = asyncio.run(render_report_material(service,
             domain_id=8,
             actor_id="operator-1",
             ops_run_id=run_id,
@@ -868,7 +872,7 @@ class FormalReportingTest(unittest.TestCase):
             ),
         }
         uow = SimpleNamespace(
-            inspections=SimpleNamespace(),
+            inspections=SimpleNamespace(get_current_report_for_conversation_template=AsyncMock(return_value=None)),
             conversations=SimpleNamespace(get_conversation=AsyncMock(return_value=conversation)),
             turns=SimpleNamespace(
                 list_all_turns=AsyncMock(return_value=turns),
@@ -899,7 +903,7 @@ class FormalReportingTest(unittest.TestCase):
             template_id="system:diagnosis.standard",
             report_version=1,
         ))
-        asyncio.run(service.generate_conversation_report(
+        asyncio.run(render_report_material(service,
             domain_id=8, actor_id="operator-1", conversation_id=conversation_id,
             template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"], trace_id="trace-session-report",
         ))
@@ -958,6 +962,7 @@ class FormalReportingTest(unittest.TestCase):
         report_hash = sha256_json(report_payload)
         current_report = SimpleNamespace(
             report_id=report_id,
+            security_level=1,
             status="READY",
             template_id="system:diagnosis.standard",
             template_version="1",
@@ -967,11 +972,13 @@ class FormalReportingTest(unittest.TestCase):
         )
         current_artifact = SimpleNamespace(
             artifact_id=report_artifact_id,
+            security_level=1,
             schema_version="REPORT_CONTENT.v1",
             content_hash=report_hash,
             payload_json=report_payload,
         )
         uow = SimpleNamespace(
+            platform_notifications=SimpleNamespace(emit_report_ready=AsyncMock()),
             inspections=SimpleNamespace(
                 get_current_report_for_conversation_template=AsyncMock(
                     return_value=current_report
@@ -1016,7 +1023,7 @@ class FormalReportingTest(unittest.TestCase):
         )
         service._publish_diagnosis_report = AsyncMock()
 
-        receipt = asyncio.run(service.generate_conversation_report(
+        receipt = asyncio.run(render_report_material(service,
             domain_id=8,
             actor_id="operator-1",
             conversation_id=conversation_id,
@@ -1027,7 +1034,7 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual(report_id, receipt.report_id)
         self.assertEqual(2, receipt.report_version)
         service._publish_diagnosis_report.assert_not_awaited()
-        uow.commit.assert_not_awaited()
+        uow.commit.assert_awaited_once()
 
     def test_get_report_presentation_uses_report_type_when_snapshot_is_missing(self) -> None:
         cases = (

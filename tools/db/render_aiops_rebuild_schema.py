@@ -576,7 +576,9 @@ def _extract_table_columns(
                 continue
             if line.startswith("        "):
                 continue
-            if stripped.startswith("CONSTRAINT ") or stripped == ");":
+            if stripped.startswith((
+                "CONSTRAINT ", "PRIMARY KEY", "FOREIGN KEY", "UNIQUE ", "CHECK ",
+            )) or stripped == ");":
                 break
             column_name = stripped.split(None, 1)[0].rstrip(",")
             if not column_name.replace("_", "").isalnum():

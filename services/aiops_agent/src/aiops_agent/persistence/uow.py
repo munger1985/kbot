@@ -21,6 +21,7 @@ from aiops_agent.repositories import (
     OpsRunRepository,
     ResourceGovernanceRepository,
     OutboxRepository,
+    OutputJobRepository,
     NotificationSubscriptionRepository,
     OperationsKnowledgeRepository,
     PolicyRepository,
@@ -66,6 +67,7 @@ class AIOpsUnitOfWork:
         self.inspections: InspectionRepository | None = None
         self.inbox: InboxRepository | None = None
         self.outbox: OutboxRepository | None = None
+        self.output_jobs: OutputJobRepository | None = None
         self.agents: AIOpsAgentRepository | None = None
         self.conversations: ConversationRepository | None = None
         self.turns: TurnRepository | None = None
@@ -102,6 +104,7 @@ class AIOpsUnitOfWork:
         self.inspections = InspectionRepository(self.session, guard)
         self.inbox = InboxRepository(self.session, guard)
         self.outbox = OutboxRepository(self.session, guard)
+        self.output_jobs = OutputJobRepository(self.session, guard)
         self.agents = AIOpsAgentRepository(self.session, guard)
         self.conversations = ConversationRepository(self.session, guard)
         self.turns = TurnRepository(self.session, guard)
@@ -163,6 +166,7 @@ class AIOpsUnitOfWork:
             self.inspections = None
             self.inbox = None
             self.outbox = None
+            self.output_jobs = None
             self.agents = None
             self.conversations = None
             self.turns = None

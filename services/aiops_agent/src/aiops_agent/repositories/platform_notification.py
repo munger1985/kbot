@@ -21,6 +21,31 @@ class PlatformNotificationRepository:
     def __init__(self, uow):
         self._uow = uow
 
+    async def emit_output_job_event(self, *, job, event_type, now, result=None):
+        """任务身份独立于 Run；只给真实发起人投递安全摘要和受控定位。"""
+        if event_type not in {"aiops.output_job.started", "aiops.output_job.failed", "aiops.case.draft_ready"}:
+            raise ValueError("输出任务通知类型无效")
+        if event_type == "aiops.case.draft_ready":
+            if (job.job_type != "CASE_EXTRACTION" or result is None
+                or result.report_id is not None or result.asset_id is None or result.asset_version_id is None):
+                raise ValueError("草稿就绪通知必须绑定确切案例版本")
+        elif result is not None:
+            raise ValueError("未成功的任务通知不能携带产物定位")
+        summary = ("案例草稿已生成，人工审核发布后才能用于后续诊断。" if event_type == "aiops.case.draft_ready"
+            else "任务已排队，完成后会在通知中心告知结果。" if event_type.endswith("started")
+            else "输出任务未能完成，请查看该任务的失败原因。")
+        return await publish_notification(uow=self._uow, producer_service="aiops",
+            event_key=f"output-job:{job.job_id}:{event_type}:{job.attempt_count}",
+            envelope=NotificationEnvelope(domain_id=int(job.domain_id), event_type=event_type,
+                resource_type="aiops_output_job", resource_id=str(job.job_id),
+                resource_name="沉淀案例" if job.job_type == "CASE_EXTRACTION" else "生成报告",
+                initiator_actor_id=job.actor_id, recipient_actor_ids=[job.actor_id], summary=summary,
+                correlation_id=job.trace_id, operation_id=str(job.job_id), occurred_at=now,
+                safe_data={"job_id": str(job.job_id), "job_type": job.job_type,
+                    "source_version": int(job.row_version or 0),
+                    **({"asset_id": str(result.asset_id), "asset_version_id": str(result.asset_version_id)}
+                        if result is not None else {})}))
+
     async def _publish_for_recipients(
         self,
         *,
@@ -200,7 +225,14 @@ class PlatformNotificationRepository:
             ),
         )
 
-    async def emit_report_ready(self, *, run, report, actor_id: str):
+    async def emit_report_ready(self, *, run, report, actor_id: str, output_job=None, now=None):
+        if output_job is not None and (
+            output_job.job_type != "REPORT_GENERATION" or output_job.actor_id != actor_id
+            or output_job.domain_id != run.domain_id
+            or report.ops_run_id != run.ops_run_id or output_job.status != "SUCCEEDED"
+            or report.status not in {"READY", "PARTIAL"} or now is None
+        ):
+            raise ValueError("报告任务通知必须绑定当前作用域、发起人和确切产物")
         recipients = {actor_id} if not actor_id.startswith("system:") else set()
         subscriptions = self._uow.notification_subscriptions
         if subscriptions is not None:
@@ -222,7 +254,8 @@ class PlatformNotificationRepository:
         if not recipients:
             return None
         return await self._publish_for_recipients(
-            event_key=f"aiops-report:{report.report_id}",
+            event_key=(f"output-job:{output_job.job_id}:aiops.report.ready"
+                if output_job is not None else f"aiops-report:{report.report_id}"),
             recipients=recipients,
             envelope_data=dict(
                 domain_id=int(run.domain_id),
@@ -230,13 +263,18 @@ class PlatformNotificationRepository:
                 resource_type="aiops_report",
                 resource_id=str(report.report_id),
                 resource_name="AIOps 报告",
-                initiator_actor_id=run.actor_id,
-                summary=_notification_summary(
+                initiator_actor_id=actor_id if output_job is not None else run.actor_id,
+                summary=("报告已生成，存在证据或内容缺口，请查看报告说明。" if report.status == "PARTIAL"
+                    else "报告已生成，可查看正式报告。") if output_job is not None else _notification_summary(
                     report.summary,
                     fallback="报告已生成",
                 ),
-                correlation_id=run.trace_id,
-                operation_id=str(run.ops_run_id),
-                safe_data={"target_id": str(run.target_id)},
+                correlation_id=output_job.trace_id if output_job is not None else run.trace_id,
+                operation_id=str(output_job.job_id if output_job is not None else run.ops_run_id),
+                safe_data={"target_id": str(run.target_id),
+                    **({"job_id": str(output_job.job_id), "job_type": output_job.job_type,
+                        "report_id": str(report.report_id), "report_version": str(report.report_version),
+                        "source_version": int(output_job.row_version or 0)} if output_job is not None else {})},
+                **({"occurred_at": now} if output_job is not None else {}),
             ),
         )

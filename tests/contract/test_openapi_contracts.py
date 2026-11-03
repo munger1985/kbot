@@ -20,7 +20,7 @@ class OpenApiContractsTest(unittest.TestCase):
         self.assertEqual([], check_openapi_contracts())
 
     def test_expected_service_contracts_are_frozen(self) -> None:
-        self.assertEqual(15, len(self.contracts))
+        self.assertEqual(16, len(self.contracts))
         self.assertEqual(
             {
                 "agent_runtime_internal_v1.json",
@@ -32,6 +32,7 @@ class OpenApiContractsTest(unittest.TestCase):
                 "knowledge_retrieval_app_internal_v1.json",
                 "media_studio_app_internal_v1.json",
                 "main_api_public_v1.json",
+                "main_api_internal_v1.json",
                 "model_embedding_v1.json",
                 "model_llm_v1.json",
                 "model_image_v1.json",

@@ -13,6 +13,8 @@ from aiops_agent.application.operations_knowledge import _diagnosis_case_markdow
 from aiops_agent.contracts.knowledge import DiagnosisCaseProfile, KnowledgeSearchRequest
 from aiops_agent.playbooks import canonical_hash
 from platform_core.identity import uuid7
+from tests.support.aiops_knowledge_scope import knowledge_agent_repository, KNOWLEDGE_BASE_ID
+from uuid import UUID
 
 
 def profile(**updates):
@@ -74,21 +76,32 @@ def source_uow(failure=None):
         get_version_relations=AsyncMock(return_value={"sources": [source]}),
         list_published_candidates=AsyncMock(),
     )
+    from tests.support.aiops_knowledge_scope import active_knowledge_bases_fixture
+    active_knowledge_bases_fixture(repository)
     uow = SimpleNamespace(
         operations_knowledge=repository,
         inspections=SimpleNamespace(get_report_scoped=AsyncMock(return_value=report),
             list_report_successors_scoped=AsyncMock(return_value=[])),
         runs=SimpleNamespace(get_artifact=AsyncMock(return_value=artifact), get_run_scoped=AsyncMock(return_value=run)),
         agents=SimpleNamespace(
-            get=AsyncMock(return_value=SimpleNamespace(current_version_id=version_id)),
+            get=AsyncMock(return_value=SimpleNamespace(status="ACTIVE", current_version_id=version_id)),
             version_has_target=AsyncMock(return_value=failure != "target_revoked"),
             version_source_ids=AsyncMock(return_value=[] if failure == "source_revoked" else ["monitor"]),
         ),
     )
+    uow.agents.get.return_value.status = "ACTIVE"
+    if failure == "agent_disabled":
+        uow.agents.get.return_value.status = "DISABLED"
+    if failure == "agent_no_version":
+        uow.agents.get.return_value.current_version_id = None
+    uow.agents.version_knowledge_policy = knowledge_agent_repository().version_knowledge_policy
     return uow, domain_id, version_id, agent_id
 
 
-@pytest.mark.parametrize("failure", [None, "hash", "report_corrected", "target_revoked", "source_revoked"])
+@pytest.mark.parametrize("failure", [
+    None, "hash", "report_corrected", "target_revoked", "source_revoked",
+    "agent_disabled", "agent_no_version",
+])
 def test_source_health_rechecks_versions_hashes_target_and_source_authorization(failure):
     uow, domain, version, agent = source_uow(failure)
     result = asyncio.run(validate_case_sources(uow=uow, domain_id=domain, version_id=version, agent_id=agent))
@@ -110,7 +123,7 @@ def test_case_search_filters_invalid_source_before_kc_reads_body():
         service._uow_factory = Uow
         service._kc = SimpleNamespace(discover=AsyncMock())
         kwargs = {"domain_id": domain, "agent_id": agent,
-            "request": KnowledgeSearchRequest(query="连接失败", knowledge_base_ids=(uuid7(),)),
+            "request": KnowledgeSearchRequest(query="连接失败", knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),)),
             "context": SimpleNamespace()}
         # 两平台的租户由现有应用边界负责，不在案例中新增共享通道。
         import inspect
@@ -179,8 +192,10 @@ def test_knowledge_rechecks_publication_after_remote_body_retrieval():
             SimpleNamespace(collection_id=str(uuid7()), bundle_revision_id=revision),
         )
         repo = SimpleNamespace(list_published_candidates=AsyncMock(side_effect=[[candidate], []]))
+        from tests.support.aiops_knowledge_scope import active_knowledge_bases_fixture
+        active_knowledge_bases_fixture(repo)
         class Uow:
-            async def __aenter__(self): return SimpleNamespace(operations_knowledge=repo)
+            async def __aenter__(self): return SimpleNamespace(operations_knowledge=repo, agents=knowledge_agent_repository())
             async def __aexit__(self, *args): pass
         service = OperationsKnowledgeService.__new__(OperationsKnowledgeService)
         service._uow_factory = Uow
@@ -189,7 +204,7 @@ def test_knowledge_rechecks_publication_after_remote_body_retrieval():
             retrieve_evidence=AsyncMock(return_value={"citations": [{"bundle_revision_id": revision, "quote": "不应泄露"}]}),
         )
         kwargs = {"domain_id": domain, "agent_id": str(uuid7()),
-            "request": KnowledgeSearchRequest(query="方法", knowledge_base_ids=(uuid7(),)), "context": SimpleNamespace()}
+            "request": KnowledgeSearchRequest(query="方法", knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),)), "context": SimpleNamespace()}
         import inspect
         if "tenant_id" in inspect.signature(service.search).parameters:
             kwargs["tenant_id"] = uuid7()

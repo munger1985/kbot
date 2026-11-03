@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import signal
+from time import monotonic
 
 from loguru import logger
 
 from main_api.application import NotificationDispatcher
+from main_api.application.notification_projection import reconcile_output_operations
+from main_api.application.aiops_output_reconciliation import AIOpsOutputReconciliation
+from main_api.application.output_authority import OutputAuthorityService
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
+from platform_clients.aiops import AIOpsClientAuth, AIOpsManagementClient
+from platform_core.security import create_auth_context_codec, create_service_identity_codec
 
 
 PROCESS_NAME = "notification_worker"
@@ -29,8 +35,9 @@ async def main() -> None:
         retention=settings.log.retention,
     )).setup()
     runtime = create_database_runtime()
+    uow_factory = create_main_api_uow(runtime.session_factory)
     dispatcher = NotificationDispatcher(
-        uow_factory=create_main_api_uow(runtime.session_factory),
+        uow_factory=uow_factory,
         batch_size=config.dispatcher_batch_size,
         lease_seconds=config.dispatcher_lease_seconds,
         max_attempts=config.dispatcher_max_attempts,
@@ -40,9 +47,24 @@ async def main() -> None:
     for event_signal in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(event_signal, stop.set)
     logger.info("通知投影 Worker 已启动")
+    projection_client = AIOpsManagementClient(
+        base_url=settings.aiops.base_url, timeout_seconds=min(settings.aiops.timeout_seconds, 10),
+        auth=AIOpsClientAuth(caller_service=settings.api.service_name, audience=settings.aiops.audience,
+            scopes=("aiops.output.reconcile",), auth_context_codec=create_auth_context_codec(),
+            service_identity_codec=create_service_identity_codec()))
+    resolver = AIOpsOutputReconciliation(client=projection_client,
+        authority=OutputAuthorityService(uow_factory=uow_factory),
+        caller_service=settings.api.service_name)
+    next_reconciliation = 0.0
     try:
         while not stop.is_set():
             processed = await dispatcher.dispatch_once()
+            if monotonic() >= next_reconciliation:
+                try:
+                    await reconcile_output_operations(uow_factory=uow_factory, resolver=resolver)
+                except Exception:
+                    logger.exception("AIOps 通知任务对账批次失败")
+                next_reconciliation = monotonic() + config.output_reconcile_seconds
             if processed:
                 continue
             try:
@@ -52,6 +74,7 @@ async def main() -> None:
             except TimeoutError:
                 pass
     finally:
+        await projection_client.close()
         await runtime.close()
         logger.info("通知投影 Worker 已停止")
 

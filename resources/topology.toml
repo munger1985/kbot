@@ -204,6 +204,7 @@ kind = "worker"
 
 # 端点只引用进程；默认 URL 根据进程端口生成，audience 使用 service_name。
 [endpoints]
+main_api = "main_api"
 knowledge_core = "knowledge_core_api"
 knowledge_retrieval_app = "knowledge_retrieval_app_api"
 media_studio_app = "media_studio_app_api"
@@ -343,6 +344,10 @@ timeout_seconds = 120
 [dependencies.model_serving.data_query]
 endpoint = "data_query"
 timeout_seconds = 300
+
+[dependencies.aiops_agent.clients.main_api]
+endpoint = "main_api"
+timeout_seconds = 10
 
 [dependencies.aiops_agent.clients.model_serving]
 endpoint = "model_llm"

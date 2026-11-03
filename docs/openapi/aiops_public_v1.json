@@ -8052,6 +8052,255 @@
         "title": "OracleRecoveryMarker",
         "type": "object"
       },
+      "OutputJobReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_count": {
+            "minimum": 0.0,
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "job_type": {
+            "enum": [
+              "REPORT_GENERATION",
+              "CASE_EXTRACTION"
+            ],
+            "title": "Job Type",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputJobResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OutputJobSource"
+          },
+          "stage": {
+            "enum": [
+              "ACCEPTED",
+              "VALIDATING",
+              "ASSEMBLING",
+              "REDACTING",
+              "INGESTING",
+              "INDEXING",
+              "FINALIZING",
+              "COMPLETED",
+              "FAILED"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "SUCCEEDED",
+              "FAILED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "job_type",
+          "status",
+          "stage",
+          "source",
+          "submitted_at",
+          "attempt_count",
+          "row_version"
+        ],
+        "title": "OutputJobReceipt",
+        "type": "object"
+      },
+      "OutputJobResult": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "asset_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Version Id"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "report_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Version"
+          }
+        },
+        "title": "OutputJobResult",
+        "type": "object"
+      },
+      "OutputJobSource": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "kind": {
+            "enum": [
+              "CONVERSATION",
+              "RUN",
+              "REPORT"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "source_id"
+        ],
+        "title": "OutputJobSource",
+        "type": "object"
+      },
       "PendingInputView": {
         "additionalProperties": false,
         "properties": {
@@ -9492,6 +9741,15 @@
         "title": "RelationParticipantView",
         "type": "object"
       },
+      "ReportCategory": {
+        "enum": [
+          "INSPECTION",
+          "DIAGNOSIS",
+          "SPECIAL_ANALYSIS"
+        ],
+        "title": "ReportCategory",
+        "type": "string"
+      },
       "ReportEdit": {
         "additionalProperties": false,
         "description": "创建一个带人工展示编辑的新报告版本。",
@@ -9794,7 +10052,16 @@
           "INSPECTION_QUARTERLY",
           "INSPECTION_ANNUAL",
           "INSPECTION_CUSTOM",
-          "COMPARISON"
+          "COMPARISON",
+          "MYSQL_WORKLOAD",
+          "MYSQL_WORKLOAD_DIFF",
+          "MYSQL_ACTIVITY",
+          "MYSQL_SQL_HEALTHCHECK",
+          "POSTGRESQL_WORKLOAD",
+          "POSTGRESQL_WORKLOAD_DIFF",
+          "POSTGRESQL_ACTIVITY",
+          "POSTGRESQL_SQL_HEALTHCHECK",
+          "POSTGRESQL_PGBADGER"
         ],
         "title": "ReportType",
         "type": "string"
@@ -19901,13 +20168,47 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ReportType"
                 },
                 {
                   "type": "null"
                 }
               ],
               "title": "Report Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReportCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "template_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Ref"
             }
           },
           {
@@ -20239,16 +20540,23 @@
     },
     "/api/v1/apps/aiops/reports:generate": {
       "post": {
-        "description": "由用户明确确认后，基于完整会话或终态诊断生成正式报告。",
+        "description": "提交独立报告任务；返回回执不表示报告已生成。",
         "operationId": "generate_report_api_v1_apps_aiops_reports_generate_post",
         "parameters": [
           {
             "in": "header",
             "name": "Idempotency-Key",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -20263,10 +20571,12 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OutputJobReceipt"
+                }
               }
             },
             "description": "Successful Response"

@@ -49,7 +49,7 @@ Promise.all(samples.map(async ([input, expected]) => {
     def test_upload_page_loads_digest_utility_before_upload_logic(self) -> None:
         page = UPLOAD_PAGE.read_text(encoding="utf-8")
         utility = "../shared/kbot-sha256.js?v=20261019_1"
-        upload = "./js/aiops-operations-knowledge.js?v=20261022_2"
+        upload = "./js/aiops-operations-knowledge.js?v=20261030_1"
         self.assertIn(utility, page)
         self.assertLess(page.index(utility), page.index(upload))
         self.assertIn(
@@ -60,7 +60,7 @@ Promise.all(samples.map(async ([input, expected]) => {
     def test_upload_copy_and_delete_confirmation_match_approval_first_flow(self) -> None:
         page = UPLOAD_PAGE.read_text(encoding="utf-8")
         script = UPLOAD_SCRIPT.read_text(encoding="utf-8")
-        self.assertIn("上传技术文档后先由人工审批", page)
+        self.assertIn("上传技术资料后先由人工审批", page)
         self.assertIn('id="submit-upload" class="primary" type="submit">上传</button>', page)
         self.assertNotIn("上传并识别标签", page)
         self.assertIn("资料已上传，等待人工审批", script)

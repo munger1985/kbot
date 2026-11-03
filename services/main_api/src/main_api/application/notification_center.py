@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from platform_core.notifications import event_definition
+from main_api.application.aiops_notification_routes import AIOPS_OUTPUT_EVENTS, aiops_notification_route
 
 
 class NotificationCenterError(ValueError):
@@ -34,6 +35,15 @@ class NotificationCenterService:
     def __init__(self, *, uow_factory):
         self._uow_factory = uow_factory
 
+    @staticmethod
+    async def _serialize_inbox(repository, rows, *, domain_id, actor_id):
+        """在授权页内批量补白名单定位，不泄露整个事件信封。"""
+        ids = [row.inbox_id for row in rows if row.event_type in AIOPS_OUTPUT_EVENTS]
+        payloads = await repository.inbox_route_payloads(
+            domain_id=domain_id, actor_id=actor_id, inbox_ids=ids) if ids else {}
+        return [serialize_entity(row) | aiops_notification_route(
+            row, payloads.get(row.inbox_id), domain_id=domain_id) for row in rows]
+
     async def summary(self, *, domain_id: int, actor_id: str) -> dict[str, int]:
         async with self._uow_factory() as uow:
             return await self._repo(uow).summary(
@@ -49,7 +59,7 @@ class NotificationCenterService:
                 domain_id=domain_id, actor_id=actor_id,
                 limit=limit, before_sequence=before_sequence,
             )
-            return [serialize_entity(row) for row in rows]
+            return await self._serialize_inbox(self._repo(uow), rows, domain_id=domain_id, actor_id=actor_id)
 
     async def resource_notifications(
         self, *, domain_id: int, actor_id: str, resource_type: str,
@@ -62,7 +72,7 @@ class NotificationCenterService:
                 resource_type=resource_type, resource_id=resource_id,
                 limit=limit,
             )
-            return [serialize_entity(row) for row in rows]
+            return await self._serialize_inbox(self._repo(uow), rows, domain_id=domain_id, actor_id=actor_id)
 
     async def stream_events(
         self, *, domain_id: int, actor_id: str,
@@ -73,7 +83,7 @@ class NotificationCenterService:
                 domain_id=domain_id, actor_id=actor_id,
                 after_sequence=after_sequence, limit=limit,
             )
-            return [serialize_entity(row) for row in rows]
+            return await self._serialize_inbox(self._repo(uow), rows, domain_id=domain_id, actor_id=actor_id)
 
     async def get_notification(
         self, *, inbox_id: UUID, domain_id: int, actor_id: str,
@@ -86,7 +96,7 @@ class NotificationCenterService:
                 raise NotificationCenterError(
                     "NOTIFICATION_NOT_FOUND", "通知不存在", 404,
                 )
-            return serialize_entity(row)
+            return (await self._serialize_inbox(self._repo(uow), [row], domain_id=domain_id, actor_id=actor_id))[0]
 
     async def set_read(
         self, *, inbox_id: UUID, domain_id: int, actor_id: str,
@@ -108,7 +118,7 @@ class NotificationCenterService:
             row.read_at = datetime.now(timezone.utc) if read else None
             row.row_version = int(row.row_version) + 1
             await uow.commit()
-            return serialize_entity(row)
+            return (await self._serialize_inbox(self._repo(uow), [row], domain_id=domain_id, actor_id=actor_id))[0]
 
     async def mark_many_read(
         self, *, inbox_ids: list[UUID], domain_id: int, actor_id: str,

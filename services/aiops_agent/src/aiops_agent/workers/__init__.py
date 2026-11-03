@@ -14,6 +14,7 @@ from .outbox_dispatcher import (
 )
 from .reconciliation import AIOpsReconciler
 from .task_worker import AIOpsTaskWorker
+from .output_jobs import OutputJobWorker
 from .workload_retention import WorkloadRetentionWorker
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "AIOpsDomainOutboxSink",
     "AIOpsReconciler",
     "AIOpsTaskWorker",
+    "OutputJobWorker",
     "LoggingOutboxSink",
     "create_kernel_handler_registry",
     "create_runtime_handler_registry",

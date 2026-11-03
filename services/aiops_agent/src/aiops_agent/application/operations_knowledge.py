@@ -10,10 +10,11 @@ from typing import Any, Callable
 from uuid import UUID
 
 from aiops_agent.application.errors import AIOpsApplicationError
+from aiops_agent.application.case_collection import assert_case_text_policy, case_collection_configuration
 from aiops_agent.application.case_redaction import CaseRedactor
 from aiops_agent.application.case_semantic_redaction import redact_case_for_index, shared_content_hash
 from aiops_agent.application.case_source_validation import validate_case_sources, validate_case_effect
-from aiops_agent.application.case_report import load_case_report, profile_from_diagnosis_report, rejected_source
+from aiops_agent.application.case_report import load_case_report, rejected_source
 from aiops_agent.application.knowledge_withdrawal import (
     CaseWithdrawalCommand, assert_case_not_withdrawn, invalid_withdrawal,
     queue_case_withdrawals, validate_command_source, validate_receipt, withdrawal_views,
@@ -46,6 +47,7 @@ from aiops_agent.entities import (
     OperationsKnowledgeVersionEntity,
 )
 from platform_core.contracts import AuthContext
+from platform_core.contracts.aiops.case_collection import CASE_MODEL_ROLES, CaseCollectionModels
 from platform_core.dictionary import ModelCategory
 from platform_core.identity import uuid7
 from platform_core.security import create_service_auth_context
@@ -209,7 +211,14 @@ def _prepare_case_revision(
         problem_signature=signature,
         environment=dict(submitted.environment),
         root_cause=root_cause,
+        investigation_steps=base_profile.investigation_steps,
         actions=tuple(actions),
+        action_effects=tuple(
+            effect for effect in base_profile.action_effects
+            if effect.action_ordinal <= len(actions)
+            and actions[effect.action_ordinal - 1] == base_actions[effect.action_ordinal - 1]
+        ),
+        unresolved_questions=base_profile.unresolved_questions,
         verification=verification,
         applicability=tuple(
             str(item).strip() for item in submitted.applicability if str(item).strip()
@@ -222,59 +231,9 @@ def _prepare_case_revision(
 
 
 def _diagnosis_case_markdown(*, title: str, profile: DiagnosisCaseProfile) -> bytes:
-    redactor = CaseRedactor()
-    title = redactor.text(title)
-    profile = redactor.profile(profile)
-    signature = profile.problem_signature
-    environment = profile.environment
-    from aiops_agent.application.report_lifecycle import report_action_items
-    actions = report_action_items({
-        "executed_actions": [str(item.get("summary") or "").strip() for item in profile.actions],
-        "action_source": "USER_PROVIDED" if any(
-            item.get("source_kind") == "USER_PROVIDED" for item in profile.actions
-        ) else None,
-        "verification": profile.verification,
-    })
-    lines = [
-        f"# {title}",
-        "",
-        "案例用途：" + {
-            "DIAGNOSTIC_REFERENCE": "诊断参考，不代表已验证处置。",
-            "NEGATIVE_EXPERIENCE": "失败或无效经验，不作为推荐措施。",
-            "VERIFIED_OPTIMIZATION": "经受控测量支持的优化案例，复用时仍须核对环境。",
-            "VERIFIED_RESOLUTION": "经受控测量支持的解决案例，复用时仍须核对环境。",
-        }[profile.case_kind],
-        "",
-        "## 问题特征",
-        "",
-        *[f"- {item}" for item in signature.get("normalized_symptoms") or ()],
-        "",
-        "## 适用环境",
-        "",
-        f"- 数据库：{environment.get('database_type') or '未限定'} {environment.get('database_version') or ''}".rstrip(),
-        f"- 平台：{environment.get('platform') or '未限定'}",
-        f"- 拓扑：{environment.get('topology') or '未限定'}",
-        "",
-        "## 调查结论与原因判断",
-        "",
-        str(profile.root_cause.get("summary") or ""),
-        "",
-        "## 登记的处置动作",
-        "",
-        *([f"- {item}" for item in actions if item] or ["未记录已执行动作，仅作为诊断参考。"]),
-        "",
-        "## 结果记录",
-        "",
-        str(profile.verification.get("result") or "NOT_VERIFIED"),
-    ]
-    limits = profile.verification.get("causal_limitations") or ()
-    if limits:
-        lines.extend(["", "## 验证边界", "", *[f"- {item}" for item in limits]])
-    if profile.applicability:
-        lines.extend(["", "## 适用条件", "", *[f"- {item}" for item in profile.applicability]])
-    if profile.contraindications:
-        lines.extend(["", "## 不适用条件", "", *[f"- {item}" for item in profile.contraindications]])
-    return ("\n".join(lines).strip() + "\n").encode("utf-8")
+    """案例的全部生成与修订入口使用同一确定性知识投影。"""
+    from aiops_agent.application.case_knowledge_projection import case_knowledge_markdown
+    return case_knowledge_markdown(title=title, profile=profile)
 
 
 def _bundle_source_hash(documents: list[dict[str, Any]]) -> str:
@@ -529,6 +488,7 @@ class OperationsKnowledgeService:
         structured_model=None,
         prompt_registry=None,
         plan_capture_reader=None,
+        knowledge_search_budget=None,
     ) -> None:
         self._uow_factory = uow_factory
         self._kc = knowledge_core
@@ -536,7 +496,10 @@ class OperationsKnowledgeService:
         self._llm_model_catalog = self._model_catalogs.get(int(ModelCategory.LLM))
         self._structured_model = structured_model
         self._prompt_registry = prompt_registry
+        self._case_model_catalog = self._llm_model_catalog
+        self._case_model_name_field = "served_model_name"
         self._plan_capture_reader = plan_capture_reader
+        self._knowledge_search_budget = knowledge_search_budget
 
     @staticmethod
     def _actor(context: AuthContext) -> str:
@@ -832,9 +795,10 @@ class OperationsKnowledgeService:
         }
 
     async def _validate_knowledge_base_models(
-        self, *, models: dict[str, UUID], context: AuthContext,
+        self, *, models: dict[str, UUID], context: AuthContext, required_roles: frozenset[str] | None = None,
     ) -> None:
-        required = {"parser_ocr", "parser_llm", "retrieval_llm", "embedding"}
+        required = ({"parser_ocr", "parser_llm", "retrieval_llm", "embedding"}
+            if required_roles is None else set(required_roles))
         missing = required - set(models)
         if missing:
             raise AIOpsApplicationError(
@@ -884,6 +848,36 @@ class OperationsKnowledgeService:
                     message=f"模型角色 {role} 未绑定到已启用的正确类别模型",
                     status_code=409,
                 )
+
+    async def _case_collection(self, *, domain_id: int,
+        context: AuthContext) -> dict[str, Any]:
+        if str(context.domain_id) != str(domain_id):
+            raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_DOMAIN_REQUIRED",
+                message="案例集合必须使用当前可信业务空间", status_code=403)
+        return await self._collection(domain_id=domain_id, name=CASE_COLLECTION, context=context)
+
+    async def get_case_collection_models(self, *, domain_id: int,
+        context: AuthContext) -> dict[str, Any]:
+        collection = await self._case_collection(domain_id=domain_id, context=context)
+        return case_collection_configuration(collection)
+
+    async def configure_case_collection_models(self, *, domain_id: int,
+        models: dict[str, UUID], context: AuthContext) -> dict[str, Any]:
+        command = CaseCollectionModels(models=models)
+        collection = await self._case_collection(domain_id=domain_id, context=context)
+        assert_case_text_policy(collection)
+        await self._validate_knowledge_base_models(
+            models=command.models, context=context, required_roles=CASE_MODEL_ROLES)
+        try:
+            configured = await self._update_knowledge_base_models(
+                domain_id=domain_id, collection_id=UUID(str(collection["collection_id"])),
+                models=command.models, context=context)
+        except AIOpsApplicationError as exc:
+            raise AIOpsApplicationError(code="AIOPS_CASE_MODEL_CONFIG_FAILED",
+                message="案例模型配置未保存，请检查模型变更限制并刷新重试",
+                status_code=exc.status_code if exc.status_code in {403, 404, 409, 422} else 503,
+                retryable=exc.retryable) from exc
+        return case_collection_configuration({**collection, **configured})
 
     async def _update_knowledge_base_models(
         self, *, domain_id: int, collection_id: UUID,
@@ -1358,7 +1352,8 @@ class OperationsKnowledgeService:
             "retired": sum(item["status"] == "RETIRED" for item in rows),
         }
 
-    async def get_case(self, *, domain_id: int, asset_id: UUID) -> dict[str, Any]:
+    async def get_case(self, *, domain_id: int, asset_id: UUID,
+        asset_version_id: UUID | None = None) -> dict[str, Any]:
         asset_page = await self.get_asset(domain_id=domain_id, asset_id=asset_id)
         if asset_page["asset"]["asset_kind"] != "DIAGNOSIS_CASE":
             raise self._not_found()
@@ -1367,8 +1362,10 @@ class OperationsKnowledgeService:
             raise self._not_found()
         detail = await self.get_version(
             domain_id=domain_id,
-            asset_version_id=UUID(versions[0]["asset_version_id"]),
+            asset_version_id=asset_version_id or UUID(versions[0]["asset_version_id"]),
         )
+        if str(detail["asset"]["asset_id"]) != str(asset_id):
+            raise self._not_found()
         detail["versions"] = versions
         return detail
 
@@ -2302,234 +2299,6 @@ class OperationsKnowledgeService:
             "replayed": False,
         }
 
-    async def extract_case(
-        self, *, domain_id: int, report_id: UUID, context: AuthContext
-    ) -> dict[str, Any]:
-        actor = self._actor(context)
-        async with self._uow_factory() as uow:
-            report = await uow.inspections.get_report_scoped(
-                report_id=report_id, domain_id=domain_id
-            )
-            if report is None:
-                raise self._not_found()
-            report, report_content, report_sources = await load_case_report(
-                uow=uow, domain_id=domain_id, report_id=report_id,
-                plan_capture_reader=getattr(self, "_plan_capture_reader", None),
-            )
-            frozen_report_hash = str(report.content_hash)
-            existing = await uow.operations_knowledge.find_by_source_hash(
-                domain_id=domain_id,
-                asset_kind="DIAGNOSIS_CASE",
-                source_hash=frozen_report_hash,
-            )
-            if existing is not None:
-                return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=existing)
-            previous_case = None
-            from aiops_agent.application.report_source_revision import report_ancestors, report_source_is_usable
-            for ancestor in await report_ancestors(uow=uow, domain_id=domain_id, report=report):
-                previous_case = await uow.operations_knowledge.find_case_by_report_id(
-                    domain_id=domain_id, report_id=ancestor.report_id,
-                )
-                if previous_case is not None:
-                    if await report_source_is_usable(uow=uow, domain_id=domain_id, report=ancestor):
-                        return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=previous_case)
-                    break
-            case_asset_id = previous_case[0].asset_id if previous_case is not None else uuid7()
-            case_version_no = int(previous_case[1].version_no) + 1 if previous_case is not None else 1
-            evidence_refs = [
-                str(item.get("artifact_id"))
-                for item in report_content.get("evidence_refs") or ()
-                if isinstance(item, dict) and item.get("artifact_id")
-            ] or [str(row.source_artifact_id) for row in report_sources]
-            scope = dict(report_content.get("scope") or {})
-            try:
-                closure_artifact_id = UUID(str(scope.get("closure_artifact_id")))
-            except (TypeError, ValueError):
-                closure_artifact_id = None
-            if closure_artifact_id is not None:
-                closure_case = await uow.operations_knowledge.find_case_by_artifact_id(
-                    domain_id=domain_id, artifact_id=closure_artifact_id,
-                )
-                if closure_case is not None:
-                    return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=closure_case)
-            from aiops_agent.application.effect_case import profile_from_effect_report
-            effect_profile = await profile_from_effect_report(
-                uow=uow, domain_id=domain_id, report=report,
-                content=report_content, sources=report_sources,
-                plan_capture_reader=getattr(self, "_plan_capture_reader", None),
-            )
-            eligibility = {"eligible": True} if effect_profile is not None else _diagnosis_case_eligibility(
-                report=report, report_content=report_content,
-                evidence_refs=evidence_refs,
-            )
-            if not eligibility["eligible"]:
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
-                    message="；".join(item["message"] for item in eligibility["reasons"]),
-                    status_code=422,
-                )
-            target = await uow.targets.get_scoped(
-                target_id=report.target_id, domain_id=domain_id
-            )
-            if target is None:
-                raise self._not_found()
-            profile = effect_profile or await profile_from_diagnosis_report(
-                uow=uow, report=report, content=report_content, sources=report_sources, target=target,
-            )
-            profile = CaseRedactor().profile(profile)
-        async def source_preflight():
-            async with self._uow_factory() as uow:
-                await load_case_report(
-                    uow=uow, domain_id=domain_id, report_id=report_id, expected_hash=frozen_report_hash,
-                    plan_capture_reader=getattr(self, "_plan_capture_reader", None),
-                )
-        collection = await self._collection(domain_id=domain_id, name=CASE_COLLECTION, context=context)
-        display_name, profile = await redact_case_for_index(
-            title=report.title, profile=profile, collection=collection,
-            source_preflight=source_preflight,
-            structured_model=self._structured_model, prompt_registry=self._prompt_registry,
-            model_catalog=self._llm_model_catalog, model_scope={}, technical_name_field="served_model_name",
-        )
-        await source_preflight()
-        markdown = _diagnosis_case_markdown(title=display_name, profile=profile)
-        response = await self._kc.ingest_user_file(
-            domain_id=domain_id,
-            collection_id=UUID(str(collection["collection_id"])),
-            file_name=f"diagnosis-case-{report_id}.md",
-            display_name=display_name,
-            media_type="text/markdown",
-            body=markdown,
-            content_sha256=hashlib.sha256(markdown).hexdigest(),
-            idempotency_key=f"diagnosis-case:{frozen_report_hash}",
-            auth_context=context,
-        )
-        item = next(iter((response.payload or {}).get("items", [])), None)
-        if not item or item.get("status") == "REJECTED":
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_EXTRACTION_FAILED",
-                message="诊断案例索引未被受理",
-                status_code=502,
-                retryable=True,
-            )
-        revision_id = UUID(str(item["bundle_revision_id"]))
-        version_id = uuid7()
-        version = OperationsKnowledgeVersionEntity(
-            asset_version_id=version_id, asset_id=case_asset_id, version_no=case_version_no,
-            status="PROCESSING", source_hash=frozen_report_hash,
-            profile_schema_version=profile.schema_version,
-            profile_json=profile.model_dump(mode="json"),
-            extraction_warnings_json=[], created_by=actor,
-        )
-        sources = [OperationsKnowledgeSourceEntity(
-            asset_version_id=version_id, source_kind="REPORT",
-            source_report_id=report.report_id, source_run_id=report.ops_run_id,
-            source_artifact_id=report.content_artifact_id,
-            content_hash=frozen_report_hash,
-            source_locator_json={"report_version": int(report.report_version)},
-        ), *[
-            OperationsKnowledgeSourceEntity(
-                asset_version_id=version_id,
-                source_kind="REPORT_EVIDENCE",
-                source_report_id=report.report_id,
-                source_run_id=row.ops_run_id,
-                source_artifact_id=row.source_artifact_id,
-                content_hash=row.content_hash,
-                source_locator_json={"source_kind": row.source_kind},
-            )
-            for row in report_sources
-        ]]
-        scope_values = [
-            ("TARGET_ID", str(report.target_id)),
-            ("DATABASE_TYPE", target.db_type),
-            ("DATABASE_VERSION", target.version_code),
-            ("PLATFORM", target.environment),
-            ("PROBLEM_CLASS", report.report_type),
-            ("TOPOLOGY", (target.capabilities_json or {}).get("topology")),
-        ]
-        scopes = [OperationsKnowledgeScopeEntity(
-            asset_version_id=version_id,
-            scope_kind=kind,
-            scope_value=str(value),
-            normalized_value=_normalize(str(value)),
-            source_kind="REPORT_FACT",
-            source_locator_json={"report_id": str(report.report_id)},
-        ) for kind, value in scope_values if value]
-        index = OperationsKnowledgeIndexEntity(
-            asset_version_id=version_id,
-            collection_id=UUID(str(collection["collection_id"])),
-            bundle_id=UUID(str(item["bundle_id"])),
-            bundle_revision_id=revision_id,
-            index_status="PENDING_APPROVAL",
-        )
-        async with self._uow_factory() as uow:
-            # 同报告并发提炼在持久化边界串行去重，不重复登记同一 KC Revision。
-            await uow.inspections.get_report_scoped(report_id=report_id, domain_id=domain_id, lock=True)
-            concurrent = await uow.operations_knowledge.find_by_source_hash(
-                domain_id=domain_id, asset_kind="DIAGNOSIS_CASE", source_hash=frozen_report_hash,
-            )
-            if concurrent is not None:
-                return await self._validated_case_replay(uow=uow, domain_id=domain_id, case=concurrent)
-            if previous_case is None:
-                asset = OperationsKnowledgeAssetEntity(
-                    asset_id=case_asset_id, domain_id=domain_id,
-                    asset_kind="DIAGNOSIS_CASE", display_name=display_name,
-                    status="PROCESSING", security_level=int(report.security_level),
-                    created_by=actor, updated_by=actor,
-                )
-                await uow.operations_knowledge.add_asset_version(
-                    asset=asset, version=version, scopes=scopes,
-                    sources=sources, indexes=[index],
-                )
-            else:
-                asset = await uow.operations_knowledge.get_asset(
-                    domain_id=domain_id, asset_id=case_asset_id, for_update=True,
-                )
-                if asset is None:
-                    raise self._not_found()
-                if asset.current_version_id is not None:
-                    previous = await uow.operations_knowledge.get_version(
-                        domain_id=domain_id,
-                        asset_version_id=asset.current_version_id,
-                        for_update=True,
-                    )
-                    if previous is not None:
-                        before_status = previous.status
-                        previous.status = "RETIRED"
-                        previous.retired_at = _now()
-                        await queue_case_withdrawals(uow=uow, asset=asset, version=previous)
-                        await uow.operations_knowledge.add_review(
-                            OperationsKnowledgeReviewEntity(
-                                asset_version_id=previous.asset_version_id,
-                                decision="SOURCE_CORRECTED",
-                                reviewer_id=actor,
-                                comment_text="来源报告已发布更正版，旧案例停止参与检索",
-                                before_status=before_status,
-                                after_status="RETIRED",
-                            )
-                        )
-                    asset.current_version_id = None
-                asset.display_name = display_name
-                asset.status = "PROCESSING"
-                asset.security_level = int(report.security_level)
-                asset.updated_by = actor
-                await uow.operations_knowledge.add_version(
-                    version=version, scopes=scopes, sources=sources, indexes=[index],
-                )
-            await uow.commit()
-        # 外部处理不跨持久化事务；先保存精确版本引用，再审批索引，变化则可靠撤回。
-        if not await self._case_index_source_fence(domain_id=domain_id, version_id=version_id, actor=actor):
-            raise rejected_source()
-        await self._kc.review_user_intake(
-            domain_id=domain_id,
-            collection_id=UUID(str(collection["collection_id"])),
-            bundle_revision_id=revision_id,
-            decision="APPROVE",
-            comment="AIOps 诊断案例候选进入 KC 索引，仍需业务审核后发布",
-            auth_context=context,
-        )
-        if not await self._case_index_source_fence(domain_id=domain_id, version_id=version_id, actor=actor, indexed=True):
-            raise rejected_source()
-        return {"asset": _asset_view(asset), "version": _version_view(version), "replayed": False}
 
     async def _validated_case_replay(self, *, uow, domain_id, case):
         """返回已提炼版本也必须复核其自身来源，而不只看新请求的报告。"""
@@ -2588,7 +2357,7 @@ class OperationsKnowledgeService:
             return valid
 
     async def reconcile_version(
-        self, *, domain_id: int, asset_version_id: UUID, context: AuthContext
+        self, *, domain_id: int, asset_version_id: UUID, context: AuthContext, actor_id=None,
     ) -> dict[str, Any]:
         detail = await self.get_version(
             domain_id=domain_id, asset_version_id=asset_version_id
@@ -2617,7 +2386,7 @@ class OperationsKnowledgeService:
             and index_payload.get("status") == "PENDING_APPROVAL"
         ):
             if not await self._case_index_source_fence(
-                domain_id=domain_id, version_id=asset_version_id, actor=self._actor(context),
+                domain_id=domain_id, version_id=asset_version_id, actor=actor_id if actor_id is not None else self._actor(context),
             ):
                 raise rejected_source()
             await self._kc.review_user_intake(
@@ -2628,7 +2397,7 @@ class OperationsKnowledgeService:
                 auth_context=context,
             )
             if not await self._case_index_source_fence(
-                domain_id=domain_id, version_id=asset_version_id, actor=self._actor(context), indexed=True,
+                domain_id=domain_id, version_id=asset_version_id, actor=actor_id if actor_id is not None else self._actor(context), indexed=True,
             ):
                 raise rejected_source()
         bundle_id = UUID(index_payload["bundle_id"])
@@ -3292,8 +3061,15 @@ class OperationsKnowledgeService:
                     if profile.redaction is None:
                         raise self._state_conflict("案例缺少脱敏审阅版本，请创建新版本后再发布")
                     scan = profile.redaction.semantic_provenance
-                    if scan.get("status") != "SCANNED" or scan.get("output_hash") != shared_content_hash(asset.display_name, profile):
+                    frozen_title = profile.knowledge_projection.title if profile.knowledge_projection else asset.display_name
+                    if scan.get("status") != "SCANNED" or scan.get("output_hash") != shared_content_hash(frozen_title, profile):
                         raise self._state_conflict("案例语义脱敏未完成或正文已变化，需创建新版本并重新审阅")
+                    from aiops_agent.application.case_knowledge_projection import case_projection_is_current
+                    if not case_projection_is_current(
+                        title=profile.knowledge_projection.title if profile.knowledge_projection else asset.display_name,
+                        profile=profile,
+                    ):
+                        raise self._state_conflict("案例知识正文或定位清单未就绪，需创建新版本并重新索引")
                     if not await validate_case_effect(uow=uow, domain_id=domain_id, profile=profile):
                         raise self._state_conflict("案例效果来源、执行回执或冻结测量无法核验，必须重新审核")
                     profile.redaction = profile.redaction.model_copy(update={"status": "REVIEWED"})
@@ -3410,6 +3186,15 @@ class OperationsKnowledgeService:
             domain_id=domain_id, asset_version_id=asset_version_id
         )
 
+    async def preview_version(
+        self, *, domain_id, asset_version_id: UUID, context: AuthContext,
+    ) -> dict[str, Any]:
+        from aiops_agent.application.knowledge_preview import preview_knowledge_version
+        return await preview_knowledge_version(
+            self, domain_id=domain_id, asset_version_id=asset_version_id, context=context,
+            kc_scope={"domain_id": domain_id},
+        )
+
     async def search(
         self, *, domain_id: int, agent_id: str, request: KnowledgeSearchRequest,
         context: AuthContext, target_id: UUID | None = None,
@@ -3425,210 +3210,12 @@ class OperationsKnowledgeService:
             "TAG_ID": request.tag_ids,
         }
         filters = {key: tuple(_normalize(v) for v in values) for key, values in filters.items() if values}
-        async with self._uow_factory() as uow:
-            knowledge_base_ids = tuple(request.knowledge_base_ids)
-            if not knowledge_base_ids:
-                try:
-                    bound_agent_id = UUID(str(agent_id))
-                except ValueError:
-                    bound_agent_id = None
-                if bound_agent_id is not None:
-                    agent = await uow.agents.get(
-                        domain_id=domain_id, agent_id=bound_agent_id
-                    )
-                    if agent is not None and agent.current_version_id is not None:
-                        knowledge_base_ids = tuple(
-                            await uow.agents.version_knowledge_base_ids(
-                                agent_version_id=agent.current_version_id
-                            )
-                        )
-            if not knowledge_base_ids:
-                return {
-                    "status": "NO_KNOWLEDGE_BASE_BOUND",
-                    "results": [],
-                    "warnings": ["当前 Agent 未绑定运维知识库"],
-                }
-            candidates = await uow.operations_knowledge.list_published_candidates(
-                domain_id=domain_id,
-                target_id=target_id,
-                source_kinds=request.source_kinds,
-                knowledge_base_ids=knowledge_base_ids,
-                max_security_level=request.max_security_level,
-                scope_filters=filters,
-                limit=request.max_results,
-            )
-            valid_candidates = []
-            for asset, version, index in candidates:
-                if str(asset.asset_kind) == "DIAGNOSIS_CASE":
-                    if not await validate_case_sources(
-                        uow=uow, domain_id=domain_id,
-                        version_id=version.asset_version_id, agent_id=agent_id,
-                        plan_capture_reader=getattr(self, "_plan_capture_reader", None),
-                    ):
-                        continue
-                if str(asset.asset_kind) == "DIAGNOSIS_CASE" and not await validate_case_effect(
-                    uow=uow, domain_id=domain_id, profile=version.profile_json,
-                ):
-                    continue
-                valid_candidates.append((asset, version, index))
-            candidates = valid_candidates
-            candidate_snapshots = [
-                {
-                    "asset_id": str(asset.asset_id),
-                    "asset_version_id": str(version.asset_version_id),
-                    "asset_kind": str(asset.asset_kind),
-                    "title": str(asset.display_name),
-                    "version": int(version.version_no),
-                    "profile": dict(version.profile_json or {}),
-                    "collection_id": index.collection_id,
-                    "bundle_revision_id": index.bundle_revision_id,
-                }
-                for asset, version, index in candidates
-            ]
-        if not candidate_snapshots:
-            return {"status": "NO_APPLICABLE_KNOWLEDGE", "results": [], "warnings": []}
-        if request.purpose == "CATALOG":
-            return {
-                "status": "READY",
-                "results": [
-                    {
-                        "asset_id": row["asset_id"],
-                        "asset_version_id": row["asset_version_id"],
-                        "asset_kind": row["asset_kind"],
-                        "title": row["title"],
-                        "version": row["version"],
-                        "authority": (
-                            "APPROVED_MANUAL"
-                            if row["asset_kind"] == "MANUAL"
-                            else str(
-                                row["profile"].get("case_kind")
-                                or "DIAGNOSTIC_REFERENCE"
-                            )
-                        ),
-                        "applicability": "CATALOG",
-                        "topics": list(
-                            _catalog_topics_from_profile(row["profile"])
-                        ),
-                        "citation_pack": [],
-                    }
-                    for row in candidate_snapshots
-                ],
-                "warnings": [],
-            }
-        collection_ids = sorted(
-            {row["collection_id"] for row in candidate_snapshots}, key=str
+        from aiops_agent.application.knowledge_search import search_published_knowledge
+        return await search_published_knowledge(
+            self, domain_id=domain_id, agent_id=agent_id, request=request,
+            context=context, target_id=target_id,
+            filters=filters, kc_scope={"domain_id": domain_id},
         )
-        revision_ids = [
-            row["bundle_revision_id"] for row in candidate_snapshots
-        ]
-        try:
-            discovery = await self._kc.discover(
-                query=request.query,
-                collection_ids=collection_ids,
-                bundle_revision_ids=revision_ids,
-                domain_id=domain_id,
-                agent_id=agent_id,
-                auth_context=context,
-                max_security_level=request.max_security_level,
-                per_collection_limit=request.max_results,
-            )
-            discovered = discovery.get("candidates") or discovery.get("items") or []
-            if not discovered:
-                return {
-                    "status": "NO_EVIDENCE_MATCH",
-                    "results": [],
-                    "warnings": ["适用候选的当前发布版本没有形成正文命中"],
-                }
-            evidence = await self._kc.retrieve_evidence(
-                query=request.query,
-                candidates=discovered,
-                domain_id=domain_id,
-                agent_id=agent_id,
-                auth_context=context,
-                max_security_level=request.max_security_level,
-                max_evidence=request.max_results * 2,
-            )
-        except KnowledgeCoreClientError as exc:
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
-                message="运维知识正文检索暂时不可用",
-                status_code=503,
-                retryable=True,
-            ) from exc
-        by_revision = {
-            str(row["bundle_revision_id"]): row
-            for row in candidate_snapshots
-        }
-        # KC 调用期间可能发生撤权、暂停或切版，输出正文前再核对当前 Registry。
-        async with self._uow_factory() as uow:
-            current_candidates = await uow.operations_knowledge.list_published_candidates(
-                domain_id=domain_id, target_id=target_id, source_kinds=request.source_kinds,
-                knowledge_base_ids=knowledge_base_ids, max_security_level=request.max_security_level,
-                scope_filters=filters, limit=request.max_results,
-            )
-            current = set()
-            for asset, version, index in current_candidates:
-                if str(asset.asset_kind) == "DIAGNOSIS_CASE" and not await validate_case_sources(
-                    uow=uow, domain_id=domain_id, version_id=version.asset_version_id, agent_id=agent_id,
-                    plan_capture_reader=getattr(self, "_plan_capture_reader", None),
-                ):
-                    continue
-                if str(asset.asset_kind) == "DIAGNOSIS_CASE" and not await validate_case_effect(
-                    uow=uow, domain_id=domain_id, profile=version.profile_json,
-                ):
-                    continue
-                current.add((str(version.asset_version_id), str(index.bundle_revision_id)))
-        by_revision = {
-            key: value for key, value in by_revision.items()
-            if (value["asset_version_id"], key) in current
-        }
-        evidence_items = evidence.get("citations") or []
-        results = []
-        for item in evidence_items:
-            revision_id = str(item.get("bundle_revision_id") or "")
-            candidate = by_revision.get(revision_id)
-            if candidate is None:
-                continue
-            known_dimensions = _profile_dimensions_from_profile(
-                candidate["profile"]
-            )
-            matched_dimensions = sorted(
-                key for key, values in filters.items()
-                if known_dimensions.get(key)
-                and not known_dimensions[key].isdisjoint(values)
-            )
-            unknown_dimensions = sorted(
-                key for key in filters if not known_dimensions.get(key)
-            )
-            results.append({
-                "asset_id": candidate["asset_id"],
-                "asset_version_id": candidate["asset_version_id"],
-                "asset_kind": candidate["asset_kind"],
-                "title": candidate["title"],
-                "version": candidate["version"],
-                "authority": (
-                    "APPROVED_MANUAL"
-                    if candidate["asset_kind"] == "MANUAL"
-                    else str(
-                        candidate["profile"].get("case_kind")
-                        or "DIAGNOSTIC_REFERENCE"
-                    )
-                ),
-                "applicability": (
-                    "PARTIAL" if unknown_dimensions else "MATCHED"
-                ),
-                "matched_dimensions": matched_dimensions,
-                "mismatched_dimensions": [],
-                "unknown_dimensions": unknown_dimensions,
-                "citation_pack": [item],
-            })
-            if len(results) >= request.max_results:
-                break
-        return {
-            "status": "READY" if results else "NO_EVIDENCE_MATCH",
-            "results": results,
-            "warnings": [] if results else ["有适用候选，但 KC 正文没有形成可引用命中"],
-        }
 
     async def list_reviews(self, *, domain_id: int, limit: int) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:

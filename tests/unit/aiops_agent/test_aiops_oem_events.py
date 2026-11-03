@@ -240,7 +240,7 @@ def test_case_publish_and_retrieval_replay_original_event_without_investigation_
             source_run_id=current.ops_run_id, content_hash=final.content_hash)
         uow.operations_knowledge = SimpleNamespace(get_version_relations=AsyncMock(return_value={"sources": (source,)}))
         uow.agents = SimpleNamespace(
-            get=AsyncMock(return_value=SimpleNamespace(current_version_id=uuid7())),
+            get=AsyncMock(return_value=SimpleNamespace(status="ACTIVE", current_version_id=uuid7())),
             version_has_target=AsyncMock(return_value=True), version_source_ids=AsyncMock(return_value=()))
         uow.turns = SimpleNamespace(get_run_link_by_ops_run_id=AsyncMock(return_value=None))
         assert await validate_case_sources(uow=uow, domain_id=uuid7(), version_id=uuid7()) == (tamper is None)

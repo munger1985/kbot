@@ -1,7 +1,10 @@
 """运维知识提炼合同与原文命令边界测试。"""
 
 import hashlib
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 from types import SimpleNamespace
+from tests.support.aiops_knowledge_scope import knowledge_agent_repository, KNOWLEDGE_BASE_ID, active_knowledge_bases_fixture
 import unittest
 from unittest.mock import ANY, AsyncMock
 
@@ -371,7 +374,8 @@ class OperationsKnowledgeUploadTest(unittest.IsolatedAsyncioTestCase):
 
 class _KnowledgeUnitOfWork:
     def __init__(self, repository):
-        self.operations_knowledge = repository
+        self.operations_knowledge = active_knowledge_bases_fixture(repository)
+        self.agents = knowledge_agent_repository()
         self.commits = 0
 
     async def __aenter__(self):
@@ -439,6 +443,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
                     state,
                     asset_version_id=version_id,
                     version_no=1,
+                    created_at=datetime.now(UTC) - timedelta(days=1),
                     profile_json={
                         "schema_version": "OPS_MANUAL_PROFILE.v1",
                         "scope": {},
@@ -473,13 +478,14 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             request=KnowledgeSearchRequest(
                 query="如何确认数据库角色？",
                 purpose="EXPLAIN",
-                knowledge_base_ids=(uuid7(),),
+                knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),),
             ),
             context=SimpleNamespace(),
         )
 
         self.assertEqual("READY", result["status"])
         self.assertEqual("Oracle 运维手册", result["results"][0]["title"])
+        self.assertGreater(result["results"][0]["ranking"]["version_age_days"], 0)
         self.assertFalse(state.active)
 
     async def test_catalog_search_lists_published_topics_without_calling_kc(self):
@@ -519,7 +525,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             request=KnowledgeSearchRequest(
                 query="列出已发布运维知识",
                 purpose="CATALOG",
-                knowledge_base_ids=(uuid7(),),
+                knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),),
                 source_kinds=("MANUAL",),
             ),
             context=SimpleNamespace(),
@@ -560,7 +566,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             request=KnowledgeSearchRequest(
                 query="不存在的正文",
                 purpose="EXPLAIN",
-                knowledge_base_ids=(uuid7(),),
+                knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),),
             ),
             context=SimpleNamespace(),
         )

@@ -32,6 +32,9 @@ class CaseRedactor:
         return value
 
     def content(self, value, key=""):
+        if key in {"source", "knowledge_projection", "evidence_refs", "counterevidence_refs", "before_refs", "after_refs",
+            "guardrail_refs", "controlled_verification_ref", "effect_result_ref", "registration_ref"}:
+            return value
         if isinstance(value, dict):
             return {name: self.content(item, str(name).lower()) for name, item in value.items()}
         if isinstance(value, (list, tuple)):

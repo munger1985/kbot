@@ -12,6 +12,9 @@ from main_api.entities import (
     WorkItemEntity,
 )
 from platform_core.notifications import NotificationEnvelope, event_definition
+from platform_core.notifications.source_order import output_event_version, source_version_decision
+from platform_core.contracts.aiops.output_projection import OutputProjectionRequest
+from main_api.application.aiops_output_reconciliation import projection_presentation
 
 
 _TERMINAL = {"SUCCEEDED", "FAILED"}
@@ -28,12 +31,14 @@ class NotificationProjectionService:
         if int(outbox.domain_id) != envelope.domain_id:
             raise ValueError("NOTIFICATION_EVENT_DOMAIN_MISMATCH")
 
-        operation = await self._project_operation(
+        operation, deliver = await self._project_operation(
             repository=uow.notifications,
             outbox=outbox,
             envelope=envelope,
             definition=definition,
         )
+        if not deliver:
+            return
         recipients = set(envelope.recipient_actor_ids)
         if operation is not None and definition.operation_status in _TERMINAL:
             recipients.update(await uow.notifications.watcher_actor_ids(
@@ -81,9 +86,17 @@ class NotificationProjectionService:
     @staticmethod
     async def _project_operation(
         *, repository, outbox, envelope, definition,
-    ) -> BackgroundOperationEntity | None:
+    ) -> tuple[BackgroundOperationEntity | None, bool]:
         if definition.operation_status is None or envelope.operation_id is None:
-            return None
+            return None, True
+        source_version = output_event_version(producer=outbox.producer_service,
+            event_type=envelope.event_type, params=envelope.safe_data, data=envelope.safe_data)
+        if source_version is not None:
+            locator = OutputProjectionRequest(job_id=envelope.safe_data["job_id"],
+                job_type=envelope.safe_data["job_type"], actor_id=envelope.initiator_actor_id,
+                domain_id=str(envelope.domain_id))
+            if str(locator.job_id) != envelope.operation_id:
+                raise ValueError("NOTIFICATION_OUTPUT_JOB_MISMATCH")
         operation = await repository.operation_for_update(
             producer=outbox.producer_service,
             source_operation_id=envelope.operation_id,
@@ -104,13 +117,31 @@ class NotificationProjectionService:
                 summary=envelope.summary,
                 last_outbox_id=outbox.outbox_id,
                 last_occurred_at=envelope.occurred_at,
+                source_version=source_version,
             )
             await repository.add_operation(operation)
-            return operation
+            return operation, True
         if operation.domain_id != envelope.domain_id:
             raise ValueError("NOTIFICATION_OPERATION_DOMAIN_MISMATCH")
-        if envelope.occurred_at < operation.last_occurred_at:
-            return operation
+        if source_version is not None:
+            if operation.initiator_actor_id != envelope.initiator_actor_id:
+                raise ValueError("NOTIFICATION_OUTPUT_ACTOR_MISMATCH")
+            previous = NotificationEnvelope.model_validate(await repository.operation_event_payload(
+                outbox_id=operation.last_outbox_id))
+            if (previous.domain_id != envelope.domain_id
+                or previous.operation_id != envelope.operation_id
+                or previous.initiator_actor_id != envelope.initiator_actor_id
+                or previous.safe_data.get("job_type") != envelope.safe_data.get("job_type")):
+                raise ValueError("NOTIFICATION_OUTPUT_SCOPE_MISMATCH")
+            decision = source_version_decision(incoming=source_version,
+                current=operation.source_version, incoming_status=definition.operation_status,
+                current_status=operation.status)
+            if decision != "ADVANCE":
+                return operation, decision == "DELIVER"
+        elif operation.source_version is not None:
+            raise ValueError("NOTIFICATION_OUTPUT_SOURCE_VERSION_REQUIRED")
+        elif envelope.occurred_at < operation.last_occurred_at:
+            return operation, True
         operation.status = definition.operation_status
         operation.resource_name = envelope.resource_name
         operation.progress_current = envelope.safe_data.get("progress_current")
@@ -119,8 +150,9 @@ class NotificationProjectionService:
         operation.summary = envelope.summary
         operation.last_outbox_id = outbox.outbox_id
         operation.last_occurred_at = envelope.occurred_at
+        operation.source_version = source_version
         operation.row_version = int(operation.row_version) + 1
-        return operation
+        return operation, True
 
     @staticmethod
     async def _project_work_item(
@@ -240,3 +272,43 @@ class NotificationDispatcher:
                     outbox_id, status, error_code,
                 )
         return len(claimed)
+
+
+async def reconcile_output_operations(*, uow_factory, resolver, limit: int = 50) -> int:
+    """在读事务外调用权威服务，每条快照只允许 CAS 写回观察到的版本。"""
+    async with uow_factory() as uow:
+        rows = await uow.notifications.output_operation_candidates(limit=limit)
+    applied = 0
+    for row in rows:
+        try:
+            envelope = NotificationEnvelope.model_validate(row["envelope"])
+            if (envelope.domain_id != row["domain_id"]
+                or envelope.operation_id != row["source_operation_id"]
+                or envelope.initiator_actor_id != row["initiator_actor_id"]
+                or str(envelope.safe_data.get("job_id")) != row["source_operation_id"]):
+                raise ValueError("通知任务定位与来源不一致")
+            snapshot = await resolver.resolve(OutputProjectionRequest(
+                job_id=row["source_operation_id"], job_type=envelope.safe_data["job_type"],
+                actor_id=row["initiator_actor_id"], domain_id=str(int(row["domain_id"]))))
+            async with uow_factory() as uow:
+                # 平台后台任务的 RUNNING 包含排队；业务回执仍保留精确 QUEUED。
+                changed = await uow.notifications.reconcile_output_operation(
+                    operation_id=row["operation_id"], domain_id=int(row["domain_id"]),
+                    source_operation_id=row["source_operation_id"],
+                    expected_row_version=int(row["row_version"]),
+                    source_version=snapshot.source_version,
+                    source_updated_at=snapshot.source_updated_at,
+                    summary=projection_presentation(snapshot)["summary"],
+                    error_code=snapshot.error_code,
+                    status="RUNNING" if snapshot.status == "QUEUED" else snapshot.status)
+                await uow.commit()
+                applied += int(changed)
+        except Exception as exc:
+            logger.warning("AIOps 通知任务对账失败 | operation_id={} | error={}",
+                row["operation_id"], type(exc).__name__)
+            async with uow_factory() as uow:
+                await uow.notifications.defer_output_reconciliation(
+                    operation_id=row["operation_id"], domain_id=int(row["domain_id"]),
+                    expected_row_version=int(row["row_version"]))
+                await uow.commit()
+    return applied

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from platform_core.http_cache import NoStoreAPIRoute
+from platform_core.contracts.aiops.report_filters import ReportCategory
+from platform_core.contracts.aiops.types import ReportType
 
 from platform_core.contracts.aiops.sql_plan_material import (
     SqlPlanMaterialPage, SqlPlanMaterialView,
@@ -13,6 +15,7 @@ import json
 from datetime import datetime
 from typing import Annotated, Any, Literal, TypeVar, cast
 from uuid import UUID
+from platform_core.contracts.aiops.output_jobs import OutputJobReceipt
 
 from fastapi import (
     APIRouter,
@@ -464,13 +467,16 @@ async def get_report(
     return ReportView.model_validate(payload)
 
 
-@router.post("/reports:generate", status_code=status.HTTP_201_CREATED)
+@router.post("/reports:generate", status_code=status.HTTP_202_ACCEPTED, response_model=OutputJobReceipt)
 async def generate_report(
     payload: ReportGenerationPayload,
     request: Request,
-    idempotency_key: IdempotencyKey,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
-    """由用户明确确认后，基于完整会话或终态诊断生成正式报告。"""
+    """提交独立报告任务；返回回执不表示报告已生成。"""
+    if not idempotency_key or not idempotency_key.strip():
+        raise HTTPException(428, {"code": "AIOPS_OUTPUT_IDEMPOTENCY_REQUIRED",
+            "message": "请提供 Idempotency-Key 后重新提交"})
     return await _client(request).generate_user_report(
         conversation_id=payload.conversation_id,
         ops_run_id=payload.ops_run_id,
@@ -526,13 +532,17 @@ async def download_report_pdf(report_id: UUID, request: Request) -> Response:
 async def list_reports(
     request: Request,
     target_id: UUID | None = None,
-    report_type: str | None = None,
+    report_type: ReportType | None = None,
+    category: ReportCategory | None = None,
+    template_ref: str | None = Query(default=None, min_length=1, max_length=128),
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> ReportPage:
     payload = await _client(request).list_reports(
         target_id=target_id,
         report_type=report_type,
+        category=category,
+        template_ref=template_ref,
         cursor=cursor,
         limit=limit,
         auth_context=request.state.auth_context,

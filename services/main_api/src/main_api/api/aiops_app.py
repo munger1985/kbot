@@ -42,6 +42,10 @@ from platform_core.contracts.aiops import (
 )
 from platform_core.contracts.aiops.workload import PGBADGER_MAX_UPLOAD_BYTES
 from platform_core.contracts.aiops.knowledge import KnowledgeReuseFeedback
+from platform_core.contracts.aiops.case_collection import CaseCollectionModels
+from platform_core.contracts.aiops.output_jobs import (
+    OutputJobList, OutputJobReceipt, OutputJobRetry, OutputJobStatus, OutputJobType,
+)
 from platform_core.contracts.aiops.conversation import SqlDiagnosisSelection
 
 
@@ -163,6 +167,9 @@ class OperationsKnowledgeTagStatusPayload(_Payload):
 
 
 class OperationsKnowledgeSearchPayload(_Payload):
+    agent_id: UUID
+    target_id: UUID | None = None
+    knowledge_base_ids: tuple[UUID, ...] = Field(default=(), max_length=32)
     query: str = Field(min_length=1, max_length=4000)
     purpose: Literal["DIAGNOSE", "EXPLAIN", "PLAN", "CHANGE", "VERIFY"] = "DIAGNOSE"
     problem_class: str | None = Field(default=None, max_length=128)
@@ -480,10 +487,11 @@ async def list_operations_diagnosis_cases(
 
 
 @router.get("/operations-knowledge/cases/{asset_id}")
-async def get_operations_diagnosis_case(asset_id: UUID, request: Request):
+async def get_operations_diagnosis_case(asset_id: UUID, request: Request,
+    asset_version_id: UUID | None = None):
     await _require(request, "aiops:use")
     return await _client(request).get_operations_diagnosis_case(
-        asset_id, auth_context=request.state.auth_context,
+        asset_id, auth_context=request.state.auth_context, asset_version_id=asset_version_id,
     )
 
 
@@ -685,6 +693,14 @@ async def get_operations_knowledge_version(asset_version_id: UUID, request: Requ
     )
 
 
+@router.get("/operations-knowledge/versions/{asset_version_id}/preview")
+async def preview_operations_knowledge_version(asset_version_id: UUID, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).preview_operations_knowledge_version(
+        asset_version_id, auth_context=request.state.auth_context,
+    )
+
+
 @router.get("/operations-knowledge/versions/{asset_version_id}/source")
 async def download_operations_knowledge_source(asset_version_id: UUID, request: Request):
     await _require(request, "aiops:knowledge_manage")
@@ -766,11 +782,16 @@ async def upload_operations_manual_version(asset_id: UUID, request: Request):
     )
 
 
-@router.post("/operations-knowledge/reports/{report_id}:extract-case", status_code=202)
-async def extract_operations_diagnosis_case(report_id: UUID, request: Request):
+@router.post("/operations-knowledge/reports/{report_id}:extract-case", status_code=202, response_model=OutputJobReceipt)
+async def extract_operations_diagnosis_case(report_id: UUID, request: Request,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None):
     await _require(request, "aiops:knowledge_manage")
+    idempotency_key = (idempotency_key or request.headers.get("Idempotency-Key", "")).strip()
+    if not idempotency_key:
+        raise HTTPException(428, {"code": "IDEMPOTENCY_KEY_REQUIRED",
+            "message": "缺少 Idempotency-Key Header"})
     return await _client(request).extract_operations_diagnosis_case(
-        report_id, auth_context=request.state.auth_context
+        report_id, auth_context=request.state.auth_context, idempotency_key=idempotency_key
     )
 
 
@@ -788,16 +809,23 @@ async def get_conversation_case_candidate(
 @router.post(
     "/operations-knowledge/conversations/{conversation_id}:close-diagnosis",
     status_code=status.HTTP_202_ACCEPTED,
+    response_model=OutputJobReceipt,
 )
 async def close_conversation_diagnosis(
     conversation_id: UUID,
     payload: DiagnosisClosurePayload,
     request: Request,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
     await _conversation_with_access(request, conversation_id)
+    idempotency_key = (idempotency_key or request.headers.get("Idempotency-Key", "")).strip()
+    if not idempotency_key:
+        raise HTTPException(428, {"code": "IDEMPOTENCY_KEY_REQUIRED",
+            "message": "缺少 Idempotency-Key Header"})
     return await _client(request).close_conversation_diagnosis(
         conversation_id,
         payload=payload.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
 
@@ -1278,6 +1306,47 @@ async def list_conversations(
             if str(item.get("agent_id")) in allowed
         ]
     return rows
+
+
+@router.get("/output-jobs", response_model=OutputJobList)
+async def list_output_jobs(request: Request,
+    job_type: OutputJobType | None = None, status: OutputJobStatus | None = None,
+    conversation_id: UUID | None = None, before_id: UUID | None = None,
+    limit: int = Query(50, ge=1, le=100)):
+    await _require(request, "aiops:use")
+    return await _client(request).list_output_jobs(
+        auth_context=request.state.auth_context, job_type=job_type, status=status,
+        conversation_id=conversation_id, before_id=before_id, limit=limit)
+
+
+@router.get("/output-jobs/{job_id}", response_model=OutputJobReceipt)
+async def get_output_job(job_id: UUID, request: Request):
+    await _require(request, "aiops:use")
+    return await _client(request).get_output_job(job_id, auth_context=request.state.auth_context)
+
+
+@router.post("/output-jobs/{job_id}:retry", status_code=202, response_model=OutputJobReceipt)
+async def retry_output_job(job_id: UUID, body: OutputJobRetry, request: Request):
+    await _require(request, "aiops:use")
+    job = OutputJobReceipt.model_validate(await _client(request).get_output_job(
+        job_id, auth_context=request.state.auth_context))
+    if job.job_type == "CASE_EXTRACTION" and job.source.kind == "REPORT":
+        await _require(request, "aiops:knowledge_manage")
+    return await _client(request).retry_output_job(job_id,
+        payload=body.model_dump(mode="json"), auth_context=request.state.auth_context)
+
+
+@router.get("/operations-knowledge/case-collection/models")
+async def get_case_collection_models(request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).get_case_collection_models(auth_context=request.state.auth_context)
+
+
+@router.put("/operations-knowledge/case-collection/models")
+async def configure_case_collection_models(payload: CaseCollectionModels, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).configure_case_collection_models(
+        models=payload.models, auth_context=request.state.auth_context)
 
 
 async def _conversation_with_access(

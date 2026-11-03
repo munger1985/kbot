@@ -37,7 +37,7 @@ body.aiops-static-page #recovery-confirm-dialog::backdrop { background: rgb(18 3
 .business-app-shell .business-app-content > .ops-main.aiops-config-page { padding: 0; }
 .business-app-shell .business-app-content > .ops-main.system-workspace { padding: 0; background: var(--page-bg); }
 /* 旧日报的 font 简写不能重置源组件继承的行高和字重。 */
-body.aiops-static-page[data-page="report-detail"] :is(.daily-report-kicker,.daily-section-kicker,.daily-conclusion-ledger strong,.daily-finding > span:first-child,.daily-finding h3,.daily-report-footer) { line-height: 1.6; }
+body.aiops-static-page[data-page="report-detail"] :is(.daily-report-kicker,.daily-section-kicker,.daily-conclusion-ledger strong,.daily-finding > span:first-child,.daily-finding h3,.daily-report-footer):not(:where(.daily-regional-report *)) { line-height: 1.6; }
 body.aiops-static-page[data-page="report-detail"] .daily-finding > .status-pill { font-family: var(--font-ui); line-height: 1.6; }
 body.aiops-static-page[data-page="report-detail"] :is(.daily-report-kicker,.daily-section-kicker) { text-transform: none; }
 body.aiops-static-page[data-page="report-detail"] .daily-conclusion-ledger strong { font-weight: 700; }

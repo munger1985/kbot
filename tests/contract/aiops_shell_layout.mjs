@@ -22,6 +22,7 @@ const shell = read(resolve(portal, "src/app/BusinessAppShell.vue"));
 const aside = shell.slice(shell.indexOf('<aside id="business-app-navigation"'), shell.indexOf("</aside>") + 8);
 const render = compile(aside, { mode: "function" }).code;
 const helpers = transpile(shell.slice(shell.indexOf("function allowed("), shell.indexOf("function applyNavigationTitle(")));
+const navigationState = transpile(shell.slice(shell.indexOf("const navigation = computed("), shell.indexOf("function allowed(")));
 const navigation = transpile(read(resolve(portal, "src/app/businessNavigation.ts")));
 const icons = read(resolve(portal, "src/shared/ui/NavIcon.vue"));
 const iconPaths = new Function(`return (${icons.split("const iconPaths: Record<string, string[]> = ")[1].split("</script>")[0].trim()})`)();
@@ -60,7 +61,7 @@ const server = createServer((request, response) => {
 });
 await new Promise(done => server.listen(0, "127.0.0.1", done));
 const browser = await chromium.launch({ headless: true });
-const measure = page => page.evaluate(() => [...document.querySelectorAll(".business-app-sidebar, .business-app-sidebar nav, .business-nav-pinned, .business-nav-group, .business-nav-group-toggle, .business-nav-item, .business-nav-item .nav-item-icon, .business-nav-item .nav-item-label, .business-app-nav-footer")].map(node => {
+const measure = page => page.evaluate(() => [...document.querySelectorAll(".business-app-sidebar, .business-app-sidebar nav, .business-nav-pinned, .business-nav-direct, .business-nav-group, .business-nav-group-toggle, .business-nav-item, .business-nav-item .nav-item-icon, .business-nav-item .nav-item-label, .business-app-nav-footer")].map(node => {
   const rect = node.getBoundingClientRect(), css = getComputedStyle(node);
   return {
     label: node.matches("a, button") ? node.textContent.trim() : node.classList[0],
@@ -91,7 +92,7 @@ try {
   await reference.addScriptTag({ path: require.resolve("vue/dist/vue.global.prod.js") });
   await reference.addScriptTag({ path: require.resolve("vue-router/dist/vue-router.global.prod.js") });
   await reference.addScriptTag({ content: `(function(){const exports={};${navigation}\nglobalThis.referenceNavigation=exports;})();` });
-  await reference.evaluate(async ({ render, helpers, iconPaths, permissions, childPaths }) => {
+  await reference.evaluate(async ({ render, helpers, navigationState, iconPaths, permissions, childPaths }) => {
     const router = VueRouter.createRouter({ history: VueRouter.createMemoryHistory(), routes: [{
       path: "/apps/aiops/:domainCode", component: { template: "<router-view/>" },
       children: childPaths.map(path => ({ path, component: { template: "<span/>" } })),
@@ -103,29 +104,27 @@ try {
       const route=VueRouter.useRoute();
       const appBase=computed(()=>'/apps/aiops/fixture');
       const domainId=ref('fixture');
+      const domainPurpose=ref('');
       const bootstrap=ref({permissions:Object.fromEntries(permissions.map(key=>[key,true]))});
-      const navigation=computed(()=>referenceNavigation.businessNavigation('aiops'));
+      const businessNavigation=referenceNavigation.businessNavigation;
       const businessNavigationRouteItem=referenceNavigation.businessNavigationRouteItem;
-      const businessItems=computed(()=>navigation.value.business);
-      const pinnedItems=computed(()=>navigation.value.pinned);
-      const navigationGroups=computed(()=>navigation.value.groups);
-      const visibleNavigationGroups=computed(()=>navigationGroups.value.filter(group=>group.items.some(allowed)));
-      const allNavigationItems=computed(()=>[...pinnedItems.value,...navigationGroups.value.flatMap(group=>group.items)]);
+      ${navigationState}
       const openNavigationGroupKey=ref('');
       const mobileNavOpen=ref(false);
       ${helpers}
       syncOpenNavigationGroup();
       watch(()=>route.fullPath,syncOpenNavigationGroup);
-      const exposed={pinnedItems,visibleNavigationGroups,allowed,target,appName:'AIOps',mobileNavOpen,openNavigationGroupKey,toggleNavigationGroup,closeMobileNav:()=>{mobileNavOpen.value=false}};
+      const exposed={pinnedItems,visibleNavigationSections,allowed,target,routeNavigationItem,appName:'AIOps',mobileNavOpen,openNavigationGroupKey,toggleNavigationGroup,closeMobileNav:()=>{mobileNavOpen.value=false}};
       globalThis.referenceShell=exposed;
       return exposed;
     `);
     const app = Vue.createApp({ setup: () => setup(Vue, VueRouter, permissions), render: new Function("Vue", render)(Vue) });
+    app.config.errorHandler = error => { throw error; };
     app.component("NavIcon", { props: ["name"], data: () => ({ iconPaths }), template: '<svg viewBox="0 0 24 24" aria-hidden="true"><path v-for="path in iconPaths[name]" :d="path"/></svg>' });
     app.use(router);
     app.mount("#reference");
     globalThis.referenceRouter = router;
-  }, { render, helpers, iconPaths, permissions, childPaths });
+  }, { render, helpers, navigationState, iconPaths, permissions, childPaths });
   const compare = async state => {
     await Promise.all([kbot, reference].map(page => page.mouse.move(0, 0)));
     await Promise.all([kbot, reference].map(page => page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))));

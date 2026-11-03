@@ -64,6 +64,30 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 "kbot-knowledge-core-api",
             )
 
+    def test_aiops_output_authority_uses_declared_main_api_endpoint(self):
+        for override in (None, "http://authority.internal:19099"):
+            with self.subTest(override=override), tempfile.TemporaryDirectory() as directory:
+                path = self._write_config(Path(directory))
+                if override is not None:
+                    path.write_text(
+                        path.read_text(encoding="utf-8")
+                        + f"main_api='{override}'\n",
+                        encoding="utf-8",
+                    )
+
+                settings = load_settings(
+                    AIOpsSettings,
+                    service="aiops_agent",
+                    config_file=path,
+                )
+
+                self.assertEqual(
+                    settings.clients.main_api.base_url,
+                    override or "http://127.0.0.1:18099",
+                )
+                self.assertEqual(settings.clients.main_api.audience, "kbot-main-api")
+                self.assertEqual(settings.clients.main_api.timeout_seconds, 10)
+
     def test_data_directory_is_derived_for_each_service(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self._write_config(Path(directory))

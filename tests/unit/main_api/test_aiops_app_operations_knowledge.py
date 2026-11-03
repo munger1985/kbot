@@ -8,8 +8,7 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
 
 from main_api.api.aiops_app import (
-    OperationsKnowledgeConversationCreatePayload,
-    create_operations_knowledge_conversation,
+    router,
     delete_operations_knowledge_asset,
     operations_knowledge_overview,
     upload_operations_knowledge,
@@ -33,12 +32,6 @@ class _AIOpsClient:
     async def upload_operations_knowledge(self, **kwargs):
         self.uploaded = kwargs
         return {"grouping_mode": "SINGLE_BUNDLE", "items": []}
-
-    async def get_operations_knowledge_execution_spec(self, **kwargs):
-        return {
-            "consumer_agent_id": str(uuid7()),
-            "owner_app_id": "aiops",
-        }
 
     async def delete_operations_knowledge_asset(self, asset_id, **kwargs):
         self.deleted = {"asset_id": asset_id, **kwargs}
@@ -75,32 +68,12 @@ def _request(client, *, body: bytes = b"", headers=None):
 
 
 class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
-    async def test_create_conversation_only_uses_server_signed_spec(self):
-        client = _AIOpsClient()
-        request = _request(client)
-        request.app.state.agent_runtime_client.create_conversation.return_value = {
-            "owner_app_id": "aiops"
-        }
-        with (
-            patch(
-                "main_api.api.aiops_app._require",
-                AsyncMock(return_value=(42, "aiopsadmin", object())),
-            ),
-            patch(
-                "main_api.api.aiops_app._effective_security_level",
-                AsyncMock(return_value=2),
-            ),
-        ):
-            await create_operations_knowledge_conversation(
-                OperationsKnowledgeConversationCreatePayload(), request
-            )
-        payload = (
-            request.app.state.agent_runtime_client.create_conversation
-            .await_args.kwargs["payload"]
-        )
-        self.assertEqual(payload["execution_spec"]["owner_app_id"], "aiops")
-        self.assertNotIn("collection_ids", payload)
-        self.assertNotIn("security_level", payload)
+    async def test_knowledge_uses_unified_agent_conversation_not_fixed_assistant(self):
+        paths = {route.path for route in router.routes}
+        self.assertTrue(any(path.endswith("/conversations/{conversation_id}/turns") for path in paths))
+        for path in paths:
+            if "/operations-knowledge/conversations" in path:
+                self.assertTrue(path.endswith(("/case-candidate", ":close-diagnosis")))
 
     async def test_overview_uses_aiops_registry_client(self):
         client = _AIOpsClient()

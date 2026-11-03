@@ -46,6 +46,9 @@ def _event(
 
 
 _EVENTS = (
+    _event("aiops.output_job.started", "aiops", "TASK", "INFO", "AIOps 输出已排队", notify=False, operation_status="RUNNING"),
+    _event("aiops.output_job.failed", "aiops", "RESULT", "WARNING", "AIOps 输出未完成", operation_status="FAILED"),
+    _event("aiops.case.draft_ready", "aiops", "RESULT", "INFO", "诊断案例草稿已生成", operation_status="SUCCEEDED"),
     _event("agent.run.input_required", "agent-runtime", "ACTION_REQUIRED", "WARNING", "Agent 运行等待输入", operation_status="WAITING_USER", work_item_action="agent.run.input"),
     _event("agent.run.completed", "agent-runtime", "RESULT", "INFO", "Agent 运行完成", operation_status="SUCCEEDED", work_item_action="agent.run.input", resolve_work_item=True),
     _event("agent.run.failed", "agent-runtime", "RESULT", "WARNING", "Agent 运行失败", operation_status="FAILED", work_item_action="agent.run.input", resolve_work_item=True),

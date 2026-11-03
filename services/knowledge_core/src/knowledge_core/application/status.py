@@ -46,6 +46,7 @@ class RevisionStatus:
     publication_failure_code: str | None
     publication_failure_message: str | None
     members: list[MemberStatus] | None = None
+    withdrawn_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -687,6 +688,7 @@ class KnowledgeCoreStatusService:
             accepted_at=entity.accepted_at,
             completed_at=entity.completed_at,
             publication_status=publication_status,
+            withdrawn_at=entity.withdrawn_at,
             publication_failure_code=publication_failure_code,
             publication_failure_message=publication_failure_message,
         )

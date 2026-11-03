@@ -11,6 +11,7 @@ from aiops_agent.application.case_source_validation import validate_case_sources
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.contracts.knowledge import DiagnosisClosureCommand
 from aiops_agent.playbooks import canonical_hash
+from tests.support.aiops_report_output import render_report_material
 from platform_core.identity import uuid7
 from tests.support.aiops_case_closure import install_closure
 from tests.unit.aiops_agent.test_aiops_report_case_extraction import case_fixture
@@ -232,6 +233,22 @@ def test_every_frozen_source_is_replayed_for_later_use(mutation):
     asyncio.run(run())
 
 
+def test_unrelated_running_turn_does_not_invalidate_already_frozen_case():
+    async def run():
+        f = await setup()
+        one = await preview(f, (f.turn_id,))
+        await close(f, one)
+        f.later.turn.status = "RUNNING"
+        assert await validate_case_sources(
+            uow=f.uow, domain_id=f.domain, version_id=next(iter(f.state.versions)),
+        )
+        # 新任务的预览仍拒绝正在运行的会话，不放宽受理门禁。
+        candidate = await preview(f, (f.turn_id,))
+        assert not candidate["eligible"]
+        assert any(reason["code"] == "CONVERSATION_ACTIVE" for reason in candidate["reasons"])
+    asyncio.run(run())
+
+
 def test_idempotency_revalidates_sources_and_approval_failure_is_recoverable():
     async def run():
         f = await setup()
@@ -258,14 +275,14 @@ def test_multi_turn_closure_report_retains_exact_source_runs_and_omits_revoked_a
         f.uow.runs.get_latest_artifact_by_prefix.side_effect = lambda **kw: closure if kw["ops_run_id"] == closure.ops_run_id else None
         f.uow.runs.list_tasks.return_value = [f.task, f.later.task]
         runtime = AIOpsRuntimeService(uow_factory=lambda: f.manager, blueprint_registry=AsyncMock(), handler_registry=AsyncMock())
-        receipt = await runtime.generate_conversation_report(domain_id=f.domain, conversation_id=f.conversation_id,
+        receipt = await render_report_material(runtime, domain_id=f.domain, conversation_id=f.conversation_id,
             actor_id=f.actor, template=resolve_system_template("system:diagnosis.standard"), trace_id="closure")
         rows = f.uow.inspections.add_report_sources.await_args.args[0]
         assert (f.run_id, f.action_artifact.artifact_id) in {(row.ops_run_id, row.source_artifact_id) for row in rows}
         assert (f.later.run_id, closure.artifact_id) in {(row.ops_run_id, row.source_artifact_id) for row in rows}
         assert receipt.status == "READY"
         f.uow.targets.get_scoped.return_value.row_version += 1
-        await runtime.generate_conversation_report(domain_id=f.domain, conversation_id=f.conversation_id,
+        await render_report_material(runtime, domain_id=f.domain, conversation_id=f.conversation_id,
             actor_id=f.actor, template=resolve_system_template("system:diagnosis.standard"), trace_id="closure-invalid")
         report = f.state.artifacts[f.state.current.content_artifact_id].payload_json
         assert not report["scope"].get("closure_artifact_id")
@@ -312,7 +329,7 @@ def test_report_case_keeps_valid_claim_without_reviving_refuted_claim(stale_fact
         f.uow.runs.list_tasks.return_value = [f.task, f.later.task]
         runtime = AIOpsRuntimeService(uow_factory=lambda: f.manager,
             blueprint_registry=AsyncMock(), handler_registry=AsyncMock())
-        await runtime.generate_conversation_report(domain_id=f.domain, conversation_id=f.conversation_id,
+        await render_report_material(runtime, domain_id=f.domain, conversation_id=f.conversation_id,
             actor_id=f.actor, template=resolve_system_template("system:diagnosis.standard"), trace_id="partial-claim")
         f.report = f.state.current
         f.report.is_current = True
@@ -381,7 +398,7 @@ def test_report_uses_latest_closure_across_selected_turns_and_never_revives_olde
         f.uow.runs.list_tasks.return_value = [f.task, f.later.task]
         runtime = AIOpsRuntimeService(uow_factory=lambda: f.manager,
             blueprint_registry=AsyncMock(), handler_registry=AsyncMock())
-        await runtime.generate_conversation_report(domain_id=f.domain, conversation_id=f.conversation_id,
+        await render_report_material(runtime, domain_id=f.domain, conversation_id=f.conversation_id,
             actor_id=f.actor, template=resolve_system_template("system:diagnosis.standard"), trace_id="latest-closure")
         content = f.state.artifacts[f.state.current.content_artifact_id].payload_json
         assert content["scope"].get("closure_artifact_id") == (None if invalidate_latest else str(newest.artifact_id))

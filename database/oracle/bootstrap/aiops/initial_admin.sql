@@ -67,12 +67,24 @@ DECLARE
                 HEXTORAW(REPLACE(p_collection_id, '-', '')),
                 l_domain_id, p_display_name, p_description,
                 '{}',
-                '{"parse_strategy":"AUTO","image_scale":2.0,"detect_table_structure":true}',
+                CASE WHEN p_content_kind='diagnosis_case' THEN '{"parse_strategy":"TEXT"}'
+                     ELSE '{"parse_strategy":"AUTO","image_scale":2.0,"detect_table_structure":true}' END,
                 'ACTIVE', 1,
                 '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"' || p_content_kind || '"}',
                 1, 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
                 SYSTIMESTAMP, SYSTIMESTAMP
             );
+        ELSIF p_content_kind='diagnosis_case' THEN
+            -- 已有案例资源只核验身份，不重启用、不覆盖模型或管理员策略。
+            SELECT COUNT(*) INTO l_collection_count FROM KBOT_KC_COLLECTION
+             WHERE DOMAIN_ID=l_domain_id AND DISPLAY_NAME=p_display_name
+               AND STATUS='ACTIVE'
+               AND JSON_VALUE(METADATA_JSON, '$.owner_app_id')='aiops'
+               AND JSON_VALUE(METADATA_JSON, '$.fixed_resource')='true'
+               AND JSON_VALUE(METADATA_JSON, '$.content_kind')='diagnosis_case';
+            IF l_collection_count <> 1 THEN
+                raise_application_error(-20003, '固定案例资源身份或状态冲突，不自动修复。');
+            END IF;
         ELSE
             UPDATE KBOT_KC_COLLECTION SET STATUS = 'ACTIVE',
                 DESCRIPTION = p_description,
@@ -83,7 +95,7 @@ DECLARE
     END;
 BEGIN
     SELECT DOMAIN_ID INTO l_domain_id FROM KBOT_PLATFORM_DOMAIN
-     WHERE NAME = 'aiops_portal' AND STATUS = 'ACTIVE';
+     WHERE NAME = 'aiops_portal' AND STATUS = 'ACTIVE' FOR UPDATE;
     ensure_collection(
         '019ffff0-0000-7000-8000-000000000001',
         'operations-manuals',

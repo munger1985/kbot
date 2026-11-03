@@ -10,6 +10,7 @@ import pytest
 from aiops_agent.application.configuration.common import sha256_json
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
+from aiops_agent.application.report_case_output import prepare_report_case, execute_prepared_report_case
 from platform_core.identity import uuid7
 from tests.unit.aiops_agent.test_aiops_report_lifecycle import fixture, generate
 
@@ -19,12 +20,13 @@ async def case_fixture(*, closure=False, result="RESOLVED", action_refs=True):
     f.run.agent_id = uuid7()
     f.uow.turns.get_run_link_by_ops_run_id = AsyncMock(return_value=None)
     f.uow.agents = SimpleNamespace(
-        get=AsyncMock(return_value=SimpleNamespace(current_version_id=uuid7())),
+        get=AsyncMock(return_value=SimpleNamespace(status="ACTIVE", current_version_id=uuid7())),
         version_has_target=AsyncMock(return_value=True),
         version_source_ids=AsyncMock(return_value=[]),
     )
     f.uow.targets = SimpleNamespace(get_scoped=AsyncMock(return_value=SimpleNamespace(
         db_type="POSTGRESQL", version_code="16", environment="TEST", capabilities_json={},
+        status="ENABLED", row_version=1,
     )))
     f.state.versions, f.state.assets, f.state.relations = {}, {}, {}
     async def store(**kwargs):
@@ -39,6 +41,8 @@ async def case_fixture(*, closure=False, result="RESOLVED", action_refs=True):
         find_by_source_hash=AsyncMock(return_value=None),
         find_case_by_artifact_id=AsyncMock(return_value=None),
         find_case_by_report_id=AsyncMock(return_value=None),
+        find_case_by_intake_revision=AsyncMock(return_value=None),
+        list_versions=AsyncMock(side_effect=lambda **kw: [v for v in f.state.versions.values() if v.asset_id == kw["asset_id"]]),
         add_asset_version=AsyncMock(side_effect=store),
         get_version=AsyncMock(side_effect=lambda **kw: f.state.versions.get(kw["asset_version_id"])),
         get_asset=AsyncMock(side_effect=lambda **kw: f.state.assets.get(kw["asset_id"])),
@@ -80,10 +84,13 @@ async def case_fixture(*, closure=False, result="RESOLVED", action_refs=True):
 
 
 async def extract(f):
-    kwargs = dict(domain_id=f.domain, report_id=f.report.report_id, context=f.context)
-    if "tenant_id" in inspect.signature(f.service.extract_case).parameters:
-        kwargs["tenant_id"] = uuid7()
-    return await f.service.extract_case(**kwargs)
+    prepared = await prepare_report_case(uow=f.uow, domain_id=f.domain, report_id=f.report.report_id, actor_id=f.actor)
+    tenant = uuid7() if "tenant_id" in inspect.signature(f.service.close_diagnosis).parameters else None
+    return await execute_prepared_report_case(f.service, domain_id=f.domain, prepared=prepared,
+        context=f.context, entity_scope={"tenant_id": tenant} if tenant else {},
+        kc_scope={"tenant_id": tenant} if tenant else {"domain_id": f.domain},
+        model_catalog=f.service._model_catalog, model_scope={"tenant_id": str(tenant)} if tenant else {},
+        technical_name_field="model_name" if tenant else "served_model_name")
 
 
 def invalidate(f, failure):
@@ -369,13 +376,20 @@ def test_supported_effect_report_runs_through_real_extraction_service_without_au
             ))
         target = uow.targets.get_scoped.return_value
         target.db_type, target.version_code, target.environment, target.capabilities_json = "POSTGRESQL", "16", "TEST", {}
+        run.status, run.plan_snapshot_json = "COMPLETED", getattr(run, "plan_snapshot_json", {})
+        target.status, target.row_version = "ENABLED", 1
         await effects.evaluate_effect_plan(command=command, **kwargs)
         published = uow.inspections.publish_report.await_args.args[0]
         published.is_current = True
+        for source in uow.inspections.add_report_sources.await_args.args[0]:
+            owner = await uow.runs.get_run_scoped(ops_run_id=source.ops_run_id, domain_id=run.domain_id)
+            owner.status = "COMPLETED"
+            owner.final_artifact_id = getattr(owner, "final_artifact_id", None)
         f.uow.inspections.get_report_scoped.side_effect = lambda **kw: published
         f.uow.inspections.list_report_sources.side_effect = lambda **kw: uow.inspections.add_report_sources.await_args.args[0]
         f.uow.runs, f.uow.targets, f.uow.agents, f.uow.changes = uow.runs, uow.targets, uow.agents, uow.changes
         f.uow.agents.version_source_ids = AsyncMock(return_value=[])
+        f.uow.agents.get.return_value.status = "ACTIVE"
         f.report, f.domain = published, run.domain_id
         result = await extract(f)
         assert result["version"]["profile"]["case_kind"] == "VERIFIED_OPTIMIZATION"

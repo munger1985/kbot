@@ -524,6 +524,20 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def get_case_collection_models(self, *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/case-collection/models",
+            auth_context=auth_context,
+        )
+
+    async def configure_case_collection_models(self, *, models: dict[str, UUID],
+        auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json(
+            "PUT", f"{INTERNAL_API_V1}/aiops/operations-knowledge/case-collection/models",
+            payload={"models": {role: str(model_id) for role, model_id in models.items()}},
+            auth_context=auth_context,
+        )
+
     async def list_operations_knowledge_tags(
         self, *, include_disabled: bool, auth_context: AuthContext,
     ) -> dict[str, Any]:
@@ -657,13 +671,36 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
     async def extract_operations_diagnosis_case(
-        self, report_id: UUID, *, auth_context: AuthContext
+        self, report_id: UUID, *, auth_context: AuthContext, idempotency_key: str
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
             f"{INTERNAL_API_V1}/aiops/operations-knowledge/reports/{report_id}:extract-case",
             auth_context=auth_context,
+            headers={"Idempotency-Key": idempotency_key},
         )
+
+    async def list_output_jobs(self, *, auth_context: AuthContext, limit: int = 50,
+        job_type: str | None = None, status: str | None = None,
+        conversation_id: UUID | None = None, before_id: UUID | None = None):
+        query = urlencode({key: str(value) for key, value in {
+            "limit": limit, "job_type": job_type, "status": status,
+            "conversation_id": conversation_id, "before_id": before_id,
+        }.items() if value is not None})
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/output-jobs?{query}",
+            auth_context=auth_context)
+
+    async def get_output_projection(self, *, payload: dict, auth_context: AuthContext):
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/output-jobs:projection",
+            payload=payload, auth_context=auth_context)
+
+    async def get_output_job(self, job_id: UUID, *, auth_context: AuthContext):
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/output-jobs/{job_id}",
+            auth_context=auth_context)
+
+    async def retry_output_job(self, job_id: UUID, *, payload: dict, auth_context: AuthContext):
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/output-jobs/{job_id}:retry",
+            payload=payload, auth_context=auth_context)
 
     async def get_conversation_case_candidate(
         self, conversation_id: UUID, *, auth_context: AuthContext,
@@ -679,12 +716,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
 
     async def close_conversation_diagnosis(
         self, conversation_id: UUID, *, payload: dict[str, Any],
+        idempotency_key: str,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
             f"{INTERNAL_API_V1}/aiops/operations-knowledge/conversations/{conversation_id}:close-diagnosis",
             payload=payload,
+            idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
@@ -709,10 +748,12 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
     async def get_operations_diagnosis_case(
-        self, asset_id: UUID, *, auth_context: AuthContext
+        self, asset_id: UUID, *, auth_context: AuthContext,
+        asset_version_id: UUID | None = None,
     ) -> dict[str, Any]:
+        query = "?" + urlencode({"asset_version_id": str(asset_version_id)}) if asset_version_id else ""
         return await self._json(
-            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/cases/{asset_id}",
+            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/cases/{asset_id}{query}",
             auth_context=auth_context,
         )
 
@@ -774,6 +815,15 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json(
             "GET",
             f"{INTERNAL_API_V1}/aiops/operations-knowledge/reviews?limit={limit}",
+            auth_context=auth_context,
+        )
+
+    async def preview_operations_knowledge_version(
+        self, asset_version_id: UUID, *, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/versions/{asset_version_id}/preview",
             auth_context=auth_context,
         )
 
@@ -1862,12 +1912,18 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         cursor: str | None,
         limit: int,
         auth_context: AuthContext,
+        category: str | None = None,
+        template_ref: str | None = None,
     ) -> dict[str, Any]:
         query = {"limit": str(limit)}
         if target_id is not None:
             query["target_id"] = str(target_id)
         if report_type is not None:
             query["report_type"] = report_type
+        if category is not None:
+            query["category"] = category
+        if template_ref is not None:
+            query["template_ref"] = template_ref
         if cursor is not None:
             query["cursor"] = cursor
         return await self._json(

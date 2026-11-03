@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from main_api.app import create_main_api_app
+from main_api.application.output_authority import OutputAuthorityService
 from main_api.application import (
     AccessManagementService,
     AccessControlService,
@@ -87,6 +88,7 @@ async def lifespan(app: FastAPI):
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     uow_factory = create_main_api_uow(db_runtime.session_factory)
+    app.state.output_authority_service = OutputAuthorityService(uow_factory=uow_factory)
     app.state.domain_validation_service = DomainValidationService(
         uow_factory=uow_factory,
     )

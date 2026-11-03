@@ -1,5 +1,5 @@
 /* 自动同步自 Ammolite shared/ui/styles.css；请修改源文件后重新生成。
- * 源文件 SHA-256: 341372fc7687ed600f4cd46e8774e78d91859131e22198fc4e11e76e240ea84e
+ * 源文件 SHA-256: 0e202d8e598bfc71b67a43ab8d4422996d6eba1e0af836a962ef8db3d13a9c71
  * 仅保留 AIOps 及其公共控件；字体使用同一系统回退栈，不从 CDN 加载。
  */
 button { all: revert; }
@@ -189,6 +189,10 @@ a { color: inherit; text-decoration: none; }
 .segmented-control { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }.segmented-control { padding:3px; border:1px solid var(--line); border-radius:9px; background:var(--surface-subtle); }.segmented-control button { min-height:32px; padding:5px 10px; border:1px solid transparent; border-radius:7px; color:var(--muted); background:transparent; font-size:13px; font-weight:600; }.segmented-control button:hover { color:var(--accent-strong); background:var(--accent-soft); }.segmented-control button.active { border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft); }
 @media (max-width: 1000px) { .operational-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.table-card-header { flex-wrap:wrap; } }
 @media (max-width: 620px) { .operational-summary-grid { grid-template-columns:1fr; }.operational-summary-card { min-height:0; } }
+.table-pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 16px; border-top: 1px solid var(--line); color: var(--faint); background: var(--surface-subtle); font-size: 13px; }
+.table-pagination-controls { display: flex; align-items: center; gap: 8px; }
+.table-pagination-controls { justify-content: flex-end; }
+@media (max-width: 600px) { .table-pagination { align-items: stretch; flex-direction: column; }.table-pagination-controls { justify-content: center; flex-wrap: wrap; } }
 .status-active,.status-disabled { gap: 6px; border: 1px solid transparent; font-weight: 700; }
 .status-active::before,.status-disabled::before { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; content: ""; }
 .status-active { border-color: #a9dcc8; color: #116149; background: #e8f6ef; }
@@ -933,6 +937,8 @@ a { color: inherit; text-decoration: none; }
 :root .key-value-table dt { color: var(--muted); font-size: 13px; }
 :root .key-value-table dd { color: var(--ink); font-size: 14px; }
 
+:root .table-pagination { border-color: var(--line); color: var(--muted); background: var(--surface-subtle); font-size: 13px; }
+
 :root .admin-drawer { border-color: var(--line); color: var(--ink); background: var(--canvas); }
 :root .admin-drawer-header { border-color: var(--line); }
 :root .admin-drawer-header h2 { color: var(--ink); font-family: var(--font-ui); }
@@ -1178,6 +1184,8 @@ a { color: inherit; text-decoration: none; }
 }
 .business-app-shell .business-nav-pinned { margin-bottom: 8px; padding-bottom: 8px; }
 .business-app-shell .business-nav-pinned .business-nav-item { min-height: 43px; margin: 0; padding: 0 10px; border-radius: 9px; }
+.business-app-shell .business-nav-direct { margin-bottom: 5px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb,var(--surface-subtle) 50%,transparent); }
+.business-app-shell .business-nav-direct .business-nav-item { min-height: 43px; margin: 0; padding: 0 10px; border-radius: 8px; }
 .business-app-shell .business-nav-group.is-collapsible {
   overflow: hidden;
   margin-bottom: 5px;

@@ -92,8 +92,8 @@
 @media (max-width:1200px) { :is([data-page="dashboard"]) .workbench-content-grid.has-context { grid-template-columns:1fr; }:is([data-page="dashboard"]) .workbench-context-column { position:static; grid-row:1; } }
 @media (max-width:1100px) { :is([data-page="dashboard"]) .work-item-queue-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:900px) { :is([data-page="dashboard"]) .work-item-form-grid,:is([data-page="dashboard"]) .work-item-processing-context { grid-template-columns:1fr; } }
-@media (max-width:680px) { :is([data-page="dashboard"]) .work-item-processing-content { padding:18px; } }
 @media (max-width:620px) { :is([data-page="dashboard"]) .work-item-queue-grid { grid-template-columns:1fr; }:is([data-page="dashboard"]) .work-item-toolbar { width:100%; }:is([data-page="dashboard"]) .work-item-toolbar > * { width:100%; } }
+@media (max-width:680px) { :is([data-page="dashboard"]) .work-item-processing-content { padding:18px; } }
 
 /* business/AIOpsTurnResultView.vue */
 :is([data-page="dashboard"]) .ops-analysis, :is([data-page="dashboard"]) .ops-solution, :is([data-page="dashboard"]) .ops-fact-confirmation, :is([data-page="dashboard"]) .ops-html-report-readonly, :is([data-page="dashboard"]) .ops-proposal-readonly {

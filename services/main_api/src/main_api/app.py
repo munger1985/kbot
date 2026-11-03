@@ -38,6 +38,7 @@ from main_api.api import (
     ops_router,
 )
 from main_api.config import get_main_api_settings
+from main_api.api.output_authority import OUTPUT_AUTHORITY_PATH, install_output_authority_boundary
 from main_api.application import (
     AppApiKeyError,
     UserAuthenticationError,
@@ -257,6 +258,7 @@ def create_main_api_app(
         "/api/v1/apps/media-studio/auth/login",
     }
     public_prefixes = {
+        OUTPUT_AUTHORITY_PATH,
         "/api/v1/auth/apps/",
         "/api/v1/integrations/aiops/signals/",
         "/static-offline-docs/",
@@ -280,6 +282,8 @@ def create_main_api_app(
             public_prefixes=public_prefixes,
         )
     )
+    install_output_authority_boundary(app, audience=config.service_name,
+        caller_service=config.output_authority_caller)
     # CORS 必须位于最外层，确保认证及业务错误响应也携带跨域响应头。
     if config.allowed_origins:
         app.add_middleware(

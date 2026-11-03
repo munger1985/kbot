@@ -13,6 +13,7 @@ from platform_core.config import (
 
 
 class MainApiProcessConfig(ServiceConfig):
+    output_authority_caller: str = Field(default="kbot-aiops-worker", min_length=1, max_length=128)
     service_name: str = "kbot-main-api"
     service_port: int = 18099
     allowed_origins: list[str] = Field(default_factory=list)
@@ -57,6 +58,7 @@ class NotificationConfig(BaseModel):
     dispatcher_lease_seconds: int = Field(default=60, ge=10, le=600)
     dispatcher_max_attempts: int = Field(default=5, ge=1, le=20)
     dispatcher_poll_seconds: float = Field(default=1.0, ge=0.1, le=60)
+    output_reconcile_seconds: float = Field(default=60.0, ge=5, le=3600)
     sse_poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=10)
     sse_heartbeat_seconds: float = Field(default=15.0, ge=1, le=60)
 

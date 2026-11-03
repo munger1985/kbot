@@ -49,6 +49,11 @@ python3 scripts/db/initialize_aiops.py --check-only
 初始密码由脚本在终端输出。初始化脚本重复执行会恢复固定初始密码，因此生产环境完成
 初始化并修改密码后，不应把它当作日常健康检查使用；日常检查使用 `--check-only`。
 
+仅为案例资源补缺时，使用[案例资源定向初始化与模型维护](aiops-case-resource-maintenance.md)中的
+`scripts/deployment/provision_aiops_case_collection.py`，不要重复运行广域初始化。
+新建案例资源采用 TEXT、空模型映射；已有案例模型与解析策略不覆盖，也不重新启用停用资源。
+案例独立显式绑定 parser_llm、retrieval_llm、embedding，不要求 OCR，不借用资料库模型。
+
 当前 AIOps 提供运维知识库增删改查、手册上传、诊断案例候选、版本审核、发布、退役和索引状态。
 诊断 Agent 与知识问答 Agent 都持久化绑定 1–N 个知识库。普通用户不会看到 Collection、Bundle
 或 Embedding；内部索引异常只以业务可理解的处理状态呈现。Agent 只通过

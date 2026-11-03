@@ -98,6 +98,16 @@ class AIOpsAgentRepository:
         )
         return list(rows)
 
+    async def version_knowledge_policy(self, *, agent_version_id: UUID) -> dict[str, Any]:
+        """返回当前版本的知识开关及规范化知识库绑定。"""
+        self._check_active()
+        version = await self._session.get(AIOpsAgentVersionEntity, agent_version_id)
+        if version is None:
+            return {}
+        policy = dict(version.knowledge_policy_json or {})
+        policy["knowledge_base_ids"] = await self.version_knowledge_base_ids(agent_version_id=agent_version_id)
+        return policy
+
     async def version_source_ids(
         self, *, agent_version_id: UUID, target_id: UUID | None = None
     ) -> list[UUID]:
