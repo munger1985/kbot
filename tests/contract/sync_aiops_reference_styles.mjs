@@ -2,6 +2,7 @@
 // 检查：node tests/contract/sync_aiops_reference_styles.mjs
 // 更新：node tests/contract/sync_aiops_reference_styles.mjs --write
 // 单页更新：node tests/contract/sync_aiops_reference_styles.mjs --write --page=inspection-detail
+// 仅共享样式：node tests/contract/sync_aiops_reference_styles.mjs --write --shared-only
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
@@ -16,6 +17,8 @@ const postcss = require("postcss");
 const read = (path) => readFileSync(path, "utf8");
 const manifest = JSON.parse(read(resolve(root, "ui/aiops/reference-pages.json")));
 const selectedPage = process.argv.find(argument => argument.startsWith("--page="))?.slice(7);
+const sharedOnly = process.argv.includes("--shared-only");
+assert.ok(!(selectedPage && sharedOnly), "单页与仅共享样式选项不能同时使用");
 if (selectedPage) assert.ok(manifest.pages[selectedPage]?.sources.length, "单页样式同步必须指定有生产基准的页面");
 const classes = new Set();
 const sourceFiles = new Set([
@@ -87,6 +90,7 @@ for (const [page, entry] of Object.entries(manifest.pages)) {
   outputs.push([`css/reference-${page}.css`, css]);
 }
 for (const [file, content] of outputs) {
+  if (sharedOnly && file !== "css/ammolite-shared.css") continue;
   if (selectedPage && file !== `css/reference-${selectedPage}.css`) continue;
   const path = resolve(root, "ui/aiops", file);
   if (process.argv.includes("--write")) writeFileSync(path, content);
@@ -94,4 +98,4 @@ for (const [file, content] of outputs) {
 }
 const actual = readdirSync(resolve(root, "ui/aiops")).filter((name) => name.endsWith(".html")).map((name) => name.slice(0, -5)).sort();
 assert.deepEqual(Object.keys(manifest.pages).sort(), actual, "所有页面必须声明 Ammolite 对应页面或平台差异");
-console.log(`AIOps 样式基线：${selectedPage ? 1 : outputs.length} 份工件，${actual.length} 个页面已登记。`);
+console.log(`AIOps 样式基线：${selectedPage || sharedOnly ? 1 : outputs.length} 份工件，${actual.length} 个页面已登记。`);

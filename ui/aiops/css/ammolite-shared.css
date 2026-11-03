@@ -1,5 +1,5 @@
 /* 自动同步自 Ammolite shared/ui/styles.css；请修改源文件后重新生成。
- * 源文件 SHA-256: f2c88f97d97c3ac7bbc525616f20706c3ce13bf1d67d7d01d64e8cbec0319023
+ * 源文件 SHA-256: 341372fc7687ed600f4cd46e8774e78d91859131e22198fc4e11e76e240ea84e
  * 仅保留 AIOps 及其公共控件；字体使用同一系统回退栈，不从 CDN 加载。
  */
 button { all: revert; }
@@ -274,9 +274,11 @@ a { color: inherit; text-decoration: none; }
 .management-catalog-card > header > :is(.status-pill,.management-catalog-status) { flex: 0 0 auto; }
 .management-catalog-card h3 { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; margin: 4px 0 0; color: var(--ink); font-family: var(--font-ui); font-size: 19px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .management-catalog-card > p { display: -webkit-box; height: 48px; overflow: hidden; margin: 0; color: var(--muted); line-height: 1.6; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.management-catalog-card dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.management-catalog-card dl > div { display: grid; min-width: 0; gap: 4px; padding: 13px 0; }
-.management-catalog-card dl > div + div { padding-left: 14px; border-left: 1px solid var(--line); }
+.management-catalog-card dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 0; border: 1px solid var(--line); }
+.management-catalog-card dl > div { display: grid; min-width: 0; gap: 4px; padding: 13px 14px; }
+.management-catalog-card dl > div:nth-child(even) { border-left: 1px solid var(--line); }
+.management-catalog-card dl > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+.management-catalog-card dl > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .management-catalog-card dt { color: var(--faint); font-size: 13px; }
 .management-catalog-card dd { overflow-wrap: anywhere; margin: 0; color: var(--ink); font-weight: 650; }
 .management-catalog-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: auto; }

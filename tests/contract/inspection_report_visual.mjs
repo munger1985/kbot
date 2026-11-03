@@ -81,6 +81,36 @@ async function verifyTemplateDetail(page, product, width, entry) {
   }
   await page.evaluate(() => document.documentElement.dataset.theme = "light");
 }
+
+async function verifyCatalogFacts(page, product, width) {
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+    await page.evaluate(()=>{
+      const group=document.createElement("section");group.id="catalog-facts-fixtures";group.className="management-catalog-grid";
+      group.innerHTML=[1,2,3,4,5].map(count=>'<article class="management-catalog-card"><dl>'+Array.from({length:count},(_,index)=>'<div><dt>字段 '+(index+1)+'</dt><dd>跨行与长内容校验 '+(index+1)+'</dd></div>').join("")+'</dl></article>').join("");
+      document.querySelector("main").append(group);
+    });
+    const metrics=await page.locator(".management-catalog-card dl").evaluateAll(grids=>grids.map(grid=>{
+      const outer=getComputedStyle(grid),bounds=grid.getBoundingClientRect();
+      return {borders:["Top","Right","Bottom","Left"].map(side=>parseFloat(outer["border"+side+"Width"])),
+        overflow:grid.scrollWidth>grid.clientWidth+1,innerWidth:grid.clientWidth,
+        cells:[...grid.children].map(cell=>{const style=getComputedStyle(cell),rect=cell.getBoundingClientRect();return {left:parseFloat(style.borderLeftWidth),top:parseFloat(style.borderTopWidth),width:rect.width,y:rect.y-bounds.y};})};
+    }));
+    for(const grid of metrics){
+      assert.deepEqual(grid.borders,[1,1,1,1],"信息网格外框必须闭合");
+      assert.equal(grid.overflow,false);
+      for(const [index,cell] of grid.cells.entries()){
+        assert.equal(cell.left,index%2===1 ? 1:0,"竖线只出现在第二列");
+        assert.equal(cell.top,index>=2 ? 1:0,"换行后必须有完整横线");
+      }
+      if(grid.cells.length%2)assert.ok(Math.abs(grid.cells.at(-1).width-grid.innerWidth)<2,"奇数项的末项必须铺满整行");
+    }
+    await page.locator("#catalog-facts-fixtures").evaluate(node=>node.remove());
+    await page.locator(".inspection-template-card").first().screenshot({path:path.join(resultDir,product+"-template-facts-"+theme+"-"+width+".png")});
+  }
+  await page.evaluate(()=>document.documentElement.dataset.theme="light");
+}
+
 let browser;
 try {
   browser = await chromium.launch({headless: true});
@@ -95,15 +125,16 @@ try {
       page.setDefaultTimeout(10000);
       page.on("pageerror",error=>errors.push(error.message));
       page.on("console",message=>{if(message.type()==="error")errors.push(message.text());});
+      page.context().on("page",created=>created.on("pageerror",error=>errors.push(error.message)));
       const ready=catalog.groups.flatMap(group=>group.checks).filter(check=>check.availability==="READY").map(check=>check.check_id);
-      const template={inspection_template_id:"sample-template",display_name:"共享日报模板",status:"ACTIVE",source_kind:"CUSTOM",template_kind:"DAILY",is_default:false,has_draft:false,version_no:1,row_version:1,selected_check_ids:ready,daily_report_layout:catalog.daily_report_layout,usage_count:3};
+      const template={inspection_template_id:"sample-template",display_name:"共享日报模板",status:"ACTIVE",source_kind:"CUSTOM",template_kind:"DAILY",is_default:false,has_draft:false,version_no:1,row_version:1,selected_check_ids:ready,daily_report_layout:catalog.daily_report_layout,usage_count:3,history_count:23};
       template.definition={display_name:template.display_name,selected_check_ids:ready,daily_report_layout:structuredClone(catalog.daily_report_layout)};
       const drafts=new Map(), draftSaves=[];
-      const builtin={...template,inspection_template_id:"builtin-template",display_name:"系统标准日报",source_kind:"BUILTIN",is_default:true};
+      const builtin={...template,inspection_template_id:"builtin-template",display_name:"系统标准日报",source_kind:"BUILTIN",is_default:true,history_count:0};
       let newDraft=null, deletionFixtures=[], deleteRequests=0, failDelete=true;
       let failPreview=false, failPublish=false, publishRequests=0, previewGate=null;
       const previewInputs=[];
-      await page.route("**/api/**",async route=>{
+      await page.context().route("**/api/**",async route=>{
         const url=new URL(route.request().url()), method=route.request().method();
         if (!url.pathname.startsWith("/api/")) return route.continue();
         let result;
@@ -148,27 +179,57 @@ try {
         } else if(url.pathname.endsWith("/inspection-templates")) result=[template,builtin,...deletionFixtures];
         else if(url.pathname.endsWith("/sample-template")) result=template;
         else if(url.pathname.endsWith("/builtin-template")) result=builtin;
-        else if(url.pathname.endsWith("/versions")) result=[{template_version_id:"version-1",version_no:template.version_no,created_by:"template-admin",created_at:"2026-11-03T00:00:00Z",current:true,definition:template.definition}];
+        else if(url.pathname.endsWith("/versions")) {
+          result=[{template_version_id:"version-1",version_no:template.version_no,created_by:"template-admin",created_at:"2026-11-03T00:00:00Z",current:true,definition:template.definition}];
+          // 模拟新标签页读取时已有新版本，必须继续使用点击时选中的冻结版本。
+          if(route.request().frame().page()!==page)result.unshift({template_version_id:"newer-version",version_no:99,current:true,definition:{...template.definition,daily_report_layout:{...template.definition.daily_report_layout,title:"不得误用最新版本"}}});
+        }
         else if(url.pathname.endsWith("/plans")) result=[{inspection_plan_id:"plan-1",display_name:"生产库巡检",template_version_no:1,is_latest:false}];
         else result=[];
         await route.fulfill({json:result});
       });
       if(product==="kbot4") {
-        await page.addInitScript(()=>{
+        await page.context().addInitScript(()=>{
           const escape=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
           globalThis.KBotAIOpsShell={ready:Promise.resolve(),escape,fmt:value=>value||"未记录",toast:()=>{}};
           globalThis.KBotAIOpsAuth={request:async(url,init)=>{const response=await fetch(url,init),body=await response.json();if(!response.ok)throw new Error(body.error?.message || body.message);return body;}};
         });
-        await page.route(/\/(runtime-config|aiops-auth|aiops-shell)\.js(\?.*)?$/,route=>route.fulfill({contentType:"application/javascript",body:""}));
+        await page.context().route(/\/(runtime-config|aiops-auth|aiops-shell)\.js(\?.*)?$/,route=>route.fulfill({contentType:"application/javascript",body:""}));
       }
       await page.goto("http://127.0.0.1:"+port+(product==="ammolite" ? "/template/test?domainId=test" : "/kbot/aiops/report-templates.html"));
       await page.locator(".management-catalog-card").first().waitFor();
       const cards=page.locator(".management-catalog-card");
       assert.equal(await cards.count(),2);
       for(const card of await cards.all())assert.equal(await card.locator(".management-catalog-primary-actions > button").count(),1);
+      await verifyCatalogFacts(page,product,width);
       // 首次进入详情也必须完整排版，不能依赖先打开编辑器带入样式。
       await page.getByRole("button",{name:"查看模板",exact:true}).click();
       await verifyTemplateDetail(page, product, width, "direct");
+      const originalUrl=page.url(), picker=page.locator(".template-version-control select"), originalVersion=await picker.inputValue();
+      const newPage=page.context().waitForEvent("page");
+      await page.getByRole("button",{name:"查看报告效果（模拟样例）",exact:true}).click();
+      const preview=await newPage;preview.setDefaultTimeout(10000);
+      await preview.locator(".inspection-template-preview .daily-report-head").waitFor();
+      assert.equal(await page.locator(".daily-regional-report").count(),0,"详情页不能内嵌模拟报告");
+      assert.equal(page.url(),originalUrl);assert.equal(await picker.inputValue(),originalVersion);
+      assert.ok(preview.url().includes(product==="kbot4" ? "version=version-1":"templateVersionId=version-1"));
+      assert.equal(await preview.locator(".template-version-control").count(),0);
+      assert.equal(await preview.locator(".daily-report-title-row h1").innerText(),template.definition.daily_report_layout.title);
+      assert.equal(await preview.locator(".inspection-template-preview").evaluate(node=>node.scrollWidth>node.clientWidth+2),false);
+      await preview.screenshot({path:path.join(resultDir,product+"-template-preview-page-"+width+".png"),fullPage:false});
+      failPreview=true;await preview.reload();await preview.getByRole("alert").filter({hasText:"模拟预览失败"}).waitFor();
+      await preview.getByRole("button",{name:"重试预览",exact:true}).click();
+      await preview.locator(".inspection-template-preview .daily-report-head").waitFor();
+      const requestsBeforeNavigation=previewInputs.length;
+      await preview.locator('[data-section-link="SQL"]').click();
+      assert.equal(await preview.locator(".daily-regional-report").count(),1);
+      assert.equal(previewInputs.length,requestsBeforeNavigation,"报告目录导航不能重新加载模板或模拟报告");
+      const invalid=new URL(preview.url()), previewCount=previewInputs.length;
+      if(product==="kbot4")invalid.searchParams.set("version","missing");
+      else invalid.searchParams.set("templateVersionId","missing");
+      await preview.goto(invalid.href);await preview.getByRole("alert").filter({hasText:"所选发布版本不存在"}).waitFor();
+      assert.equal(previewInputs.length,previewCount,"失效版本不能回退到其他版本生成报告");
+      await preview.close();
       await page.getByRole("button",{name:"返回模板中心",exact:true}).click();
       await page.screenshot({path:path.join(resultDir,product+"-template-cards-"+width+".png"),fullPage:false});
       const builtinCard=cards.filter({hasText:"系统标准日报"});
@@ -318,12 +379,12 @@ try {
       deletionFixtures=[
         {...template,inspection_template_id:"inactive-unused",display_name:"可删除日报",status:"INACTIVE",usage_count:0,history_count:0,can_delete:true,row_version:1,has_draft:true},
         {...template,inspection_template_id:"inactive-used",display_name:"停用仍被引用",status:"INACTIVE",usage_count:1,can_delete:false},
-        {...template,inspection_template_id:"inactive-history",display_name:"历史批次引用",status:"INACTIVE",usage_count:0,history_count:1,can_delete:false},
+        {...template,inspection_template_id:"inactive-history",display_name:"历史保留模板",status:"INACTIVE",usage_count:0,history_count:1,can_delete:false},
         {...template,inspection_template_id:"inactive-default",display_name:"受保护默认模板",status:"INACTIVE",is_default:true,can_delete:false},
       ];
       await page.reload();await page.locator(".management-catalog-card").first().waitFor();
       const deletable=cards.filter({hasText:"可删除日报"}), confirm=page.locator(".confirm-dialog");
-      for(const label of ["共享日报模板","停用仍被引用","历史批次引用","受保护默认模板"]){
+      for(const label of ["共享日报模板","停用仍被引用","历史保留模板","受保护默认模板"]){
         const card=cards.filter({hasText:label});await card.getByRole("button",{name:/更多/}).click();
         assert.equal(await card.getByRole("button",{name:"删除模板",exact:true}).count(),0);
         await page.keyboard.press("Escape");
@@ -349,7 +410,7 @@ try {
       await deleted;await deletable.waitFor({state:"detached"});assert.equal(deleteRequests,2);
       await cards.filter({hasText:"停用仍被引用"}).waitFor();
       assert.equal(await cards.filter({hasText:"停用仍被引用"}).count(),1);
-      assert.equal(await cards.filter({hasText:"历史批次引用"}).count(),1);
+      assert.equal(await cards.filter({hasText:"历史保留模板"}).count(),1);
       // 409 是专门注入的版本竞争，不把预期 HTTP 失败算作控制台异常。
       assert.deepEqual(errors.filter(message=>!message.includes("409 (Conflict)")),[]);
       await page.close();
@@ -375,7 +436,7 @@ try {
           target_id: "wms", title: data.header.title, report_version: 1, template_ref: "system:inspection.daily",
           template_version: "1", summary: data.conclusion.text, period_start: "2026-11-01T00:00:00Z", period_end: "2026-11-02T00:00:00Z"};
         await page.route("https://**", route => route.abort());
-        await page.route("**/api/**", route => {
+        await page.context().route("**/api/**", route => {
           const url = new URL(route.request().url());
           if (!url.pathname.startsWith("/api/")) return route.continue();
           const result = url.pathname.endsWith("/presentation") ? presentation
@@ -383,12 +444,12 @@ try {
           return route.fulfill({json: result});
         });
         if (product === "kbot4") {
-          await page.addInitScript(() => {
+          await page.context().addInitScript(() => {
             const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
             globalThis.KBotAIOpsShell = {ready:Promise.resolve(),escape,fmt:value=>value || "未记录",toast:()=>{}};
             globalThis.KBotAIOpsAuth = {request:async url => (await fetch(url)).json()};
           });
-          await page.route(/\/(runtime-config|aiops-auth|aiops-shell)\.js(\?.*)?$/, route => route.fulfill({contentType:"application/javascript",body:""}));
+          await page.context().route(/\/(runtime-config|aiops-auth|aiops-shell)\.js(\?.*)?$/, route => route.fulfill({contentType:"application/javascript",body:""}));
         }
         const url = product === "ammolite" ? `/sample/test/${name}?domainId=test-domain` : `/kbot/aiops/report-detail.html?id=${name}`;
         await page.goto(`http://127.0.0.1:${port}${url}`);
