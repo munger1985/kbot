@@ -1,5 +1,5 @@
-import "./daily-template-editor.js?v=20261103_3";
-import {selectedTopics} from "./daily-template-model.js?v=20261103_3";
+import "./daily-template-editor.js?v=20261103_5";
+import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
 
 (function () {
   "use strict";

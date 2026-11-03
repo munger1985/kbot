@@ -1,5 +1,5 @@
 // 分步编辑器使用正式目录、预览与版本接口，不执行数据库查询。
-import * as model from "./daily-template-model.js?v=20261103_3";
+import * as model from "./daily-template-model.js?v=20261103_5";
 const root = document.getElementById("daily-template-editor");
 const esc = value => globalThis.KBotAIOpsShell.escape(value);
 const request = (path,body,method="POST") => KBotAIOpsAuth.request("/api/v1/apps/aiops"+path,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});

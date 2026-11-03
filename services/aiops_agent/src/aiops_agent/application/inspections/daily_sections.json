@@ -65,7 +65,7 @@
     {
       "section_id": "SQL",
       "title": "问题 SQL",
-      "description": "仅列命中问题规则的 SQL，按严重性排序并逐条保留 Agent 分析。",
+      "description": "依据可取得的耗时、CPU、I/O、锁相关等待、扫描量和临时空间等指标筛查；仅列问题 SQL，按严重性排序并逐条保留 Agent 分析与初步建议。",
       "semantic_roles": []
     },
     {

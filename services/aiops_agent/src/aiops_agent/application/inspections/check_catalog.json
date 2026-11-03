@@ -383,7 +383,7 @@
           "zero_row_status": "FINDING",
           "report_columns": ["container_id", "wait_class", "total_waits_fg", "foreground_waited_seconds"]
         },
-        {"report_section":"SQL","check_id":"oracle.performance.heavy_sort_sql","display_name":"SQL 排序与临时空间","availability":"READY","tool_id":"db.sql.problem_candidates","playbook_id":null,"finding_types":["TOP_SQL"],"default_for":["DAILY","WEEKLY"],"trend_required":false,"zero_row_status":"CLEAR","report_columns":["sql_key","schema_name","sql_text","text_kind","execution_count","total_elapsed_ms","average_elapsed_ms","maximum_elapsed_ms","average_cpu_ms","average_io_ms","average_lock_ms","average_reads","average_rows_examined","average_spills","workarea_total_executions","workarea_multipass_executions","workarea_multipass_percent","maximum_workarea_temp_mb","collection_status"],"supported_db_types":["ORACLE"]},
+        {"report_section":"SQL","check_id":"oracle.performance.heavy_sort_sql","display_name":"问题 SQL","availability":"READY","tool_id":"db.sql.problem_candidates","playbook_id":null,"finding_types":["TOP_SQL"],"default_for":["DAILY","WEEKLY"],"trend_required":false,"zero_row_status":"CLEAR","report_columns":["sql_key","schema_name","sql_text","text_kind","execution_count","total_elapsed_ms","average_elapsed_ms","maximum_elapsed_ms","average_cpu_ms","average_io_ms","average_lock_ms","average_reads","average_rows_examined","average_spills","workarea_total_executions","workarea_multipass_executions","workarea_multipass_percent","maximum_workarea_temp_mb","collection_status"],"supported_db_types":["ORACLE"]},
         {
           "check_id": "oracle.performance.core_parameters",
           "report_section": "PERFORMANCE",

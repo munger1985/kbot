@@ -174,6 +174,13 @@ try {
       assert.equal(await editor.locator(".daily-adaptation").getAttribute("open"),null);
       assert.equal(await editor.getByRole("button",{name:"发布新版本",exact:true}).isVisible(),false);
       await page.screenshot({path:path.join(resultDir,product+"-template-checks-"+width+".png"),fullPage:false});
+      await editor.locator('[data-topic="SQL"]').click();
+      const sqlTopic=editor.locator(".daily-topic-body");
+      assert.ok((await sqlTopic.innerText()).includes("CPU"));
+      assert.ok((await sqlTopic.innerText()).includes("I/O"));
+      assert.equal(await sqlTopic.locator(".daily-foundation-list li").filter({hasText:"问题 SQL"}).count(),1);
+      assert.equal(await sqlTopic.locator(".daily-check-row").count(),0);
+      assert.equal((await sqlTopic.innerText()).includes("SQL 排序与临时空间"),false);
       await editor.locator('[data-topic="PERFORMANCE"]').click();
       await editor.locator('[data-check-group="实例吞吐与运行线程"]').uncheck();
       const expected=ready.filter(id=>id!=="mysql.instance.throughput");

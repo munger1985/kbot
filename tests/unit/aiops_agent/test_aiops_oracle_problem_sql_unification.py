@@ -10,7 +10,7 @@ import pytest
 import sqlglot
 
 from aiops_agent.application.inspections.assessment import compile_standard_steps, freeze_inspection_policy
-from aiops_agent.application.inspections.check_catalog import compile_selected_check_steps, inspection_template_steps
+from aiops_agent.application.inspections.check_catalog import compile_selected_check_steps, inspection_template_steps, load_check_catalog
 from aiops_agent.application.inspections.sql_problems import (
     PROBLEM_SQL_TOOL, classify_problem_sql, problem_sql_inputs, problem_sql_policy,
 )
@@ -25,6 +25,17 @@ from tests.unit.aiops_agent.test_aiops_problem_sql_inspection import (
 def oracle_tool():
     return DiagnosticRegistry.load().resolve(tool_id=PROBLEM_SQL_TOOL, tool_version="1.0.0",
         db_type="ORACLE", db_version="19c", capabilities={"dynamic_performance_views"}, entitlements=set())
+
+
+def test_problem_sql_check_names_cover_all_resource_signals_not_only_sorting():
+    checks = [item for group in load_check_catalog().groups for item in group.checks
+              if item.report_section == "SQL"]
+    assert {db_type for item in checks for db_type in item.supported_db_types} == {"ORACLE", "MYSQL", "POSTGRESQL"}
+    assert all(item.display_name == "问题 SQL" and item.tool_id == PROBLEM_SQL_TOOL for item in checks)
+    description = next(section["description"] for section in load_check_catalog().report_sections
+                       if section["section_id"] == "SQL")
+    for term in ("CPU", "I/O", "等待", "扫描", "临时空间", "Agent"):
+        assert term in description
 
 
 @pytest.mark.parametrize("old_tool", ["db.sql.top_current", "db.oracle.performance.heavy_sort_sql"])
@@ -43,6 +54,7 @@ def test_existing_sort_selection_uses_one_current_query(old_tool, schedule_type)
     sql_steps = [step for step in steps if step["expected_evidence_kind"] == "TOP_SQL"]
     assert len(sql_steps) == 1
     assert sql_steps[0]["tool_id"] == PROBLEM_SQL_TOOL
+    assert sql_steps[0]["title"] == "问题 SQL"
     assert set(sql_steps[0]["check_ids"]) == {"oracle.sql.problems", "oracle.performance.heavy_sort_sql"}
     assert sql_steps[0]["input"] == problem_sql_inputs(sql_steps[0]["sql_problem_policy"])
     assert "limit" not in sql_steps[0]["input"]
