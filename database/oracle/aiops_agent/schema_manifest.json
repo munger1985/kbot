@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 54,
-  "contract_version": "aiops-oracle-v54-system-operations-plans",
+  "schema_version": 55,
+  "contract_version": "aiops-oracle-v55-inspection-template-lifecycle",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -22,7 +22,7 @@
     {
       "name": "004_ops_inspection.sql",
       "statements": 36,
-      "sha256": "0a5b376425a2d6e96daf7574fa3d333926ba48bef89f94eaf354270baf745976"
+      "sha256": "8f5f85f2cc6c549c8e1ed74e02e94e2a9220cd531cc7bdf7fe467010052494a5"
     },
     {
       "name": "005_ops_messaging.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "9e0c719b6e494460412ea3985c29f8d1e9ca20dd57ca251b936ef348301ab98a"
+      "sha256": "7a34e1e8dc40a25525fbde4704ee95bd04c62244c8b20729917b15de7e0ba042"
     },
     {
       "name": "007_ops_agents.sql",

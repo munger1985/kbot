@@ -214,6 +214,8 @@ class ReportTemplateVersionUpdateTest(unittest.IsolatedAsyncioTestCase):
         template_id = uuid7()
         row = _PostCommitGuardedRow(
             inspection_template_id=template_id,
+            management_json={"source_kind":"CUSTOM","draft":InspectionTemplateService._definition(
+                display_name="每日巡检", selected_check_ids=("oracle.backup.rman_volume",))},
             display_name="每日巡检",
             status="ACTIVE",
             current_version_id=uuid7(),
@@ -228,7 +230,7 @@ class ReportTemplateVersionUpdateTest(unittest.IsolatedAsyncioTestCase):
 
         inspections = SimpleNamespace(
             get_inspection_template=AsyncMock(return_value=row),
-            next_inspection_template_version=AsyncMock(return_value=2),
+            list_inspection_template_versions=AsyncMock(return_value=[]),
             add_inspection_template_version=AsyncMock(),
         )
         uow = SimpleNamespace(
@@ -239,12 +241,8 @@ class ReportTemplateVersionUpdateTest(unittest.IsolatedAsyncioTestCase):
             uow_factory=lambda: _UnitOfWorkContext(uow)
         )
 
-        result = await service.create_version(
-            domain_id=7,
-            actor_id="actor:new",
-            template_id=template_id,
-            expected_row_version=1,
-            selected_check_ids=("oracle.backup.rman_volume",),
+        result = await service.publish(
+            domain_id=7, actor_id="actor:new", template_id=template_id, expected_row_version=1,
         )
 
         self.assertEqual(2, result["row_version"])

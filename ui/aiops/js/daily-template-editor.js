@@ -1,22 +1,23 @@
 // 分步编辑器使用正式目录、预览与版本接口，不执行数据库查询。
-import * as model from "./daily-template-model.js?v=20261103_2";
+import * as model from "./daily-template-model.js?v=20261103_3";
 const root = document.getElementById("daily-template-editor");
 const esc = value => globalThis.KBotAIOpsShell.escape(value);
-const request = (path,body) => KBotAIOpsAuth.request("/api/v1/apps/aiops"+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+const request = (path,body,method="POST") => KBotAIOpsAuth.request("/api/v1/apps/aiops"+path,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
 let catalog,detail,draft,original,onSaved,automatic,topicId,regionId,engine,adaptationEngine,scenario;
-let step="checks",busy=false,previewBusy=false,stale=true,revision=0,session=0;
+let persisted="",step="checks",busy=false,previewBusy=false,stale=true,revision=0,session=0;
 const node = id => root.querySelector("#"+id);
 const title = key => catalog.report_sections.find(item=>item.section_id===key)?.title || key;
 const valid = () => Boolean(draft.name.trim() && draft.layout.title.trim() && draft.selected.length && !model.unavailableIds(catalog,draft.selected).length);
 function error(message) {node("daily-template-error").textContent=message;node("daily-template-error").hidden=!message;}
+function changed() {const diff=model.changeSummary(draft,original);return !detail?.version_no || draft.name.trim()!==original.name || diff.added>0 || diff.removed>0 || diff.layoutChanged;}
 function updatePublish() {
-  node("daily-publish").disabled=busy || step!=="preview" || !valid() || stale || previewBusy || !node("daily-publish-confirm").checked;
-  node("daily-publish-confirm").disabled=busy || !valid() || stale || previewBusy;
+  node("daily-publish").disabled=busy || step!=="preview" || !changed() || !valid() || stale || previewBusy || !node("daily-publish-confirm").checked;
+  node("daily-publish-confirm").disabled=busy || !changed() || !valid() || stale || previewBusy;
 }
 function renderSummary() {
   const changes=model.changeSummary(draft,original),invalid=model.unavailableIds(catalog,draft.selected);
   node("daily-editor-summary").innerHTML='<p class="eyebrow">模板摘要</p><h2>'+esc(draft.name || "未命名模板")+'</h2><dl>'+
-    [["适用范围","通用日报 · 全部数据库类型"],["系统保障","自动纳入，不能移除"],["追加专项",draft.selected.filter(id=>!automatic.has(id)).length+" 个数据库适配检查"],["报告区域",draft.layout.sections.length+" 个共享区域"],["发布状态",detail?.inspection_template_id ? "基于 v"+detail.version_no+" 编辑" : "新模板 · 尚未发布"]].map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join("")+
+    [["适用范围","通用日报 · 全部数据库类型"],["系统保障","自动纳入，不能移除"],["追加专项",draft.selected.filter(id=>!automatic.has(id)).length+" 个数据库适配检查"],["报告区域",draft.layout.sections.length+" 个共享区域"],["发布状态",detail?.version_no ? "基于 v"+detail.version_no+" 编辑" : "新模板 · 尚未发布"]].map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join("")+
     '</dl><hr><h3>发布影响</h3><p>发布形成不可变新版本；已有计划不自动升级。</p><p>修改计划并明确选择新版本后才生效。月报排版保持现状。</p>'+
     (invalid.length ? '<p class="notice notice-error">所选检查有 '+invalid.length+' 项已不可用，请刷新目录后重新选择。</p>' : "");
   node("daily-change-summary").textContent="专项新增 "+changes.added+" 项，移除 "+changes.removed+" 项；日报版式"+(changes.layoutChanged ? "有变化" : "未变化")+"。";
@@ -81,20 +82,24 @@ async function preview() {
     if(requestedSession===session){previewBusy=false;node("daily-refresh-preview").disabled=false;node("daily-refresh-preview").textContent="刷新模拟预览";updatePublish();}
   }
 }
-function close() {if(busy)return;session++;root.hidden=true;document.querySelector("main.aiops-template-page").hidden=false;window.scrollTo(0,0);}
+async function close(force=false) {
+  if(busy)return;
+  if(!force && JSON.stringify(draft)!==persisted && !await globalThis.KBotInspectionTemplates.confirm("离开模板编辑","尚有未保存修改。返回将保留上次保存的草稿，放弃本地修改。"))return;
+  session++;root.hidden=true;document.querySelector("main.aiops-template-page").hidden=false;window.scrollTo(0,0);if(!force)await onSaved();
+}
 function open(value,editing,callback) {
-  catalog=value;detail=editing;onSaved=callback;session++;revision=0;busy=false;previewBusy=false;stale=true;
-  try{draft=model.createDraft(catalog,detail);original=structuredClone(draft);automatic=model.automaticIds(catalog);}
+  catalog=value;detail=editing;onSaved=callback;globalThis.KBotInspectionTemplates.hideDetail();session++;revision=0;busy=false;previewBusy=false;stale=true;
+  try{draft=model.createDraft(catalog,detail);original=model.createDraft(catalog,detail?.definition ? {...detail,draft:null} : detail);persisted=JSON.stringify(draft);automatic=model.automaticIds(catalog);}
   catch(cause){KBotAIOpsShell.toast(cause.message);return;}
   topicId=model.themes(catalog).find(item=>item.section_id==="CAPACITY")?.section_id || model.themes(catalog)[0].section_id;
   regionId="OVERVIEW";engine=model.engines(catalog)[0];adaptationEngine=engine;scenario="ATTENTION";
   const options=model.engines(catalog).map(value=>'<option>'+esc(value)+'</option>').join("");
-  root.innerHTML='<header class="ops-head"><div><p class="eyebrow">通用日报 · 模板编辑</p><h1>'+(detail?.inspection_template_id ? "创建模板新版本" : "新建巡检模板")+'</h1><p>先确定检查内容，再编排报告，最后预览与发布。一份模板适用于不同数据库。</p></div><button type="button" class="secondary-button" data-close-daily-editor>返回模板中心</button></header><form id="daily-template-form"><fieldset class="daily-editor-fields"><nav class="daily-editor-steps" aria-label="日报模板编辑步骤">'+
+  root.innerHTML='<header class="ops-head"><div><p class="eyebrow">通用日报 · 模板编辑</p><h1>'+(detail?.inspection_template_id ? "编辑巡检模板" : "新建巡检模板")+'</h1><p>先确定检查内容，再编排报告，最后预览与发布。一份模板适用于不同数据库。</p></div><button type="button" class="secondary-button" data-close-daily-editor>返回模板中心</button></header><form id="daily-template-form"><fieldset class="daily-editor-fields"><nav class="daily-editor-steps" aria-label="日报模板编辑步骤">'+
     [["checks","检查内容","选择业务主题与专项"],["layout","报告编排","设置标题与共享目录"],["preview","预览与发布","核对样例与版本影响"]].map(([key,label,help],index)=>'<button type="button" data-editor-tab="'+key+'"><span class="daily-step-number">'+(index+1)+'</span><span><strong>'+label+'</strong><small>'+help+'</small></span></button>').join("")+'</nav><div class="daily-editor-workspace"><div class="daily-editor-main">'+
     '<section class="daily-editor-panel" data-editor-panel="checks"><header class="daily-panel-head"><p class="eyebrow">第一步 · 检查什么</p><h2>围绕业务主题选择检查</h2><p>系统保障自动纳入且不可移除；可追加专项不会替代基础检查。</p></header><div class="daily-topic-layout"><nav id="daily-topic-nav" class="daily-topic-nav" aria-label="检查主题"></nav><div id="daily-topic-body" class="daily-topic-body"></div></div></section>'+
-    '<section class="daily-editor-panel" data-editor-panel="layout" hidden><header class="daily-panel-head"><p class="eyebrow">第二步 · 报告怎么读</p><h2>共享报告编排</h2><p>十二个区域共用一份格式。已知问题、必要检查和未完成事项不能隐藏。</p></header><div class="daily-global-settings"><div class="daily-field-grid"><label class="control-field"><span class="field-label">模板名称</span><input name="display_name" maxlength="256" required '+(detail?.inspection_template_id ? "disabled" : "")+' value="'+esc(draft.name)+'"></label><label class="control-field"><span class="field-label">日报标题</span><input name="report_title" maxlength="128" required value="'+esc(draft.layout.title)+'"></label></div><label class="control-field"><span class="field-label">统一正常明细偏好</span><select id="daily-normal-preference"><option value="CUSTOM" disabled>按区域设置（保留现有差异）</option><option value="FULL">完整明细</option><option value="SUMMARY">摘要，网页可展开核查</option></select></label></div><div class="daily-template-layout"><nav id="daily-layout-outline" class="daily-layout-outline" aria-label="日报区域配置"></nav><div id="daily-layout-settings" class="daily-template-settings"></div></div></section>'+
+    '<section class="daily-editor-panel" data-editor-panel="layout" hidden><header class="daily-panel-head"><p class="eyebrow">第二步 · 报告怎么读</p><h2>共享报告编排</h2><p>十二个区域共用一份格式。已知问题、必要检查和未完成事项不能隐藏。</p></header><div class="daily-global-settings"><div class="daily-field-grid"><label class="control-field"><span class="field-label">模板名称</span><input name="display_name" maxlength="256" required '+""+' value="'+esc(draft.name)+'"></label><label class="control-field"><span class="field-label">日报标题</span><input name="report_title" maxlength="128" required value="'+esc(draft.layout.title)+'"></label></div><label class="control-field"><span class="field-label">统一正常明细偏好</span><select id="daily-normal-preference"><option value="CUSTOM" disabled>按区域设置（保留现有差异）</option><option value="FULL">完整明细</option><option value="SUMMARY">摘要，网页可展开核查</option></select></label></div><div class="daily-template-layout"><nav id="daily-layout-outline" class="daily-layout-outline" aria-label="日报区域配置"></nav><div id="daily-layout-settings" class="daily-template-settings"></div></div></section>'+
     '<section class="daily-editor-panel daily-template-preview" data-editor-panel="preview" hidden><header class="daily-panel-head"><p class="eyebrow">第三步 · 核对后发布</p><h2>预览与发布</h2><p>模拟样例使用正式日报渲染器，不连接目标数据库、不调用模型。</p></header><div class="daily-preview-controls"><label class="control-field"><span class="field-label">模拟数据库类型</span><select name="preview_engine">'+options+'</select></label><label class="control-field"><span class="field-label">模拟场景</span><select name="preview_scenario"><option value="NORMAL">检查正常</option><option value="ATTENTION" selected>发现问题</option><option value="INCOMPLETE">检查未完成</option></select></label><button id="daily-refresh-preview" type="button" class="secondary-button">刷新模拟预览</button><p>数据库类型只影响样例，不改变通用模板范围。</p></div><p id="daily-preview-error" class="notice notice-error" role="alert" hidden></p><p id="daily-preview-stale" class="notice" role="status"></p><div id="daily-template-preview" class="daily-preview-paper"><p class="notice">选择数据库类型与场景，生成模拟报告后核对。</p></div>'+
-    '<section class="daily-publish-review"><h3>本次发布核对</h3><p id="daily-change-summary"></p><p>'+esc(detail?.inspection_template_id ? "当前 v"+detail.version_no+" → 新版本 v"+(Number(detail.version_no)+1) : "创建首个不可变版本")+'。已有计划仍使用原绑定版本，历史报告不重写。</p><label class="check-field"><input id="daily-publish-confirm" type="checkbox">我已核对预览与变更，确认发布新版本；已有计划不自动升级。</label></section></section></div><aside id="daily-editor-summary" class="daily-editor-summary" aria-label="模板摘要"></aside></div><p id="daily-validation" class="notice" role="status" hidden>请填写模板名称、日报标题，并至少保留一项可用目录检查。</p><p id="daily-template-error" class="notice notice-error" role="alert" hidden></p><footer class="daily-template-footer"><p id="daily-step-help"></p><button id="daily-previous" type="button" class="secondary-button">上一步</button><button id="daily-next" type="button" class="primary-button">下一步：报告编排</button><button id="daily-publish" type="submit" class="primary-button" hidden>发布新版本</button></footer></fieldset></form>';
+    '<section class="daily-publish-review"><h3>本次发布核对</h3><p id="daily-change-summary"></p><p>'+esc(detail?.version_no ? "当前 v"+detail.version_no+" → 新版本 v"+(Number(detail.version_no)+1) : "创建首个不可变版本")+'。已有计划仍使用原绑定版本，历史报告不重写。</p><label class="check-field"><input id="daily-publish-confirm" type="checkbox">我已核对预览与变更，确认发布新版本；已有计划不自动升级。</label></section></section></div><aside id="daily-editor-summary" class="daily-editor-summary" aria-label="模板摘要"></aside></div><p id="daily-validation" class="notice" role="status" hidden>请填写模板名称、日报标题，并至少保留一项可用目录检查。</p><p id="daily-template-error" class="notice notice-error" role="alert" hidden></p><footer class="daily-template-footer"><button id="daily-save-draft" type="button" class="secondary-button">保存草稿</button><p id="daily-step-help"></p><button id="daily-previous" type="button" class="secondary-button">上一步</button><button id="daily-next" type="button" class="primary-button">下一步：报告编排</button><button id="daily-publish" type="submit" class="primary-button" hidden>发布新版本</button></footer></fieldset></form>';
   renderTopic();renderLayout();go("checks");root.hidden=false;document.querySelector("main.aiops-template-page").hidden=true;window.scrollTo(0,0);
 }
 root.addEventListener("click",event=>{
@@ -112,6 +117,7 @@ root.addEventListener("click",event=>{
   if(button.id==="daily-previous")go(step==="preview" ? "layout" : "checks");
   if(button.id==="daily-next")go(step==="checks" ? "layout" : "preview");
   if(button.id==="daily-refresh-preview")preview();
+  if(button.id==="daily-save-draft")saveDraft();
 });
 root.addEventListener("input",event=>{
   const target=event.target;if(busy)return;
@@ -133,12 +139,28 @@ root.addEventListener("change",event=>{
   if(target.name==="preview_engine")engine=target.value;
   if(target.name==="preview_scenario")scenario=target.value;markStale();
 });
+async function persistDraft() {
+  const id=detail?.inspection_template_id;
+  detail=await request("/inspection-templates"+(id ? "/"+encodeURIComponent(id)+"/draft" : ""),{
+    ...(id ? {expected_row_version:detail.row_version}:{}),display_name:draft.name.trim(),
+    selected_check_ids:draft.selected,daily_report_layout:draft.layout,
+  },id ? "PUT":"POST");
+  persisted=JSON.stringify(draft);renderSummary();
+}
+async function saveDraft() {
+  if(busy || !valid())return;
+  busy=true;root.querySelector(".daily-editor-fields").disabled=true;error("");
+  try{await persistDraft();KBotAIOpsShell.toast("草稿已保存，不影响已发布版本或巡检计划。");}
+  catch(cause){error(cause.message);}
+  finally{busy=false;root.querySelector(".daily-editor-fields").disabled=false;updatePublish();}
+}
 root.addEventListener("submit",async event=>{
-  event.preventDefault();if(busy || step!=="preview" || !valid() || stale || previewBusy || !node("daily-publish-confirm").checked)return;
+  event.preventDefault();if(busy || step!=="preview" || !changed() || !valid() || stale || previewBusy || !node("daily-publish-confirm").checked)return;
   busy=true;error("");root.setAttribute("aria-busy","true");root.querySelector("[data-close-daily-editor]").disabled=true;root.querySelector(".daily-editor-fields").disabled=true;node("daily-publish").textContent="发布中…";updatePublish();
   try {
-    await request("/inspection-templates"+(detail?.inspection_template_id ? "/"+encodeURIComponent(detail.inspection_template_id)+"/versions" : ""),{...(detail?.inspection_template_id ? {expected_row_version:detail.row_version} : {display_name:draft.name.trim()}),selected_check_ids:draft.selected,daily_report_layout:draft.layout});
-    busy=false;close();KBotAIOpsShell.toast("模板已发布为不可变新版本；已有计划仍使用原绑定版本。");await onSaved();
+    await persistDraft();
+    await request("/inspection-templates/"+encodeURIComponent(detail.inspection_template_id)+":publish",{expected_row_version:detail.row_version});
+    busy=false;await close(true);KBotAIOpsShell.toast("模板已发布；已有计划仍使用原绑定版本。");await onSaved();
   } catch(cause){error(cause.message);node("daily-publish-confirm").checked=false;}
   finally{busy=false;root.setAttribute("aria-busy","false");root.querySelector("[data-close-daily-editor]").disabled=false;root.querySelector(".daily-editor-fields").disabled=false;node("daily-publish").textContent="发布新版本";updatePublish();}
 });

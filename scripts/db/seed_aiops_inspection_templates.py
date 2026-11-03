@@ -160,77 +160,14 @@ async def seed_default_inspection_templates(
                         )
                     ).all()
                 )
-                rows_by_name: dict[str, list[InspectionTemplateEntity]] = {}
-                for row in rows:
-                    rows_by_name.setdefault(str(row.display_name), []).append(row)
+                existing_keys = {(row.management_json or {}).get("system_key") for row in rows}
                 for seed in seeds:
-                    matching = rows_by_name.get(seed.display_name, [])
-                    if len(matching) > 1:
-                        raise RuntimeError(
-                            f"Domain {domain_id} 存在重名巡检模板："
-                            f"{seed.display_name}"
-                        )
-                    if matching:
-                        row = matching[0]
-                        version = await session.get(
-                            InspectionTemplateVersionEntity,
-                            row.current_version_id,
-                        )
-                        if version is None:
-                            raise RuntimeError(
-                                f"Domain {domain_id} 的 {seed.display_name} "
-                                "当前版本不存在"
-                            )
-                        managed_outdated = (
-                            str(row.created_by) == BOOTSTRAP_ACTOR
-                            and str(version.content_hash) != seed.content_hash
-                        )
-                        if managed_outdated and check_only:
-                            raise RuntimeError(
-                                f"Domain {domain_id} 的内置模板 "
-                                f"{seed.display_name} 不是当前目录版本"
-                            )
-                        if managed_outdated:
-                            next_version = int(
-                                await session.scalar(
-                                    select(
-                                        func.coalesce(
-                                            func.max(
-                                                InspectionTemplateVersionEntity.version_no
-                                            ),
-                                            0,
-                                        )
-                                    ).where(
-                                        InspectionTemplateVersionEntity.inspection_template_id
-                                        == row.inspection_template_id
-                                    )
-                                )
-                            ) + 1
-                            version_id = uuid7()
-                            session.add(
-                                InspectionTemplateVersionEntity(
-                                    inspection_template_version_id=version_id,
-                                    domain_id=domain_id,
-                                    inspection_template_id=(
-                                        row.inspection_template_id
-                                    ),
-                                    version_no=next_version,
-                                    definition_json=seed.definition,
-                                    content_hash=seed.content_hash,
-                                    created_by=BOOTSTRAP_ACTOR,
-                                )
-                            )
-                            row.current_version_id = version_id
-                            row.updated_by = BOOTSTRAP_ACTOR
-                            updated_count += 1
-                        else:
-                            existing_count += 1
+                    key = "inspection." + seed.schedule_type.lower()
+                    if key in existing_keys:
+                        existing_count += 1
                         continue
                     if check_only:
-                        raise RuntimeError(
-                            f"Domain {domain_id} 缺少默认巡检模板："
-                            f"{seed.display_name}"
-                        )
+                        raise RuntimeError(f"Domain {domain_id} 缺少内置模板：{seed.display_name}")
                     template_id = uuid7()
                     version_id = uuid7()
                     session.add(
@@ -240,6 +177,12 @@ async def seed_default_inspection_templates(
                             display_name=seed.display_name,
                             status="ACTIVE",
                             current_version_id=version_id,
+                            management_json={
+                                "source_kind": "BUILTIN", "template_kind": seed.schedule_type,
+                                "system_key": key,
+                                "is_default": not any((row.management_json or {}).get("is_default") and
+                                    (row.management_json or {}).get("template_kind") == seed.schedule_type for row in rows),
+                            },
                             created_by=BOOTSTRAP_ACTOR,
                             updated_by=BOOTSTRAP_ACTOR,
                         )

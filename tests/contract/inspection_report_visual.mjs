@@ -71,7 +71,11 @@ try {
       page.on("pageerror",error=>errors.push(error.message));
       page.on("console",message=>{if(message.type()==="error")errors.push(message.text());});
       const ready=catalog.groups.flatMap(group=>group.checks).filter(check=>check.availability==="READY").map(check=>check.check_id);
-      const template={inspection_template_id:"sample-template",display_name:"共享日报模板",status:"ACTIVE",version_no:1,row_version:1,selected_check_ids:ready,daily_report_layout:catalog.daily_report_layout,usage_count:3};
+      const template={inspection_template_id:"sample-template",display_name:"共享日报模板",status:"ACTIVE",source_kind:"CUSTOM",template_kind:"DAILY",is_default:false,has_draft:false,version_no:1,row_version:1,selected_check_ids:ready,daily_report_layout:catalog.daily_report_layout,usage_count:3};
+      template.definition={display_name:template.display_name,selected_check_ids:ready,daily_report_layout:structuredClone(catalog.daily_report_layout)};
+      const drafts=new Map(), draftSaves=[];
+      const builtin={...template,inspection_template_id:"builtin-template",display_name:"系统标准日报",source_kind:"BUILTIN",is_default:true};
+      let newDraft=null;
       let failPreview=false, failPublish=false, publishRequests=0, previewGate=null;
       const previewInputs=[];
       await page.route("**/api/**",async route=>{
@@ -90,12 +94,29 @@ try {
           const byId=Object.fromEntries(preview.daily_inspection.sections.map(region=>[region.section_id,region]));
           preview.daily_inspection.sections=input.daily_report_layout.sections.map((settings,index)=>({...byId[settings.section_id],...settings,ordinal:index+1}));
           result=preview;
-        } else if(method==="POST" && (url.pathname.endsWith("/versions") || url.pathname.endsWith("/inspection-templates"))) {
+        } else if(method==="PUT" && url.pathname.endsWith("/draft")) {
+          const input=route.request().postDataJSON(),id=url.pathname.split("/").at(-2);
+          const row=id==="new-template" ? newDraft:template;
+          assert.equal(input.expected_row_version,row.row_version);
+          row.row_version++;row.draft={display_name:input.display_name,selected_check_ids:input.selected_check_ids,daily_report_layout:input.daily_report_layout};row.has_draft=true;
+          draftSaves.push(input);drafts.set(id,structuredClone(row.draft));result=structuredClone(row);
+        } else if(method==="POST" && url.pathname.endsWith("/inspection-templates")) {
+          const input=route.request().postDataJSON();
+          newDraft={...template,...input,inspection_template_id:"new-template",row_version:1,version_no:null,definition:null,draft:input,has_draft:true};
+          drafts.set("new-template",input);result=newDraft;
+        } else if(method==="POST" && url.pathname.endsWith(":publish")) {
           publishRequests++;
+          const id=url.pathname.split("/").at(-1).split(":")[0],row=id==="new-template"?newDraft:template;
+          assert.equal(route.request().postDataJSON().expected_row_version,row.row_version);
           if(failPublish) {failPublish=false;await route.fulfill({status:409,json:{message:"版本已变化，请刷新后重试。",error:{code:"ROW_VERSION_CONFLICT",message:"版本已变化，请刷新后重试。"}}});return;}
-          writes.push(route.request().postDataJSON());result=template;
-        } else if(url.pathname.endsWith("/inspection-templates")) result=[template];
+          writes.push(structuredClone(drafts.get(id)));
+          row.definition=structuredClone(row.draft);row.display_name=row.definition.display_name;row.selected_check_ids=row.definition.selected_check_ids;row.daily_report_layout=row.definition.daily_report_layout;row.draft=null;row.has_draft=false;row.version_no=(row.version_no||0)+1;row.row_version++;
+          result=row;
+        } else if(url.pathname.endsWith("/inspection-templates")) result=[template,builtin];
         else if(url.pathname.endsWith("/sample-template")) result=template;
+        else if(url.pathname.endsWith("/builtin-template")) result=builtin;
+        else if(url.pathname.endsWith("/versions")) result=[{template_version_id:"version-1",version_no:template.version_no,created_by:"template-admin",created_at:"2026-11-03T00:00:00Z",current:true,definition:template.definition}];
+        else if(url.pathname.endsWith("/plans")) result=[{inspection_plan_id:"plan-1",display_name:"生产库巡检",template_version_no:1,is_latest:false}];
         else result=[];
         await route.fulfill({json:result});
       });
@@ -108,9 +129,19 @@ try {
         await page.route(/\/(runtime-config|aiops-auth|aiops-shell)\.js(\?.*)?$/,route=>route.fulfill({contentType:"application/javascript",body:""}));
       }
       await page.goto("http://127.0.0.1:"+port+(product==="ammolite" ? "/template/test?domainId=test" : "/kbot/aiops/report-templates.html"));
-      try { await page.getByRole("button",{name:"创建新版本",exact:true}).click({timeout:10000}); }
+      await page.locator(".management-catalog-card").first().waitFor();
+      const cards=page.locator(".management-catalog-card");
+      assert.equal(await cards.count(),2);
+      for(const card of await cards.all())assert.equal(await card.locator(".management-catalog-primary-actions > button").count(),1);
+      await page.screenshot({path:path.join(resultDir,product+"-template-cards-"+width+".png"),fullPage:false});
+      const builtinCard=cards.filter({hasText:"系统标准日报"});
+      await builtinCard.getByRole("button",{name:/更多/}).click();
+      assert.ok((await builtinCard.getByRole("menu").innerText()).includes("基于此创建"));
+      assert.equal((await builtinCard.getByRole("menu").innerText()).includes("停用"),false);
+      await page.keyboard.press("Escape");
+      try { await page.getByRole("button",{name:"编辑模板",exact:true}).click({timeout:10000}); }
       catch(error) { console.error(product,width,errors,await page.locator("body").innerText()); throw error; }
-      const editor=page.locator(".daily-template-editor");
+      const editor=page.locator(product==="kbot4" ? "#daily-template-editor" : "main.daily-template-editor");
       await editor.waitFor();
       assert.equal(await editor.evaluate(node=>node.tagName==="DIALOG" || Boolean(node.closest("dialog"))),false);
       assert.equal(await editor.locator("[data-topic]").count(),9);
@@ -137,6 +168,13 @@ try {
       await page.screenshot({path:path.join(resultDir,product+"-template-layout-"+width+".png"),fullPage:false});
       await editor.locator('[data-editor-tab="checks"]').click();
       assert.equal(await editor.locator('[data-check-group="实例吞吐与运行线程"]').isChecked(),false);
+      await editor.locator('[data-editor-tab="layout"]').click();
+      assert.equal(await title.inputValue(),"共享日报 · 版式验收");
+      const savedDraft=page.waitForResponse(response=>response.url().endsWith("/draft") && response.request().method()==="PUT");
+      await editor.getByRole("button",{name:"保存草稿",exact:true}).click();await savedDraft;
+      assert.equal(publishRequests,0);
+      await editor.getByRole("button",{name:"返回模板中心",exact:true}).click();
+      await page.getByRole("button",{name:"编辑模板",exact:true}).click();
       await editor.locator('[data-editor-tab="layout"]').click();
       assert.equal(await title.inputValue(),"共享日报 · 版式验收");
       await editor.locator('[data-editor-tab="preview"]').click();
@@ -194,16 +232,16 @@ try {
       assert.equal(writes[0].daily_report_layout.sections[2].section_id,"CAPACITY");
       assert.deepEqual(writes[0].selected_check_ids,expected);
       // 关闭并重开后，前一会话迟到的预览不能污染新草稿。
-      await page.getByRole("button",{name:"创建新版本",exact:true}).click();
+      await page.getByRole("button",{name:"编辑模板",exact:true}).click();
       const delayedStarted=new Promise(resolve=>{started=resolve;});
       previewGate={promise:new Promise(resolve=>{release=resolve;}),started};
       await editor.locator('[data-editor-tab="preview"]').click();
       await delayedStarted;
       await editor.getByRole("button",{name:"返回模板中心",exact:true}).click();
-      await page.getByRole("button",{name:"创建新版本",exact:true}).click();
+      await page.getByRole("button",{name:"编辑模板",exact:true}).click();
       release();
       await editor.locator('[data-editor-tab="layout"]').click();
-      assert.equal(await editor.getByLabel("日报标题").inputValue(),catalog.daily_report_layout.title);
+      assert.equal(await editor.getByLabel("日报标题").inputValue(),"共享日报 · 版式验收");
       assert.equal(await editor.locator(".daily-report-head").count(),0);
       await editor.getByRole("button",{name:"返回模板中心",exact:true}).click();
       await page.locator(".management-catalog-add-card").filter({hasText:"新建巡检模板"}).click();
@@ -217,10 +255,22 @@ try {
       await editor.waitFor({state:"hidden"});
       assert.equal(writes.length,2);
       assert.equal(writes[1].display_name,"通用日报新模板");
-      assert.equal("expected_row_version" in writes[1],false);
+      assert.equal(draftSaves.length >= 3,true);
       const autoIds=new Set([...Object.values(catalog.daily_check_policy.baseline),...Object.values(catalog.daily_check_policy.supplemental)].flat());
       assert.ok(writes[1].selected_check_ids.length);
       assert.ok(writes[1].selected_check_ids.every(id=>autoIds.has(id)));
+      // 内置模板只读详情、历史及引用计划使用完整页面，不弹抽屉。
+      await page.getByRole("button",{name:"查看模板",exact:true}).click();
+      await page.locator(".inspection-template-detail h1").filter({hasText:"系统标准日报"}).waitFor();
+      await page.screenshot({path:path.join(resultDir,product+"-template-detail-"+width+".png"),fullPage:false});
+      const detailPage=product==="kbot4" ? page.locator("section.daily-template-editor").last() : page.locator("main.daily-template-editor");
+      assert.equal(await detailPage.evaluate(node=>node.scrollWidth>node.clientWidth+2),false);
+      await page.getByRole("button",{name:"版本历史",exact:true}).click();
+      await page.getByText(/发布人：.*template-admin/).waitFor();
+      assert.equal(await page.getByRole("button",{name:"基于此版本编辑",exact:true}).count(),0);
+      await page.getByRole("button",{name:"引用计划",exact:true}).click();
+      await page.getByText(/生产库巡检.*v1/).waitFor();
+      await page.getByRole("button",{name:"返回模板中心",exact:true}).click();
       // 409 是专门注入的版本竞争，不把预期 HTTP 失败算作控制台异常。
       assert.deepEqual(errors.filter(message=>!message.includes("409 (Conflict)")),[]);
       await page.close();

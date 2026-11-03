@@ -1096,7 +1096,8 @@ CREATE TABLE KBOT_OPS_INSPECTION_TEMPLATE (
     DOMAIN_ID NUMBER(38) NOT NULL,
     DISPLAY_NAME VARCHAR2(256 CHAR) NOT NULL,
     STATUS VARCHAR2(16 CHAR) DEFAULT 'ACTIVE' NOT NULL,
-    CURRENT_VERSION_ID RAW(16) NOT NULL,
+    CURRENT_VERSION_ID RAW(16),
+    MANAGEMENT_JSON JSON DEFAULT '{}' NOT NULL,
     ROW_VERSION NUMBER(19) DEFAULT 1 NOT NULL,
     CREATED_BY VARCHAR2(256 CHAR) NOT NULL,
     UPDATED_BY VARCHAR2(256 CHAR) NOT NULL,
@@ -1947,8 +1948,8 @@ CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    54 AS SCHEMA_VERSION,
-    'aiops-oracle-v54-system-operations-plans' AS CONTRACT_VERSION
+    55 AS SCHEMA_VERSION,
+    'aiops-oracle-v55-inspection-template-lifecycle' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -3637,7 +3638,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 54 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 55 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -3650,8 +3651,8 @@ BEGIN
         raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 54
-       OR l_contract_version <> 'aiops-oracle-v54-system-operations-plans' THEN
+       OR l_schema_version <> 55
+       OR l_contract_version <> 'aiops-oracle-v55-inspection-template-lifecycle' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3661,7 +3662,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：79 张表、10 个视图，Schema Version '
-        || '54，合同 aiops-oracle-v54-system-operations-plans。'
+        || '55，合同 aiops-oracle-v55-inspection-template-lifecycle。'
     );
 END;
 /

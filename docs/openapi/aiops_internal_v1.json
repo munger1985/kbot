@@ -2922,6 +2922,41 @@
         "title": "ConversationUploadReceipt",
         "type": "object"
       },
+      "CreateInspectionTemplate": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_report_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyReportLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "selected_check_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Selected Check Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "selected_check_ids"
+        ],
+        "title": "CreateInspectionTemplate",
+        "type": "object"
+      },
       "CreateOpsRunCommand": {
         "additionalProperties": false,
         "properties": {
@@ -3122,6 +3157,49 @@
           "input"
         ],
         "title": "CreateOpsRunCommand",
+        "type": "object"
+      },
+      "CreateSessionReportTemplate": {
+        "additionalProperties": false,
+        "properties": {
+          "definition": {
+            "additionalProperties": true,
+            "title": "Definition",
+            "type": "object"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "definition"
+        ],
+        "title": "CreateSessionReportTemplate",
+        "type": "object"
+      },
+      "CreateSessionReportTemplateVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "definition": {
+            "additionalProperties": true,
+            "title": "Definition",
+            "type": "object"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "definition"
+        ],
+        "title": "CreateSessionReportTemplateVersion",
         "type": "object"
       },
       "CredentialIssueRequest": {
@@ -8356,6 +8434,21 @@
         "title": "InspectionSqlStatement",
         "type": "object"
       },
+      "InspectionTemplateRevision": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "InspectionTemplateRevision",
+        "type": "object"
+      },
       "InstanceDiscoveryCandidate": {
         "additionalProperties": false,
         "properties": {
@@ -11884,6 +11977,36 @@
         "title": "PostgreSQLRecoveryMarker",
         "type": "object"
       },
+      "PreviewDailyTemplate": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_report_layout": {
+            "$ref": "#/components/schemas/DailyReportLayout"
+          },
+          "database_type": {
+            "default": "ORACLE",
+            "pattern": "^[A-Z][A-Z0-9_]{0,31}$",
+            "title": "Database Type",
+            "type": "string"
+          },
+          "scenario": {
+            "default": "NORMAL",
+            "pattern": "^(NORMAL|ATTENTION|INCOMPLETE)$",
+            "title": "Scenario",
+            "type": "string"
+          },
+          "selected_check_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Selected Check Ids",
+            "type": "array"
+          }
+        },
+        "title": "PreviewDailyTemplate",
+        "type": "object"
+      },
       "ProposalPage": {
         "additionalProperties": false,
         "properties": {
@@ -14864,6 +14987,47 @@
         "title": "RunTerminalEvent",
         "type": "object"
       },
+      "SaveInspectionTemplateDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_report_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyReportLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "selected_check_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Selected Check Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "selected_check_ids",
+          "expected_row_version"
+        ],
+        "title": "SaveInspectionTemplateDraft",
+        "type": "object"
+      },
       "ScopeResolutionStatus": {
         "enum": [
           "NOT_REQUIRED",
@@ -15022,6 +15186,22 @@
           "configured"
         ],
         "title": "SecretRefStatus",
+        "type": "object"
+      },
+      "SetDefaultSessionReportTemplate": {
+        "additionalProperties": false,
+        "properties": {
+          "template_ref": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Template Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_ref"
+        ],
+        "title": "SetDefaultSessionReportTemplate",
         "type": "object"
       },
       "SignalEventEnvelope": {
@@ -19680,6 +19860,27 @@
           "event_type"
         ],
         "title": "UnknownEvent",
+        "type": "object"
+      },
+      "UpdateSessionReportTemplate": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "pattern": "^(ACTIVE|INACTIVE)$",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "status"
+        ],
+        "title": "UpdateSessionReportTemplate",
         "type": "object"
       },
       "ValidationError": {
@@ -26547,6 +26748,477 @@
         ]
       }
     },
+    "/internal/v1/aiops/inspection-templates": {
+      "get": {
+        "operationId": "list_inspection_templates_internal_v1_aiops_inspection_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Inspection Templates",
+        "tags": [
+          "AIOps Templates"
+        ]
+      },
+      "post": {
+        "operationId": "create_inspection_template_internal_v1_aiops_inspection_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInspectionTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/inspection-templates/{template_id}": {
+      "get": {
+        "operationId": "get_inspection_template_internal_v1_aiops_inspection_templates__template_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      },
+      "patch": {
+        "operationId": "update_inspection_template_internal_v1_aiops_inspection_templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSessionReportTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/inspection-templates/{template_id}/draft": {
+      "delete": {
+        "operationId": "discard_inspection_template_internal_v1_aiops_inspection_templates__template_id__draft_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionTemplateRevision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      },
+      "put": {
+        "operationId": "draft_inspection_template_internal_v1_aiops_inspection_templates__template_id__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveInspectionTemplateDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Draft Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/inspection-templates/{template_id}/plans": {
+      "get": {
+        "operationId": "plans_inspection_template_internal_v1_aiops_inspection_templates__template_id__plans_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plans Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/inspection-templates/{template_id}/versions": {
+      "get": {
+        "operationId": "inspection_template_versions_internal_v1_aiops_inspection_templates__template_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspection Template Versions",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/inspection-templates/{template_id}:default": {
+      "post": {
+        "operationId": "default_inspection_template_internal_v1_aiops_inspection_templates__template_id__default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionTemplateRevision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Default Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/inspection-templates/{template_id}:publish": {
+      "post": {
+        "operationId": "publish_inspection_template_internal_v1_aiops_inspection_templates__template_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionTemplateRevision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Inspection Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/inspection-templates:preview": {
+      "post": {
+        "operationId": "preview_daily_template_internal_v1_aiops_inspection_templates_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewDailyTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPresentation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Daily Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
     "/internal/v1/aiops/intake/signal-events": {
       "post": {
         "operationId": "intake_signal_event_internal_v1_aiops_intake_signal_events_post",
@@ -29023,6 +29695,25 @@
         ]
       }
     },
+    "/internal/v1/aiops/report-layouts": {
+      "get": {
+        "operationId": "list_report_layouts_internal_v1_aiops_report_layouts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Report Layouts",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
     "/internal/v1/aiops/reports": {
       "get": {
         "operationId": "list_reports_internal_v1_aiops_reports_get",
@@ -29926,6 +30617,281 @@
         "summary": "Revoke Sql Plan Material",
         "tags": [
           "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/session-report-templates": {
+      "get": {
+        "operationId": "list_session_report_templates_internal_v1_aiops_session_report_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Session Report Templates",
+        "tags": [
+          "AIOps Templates"
+        ]
+      },
+      "post": {
+        "operationId": "create_session_report_template_internal_v1_aiops_session_report_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionReportTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session Report Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/session-report-templates/default": {
+      "put": {
+        "operationId": "set_default_session_report_template_internal_v1_aiops_session_report_templates_default_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDefaultSessionReportTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Default Session Report Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/session-report-templates/{template_id}": {
+      "get": {
+        "operationId": "get_session_report_template_internal_v1_aiops_session_report_templates__template_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session Report Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      },
+      "patch": {
+        "operationId": "update_session_report_template_internal_v1_aiops_session_report_templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSessionReportTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Session Report Template",
+        "tags": [
+          "AIOps Templates"
+        ]
+      }
+    },
+    "/internal/v1/aiops/session-report-templates/{template_id}/versions": {
+      "get": {
+        "operationId": "list_session_report_template_versions_internal_v1_aiops_session_report_templates__template_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Session Report Template Versions",
+        "tags": [
+          "AIOps Templates"
+        ]
+      },
+      "post": {
+        "operationId": "create_session_report_template_version_internal_v1_aiops_session_report_templates__template_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionReportTemplateVersion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session Report Template Version",
+        "tags": [
+          "AIOps Templates"
         ]
       }
     },

@@ -28,11 +28,13 @@ class CreateInspectionTemplate(BaseModel):
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
 
-class CreateInspectionTemplateVersion(BaseModel):
-    daily_report_layout: DailyReportLayout | None = None
+class SaveInspectionTemplateDraft(CreateInspectionTemplate):
+    expected_row_version: int = Field(ge=1)
+
+
+class InspectionTemplateRevision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_row_version: int = Field(ge=1)
-    selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
 
 class CreateSessionReportTemplate(BaseModel):
@@ -78,9 +80,9 @@ async def list_inspection_templates(
     request: Request,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
-    domain_id, _ = _scope(request, context)
+    domain_id, actor_id = _scope(request, context)
     return await request.app.state.inspection_template_service.list(
-        domain_id=domain_id
+        domain_id=domain_id, actor_id=actor_id
     )
 
 
@@ -108,20 +110,39 @@ async def create_inspection_template(
     )
 
 
-@router.post("/inspection-templates/{template_id}/versions", status_code=201)
-async def create_inspection_template_version(
-    template_id: UUID,
-    body: CreateInspectionTemplateVersion,
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
+@router.put("/inspection-templates/{template_id}/draft")
+async def draft_inspection_template(template_id: UUID, request: Request, body: SaveInspectionTemplateDraft, context: AuthContext = Depends(get_aiops_auth_context)):
     domain_id, actor_id = _scope(request, context)
-    return await request.app.state.inspection_template_service.create_version(
-        domain_id=domain_id,
-        actor_id=actor_id,
-        template_id=template_id,
-        **body.model_dump(),
-    )
+    return await request.app.state.inspection_template_service.save_draft(
+        domain_id=domain_id, actor_id=actor_id, template_id=template_id, **body.model_dump(mode="json"))
+
+
+@router.post("/inspection-templates/{template_id}:publish", status_code=201)
+async def publish_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateRevision, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.inspection_template_service.publish(
+        domain_id=domain_id, actor_id=actor_id, template_id=template_id, **body.model_dump(mode="json"))
+
+
+@router.post("/inspection-templates/{template_id}:default")
+async def default_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateRevision, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.inspection_template_service.set_default(
+        domain_id=domain_id, actor_id=actor_id, template_id=template_id, **body.model_dump(mode="json"))
+
+
+@router.delete("/inspection-templates/{template_id}/draft")
+async def discard_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateRevision, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.inspection_template_service.discard_draft(
+        domain_id=domain_id, actor_id=actor_id, template_id=template_id, **body.model_dump(mode="json"))
+
+
+@router.get("/inspection-templates/{template_id}/plans")
+async def plans_inspection_template(template_id: UUID, request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.inspection_template_service.list_plans(
+        domain_id=domain_id, template_id=template_id)
 
 
 @router.post("/inspection-templates:preview", response_model=ReportPresentation)
@@ -204,7 +225,7 @@ async def create_session_report_template_version(
         domain_id=domain_id,
         actor_id=actor_id,
         template_id=template_id,
-        **body.model_dump(),
+        **body.model_dump(mode="json"),
     )
 
 

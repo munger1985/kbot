@@ -246,19 +246,36 @@ class InspectionRepository(AIOpsRepository):
             ))
         return int(value) + 1
 
+    async def delete_inspection_template(self, entity):
+        """仅由生命周期服务删除无发布、无引用的草稿根。"""
+        await self._session.delete(entity)
+
+    async def list_plans_by_inspection_template(self, *, domain_id, template_id):
+        """引用计划保持业务空间隔离，包含停用计划。"""
+        return list(await self._session.scalars(select(InspectionPlanEntity).where(
+            InspectionPlanEntity.domain_id == domain_id,
+            InspectionPlanEntity.inspection_template_id == template_id,
+        ).order_by(InspectionPlanEntity.created_at.desc())))
+
+    async def lock_inspection_template_defaults(self, *, domain_id):
+        """所有默认切换、种子和停用遵循先空间后模板的锁顺序。"""
+        if not await self.lock_domain(domain_id=domain_id):
+            raise ValueError("业务空间不存在")
+
     async def add_inspection_template(self, entity):
         return await self._add(entity)
 
     async def add_inspection_template_version(self, entity):
         return await self._add(entity)
 
-    async def list_inspection_templates(self, *, domain_id: int):
-        rows = await self._session.scalars(
-            select(InspectionTemplateEntity)
-            .where(InspectionTemplateEntity.domain_id == domain_id)
-            .order_by(InspectionTemplateEntity.updated_at.desc())
-        )
-        return list(rows)
+    async def list_inspection_templates(self, *, domain_id, lock: bool = False):
+        """默认切换在空间锁内锁定根记录，避免覆盖并行保存的草稿。"""
+        statement = select(InspectionTemplateEntity).where(
+            InspectionTemplateEntity.domain_id == domain_id,
+        ).order_by(InspectionTemplateEntity.created_at.desc(), InspectionTemplateEntity.inspection_template_id.desc())
+        if lock:
+            statement = statement.with_for_update()
+        return list(await self._session.scalars(statement))
 
     async def count_plans_by_inspection_templates(self, *, domain_id, template_ids):
         """按业务空间统计模板引用计划数，停用计划仍属于有效引用。"""

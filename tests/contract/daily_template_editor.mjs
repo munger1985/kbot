@@ -14,6 +14,10 @@ assert.equal(await fs.readFile(path.join(portalDir,"daily-template-editor.css"),
 const model=await import("data:text/javascript;base64,"+Buffer.from(source).toString("base64"));
 const catalog=JSON.parse(await fs.readFile(process.argv[2] || "/tmp/daily-template-stepper-20261103/catalog.json","utf8"));
 assert.equal(model.themes(catalog).length,9);
+const selectedTopics=model.selectedTopics(catalog,model.checks(catalog).map(check=>check.check_id));
+assert.ok(selectedTopics.length);
+assert.ok(selectedTopics.every(topic=>new Set(topic.checks).size===topic.checks.length));
+assert.deepEqual(model.selectedTopics(catalog,["unknown"]),[{title:"未识别检查",checks:["unknown"]}]);
 const original=JSON.stringify(catalog),draft=model.createDraft(catalog),automatic=model.automaticIds(catalog);
 assert.ok(automatic.size);
 assert.ok(draft.selected.length);
@@ -41,6 +45,11 @@ assert.deepEqual(model.unavailableIds(catalog,["unknown","oracle.storage.row_cha
 const base=model.createDraft(catalog),changed=structuredClone(base);
 changed.selected.pop();changed.layout.title="新的日报标题";
 assert.deepEqual(model.changeSummary(changed,base),{added:0,removed:1,layoutChanged:true});
+const persistedDraft={display_name:"保存的草稿",selected_check_ids:base.selected,daily_report_layout:base.layout};
+const published={display_name:"已发布内容",selected_check_ids:[],daily_report_layout:catalog.daily_report_layout};
+assert.equal(model.createDraft(catalog,{draft:persistedDraft,definition:published}).name,"保存的草稿");
+assert.equal(model.createDraft(catalog,{draft:null,definition:published}).name,"已发布内容");
+assert.deepEqual(model.createDraft(catalog,{draft:persistedDraft}).selected,base.selected);
 assert.equal(JSON.stringify(catalog),original);
 assert.throws(()=>model.createDraft({...catalog,daily_check_policy:{}}),/保障策略/);
 const future=structuredClone(catalog);

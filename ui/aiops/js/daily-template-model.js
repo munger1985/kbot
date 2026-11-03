@@ -26,8 +26,17 @@ export function toggleGroup(group, selected, enabled) {
   const ids = groupIds(group);
   return enabled ? [...new Set([...selected, ...ids])] : selected.filter(id => !ids.includes(id));
 }
+export function selectedTopics(catalog, selectedIds) {
+  const selected=new Set(selectedIds), known=checks(catalog).filter(check=>selected.has(check.check_id));
+  const topics=themes(catalog).map(theme=>({title:theme.title,checks:[...new Set(known.filter(check=>check.report_section===theme.section_id).map(check=>check.display_name))]})).filter(theme=>theme.checks.length);
+  const included=new Set(known.map(check=>check.check_id));
+  const missing=selectedIds.filter(id=>!included.has(id));
+  if(missing.length)topics.push({title:"未识别检查",checks:missing});
+  return topics;
+}
 export function createDraft(catalog, template) {
   const automatic = automaticIds(catalog);
+  template = template?.draft || template?.definition || template;
   return {
     name: template?.display_name || "",
     selected: [...(template?.selected_check_ids || checks(catalog).filter(check => check.availability === "READY" && automatic.has(check.check_id)).map(check => check.check_id))],

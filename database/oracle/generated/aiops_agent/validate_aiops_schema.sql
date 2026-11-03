@@ -1945,6 +1945,7 @@ BEGIN
             'KBOT_OPS_INSPECTION_TEMPLATE|DISPLAY_NAME',
             'KBOT_OPS_INSPECTION_TEMPLATE|DOMAIN_ID',
             'KBOT_OPS_INSPECTION_TEMPLATE|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE|MANAGEMENT_JSON',
             'KBOT_OPS_INSPECTION_TEMPLATE|ROW_VERSION',
             'KBOT_OPS_INSPECTION_TEMPLATE|STATUS',
             'KBOT_OPS_INSPECTION_TEMPLATE|UPDATED_AT',
@@ -3209,6 +3210,7 @@ BEGIN
             'KBOT_OPS_INSPECTION_TEMPLATE|DISPLAY_NAME',
             'KBOT_OPS_INSPECTION_TEMPLATE|DOMAIN_ID',
             'KBOT_OPS_INSPECTION_TEMPLATE|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE|MANAGEMENT_JSON',
             'KBOT_OPS_INSPECTION_TEMPLATE|ROW_VERSION',
             'KBOT_OPS_INSPECTION_TEMPLATE|STATUS',
             'KBOT_OPS_INSPECTION_TEMPLATE|UPDATED_AT',
@@ -4021,7 +4023,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1247 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1248 项。');
     END IF;
 
     l_issue_count := 0;
@@ -4113,19 +4115,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 54
-           OR l_contract_version <> 'aiops-oracle-v54-system-operations-plans' THEN
+           OR l_schema_version <> 55
+           OR l_contract_version <> 'aiops-oracle-v55-inspection-template-lifecycle' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '54/aiops-oracle-v54-system-operations-plans'
+                || '55/aiops-oracle-v55-inspection-template-lifecycle'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/54/'
-                || 'aiops-oracle-v54-system-operations-plans'
+                '[通过] Schema 合同：AIOPS/55/'
+                || 'aiops-oracle-v55-inspection-template-lifecycle'
             );
         END IF;
     EXCEPTION
@@ -4154,7 +4156,7 @@ BEGIN
         '验证通过：79 张表、10 个视图、'
         || '1 个属性图、'
         || '302 个命名索引、259 个命名约束、'
-        || '1247 个表列；Schema 与当前规范一致。'
+        || '1248 个表列；Schema 与当前规范一致。'
     );
 END;
 /

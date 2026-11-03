@@ -70,9 +70,10 @@ class InspectionTemplateEntity(BaseEntity):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="ACTIVE"
     )
-    current_version_id: Mapped[UUID] = mapped_column(
-        UUIDv7Type(), nullable=False
+    current_version_id: Mapped[UUID | None] = mapped_column(
+        UUIDv7Type(), nullable=True
     )
+    management_json: Mapped[dict] = mapped_column(OracleNativeJSON, nullable=False, default=dict)
     row_version: Mapped[int] = mapped_column(
         Numeric(19, 0), nullable=False, default=1
     )

@@ -9015,6 +9015,62 @@
         "title": "InspectionTemplateCreatePayload",
         "type": "object"
       },
+      "InspectionTemplateDraftPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_report_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyReportLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "selected_check_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Selected Check Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "selected_check_ids",
+          "expected_row_version"
+        ],
+        "title": "InspectionTemplateDraftPayload",
+        "type": "object"
+      },
+      "InspectionTemplateRevisionPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "InspectionTemplateRevisionPayload",
+        "type": "object"
+      },
       "InspectionTemplateStatusPayload": {
         "additionalProperties": false,
         "properties": {
@@ -9034,40 +9090,6 @@
           "status"
         ],
         "title": "InspectionTemplateStatusPayload",
-        "type": "object"
-      },
-      "InspectionTemplateVersionPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "daily_report_layout": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DailyReportLayout"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "expected_row_version": {
-            "minimum": 1.0,
-            "title": "Expected Row Version",
-            "type": "integer"
-          },
-          "selected_check_ids": {
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Selected Check Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "expected_row_version",
-          "selected_check_ids"
-        ],
-        "title": "InspectionTemplateVersionPayload",
         "type": "object"
       },
       "InstanceDiscoveryCandidate": {
@@ -28608,6 +28630,147 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/inspection-templates/{template_id}/draft": {
+      "delete": {
+        "operationId": "discard_inspection_template_api_v1_apps_aiops_inspection_templates__template_id__draft_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionTemplateRevisionPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Inspection Template",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "put": {
+        "operationId": "draft_inspection_template_api_v1_apps_aiops_inspection_templates__template_id__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionTemplateDraftPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Draft Inspection Template",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/inspection-templates/{template_id}/plans": {
+      "get": {
+        "operationId": "plans_inspection_template_api_v1_apps_aiops_inspection_templates__template_id__plans_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plans Inspection Template",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/inspection-templates/{template_id}/versions": {
       "get": {
         "operationId": "inspection_template_versions_api_v1_apps_aiops_inspection_templates__template_id__versions_get",
@@ -28647,9 +28810,11 @@
         "tags": [
           "AIOps App"
         ]
-      },
+      }
+    },
+    "/api/v1/apps/aiops/inspection-templates/{template_id}:default": {
       "post": {
-        "operationId": "create_inspection_template_version_api_v1_apps_aiops_inspection_templates__template_id__versions_post",
+        "operationId": "default_inspection_template_api_v1_apps_aiops_inspection_templates__template_id__default_post",
         "parameters": [
           {
             "in": "path",
@@ -28666,7 +28831,58 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/InspectionTemplateVersionPayload"
+                "$ref": "#/components/schemas/InspectionTemplateRevisionPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Default Inspection Template",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/inspection-templates/{template_id}:publish": {
+      "post": {
+        "operationId": "publish_inspection_template_api_v1_apps_aiops_inspection_templates__template_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionTemplateRevisionPayload"
               }
             }
           },
@@ -28692,7 +28908,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Inspection Template Version",
+        "summary": "Publish Inspection Template",
         "tags": [
           "AIOps App"
         ]

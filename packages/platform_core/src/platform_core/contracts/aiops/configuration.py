@@ -968,26 +968,33 @@ class InspectionTemplateCreate(AIOpsContract):
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
 
-class InspectionTemplateVersionCreate(AIOpsContract):
-    daily_report_layout: DailyReportLayout | None = None
-    schema_version: str = PUBLIC_SCHEMA_VERSION
+class InspectionTemplateDraftSave(InspectionTemplateCreate):
     expected_row_version: int = Field(ge=1)
-    selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
+
+class InspectionTemplateRevision(AIOpsContract):
+    expected_row_version: int = Field(ge=1)
 
 class InspectionTemplateSummary(AIOpsContract):
-    usage_count: int = Field(default=0, ge=0)
-    daily_report_layout: DailyReportLayout | None = None
     schema_version: str = PUBLIC_SCHEMA_VERSION
     inspection_template_id: UUIDv7
+    inspection_template_version_id: UUIDv7 | None = None
     display_name: str
     status: str
-    version_no: int = Field(ge=1)
-    selected_check_ids: tuple[str, ...] = Field(min_length=1)
-    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_kind: Literal["BUILTIN", "CUSTOM"]
+    template_kind: Literal["DAILY", "MONTHLY"]
+    system_key: str | None = None
+    description: str = ""
+    is_default: bool = False
+    has_draft: bool = False
+    has_unpublished_changes: bool = False
+    usage_count: int = Field(default=0, ge=0)
+    version_no: int | None = Field(default=None, ge=1)
+    selected_check_ids: tuple[str, ...] = ()
+    daily_report_layout: DailyReportLayout | None = None
+    content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     row_version: int = Field(ge=1)
     updated_at: UtcDatetime
-
 
 class InspectionPlanCreate(AIOpsContract):
     business_system_id: UUIDv7

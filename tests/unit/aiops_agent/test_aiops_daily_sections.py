@@ -193,6 +193,7 @@ def test_create_publish_history_disable_and_domain_scope_preserve_old_version():
             add_inspection_template_version=AsyncMock(side_effect=add_version),
             get_inspection_template=AsyncMock(side_effect=scoped_row),
             get_inspection_template_version=AsyncMock(side_effect=lambda **kwargs: versions.get(kwargs["inspection_template_version_id"])),
+            lock_inspection_template_defaults=AsyncMock(),
             next_inspection_template_version=AsyncMock(return_value=2),
             list_inspection_template_versions=AsyncMock(side_effect=lambda **kwargs: sorted(
                 [item for item in versions.values() if item.inspection_template_id == kwargs["inspection_template_id"]],
@@ -208,10 +209,15 @@ def test_create_publish_history_disable_and_domain_scope_preserve_old_version():
         original_layout = normalize_daily_layout()
         first = await service.create(**identity, display_name="共享日报", selected_check_ids=selected, daily_report_layout=original_layout)
         template_id = next(iter(rows))
+        assert first["version_no"] is None and not versions
+        first = await service.publish(**identity, template_id=template_id, expected_row_version=1)
         initial = deepcopy(next(iter(versions.values())).definition_json)
         layout = normalize_daily_layout()
         layout["title"] = "新版日报"
-        await service.create_version(**identity, template_id=template_id, expected_row_version=1, selected_check_ids=selected, daily_report_layout=layout)
+        await service.save_draft(domain_id=domain, actor_id=actor, template_id=template_id, expected_row_version=1,
+                                 display_name="共享日报", selected_check_ids=selected, daily_report_layout=layout)
+        assert len(versions) == 1
+        await service.publish(**identity, template_id=template_id, expected_row_version=1)
         history = await service.list_versions(domain_id=domain,template_id=template_id)
         assert [item["version_no"] for item in history] == [2,1]
         assert history[0]["current"] is True and history[1]["current"] is False
@@ -219,7 +225,7 @@ def test_create_publish_history_disable_and_domain_scope_preserve_old_version():
         assert first["daily_report_layout"] == original_layout
         with pytest.raises(Exception):
             await service.list_versions(domain_id=8 if IS_KBOT else uuid7(),template_id=template_id)
-        assert repo.list_inspection_template_versions.await_count == 1
+        assert repo.list_inspection_template_versions.await_count == 3
         await service.update(domain_id=domain,actor_id=actor,template_id=template_id,expected_row_version=1,status="INACTIVE")
         assert rows[template_id].status == "INACTIVE"
         assert len(versions) == 2

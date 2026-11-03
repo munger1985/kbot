@@ -38,7 +38,7 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     } catch(cause) {if (sequence === state.scopeSequence) {state.scopeError = "无法读取系统数据库范围，请重试。";error.hidden = false;error.textContent = state.scopeError;shell.toast(cause.message);}}
     finally {if (sequence === state.scopeSequence) {state.scopeLoading = false;loading.hidden = true;updateForm();}}
   }
-  const activeTemplates = () => state.templates.filter(item => item.status === "ACTIVE");
+  const activeTemplates = () => state.templates.filter(item => item.status === "ACTIVE" && item.version_no);
   function cronExpression() {
     if (form.elements.schedule_type.value === "CRON") return form.elements.cron_expression.value.trim();
     if (normalizeTime(form.elements.execution_time.value) !== form.elements.execution_time.value || !form.elements.execution_time.value) return "";
@@ -101,13 +101,13 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     form.elements.business_system_id.disabled = Boolean(plan);
     form.elements.business_system_id.value = plan?.business_system_id || systemFilter;
     populateAgents();
-    form.elements.inspection_template_id.innerHTML = '<option value="">请选择巡检内容模板</option>' + state.templates.map(item => `<option value="${esc(item.inspection_template_id)}"${item.status !== "ACTIVE" ? " disabled" : ""}>${esc(item.display_name)} · v${esc(item.version_no)} · ${rows(item.selected_check_ids).length} 项</option>`).join("");
+    form.elements.inspection_template_id.innerHTML = '<option value="">请选择巡检内容模板</option>' + state.templates.filter(item => item.version_no).map(item => `<option value="${esc(item.inspection_template_id)}"${item.status !== "ACTIVE" ? " disabled" : ""}>${esc(item.display_name)} · v${esc(item.version_no)} · ${rows(item.selected_check_ids).length} 项</option>`).join("");
     if (plan) {
       for (const key of ["display_name","business_system_id","agent_id","schedule_type","cron_expression","timezone","inspection_template_id","timeout_seconds","overlap_policy","misfire_policy"]) form.elements[key].value = plan[key] ?? "";
       const parts = String(plan.cron_expression).split(/\s+/);
       form.elements.execution_time.value = parts.length === 5 ? `${String(Number(parts[1])).padStart(2,"0")}:${String(Number(parts[0])).padStart(2,"0")}` : "02:00";
       if (plan.schedule_type === "WEEKLY") form.querySelectorAll('[name="weekdays"]').forEach(input => {input.checked = parts[4]?.split(",").includes(input.value);});
-    } else if (activeTemplates().length === 1) form.elements.inspection_template_id.value = activeTemplates()[0].inspection_template_id;
+    } else { const preferred = activeTemplates().find(item => item.is_default && item.template_kind === "DAILY"); if(preferred) form.elements.inspection_template_id.value = preferred.inspection_template_id; }
     document.getElementById("inspection-plan-title").textContent = plan ? "编辑巡检计划" : "新建巡检计划";
     void loadSystemScope();updateForm();if (!drawer.open) drawer.showModal();drawer.scrollTop = 0;
   }

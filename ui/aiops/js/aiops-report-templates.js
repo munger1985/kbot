@@ -1,4 +1,5 @@
-import "./daily-template-editor.js?v=20261103_2";
+import "./daily-template-editor.js?v=20261103_3";
+import {selectedTopics} from "./daily-template-model.js?v=20261103_3";
 
 (function () {
   "use strict";
@@ -11,12 +12,10 @@ import "./daily-template-editor.js?v=20261103_2";
   const defaultSections = ["EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS", "ROOT_CAUSE", "RECOMMENDATIONS", "EVIDENCE_BOUNDARY"];
   let selectedSections = [...defaultSections];
   let checkCatalog = null;
-  let editingInspectionTemplate = null;
   let editingSessionTemplate = null;
   let sessionTemplates = [];
   let inspectionTemplates = [];
   let actionBusy = false;
-  const checkedValues = (form, name) => [...form.querySelectorAll(`[name="${name}"]:checked`)].map(item => item.value);
   const sectionLabel = kind => sectionLabels[kind] || kind;
   function matchesSearch(item, session = false) {
     const keyword = document.getElementById("template-search").value.trim().toLocaleLowerCase();
@@ -33,11 +32,24 @@ import "./daily-template-editor.js?v=20261103_2";
     document.getElementById("session-template-sections").innerHTML = '<legend>报告章节</legend>' + Object.entries(sectionLabels).map(([kind, label]) => `<label class="check-field"><input type="checkbox" name="section" value="${kind}" ${selectedSections.includes(kind) ? "checked" : ""} ${requiredSections.has(kind) ? "disabled" : ""}><span class="check-field-copy"><strong>${label}</strong><small>${kind}</small></span></label>`).join("");
     renderOutline();
   }
-  function renderInspectionChecks(selectedIds = []) {
-    document.getElementById("inspection-template-checks").innerHTML = (checkCatalog?.groups || []).map(group => `<fieldset class="aiops-template-check-group"><legend>${escape(group.display_name)}</legend>${(group.checks || []).map(check => `<label class="check-field"><input type="checkbox" name="check_id" value="${escape(check.check_id)}" ${selectedIds.includes(check.check_id) ? "checked" : ""} ${check.availability !== "READY" ? "disabled" : ""}><span class="check-field-copy"><strong>${escape(check.display_name)}</strong><small>${escape(check.check_id)}${check.trend_required ? " · 需要历史趋势" : ""}${check.availability !== "READY" ? " · 尚未可用" : ""}</small></span></label>`).join("")}</fieldset>`).join("");
-  }
+
   function renderInspectionTemplates() {
-    document.getElementById("ops-inspection-template-body").innerHTML = inspectionTemplates.filter(item => matchesSearch(item)).map(item => `<article class="management-catalog-card"><header><div><p class="eyebrow">INSPECTION TEMPLATE</p><h3>${escape(item.display_name)}</h3></div><span class="status-pill ${item.status === "ACTIVE" ? "status-success" : "status-muted"}">${item.status === "ACTIVE" ? "已启用" : "已停用"}</span></header><dl><div><dt>当前版本</dt><dd>v${escape(item.version_no)}</dd></div><div><dt>检查项目 / 引用计划</dt><dd>${(item.selected_check_ids || []).length} 项 / ${Number(item.usage_count || 0)} 个</dd></div></dl><footer class="management-catalog-actions"><span class="management-catalog-note">更新于 ${escape(shell.fmt(item.updated_at))}</span><button class="row-action" type="button" data-edit-inspection-template="${escape(item.inspection_template_id)}">创建新版本</button><button class="row-action" type="button" data-copy-inspection="${escape(item.inspection_template_id)}">复制</button><button class="row-action" type="button" data-history-inspection="${escape(item.inspection_template_id)}">版本与差异</button><button class="row-action" type="button" data-toggle-inspection="${escape(item.inspection_template_id)}">${item.status === "ACTIVE" ? "停用" : "启用"}</button></footer></article>`).join("");
+    document.getElementById("ops-inspection-template-body").innerHTML = inspectionTemplates.filter(item => matchesSearch(item)).map(item => {
+      const id=escape(item.inspection_template_id),custom=item.source_kind==="CUSTOM",daily=item.template_kind==="DAILY";
+      const edit=custom && daily && (item.status==="ACTIVE" || !item.version_no);
+      const actions='<button class="row-action" data-'+(edit ? 'edit-inspection-template':'view-inspection')+'="'+id+'">'+(!item.version_no ? "继续编辑" : edit ? "编辑模板":"查看模板")+'</button>';
+      const more=
+        (item.version_no && daily ? '<button class="row-action" data-copy-inspection="'+id+'">基于此创建</button>':"")+
+        (item.version_no && item.status==="ACTIVE" && !item.is_default ? '<button class="row-action" data-template-mutation data-default-inspection="'+id+'">设为新计划默认</button>':"")+
+        (custom && item.status!=="ACTIVE" && daily ? '<button class="row-action" data-edit-inspection-template="'+id+'">编辑模板</button>':"")+
+        (custom && item.version_no ? '<button class="row-action" data-template-mutation data-toggle-inspection="'+id+'">'+(item.status==="ACTIVE" ? "停用":"启用")+'</button>':"")+
+        (custom && item.has_draft ? '<button class="danger-row-action" data-template-mutation data-discard-inspection="'+id+'">放弃草稿</button>':"");
+      return '<article class="management-catalog-card inspection-template-card"><header><div><p class="eyebrow">'+(custom ? "自定义模板":"系统内置 · 只读")+' · '+(daily ? "日常巡检":"月度巡检")+'</p><h3><button class="row-action" data-view-inspection="'+id+'">'+escape(item.display_name)+'</button></h3></div><span class="status-pill">'+(!item.version_no ? "尚未发布" : item.status==="ACTIVE" ? "已启用":"已停用")+'</span></header>'+
+        '<div class="inspection-template-flags">'+(item.is_default ? '<span class="status-pill status-success">新计划默认</span>':"")+(item.has_unpublished_changes ? '<span>有未发布修改</span>':"")+'</div>'+
+        '<dl><div><dt>最新发布</dt><dd>'+(item.version_no ? "v"+escape(item.version_no):"尚未发布")+'</dd></div><div><dt>引用计划</dt><dd>'+Number(item.usage_count || 0)+' 个</dd></div></dl>'+
+        '<footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">'+actions+'</div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" aria-haspopup="menu" aria-expanded="false">更多 ⌄</button><div class="management-catalog-menu" role="menu" hidden>'+more+'</div></div></footer></article>';
+    }).join("");
+    setActionBusy(actionBusy);
   }
   function renderSessionTemplates() {
     document.getElementById("ops-session-report-template-body").innerHTML = sessionTemplates.filter(item => matchesSearch(item, true)).map(item => {
@@ -57,6 +69,7 @@ import "./daily-template-editor.js?v=20261103_2";
         KBotAIOpsAuth.request(`${api}/session-report-templates`),
       ]);
       renderInspectionTemplates(); renderSessionTemplates();
+      if(new URLSearchParams(location.hash.slice(1)).get('template')) await showInspectionDetail();
     } catch (error) { shell.toast(error.message); }
     finally { refresh.disabled = false; refresh.textContent = "刷新目录"; }
   }
@@ -80,8 +93,8 @@ import "./daily-template-editor.js?v=20261103_2";
       root.querySelector(".management-catalog-more").setAttribute("aria-expanded", "false");
     });
   }
-  function canSave(form, kind) {
-    return Boolean(form.elements.display_name.value.trim()) && (kind === "inspection" ? checkedValues(form, "check_id").length > 0 : selectedSections.length > 0);
+  function canSave(form) {
+    return Boolean(form.elements.display_name.value.trim()) && selectedSections.length > 0;
   }
   function updateSaveButton(form, kind) {
     const busy = form.closest("dialog").dataset.busy === "true";
@@ -90,20 +103,15 @@ import "./daily-template-editor.js?v=20261103_2";
   }
   function openEditor(kind, editing = null, clone = null) {
     if (kind === "inspection") { KBotDailyTemplateEditor.open(checkCatalog,editing,loadTemplates); return; }
-    const isInspection = false;
-    const dialog = document.getElementById(isInspection ? "inspection-template-dialog" : "session-report-template-dialog");
+    const dialog = document.getElementById("session-report-template-dialog");
     const form = dialog.querySelector("form");
-    if (isInspection) editingInspectionTemplate = editing;
-    else editingSessionTemplate = editing;
+    editingSessionTemplate = editing;
     form.reset();
     form.elements.display_name.disabled = Boolean(editing);
     form.elements.display_name.value = editing?.display_name || (clone ? `${clone.display_name} 副本` : "");
     const result = form.querySelector('[role="status"]'); result.hidden = true; result.textContent = "";
-    if (isInspection) renderInspectionChecks(editing?.selected_check_ids || []);
-    else {
-      selectedSections = editing ? (editing.definition?.sections || []).map(section => section.kind) : [...(clone?.sections || defaultSections)];
-      renderSessionSections();
-    }
+    selectedSections = editing ? (editing.definition?.sections || []).map(section => section.kind) : [...(clone?.sections || defaultSections)];
+    renderSessionSections();
     dialog.querySelector("h2").textContent = editing ? "创建新版本" : "新建模板";
     dialog.setAttribute("aria-label", editing ? "创建模板新版本" : "新建模板");
     updateSaveButton(form, kind);
@@ -125,23 +133,83 @@ import "./daily-template-editor.js?v=20261103_2";
       document.getElementById("template-history-drawer").showModal();
     } catch (error) { shell.toast(error.message); }
   }
-  async function showInspectionHistory(template) {
-    try {
-      const versions = await KBotAIOpsAuth.request(api+"/inspection-templates/"+encodeURIComponent(template.inspection_template_id)+"/versions");
-      document.getElementById("template-history-title").textContent = template.display_name + " · 版本与差异";
-      document.getElementById("template-history-list").innerHTML = '<p>已有计划绑定的版本不自动升级；停用不删除既有运行。</p>' + versions.map((version,index) => {
-        const a=version.definition,b=versions[index+1]?.definition;
-        const change=b ? "检查项新增 "+a.selected_check_ids.filter(id=>!b.selected_check_ids.includes(id)).length+"，移除 "+b.selected_check_ids.filter(id=>!a.selected_check_ids.includes(id)).length+"；日报版式"+(JSON.stringify(a.daily_report_layout)!==JSON.stringify(b.daily_report_layout) ? "有变化" : "未变化") : "初始版本";
-        return '<article><header><strong>v'+escape(version.version_no)+'</strong>'+(version.current ? '<span class="status-pill status-success">当前版本</span>' : "")+'<time>'+escape(shell.fmt(version.created_at))+'</time></header><p>'+escape(change)+'</p><details><summary>查看冻结定义</summary><pre>'+escape(JSON.stringify(version.definition,null,2))+'</pre></details></article>';
-      }).join("");
-      document.getElementById("template-history-drawer").showModal();
-    } catch(error) {shell.toast(error.message);}
+  const detailRoot=document.createElement("section");
+  detailRoot.className="ops-main daily-template-editor aiops-page inspection-template-detail";detailRoot.hidden=true;document.querySelector("main.aiops-template-page").after(detailRoot);
+  let detailData=null,detailVersions=[],detailPlans=[],detailSeq=0;
+  async function confirmTemplate(title,message) {
+    const dialog=document.createElement("dialog");dialog.className="confirm-dialog";
+    dialog.innerHTML='<h2>'+escape(title)+'</h2><p>'+escape(message)+'</p><footer><button class="secondary-button" data-no>取消</button><button class="primary-button" data-yes>确认</button></footer>';
+    document.body.append(dialog);dialog.showModal();dialog.querySelector("[data-no]").focus();
+    return await new Promise(resolve=>{const finish=value=>{dialog.close();dialog.remove();resolve(value);};dialog.querySelector("[data-no]").onclick=()=>finish(false);dialog.querySelector("[data-yes]").onclick=()=>finish(true);dialog.oncancel=event=>{event.preventDefault();finish(false);};});
   }
+  function businessDiff(version,previous) {
+    if(!previous)return "初始版本";
+    const a=version.definition,b=previous.definition;
+    return "检查项新增 "+a.selected_check_ids.filter(id=>!b.selected_check_ids.includes(id)).length+"，移除 "+b.selected_check_ids.filter(id=>!a.selected_check_ids.includes(id)).length+"；日报版式"+(JSON.stringify(a.daily_report_layout)!==JSON.stringify(b.daily_report_layout) ? "有变化":"未变化")+(a.display_name!==b.display_name ? "；模板名称有变化":"");
+  }
+  function detailTab() {return new URLSearchParams(location.hash.slice(1)).get("tab") || "content";}
+  function setDetailTab(tab) {window.scrollTo(0,0);const params=new URLSearchParams(location.hash.slice(1));params.set("tab",tab);history.replaceState(null,"","#"+params);renderInspectionDetail();}
+  async function showInspectionDetail() {
+    const params=new URLSearchParams(location.hash.slice(1)),id=params.get("template"),seq=++detailSeq;
+    if(!id){detailRoot.hidden=true;document.querySelector("main.aiops-template-page").hidden=false;return;}
+    detailRoot.hidden=false;document.querySelector("main.aiops-template-page").hidden=true;
+    detailRoot.innerHTML='<button class="secondary-button" data-back-templates>返回模板中心</button><p role="status">正在读取模板详情…</p>';
+    try{
+      const [detail,versions,plans]=await Promise.all(["/"+id,"/"+id+"/versions","/"+id+"/plans"].map(suffix=>KBotAIOpsAuth.request(api+"/inspection-templates"+suffix)));
+      if(seq!==detailSeq)return;
+      detailData=detail;detailVersions=versions;detailPlans=plans;renderInspectionDetail();window.scrollTo(0,0);
+    }catch(error){if(seq===detailSeq)detailRoot.innerHTML='<button class="secondary-button" data-back-templates>返回模板中心</button><p class="notice notice-error" role="alert">'+escape(error.message)+'</p>';}
+  }
+  function renderInspectionDetail() {
+    if(!detailData)return;
+    const tab=detailTab(),custom=detailData.source_kind==="CUSTOM";
+    detailRoot.innerHTML='<header class="ops-head"><div><p class="eyebrow">巡检模板详情 · 只读发布内容</p><h1>'+escape(detailData.display_name)+'</h1></div><button class="secondary-button" data-back-templates>返回模板中心</button></header><p class="notice">'+(custom ? "自定义模板 · 草稿不影响计划，旧计划不会自动升级。":"系统内置 · 只读，定制请基于此创建。")+'</p><nav class="segmented-control" aria-label="模板详情页签">'+[["content","模板内容"],["versions","版本历史"],["plans","引用计划"]].map(([id,label])=>'<button class="'+(tab===id?"active":"")+'" data-detail-tab="'+id+'">'+label+'</button>').join("")+'</nav><section class="daily-editor-panel" id="inspection-detail-content"></section>';
+    const panel=detailRoot.querySelector("#inspection-detail-content");
+    if(tab==="versions") {
+      panel.innerHTML='<p>历史只读；基于旧版本编辑只替换工作草稿，不改变旧计划。</p>'+detailVersions.map((version,index)=>'<article class="daily-publish-review"><h2>v'+escape(version.version_no)+(version.current ? " · 最新发布":"")+'</h2><p>发布于 '+escape(shell.fmt(version.created_at))+' · 发布人：'+escape(version.created_by)+'</p><p>'+escape(businessDiff(version,detailVersions[index+1]))+'</p><button class="row-action" data-view-version="'+escape(version.template_version_id)+'">查看此版本</button>'+(custom && detailData.template_kind==="DAILY" ? '<button class="row-action" data-edit-version="'+escape(version.template_version_id)+'">基于此版本编辑</button>':"")+'<details><summary>技术定义</summary><pre>'+escape(JSON.stringify(version.definition,null,2))+'</pre></details></article>').join("")+(detailVersions.length?"":"<p>尚无发布版本。</p>");
+    }else if(tab==="plans") {
+      panel.innerHTML='<p>默认切换、停用与发布均不改变既有计划绑定。升级请在计划编辑页明确确认。</p><ul>'+detailPlans.map(plan=>'<li>'+escape(plan.display_name)+' · v'+escape(plan.template_version_no)+' · '+(plan.is_latest ? "已绑定最新发布版本":"保留原版本")+'</li>').join("")+'</ul>'+(detailPlans.length?"":"<p>暂无引用计划。</p>")+'<a class="row-action" href="./inspection-plans.html">前往巡检计划管理</a>';
+    }else {
+      if(!detailVersions.length){panel.innerHTML="<p>尚未发布，请返回模板中心继续编辑草稿。</p>";return;}
+      panel.innerHTML='<label class="control-field"><span class="field-label">查看发布版本</span><select id="inspection-version-select">'+detailVersions.map(version=>'<option value="'+escape(version.template_version_id)+'">v'+escape(version.version_no)+(version.current ? " · 最新发布":" · 历史只读")+'</option>').join("")+'</select></label><div id="inspection-readonly-content"></div>';
+      panel.querySelector("select").onchange=renderReadonlyVersion;renderReadonlyVersion();
+    }
+  }
+  function renderReadonlyVersion(id) {
+    const select=detailRoot.querySelector("#inspection-version-select");
+    if(typeof id==="string")select.value=id;
+    const version=detailVersions.find(item=>item.template_version_id===select.value),definition=version.definition;
+    detailRoot.querySelector("#inspection-readonly-content").innerHTML='<h2>'+escape(definition.daily_report_layout?.title || detailData.display_name)+'</h2><div class="template-readonly-grid"><section><h3>报告目录</h3><ol>'+(definition.daily_report_layout?.sections || []).map(section=>'<li>'+escape(checkCatalog.report_sections.find(item=>item.section_id===section.section_id)?.title || section.section_id)+'</li>').join("")+'</ol></section><section><h3>已配置检查</h3><div class="template-check-topics">'+selectedTopics(checkCatalog,definition.selected_check_ids).map(topic=>'<section><h4>'+escape(topic.title)+'</h4><ul>'+topic.checks.map(name=>'<li>'+escape(name)+'</li>').join("")+'</ul></section>').join("")+'</div></section></div>'+(detailData.template_kind==="DAILY" ? '<button class="secondary-button" data-preview-inspection>查看报告效果（模拟样例）</button><div id="inspection-readonly-preview"></div>':"");
+  }
+  detailRoot.onclick=async event=>{
+    const button=event.target.closest("button");if(!button)return;
+    if(button.hasAttribute("data-back-templates")){location.hash="";return;}
+    if(button.dataset.detailTab){setDetailTab(button.dataset.detailTab);return;}
+    if(button.dataset.viewVersion){setDetailTab("content");renderReadonlyVersion(button.dataset.viewVersion);return;}
+    if(button.dataset.editVersion){
+      if(actionBusy)return;
+      if(detailData.has_draft && !await confirmTemplate("替换工作草稿","将用所选历史版本替换当前草稿；不修改发布历史和旧计划。"))return;
+      setActionBusy(true);button.disabled=true;
+      try{
+        const version=detailVersions.find(item=>item.template_version_id===button.dataset.editVersion);
+        const saved=await KBotAIOpsAuth.request(api+"/inspection-templates/"+detailData.inspection_template_id+"/draft",{method:"PUT",body:JSON.stringify({expected_row_version:detailData.row_version,display_name:version.definition.display_name,selected_check_ids:version.definition.selected_check_ids,daily_report_layout:version.definition.daily_report_layout})});
+        detailRoot.hidden=true;KBotDailyTemplateEditor.open(checkCatalog,saved,loadTemplates);
+      }catch(error){shell.toast(error.message);}finally{setActionBusy(false);button.disabled=false;}
+    }
+    if(button.hasAttribute("data-preview-inspection")){
+      const version=detailVersions.find(item=>item.template_version_id===detailRoot.querySelector("select").value),seq=detailSeq,output=detailRoot.querySelector("#inspection-readonly-preview");
+      button.disabled=true;
+      try{const report=await KBotAIOpsAuth.request(api+"/inspection-templates:preview",{method:"POST",body:JSON.stringify({selected_check_ids:version.definition.selected_check_ids,daily_report_layout:version.definition.daily_report_layout,database_type:"ORACLE",scenario:"ATTENTION"})});if(seq===detailSeq && output.isConnected)output.innerHTML=KBotDailyInspectionReport.render(report.daily_inspection);}
+      catch(error){if(output.isConnected)output.textContent=error.message;}finally{button.disabled=false;}
+    }
+  };
+  globalThis.KBotInspectionTemplates=Object.freeze({confirm:confirmTemplate,hideDetail:()=>{detailSeq++;detailRoot.hidden=true;}});
+  window.addEventListener("hashchange",showInspectionDetail);
+
   function bindEditor(kind) {
-    const isInspection = kind === "inspection";
-    const dialog = document.getElementById(isInspection ? "inspection-template-dialog" : "session-report-template-dialog");
+    const dialog = document.getElementById("session-report-template-dialog");
     const form = dialog.querySelector("form");
-    dialog.querySelectorAll(isInspection ? "[data-close-inspection-template]" : "[data-close-session-report-template]").forEach(button => { button.onclick = () => { if (!dialog.dataset.busy) dialog.close(); }; });
+    dialog.querySelectorAll("[data-close-session-report-template]").forEach(button => { button.onclick = () => { if (!dialog.dataset.busy) dialog.close(); }; });
     form.addEventListener("input", () => updateSaveButton(form, kind));
     form.addEventListener("change", event => {
       if (event.target.name === "section") {
@@ -166,10 +234,10 @@ import "./daily-template-editor.js?v=20261103_2";
     form.onsubmit = async event => {
       event.preventDefault();
       if (dialog.dataset.busy || !canSave(form, kind)) return;
-      const editing = isInspection ? editingInspectionTemplate : editingSessionTemplate;
-      const selected = isInspection ? { selected_check_ids: checkedValues(form, "check_id") } : { definition: { schema_version: "SESSION_REPORT_TEMPLATE.v1", sections: orderedSections().map(kind => ({ kind })) } };
-      const id = isInspection ? editing?.inspection_template_id : editing?.template_id;
-      const path = `${api}/${isInspection ? "inspection-templates" : "session-report-templates"}${id ? `/${encodeURIComponent(id)}/versions` : ""}`;
+      const editing = editingSessionTemplate;
+      const selected = { definition: { schema_version: "SESSION_REPORT_TEMPLATE.v1", sections: orderedSections().map(kind => ({ kind })) } };
+      const id = editing?.template_id;
+      const path = api+"/session-report-templates"+(id ? "/"+encodeURIComponent(id)+"/versions":"");
       const body = editing ? { expected_row_version: editing.row_version, ...selected } : { display_name: form.elements.display_name.value.trim(), ...selected };
       const result = form.querySelector('[role="status"]'); result.hidden = true;
       dialog.dataset.busy = "true";
@@ -199,15 +267,23 @@ import "./daily-template-editor.js?v=20261103_2";
       document.getElementById("session-template-catalog").hidden = button.dataset.templateTab !== "session";
       closeMenus();
     }; });
-    document.getElementById("ops-inspection-template-body").onclick = event => {
-      const button = event.target.closest("[data-edit-inspection-template]");
-      if (button) openVersion("inspection", button.dataset.editInspectionTemplate);
-      const action = event.target.closest("button"); if (!action) return;
-      const item = inspectionTemplates.find(item => item.inspection_template_id === (action.dataset.copyInspection || action.dataset.historyInspection || action.dataset.toggleInspection));
-      if (!item) return;
-      if (action.dataset.copyInspection) KBotDailyTemplateEditor.open(checkCatalog,{...item,inspection_template_id:"",display_name:item.display_name+" 副本"},loadTemplates);
-      if (action.dataset.toggleInspection) mutateTemplate("/inspection-templates/"+encodeURIComponent(item.inspection_template_id),"PATCH",{expected_row_version:item.row_version,status:item.status==="ACTIVE" ? "INACTIVE" : "ACTIVE"});
-      if (action.dataset.historyInspection) showInspectionHistory(item);
+    document.getElementById("ops-inspection-template-body").onclick = async event => {
+      const action=event.target.closest("button");if(!action || actionBusy)return;
+      if(action.matches(".management-catalog-more")){
+        const root=action.closest(".management-catalog-overflow"),open=action.getAttribute("aria-expanded")!=="true";
+        closeMenus(root);action.setAttribute("aria-expanded",String(open));root.querySelector(".management-catalog-menu").hidden=!open;return;
+      }
+      closeMenus();
+      const item=inspectionTemplates.find(item=>Object.values(action.dataset).includes(item.inspection_template_id));
+      if(!item)return;
+      if(action.dataset.editInspectionTemplate){await openVersion("inspection",item.inspection_template_id);return;}
+      if(action.dataset.viewInspection){location.hash=new URLSearchParams({template:item.inspection_template_id,tab:"content"});return;}
+      if(action.dataset.copyInspection){
+        try{const detail=await KBotAIOpsAuth.request(api+"/inspection-templates/"+item.inspection_template_id);KBotDailyTemplateEditor.open(checkCatalog,{...detail,inspection_template_id:"",draft:null,definition:null,display_name:item.display_name+" 副本"},loadTemplates);}catch(error){shell.toast(error.message);}
+      }
+      if(action.dataset.toggleInspection)await mutateTemplate("/inspection-templates/"+item.inspection_template_id,"PATCH",{expected_row_version:item.row_version,status:item.status==="ACTIVE"?"INACTIVE":"ACTIVE"});
+      if(action.dataset.defaultInspection)await mutateTemplate("/inspection-templates/"+item.inspection_template_id+":default","POST",{expected_row_version:item.row_version});
+      if(action.dataset.discardInspection && await confirmTemplate("放弃草稿",item.version_no ? "只丢弃未发布修改，保留全部版本和计划。":"删除尚未发布的模板草稿。"))await mutateTemplate("/inspection-templates/"+item.inspection_template_id+"/draft","DELETE",{expected_row_version:item.row_version});
     };
     document.getElementById("ops-session-report-template-body").onclick = event => {
       const button = event.target.closest("button"); if (!button) return;

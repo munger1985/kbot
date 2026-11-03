@@ -314,10 +314,13 @@ class InspectionTemplateCreatePayload(_Payload):
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
 
 
-class InspectionTemplateVersionPayload(_Payload):
-    daily_report_layout: DailyReportLayout | None = None
+class InspectionTemplateDraftPayload(InspectionTemplateCreatePayload):
     expected_row_version: int = Field(ge=1)
-    selected_check_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class InspectionTemplateRevisionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_row_version: int = Field(ge=1)
 
 
 class SessionReportTemplateCreatePayload(_Payload):
@@ -1681,19 +1684,53 @@ async def create_inspection_template(
     )
 
 
-@router.post("/inspection-templates/{template_id}/versions", status_code=201)
-async def create_inspection_template_version(
-    template_id: UUID,
-    payload: InspectionTemplateVersionPayload,
-    request: Request,
-):
+@router.put("/inspection-templates/{template_id}/draft")
+async def draft_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateDraftPayload):
     await _require(request, "aiops:plan_manage")
     return await _client(request).inspection_template_request(
-        "POST", f"/{template_id}/versions",
-        payload=payload.model_dump(mode="json"),
+        "PUT", f"/{template_id}/draft",
+        payload=body.model_dump(mode="json"),
         auth_context=request.state.auth_context,
     )
 
+
+@router.post("/inspection-templates/{template_id}:publish", status_code=201)
+async def publish_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateRevisionPayload):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request(
+        "POST", f"/{template_id}:publish",
+        payload=body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/inspection-templates/{template_id}:default")
+async def default_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateRevisionPayload):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request(
+        "POST", f"/{template_id}:default",
+        payload=body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.delete("/inspection-templates/{template_id}/draft")
+async def discard_inspection_template(template_id: UUID, request: Request, body: InspectionTemplateRevisionPayload):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request(
+        "DELETE", f"/{template_id}/draft",
+        payload=body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/inspection-templates/{template_id}/plans")
+async def plans_inspection_template(template_id: UUID, request: Request):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request(
+        "GET", f"/{template_id}/plans",
+        auth_context=request.state.auth_context,
+    )
 
 class DailyTemplatePreviewPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")

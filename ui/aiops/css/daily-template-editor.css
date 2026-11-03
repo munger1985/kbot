@@ -1,4 +1,13 @@
 /* 方案 A：单文档滚动、分步任务与稳定摘要；按钮沿用项目设计系统。 */
+.inspection-template-card h3 > .row-action { border:0; padding:0; background:transparent; font:inherit; text-align:start; white-space:normal; overflow-wrap:anywhere; }
+.management-catalog-card.inspection-template-card { display:flex; flex-direction:column; }
+.inspection-template-flags { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-height:24px; }
+.inspection-template-detail { width:min(100%,1280px); margin-inline:auto; padding:24px; box-sizing:border-box; }
+.inspection-template-detail > .daily-editor-panel { padding:24px; }
+.template-readonly-grid { display:grid; grid-template-columns:minmax(220px,1fr) minmax(0,2fr); gap:24px; align-items:start; }
+.template-check-topics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.template-check-topics section { min-width:0; padding:16px; background:var(--surface-subtle); border:1px solid var(--line); border-radius:var(--radius-sm); }
+@media(max-width:760px) { .template-readonly-grid,.template-check-topics {grid-template-columns:minmax(0,1fr);} }
 .daily-template-editor { display:grid; gap:24px; min-width:0; font-size:14px; line-height:1.65; }
 .daily-template-editor [hidden], .daily-template-editor[hidden], .aiops-template-page[hidden], .daily-template-history[hidden] { display:none !important; }
 .daily-template-editor > header { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; }
