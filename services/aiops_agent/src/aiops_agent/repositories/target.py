@@ -697,6 +697,16 @@ class TargetRepository(AIOpsRepository):
             else ""
         )
         database_types = "'MYSQL', 'POSTGRESQL'" if activity else "'ORACLE', 'MYSQL', 'POSTGRESQL'"
+        terminal = ", ".join("'" + status.value + "'" for status in TERMINAL_RUN_STATUSES)
+        overlap_clause = "" if activity else f"""
+                          AND NOT EXISTS (
+                              SELECT 1 FROM KBOT_OPS_RUN active_run
+                              WHERE active_run.TARGET_ID = KBOT_OPS_TARGET.TARGET_ID
+                                AND active_run.IDEMPOTENCY_KEY LIKE 'workload:workload:%'
+                                AND active_run.STATUS NOT IN ({terminal})
+                                AND active_run.DEADLINE_AT > :now
+                          )
+        """
         claimed_id = await self._claim_oracle_uuid(
             plsql=f"""
                 DECLARE
@@ -708,6 +718,7 @@ class TargetRepository(AIOpsRepository):
                           AND READONLY_CONNECTION_ENABLED = 1
                           AND CONNECTIVITY_STATUS IN ('CONNECTED', 'DEGRADED')
                           {activity_clause}
+                          {overlap_clause}
                           AND {due_column} IS NOT NULL
                           AND {due_column} <= :now
                         ORDER BY {due_column}, TARGET_ID

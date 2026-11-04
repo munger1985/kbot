@@ -63,6 +63,24 @@ class WorkloadRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def latest_hotspot_snapshot(
+        self, *, domain_id: int, target_id: UUID, before: datetime,
+    ) -> WorkloadSnapshotEntity | None:
+        """只读取当前授权作用域内、调度时间之前最近的有效快照。"""
+        self._check_active()
+        statement = (
+            select(WorkloadSnapshotEntity)
+            .where(
+                WorkloadSnapshotEntity.domain_id == domain_id,
+                WorkloadSnapshotEntity.target_id == target_id,
+                WorkloadSnapshotEntity.collected_at < before,
+                WorkloadSnapshotEntity.status.in_(("READY", "PARTIAL")),
+            )
+            .order_by(WorkloadSnapshotEntity.collected_at.desc(), WorkloadSnapshotEntity.workload_snapshot_id.desc())
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def list_snapshots(
         self,
         *,

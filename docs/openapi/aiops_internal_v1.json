@@ -20870,53 +20870,37 @@
       "WorkloadPolicy": {
         "additionalProperties": false,
         "properties": {
-          "collection_mode": {
-            "default": "BOUNDED_CANDIDATES",
-            "enum": [
-              "BOUNDED_CANDIDATES",
-              "VISIBLE_SET"
-            ],
-            "title": "Collection Mode",
-            "type": "string"
-          },
           "enabled": {
             "default": false,
             "title": "Enabled",
             "type": "boolean"
           },
           "interval_minutes": {
-            "default": 5,
-            "maximum": 60.0,
-            "minimum": 1.0,
+            "default": 1,
+            "maximum": 60,
+            "minimum": 1,
             "title": "Interval Minutes",
             "type": "integer"
           },
           "retention_days": {
             "default": 30,
-            "maximum": 365.0,
-            "minimum": 1.0,
+            "maximum": 365,
+            "minimum": 1,
             "title": "Retention Days",
             "type": "integer"
           },
           "round_timeout_seconds": {
             "default": 30,
-            "maximum": 120.0,
-            "minimum": 5.0,
+            "maximum": 120,
+            "minimum": 5,
             "title": "Round Timeout Seconds",
             "type": "integer"
           },
           "top_statement_limit": {
             "default": 100,
-            "maximum": 500.0,
-            "minimum": 10.0,
+            "maximum": 100,
+            "minimum": 10,
             "title": "Top Statement Limit",
-            "type": "integer"
-          },
-          "visible_statement_limit": {
-            "default": 500,
-            "maximum": 500.0,
-            "minimum": 10.0,
-            "title": "Visible Statement Limit",
             "type": "integer"
           }
         },

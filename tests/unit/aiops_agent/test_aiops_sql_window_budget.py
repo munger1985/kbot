@@ -29,7 +29,7 @@ def backed_observation():
     return backed_sql_fact(observation(), run)
 
 
-def window_fixture(*, mode="BOUNDED_CANDIDATES", complete=False):
+def window_fixture(*, mode="HOTSPOT_TRACKING", complete=False):
     start = datetime(2026, 10, 28, tzinfo=UTC)
     snapshots = [
         SimpleNamespace(
@@ -38,7 +38,7 @@ def window_fixture(*, mode="BOUNDED_CANDIDATES", complete=False):
             instance_started_at=start - timedelta(days=1), instance_metrics_json={},
             window_seconds=300, status="READY", coverage_json={"DIGEST": "AVAILABLE"},
             database_version="8.4", catalog_version="catalog", capability_probe_version="probe",
-            continuity_json={"sql_collection": {"mode": mode, "visible_set_read_complete": complete}},
+            continuity_json={"sql_collection": {"mode": mode, "complete": complete}},
         ) for minute in (0, 5)
     ]
     statements = [
@@ -83,11 +83,10 @@ def test_window_source_version_change_is_not_comparable():
     assert result["gaps"]["SOURCE_VERSION_CHANGED"] == 1
 
 
-def test_visible_set_is_only_complete_when_all_snapshot_reads_completed():
-    args = window_fixture(mode="VISIBLE_SET", complete=True)
-    assert build_top_sql_window(**args)["candidate_scope"]["complete"] is True
-    args["snapshots"][1].continuity_json["sql_collection"]["visible_set_read_complete"] = False
+def test_hotspot_pool_never_claims_exhaustive_coverage():
+    args = window_fixture(mode="HOTSPOT_TRACKING")
     result = build_top_sql_window(**args)
+    assert result["candidate_scope"]["mode"] == "HOTSPOT_TRACKING"
     assert result["candidate_scope"]["complete"] is False
     assert result["gaps"]["LIMITED_CANDIDATE_SET"] == 1
 
@@ -271,8 +270,8 @@ def test_deadline_handles_raw_persisted_tool_results_before_assessment():
     assert result.evidence[0].captured_at
 
 
-@pytest.mark.parametrize("row_count,truncated,invalid,complete", [(1, False, False, True), (10, False, False, False), (1, True, False, False), (1, False, True, False)])
-def test_collector_visible_set_does_not_hide_limit_truncation_or_dropped_identity(row_count, truncated, invalid, complete):
+@pytest.mark.parametrize("row_count,truncated,invalid,complete", [(1, False, False, False), (10, False, False, False), (1, True, False, False), (1, False, True, False)])
+def test_collector_hotspot_pool_does_not_hide_truncation_or_dropped_identity(row_count, truncated, invalid, complete):
     from tests.unit.aiops_agent.test_aiops_workload_collection_timing import RecordingService, _artifact
     from aiops_agent.workers.workload_collection_handlers import WorkloadCollectionHandler
 
@@ -286,7 +285,7 @@ def test_collector_visible_set_does_not_hide_limit_truncation_or_dropped_identit
     context = SimpleNamespace(
         target_id=uuid7(), plan_snapshot={
             "database_diagnostics": {"tenant_id": str(uuid7()), "domain_id": 7, "db_type": "MYSQL", "configured_version": "8.4", "catalog_hash": "catalog", "capability_snapshot": {}},
-            "workload_collection": {"scheduled_for": now.isoformat(), "window_seconds": 300, "retention_days": 30, "policy": {"collection_mode": "VISIBLE_SET", "visible_statement_limit": 10}},
+            "workload_collection": {"scheduled_for": now.isoformat(), "window_seconds": 300, "retention_days": 30, "policy": {"top_statement_limit": 10}},
         },
         input_artifacts=(
             _artifact("db.instance.identity", now, ["version"], [["8.4"]]),
@@ -296,6 +295,8 @@ def test_collector_visible_set_does_not_hide_limit_truncation_or_dropped_identit
     )
     asyncio.run(WorkloadCollectionHandler(workload_service=service).execute(context))
     metadata = service.request.continuity["sql_collection"]
-    assert metadata["visible_set_read_complete"] is complete
+    assert metadata["complete"] is complete
+    assert metadata["source_truncated"] is truncated
+    assert metadata["invalid_identity_rows"] == (row_count if invalid else 0)
     assert metadata["observed_rows"] == row_count
     assert metadata["accepted_rows"] == (0 if invalid else row_count)

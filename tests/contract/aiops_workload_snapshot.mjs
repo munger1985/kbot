@@ -17,7 +17,7 @@ let popoversSupported = true;
 const node = { addEventListener() {}, querySelectorAll() { return []; }, classList: { toggle() {} }, append(value) { notifications.push(value); } };
 const doc = { getElementById() { return node; }, querySelector() { return node; }, querySelectorAll() { return []; }, addEventListener() {}, body: { append(value) { notifications.push(value); } }, createElement() { const value = { style: {}, setAttribute(name, data) { this[name] = data; }, remove() {} }; if (popoversSupported) value.showPopover = function () { this.open = true; }; return value; } };
 const calls = [], pending = [];
-const policy = { enabled: false, interval_minutes: 5, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 47 };
+const policy = { enabled: false, interval_minutes: 1, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 47 };
 const target = (version, override = {}) => ({ row_version: version, workload_snapshot_policy: { ...policy, ...override } });
 let handler = async () => target(7);
 const context = {
@@ -90,8 +90,7 @@ assert.equal(node.disabled, false, '连接检查完成后必须恢复页面操�
 
 // 无正式 Target 的旧草稿直接显示默认策略，不读取或写入 Target。
 const defaults = api.createWorkloadPolicy();
-assert.deepEqual(JSON.parse(JSON.stringify(defaults)), { enabled: false, collection_mode: 'BOUNDED_CANDIDATES',
-  visible_statement_limit: 500, interval_minutes: 5, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30 });
+assert.deepEqual(JSON.parse(JSON.stringify(defaults)), { enabled: false, interval_minutes: 1, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30 });
 const newResources = ['new-a', 'new-b'].map(draft_resource_id => ({ draft_resource_id, database: { db_type: 'ORACLE' } }));
 api.seed({ resources: newResources, active: 'new-a', published: false, detail: null });
 const beforeNew = calls.length;
@@ -111,7 +110,7 @@ assert.equal(calls.length, beforeNew);
 api.setActive('new-b');
 api.snapshotHtml(newResources[1]);
 assert.equal(api.state().draft.enabled, false);
-assert.equal(api.state().draft.interval_minutes, 5);
+assert.equal(api.state().draft.interval_minutes, 1);
 api.setActive('new-a');
 api.snapshotHtml(newResources[0]);
 assert.equal(api.state().draft.enabled, true);
@@ -122,7 +121,7 @@ assert.equal(newResources[0].database.workload_snapshot_policy.enabled, false);
 for (const value of [0, 61, 1.5, NaN, true]) assert.equal(api.validWorkloadPolicy({ ...defaults, interval_minutes: value }), false);
 assert.equal(api.validWorkloadPolicy(defaults), true);
 assert.equal(api.validWorkloadPolicy({ ...defaults, enabled: 'true' }), false);
-assert.equal(api.validWorkloadPolicy({ ...defaults, collection_mode: 'unknown' }), false);
+assert.equal(api.validWorkloadPolicy({ ...defaults, top_statement_limit: 101 }), false);
 
 // 已有 Target 的迟到响应不能覆盖刚切换到的新草稿。
 api.seed({ resources, active: 'a', published: false, detail: { resources: [{ system_resource_id: 'node1', resource: { database: { target_id: 'target1' } } }] } });

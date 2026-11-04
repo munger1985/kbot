@@ -509,15 +509,14 @@
   }
 
   function createWorkloadPolicy(value) {
-    return { enabled: false, collection_mode: "BOUNDED_CANDIDATES", visible_statement_limit: 500,
-      interval_minutes: 5, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30, ...value };
+    const defaults = { enabled: false, interval_minutes: 1, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30 };
+    return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key, value?.[key] ?? fallback]));
   }
 
   function validWorkloadPolicy(policy) {
     return typeof policy.enabled === "boolean"
-      && ["BOUNDED_CANDIDATES", "VISIBLE_SET"].includes(policy.collection_mode)
-      && [[policy.visible_statement_limit, 10, 500], [policy.interval_minutes, 1, 60],
-        [policy.retention_days, 1, 365], [policy.top_statement_limit, 10, 500],
+      && [[policy.interval_minutes, 1, 60],
+        [policy.retention_days, 1, 365], [policy.top_statement_limit, 10, 100],
         [policy.round_timeout_seconds, 5, 120]].every(([value, min, max]) => Number.isInteger(value) && value >= min && value <= max);
   }
 
@@ -569,7 +568,7 @@
       if (ticket !== snapshotGeneration) return;
       snapshotState.target = target;
       const staged = currentResource()?.workload_snapshot;
-      snapshotState.draft = { ...(staged?.target_id === targetId ? staged.policy : target.workload_snapshot_policy) };
+      snapshotState.draft = createWorkloadPolicy(staged?.target_id === targetId ? staged.policy : target.workload_snapshot_policy);
     } catch (error) { if (ticket === snapshotGeneration) snapshotState.error = snapshotError(error); }
     finally { if (ticket === snapshotGeneration) { snapshotState.busy = false; snapshotRender(); } }
   }
@@ -626,13 +625,13 @@
     if (policy && (status || !item.system_resource_id)) {
       content += status ? `<div class="snapshot-status">当前策略：${status.workload_snapshot_policy.enabled ? "已启用" : "未启用"} · 最近采集尝试：${esc(formatTime(status.workload_last_collected_at))} · 下次计划：${esc(formatTime(status.workload_next_run_at))}<br>最近采集错误：${esc(status.workload_last_error_code || "无")}</div>`
         : '<div class="snapshot-status">尚未发布：采集策略仅保存在草稿中，发布资源后才会创建 Target 并按策略采集，不会提前生成快照。</div>';
-      if (!isPublishedView()) content += `<label class="snapshot-toggle"><input data-snapshot-field="enabled" type="checkbox" ${policy.enabled ? "checked" : ""} ${disabled}> 启用周期快照</label><div class="snapshot-fields"><label>采集范围<select data-snapshot-field="collection_mode" ${disabled}><option value="BOUNDED_CANDIDATES" ${policy.collection_mode !== "VISIBLE_SET" ? "selected" : ""}>有限累计候选</option><option value="VISIBLE_SET" ${policy.collection_mode === "VISIBLE_SET" ? "selected" : ""}>尝试读取可见集合（有界）</option></select></label>${policy.collection_mode === "VISIBLE_SET" ? `<label>可见集合行数上限<input data-snapshot-field="visible_statement_limit" type="number" min="10" max="500" step="1" value="${esc(policy.visible_statement_limit || 500)}" ${disabled}></label>` : ""}<label>采集间隔（分钟）<input data-snapshot-field="interval_minutes" type="number" min="1" max="60" step="1" value="${esc(policy.interval_minutes)}" ${disabled}></label><label>保留天数<input data-snapshot-field="retention_days" type="number" min="1" max="365" step="1" value="${esc(policy.retention_days)}" ${disabled}></label><label>候选 SQL 数<input data-snapshot-field="top_statement_limit" type="number" min="10" max="500" step="1" value="${esc(policy.top_statement_limit)}" ${disabled}></label></div><div class="snapshot-actions">${status ? `<button class="secondary-button" type="button" id="snapshot-refresh" ${disabled}>测试连接并刷新能力</button>` : ""}<span id="snapshot-dirty" ${item.workload_snapshot || item.database?.workload_snapshot_policy ? "" : "hidden"}>策略已修改，将随业务系统发布</span></div>`;
-      else content += `<p>采集范围：${policy.collection_mode === "VISIBLE_SET" ? "尝试读取可见集合（有界）" : "有限累计候选"} · 行数上限：${esc(policy.collection_mode === "VISIBLE_SET" ? policy.visible_statement_limit : policy.top_statement_limit)} · 间隔：${esc(policy.interval_minutes)} 分钟 · 保留：${esc(policy.retention_days)} 天</p>`;
+      if (!isPublishedView()) content += `<label class="snapshot-toggle"><input data-snapshot-field="enabled" type="checkbox" ${policy.enabled ? "checked" : ""} ${disabled}> 启用周期快照</label><div class="snapshot-fields"><label>采集间隔（分钟）<input data-snapshot-field="interval_minutes" type="number" min="1" max="60" step="1" value="${esc(policy.interval_minutes)}" ${disabled}></label><label>保留天数<input data-snapshot-field="retention_days" type="number" min="1" max="365" step="1" value="${esc(policy.retention_days)}" ${disabled}></label><label>跟踪 SQL 上限<input data-snapshot-field="top_statement_limit" type="number" min="10" max="100" step="1" value="${esc(policy.top_statement_limit)}" ${disabled}></label></div><div class="snapshot-actions">${status ? `<button class="secondary-button" type="button" id="snapshot-refresh" ${disabled}>测试连接并刷新能力</button>` : ""}<span id="snapshot-dirty" ${item.workload_snapshot || item.database?.workload_snapshot_policy ? "" : "hidden"}>策略已修改，将随业务系统发布</span></div>`;
+      else content += `<p>多指标热点发现与连续跟踪 · SQL 上限：${esc(policy.top_statement_limit)} · 间隔：${esc(policy.interval_minutes)} 分钟 · 保留：${esc(policy.retention_days)} 天</p>`;
       if (status) content += `<button type="button" id="snapshot-status-refresh" class="secondary-button snapshot-reload" ${disabled}>刷新采集状态</button>`;
       else content += '<p>连接测试请使用抽屉底部的“测试连接”；测试或保存草稿不会启动采集。</p>';
     }
     const hint = isPublishedView() ? "运行中的业务系统仅供查看；下线后可编辑采集策略。" : "修改保存在业务系统草稿中，发布时生效；RAC 按当前节点配置。";
-    return `<section class="snapshot-settings readonly-detail-section"><header><span>04</span><div><strong>历史 SQL 采集</strong><small>${hint}</small></div></header><div class="snapshot-body"><p>统计来源：${esc(source)}。采集需要已启用的 Target、可用的只读连接、有效的 Agent 业务系统资源授权和运行中的采集服务。</p><p>启用后至少需要两次可比较的快照才能计算窗口增量，不回填历史；窗口可能未被完整覆盖。</p>${content}</div></section>`;
+    return `<section class="snapshot-settings readonly-detail-section"><header><span>04</span><div><strong>历史 SQL 采集</strong><small>${hint}</small></div></header><div class="snapshot-body"><p>统计来源：${esc(source)}。采集需要已启用的 Target、可用的只读连接、有效的 Agent 业务系统资源授权和运行中的采集服务。</p><p>多指标热点发现与连续跟踪，默认每分钟最多 100 条；预留新热点名额，连续无增量后退出。只采集 SQL 摘要与计数器，计划和对象按需诊断；不代表全库完整排名。</p><p>启用后至少需要两次可比较的快照才能计算窗口增量，不回填历史；窗口可能未被完整覆盖。</p>${content}</div></section>`;
   }
 
   function renderBusiness() {
@@ -784,10 +783,9 @@
     const item = currentResource();
     if (resourceDrawerMode !== "EDITOR" || !item) return;
     if (snapshotState?.draft && !isPublishedView()) drawer.querySelectorAll("[data-snapshot-field]").forEach((input) => input.addEventListener(input.type === "checkbox" ? "change" : "input", () => {
-      snapshotState.draft[input.dataset.snapshotField] = input.type === "checkbox" ? input.checked : input.dataset.snapshotField === "collection_mode" ? input.value : input.value === "" ? "" : Number(input.value);
+      snapshotState.draft[input.dataset.snapshotField] = input.type === "checkbox" ? input.checked : input.value === "" ? "" : Number(input.value);
       stageSnapshotPolicy();
       document.getElementById("snapshot-dirty").hidden = !(item.workload_snapshot || item.database?.workload_snapshot_policy);
-      if (input.dataset.snapshotField === "collection_mode") snapshotRender();
     }));
     const snapshotRefresh = document.getElementById("snapshot-refresh");
     if (snapshotRefresh) snapshotRefresh.onclick = () => void snapshotOperation();
@@ -1202,7 +1200,7 @@
       const staged = item.workload_snapshot;
       if (!staged) return;
       const original = detail?.resources?.find((row) => row.system_resource_id === item.system_resource_id)?.resource?.database;
-      const valid = ["BOUNDED_CANDIDATES", "VISIBLE_SET"].includes(staged.policy.collection_mode) && [[staged.policy.visible_statement_limit, 10, 500], [staged.policy.interval_minutes, 1, 60], [staged.policy.retention_days, 1, 365], [staged.policy.top_statement_limit, 10, 500]].every(([value, min, max]) => Number.isInteger(value) && value >= min && value <= max);
+      const valid = validWorkloadPolicy(createWorkloadPolicy(staged.policy));
       if (!valid || !original || original.target_id !== staged.target_id || !Number.isInteger(staged.target_row_version) || staged.target_row_version < 1) errors.push(`${item.display_name}：历史 SQL 采集策略无效，请检查间隔、保留天数、候选数量及 Target。`);
     });
     relations.forEach((relation) => {
@@ -1265,7 +1263,7 @@
     let current = await request(`/business-systems/${encodeURIComponent(systemId)}`);
     for (const item of resources) {
       if (item.system_resource_id) {
-        await request(`/managed-resources/${encodeURIComponent(item.resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.resource_row_version}"` }, body: JSON.stringify({ display_name: item.display_name.trim(), owner_group_id: item.owner_group_id, location_name: item.location_name.trim() || null, database: item.database ? { version_code: item.database.version_code, environment: item.database.environment, deployment_type: item.database.deployment_type, rac_node_number: item.database.rac_node_number, db_role: item.database.db_role, ...(item.workload_snapshot ? { workload_snapshot_policy: item.workload_snapshot.policy, target_row_version: item.workload_snapshot.target_row_version, business_system_id: systemId, system_resource_id: item.system_resource_id } : {}) } : null }) });
+        await request(`/managed-resources/${encodeURIComponent(item.resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.resource_row_version}"` }, body: JSON.stringify({ display_name: item.display_name.trim(), owner_group_id: item.owner_group_id, location_name: item.location_name.trim() || null, database: item.database ? { version_code: item.database.version_code, environment: item.database.environment, deployment_type: item.database.deployment_type, rac_node_number: item.database.rac_node_number, db_role: item.database.db_role, ...(item.workload_snapshot ? { workload_snapshot_policy: createWorkloadPolicy(item.workload_snapshot.policy), target_row_version: item.workload_snapshot.target_row_version, business_system_id: systemId, system_resource_id: item.system_resource_id } : {}) } : null }) });
         current = await request(`/business-systems/${encodeURIComponent(systemId)}/resources/${encodeURIComponent(item.system_resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.system_row_version}"` }, body: JSON.stringify({ architecture_layer_key: item.architecture_layer_key, responsibility_group_id: null, display_order: item.display_order }) });
       } else {
         const before = new Set(current.resources.map((row) => row.system_resource_id));

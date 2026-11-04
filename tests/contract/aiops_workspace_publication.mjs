@@ -93,7 +93,7 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   assert.equal(draft.payload.publish.resources[0].database.target.oracle_container_scope, engine === 'ORACLE' ? 'PDB' : null);
   assert.equal(draft.payload.publish.resources[0].database.target.controlled_change_enabled, false);
   assert.deepEqual(draft.payload.publish.resources[0].database.target.workload_snapshot_policy, {
-    enabled: false, collection_mode: 'BOUNDED_CANDIDATES', visible_statement_limit: 500, interval_minutes: 5,
+    enabled: false, interval_minutes: 1,
     retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30,
   });
   assert.equal(draft.payload.publish.resources[0].database.target.diagnostic_credential.username, 'fixture_readonly');
@@ -139,14 +139,16 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
 {
   const f = fixture('system-1'), item = resource();
   Object.assign(item, { mode: 'EXISTING', resource_id: 'resource-1', system_resource_id: 'system-resource-1', resource_row_version: 4, system_row_version: 5, saved: true });
-  item.workload_snapshot = { target_id: 'target-1', target_row_version: 8, policy: { enabled: true, collection_mode: 'VISIBLE_SET', visible_statement_limit: 250, interval_minutes: 5, retention_days: 30, top_statement_limit: 100 } };
+  item.workload_snapshot = { target_id: 'target-1', target_row_version: 8, policy: { enabled: true, interval_minutes: 1, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30, collection_mode: 'VISIBLE_SET', visible_statement_limit: 250 } };
   const detail = { business_system_id: 'system-1', system_code: 'MES', ...copy(system), status: 'DISABLED', row_version: 3, resources: [{ system_resource_id: 'system-resource-1', architecture_layer_key: 'DATA', status: 'ACTIVE', row_version: 5, resource: { resource_id: 'resource-1', row_version: 4, display_name: item.display_name, resource_type_key: 'DATABASE', owner_group_id: item.owner_group_id, database: { ...copy(item.database), target_id: 'target-1', endpoint: { host: 'db.example.invalid', port: 1521, service: 'MES' } } } }], relations: [] };
   f.api.seed({ system: copy(system), resources: [item], sources: [monitor], detail, draftId: 'edit-draft', draftRevision: 11 });
   f.handle(async call => call.path.includes('/business-systems/system-1') ? copy(detail) : {});
   await f.api.commit();
   const patch = f.calls.find(call => call.method === 'PATCH' && call.path === '/managed-resources/resource-1');
   assert.equal(patch.headers['If-Match'], '"rv-4"');
-  assert.deepEqual(patch.payload.database.workload_snapshot_policy, item.workload_snapshot.policy);
+  assert.equal(patch.payload.database.workload_snapshot_policy.collection_mode, undefined);
+  assert.equal(patch.payload.database.workload_snapshot_policy.visible_statement_limit, undefined);
+  assert.deepEqual(patch.payload.database.workload_snapshot_policy, { enabled: true, interval_minutes: 1, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30 });
   assert.equal(patch.payload.database.target_row_version, 8);
   assert.equal(patch.payload.database.business_system_id, 'system-1');
   assert.equal(patch.payload.database.system_resource_id, 'system-resource-1');
@@ -179,8 +181,8 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
 // 未发布资源的采集设置同时保留在可编辑草稿和正式创建载荷中。
 for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   const f = fixture();
-  const selected = { enabled: true, collection_mode: 'VISIBLE_SET', visible_statement_limit: 250, interval_minutes: 2,
-    retention_days: 60, top_statement_limit: 120, round_timeout_seconds: 47 };
+  const selected = { enabled: true, interval_minutes: 2,
+    retention_days: 60, top_statement_limit: 80, round_timeout_seconds: 47 };
   f.api.seed({ system: copy(system), resources: [resource(engine, { workload_snapshot_policy: selected })], sources: [monitor] });
   f.handle(async call => call.path.endsWith(':commit') ? { business_system_id: 'published' } : { draft_id: 'draft-1', revision: 7 });
   await f.api.commit();
@@ -190,7 +192,7 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   assert.deepEqual(body.publish.resources[0].database.target.workload_snapshot_policy, selected);
   assert.equal(f.calls.some(call => call.path.startsWith('/targets/')), false);
 }
-for (const policy of [{ enabled: true, interval_minutes: 0 }, { collection_mode: 'unknown' }, { enabled: 'true' }]) {
+for (const policy of [{ enabled: true, interval_minutes: 0 }, { top_statement_limit: 101 }, { enabled: 'true' }]) {
   const f = fixture();
   f.api.seed({ system: copy(system), resources: [resource('ORACLE', { workload_snapshot_policy: policy })], sources: [monitor] });
   await f.api.commit();

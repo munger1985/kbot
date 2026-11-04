@@ -1355,16 +1355,7 @@
         ],
         "required_entitlements": [],
         "required_privileges": [],
-        "parameters": [
-          {
-            "name": "limit",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 500,
-            "required": false,
-            "default": 100
-          }
-        ],
+        "parameters": [{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100},{"name":"tracked_keys","type":"string","max_length":65536,"default":"[]","required":false},{"name":"excluded_keys","type":"string","max_length":65536,"default":"[]","required":false}],
         "output_columns": [
           {
             "name": "schema_name",
@@ -1417,7 +1408,7 @@
           }
         ],
         "template_ref": "sql/statement_digest_top.sql",
-        "template_sha256": "8b67d1b2877f317d8ac82abd66e0dcecfcdfb9bd2e922446ae83790a240e9cf9",
+        "template_sha256": "363b7a7d1c49d4c84213b443199d43f7c3961dc61e0ad12ec04cfd5901aea4cd",
         "timeout_seconds": 20,
         "max_rows": 500,
         "max_bytes": 16777216,

@@ -16,7 +16,7 @@ class DiagnosticParameter(BaseModel):
     required: bool = True
     minimum: int | None = None
     maximum: int | None = None
-    max_length: int | None = Field(default=None, ge=1, le=4096)
+    max_length: int | None = Field(default=None, ge=1, le=65536)
     enum: tuple[str, ...] = ()
     default: Any | None = None
 

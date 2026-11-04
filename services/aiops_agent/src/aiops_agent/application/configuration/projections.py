@@ -45,6 +45,7 @@ from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.secret_store import SecretStorePort
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
+    WorkloadPolicy,
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
@@ -141,6 +142,14 @@ def _target_summary(entity: TargetEntity) -> TargetSummary:
         updated_at=entity.updated_at.astimezone(UTC),
     )
 
+def project_workload_policy(value: dict | None) -> WorkloadPolicy:
+    """配置只投影当前策略字段；采集预算统一限制为最多一百条。"""
+    fields = {key: item for key, item in dict(value or {}).items() if key in WorkloadPolicy.model_fields}
+    if isinstance(fields.get("top_statement_limit"), int):
+        fields["top_statement_limit"] = min(100, fields["top_statement_limit"])
+    return WorkloadPolicy.model_validate(fields)
+
+
 def _target_detail(entity: TargetEntity) -> TargetDetail:
     return TargetDetail(
         **_target_summary(entity).model_dump(),
@@ -158,7 +167,7 @@ def _target_detail(entity: TargetEntity) -> TargetDetail:
         diagnostic_credential=_credential_status(entity.diagnostic_credential_id, entity),
         execution_credential=_credential_status(entity.execution_credential_id, entity),
         capabilities=entity.capabilities_json or {},
-        workload_snapshot_policy=entity.workload_snapshot_policy_json or {},
+        workload_snapshot_policy=project_workload_policy(entity.workload_snapshot_policy_json),
         activity_sampler_policy=entity.activity_sampler_policy_json or {},
         activity_sampler_status=entity.activity_sampler_status or "DISABLED",
         activity_sampler_disabled_reason=entity.activity_sampler_disabled_reason,

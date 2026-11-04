@@ -179,6 +179,7 @@ def scheduler_context(*, authorized=True, enabled=True):
         agents=SimpleNamespace(get_active_for_collection=AsyncMock(return_value=binding if authorized else None)),
         runs=SimpleNamespace(database_now=AsyncMock(return_value=NOW), add_run=AsyncMock(),
                              add_tasks=AsyncMock(), append_event=AsyncMock()),
+        workloads=SimpleNamespace(latest_hotspot_snapshot=AsyncMock(return_value=None)),
         commit=AsyncMock(),
     )
 
@@ -360,6 +361,7 @@ def test_two_scheduled_collections_persist_then_produce_resource_window():
     uow.targets.get_fully_scoped = AsyncMock(return_value=target)
     uow.targets.update_workload_runtime_state.side_effect = update_state
     uow.workloads = SimpleNamespace(
+        latest_hotspot_snapshot=AsyncMock(side_effect=lambda **kwargs: snapshots[-1] if snapshots else None),
         get_snapshot_by_schedule=AsyncMock(side_effect=find_schedule),
         add_snapshot_bundle=AsyncMock(side_effect=add_bundle),
         list_snapshots=AsyncMock(side_effect=list_snapshots),
@@ -389,6 +391,9 @@ def test_two_scheduled_collections_persist_then_produce_resource_window():
             uow.runs.database_now.return_value = now
             await scheduler._schedule_one("WORKLOAD")
             frozen = uow.runs.add_run.await_args.args[0].plan_snapshot_json
+            frozen_statement_tool = next(tool for tool in frozen["database_diagnostics"]["tools"] if tool["tool_id"] == "db.oracle.workload.statements")
+            import json
+            assert json.loads(frozen_statement_tool["parameters"]["tracked_keys"]) == (["36apy6dncjggq"] if step else [])
             result = await WorkloadCollectionHandler(workload_service=service).execute(SimpleNamespace(
                 target_id=TARGET, plan_snapshot=frozen,
                 input_artifacts=(
@@ -420,6 +425,9 @@ def test_two_scheduled_collections_persist_then_produce_resource_window():
     assert target.workload_last_error_code is None
     assert target.workload_consecutive_failures == 0
     assert result["snapshot_count"] == 2
+    assert result["candidate_scope"]["mode"] == "HOTSPOT_TRACKING"
+    assert result["candidate_scope"]["baseline_count"] == 1
+    assert result["candidate_scope"]["complete"] is False
     assert result["collection_state"]["last_attempt_at"] == (NOW + timedelta(minutes=5)).isoformat()
     assert Decimal(result["top_statements"][0]["cpu_seconds"]) == 2
     assert result["top_statements"][0]["buffer_gets"] == "500"

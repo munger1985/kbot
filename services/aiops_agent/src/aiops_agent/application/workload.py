@@ -704,8 +704,10 @@ def build_top_sql_window(
     if not intervals or not boundary_ok or any(left[1] != right[0] for left, right in zip(intervals, intervals[1:])):
         gaps["WINDOW_NOT_FULLY_COVERED"] += 1
     collection_metadata = [dict(dict(getattr(item, "continuity_json", None) or {}).get("sql_collection") or {}) for item in ordered]
-    visible_complete = bool(ordered) and all(item.get("mode") == "VISIBLE_SET" and item.get("visible_set_read_complete") is True for item in collection_metadata)
-    if intervals and not visible_complete:
+    hotspot_tracking = bool(ordered) and all(item.get("mode") == "HOTSPOT_TRACKING" for item in collection_metadata)
+    baseline_count = sum(int(dict(item.get("pool") or {}).get("baseline_count", 0)) for item in collection_metadata)
+    retired_count = sum(int(dict(item.get("pool") or {}).get("retired_count", 0)) for item in collection_metadata)
+    if intervals:
         gaps["LIMITED_CANDIDATE_SET"] += 1
     if gaps:
         for item in ranked:
@@ -721,8 +723,8 @@ def build_top_sql_window(
         "boundary_skew_seconds": {"start": start_skew, "end": end_skew},
         "alignment": alignment,
         "availability": "PARTIAL" if intervals and gaps else "OBSERVED" if intervals else "UNAVAILABLE",
-        "candidate_scope": {"mode": "VISIBLE_SET" if visible_complete else "BOUNDED_CANDIDATES", "complete": visible_complete, "atomic": False},
-        "source_visibility": "DIAGNOSTIC_CREDENTIAL_VISIBLE_CANDIDATES",
+        "candidate_scope": {"mode": "HOTSPOT_TRACKING" if hotspot_tracking else "BOUNDED_CANDIDATES", "complete": False, "atomic": False, "baseline_count": baseline_count, "retired_count": retired_count},
+        "source_visibility": "DIAGNOSTIC_CREDENTIAL_VISIBLE_HOTSPOTS",
         "continuity_confidence": "NO_IDENTIFIED_RESET_NOT_PROOF_OF_CONTINUITY",
         "rank_metric": options.rank_metric,
         "rank_metric_label": METRICS_BY_CODE[options.rank_metric].label,
@@ -748,8 +750,8 @@ def build_top_sql_window(
         "status": "OBSERVED" if intervals and not gaps else "PARTIAL" if intervals else "INSUFFICIENT",
         "gaps": dict(sorted(gaps.items())),
         "warnings": [
-            ("已读取声明来源在采集时可见的集合；非原子采集，不保证捕获所有执行或源内部淘汰。"
-             if visible_complete else "候选语句来自有限快照，窗口热点可能遗漏；统计重置或淘汰重建可能无法完整识别。"),
+            f"窗口快照中新建基线 {baseline_count} 条次、退出跟踪 {retired_count} 条次；轮换、源淘汰和统计重置可能造成漏采。",
+            ("排名仅覆盖已跟踪热点 SQL 的可比较窗口增量，不代表全库完整排名；新 SQL 首次出现只建立基线，不回填、不按零推算。"),
             f"边界口径：{alignment}；起点偏差 {start_skew} 秒，终点偏差 {end_skew} 秒；不插值、不称精确请求窗口。"
         ],
         "top_statements": ranked,
@@ -1058,7 +1060,7 @@ class WorkloadService:
             snapshots = await uow.workloads.list_snapshots(
                 domain_id=domain_id,
                 target_id=target_id,
-                period_start=period_start - timedelta(seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 5) * 60),
+                period_start=period_start - timedelta(seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 1) * 60),
                 period_end=exclusive_end,
                 max_rows=20001,
             )
@@ -1092,7 +1094,7 @@ class WorkloadService:
                 postgresql_database_oid=(
                     str(database_oid) if database_oid is not None else None
                 ),
-                boundary_tolerance_seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 5) * 60,
+                boundary_tolerance_seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 1) * 60,
             )
             result["snapshot_ids"] = [str(item) for item in ids]
             result["snapshot_count"] = len(ids)
@@ -1461,7 +1463,7 @@ class WorkloadService:
             if request.status == "FAILED":
                 failures = int(target.workload_consecutive_failures) + 1
                 policy = dict(target.workload_snapshot_policy_json or {})
-                interval = int(policy.get("interval_minutes") or 5)
+                interval = int(policy.get("interval_minutes") or 1)
                 retry_at = request.collected_at + timedelta(
                     minutes=min(60, interval * (2 ** min(failures, 6)))
                 )

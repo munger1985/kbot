@@ -1,3 +1,8 @@
+WITH tracked AS (
+    SELECT value AS identity_key FROM jsonb_array_elements_text(CAST(:tracked_keys AS jsonb))
+), excluded AS (
+    SELECT value AS identity_key FROM jsonb_array_elements_text(CAST(:excluded_keys AS jsonb))
+)
 SELECT
     CAST(statements.queryid AS text) AS query_id,
     statements.dbid AS database_oid,
@@ -37,7 +42,10 @@ LEFT JOIN pg_catalog.pg_roles AS role_name
   ON role_name.oid = statements.userid
 WHERE statements.queryid IS NOT NULL
   AND statements.dbid = (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database())
-ORDER BY LEAST(
+  AND (CAST(statements.queryid AS text) || ':' || CAST(statements.dbid AS text) || ':' || CAST(statements.userid AS text) || ':' || CASE WHEN statements.toplevel THEN '1' ELSE '0' END IN (SELECT identity_key FROM tracked)
+       OR CAST(statements.queryid AS text) || ':' || CAST(statements.dbid AS text) || ':' || CAST(statements.userid AS text) || ':' || CASE WHEN statements.toplevel THEN '1' ELSE '0' END NOT IN (SELECT identity_key FROM excluded))
+ORDER BY CASE WHEN CAST(statements.queryid AS text) || ':' || CAST(statements.dbid AS text) || ':' || CAST(statements.userid AS text) || ':' || CASE WHEN statements.toplevel THEN '1' ELSE '0' END IN (SELECT identity_key FROM tracked) THEN 0 ELSE 1 END,
+LEAST(
     ROW_NUMBER() OVER (ORDER BY statements.total_exec_time DESC, statements.queryid, statements.userid),
     ROW_NUMBER() OVER (ORDER BY statements.total_exec_time / NULLIF(statements.calls, 0) DESC NULLS LAST, statements.queryid, statements.userid),
     ROW_NUMBER() OVER (ORDER BY statements.calls DESC, statements.queryid, statements.userid),

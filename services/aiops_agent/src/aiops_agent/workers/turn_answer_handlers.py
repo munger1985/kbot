@@ -204,7 +204,7 @@ def _primary_result_metadata(
     title = spec["title"]
     if result_kind == "TOP_SQL_LIST":
         title = (
-            "Top SQL（已采集候选的窗口增量）" if fact.tool_id == "workload.sql.top_window"
+            "Top SQL（已跟踪热点的窗口增量）" if fact.tool_id == "workload.sql.top_window"
             else "Top SQL（采样增量）" if semantics == "SNAPSHOT_DELTA"
             else "Top SQL（累计统计）" if semantics == "CUMULATIVE_SINCE_LOAD"
             else "当前活跃 SQL 快照" if semantics == "CURRENT_ACTIVITY"
@@ -381,7 +381,7 @@ class DbaEvidenceAssessmentHandler:
                     "MISSED_SNAPSHOTS": "采样间断",
                     "COUNTER_RESET": "统计计数器重置",
                     "PARTIAL_SOURCE": "采集来源不完整",
-                    "LIMITED_CANDIDATE_SET": "累计排名截取的候选集可能遗漏窗口热点",
+                    "LIMITED_CANDIDATE_SET": "仅跟踪有界热点池，不能视为全库完整排名",
                     "STATEMENT_APPEARED_OR_EVICTED": "语句新增或淘汰",
                     "STATEMENT_UNAVAILABLE": "部分语句统计不可用",
                 }
@@ -1749,7 +1749,7 @@ class DbaAnswerComposeHandler:
                     message += "请查看证据缺口。"
             elif fact.tool_id == "workload.sql.top_window":
                 message = (
-                    "下表是已采集候选的窗口增量排名；实际覆盖范围和采集限制见表格说明，不能保证覆盖全部窗口热点。"
+                    "下表是已跟踪热点 SQL 的窗口增量排名；实际覆盖范围和采集限制见表格说明，不能保证覆盖全部窗口热点。"
                     if fact.row_count else
                     "可比较快照中没有返回可排名的 SQL；这不证明窗口内没有 SQL 执行。实际覆盖范围和采集限制见表格说明。"
                 )

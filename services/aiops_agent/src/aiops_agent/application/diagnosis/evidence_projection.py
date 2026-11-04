@@ -51,7 +51,7 @@ def top_sql_window_evidence_fact(*, result, artifact_id):
         "MISSED_SNAPSHOTS": "采样间断",
         "COUNTER_RESET": "统计计数器重置",
         "PARTIAL_SOURCE": "采集来源不完整",
-        "LIMITED_CANDIDATE_SET": "有界候选集可能遗漏窗口热点",
+        "LIMITED_CANDIDATE_SET": "仅跟踪有界热点池，不能视为全库完整排名",
         "METRIC_NOT_COLLECTED": "部分历史快照未采集资源指标，未知不按零处理",
         "METRIC_COUNTER_RESET": "部分资源指标计数器重置",
         "RANK_METRIC_UNAVAILABLE": "所选排名指标没有可比较的历史数据",

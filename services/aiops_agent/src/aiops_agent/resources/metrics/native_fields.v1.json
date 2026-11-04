@@ -738,7 +738,7 @@
       "tool_id": "db.postgresql.statement.top",
       "tool_version": "1.0.0",
       "variant": "postgresql_pg_stat_statements_12",
-      "template_sha256": "3552518ebabd862ccd632fcbe833be9b48bbd916dfd282ab232bec41db30660e",
+      "template_sha256": "7878e2d34216490075d8081a95399268be9cdfefc141cb1d3549705e7fdf0e85",
       "profile": "pg_stat_statements_12",
       "output_columns": [["query_id","STRING"],["database_oid","INTEGER"],["database_name","STRING"],["user_oid","INTEGER"],["username","STRING"],["normalized_statement","STRING"],["execution_count","INTEGER"],["total_exec_time_ms","DECIMAL"],["mean_exec_time_ms","DECIMAL"],["max_exec_time_ms","DECIMAL"],["rows_processed","INTEGER"],["shared_blks_hit","INTEGER"],["shared_blks_read","INTEGER"],["shared_blks_dirtied","INTEGER"],["shared_blks_written","INTEGER"],["local_blks_hit","INTEGER"],["local_blks_read","INTEGER"],["local_blks_dirtied","INTEGER"],["local_blks_written","INTEGER"],["temp_blks_read","INTEGER"],["temp_blks_written","INTEGER"],["block_read_time_ms","DECIMAL"],["block_write_time_ms","DECIMAL"]]
     },
@@ -747,7 +747,7 @@
       "tool_id": "db.postgresql.statement.top",
       "tool_version": "1.0.0",
       "variant": "postgresql_pg_stat_statements_13",
-      "template_sha256": "8fe645cee587788c6540b2ba16265789c8a5c5a8e497d85b755eb4a7f1ded36b",
+      "template_sha256": "1ed366225840c1577f5418cf82edbf469f07628fc663dd51b835a37451c9b787",
       "profile": "pg_stat_statements_13",
       "output_columns": [["query_id","STRING"],["database_oid","INTEGER"],["database_name","STRING"],["user_oid","INTEGER"],["username","STRING"],["normalized_statement","STRING"],["plan_count","INTEGER"],["total_plan_time_ms","DECIMAL"],["execution_count","INTEGER"],["total_exec_time_ms","DECIMAL"],["mean_exec_time_ms","DECIMAL"],["max_exec_time_ms","DECIMAL"],["rows_processed","INTEGER"],["shared_blks_hit","INTEGER"],["shared_blks_read","INTEGER"],["shared_blks_dirtied","INTEGER"],["shared_blks_written","INTEGER"],["local_blks_hit","INTEGER"],["local_blks_read","INTEGER"],["local_blks_dirtied","INTEGER"],["local_blks_written","INTEGER"],["temp_blks_read","INTEGER"],["temp_blks_written","INTEGER"],["block_read_time_ms","DECIMAL"],["block_write_time_ms","DECIMAL"],["wal_records","INTEGER"],["wal_fpi","INTEGER"],["wal_bytes","DECIMAL"]]
     },
@@ -756,7 +756,7 @@
       "tool_id": "db.postgresql.statement.top",
       "tool_version": "1.0.0",
       "variant": "postgresql_pg_stat_statements_14_17",
-      "template_sha256": "3d0a185dc4eeae7cd566f721049aeb908774c01964b5af1872f89b85de646198",
+      "template_sha256": "43b1a89722e2edc63d062cfc1bac962c9211f018228b2f58847db5f68ca4dc58",
       "profile": "pg_stat_statements_14",
       "output_columns": [["query_id","STRING"],["database_oid","INTEGER"],["database_name","STRING"],["user_oid","INTEGER"],["username","STRING"],["top_level","BOOLEAN"],["normalized_statement","STRING"],["plan_count","INTEGER"],["total_plan_time_ms","DECIMAL"],["execution_count","INTEGER"],["total_exec_time_ms","DECIMAL"],["mean_exec_time_ms","DECIMAL"],["max_exec_time_ms","DECIMAL"],["rows_processed","INTEGER"],["shared_blks_hit","INTEGER"],["shared_blks_read","INTEGER"],["shared_blks_dirtied","INTEGER"],["shared_blks_written","INTEGER"],["local_blks_hit","INTEGER"],["local_blks_read","INTEGER"],["local_blks_dirtied","INTEGER"],["local_blks_written","INTEGER"],["temp_blks_read","INTEGER"],["temp_blks_written","INTEGER"],["block_read_time_ms","DECIMAL"],["block_write_time_ms","DECIMAL"],["wal_records","INTEGER"],["wal_fpi","INTEGER"],["wal_bytes","DECIMAL"]]
     },
@@ -765,7 +765,7 @@
       "tool_id": "db.postgresql.statement.top",
       "tool_version": "1.0.0",
       "variant": "postgresql_pg_stat_statements_18_plus",
-      "template_sha256": "67ca4dc58837e84887ee1cd1319bb7f33287b2acd6fa028efaf73a4e1370a2bc",
+      "template_sha256": "8b125d9cf635dac129b7d5a8cd1e36fff88aee28b016e175f39f69bc6cb57f28",
       "profile": "pg_stat_statements_18",
       "output_columns": [["query_id","STRING"],["database_oid","INTEGER"],["database_name","STRING"],["user_oid","INTEGER"],["username","STRING"],["top_level","BOOLEAN"],["normalized_statement","STRING"],["plan_count","INTEGER"],["total_plan_time_ms","DECIMAL"],["execution_count","INTEGER"],["total_exec_time_ms","DECIMAL"],["mean_exec_time_ms","DECIMAL"],["max_exec_time_ms","DECIMAL"],["rows_processed","INTEGER"],["shared_blks_hit","INTEGER"],["shared_blks_read","INTEGER"],["shared_blks_dirtied","INTEGER"],["shared_blks_written","INTEGER"],["local_blks_hit","INTEGER"],["local_blks_read","INTEGER"],["local_blks_dirtied","INTEGER"],["local_blks_written","INTEGER"],["temp_blks_read","INTEGER"],["temp_blks_written","INTEGER"],["block_read_time_ms","DECIMAL"],["block_write_time_ms","DECIMAL"],["wal_records","INTEGER"],["wal_fpi","INTEGER"],["wal_bytes","DECIMAL"]]
     },
@@ -819,7 +819,7 @@
       "tool_id": "db.mysql.statement.digest.top",
       "tool_version": "1.0.0",
       "variant": "mysql_8_digest",
-      "template_sha256": "8b67d1b2877f317d8ac82abd66e0dcecfcdfb9bd2e922446ae83790a240e9cf9",
+      "template_sha256": "363b7a7d1c49d4c84213b443199d43f7c3961dc61e0ad12ec04cfd5901aea4cd",
       "profile": "mysql_digest_top",
       "output_columns": [["schema_name","STRING"],["digest","STRING"],["digest_text","STRING"],["query_sample_text","STRING"],["execution_count","INTEGER"],["total_latency_picoseconds","DECIMAL"],["average_latency_picoseconds","DECIMAL"],["maximum_latency_picoseconds","DECIMAL"],["lock_time_picoseconds","DECIMAL"],["rows_examined","INTEGER"],["rows_sent","INTEGER"],["temp_disk_tables","INTEGER"]]
     },
@@ -828,7 +828,7 @@
       "tool_id": "db.oracle.workload.statements",
       "tool_version": "1.0.0",
       "variant": "oracle_19_plus_workload_sqlstats",
-      "template_sha256": "0dc2061428de039b603e462d4121ec5944abbaa06c12e75c56072682ef99ab89",
+      "template_sha256": "2a0ed58484e2f2d33267136a99874eb0c42e648c90de54735952e5be69531789",
       "profile": "oracle_workload_sqlstats",
       "output_columns": [["sql_id","STRING"],["sql_text","STRING"],["executions","INTEGER"],["elapsed_time","INTEGER"],["rows_processed","INTEGER"],["plan_hash_value","INTEGER"],["cpu_time","INTEGER"],["buffer_gets","INTEGER"],["disk_reads","INTEGER"]]
     },

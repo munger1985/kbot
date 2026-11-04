@@ -165,7 +165,7 @@ function installFixture(data) {
     if (suffix.endsWith('/targets')) return {items:location.pathname.includes('reports')&&!location.search.includes('empty=1')?[data.target,{...data.target,target_id:'postgres-1',display_name:'生产 PostgreSQL',db_type:'POSTGRESQL'},{...data.target,target_id:'mysql-1',display_name:'生产 MySQL',db_type:'MYSQL'}]:rows(data.target)};
     if (suffix.endsWith('/dashboard')) return location.search.includes('empty=1')?{generated_at:data.dashboard.generated_at,summary:{},automation:{},targets:[]}:data.dashboard;
     if (suffix.endsWith('/reports')) return {items:rows(data.report),has_more:false,next_cursor:null};
-    if (suffix.endsWith('/targets/target-1')) return location.pathname.includes('business-system-workspace')?{...data.target,row_version:3,workload_snapshot_policy:{enabled:false,collection_mode:'BOUNDED_CANDIDATES',visible_statement_limit:500,interval_minutes:5,retention_days:30,top_statement_limit:100,round_timeout_seconds:30}}:data.target;
+    if (suffix.endsWith('/targets/target-1')) return location.pathname.includes('business-system-workspace')?{...data.target,row_version:3,workload_snapshot_policy:{enabled:false,interval_minutes:1,retention_days:30,top_statement_limit:100,round_timeout_seconds:30}}:data.target;
     if (suffix.endsWith('/reports/report-1')) return {...data.report,target_id:'target-1',period_start:'2026-10-30T02:00:00Z',period_end:'2026-10-30T03:00:00Z',report_type:new URLSearchParams(location.search).get('reportMode')==='COMPARISON'?'COMPARISON':'PERFORMANCE'};
     if (suffix.endsWith('/operations-knowledge/reports/report-1/case-eligibility')) return {eligible:true,reasons:[],existing_asset_id:location.search.includes('empty=1')?'case-1':null};
     if (suffix.endsWith('/reports/report-1/presentation')) {
@@ -732,8 +732,8 @@ try {
           assert.ok((await page.locator('.snapshot-status').innerText()).includes('尚未发布'));
           assert.equal(await page.getByRole('button',{name:'测试连接并刷新能力',exact:true}).count(),0);
           await page.locator('.snapshot-toggle input').check();
-          await page.locator('.snapshot-fields select').selectOption('VISIBLE_SET');
-          await page.getByLabel('可见集合行数上限').fill('250');
+          await page.getByLabel('跟踪 SQL 上限').fill('80');
+          assert.equal(await page.locator('.snapshot-fields select').count(),0);
           await page.getByLabel('采集间隔（分钟）').fill('2');
           assert.equal((await page.evaluate(()=>fixtureRequests)).some(row=>row.path.includes('/targets/')),false,'未发布策略不访问 Target');
         }
@@ -753,7 +753,7 @@ try {
       if(interaction) {
         for(const page of [kbot,reference]) await page.locator('.snapshot-toggle input').check();
         for(const width of [1440,420]) {await Promise.all([kbot,reference].map(async page=>{await page.setViewportSize({width,height:1000});await page.locator(".resource-drawer-body").evaluate(node=>{node.scrollTop=0;});}));await compareRegions(kbot,reference,['.snapshot-settings','.snapshot-fields','.snapshot-toggle','.snapshot-actions','.snapshot-reload'],{page:name,width,empty,state:'staged-bounded-policy'});}
-        for(const page of [kbot,reference]) await page.locator('.snapshot-fields select').selectOption('VISIBLE_SET');
+        for(const page of [kbot,reference]) await page.getByLabel('跟踪 SQL 上限').fill('80');
         for(const width of [1440,420]) {await Promise.all([kbot,reference].map(async page=>{await page.setViewportSize({width,height:1000});await page.locator(".resource-drawer-body").evaluate(node=>{node.scrollTop=0;});}));await compareRegions(kbot,reference,['.snapshot-settings','.snapshot-fields','.snapshot-toggle','.snapshot-actions','.snapshot-reload'],{page:name,width,empty,state:'staged-visible-policy'});}
         for(const page of [kbot,reference]) {
           await page.evaluate(()=>{fixtureHoldWrites=true;});
@@ -764,7 +764,7 @@ try {
           await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});
           await page.locator('.snapshot-error').waitFor();
           assert.equal(await page.locator('.snapshot-toggle input').isChecked(),true,'刷新失败不能丢失暂存策略');
-          assert.equal(await page.locator('.snapshot-fields select').inputValue(),'VISIBLE_SET');
+          assert.equal(await page.getByLabel('跟踪 SQL 上限').inputValue(),'80');
           assert.equal(await page.getByRole('button',{name:'保存草稿',exact:true}).isDisabled(),false,'刷新完成后恢复保存草稿');
         }
       }
@@ -794,7 +794,7 @@ try {
         for(const page of [kbot,reference]) {await page.evaluate(()=>{fixtureHoldWrites=true;});await page.getByRole('button',{name:'保存草稿',exact:true}).click();await page.waitForFunction(()=>typeof fixtureReleaseWrite==='function');assert.ok(await page.getByRole('button',{name:'保存草稿',exact:true}).isDisabled());}
         for(const page of [kbot,reference]) {
           const call=await page.evaluate(()=>fixtureRequests.find(item=>item.method==='POST'&&item.path.endsWith('/business-system-drafts'))),body=JSON.parse(call.body);
-          assert.equal(body.mode,'EDIT');assert.equal(body.business_system_id,'system-1');assert.equal(body.payload.resources[0].workload_snapshot.policy.collection_mode,'VISIBLE_SET');assert.equal(body.payload.resources[0].workload_snapshot.policy.enabled,true);assert.equal(body.payload.relations.filter(item=>item.relation_type_key==='DATA_GUARD').length,1);assert.ok(Array.isArray(body.payload.dismissed_inference_keys));
+          assert.equal(body.mode,'EDIT');assert.equal(body.business_system_id,'system-1');assert.equal(body.payload.resources[0].workload_snapshot.policy.top_statement_limit,80);assert.equal(body.payload.resources[0].workload_snapshot.policy.enabled,true);assert.equal(body.payload.relations.filter(item=>item.relation_type_key==='DATA_GUARD').length,1);assert.ok(Array.isArray(body.payload.dismissed_inference_keys));
           await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});await page.getByRole('button',{name:'保存草稿',exact:true}).waitFor();
           await page.waitForFunction(()=>!document.querySelector('.workspace-actions button').disabled);
         }

@@ -40,7 +40,7 @@ def test_oracle_scheduler_freezes_only_free_readonly_tools():
     ids = [item["tool_id"] for item in tools]
     assert ids == ["db.instance.identity", "db.oracle.workload.identity", "db.oracle.workload.statements"]
     assert not unavailable
-    assert tools[-1]["parameters"]["limit"] == 200
+    assert tools[-1]["parameters"]["limit"] == 100
     assert all(".awr." not in item for item in ids)
 
 

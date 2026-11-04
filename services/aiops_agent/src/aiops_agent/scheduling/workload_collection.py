@@ -11,6 +11,7 @@ from uuid import UUID
 
 from loguru import logger
 
+from aiops_agent.application.top_sql_hotspots import prepare_hotspot_round
 from aiops_agent.entities import OpsRunEntity, OpsTaskEntity
 from platform_core.identity import uuid7
 
@@ -19,15 +20,6 @@ _MYSQL_WORKLOAD_TOOLS = (
     "db.instance.identity",
     "db.instance.performance",
     "db.mysql.statement.digest.top",
-    "db.wait.class_summary",
-    "db.mysql.io.summary",
-    "db.memory.summary",
-    "db.mysql.lock.current",
-    "db.storage.capacity",
-    "db.mysql.table.hotspots",
-    "db.index.health",
-    "db.mysql.replication.channel_status",
-    "db.mysql.group_replication.status",
 )
 _MYSQL_ACTIVITY_TOOLS = (
     "db.instance.identity",
@@ -40,14 +32,6 @@ _POSTGRESQL_WORKLOAD_TOOLS = (
     "db.postgresql.workload.identity",
     "db.postgresql.database.statistics",
     "db.postgresql.statement.top",
-    "db.postgresql.wait.current",
-    "db.postgresql.checkpoint.statistics",
-    "db.postgresql.wal.statistics",
-    "db.postgresql.io.summary",
-    "db.postgresql.table.statistics",
-    "db.postgresql.index.statistics",
-    "db.postgresql.replication.slot_retention",
-    "db.postgresql.archiver.status",
 )
 _POSTGRESQL_ACTIVITY_TOOLS = (
     "db.instance.identity",
@@ -160,10 +144,21 @@ class WorkloadCollectionScheduler:
                 if kind == "WORKLOAD"
                 else target.activity_next_sample_at
             ) or now
+            previous_pool = {}
+            if kind == "WORKLOAD":
+                previous_snapshot = await uow.workloads.latest_hotspot_snapshot(
+                    domain_id=target.domain_id,
+                    target_id=target.target_id, before=now,
+                )
+                if previous_snapshot is not None:
+                    age = now - _aware(previous_snapshot.collected_at)
+                    if age <= timedelta(minutes=2 * int(policy.get("interval_minutes") or 1)):
+                        previous_pool = dict(dict(previous_snapshot.continuity_json or {}).get("sql_collection") or {}).get("pool") or {}
             tools, unavailable = self._freeze_tools(
                 target=target,
                 kind=kind,
                 policy=policy,
+                previous_pool=previous_pool,
             )
             if not any(
                 item["tool_id"] == "db.instance.identity" for item in tools
@@ -218,9 +213,10 @@ class WorkloadCollectionScheduler:
                 ),
                 "workload_collection": {
                     "kind": kind,
+                    "scope": "SQL_HOTSPOTS" if kind == "WORKLOAD" else "ACTIVITY",
                     "scheduled_for": scheduled_for.isoformat(),
                     "window_seconds": (
-                        int(policy.get("interval_minutes") or 5) * 60
+                        int(policy.get("interval_minutes") or 1) * 60
                         if kind == "WORKLOAD"
                         else int(policy.get("interval_seconds") or 5)
                     ),
@@ -229,6 +225,7 @@ class WorkloadCollectionScheduler:
                         or (30 if kind == "WORKLOAD" else 7)
                     ),
                     "policy": policy,
+                    "previous_hotspot_pool": previous_pool,
                     "unavailable_tools": unavailable,
                 },
             }
@@ -288,7 +285,7 @@ class WorkloadCollectionScheduler:
                 values = {
                     "workload_next_run_at": now
                     + timedelta(
-                        minutes=int(policy.get("interval_minutes") or 5)
+                        minutes=int(policy.get("interval_minutes") or 1)
                     )
                 }
             else:
@@ -318,7 +315,7 @@ class WorkloadCollectionScheduler:
             domain_id=target.domain_id, target_id=target.target_id
         )
 
-    def _freeze_tools(self, *, target, kind: str, policy: dict) -> tuple[list[dict], list[dict]]:
+    def _freeze_tools(self, *, target, kind: str, policy: dict, previous_pool: dict | None = None) -> tuple[list[dict], list[dict]]:
         capabilities = _capability_names(target.capabilities_json)
         entitlements = _string_set(
             dict(target.capabilities_json or {}).get("entitlements")
@@ -353,16 +350,14 @@ class WorkloadCollectionScheduler:
                 for item in definition.parameters
                 if not item.required
             }
-            if tool_id == "db.mysql.statement.digest.top":
-                parameters["limit"] = int(
-                    (policy.get("visible_statement_limit") or 500) if policy.get("collection_mode") == "VISIBLE_SET" else (policy.get("top_statement_limit") or 100)
-                )
-            if tool_id == "db.postgresql.statement.top":
-                parameters["limit"] = int(
-                    (policy.get("visible_statement_limit") or 500) if policy.get("collection_mode") == "VISIBLE_SET" else (policy.get("top_statement_limit") or 100)
-                )
-            if tool_id == "db.oracle.workload.statements":
-                parameters["limit"] = int((policy.get("visible_statement_limit") or 500) if policy.get("collection_mode") == "VISIBLE_SET" else (policy.get("top_statement_limit") or 100))
+            if tool_id in {
+                "db.mysql.statement.digest.top", "db.postgresql.statement.top",
+                "db.oracle.workload.statements",
+            }:
+                parameters["limit"] = min(100, int(policy.get("top_statement_limit") or 100))
+                parameters.update(prepare_hotspot_round(
+                    previous=previous_pool or {}, limit=parameters["limit"],
+                ))
             if tool_id in {
                 "db.mysql.activity.sample",
                 "db.postgresql.activity.sample",
@@ -634,3 +629,8 @@ def _sha256_json(value: dict) -> str:
             default=str,
         ).encode("utf-8")
     ).hexdigest()
+
+
+def _aware(value: datetime) -> datetime:
+    """数据库驱动返回无时区时间时，按统一存储约定解释为 UTC。"""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value

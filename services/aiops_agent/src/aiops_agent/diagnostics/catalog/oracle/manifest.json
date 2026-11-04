@@ -1105,7 +1105,7 @@
       "variant": "oracle_19_plus_workload_sqlstats", "supported_version_min": 19,
       "supported_version_max_exclusive": 27, "required_capabilities": ["dynamic_performance_views"],
       "required_entitlements": [], "required_privileges": ["V_$SQLSTATS"],
-      "parameters": [{"name": "limit", "type": "integer", "minimum": 10, "maximum": 500, "default": 100, "required": false}],
+      "parameters": [{"name":"limit","type":"integer","minimum":10,"maximum":500,"default":100,"required":false},{"name":"tracked_keys","type":"string","max_length":65536,"default":"[]","required":false},{"name":"excluded_keys","type":"string","max_length":65536,"default":"[]","required":false}],
       "output_columns": [
         {"name": "sql_id", "logical_type": "STRING", "nullable": false},
         {"name": "sql_text", "logical_type": "STRING"},
@@ -1118,7 +1118,7 @@
         {"name": "disk_reads", "logical_type": "INTEGER"}
       ],
       "template_ref": "sql/workload_statements.sql",
-      "template_sha256": "0dc2061428de039b603e462d4121ec5944abbaa06c12e75c56072682ef99ab89",
+      "template_sha256": "2a0ed58484e2f2d33267136a99874eb0c42e648c90de54735952e5be69531789",
       "timeout_seconds": 20, "max_rows": 500, "max_bytes": 2097152, "cost_level": "LOW"
     },
     {

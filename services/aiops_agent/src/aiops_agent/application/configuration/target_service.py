@@ -78,7 +78,6 @@ from platform_core.contracts.aiops import (
     TargetFactView,
     TargetPage,
     TargetPatch,
-    WorkloadPolicy,
     TargetSummary,
     WebhookKeyRotation,
 )
@@ -89,6 +88,7 @@ from platform_core.contracts.aiops.configuration import (
 from platform_core.identity import uuid7
 
 from .projections import (
+    project_workload_policy,
     _target_detail,
     _target_summary,
     _target_fact_view,
@@ -492,7 +492,7 @@ class TargetConfigurationMixin:
                     target_id=target_id, domain_id=scope.domain_id,
                 )
                 if assigned_system is not None:
-                    current_policy = WorkloadPolicy.model_validate(entity.workload_snapshot_policy_json or {})
+                    current_policy = project_workload_policy(entity.workload_snapshot_policy_json)
                     if request.workload_snapshot_policy != current_policy:
                         raise state_conflict("业务系统数据库的历史 SQL 采集策略只能在下线后的业务系统编辑页修改")
                     fields.pop("workload_snapshot_policy")

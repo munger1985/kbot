@@ -1,3 +1,8 @@
+WITH tracked AS (
+    SELECT identity_key FROM JSON_TABLE(:tracked_keys, '$[*]' COLUMNS (identity_key VARCHAR(512) PATH '$'))
+), excluded AS (
+    SELECT identity_key FROM JSON_TABLE(:excluded_keys, '$[*]' COLUMNS (identity_key VARCHAR(512) PATH '$'))
+)
 SELECT
     ranked.sql_id,
     ranked.sql_text,
@@ -26,8 +31,11 @@ FROM (
     WHERE con_id = TO_NUMBER(SYS_CONTEXT('USERENV', 'CON_ID'))
       AND sql_id IS NOT NULL
       AND elapsed_time >= 0
+      AND (sql_id IN (SELECT identity_key FROM tracked)
+           OR sql_id NOT IN (SELECT identity_key FROM excluded))
     ) candidates
-    ORDER BY LEAST(candidates.elapsed_rank, candidates.cpu_rank, candidates.logical_rank,
+    ORDER BY CASE WHEN candidates.sql_id IN (SELECT identity_key FROM tracked) THEN 0 ELSE 1 END,
+             LEAST(candidates.elapsed_rank, candidates.cpu_rank, candidates.logical_rank,
                    candidates.read_rank, candidates.count_rank, candidates.mean_rank,
                    candidates.mean_cpu_rank, candidates.mean_logical_rank),
              candidates.elapsed_rank, candidates.sql_id

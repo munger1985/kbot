@@ -10,6 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from aiops_agent.application.top_sql_hotspots import MODE, update_hotspot_pool
 from aiops_agent.workers.handlers import TaskExecutionContext
 from platform_core.contracts.aiops.workload import (
     CollectionQuality,
@@ -146,11 +147,25 @@ class WorkloadCollectionHandler:
             observation=observations.get(statement_tool),
         )
         policy = dict(collection.get("policy") or {})
-        collection_mode = str(policy.get("collection_mode") or "BOUNDED_CANDIDATES")
-        statement_limit = int(policy.get("visible_statement_limit") or 500) if collection_mode == "VISIBLE_SET" else int(policy.get("top_statement_limit") or 100)
+        statement_limit = min(100, int(policy.get("top_statement_limit") or 100))
         statement_observation = dict(observations.get(statement_tool) or {})
         observed_rows = len(_rows(statement_observation))
-        candidate_complete = collection_mode == "VISIBLE_SET" and not statement_observation.get("truncated", True) and observed_rows < statement_limit and len(statements) == observed_rows and coverage.get("DIGEST" if database_type == "MYSQL" else "STATEMENT") == CollectionQuality.AVAILABLE
+        statements = statements[:statement_limit]
+        pool = update_hotspot_pool(
+            statements=statements,
+            previous=dict(collection.get("previous_hotspot_pool") or {}),
+            instance={"identity": instance_identifier, "started_at": (instance_started_at or captured_at).isoformat(), "database_type": database_type, **({"uptime_seconds": uptime} if database_type == "MYSQL" else {})},
+            limit=statement_limit,
+        )
+        statement_family = "DIGEST" if database_type == "MYSQL" else "STATEMENT"
+        if coverage.get(statement_family) != CollectionQuality.AVAILABLE:
+            # 本轮来源失败不能把旧热点全部淘汰；保留跟踪请求，但不补造当前语句事实。
+            previous_pool = dict(collection.get("previous_hotspot_pool") or {})
+            if previous_pool and not pool["instance_changed"]:
+                pool = {**previous_pool, "baseline_count": 0, "counter_reset_count": 0,
+                        "retired_count": 0, "new_count": 0, "source_interrupted": True}
+        if collection.get("scope") == "SQL_HOTSPOTS":
+            coverage = {key: value for key, value in coverage.items() if key in {"IDENTITY", "INSTANCE", "STATEMENT", "DIGEST"}}
         metrics = _metric_rows(database_type, observations)
         replication_metrics = {
             tool_id: _rows(observation)
@@ -169,7 +184,9 @@ class WorkloadCollectionHandler:
         )
         status = "FAILED" if fatal else "PARTIAL" if partial else "READY"
         error_code = (
-            f"{database_type}_SNAPSHOT_IDENTITY_UNAVAILABLE" if fatal else None
+            f"{database_type}_SNAPSHOT_IDENTITY_UNAVAILABLE" if fatal else
+            str(dict(gaps.get(statement_tool) or {}).get("code") or "SQL_STATISTICS_UNAVAILABLE")
+            if coverage.get(statement_family) != CollectionQuality.AVAILABLE else None
         )
         request = WorkloadSnapshotCreate(
             target_id=context.target_id,
@@ -208,7 +225,15 @@ class WorkloadCollectionHandler:
                     for row in _rows(observations.get("db.postgresql.database.statistics"))
                     if row.get("database_oid") is not None
                 } if database_type == "POSTGRESQL" else {},
-                "sql_collection": {"mode": collection_mode, "limit": statement_limit, "observed_rows": observed_rows, "accepted_rows": len(statements), "visible_set_read_complete": candidate_complete, "atomic": False, "source_visibility": "DIAGNOSTIC_CREDENTIAL_VISIBLE_ONLY"},
+                "sql_collection": {
+                    "mode": MODE, "limit": statement_limit,
+                    "observed_rows": observed_rows, "accepted_rows": len(statements),
+                    "complete": False, "atomic": False,
+                    "source_visibility": "DIAGNOSTIC_CREDENTIAL_VISIBLE_ONLY",
+                    "source_truncated": bool(statement_observation.get("truncated", True)),
+                    "invalid_identity_rows": observed_rows - len(statements),
+                    "pool": pool,
+                },
                 "instance": {
                     "identity": instance_identifier,
                     "started_at": (instance_started_at or captured_at).isoformat(),
@@ -462,7 +487,7 @@ def _statement_rows(
                 mean_duration_microseconds=duration // count if count else 0,
                 max_duration_microseconds=0,
                 rows_processed=_integer(item.get("rows_processed")) or 0,
-                rank_dimension="MULTI_METRIC_CANDIDATE",
+                rank_dimension="HOTSPOT_TRACKING",
                 database_metrics={
                     key: item[key] for key in
                     ("plan_hash_value", "cpu_time", "buffer_gets", "disk_reads")
@@ -473,7 +498,7 @@ def _statement_rows(
             continue
         if database_type == "MYSQL":
             identity = str(item.get("digest") or "").upper()
-            if len(identity) != 64:
+            if not re.fullmatch(r"[0-9A-F]{64}", identity):
                 continue
             total_us = _picoseconds_to_microseconds(
                 item.get("total_latency_picoseconds")
@@ -509,7 +534,7 @@ def _statement_rows(
                     max_duration_microseconds=max_us,
                     rows_processed=_integer(item.get("rows_sent")) or 0,
                     database_metrics={**database_metrics, "schema_name": item.get("schema_name")},
-                    rank_dimension="MULTI_METRIC_CANDIDATE",
+                    rank_dimension="HOTSPOT_TRACKING",
                     rank_no=rank,
                 )
             )
@@ -542,7 +567,7 @@ def _statement_rows(
                     item.get("max_exec_time_ms")
                 ),
                 rows_processed=_integer(item.get("rows_processed")) or 0,
-                rank_dimension="MULTI_METRIC_CANDIDATE",
+                rank_dimension="HOTSPOT_TRACKING",
                 database_metrics={
                     key: value
                     for key, value in item.items()
