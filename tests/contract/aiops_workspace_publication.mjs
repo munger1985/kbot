@@ -70,6 +70,7 @@ const monitor = { source_id: 'source-1', source_type: 'OEM', status: 'ENABLED' }
   assert.equal(f.calls.at(-1).method, 'PUT');
   assert.equal(f.calls.at(-1).payload.revision, 7);
   assert.equal(f.api.state().draftRevision, 8);
+  assert.equal(f.navigations.length, 0, '仅保存草稿必须保留编辑页');
 }
 
 // 发布只提交配置；不要求先测试连接，也不能在创建资源前丢失业务空间或留下旧草稿链接。
@@ -86,6 +87,7 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   await flush();
   assert.equal(f.api.state().saving, true);
   assert.equal(f.node('commit').disabled, true);
+  assert.equal(f.navigations.length, 0, '发布请求尚未完成不能返回列表');
   await f.api.commit();
   assert.equal(f.calls.filter(call => call.path.endsWith(':commit')).length, 1, '重复点击发布不能重复提交');
   const draft = f.calls[0].payload;
@@ -104,9 +106,11 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   assert.equal(f.api.state().dirty, false);
   assert.equal(f.navigations.length, 1);
   const url = f.navigations[0];
-  assert.equal(url.searchParams.get('id'), 'system-published');
+  assert.equal(url.pathname, '/ui/aiops/business-systems.html');
+  assert.equal(url.searchParams.has('id'), false);
   assert.equal(url.searchParams.get('domainId'), 'domain-42');
   assert.equal(url.searchParams.has('draft'), false);
+  assert.equal(url.searchParams.has('view'), false);
 }
 
 // 创建发布失败时保留已保存草稿，重试更新同一草稿，不重复创建业务系统配置。
@@ -142,8 +146,17 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   item.workload_snapshot = { target_id: 'target-1', target_row_version: 8, policy: { enabled: true, interval_minutes: 1, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30, collection_mode: 'VISIBLE_SET', visible_statement_limit: 250 } };
   const detail = { business_system_id: 'system-1', system_code: 'MES', ...copy(system), status: 'DISABLED', row_version: 3, resources: [{ system_resource_id: 'system-resource-1', architecture_layer_key: 'DATA', status: 'ACTIVE', row_version: 5, resource: { resource_id: 'resource-1', row_version: 4, display_name: item.display_name, resource_type_key: 'DATABASE', owner_group_id: item.owner_group_id, database: { ...copy(item.database), target_id: 'target-1', endpoint: { host: 'db.example.invalid', port: 1521, service: 'MES' } } } }], relations: [] };
   f.api.seed({ system: copy(system), resources: [item], sources: [monitor], detail, draftId: 'edit-draft', draftRevision: 11 });
-  f.handle(async call => call.path.includes('/business-systems/system-1') ? copy(detail) : {});
-  await f.api.commit();
+  let finishCleanup;
+  f.handle(async call => {
+    if (call.method === 'DELETE') return new Promise(resolve => { finishCleanup = resolve; });
+    return call.path.includes('/business-systems/system-1') ? copy(detail) : {};
+  });
+  const pending = f.api.commit();
+  await flush();
+  assert.equal(typeof finishCleanup, 'function');
+  assert.equal(f.navigations.length, 0, '编辑保存及草稿清理全部成功后才能返回列表');
+  finishCleanup({});
+  await pending;
   const patch = f.calls.find(call => call.method === 'PATCH' && call.path === '/managed-resources/resource-1');
   assert.equal(patch.headers['If-Match'], '"rv-4"');
   assert.equal(patch.payload.database.workload_snapshot_policy.collection_mode, undefined);
@@ -160,6 +173,31 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   assert.equal(f.api.state().dirty, false);
   assert.equal(new URL(f.location.href).searchParams.has('draft'), false);
   assert.equal(new URL(f.location.href).searchParams.get('domainId'), 'domain-42');
+  assert.equal(f.navigations.length, 1);
+  assert.equal(f.navigations[0].pathname, '/ui/aiops/business-systems.html');
+  assert.equal(f.navigations[0].searchParams.has('id'), false);
+  assert.equal(f.navigations[0].searchParams.has('view'), false);
+}
+
+// 编辑保存或草稿清理失败时不得离开工作区，也不能丢失重试所需的编辑内容与草稿版本。
+for (const failure of ['PATCH', 'DELETE']) {
+  const f = fixture('system-1');
+  const detail = { business_system_id: 'system-1', ...copy(system), status: 'DISABLED', row_version: 3, resources: [], relations: [] };
+  const item = resource();
+  f.api.seed({ system: copy(system), resources: [item], sources: [monitor], detail, draftId: 'edit-draft', draftRevision: 11 });
+  f.handle(async call => {
+    if (call.method === failure) throw new Error(`隔离测试：${failure} 失败`);
+    if (call.path.endsWith('/resources')) return { ...copy(detail), resources: [{ system_resource_id: 'sr-1', row_version: 1, resource: { resource_id: 'resource-1', row_version: 1 } }] };
+    return copy(detail);
+  });
+  await f.api.commit();
+  assert.equal(f.navigations.length, 0);
+  assert.equal(f.api.state().draftId, 'edit-draft');
+  assert.equal(f.api.state().draftRevision, 11);
+  assert.equal(f.api.state().dirty, true);
+  assert.equal(f.api.state().saving, false);
+  assert.equal(f.api.state().system.display_name, system.display_name);
+  assert.match(f.notifications.at(-1), new RegExp(`${failure} 失败`));
 }
 
 // 发布前按稳定定位键刷新监控引用，不能提交失效的候选引用，也不能猜测替代候选。

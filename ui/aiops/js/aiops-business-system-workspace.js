@@ -1301,14 +1301,12 @@
       draftId = "";
       draftRevision = 0;
       dirty = false; shell.toast(creating ? "业务系统资源已发布并上线。" : "业务系统资源已发布。");
-      const publishedUrl = new URL(location.href);
-      publishedUrl.searchParams.set("id", saved.business_system_id);
-      publishedUrl.searchParams.delete("draft");
-      if (creating) location.replace(publishedUrl.href);
-      else {
-        history.replaceState(null, "", publishedUrl);
-        hydrate(saved); notifyValidationIssues(saved); render();
+      notifyValidationIssues(saved);
+      const publishedUrl = new URL("./business-systems.html", location.href);
+      for (const [key, value] of new URL(location.href).searchParams) {
+        if (!["id", "draft", "view"].includes(key)) publishedUrl.searchParams.append(key, value);
       }
+      location.replace(publishedUrl.href);
     } catch (error) { shell.toast(error.message); }
     finally { saving = false; updateFooter(); }
   }
