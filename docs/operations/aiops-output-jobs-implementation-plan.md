@@ -1343,3 +1343,32 @@ Oracle 历史 NULL、ORM／DDL 类型差异和全站模板视觉差异仍按上�
 
 本批没有 SSH、部署、重启、数据库写入、模型调用或测试资源创建；未提交或推送。
 按最新分工，本次代码实施交付完成；真实验收仍为“由用户执行，尚无本批结果”。
+
+### 6.24 案例 KC 自动资源生命周期（2026-11-04）
+
+本节替代 6.12 中依赖定向部署脚本的资源补缺流程，历史记录不代表当前操作要求。
+
+- 平台业务事务登记一 Domain 一条持久化资源事件，KC 内部用例负责实际建库与所属绑定。
+- Domain/App 生命周期入口与规范初始化统一登记；后台键集分页对账自动纳管已有空间。
+- 资源记录持有已知 Collection ID、租约、重试时间、失败码和独立模型配置状态。
+- KC 父空间行锁串行初始化，复用有效资源、不覆盖配置、不重建已知丢失资源；
+  通用物理删除入口保护系统案例资源。
+- 案例页面显示资源/模型配置状态；配置七项不变，模型必须显式配置。
+- 删除定向 provision_aiops_case_collection.py；运行时无部署脚本依赖，无 Schema 探测。
+- 本地离线验证结果与实际环境验收分开记录；本次不执行服务器部署、DDL 或真实检索。
+
+离线验证记录（不代表真实环境验收）：
+
+- 最新资源生命周期、Domain 事务事件与案例模型专项：Ammolite 71 passed；
+  KBot4 67 passed / 4 个仅 PostgreSQL 绑定场景 skipped。
+- Main API / KC / 资源联合回归：Ammolite 550 passed / 1 deselected，
+  KBot4 324 passed / 4 skipped。Ammolite 排除项是既有会话 starter 夹具缺失
+  business_systems；相关实现函数 AST 与测试文件均核对为本次未修改。
+- 完整 AIOps 单元目录批次：KBot4 4985 passed / 4 skipped；
+  Ammolite 5029 passed / 1 failed，失败为动态采样 POSTGRESQL 场景返回 PARTIAL。
+  该采样文件独立复跑 16 passed；未修改采样代码，不将原完整批次标记为全绿。
+- 两仓架构边界、规范 Schema、OpenAPI 快照和跨项目对齐门禁通过；
+  Ammolite Entity 所有权检查通过。
+- Portal typecheck 与 build 通过（保留既有大包体提示），KBot 页面脚本语法检查通过。
+- 案例页隔离对照通过空/有数据及至少三种屏宽；补测资源初始化中、状态接口失败时列表独立可用。
+- 无 SSH、服务器部署/重启、数据库写入或真实模型/检索调用；本批未提交、未推送。

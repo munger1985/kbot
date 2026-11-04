@@ -131,6 +131,11 @@ function installFixture(data) {
     const suffix = new URL(path, "http://fixture").pathname.replace(/\/domains\/[^/]+\/(?:ops|manage)/, "");
     const rows = (item) => location.search.includes("empty=1") ? [] : [item];
     // 成果列表与后台生成记录独立；通知顶栏不以未知请求静默兜底。
+    if (suffix.endsWith('/case-collection/resource')) {
+      if (globalThis.fixtureCaseResourceFailure) throw new Error('隔离测试：资源状态暂不可用');
+      return globalThis.fixtureCaseResource || {resource_status:'READY',configuration_status:'MODELS_REQUIRED',
+        missing_model_roles:['embedding','parser_llm','retrieval_llm'],collection_id:'case-kc-1',error_code:null};
+    }
     if (suffix.endsWith('/output-jobs')) return {items:[],has_more:false,next_cursor:null};
     if (suffix === '/api/v1/notifications/summary') return {unread:0};
     if (suffix.endsWith('/diagnostic-sources')) return {items:rows({...data.source,source_type:globalThis.fixtureSourceType || 'PROMETHEUS',status:globalThis.fixtureSourceStatus || 'ENABLED'})};
@@ -887,6 +892,22 @@ try {
         await page.evaluate(()=>{fixtureHoldWrites=true;});await page.getByRole('button',{name:'沉淀案例',exact:true}).click();await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));
         const request=await page.evaluate(()=>fixtureRequests.filter(row=>row.method==='POST').at(-1));assert.ok(request.path.endsWith('/operations-knowledge/reports/report-1:extract-case'));
         assert.ok(request.headers['Idempotency-Key']);assert.equal(await page.getByRole('button',{name:'正在提交…',exact:true}).isDisabled(),true);await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});await page.getByRole('link',{name:'查看案例生成记录',exact:true}).waitFor();
+      }
+    }
+    if(name==='cases') {
+      for (const page of [kbot,reference]) {
+        const status = page.getByRole('status',{name:'案例库资源状态'});
+        assert.ok((await status.innerText()).includes('案例库资源：已就绪；模型配置：待显式配置'));
+        await page.evaluate(()=>{fixtureCaseResource={resource_status:'RUNNING',configuration_status:'UNKNOWN'};});
+        await page.getByRole('button',{name:'刷新',exact:true}).click();
+        await status.filter({hasText:'正在初始化'}).waitFor();
+        await page.evaluate(()=>{fixtureCaseResourceFailure=true;});
+        await page.getByRole('button',{name:'刷新',exact:true}).click();
+        await status.filter({hasText:'案例列表仍可独立查看'}).waitFor();
+        await page.locator('.diagnosis-cases-page tbody').filter({hasText:empty?'没有诊断案例':'归档空间告警诊断'}).waitFor();
+        await page.evaluate(()=>{fixtureCaseResourceFailure=false;delete globalThis.fixtureCaseResource;});
+        await page.getByRole('button',{name:'刷新',exact:true}).click();
+        await status.filter({hasText:'已就绪'}).waitFor();
       }
     }
     if(name==='cases' && !empty) {

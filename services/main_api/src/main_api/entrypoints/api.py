@@ -25,6 +25,7 @@ from main_api.application import (
 )
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
+from main_api.application.case_resource_lifecycle import CaseResourceLifecycle
 from platform_clients import (
     AIOpsClientAuth,
     AIOpsManagementClient,
@@ -88,6 +89,7 @@ async def lifespan(app: FastAPI):
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     uow_factory = create_main_api_uow(db_runtime.session_factory)
+    app.state.case_resource_lifecycle = CaseResourceLifecycle(uow_factory=uow_factory, client=None)
     app.state.output_authority_service = OutputAuthorityService(uow_factory=uow_factory)
     app.state.domain_validation_service = DomainValidationService(
         uow_factory=uow_factory,

@@ -37,7 +37,8 @@ python3 scripts/db/initialize_aiops.py
 ```
 
 脚本在同一 Oracle 事务范围内幂等补齐 App、Domain、用户、角色、权限、默认运维知识库和
-固定诊断案例集合，不自动上传或批准手册。初始化后，用户在“运维知识库”页面创建知识库，
+案例资源初始化事件；后台经 KC 自动创建固定诊断案例集合，不自动上传或批准手册。
+初始化后，用户在“运维知识库”页面创建知识库，
 在“运维知识”页面选择知识库上传资料、配置解析模型并完成审批发布。
 
 只读复查完整结果：
@@ -49,8 +50,8 @@ python3 scripts/db/initialize_aiops.py --check-only
 初始密码由脚本在终端输出。初始化脚本重复执行会恢复固定初始密码，因此生产环境完成
 初始化并修改密码后，不应把它当作日常健康检查使用；日常检查使用 `--check-only`。
 
-仅为案例资源补缺时，使用[案例资源定向初始化与模型维护](aiops-case-resource-maintenance.md)中的
-`scripts/deployment/provision_aiops_case_collection.py`，不要重复运行广域初始化。
+案例资源由[系统自动生命周期](aiops-case-resource-maintenance.md)维护：初始化登记持久化事件，
+后台经 KC 自动创建；已有空间自动对账纳管，不运行人工补缺脚本或重复广域初始化。
 新建案例资源采用 TEXT、空模型映射；已有案例模型与解析策略不覆盖，也不重新启用停用资源。
 案例独立显式绑定 parser_llm、retrieval_llm、embedding，不要求 OCR，不借用资料库模型。
 

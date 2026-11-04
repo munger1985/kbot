@@ -734,8 +734,17 @@ class OperationsKnowledgeService:
             ) from exc
         matches = [
             item for item in catalog.get("collections", [])
-            if item.get("display_name") == name
+            if (item.get("display_name") == name if name != CASE_COLLECTION else (
+                (item.get("metadata") or {}).get("owner_app_id") == "aiops"
+                and (item.get("metadata") or {}).get("fixed_resource") is True
+                and (item.get("metadata") or {}).get("content_kind") == "diagnosis_case"))
         ]
+        if not matches and name == CASE_COLLECTION:
+            raise AIOpsApplicationError(
+                code="AIOPS_CASE_COLLECTION_NOT_READY",
+                message="案例库资源尚未就绪，系统正在自动维护，请稍后重试或查看案例库资源状态",
+                status_code=503, retryable=True,
+            )
         if len(matches) != 1:
             raise AIOpsApplicationError(
                 code="AIOPS_KNOWLEDGE_INDEX_STALE",

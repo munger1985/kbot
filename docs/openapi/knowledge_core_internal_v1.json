@@ -62,6 +62,95 @@
         "title": "BindingRequest",
         "type": "object"
       },
+      "CaseResourceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "allow_create": {
+            "default": true,
+            "title": "Allow Create",
+            "type": "boolean"
+          },
+          "domain_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "expected_collection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Collection Id"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "required": [
+          "domain_id",
+          "actor_id"
+        ],
+        "title": "CaseResourceRequest",
+        "type": "object"
+      },
+      "CaseResourceResult": {
+        "additionalProperties": false,
+        "properties": {
+          "collection_id": {
+            "format": "uuid",
+            "title": "Collection Id",
+            "type": "string"
+          },
+          "configuration_status": {
+            "enum": [
+              "MODELS_REQUIRED",
+              "CONFIGURED",
+              "TEXT_POLICY_REQUIRED"
+            ],
+            "title": "Configuration Status",
+            "type": "string"
+          },
+          "missing_model_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Model Roles",
+            "type": "array"
+          },
+          "request": {
+            "$ref": "#/components/schemas/CaseResourceRequest"
+          }
+        },
+        "required": [
+          "request",
+          "collection_id",
+          "missing_model_roles",
+          "configuration_status"
+        ],
+        "title": "CaseResourceResult",
+        "type": "object"
+      },
       "CollectionModelPolicyResponse": {
         "properties": {
           "embedding_change_allowed": {
@@ -5047,6 +5136,47 @@
         "summary": "Search Visual",
         "tags": [
           "Knowledge Core Visual Retrieval"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/system/aiops-case-collections:ensure": {
+      "post": {
+        "operationId": "ensure_case_resource_internal_v1_knowledge_system_aiops_case_collections_ensure_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseResourceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResourceResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ensure Case Resource",
+        "tags": [
+          "System Resources"
         ]
       }
     },

@@ -13,6 +13,7 @@ SCHEMA_ROOT = ROOT / "database" / "oracle"
 SERVICE_TABLES = {
     "platform_core": {
         "KBOT_PLATFORM_DOMAIN",
+        "KBOT_PLATFORM_CASE_RESOURCE",
         "KBOT_PLATFORM_PROMPT",
         "KBOT_PLATFORM_PROMPT_VERSION",
         "KBOT_NOTIFICATION_OUTBOX",

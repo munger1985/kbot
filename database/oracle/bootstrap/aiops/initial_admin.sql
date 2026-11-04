@@ -1,6 +1,6 @@
 -- 由 scripts/db/initialize_aiops.py 调用的 AIOps 首次使用数据资产。
 -- 本资产只写基础数据，不创建或修改 Schema 对象。
--- 固定资源：aiops_portal Domain、默认运维知识库、diagnosis-cases KC Collection、aiopsadmin。
+-- 固定资源：aiops_portal Domain、默认运维知识库、案例资源持久化事件、aiopsadmin。
 -- 初始密码：AIOpsAdmin@2026!；重复执行会恢复该密码。
 
 SET SERVEROUTPUT ON
@@ -67,24 +67,12 @@ DECLARE
                 HEXTORAW(REPLACE(p_collection_id, '-', '')),
                 l_domain_id, p_display_name, p_description,
                 '{}',
-                CASE WHEN p_content_kind='diagnosis_case' THEN '{"parse_strategy":"TEXT"}'
-                     ELSE '{"parse_strategy":"AUTO","image_scale":2.0,"detect_table_structure":true}' END,
+                '{"parse_strategy":"AUTO","image_scale":2.0,"detect_table_structure":true}',
                 'ACTIVE', 1,
                 '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"' || p_content_kind || '"}',
                 1, 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
                 SYSTIMESTAMP, SYSTIMESTAMP
             );
-        ELSIF p_content_kind='diagnosis_case' THEN
-            -- 已有案例资源只核验身份，不重启用、不覆盖模型或管理员策略。
-            SELECT COUNT(*) INTO l_collection_count FROM KBOT_KC_COLLECTION
-             WHERE DOMAIN_ID=l_domain_id AND DISPLAY_NAME=p_display_name
-               AND STATUS='ACTIVE'
-               AND JSON_VALUE(METADATA_JSON, '$.owner_app_id')='aiops'
-               AND JSON_VALUE(METADATA_JSON, '$.fixed_resource')='true'
-               AND JSON_VALUE(METADATA_JSON, '$.content_kind')='diagnosis_case';
-            IF l_collection_count <> 1 THEN
-                raise_application_error(-20003, '固定案例资源身份或状态冲突，不自动修复。');
-            END IF;
         ELSE
             UPDATE KBOT_KC_COLLECTION SET STATUS = 'ACTIVE',
                 DESCRIPTION = p_description,
@@ -102,11 +90,16 @@ BEGIN
         'AIOps 固定数据库运维手册 Collection',
         'operations_manual'
     );
-    ensure_collection(
-        '019ffff0-0000-7000-8000-000000000002',
-        'diagnosis-cases',
-        'AIOps 固定历史诊断案例 Collection',
-        'diagnosis_case'
+    -- 案例 Collection 统一由平台后台经 KC 内部接口创建；重复初始化不重置已知身份。
+    MERGE INTO KBOT_PLATFORM_CASE_RESOURCE target
+    USING (SELECT l_domain_id DOMAIN_ID FROM DUAL) source
+    ON (target.DOMAIN_ID=source.DOMAIN_ID)
+    WHEN NOT MATCHED THEN INSERT (
+        DOMAIN_ID, ACTOR_ID, STATUS, CONFIGURATION_STATUS, MISSING_MODEL_ROLES,
+        ATTEMPT_COUNT, NEXT_ATTEMPT_AT, CREATION_ALLOWED
+    ) VALUES (
+        source.DOMAIN_ID, 'bootstrap:aiops_initial_admin', 'QUEUED', 'UNKNOWN', '[]',
+        0, SYSTIMESTAMP, 1
     );
 END;
 /

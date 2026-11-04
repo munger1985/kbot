@@ -444,6 +444,7 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
             collection_id=COLLECTION_ID,
             status="DELETING",
             updated_by="tester",
+            metadata_json={},
         )
         existing = SimpleNamespace(
             ingestion_job_id=job_id,
@@ -471,6 +472,7 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
             collection_id=COLLECTION_ID,
             status="DELETION_FAILED",
             updated_by="tester",
+            metadata_json={},
         )
         existing = SimpleNamespace(
             ingestion_job_id=job_id,

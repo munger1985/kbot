@@ -2671,6 +2671,62 @@
         "title": "CaseCollectionModels",
         "type": "object"
       },
+      "CaseResourceStatus": {
+        "properties": {
+          "collection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Id"
+          },
+          "configuration_status": {
+            "default": "UNKNOWN",
+            "title": "Configuration Status",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "missing_model_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Model Roles",
+            "type": "array"
+          },
+          "resource_status": {
+            "enum": [
+              "UNINITIALIZED",
+              "QUEUED",
+              "RUNNING",
+              "READY",
+              "FAILED",
+              "PAUSED"
+            ],
+            "title": "Resource Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_status"
+        ],
+        "title": "CaseResourceStatus",
+        "type": "object"
+      },
       "CitationEvidenceView": {
         "additionalProperties": false,
         "description": "回答引用中可直接展示的安全结构化证据。",
@@ -30395,6 +30451,27 @@
           }
         },
         "summary": "Configure Case Collection Models",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/case-collection/resource": {
+      "get": {
+        "operationId": "get_case_collection_resource_api_v1_apps_aiops_operations_knowledge_case_collection_resource_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResourceStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Case Collection Resource",
         "tags": [
           "AIOps App"
         ]

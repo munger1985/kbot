@@ -1,5 +1,6 @@
 """Explicit transaction boundary for Knowledge Core use cases."""
 from collections.abc import Callable
+from knowledge_core.repositories.case_resource import SystemCaseResourceRepository
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -25,6 +26,7 @@ class KnowledgeCoreUnitOfWork:
         job_wakeup_publisher: JobWakeupPublisher | None = None,
     ):
         self._session_factory = session_factory
+        self.case_resources = None
         self._job_wakeup_publisher = job_wakeup_publisher
         self._pending_wakeup_channels: set[str] = set()
         self.session: AsyncSession | None = None
@@ -49,6 +51,7 @@ class KnowledgeCoreUnitOfWork:
 
     async def __aenter__(self) -> "KnowledgeCoreUnitOfWork":
         self.session = self._session_factory()
+        self.case_resources = SystemCaseResourceRepository(self.session)
         self.collections = CollectionRepository(self.session)
         self.bindings = CollectionBindingRepository(self.session)
         self.receipts = IngestionReceiptRepository(self.session)
@@ -117,6 +120,7 @@ class KnowledgeCoreUnitOfWork:
         finally:
             await self.session.close()
             self.session = None
+            self.case_resources = None
             self.collections = None
             self.bindings = None
             self.receipts = None

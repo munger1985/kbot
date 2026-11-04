@@ -79,6 +79,10 @@ from knowledge_core.application.visual_search import KnowledgeCoreVisualService
 from platform_clients import AIModelClient, AIModelConfigClient
 from knowledge_core.persistence import create_kc_uow
 from platform_core.platform.port_check import check_port_available
+from knowledge_core.api.case_resource import install_case_resource_boundary
+from knowledge_core.application.case_resource import SystemCaseResourceService
+from platform_core.contracts.aiops.case_resource import CASE_RESOURCE_PATH
+from platform_core.security.middleware import PUBLIC_PATHS
 from platform_core.security import create_internal_auth_middleware
 
 
@@ -293,6 +297,7 @@ async def lifespan(app: FastAPI):
             "visual_max_concurrency": settings.parse_policy.visual_max_concurrency,
         },
     )
+    app.state.case_resource_service = SystemCaseResourceService(uow_factory=kc_uow_factory)
     app.state.kc_collection_service = KnowledgeCoreCollectionService(
         uow_factory=kc_uow_factory,
     )
@@ -329,8 +334,9 @@ app.add_middleware(
 )
 app.middleware("http")(log_requests)
 app.middleware("http")(
-    create_internal_auth_middleware(audience=SERVICE_NAME)
+    create_internal_auth_middleware(audience=SERVICE_NAME, public_paths=PUBLIC_PATHS | {CASE_RESOURCE_PATH})
 )
+install_case_resource_boundary(app, audience=SERVICE_NAME, caller_service="kbot-main-api")
 app.include_router(intake_router)
 app.include_router(collection_router)
 app.include_router(model_reference_router)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from platform_core.app_resources.repository import CaseResourceRepository
 
 from main_api.repositories import (
     AccessControlRepository,
@@ -17,6 +18,7 @@ from main_api.repositories import (
 class MainApiUnitOfWork:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._session_factory = session_factory
+        self.case_resources = None
         self.session: AsyncSession | None = None
         self.domains: PlatformDomainRepository | None = None
         self.notifications: NotificationRepository | None = None
@@ -25,6 +27,7 @@ class MainApiUnitOfWork:
 
     async def __aenter__(self) -> "MainApiUnitOfWork":
         self.session = self._session_factory()
+        self.case_resources = CaseResourceRepository(self.session)
         self.domains = PlatformDomainRepository(self.session)
         self.notifications = NotificationRepository(self.session)
         self.access = AccessControlRepository(self.session)
@@ -50,6 +53,7 @@ class MainApiUnitOfWork:
                 await session.close()
         finally:
             self.session = None
+            self.case_resources = None
             self.domains = None
             self.notifications = None
             self.access = None

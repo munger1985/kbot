@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, cast
 from urllib.parse import unquote
 from uuid import UUID
 
+from platform_core.contracts.aiops.case_resource import CaseResourceStatus
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -1334,6 +1335,13 @@ async def retry_output_job(job_id: UUID, body: OutputJobRetry, request: Request)
         await _require(request, "aiops:knowledge_manage")
     return await _client(request).retry_output_job(job_id,
         payload=body.model_dump(mode="json"), auth_context=request.state.auth_context)
+
+
+@router.get("/operations-knowledge/case-collection/resource", response_model=CaseResourceStatus)
+async def get_case_collection_resource(request: Request):
+    await _require(request, "aiops:use")
+    return await request.app.state.case_resource_lifecycle.status(
+        domain_id=request.state.auth_context.domain_id)
 
 
 @router.get("/operations-knowledge/case-collection/models")

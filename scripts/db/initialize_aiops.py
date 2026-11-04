@@ -44,7 +44,8 @@ class AIOpsInitializationResult:
     domain_id: int
     knowledge_base_id: str
     collection_id: str
-    case_collection_id: str
+    case_collection_id: str | None
+    case_resource_status: str
     permission_count: int
 
 
@@ -130,21 +131,19 @@ async def _validate(connection) -> AIOpsInitializationResult:
     """))).one_or_none()
     if resource is None:
         raise RuntimeError("aiopsadmin、aiops_portal 或默认运维知识库初始化不完整")
-    case_collection_id = (await connection.execute(text("""
-        SELECT LOWER(SUBSTR(RAWTOHEX(collection.COLLECTION_ID),1,8)||'-'||
+    case_resource = (await connection.execute(text("""
+        SELECT CASE WHEN collection.COLLECTION_ID IS NULL THEN NULL ELSE
+               LOWER(SUBSTR(RAWTOHEX(collection.COLLECTION_ID),1,8)||'-'||
                      SUBSTR(RAWTOHEX(collection.COLLECTION_ID),9,4)||'-'||
                      SUBSTR(RAWTOHEX(collection.COLLECTION_ID),13,4)||'-'||
                      SUBSTR(RAWTOHEX(collection.COLLECTION_ID),17,4)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),21,12))
-          FROM KBOT_KC_COLLECTION collection
+                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),21,12)) END, collection.STATUS
+          FROM KBOT_PLATFORM_CASE_RESOURCE collection
          WHERE collection.DOMAIN_ID=:domain_id
-           AND collection.DISPLAY_NAME='diagnosis-cases'
-           AND collection.STATUS='ACTIVE'
-           AND JSON_VALUE(collection.METADATA_JSON, '$.owner_app_id')='aiops'
-           AND JSON_VALUE(collection.METADATA_JSON, '$.fixed_resource')='true'
-    """), {"domain_id": int(resource[0])})).scalar_one_or_none()
-    if case_collection_id is None:
-        raise RuntimeError("固定诊断案例集合初始化不完整")
+    """), {"domain_id": int(resource[0])})).one_or_none()
+    if case_resource is None:
+        raise RuntimeError("案例资源初始化事件未登记")
+    case_collection_id, resource_status = case_resource
     missing = (await connection.execute(text("""
         SELECT PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID='aiops'
         MINUS
@@ -161,7 +160,8 @@ async def _validate(connection) -> AIOpsInitializationResult:
         domain_id=int(resource[0]),
         knowledge_base_id=DEFAULT_KNOWLEDGE_BASE_ID,
         collection_id=str(resource[1]),
-        case_collection_id=str(case_collection_id),
+        case_collection_id=str(case_collection_id) if case_collection_id else None,
+        case_resource_status=str(resource_status),
         permission_count=permission_count,
     )
 
@@ -208,7 +208,8 @@ def main() -> int:
         f"Domain={DOMAIN_NAME}({result.domain_id})，"
         f"KnowledgeBase=默认运维知识库({result.knowledge_base_id})，"
         f"Collection={COLLECTION_NAME}({result.collection_id})，"
-        f"CaseCollection={CASE_COLLECTION_NAME}({result.case_collection_id})，"
+        f"CaseCollection={CASE_COLLECTION_NAME}({result.case_collection_id or '等待后台创建'})，"
+        f"CaseResourceStatus={result.case_resource_status}，"
         f"权限={result.permission_count}，用户={ADMIN_USER}"
     )
     if not args.check_only:

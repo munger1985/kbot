@@ -459,6 +459,11 @@ class KnowledgeCoreCollectionService:
             )
             if collection is None:
                 raise CollectionNotFoundError("Collection not found")
+            metadata = collection.metadata_json or {}
+            if (metadata.get("owner_app_id") == "aiops"
+                and metadata.get("fixed_resource") is True
+                and metadata.get("content_kind") == "diagnosis_case"):
+                raise CollectionInUseError("系统案例资源由业务空间生命周期管理，不能物理删除")
             if await uow.bindings.has_active_binding(
                 collection_id=collection.collection_id,
             ):

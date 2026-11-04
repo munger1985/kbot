@@ -31,11 +31,13 @@ def fixture():
         "collection_id": str(collection_id), "display_name": "diagnosis-cases",
         "status": "ACTIVE", "row_version": 8, "models": {},
         "metadata": {"owner_app_id": "aiops", "fixed_resource": True,
+            "content_kind": "diagnosis_case",
             "domain_id": str(store.domain)},
         "source_system": "aiops", "external_key": f"diagnosis-cases:{store.domain}",
         "parse_policy": {"parse_strategy": "AUTO"},
     }
     manual = {**deepcopy(collection), "collection_id": str(manual_id),
+        "metadata": {**deepcopy(collection["metadata"]), "content_kind": "operations_manual"},
         "display_name": "operations-manuals", "external_key": f"operations-manuals:{store.domain}",
         "models": {"parser_ocr": str(uuid7()), "embedding": str(uuid7())}}
     kc = SimpleNamespace(list_collections=AsyncMock(return_value={"collections": [manual, collection]}),

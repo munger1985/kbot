@@ -93,6 +93,8 @@ class DomainManagementService:
                 user_id=actor_id,
                 domain_id=int(entity.domain_id),
             )
+            if app_id == "aiops":
+                await uow.case_resources.register(domain_id=int(entity.domain_id), actor_id=actor_id, force=True)
             await uow.commit()
             return self._view(entity)
 
@@ -179,6 +181,8 @@ class DomainManagementService:
             if changed:
                 entity.row_version = int(entity.row_version) + 1
                 entity.updated_by = actor_id
+            if app_id == "aiops":
+                await uow.case_resources.register(domain_id=int(entity.domain_id), actor_id=actor_id, force=True)
             await uow.commit()
             return self._view(entity)
 
