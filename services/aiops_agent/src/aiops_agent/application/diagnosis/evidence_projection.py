@@ -10,6 +10,7 @@ from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 def top_sql_window_evidence_fact(*, result, artifact_id):
     """历史窗口来源按原始窗口结果重建，不能借累计或当前快照证明历史。"""
     from decimal import Decimal
+    import json
     from aiops_agent.application.diagnosis.calculations import statement_window_graphs
     from aiops_agent.contracts.measurements import DerivedMeasurement
 
@@ -44,18 +45,24 @@ def top_sql_window_evidence_fact(*, result, artifact_id):
         "MISSED_SNAPSHOTS": "采样间断",
         "COUNTER_RESET": "统计计数器重置",
         "PARTIAL_SOURCE": "采集来源不完整",
-        "LIMITED_CANDIDATE_SET": "累计排名截取的候选集可能遗漏窗口热点",
+        "LIMITED_CANDIDATE_SET": "有界候选集可能遗漏窗口热点",
+        "METRIC_NOT_COLLECTED": "部分历史快照未采集资源指标，未知不按零处理",
+        "METRIC_COUNTER_RESET": "部分资源指标计数器重置",
+        "RANK_METRIC_UNAVAILABLE": "所选排名指标没有可比较的历史数据",
         "STATEMENT_APPEARED_OR_EVICTED": "语句新增或淘汰",
         "STATEMENT_UNAVAILABLE": "部分语句统计不可用",
     }
     warnings = (
         requested,
+        *((f"查询 Target：{result['target_id']}",) if result.get("target_id") else ()),
+        *((f"排名与筛选：{result.get('query_summary', result.get('rank_metric_label'))}；匹配 {result.get('matched_count', 0)} 条。",) if result.get("query_options") else ()),
         f"实际覆盖区间：{covered}",
         *(str(item) for item in result.get("warnings") or ()),
         *(f"数据缺口：{gap_labels.get(str(code), str(code))}（{count}）"
           for code, count in gap_counts.items()),
     )
     statements = list(result.get("top_statements") or ())
+    metric_columns = tuple(dict(column) for column in result.get("metric_columns") or ())
     if not intervals:
         return None
     identity_type = str(statements[0].get("statement_identity_type") or "") if statements else ""
@@ -80,6 +87,9 @@ def top_sql_window_evidence_fact(*, result, artifact_id):
             {"name": "execution_count", "logical_type": "INTEGER"},
             {"name": "total_duration_seconds", "logical_type": "DECIMAL"},
             {"name": "mean_duration_seconds", "logical_type": "DECIMAL"},
+            *metric_columns,
+            *(({"name": "instance_identity", "label": "实例身份", "logical_type": "STRING"},
+               {"name": "metric_quality_note", "label": "指标覆盖", "logical_type": "STRING"}) if metric_columns else ()),
         ),
         rows=tuple(
             (
@@ -90,10 +100,14 @@ def top_sql_window_evidence_fact(*, result, artifact_id):
                 str(Decimal(str(item.get("total_duration_microseconds", 0))) / 1_000_000),
                 str(Decimal(str(item["mean_duration_microseconds"])) / 1_000_000)
                 if item.get("mean_duration_microseconds") is not None else None,
+                *(item.get(column["name"]) for column in metric_columns),
+                *((json.dumps(item.get("instance_identity") or {}, ensure_ascii=False, sort_keys=True),
+                   "部分指标缺失或重置，详见证据缺口" if any(value != "OBSERVED" for value in dict(item.get("metric_quality") or {}).values()) else "已观测")
+                  if metric_columns else ()),
             ) for item in statements
         ),
         row_count=len(statements),
-        truncated=False,
+        truncated=int(result.get("matched_count") or len(statements)) > len(statements),
         warnings=warnings,
         derivations=tuple(
             DerivedMeasurement.model_validate(value)

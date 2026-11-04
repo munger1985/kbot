@@ -3047,6 +3047,7 @@ class DbaAnswerComposeHandler:
                             "label": "已执行（秒）"
                             if primary and primary["result_kind"] == "CURRENT_SQL_LIST"
                             and str(column.get("name") or "").lower() == "elapsed_seconds"
+                            else str(column["label"]) if fact.tool_id == "workload.sql.top_window" and column.get("label")
                             else _PRIMARY_COLUMN_LABELS.get(
                                 str(column.get("name") or "").lower(),
                                 display_field_name(column.get("name") or "") if fact.tool_id in {"db.oracle.statement.plan", "db.oracle.statement.bind_metadata"} else str(column.get("name") or ""),

@@ -70,6 +70,7 @@ class WorkloadRepository(AIOpsRepository):
         target_id: UUID,
         period_start: datetime,
         period_end: datetime,
+        max_rows: int | None = None,
     ) -> list[WorkloadSnapshotEntity]:
         self._check_active()
         statement = (
@@ -84,6 +85,7 @@ class WorkloadRepository(AIOpsRepository):
                 WorkloadSnapshotEntity.collected_at,
                 WorkloadSnapshotEntity.workload_snapshot_id,
             )
+            .limit(max_rows)
         )
         return list((await self._session.execute(statement)).scalars())
 
@@ -93,6 +95,7 @@ class WorkloadRepository(AIOpsRepository):
         domain_id: int,
         target_id: UUID,
         workload_snapshot_ids: Sequence[UUID],
+        max_rows: int | None = None,
     ) -> list[WorkloadStatementEntity]:
         self._check_active()
         if not workload_snapshot_ids:
@@ -111,6 +114,7 @@ class WorkloadRepository(AIOpsRepository):
                 WorkloadStatementEntity.rank_no,
                 WorkloadStatementEntity.workload_statement_id,
             )
+            .limit(max_rows)
         )
         return list((await self._session.execute(statement)).scalars())
 

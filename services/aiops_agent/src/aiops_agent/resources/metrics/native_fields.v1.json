@@ -620,6 +620,9 @@
       "fields": [
         {"column":"executions","native_columns":["EXECUTIONS"],"native_unit":"execution","observed_unit":"execution","kind":"ADDITIVE_COUNTER","unit":"execution","scale_to_canonical":"1","projection":"IDENTITY"},
         {"column":"elapsed_time","native_columns":["ELAPSED_TIME"],"native_unit":"microsecond","observed_unit":"microsecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000001","projection":"IDENTITY"},
+        {"column":"cpu_time","native_columns":["CPU_TIME"],"native_unit":"microsecond","observed_unit":"microsecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000001","projection":"IDENTITY"},
+        {"column":"buffer_gets","native_columns":["BUFFER_GETS"],"native_unit":"oracle_block_access","observed_unit":"oracle_block_access","kind":"ADDITIVE_COUNTER","unit":"oracle_block_access","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"disk_reads","native_columns":["DISK_READS"],"native_unit":"oracle_block","observed_unit":"oracle_block","kind":"ADDITIVE_COUNTER","unit":"oracle_block","scale_to_canonical":"1","projection":"IDENTITY"},
         {"column":"rows_processed","native_columns":["ROWS_PROCESSED"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"}
       ]
     },
@@ -735,7 +738,7 @@
       "tool_id": "db.postgresql.statement.top",
       "tool_version": "1.0.0",
       "variant": "postgresql_pg_stat_statements_12",
-      "template_sha256": "f9c9cb76164c2f2c9012277eb655e36522f7f586ce18f8a69e3ac33e83c541a7",
+      "template_sha256": "3552518ebabd862ccd632fcbe833be9b48bbd916dfd282ab232bec41db30660e",
       "profile": "pg_stat_statements_12",
       "output_columns": [["query_id","STRING"],["database_oid","INTEGER"],["database_name","STRING"],["user_oid","INTEGER"],["username","STRING"],["normalized_statement","STRING"],["execution_count","INTEGER"],["total_exec_time_ms","DECIMAL"],["mean_exec_time_ms","DECIMAL"],["max_exec_time_ms","DECIMAL"],["rows_processed","INTEGER"],["shared_blks_hit","INTEGER"],["shared_blks_read","INTEGER"],["shared_blks_dirtied","INTEGER"],["shared_blks_written","INTEGER"],["local_blks_hit","INTEGER"],["local_blks_read","INTEGER"],["local_blks_dirtied","INTEGER"],["local_blks_written","INTEGER"],["temp_blks_read","INTEGER"],["temp_blks_written","INTEGER"],["block_read_time_ms","DECIMAL"],["block_write_time_ms","DECIMAL"]]
     },
@@ -744,7 +747,7 @@
       "tool_id": "db.postgresql.statement.top",
       "tool_version": "1.0.0",
       "variant": "postgresql_pg_stat_statements_13",
-      "template_sha256": "0bba862e693dcbe6f6fb43dfbf904306b72387ce94be466b95c74d71fbf75ee3",
+      "template_sha256": "8fe645cee587788c6540b2ba16265789c8a5c5a8e497d85b755eb4a7f1ded36b",
       "profile": "pg_stat_statements_13",
       "output_columns": [["query_id","STRING"],["database_oid","INTEGER"],["database_name","STRING"],["user_oid","INTEGER"],["username","STRING"],["normalized_statement","STRING"],["plan_count","INTEGER"],["total_plan_time_ms","DECIMAL"],["execution_count","INTEGER"],["total_exec_time_ms","DECIMAL"],["mean_exec_time_ms","DECIMAL"],["max_exec_time_ms","DECIMAL"],["rows_processed","INTEGER"],["shared_blks_hit","INTEGER"],["shared_blks_read","INTEGER"],["shared_blks_dirtied","INTEGER"],["shared_blks_written","INTEGER"],["local_blks_hit","INTEGER"],["local_blks_read","INTEGER"],["local_blks_dirtied","INTEGER"],["local_blks_written","INTEGER"],["temp_blks_read","INTEGER"],["temp_blks_written","INTEGER"],["block_read_time_ms","DECIMAL"],["block_write_time_ms","DECIMAL"],["wal_records","INTEGER"],["wal_fpi","INTEGER"],["wal_bytes","DECIMAL"]]
     },
@@ -753,7 +756,7 @@
       "tool_id": "db.postgresql.statement.top",
       "tool_version": "1.0.0",
       "variant": "postgresql_pg_stat_statements_14_17",
-      "template_sha256": "bda8a44f0efa54f5395524f0ae9bb7f438f946eb182678b0c16ff30f319d58e3",
+      "template_sha256": "3d0a185dc4eeae7cd566f721049aeb908774c01964b5af1872f89b85de646198",
       "profile": "pg_stat_statements_14",
       "output_columns": [["query_id","STRING"],["database_oid","INTEGER"],["database_name","STRING"],["user_oid","INTEGER"],["username","STRING"],["top_level","BOOLEAN"],["normalized_statement","STRING"],["plan_count","INTEGER"],["total_plan_time_ms","DECIMAL"],["execution_count","INTEGER"],["total_exec_time_ms","DECIMAL"],["mean_exec_time_ms","DECIMAL"],["max_exec_time_ms","DECIMAL"],["rows_processed","INTEGER"],["shared_blks_hit","INTEGER"],["shared_blks_read","INTEGER"],["shared_blks_dirtied","INTEGER"],["shared_blks_written","INTEGER"],["local_blks_hit","INTEGER"],["local_blks_read","INTEGER"],["local_blks_dirtied","INTEGER"],["local_blks_written","INTEGER"],["temp_blks_read","INTEGER"],["temp_blks_written","INTEGER"],["block_read_time_ms","DECIMAL"],["block_write_time_ms","DECIMAL"],["wal_records","INTEGER"],["wal_fpi","INTEGER"],["wal_bytes","DECIMAL"]]
     },
@@ -762,7 +765,7 @@
       "tool_id": "db.postgresql.statement.top",
       "tool_version": "1.0.0",
       "variant": "postgresql_pg_stat_statements_18_plus",
-      "template_sha256": "986f5807f5ca5863353216d12216d84af361b9cd64928c618af8bb9872096524",
+      "template_sha256": "67ca4dc58837e84887ee1cd1319bb7f33287b2acd6fa028efaf73a4e1370a2bc",
       "profile": "pg_stat_statements_18",
       "output_columns": [["query_id","STRING"],["database_oid","INTEGER"],["database_name","STRING"],["user_oid","INTEGER"],["username","STRING"],["top_level","BOOLEAN"],["normalized_statement","STRING"],["plan_count","INTEGER"],["total_plan_time_ms","DECIMAL"],["execution_count","INTEGER"],["total_exec_time_ms","DECIMAL"],["mean_exec_time_ms","DECIMAL"],["max_exec_time_ms","DECIMAL"],["rows_processed","INTEGER"],["shared_blks_hit","INTEGER"],["shared_blks_read","INTEGER"],["shared_blks_dirtied","INTEGER"],["shared_blks_written","INTEGER"],["local_blks_hit","INTEGER"],["local_blks_read","INTEGER"],["local_blks_dirtied","INTEGER"],["local_blks_written","INTEGER"],["temp_blks_read","INTEGER"],["temp_blks_written","INTEGER"],["block_read_time_ms","DECIMAL"],["block_write_time_ms","DECIMAL"],["wal_records","INTEGER"],["wal_fpi","INTEGER"],["wal_bytes","DECIMAL"]]
     },
@@ -816,7 +819,7 @@
       "tool_id": "db.mysql.statement.digest.top",
       "tool_version": "1.0.0",
       "variant": "mysql_8_digest",
-      "template_sha256": "2758310d65e6d00807e189f71cbb93e87cd5ce375d1a379f2b2e541cb8522fe3",
+      "template_sha256": "8b67d1b2877f317d8ac82abd66e0dcecfcdfb9bd2e922446ae83790a240e9cf9",
       "profile": "mysql_digest_top",
       "output_columns": [["schema_name","STRING"],["digest","STRING"],["digest_text","STRING"],["query_sample_text","STRING"],["execution_count","INTEGER"],["total_latency_picoseconds","DECIMAL"],["average_latency_picoseconds","DECIMAL"],["maximum_latency_picoseconds","DECIMAL"],["lock_time_picoseconds","DECIMAL"],["rows_examined","INTEGER"],["rows_sent","INTEGER"],["temp_disk_tables","INTEGER"]]
     },
@@ -825,9 +828,9 @@
       "tool_id": "db.oracle.workload.statements",
       "tool_version": "1.0.0",
       "variant": "oracle_19_plus_workload_sqlstats",
-      "template_sha256": "3ac816f01b08d6ab50c01d4839bd6458daaf6f666176f8cc7e0467c40fd086b8",
+      "template_sha256": "0dc2061428de039b603e462d4121ec5944abbaa06c12e75c56072682ef99ab89",
       "profile": "oracle_workload_sqlstats",
-      "output_columns": [["sql_id","STRING"],["sql_text","STRING"],["executions","INTEGER"],["elapsed_time","INTEGER"],["rows_processed","INTEGER"],["plan_hash_value","INTEGER"]]
+      "output_columns": [["sql_id","STRING"],["sql_text","STRING"],["executions","INTEGER"],["elapsed_time","INTEGER"],["rows_processed","INTEGER"],["plan_hash_value","INTEGER"],["cpu_time","INTEGER"],["buffer_gets","INTEGER"],["disk_reads","INTEGER"]]
     },
     {
       "database_type": "ORACLE",

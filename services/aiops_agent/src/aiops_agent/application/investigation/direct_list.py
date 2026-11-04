@@ -3,6 +3,7 @@
 from platform_core.contracts.aiops import InvestigationAction, MeasurementSemantics
 
 from aiops_agent.application.top_sql_window import TOP_SQL_REFERENCE_KIND, TOP_SQL_WINDOW_TOOL
+from aiops_agent.application.top_sql_metrics import OPTION_FIELDS, TopSqlOptions
 
 
 _CUMULATIVE_TOOLS = {
@@ -19,6 +20,9 @@ def add_top_sql_reference(investigation, *, db_type: str, available_tools: tuple
         return investigation, None
     window = next((action for action in investigation.plan.actions if action.tool_id == TOP_SQL_WINDOW_TOOL), None)
     if window is None:
+        return investigation, None
+    if TopSqlOptions.model_validate({key: value for key, value in window.input.items() if key in OPTION_FIELDS}).frozen():
+        # 累计耗时参考无法满足资源指标或阈值，不用它冒充本次查询。
         return investigation, None
     next_id = max((int(action.action_id[1:]) for action in investigation.plan.actions), default=0) + 1
     action = InvestigationAction(

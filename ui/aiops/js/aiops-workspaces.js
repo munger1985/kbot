@@ -2063,7 +2063,7 @@
 
   function starterParameterHtml(field, initialParameters = {}, item = null) {
     const isDateTime = field.type === "datetime" || field.type === "oracle_datetime";
-    const type = isDateTime ? "datetime-local" : field.type === "integer" ? "number" : "text";
+    const type = isDateTime ? "datetime-local" : ["integer", "number"].includes(field.type) ? "number" : "text";
     const value = starterParameterValue(field, initialParameters);
     const attributes = [
       field.required ? "required" : "",
@@ -2071,19 +2071,20 @@
       field.max !== undefined ? `max="${esc(field.max)}"` : "",
       field.max_length !== undefined ? `maxlength="${esc(field.max_length)}"` : "",
       isDateTime ? 'step="1"' : "",
+      field.type === "number" ? 'step="any"' : "",
       field.pattern ? `pattern="${esc(field.pattern)}"` : "",
       field.placeholder ? `placeholder="${esc(field.placeholder)}"` : "",
     ].filter(Boolean).join(" ");
     let control = `<input name="${esc(field.name)}" type="${type}" value="${esc(value)}" ${attributes}>`;
     if (field.type === "select") {
       const emptyOption = field.required ? "" : `<option value="">自动获取或按默认策略</option>`;
-      control = `<select name="${esc(field.name)}" ${field.required ? "required" : ""}>${emptyOption}${values(field.options).map((option) => `<option value="${esc(option.value)}"${String(option.value) === String(value) ? " selected" : ""}>${esc(option.label || option.value)}</option>`).join("")}</select>`;
+      control = `<select name="${esc(field.name)}" ${field.required ? "required" : ""}>${emptyOption}${values(field.options).map((option) => `<option value="${esc(option.value)}" data-supported-db-types="${esc(values(option.supported_db_types).join(","))}"${String(option.value) === String(value) ? " selected" : ""}>${esc(option.label || option.value)}</option>`).join("")}</select>`;
     } else if (field.type === "identifier_list") {
       control = `<textarea name="${esc(field.name)}" rows="3" ${attributes}>${esc(value)}</textarea>`;
     }
     const windowField = item?.starter_id === "database.sql.top-current" && ["begin_time", "end_time"].includes(field.name);
     const hidden = windowField && (initialParameters.window || "15m") !== "custom";
-    return `<label class="control-field"${windowField ? " data-top-sql-window-field" : ""}${hidden ? " hidden" : ""}><span class="field-label">${esc(field.label)}</span>${control}${field.help ? `<small>${esc(field.help)}</small>` : ""}</label>`;
+    return `<label class="control-field" data-supported-db-types="${esc(values(field.supported_db_types).join(","))}"${windowField ? " data-top-sql-window-field" : ""}${hidden ? " hidden" : ""}><span class="field-label">${esc(field.label)}</span>${control}${field.help ? `<small>${esc(field.help)}</small>` : ""}</label>`;
   }
 
   function starterParameterGroupsHtml(item, initialParameters = {}) {
@@ -2150,10 +2151,36 @@
     content.querySelector("[data-starter-back]").onclick = openStarterMenu;
     const systems = compatibleStarterSystems(item);
     const systemSelect = content.querySelector('[name="starter_business_system_id"]');
+    const updateResourceMetricFields = () => {
+      const system = systems.find(row => row.business_system_id === systemSelect.value);
+      const resource = content.querySelector('[name="starter_resource_id"]:checked')?.value;
+      const dbType = values(system?.targets).find(row => row.resource_id === resource)?.db_type;
+      content.querySelectorAll('label[data-supported-db-types]').forEach(label => {
+        const supported = label.dataset.supportedDbTypes.split(",").filter(Boolean);
+        const unavailable = !!dbType && supported.length > 0 && !supported.includes(dbType);
+        if (!supported.length) return;
+        label.hidden = unavailable;
+        const control = label.querySelector("input,select");
+        control.disabled = unavailable;
+        if (unavailable) control.value = "";
+      });
+      content.querySelectorAll('select option[data-supported-db-types]').forEach(option => {
+        const supported = option.dataset.supportedDbTypes.split(",").filter(Boolean);
+        option.disabled = !!dbType && supported.length > 0 && !supported.includes(dbType);
+        option.hidden = option.disabled;
+      });
+      content.querySelectorAll("select").forEach(select => {
+        if (select.selectedOptions[0]?.disabled) select.value = values(item.input_schema).find(field => field.name === select.name)?.default || "";
+      });
+    };
     systemSelect.onchange = () => {
       const system = systems.find((row) => row.business_system_id === systemSelect.value);
       content.querySelector("[data-starter-target-options]").innerHTML = starterTargetOptionsHtml(system);
-      content.querySelectorAll('[name="starter_resource_id"]').forEach(input => { input.onchange = () => content.querySelectorAll('.aiops-starter-target-option').forEach(label => label.classList.toggle('is-selected', label.querySelector('input').checked)); });
+      content.querySelectorAll('[name="starter_resource_id"]').forEach(input => { input.onchange = () => {
+        content.querySelectorAll('.aiops-starter-target-option').forEach(label => label.classList.toggle('is-selected', label.querySelector('input').checked));
+        updateResourceMetricFields();
+      }; });
+      updateResourceMetricFields();
     };
     const submitSelection = (automatic = false) => {
       if (dialog.dataset.busy === 'true') return;
@@ -2176,7 +2203,7 @@
             if (value.length === 16) value += ":00";
             value = value.replace("T", " ");
           }
-          if (field.type === "integer") value = Number(value);
+          if (field.type === "integer" && Number.isSafeInteger(Number(value))) value = Number(value);
           parameters[field.name] = value;
         }
       }

@@ -658,6 +658,11 @@ class TurnPlanningService:
         )
         temporal_mode = TemporalAnalysisMode.CURRENT
         if kind == "TOP_SQL_LIST":
+            from aiops_agent.application.top_sql_metrics import OPTION_FIELDS, TopSqlOptions
+            try:
+                TopSqlOptions.model_validate({key: value for key, value in parameters.items() if key in OPTION_FIELDS}).validate_database(db_type)
+            except ValueError as exc:
+                raise validation_failed(str(exc)) from exc
             tool_ids = ("db.instance.identity", TOP_SQL_WINDOW_TOOL)
             inputs[TOP_SQL_WINDOW_TOOL] = freeze_top_sql_window(
                 parameters, now=datetime.now(UTC)

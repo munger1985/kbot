@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from aiops_agent.application.implementation.inputs import (
     normalize_implementation_parameters,
 )
 from platform_core.contracts.aiops import ImplementationProfile
+from aiops_agent.application.top_sql_metrics import OPTION_FIELDS, TopSqlOptions, metric_input_schema
 
 
 class ConversationStarterCatalog:
@@ -114,6 +116,16 @@ class ConversationStarterCatalog:
             status, reason = self._availability(target)
             if status == "UNAVAILABLE":
                 raise validation_failed(reason)
+            if str(dict(item.get("planning") or {}).get("kind")) == "TOP_SQL_LIST":
+                try:
+                    normalized = self._validate_parameters(
+                        list(self._input_schema(item)), dict(selection.parameters)
+                    )
+                    TopSqlOptions.model_validate({
+                        key: value for key, value in normalized.items() if key in OPTION_FIELDS
+                    }).validate_database(str(target.db_type))
+                except ValueError as exc:
+                    raise validation_failed(str(exc)) from exc
         return self._freeze_item(
             item=item,
             supplied_parameters=dict(selection.parameters),
@@ -207,6 +219,8 @@ class ConversationStarterCatalog:
     def _input_schema(item: dict[str, Any]) -> tuple[dict[str, Any], ...]:
         """实施档案由代码目录动态提供参数，其他入口继续读取 JSON。"""
         planning = dict(item.get("planning") or {})
+        if str(planning.get("kind") or "") == "TOP_SQL_LIST":
+            return (*tuple(dict(field) for field in item.get("input_schema", ())), *metric_input_schema())
         if str(planning.get("kind") or "") != "IMPLEMENTATION":
             return tuple(dict(field) for field in item.get("input_schema", ()))
         profile = ImplementationProfile(str(planning["implementation_profile"]))
@@ -244,10 +258,22 @@ class ConversationStarterCatalog:
             if value is None:
                 continue
             kind = str(field.get("type") or "text")
-            if kind == "integer":
+            if kind == "number":
                 try:
+                    if isinstance(value, bool):
+                        raise ValueError
+                    numeric = Decimal(str(value))
+                    if not numeric.is_finite() or numeric < Decimal(str(field.get("min", 0))) or numeric > Decimal("1e30"):
+                        raise ValueError
+                except (InvalidOperation, ValueError) as exc:
+                    raise validation_failed(f"{field['label']}必须是有限非负数") from exc
+                value = format(numeric, "f")
+            elif kind == "integer":
+                try:
+                    if isinstance(value, bool) or isinstance(value, float) and not value.is_integer():
+                        raise ValueError
                     value = int(value)
-                except (TypeError, ValueError) as exc:
+                except (TypeError, ValueError, OverflowError) as exc:
                     raise validation_failed(f"{field['label']}必须是整数") from exc
                 if value < int(field.get("min", value)) or value > int(
                     field.get("max", value)

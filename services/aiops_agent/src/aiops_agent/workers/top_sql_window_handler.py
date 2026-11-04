@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL, validate_top_sql_window
+from aiops_agent.application.top_sql_metrics import OPTION_FIELDS
 from aiops_agent.workers.handlers import TaskExecutionContext
 
 
@@ -35,5 +36,6 @@ class TopSqlWindowHandler:
             period_start=datetime.fromisoformat(parameters["period_start"]),
             period_end=datetime.fromisoformat(parameters["period_end"]),
             limit=parameters["limit"],
+            **{key: parameters[key] for key in OPTION_FIELDS if key in parameters},
         )
         return TopSqlWindowResult(target_id=context.target_id, result=result)

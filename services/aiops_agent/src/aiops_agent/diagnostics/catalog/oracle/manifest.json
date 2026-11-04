@@ -1112,10 +1112,13 @@
         {"name": "executions", "logical_type": "INTEGER", "nullable": false},
         {"name": "elapsed_time", "logical_type": "INTEGER", "nullable": false},
         {"name": "rows_processed", "logical_type": "INTEGER", "nullable": false},
-        {"name": "plan_hash_value", "logical_type": "INTEGER"}
+        {"name": "plan_hash_value", "logical_type": "INTEGER"},
+        {"name": "cpu_time", "logical_type": "INTEGER"},
+        {"name": "buffer_gets", "logical_type": "INTEGER"},
+        {"name": "disk_reads", "logical_type": "INTEGER"}
       ],
       "template_ref": "sql/workload_statements.sql",
-      "template_sha256": "3ac816f01b08d6ab50c01d4839bd6458daaf6f666176f8cc7e0467c40fd086b8",
+      "template_sha256": "0dc2061428de039b603e462d4121ec5944abbaa06c12e75c56072682ef99ab89",
       "timeout_seconds": 20, "max_rows": 500, "max_bytes": 2097152, "cost_level": "LOW"
     },
     {

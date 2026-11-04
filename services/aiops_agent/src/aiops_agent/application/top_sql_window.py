@@ -3,6 +3,8 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from aiops_agent.application.top_sql_metrics import OPTION_FIELDS, TopSqlOptions
+
 
 TOP_SQL_WINDOW_TOOL = "workload.sql.top_window"
 TOP_SQL_REFERENCE_KIND = "TOP_SQL_CUMULATIVE_REFERENCE"
@@ -27,6 +29,7 @@ def freeze_top_sql_window(parameters: dict[str, Any], *, now: datetime) -> dict[
         "period_start": start.isoformat(),
         "period_end": end.isoformat(),
         "limit": parameters.get("limit", 10),
+        **{key: parameters[key] for key in OPTION_FIELDS if key in parameters},
     })
 
 
@@ -41,7 +44,7 @@ def _parse_time(value: object) -> datetime:
 
 
 def validate_top_sql_window(parameters: dict[str, Any]) -> dict[str, Any]:
-    if set(parameters) != {"period_start", "period_end", "limit"}:
+    if not {"period_start", "period_end", "limit"} <= set(parameters) or set(parameters) - {"period_start", "period_end", "limit"} - OPTION_FIELDS:
         raise ValueError("Top SQL 查询参数无效")
     start = _parse_time(parameters["period_start"])
     end = _parse_time(parameters["period_end"])
@@ -50,4 +53,5 @@ def validate_top_sql_window(parameters: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Top SQL 返回数量必须为 1 到 50")
     if not start < end or end - start > timedelta(days=365):
         raise ValueError("Top SQL 时间窗口必须大于零且不超过 365 天")
-    return {"period_start": start.isoformat(), "period_end": end.isoformat(), "limit": limit}
+    options = TopSqlOptions.model_validate({key: parameters[key] for key in OPTION_FIELDS if key in parameters})
+    return {"period_start": start.isoformat(), "period_end": end.isoformat(), "limit": limit, **options.frozen()}

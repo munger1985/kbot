@@ -462,7 +462,12 @@ def _statement_rows(
                 mean_duration_microseconds=duration // count if count else 0,
                 max_duration_microseconds=0,
                 rows_processed=_integer(item.get("rows_processed")) or 0,
-                database_metrics={"plan_hash_value": item.get("plan_hash_value")},
+                rank_dimension="MULTI_METRIC_CANDIDATE",
+                database_metrics={
+                    key: item[key] for key in
+                    ("plan_hash_value", "cpu_time", "buffer_gets", "disk_reads")
+                    if item.get(key) is not None
+                },
                 rank_no=rank,
             ))
             continue
@@ -504,6 +509,7 @@ def _statement_rows(
                     max_duration_microseconds=max_us,
                     rows_processed=_integer(item.get("rows_sent")) or 0,
                     database_metrics={**database_metrics, "schema_name": item.get("schema_name")},
+                    rank_dimension="MULTI_METRIC_CANDIDATE",
                     rank_no=rank,
                 )
             )
@@ -536,6 +542,7 @@ def _statement_rows(
                     item.get("max_exec_time_ms")
                 ),
                 rows_processed=_integer(item.get("rows_processed")) or 0,
+                rank_dimension="MULTI_METRIC_CANDIDATE",
                 database_metrics={
                     key: value
                     for key, value in item.items()

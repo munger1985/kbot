@@ -29,5 +29,14 @@ LEFT JOIN pg_catalog.pg_roles AS role_name
   ON role_name.oid = statements.userid
 WHERE statements.queryid IS NOT NULL
   AND statements.dbid = (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database())
-ORDER BY statements.total_time DESC, statements.queryid DESC
+ORDER BY LEAST(
+    ROW_NUMBER() OVER (ORDER BY statements.total_time DESC, statements.queryid, statements.userid),
+    ROW_NUMBER() OVER (ORDER BY statements.total_time / NULLIF(statements.calls, 0) DESC NULLS LAST, statements.queryid, statements.userid),
+    ROW_NUMBER() OVER (ORDER BY statements.calls DESC, statements.queryid, statements.userid),
+    ROW_NUMBER() OVER (ORDER BY statements.rows DESC, statements.queryid, statements.userid),
+    ROW_NUMBER() OVER (ORDER BY statements.shared_blks_hit + statements.shared_blks_read DESC, statements.queryid, statements.userid),
+    ROW_NUMBER() OVER (ORDER BY statements.shared_blks_read DESC, statements.queryid, statements.userid),
+    ROW_NUMBER() OVER (ORDER BY statements.temp_blks_read DESC, statements.queryid, statements.userid),
+    ROW_NUMBER() OVER (ORDER BY statements.temp_blks_written DESC, statements.queryid, statements.userid)
+), statements.total_time DESC, statements.queryid DESC, statements.userid
 LIMIT :limit

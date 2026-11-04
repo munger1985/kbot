@@ -750,8 +750,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261029_3", "20261103_3"),
-            "situations": ("20261029_3", "20261103_3"),
+            "chat": ("20261029_3", "20261104_1"),
+            "situations": ("20261029_3", "20261104_1"),
         }
         for page_name, (stylesheet_version, script_version) in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
@@ -762,7 +762,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
         self.assertIn("reference-inspections.css?v=20261103_1", inspections)
-        self.assertIn("aiops-workspaces.js?v=20261103_3", inspections)
+        self.assertIn("aiops-workspaces.js?v=20261104_1", inspections)
         self.assertIn("aiops-chat-charts.js?v=20261030_1", inspections)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)

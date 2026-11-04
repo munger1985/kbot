@@ -13,6 +13,9 @@ from typing import Any
 from uuid import UUID
 
 from aiops_agent.application.errors import resource_not_found, validation_failed
+from aiops_agent.application.top_sql_metrics import (
+    METRICS_BY_CODE, SQL_METRICS, TopSqlOptions, finalize_metric_rows, metric_delta,
+)
 from aiops_agent.application.postgresql_artifacts import (
     PostgreSQLArtifactStore,
     validate_pgbadger_artifact,
@@ -477,12 +480,19 @@ def build_top_sql_window(
     limit: int,
     postgresql_database_oid: str | None = None,
     boundary_tolerance_seconds: int = 300,
+    database_type: str | None = None,
+    **query_options,
 ) -> dict[str, Any]:
     """按不晚于请求边界的最近快照对齐；不插值，不隐藏候选集和连续性缺口。"""
     if period_start.tzinfo is None or period_end.tzinfo is None:
         raise ValueError("时间窗口必须包含时区")
     if period_start >= period_end or not 1 <= limit <= 50 or not 0 <= boundary_tolerance_seconds <= 3600:
         raise ValueError("时间窗口或返回数量无效")
+    options = TopSqlOptions.model_validate(query_options)
+    database_type = database_type or (str(snapshots[0].database_type) if snapshots else None)
+    if database_type:
+        options.validate_database(database_type)
+    metrics = tuple(metric for metric in SQL_METRICS if database_type in metric.databases)
     available = sorted(
         (item for item in snapshots if item.collected_at <= period_end),
         key=lambda item: (item.collected_at, str(item.workload_snapshot_id)),
@@ -496,6 +506,13 @@ def build_top_sql_window(
     observed_start = start_boundary.collected_at if start_boundary and start_skew <= boundary_tolerance_seconds else period_start
     ordered = [item for item in available if item.collected_at >= observed_start]
     by_snapshot: dict[UUID, dict[tuple, object]] = defaultdict(dict)
+    snapshot_by_id = {item.workload_snapshot_id: item for item in ordered}
+    generation_keys = {}
+    generation_start = None
+    for index, snapshot in enumerate(ordered):
+        if index == 0 or not _same_snapshot_instance(ordered[index - 1], snapshot):
+            generation_start = str(snapshot.workload_snapshot_id)
+        generation_keys[snapshot.workload_snapshot_id] = generation_start
     for item in statements:
         if (
             str(item.statement_identity_type) == "POSTGRESQL_QUERY_ID"
@@ -506,6 +523,13 @@ def build_top_sql_window(
         ):
             continue
         native = dict(getattr(item, "database_metrics_json", None) or {})
+        snapshot = snapshot_by_id.get(item.workload_snapshot_id)
+        if snapshot is None:
+            continue
+        instance_key = json.dumps({
+            "identity": snapshot.instance_identity_json,
+            "generation": generation_keys[snapshot.workload_snapshot_id],
+        }, sort_keys=True, default=str)
         schema = native.get("schema_name") if "schema_name" in native else item.database_name
         key = (
             str(item.statement_identity_type),
@@ -514,6 +538,7 @@ def build_top_sql_window(
             str(item.user_identifier or ""),
             int(item.top_level),
             str(native.get("plan_hash_value") or ""),
+            instance_key,
         )
         by_snapshot[item.workload_snapshot_id][key] = item
 
@@ -600,7 +625,11 @@ def build_top_sql_window(
                 continue
             count = int(after.execution_count) - int(before.execution_count)
             duration = int(after.total_duration_microseconds) - int(before.total_duration_microseconds)
-            if count == 0 and duration == 0:
+            deltas = {
+                metric.code: metric_delta(metric, before, after)
+                for metric in metrics if metric.mean_of is None
+            }
+            if count == 0 and duration == 0 and not any(value is not None and value > 0 for value, _reason in deltas.values()):
                 continue
             statement_text = str(getattr(after, "normalized_statement", None) or "")
             if re.fullmatch(
@@ -625,15 +654,28 @@ def build_top_sql_window(
                     ),
                     "execution_count": 0,
                     "total_duration_microseconds": 0,
+                    "instance_key": key[6],
+                    "instance_identity": dict(current.instance_identity_json or {}),
+                    "instance_started_at": str(current.instance_started_at),
+                    "metric_values": {},
+                    "metric_executions": {},
+                    "metric_gaps": {},
                 },
             )
             aggregate["execution_count"] += count
             aggregate["total_duration_microseconds"] += duration
+            for code, (value, reason) in deltas.items():
+                if value is None:
+                    aggregate["metric_gaps"][code] = aggregate["metric_gaps"].get(code, 0) + 1
+                    gaps[reason] += 1
+                else:
+                    aggregate["metric_values"][code] = aggregate["metric_values"].get(code, Decimal(0)) + value
+                    aggregate["metric_executions"][code] = aggregate["metric_executions"].get(code, 0) + count
             aggregate["covered_intervals"].append({"start": previous.collected_at.isoformat(), "end": current.collected_at.isoformat()})
-    ranked = sorted(
-        totals.values(),
-        key=lambda item: (-item["total_duration_microseconds"], item["statement_identity_type"], item["statement_identity_value"], str(item.get("schema_name", item["database_name"])), item["user_identifier"], str(item["top_level"]), str(item.get("plan_hash_value", ""))),
-    )[:limit]
+    filtered = finalize_metric_rows(list(totals.values()), metrics, options)
+    ranked = filtered[:limit]
+    if totals and not any(row.get("metric_values", {}).get(options.rank_metric) is not None for row in totals.values()):
+        gaps["RANK_METRIC_UNAVAILABLE"] += 1
     for item in ranked:
         from aiops_agent.contracts.measurements import ScalarMeasurement
         from aiops_agent.domain.measurements import derive_measurement
@@ -681,7 +723,18 @@ def build_top_sql_window(
         "candidate_scope": {"mode": "VISIBLE_SET" if visible_complete else "BOUNDED_CANDIDATES", "complete": visible_complete, "atomic": False},
         "source_visibility": "DIAGNOSTIC_CREDENTIAL_VISIBLE_CANDIDATES",
         "continuity_confidence": "NO_IDENTIFIED_RESET_NOT_PROOF_OF_CONTINUITY",
-        "rank_metric": "TOTAL_DURATION",
+        "rank_metric": options.rank_metric,
+        "rank_metric_label": METRICS_BY_CODE[options.rank_metric].label,
+        "sort_direction": options.sort_direction,
+        "query_options": options.model_dump(mode="json"),
+        "query_summary": options.summary(),
+        "candidate_count": len(totals),
+        "matched_count": len(filtered),
+        "database_type": database_type,
+        "metric_columns": [
+            {"code": metric.code, "name": metric.column, "label": metric.label, "unit": metric.unit, "logical_type": "DECIMAL"}
+            for metric in metrics if metric.code not in {"TOTAL_DURATION", "MEAN_DURATION", "EXECUTION_COUNT"}
+        ],
         "covered_intervals": [
             {"start": start.isoformat(), "end": end.isoformat()}
             for start, end in intervals
@@ -974,6 +1027,7 @@ class WorkloadService:
         period_start: datetime,
         period_end: datetime,
         limit: int,
+        **query_options,
     ) -> dict[str, Any]:
         """在业务域内读取历史快照，不创建或修改报告。"""
         if (
@@ -994,13 +1048,22 @@ class WorkloadService:
             )
             if target is None:
                 raise resource_not_found("Target")
+            try:
+                options = TopSqlOptions.model_validate(query_options)
+                if getattr(target, "db_type", None):
+                    options.validate_database(str(target.db_type))
+            except ValueError as exc:
+                raise validation_failed(str(exc)) from exc
             snapshots = await uow.workloads.list_snapshots(
                 domain_id=domain_id,
                 target_id=target_id,
                 period_start=period_start - timedelta(seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 5) * 60),
                 period_end=exclusive_end,
+                max_rows=20001,
             )
             ids = tuple(item.workload_snapshot_id for item in snapshots)
+            if len(ids) > 20000:
+                raise validation_failed("Top SQL 窗口超过快照查询预算，请缩小时间范围")
             statements = []
             for offset in range(0, len(ids), 500):
                 statements.extend(
@@ -1008,8 +1071,11 @@ class WorkloadService:
                         domain_id=domain_id,
                         target_id=target_id,
                         workload_snapshot_ids=ids[offset:offset + 500],
+                        max_rows=100001 - len(statements),
                     )
                 )
+                if len(statements) > 100000:
+                    raise validation_failed("Top SQL 窗口超过语句查询预算，请缩小时间范围")
             probe = dict(
                 dict(target.capabilities_json or {}).get("capability_probe") or {}
             )
@@ -1020,12 +1086,15 @@ class WorkloadService:
                 period_start=period_start,
                 period_end=period_end,
                 limit=limit,
+                database_type=str(target.db_type) if getattr(target, "db_type", None) else None,
+                **options.frozen(),
                 postgresql_database_oid=(
                     str(database_oid) if database_oid is not None else None
                 ),
                 boundary_tolerance_seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 5) * 60,
             )
             result["snapshot_ids"] = [str(item) for item in ids]
+            result["target_id"] = str(target_id)
             result["collection_enabled"] = bool(
                 dict(target.workload_snapshot_policy_json or {}).get("enabled")
             )

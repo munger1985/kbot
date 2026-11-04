@@ -13,6 +13,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("services/aiops_agent/src/aiops_agent/application/top_sql_metrics.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/top_sql_window.py"),
+    Path("tests/unit/aiops_agent/test_aiops_top_sql_resources.py"),
+    Path("docs/proposals/aiops-top-sql-resource-ranking.md"),
     Path("services/aiops_agent/src/aiops_agent/application/knowledge_ranking.py"),
     Path("tests/unit/aiops_agent/test_aiops_knowledge_ranking.py"),
     Path("docs/operations/aiops-case-retrieval-evaluation.md"),
@@ -677,8 +681,8 @@ def _capability_alignment(
     violations = []
     if local_catalog != peer_catalog:
         violations.append("版本化运维能力目录不一致")
-    if local_catalog.get("catalog_version") != "2.1.0":
-        violations.append("运维能力目录必须使用2.1.0语义合同")
+    if local_catalog.get("catalog_version") != "2.2.0":
+        violations.append("运维能力目录必须使用2.2.0语义合同")
     if len(local_catalog.get("starters", ())) != 26:
         violations.append("运维能力目录必须完整包含26项能力")
     for key, equal in prompt_alignment.items():
