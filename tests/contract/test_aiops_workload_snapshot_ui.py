@@ -1,14 +1,22 @@
 """验证业务系统数据库的历史 SQL 采集入口。"""
 
 from pathlib import Path
+import json
 import subprocess
 import unittest
 
+from platform_core.contracts.aiops.workload import WorkloadPolicy
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class WorkloadSnapshotUiTest(unittest.TestCase):
+    def test_new_resource_defaults_match_backend_contract(self):
+        script = (ROOT / "ui/aiops/js/aiops-business-system-workspace.js").read_text(encoding="utf-8")
+        helper = script[script.index("  function createWorkloadPolicy("):script.index("  function validWorkloadPolicy(")]
+        result = subprocess.run(["node", "-e", helper + "process.stdout.write(JSON.stringify(createWorkloadPolicy()));"], check=True, capture_output=True, text=True)
+        self.assertEqual(WorkloadPolicy().model_dump(mode="json"), json.loads(result.stdout))
+
     def test_node_behaviour(self):
         subprocess.run(["node", str(ROOT / "tests/contract/aiops_workload_snapshot.mjs")], check=True, cwd=ROOT)
 

@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 const file = fileURLToPath(new URL('../../ui/aiops/js/aiops-business-system-workspace.js', import.meta.url));
 const source = readFileSync(file, 'utf8');
 const instrumented = source.replace(/\}\)\(\);\s*$/, `globalThis.snapshotTest = {
-  snapshotHtml, snapshotTargetId, stageSnapshotPolicy, loadSnapshotPolicy, snapshotOperation, draftPayload,
+  snapshotHtml, snapshotTargetId, stageSnapshotPolicy, loadSnapshotPolicy, snapshotOperation, draftPayload, createWorkloadPolicy, validWorkloadPolicy,
   seed(value) { detail = value.detail; resources = value.resources; activeResourceId = value.active; workspaceReadOnly = value.published; },
   setActive(value) { activeResourceId = value; }, setPublished(value) { workspaceReadOnly = value; },
   state() { return snapshotState; },
@@ -87,3 +87,52 @@ assert.equal(node.disabled, true, '连接检查期间必须同步禁用保存草
 finishCheck({ ...target(23), connectivity_status: 'CONNECTED' });
 await check;
 assert.equal(node.disabled, false, '连接检查完成后必须恢复页面操作');
+
+// 无正式 Target 的旧草稿直接显示默认策略，不读取或写入 Target。
+const defaults = api.createWorkloadPolicy();
+assert.deepEqual(JSON.parse(JSON.stringify(defaults)), { enabled: false, collection_mode: 'BOUNDED_CANDIDATES',
+  visible_statement_limit: 500, interval_minutes: 5, retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30 });
+const newResources = ['new-a', 'new-b'].map(draft_resource_id => ({ draft_resource_id, database: { db_type: 'ORACLE' } }));
+api.seed({ resources: newResources, active: 'new-a', published: false, detail: null });
+const beforeNew = calls.length;
+assert.ok(api.snapshotHtml(newResources[0]).includes('启用周期快照'));
+assert.ok(api.snapshotHtml(newResources[0]).includes('尚未发布'));
+assert.ok(!api.snapshotHtml(newResources[0]).includes('id="snapshot-refresh"'));
+assert.ok(!api.snapshotHtml(newResources[0]).includes('id="snapshot-status-refresh"'));
+assert.equal(api.snapshotTargetId(newResources[0]), '');
+await api.loadSnapshotPolicy();
+api.state().draft.enabled = true;
+api.state().draft.interval_minutes = 2;
+api.stageSnapshotPolicy();
+assert.equal(newResources[0].database.workload_snapshot_policy.enabled, true);
+assert.equal(newResources[0].database.workload_snapshot_policy.interval_minutes, 2);
+await api.snapshotOperation();
+assert.equal(calls.length, beforeNew);
+api.setActive('new-b');
+api.snapshotHtml(newResources[1]);
+assert.equal(api.state().draft.enabled, false);
+assert.equal(api.state().draft.interval_minutes, 5);
+api.setActive('new-a');
+api.snapshotHtml(newResources[0]);
+assert.equal(api.state().draft.enabled, true);
+assert.equal(api.state().draft.interval_minutes, 2);
+api.state().draft.enabled = false;
+api.stageSnapshotPolicy();
+assert.equal(newResources[0].database.workload_snapshot_policy.enabled, false);
+for (const value of [0, 61, 1.5, NaN, true]) assert.equal(api.validWorkloadPolicy({ ...defaults, interval_minutes: value }), false);
+assert.equal(api.validWorkloadPolicy(defaults), true);
+assert.equal(api.validWorkloadPolicy({ ...defaults, enabled: 'true' }), false);
+assert.equal(api.validWorkloadPolicy({ ...defaults, collection_mode: 'unknown' }), false);
+
+// 已有 Target 的迟到响应不能覆盖刚切换到的新草稿。
+api.seed({ resources, active: 'a', published: false, detail: { resources: [{ system_resource_id: 'node1', resource: { database: { target_id: 'target1' } } }] } });
+let finishOld;
+handler = () => new Promise(resolve => { finishOld = resolve; });
+const oldRequest = api.loadSnapshotPolicy();
+api.seed({ resources: newResources, active: 'new-b', published: false, detail: null });
+api.snapshotHtml(newResources[1]);
+finishOld(target(99));
+await oldRequest;
+assert.equal(api.state().resourceId, 'new-b');
+assert.equal(api.state().target, null);
+assert.equal(api.state().draft.enabled, false);

@@ -92,6 +92,10 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   assert.equal(draft.payload.publish.resources[0].database.target.endpoint[engine === 'ORACLE' ? 'service' : 'database'], 'MES');
   assert.equal(draft.payload.publish.resources[0].database.target.oracle_container_scope, engine === 'ORACLE' ? 'PDB' : null);
   assert.equal(draft.payload.publish.resources[0].database.target.controlled_change_enabled, false);
+  assert.deepEqual(draft.payload.publish.resources[0].database.target.workload_snapshot_policy, {
+    enabled: false, collection_mode: 'BOUNDED_CANDIDATES', visible_statement_limit: 500, interval_minutes: 5,
+    retention_days: 30, top_statement_limit: 100, round_timeout_seconds: 30,
+  });
   assert.equal(draft.payload.publish.resources[0].database.target.diagnostic_credential.username, 'fixture_readonly');
   assert.equal(f.calls.at(-1).headers['If-Match'], '"rv-7"');
   assert.match(f.calls.at(-1).headers['Idempotency-Key'], /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -172,4 +176,25 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   await assert.rejects(f.api.refreshDiscoveryReferences(), /原数据库监控 Target 已不存在/);
 }
 
-console.log('通过：草稿失败恢复与 revision、三引擎发布载荷、发布互斥、上下文与草稿 URL、监控候选稳定定位合同。');
+// 未发布资源的采集设置同时保留在可编辑草稿和正式创建载荷中。
+for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
+  const f = fixture();
+  const selected = { enabled: true, collection_mode: 'VISIBLE_SET', visible_statement_limit: 250, interval_minutes: 2,
+    retention_days: 60, top_statement_limit: 120, round_timeout_seconds: 47 };
+  f.api.seed({ system: copy(system), resources: [resource(engine, { workload_snapshot_policy: selected })], sources: [monitor] });
+  f.handle(async call => call.path.endsWith(':commit') ? { business_system_id: 'published' } : { draft_id: 'draft-1', revision: 7 });
+  await f.api.commit();
+  assert.equal(f.calls.filter(call => call.path.endsWith(':commit')).length, 1);
+  const body = f.calls[0].payload.payload;
+  assert.deepEqual(body.resources[0].database.workload_snapshot_policy, selected);
+  assert.deepEqual(body.publish.resources[0].database.target.workload_snapshot_policy, selected);
+  assert.equal(f.calls.some(call => call.path.startsWith('/targets/')), false);
+}
+for (const policy of [{ enabled: true, interval_minutes: 0 }, { collection_mode: 'unknown' }, { enabled: 'true' }]) {
+  const f = fixture();
+  f.api.seed({ system: copy(system), resources: [resource('ORACLE', { workload_snapshot_policy: policy })], sources: [monitor] });
+  await f.api.commit();
+  assert.equal(f.calls.length, 0, '无效采集策略不能进入发布写操作');
+  assert.ok(f.notifications.some(value => value.includes('历史 SQL 采集策略无效')));
+}
+console.log('通过：草稿失败恢复与 revision、三引擎发布载荷、未发布资源采集策略、发布互斥、上下文与草稿 URL、监控候选稳定定位合同。');

@@ -727,14 +727,28 @@ try {
       } else for(const page of [kbot,reference]) {await page.locator('.resource-card').first().click();await page.locator('.snapshot-status').waitFor();}
       for(const width of [1440,1024,900,420]) {await Promise.all([kbot,reference].map(async page=>{await page.setViewportSize({width,height:1000});await page.locator('.resource-drawer-body').evaluate(node=>{node.scrollTop=0;});}));await compareRegions(kbot,reference,['.resource-config-drawer','.resource-config-drawer .admin-drawer-header','.resource-drawer-body','.resource-drawer-form','.editor-grid','.database-grid','.connection-layout','.connection-field-group','.connection-row','.readonly-detail-section','.readonly-detail-section dl','.snapshot-settings','.snapshot-body','.snapshot-status','.resource-config-drawer .admin-drawer-footer'],{page:name,width,empty,state:'resource-editor'});}
       if(empty) {
+        for(const page of [kbot,reference]) {
+          assert.equal(await page.locator('.snapshot-toggle input').isChecked(),false,'未发布资源默认不启动采集');
+          assert.ok((await page.locator('.snapshot-status').innerText()).includes('尚未发布'));
+          assert.equal(await page.getByRole('button',{name:'测试连接并刷新能力',exact:true}).count(),0);
+          await page.locator('.snapshot-toggle input').check();
+          await page.locator('.snapshot-fields select').selectOption('VISIBLE_SET');
+          await page.getByLabel('可见集合行数上限').fill('250');
+          await page.getByLabel('采集间隔（分钟）').fill('2');
+          assert.equal((await page.evaluate(()=>fixtureRequests)).some(row=>row.path.includes('/targets/')),false,'未发布策略不访问 Target');
+        }
+        for(const width of [1440,420]) {
+          await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
+          await compareRegions(kbot,reference,['.snapshot-settings','.snapshot-body','.snapshot-fields','.snapshot-toggle','.snapshot-actions'],{page:name,width,empty,state:'new-resource-policy'});
+        }
         for(const engine of ['MYSQL','POSTGRESQL','ORACLE']) {
           for(const page of [kbot,reference]) await page.locator('.resource-config-drawer').getByText('数据库引擎',{exact:true}).locator('..').locator('select').selectOption(engine);
-          for(const width of [1440,420]) {await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));await compareRegions(kbot,reference,['.database-grid','.connection-layout','.connection-endpoint-row','.connection-access-row','.connection-monitoring-row','.resource-drawer-editor-footer'],{page:name,width,empty,state:`engine-${engine}`});}
+          for(const width of [1440,420]) {await Promise.all([kbot,reference].map(async page=>{await page.setViewportSize({width,height:1000});await page.locator('.resource-drawer-body').evaluate(node=>{node.scrollTop=0;});}));await compareRegions(kbot,reference,['.database-grid','.connection-layout','.connection-endpoint-row','.connection-access-row','.connection-monitoring-row','.resource-drawer-editor-footer'],{page:name,width,empty,state:`engine-${engine}`});}
         }
         for(const page of [kbot,reference]) await page.locator('.resource-config-drawer').getByText('容器范围',{exact:true}).locator('..').locator('select').selectOption('PDB');
-        for(const width of [1440,420]) {await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));await compareRegions(kbot,reference,['.connection-access-row','.resource-drawer-editor-footer'],{page:name,width,empty,state:'oracle-pdb'});}
+        for(const width of [1440,420]) {await Promise.all([kbot,reference].map(async page=>{await page.setViewportSize({width,height:1000});await page.locator('.resource-drawer-body').evaluate(node=>{node.scrollTop=0;});}));await compareRegions(kbot,reference,['.connection-access-row','.resource-drawer-editor-footer'],{page:name,width,empty,state:'oracle-pdb'});}
         for(const page of [kbot,reference]) await page.locator('.resource-config-drawer').getByText('部署形态',{exact:true}).locator('..').locator('select').selectOption('RAC');
-        for(const width of [1440,420]) {await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));await compareRegions(kbot,reference,['.editor-grid','.database-grid','.rac-editor','.rac-guidance','.rac-node-list','.rac-node-card','.rac-node-card header','.rac-node-card .editor-grid','.rac-add-node','.resource-drawer-editor-footer'],{page:name,width,empty,state:'new-rac'});}
+        for(const width of [1440,420]) {await Promise.all([kbot,reference].map(async page=>{await page.setViewportSize({width,height:1000});await page.locator('.resource-drawer-body').evaluate(node=>{node.scrollTop=0;});}));await compareRegions(kbot,reference,['.editor-grid','.database-grid','.rac-editor','.rac-guidance','.rac-node-list','.rac-node-card','.rac-node-card header','.rac-node-card .editor-grid','.rac-add-node','.resource-drawer-editor-footer'],{page:name,width,empty,state:'new-rac'});}
       }
       if(interaction) {
         for(const page of [kbot,reference]) await page.locator('.snapshot-toggle input').check();
