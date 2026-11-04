@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from aiops_agent.application.errors import resource_not_found, validation_failed
+from aiops_agent.application.top_sql_collection import collection_runtime_state
 from aiops_agent.application.top_sql_metrics import (
     METRICS_BY_CODE, SQL_METRICS, TopSqlOptions, finalize_metric_rows, metric_delta,
 )
@@ -1094,6 +1095,8 @@ class WorkloadService:
                 boundary_tolerance_seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 5) * 60,
             )
             result["snapshot_ids"] = [str(item) for item in ids]
+            result["snapshot_count"] = len(ids)
+            result["collection_state"] = collection_runtime_state(target)
             result["target_id"] = str(target_id)
             result["collection_enabled"] = bool(
                 dict(target.workload_snapshot_policy_json or {}).get("enabled")

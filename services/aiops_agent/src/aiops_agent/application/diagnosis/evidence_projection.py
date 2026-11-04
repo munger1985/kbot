@@ -5,6 +5,7 @@ from aiops_agent.application.diagnosis.native_measurements import MAX_NATIVE_SER
 from aiops_agent.application.diagnosis.sql_plans import database_cursor_plan
 from aiops_agent.contracts.measurements import NativeSeriesScope
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+from aiops_agent.application.top_sql_collection import collection_failure_reason, collection_runtime_note
 
 
 def top_sql_window_evidence_fact(*, result, artifact_id):
@@ -34,7 +35,12 @@ def top_sql_window_evidence_fact(*, result, artifact_id):
     gap_counts = dict(result.get("gaps") or {})
     if not result.get("collection_enabled"):
         gap_counts["COLLECTION_DISABLED"] = 1
+    failure_reason = collection_failure_reason(result)
+    runtime_note = collection_runtime_note(result)
+    if failure_reason:
+        gap_counts["COLLECTION_FAILED"] = 1
     gap_labels = {
+        "COLLECTION_FAILED": failure_reason,
         "COLLECTION_DISABLED": "周期快照未启用",
         "INSUFFICIENT_SNAPSHOTS": "有效快照不足两次",
         "WINDOW_NOT_FULLY_COVERED": "未覆盖完整窗口",
@@ -57,8 +63,9 @@ def top_sql_window_evidence_fact(*, result, artifact_id):
         *((f"查询 Target：{result['target_id']}",) if result.get("target_id") else ()),
         *((f"排名与筛选：{result.get('query_summary', result.get('rank_metric_label'))}；匹配 {result.get('matched_count', 0)} 条。",) if result.get("query_options") else ()),
         f"实际覆盖区间：{covered}",
+        *((runtime_note,) if runtime_note else ()),
         *(str(item) for item in result.get("warnings") or ()),
-        *(f"数据缺口：{gap_labels.get(str(code), str(code))}（{count}）"
+        *(f"数据缺口：{gap_labels.get(str(code), str(code))}（缺口次数：{count}）"
           for code, count in gap_counts.items()),
     )
     statements = list(result.get("top_statements") or ())

@@ -292,6 +292,50 @@ class AIOpsAgentRepository:
         )
         return list(rows)
 
+    async def get_active_for_collection(
+        self, *, domain_id: int, target_id: UUID
+    ):
+        """按现行资源授权和稳定 Agent ID 顺序选择周期采集执行者。"""
+        statement = (
+            select(AIOpsAgentEntity.agent_id)
+            .join(
+                AIOpsAgentVersionEntity,
+                (AIOpsAgentVersionEntity.agent_version_id == AIOpsAgentEntity.current_version_id)
+                & (AIOpsAgentVersionEntity.agent_id == AIOpsAgentEntity.agent_id),
+            )
+            .join(
+                AIOpsAgentVersionBusinessSystemEntity,
+                AIOpsAgentVersionBusinessSystemEntity.agent_version_id == AIOpsAgentVersionEntity.agent_version_id,
+            )
+            .join(
+                BusinessSystemResourceEntity,
+                BusinessSystemResourceEntity.business_system_id == AIOpsAgentVersionBusinessSystemEntity.business_system_id,
+            )
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == BusinessSystemResourceEntity.resource_id)
+            .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(TargetEntity, TargetEntity.target_id == DatabaseResourceEntity.target_id)
+            .where(
+                AIOpsAgentEntity.domain_id == domain_id,
+                AIOpsAgentEntity.status == "ACTIVE",
+                TargetEntity.domain_id == domain_id,
+                TargetEntity.target_id == target_id,
+                TargetEntity.status == "ENABLED",
+                ManagedResourceEntity.domain_id == domain_id,
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
+                BusinessSystemResourceEntity.status == "ACTIVE",
+            )
+            .distinct()
+            .order_by(AIOpsAgentEntity.agent_id)
+            .limit(1)
+        )
+        agent_id = await self._session.scalar(statement)
+        if agent_id is None:
+            return None
+        # 再解析当前版本，冻结与对话相同的授权上下文，不读取旧 Target 直接绑定。
+        return await self.get_active(
+            domain_id=domain_id, agent_id=agent_id, target_id=target_id
+        )
+
     async def has_schedulable_inspection_plans(
         self, *, domain_id: int, agent_id: UUID
     ) -> bool:

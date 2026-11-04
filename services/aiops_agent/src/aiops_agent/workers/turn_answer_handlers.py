@@ -5,6 +5,7 @@ from __future__ import annotations
 from aiops_agent.domain.evidence.physical_identity import physical_identity_model_context
 from aiops_agent.domain.operations.model_budget import work_deadline
 from aiops_agent.config import AIOpsDiagnosisConfig
+from aiops_agent.application.top_sql_collection import collection_failure_reason, collection_runtime_note
 
 import hashlib
 import json
@@ -364,7 +365,12 @@ class DbaEvidenceAssessmentHandler:
                 gap_counts = dict(result.get("gaps") or {})
                 if not result.get("collection_enabled"):
                     gap_counts["COLLECTION_DISABLED"] = 1
+                failure_reason = collection_failure_reason(result)
+                runtime_note = collection_runtime_note(result)
+                if failure_reason:
+                    gap_counts["COLLECTION_FAILED"] = 1
                 gap_labels = {
+                    "COLLECTION_FAILED": failure_reason,
                     "COLLECTION_DISABLED": "周期快照未启用",
                     "INSUFFICIENT_SNAPSHOTS": "有效快照不足两次",
                     "WINDOW_NOT_FULLY_COVERED": "未覆盖完整窗口",
@@ -383,7 +389,7 @@ class DbaEvidenceAssessmentHandler:
                     requested,
                     f"实际覆盖区间：{covered}",
                     *(str(item) for item in result.get("warnings") or ()),
-                    *(f"数据缺口：{gap_labels.get(str(code), str(code))}（{count}）"
+                    *(f"数据缺口：{gap_labels.get(str(code), str(code))}（缺口次数：{count}）"
                       for code, count in gap_counts.items()),
                 )
                 fact = top_sql_window_evidence_fact(result=result, artifact_id=artifact_id)
@@ -396,7 +402,11 @@ class DbaEvidenceAssessmentHandler:
                             source_id="workload.sql.top_window",
                             step_id="top-sql-window",
                             code=str(code),
-                            detail=f"历史 SQL 快照存在数据缺口：{gap_labels.get(str(code), str(code))}（{count}）；{requested}；实际覆盖区间：{covered}",
+                            detail=(
+                                f"{failure_reason}；{runtime_note}" if code == "COLLECTION_FAILED" else
+                                f"历史 SQL 快照存在数据缺口：{gap_labels.get(str(code), str(code))}（缺口次数：{count}）；{requested}；实际覆盖区间：{covered}"
+                                + (f"；{runtime_note}" if runtime_note else "")
+                            ),
                             retryable=False,
                         )
                     )
@@ -1730,6 +1740,9 @@ class DbaAnswerComposeHandler:
                 codes = {gap.code for gap in assessment.gaps if gap.source_id == "workload.sql.top_window"}
                 if "COLLECTION_DISABLED" in codes:
                     message += "周期 SQL 快照未启用；请在 Target 采集配置中启用并发布，积累覆盖所需窗口的快照后重试。"
+                elif "COLLECTION_FAILED" in codes:
+                    failure = next(gap for gap in assessment.gaps if gap.source_id == "workload.sql.top_window" and gap.code == "COLLECTION_FAILED")
+                    message += f"周期采集存在运行错误：{failure.detail}。请先恢复采集，不能仅靠等待快照恢复。"
                 elif "INSUFFICIENT_SNAPSHOTS" in codes:
                     message += "可比较快照不足；请确认采集正常，待快照覆盖所需窗口后重试。"
                 else:

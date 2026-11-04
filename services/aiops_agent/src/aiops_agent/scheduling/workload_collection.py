@@ -139,6 +139,10 @@ class WorkloadCollectionScheduler:
                 return True
             binding = await self._active_binding(uow, target)
             if binding is None:
+                logger.warning(
+                    "数据库周期采集未创建任务：kind={} target_id={} error_code=ACTIVE_AGENT_BINDING_MISSING；当前资源授权中没有可用 Agent",
+                    kind, target.target_id,
+                )
                 values = self._defer_without_binding_values(
                     target=target,
                     kind=kind,
@@ -294,6 +298,9 @@ class WorkloadCollectionScheduler:
                         seconds=int(policy.get("interval_seconds") or 5)
                     )
                 }
+            if kind == "WORKLOAD" and getattr(target, "workload_last_error_code", None) == "ACTIVE_AGENT_BINDING_MISSING":
+                # 授权已恢复并创建任务，不继续展示过期的授权阻塞；执行失败计数由快照落库收敛。
+                values["workload_last_error_code"] = None
             await uow.targets.update_workload_runtime_state(
                 target_id=target.target_id, values=values
             )
@@ -307,20 +314,9 @@ class WorkloadCollectionScheduler:
             return True
 
     async def _active_binding(self, uow, target):
-        for relation in await uow.targets.list_agent_bindings(
-            target_id=target.target_id,
-            domain_id=target.domain_id,
-        ):
-            if str(relation.status) != "ACTIVE":
-                continue
-            binding = await uow.agents.get_active(
-                domain_id=target.domain_id,
-                agent_id=relation.agent_id,
-                target_id=target.target_id,
-            )
-            if binding is not None:
-                return binding
-        return None
+        return await uow.agents.get_active_for_collection(
+            domain_id=target.domain_id, target_id=target.target_id
+        )
 
     def _freeze_tools(self, *, target, kind: str, policy: dict) -> tuple[list[dict], list[dict]]:
         capabilities = _capability_names(target.capabilities_json)
