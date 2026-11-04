@@ -416,6 +416,10 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("数据库容量使用率趋势", script)
         stylesheet = (AIOPS_ROOT / "css" / "reference-monitoring.css").read_text(encoding="utf-8")
         self.assertIn(".monitoring-panels .monitoring-panel", stylesheet)
+        self.assertIn("reference-monitoring.css?v=20261104_3", page)
+        main_style = stylesheet.split(".monitoring-dashboard-main {", 1)[1].split("}", 1)[0]
+        self.assertIn("grid-auto-rows:max-content;", main_style)
+        self.assertIn("overflow-y:auto;", main_style)
         self.assertIn(".is-capacity-comparison .capacity-overview { height:180px; overflow:auto; }", stylesheet)
         self.assertIn("使用率趋势", script)
         self.assertIn("capacity_warning_percent", script)

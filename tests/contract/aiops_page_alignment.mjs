@@ -290,7 +290,13 @@ function installFixture(data) {
     if (suffix.endsWith('/monitoring/view')) {
       const instance=monitoringInstances().find(item=>item.instance_id===suffix.match(/\/targets\/([^/]+)/)?.[1])||data.monitoringInstance;
       const params=new URL(path,'http://fixture').searchParams;
-      return { source: data.monitoringSource, profile: { profile_id: params.get('profile_id'), display_name: instance.instance_id==='instance-1'?'数据库总览':`总览 ${instance.instance_id}`, version: '1.0.0' }, generated_at: '2026-10-30T03:00:00Z', window: { start: '2026-10-30T02:00:00Z', end: '2026-10-30T03:00:00Z' }, instances: [{ ...instance, status: 'AVAILABLE' }], panels: location.search.includes('panels=1') ? data.monitoringPanels : [], gaps: [], partial: false };
+      const panels=globalThis.fixtureMonitoringDensePanels
+        ? Array.from({length:24},(_,index)=>{
+          const panel=data.monitoringPanels[index%data.monitoringPanels.length];
+          return {...panel,panel_id:`${panel.panel_id}-${index}`,title:`${panel.title} ${index+1}`,series:panel.series.map(series=>({...series,series_key:`${series.series_key}-${index}`}))};
+        })
+        : location.search.includes('panels=1') ? data.monitoringPanels : [];
+      return { source: data.monitoringSource, profile: { profile_id: params.get('profile_id'), display_name: instance.instance_id==='instance-1'?'数据库总览':`总览 ${instance.instance_id}`, version: '1.0.0' }, generated_at: '2026-10-30T03:00:00Z', window: { start: '2026-10-30T02:00:00Z', end: '2026-10-30T03:00:00Z' }, instances: [{ ...instance, status: 'AVAILABLE' }], panels, gaps: [], partial: false };
     }
     fixtureFailures.push(path);
     throw new Error(`未定义的对照请求：${path}`);

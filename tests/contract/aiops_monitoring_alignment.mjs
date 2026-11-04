@@ -2,7 +2,61 @@
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 
+async function verifyMonitoringContentRows(kbot, reference, artifacts) {
+  const failures=[];
+  for (const [label,page] of [['kbot',kbot],['ammolite',reference]]) {
+    const originalCount=await page.locator('.monitoring-panel').count();
+    await page.setViewportSize({width:1440,height:600});
+    await page.evaluate(()=>{globalThis.fixtureMonitoringDensePanels=true;});
+    await page.getByRole('button',{name:'刷新',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelectorAll('.monitoring-panel').length===24);
+    try {
+      for (const [width,height] of [[1920,768],[1440,600],[1024,600],[821,600]]) {
+        await page.setViewportSize({width,height});
+        for (const expanded of [false,true]) {
+          await page.locator('.monitoring-dashboard-main').evaluate(node=>{node.scrollTop=0;});
+          if (expanded) await page.getByRole('button',{name:/^数据质量/}).click();
+          // 移开指针并等待通用卡片悬停动画结束，再测量布局间距。
+          await page.mouse.move(0,0);
+          await page.waitForFunction(()=>getComputedStyle(document.querySelector('.monitoring-observation-card')).transform==='none');
+          const bounds=await page.evaluate(()=>{
+            const rect=node=>{const box=node.getBoundingClientRect();return {top:box.top,bottom:box.bottom,left:box.left,right:box.right,height:box.height};};
+            const main=document.querySelector('.monitoring-dashboard-main');
+            return {card:rect(document.querySelector('.monitoring-observation-card')),toolbar:rect(document.querySelector('.monitoring-query-toolbar')),summary:rect(document.querySelector('.monitoring-summary-strip')),panels:rect(document.querySelector('.monitoring-panels')),fields:[...document.querySelectorAll('.monitoring-rail-fields select')].map(node=>({...rect(node),hit:document.elementFromPoint(node.getBoundingClientRect().x+node.clientWidth/2,node.getBoundingClientRect().y+node.clientHeight/2)===node})),scrollHeight:main.scrollHeight,clientHeight:main.clientHeight,gap:Number.parseFloat(getComputedStyle(main).rowGap)};
+          });
+          if (width===1920||width===1440) await page.screenshot({path:resolve(artifacts,`${label}-monitoring-dense-${width}x${height}-${expanded?'quality':'settings'}.png`)});
+          assert.ok(bounds.toolbar.top>=bounds.card.top&&bounds.summary.bottom<=bounds.card.bottom+1,`${label} ${width}x${height}：多行指标不得压缩设置/状态卡片：${JSON.stringify(bounds)}`);
+          assert.equal(bounds.fields.length,4);
+          assert.ok(bounds.fields.every(field=>field.top>=bounds.card.top&&field.bottom<=bounds.card.bottom&&field.hit),'四个设置控件必须完整可见且可点击');
+          assert.ok(Math.abs(bounds.panels.top-bounds.card.bottom-bounds.gap)<1,`${label} ${width}x${height}：多行指标仍保持统一间距：${JSON.stringify(bounds)}`);
+          assert.ok(bounds.scrollHeight>bounds.clientHeight,'指标较多时由右侧工作区滚动，不得挤压顶部设置');
+          const lastPanel=page.locator('.monitoring-panel').last();
+          await lastPanel.scrollIntoViewIfNeeded();
+          assert.ok(await lastPanel.locator('header').evaluate(node=>{const box=node.getBoundingClientRect(),main=document.querySelector('.monitoring-dashboard-main').getBoundingClientRect();return box.top>=main.top&&box.bottom<=main.bottom;}),'最后一行指标必须可以滚动到');
+          if (expanded) {
+            const detail=page.locator('.monitoring-quality-detail');
+            await detail.scrollIntoViewIfNeeded();
+            assert.ok(await detail.locator('header').evaluate(node=>{const box=node.getBoundingClientRect(),main=document.querySelector('.monitoring-dashboard-main').getBoundingClientRect();return box.top>=main.top&&box.bottom<=main.bottom;}),'数据质量展开后必须保留内容高度且可滚动到');
+            await page.locator('.monitoring-dashboard-main').evaluate(node=>{node.scrollTop=0;});
+            await page.getByRole('button',{name:/^数据质量/}).click();
+          }
+        }
+      }
+    } catch (error) {
+      failures.push(error.message);
+    } finally {
+      await page.setViewportSize({width:1440,height:1000});
+      await page.evaluate(()=>{globalThis.fixtureMonitoringDensePanels=false;});
+      await page.getByRole('button',{name:'刷新',exact:true}).click();
+      await page.waitForFunction(count=>document.querySelectorAll('.monitoring-panel').length===count,originalCount);
+      await page.locator('.monitoring-dashboard-main').evaluate(node=>{node.scrollTop=0;});
+    }
+  }
+  assert.deepEqual(failures,[],`多指标/短视口布局回归失败，截图：${artifacts}`);
+}
+
 export async function verifyMonitoringNavigation(kbot, reference, compareRegions, artifacts) {
+  await verifyMonitoringContentRows(kbot,reference,artifacts);
   const pages = [kbot, reference];
   for (const page of pages) {
     await page.setViewportSize({width:1440,height:1000});
