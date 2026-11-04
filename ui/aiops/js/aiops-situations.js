@@ -155,11 +155,13 @@
       loading.hidden=true;table.hidden=false;
     }
   }
-  shell.ready.then(()=>{
+  shell.ready.then(async ()=>{
     document.getElementById("refresh-workspace").onclick=load;
     document.getElementById("situations-body").onclick=event=>{const trigger=event.target.closest("[data-situation-id]");if(trigger){const item=state.items.find(item=>item.situation_id===trigger.dataset.situationId);if(item)void open(item);}};
     drawer.onclick=event=>{if(event.target.closest("[data-close-situation]"))close();else if(event.target.closest("[data-situation-results]")){state.continuation=false;renderMode();renderResult();}else if(event.target.closest("[data-situation-continue]"))void openContinuation();};
     drawer.addEventListener("close",()=>{if(state.selected && !drawer.open)close();});window.addEventListener("pagehide",close);
-    return load();
+    await load();
+    const situationId=new URLSearchParams(location.search).get("situationId");
+    if(situationId)await open({situation_id:situationId});
   }).catch(error=>shell.toast(error.message));
 })();

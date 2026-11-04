@@ -13,6 +13,55 @@ from platform_core.contracts.aiops.output_jobs import OutputJobResult
 from platform_core.identity import uuid7
 
 
+@pytest.mark.parametrize("kind", ["failed", "input", "started", "situation", "proposal", "case"])
+def test_diagnostic_notifications_keep_the_authoritative_domain_and_resource(kind):
+    async def run():
+        repo, job, payload, count = adapter()
+        source = SimpleNamespace(ops_run_id=uuid7(), target_id=uuid7(), domain_id=job.domain_id,
+            tenant_id=job.tenant_id, actor_id=job.actor_id, trace_id="trace", situation_id=None)
+        subscriptions = SimpleNamespace(recipient_actor_ids=AsyncMock(return_value=[job.actor_id]))
+        if job.tenant_id:
+            repo._notification_subscriptions = subscriptions
+        else:
+            repo._uow.notification_subscriptions = subscriptions
+        resource_id = source.ops_run_id
+        id_key = "run_id"
+        if kind in {"failed", "input"}:
+            await repo.emit_run_event(run=source,
+                event_type="aiops.run.failed" if kind == "failed" else "aiops.diagnostic.input_required",
+                summary="安全摘要", actor_id=job.actor_id)
+        elif kind == "started":
+            await repo.emit_run_started(run=source, target_name="运维目标")
+        elif kind == "situation":
+            target = SimpleNamespace(target_id=source.target_id, domain_id=job.domain_id,
+                tenant_id=job.tenant_id, display_name="运维目标")
+            situation = SimpleNamespace(situation_id=uuid7(), severity="CRITICAL")
+            resource_id, id_key = situation.situation_id, "situation_id"
+            await repo.emit_situation_event(target=target, situation=situation,
+                event_type="aiops.situation.detected", stage="SITUATION_DETECTED",
+                summary="安全摘要", trace_id="trace")
+        elif kind == "proposal":
+            proposal = SimpleNamespace(proposal_id=uuid7())
+            await repo.emit_proposal_event(run=source, proposal=proposal,
+                event_type="aiops.proposal.review_required", summary="安全摘要", actor_id=job.actor_id)
+        else:
+            asset = SimpleNamespace(domain_id=job.domain_id, tenant_id=job.tenant_id, created_by=job.actor_id)
+            await repo.emit_case_review_required(asset=asset,
+                version=SimpleNamespace(asset_version_id=uuid7()), run=source)
+        data = payload()
+        assert count() == 1
+        if job.tenant_id:
+            assert data["route_params"]["domain_id"] == str(job.domain_id)
+            assert data["route_params"][id_key] == str(resource_id)
+        else:
+            assert data["domain_id"] == job.domain_id
+            if kind != "proposal":
+                assert data["resource_id"] == str(resource_id)
+            else:
+                assert data["safe_data"]["run_id"] == str(source.ops_run_id)
+    asyncio.run(run())
+
+
 NOW = datetime(2026, 11, 3, 3, tzinfo=timezone.utc)
 
 

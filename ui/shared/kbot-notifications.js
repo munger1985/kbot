@@ -3,7 +3,14 @@
   const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
   function href(item, domainId) {
     const params = item.route_params || {};
-    if (String(item.domain_id) !== String(domainId) || String(params.domain_id) !== String(domainId)) return null;
+    const scope = String(domainId ?? "");
+    if (!/^[1-9]\d*$/.test(scope) || String(item.domain_id) !== scope || String(params.domain_id) !== scope) return null;
+    if (item.route_key === "aiops.run.detail") {
+      return isUuid(params.run_id) ? "./runs.html?" + new URLSearchParams({ runId: params.run_id }) : null;
+    }
+    if (item.route_key === "aiops.situation.detail") {
+      return isUuid(params.situation_id) ? "./situations.html?" + new URLSearchParams({ situationId: params.situation_id }) : null;
+    }
     if (item.route_key === "aiops.report.detail" && isUuid(params.report_id)) {
       const query = new URLSearchParams({ id: params.report_id });
       if (params.job_id) { if (!isUuid(params.job_id)) return null; query.set("job_id", params.job_id); }

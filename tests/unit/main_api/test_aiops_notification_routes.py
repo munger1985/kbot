@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.dialects import oracle
 
-from main_api.application.aiops_notification_routes import aiops_notification_route
+from main_api.application.aiops_notification_routes import AIOPS_RESOURCE_EVENTS, aiops_notification_route
 from main_api.application.notification_center import NotificationCenterService
 from main_api.entities import NotificationInboxEntity
 from main_api.repositories.notifications import NotificationRepository
@@ -106,3 +106,36 @@ def test_repository_enrichment_scopes_inbox_and_outbox_without_schema_copy():
         assert 'KBOT_NOTIFICATION_OUTBOX.PRODUCER_SERVICE' in sql
         assert "alice" in compiled.params.values() and "aiops" in compiled.params.values()
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("event", AIOPS_RESOURCE_EVENTS)
+def test_run_situation_and_proposal_routes_preserve_exact_domain_and_resource(event):
+    resource_type, route_key, id_key = AIOPS_RESOURCE_EVENTS[event]
+    row, _ = fixture()
+    row.event_type, row.resource_type = event, resource_type
+    run_id = str(uuid7())
+    envelope = NotificationEnvelope(domain_id=73, event_type=event,
+        resource_type=resource_type, resource_id=row.resource_id,
+        summary="安全摘要", correlation_id="trace", recipient_actor_ids=["alice"],
+        safe_data={"run_id": run_id} if resource_type == "aiops_proposal" else {})
+    payload = envelope.model_dump(mode="json")
+    result = aiops_notification_route(row, payload, domain_id=73)
+    assert result["route_key"] == route_key
+    assert result["route_params"] == {
+        "domain_id": "73", id_key: row.resource_id,
+        **({"run_id": run_id} if resource_type == "aiops_proposal" else {}),
+    }
+    assert aiops_notification_route(row, payload, domain_id=74) == {}
+    payload["resource_id"] = "javascript:alert(1)"
+    row.resource_id = payload["resource_id"]
+    assert aiops_notification_route(row, payload, domain_id=73) == {}
+
+
+def test_proposal_without_valid_run_cannot_navigate_to_another_resource():
+    row, _ = fixture()
+    row.event_type, row.resource_type = "aiops.proposal.review_required", "aiops_proposal"
+    for safe in ({}, {"run_id": "javascript:alert(1)"}):
+        payload = NotificationEnvelope(domain_id=73, event_type=row.event_type,
+            resource_type=row.resource_type, resource_id=row.resource_id,
+            summary="安全摘要", correlation_id="trace", safe_data=safe).model_dump(mode="json")
+        assert aiops_notification_route(row, payload, domain_id=73) == {}
