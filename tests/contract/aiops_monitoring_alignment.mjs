@@ -2,6 +2,46 @@
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 
+async function verifyMonitoringHover(page, label) {
+  const sample=()=>page.evaluate(async()=>{
+    const samples=[];
+    for(let index=0;index<12;index++) {
+      await new Promise(requestAnimationFrame);
+      samples.push([...document.querySelectorAll('.monitoring-observation-card,.monitoring-rail-fields select')].map(node=>node.getBoundingClientRect().top));
+    }
+    return samples;
+  });
+  await page.mouse.move(0,0);
+  const baseline=(await sample()).at(-1);
+  for(const selector of ['.monitoring-query-toolbar > p','.monitoring-rail-fields select','.monitoring-summary-strip > button']) {
+    await page.locator(selector).first().hover();
+    assert.ok((await sample()).every(row=>row.every((top,index)=>Math.abs(top-baseline[index])<0.1)),`${label}：设置卡片及控件悬停全过程不得发生位移`);
+  }
+  for(const index of [0,1]) {
+    await page.mouse.move(0,0);
+    const panel=page.locator('.monitoring-panel').nth(index);
+    const before=await panel.evaluate(node=>({top:node.getBoundingClientRect().top,shadow:getComputedStyle(node).boxShadow,border:getComputedStyle(node).borderTopColor}));
+    await panel.locator('header h2').hover();
+    await page.waitForFunction(index=>{
+      const node=document.querySelectorAll('.monitoring-panel')[index],style=getComputedStyle(node);
+      return style.transform!=='none'&&Math.abs(new DOMMatrixReadOnly(style.transform).m42-Number.parseFloat(style.getPropertyValue('--card-hover-offset')))<0.1;
+    },index,{timeout:2000});
+    const after=await panel.evaluate(node=>({top:node.getBoundingClientRect().top,shadow:getComputedStyle(node).boxShadow,border:getComputedStyle(node).borderTopColor,offset:Number.parseFloat(getComputedStyle(node).getPropertyValue('--card-hover-offset'))}));
+    assert.ok(after.offset<0&&Math.abs(after.top-before.top-after.offset)<0.1,`${label}：正常/无数据指标卡片应按共享令牌轻微上浮`);
+    assert.notEqual(after.shadow,before.shadow,'指标卡片悬停时增强阴影');
+    assert.equal(after.border,before.border,'悬停不得改变指标质量标识颜色');
+  }
+  try {
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.locator('.monitoring-panel header h2').first().hover();
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.monitoring-panel')).transform==='none');
+    assert.equal(await page.locator('.monitoring-panel').first().evaluate(node=>getComputedStyle(node).transitionDuration),'0s','减少动态效果时关闭指标卡片位移和过渡');
+  } finally {
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await page.mouse.move(0,0);
+  }
+}
+
 async function verifyMonitoringContentRows(kbot, reference, artifacts) {
   const failures=[];
   for (const [label,page] of [['kbot',kbot],['ammolite',reference]]) {
@@ -11,6 +51,7 @@ async function verifyMonitoringContentRows(kbot, reference, artifacts) {
     await page.getByRole('button',{name:'刷新',exact:true}).click();
     await page.waitForFunction(()=>document.querySelectorAll('.monitoring-panel').length===24);
     try {
+      await verifyMonitoringHover(page,label);
       for (const [width,height] of [[1920,768],[1440,600],[1024,600],[821,600]]) {
         await page.setViewportSize({width,height});
         for (const expanded of [false,true]) {

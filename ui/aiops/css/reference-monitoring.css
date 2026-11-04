@@ -10,6 +10,8 @@
 :is([data-page="monitoring"]) .monitoring-rail-collapsed-label { display:none; margin-top:42px; color:var(--muted); font-family:var(--font-data); font-size:12px; letter-spacing:.08em; writing-mode:vertical-rl; }
 :is([data-page="monitoring"]) .rail-collapsed .monitoring-rail-content { display:none; }:is([data-page="monitoring"]) .rail-collapsed .monitoring-rail-collapsed-label { display:block; }:is([data-page="monitoring"]) .rail-collapsed .monitoring-rail-toggle { right:10px; }
 :is([data-page="monitoring"]) .monitoring-observation-card { min-width:0; overflow:hidden; border:1px solid var(--line); border-radius:9px; background:var(--surface); }
+/* 设置是固定操作区，不随通用卡片悬停效果上浮，保留控件的焦点反馈。 */
+:is([data-page="monitoring"]) .aiops-monitoring-page .monitoring-dashboard-main > .monitoring-observation-card:hover { transform:none; }
 :is([data-page="monitoring"]) .monitoring-observation-card:has(.monitoring-summary-strip.has-issue) { border-color:color-mix(in srgb,var(--warning) 40%,var(--line)); }
 :is([data-page="monitoring"]) .monitoring-query-toolbar { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:18px; min-width:0; padding:12px 16px; }
 :is([data-page="monitoring"]) .monitoring-query-toolbar > p { margin:0; color:var(--muted); font-size:12px; font-weight:650; white-space:nowrap; }
@@ -46,7 +48,8 @@
 }
 
 /* business/AIOpsMonitoringPanelChart.vue */
-:is([data-page="monitoring"]) .monitoring-panel { display:flex; height:380px; overflow:hidden; flex-direction:column; border:1px solid var(--line); border-top:2px solid var(--success); border-radius:9px; background:var(--surface); }
+:is([data-page="monitoring"]) .monitoring-panel { display:flex; height:380px; overflow:hidden; flex-direction:column; border:1px solid var(--line); border-top:2px solid var(--success); border-radius:9px; background:var(--surface); box-shadow:var(--card-shadow); transition:box-shadow .16s ease,transform .16s ease; }
+:is([data-page="monitoring"]) .monitoring-panel:hover { box-shadow:var(--card-shadow-hover); transform:translateY(var(--card-hover-offset)); }
 :is([data-page="monitoring"]) .monitoring-panel.tone-warning { border-top-color:var(--warning); }
 :is([data-page="monitoring"]) .monitoring-panel.tone-danger { border-top-color:var(--danger); }
 :is([data-page="monitoring"]) .monitoring-panel.tone-none { border-top-style:dashed; border-top-color:var(--muted); }
@@ -121,6 +124,7 @@
 :is([data-page="monitoring"]) .monitoring-raw-evidence > p { margin:8px 0 12px; color:var(--muted); font-size:12px; }
 :is([data-page="monitoring"]) .monitoring-data-drawer > .admin-drawer-footer { margin-top:auto; }
 :is([data-page="monitoring"]) .quality-no_data { border-style:dashed; }
+@media (prefers-reduced-motion:reduce) { :is([data-page="monitoring"]) .monitoring-panel { transition:none; }:is([data-page="monitoring"]) .monitoring-panel:hover { transform:none; } }
 @media (max-width:900px) { :is([data-page="monitoring"]) .capacity-row { grid-template-columns:minmax(135px,.7fr) minmax(180px,1.3fr); } }
 @media (max-width:720px) { :is([data-page="monitoring"]) .monitoring-panel > header { flex-direction:column; } :is([data-page="monitoring"]) .monitoring-panel-actions { width:100%; justify-content:space-between; } :is([data-page="monitoring"]) .monitoring-data-drawer .drawer-summary-grid,:is([data-page="monitoring"]) .monitoring-series-insights { grid-template-columns:repeat(2,minmax(0,1fr)); } :is([data-page="monitoring"]) .capacity-legend small { display:none; }:is([data-page="monitoring"]) .capacity-row { grid-template-columns:1fr; gap:10px; }:is([data-page="monitoring"]) .capacity-values { grid-column:auto; } }
 @media (max-width:520px) { :is([data-page="monitoring"]) .monitoring-series-insights,:is([data-page="monitoring"]) .monitoring-series-insights dl { grid-template-columns:1fr; } :is([data-page="monitoring"]) .monitoring-series-insights dl div,:is([data-page="monitoring"]) .monitoring-series-insights dl div:nth-child(even) { border-top:1px solid var(--line); border-left:0; } }

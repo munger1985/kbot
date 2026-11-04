@@ -416,7 +416,10 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("数据库容量使用率趋势", script)
         stylesheet = (AIOPS_ROOT / "css" / "reference-monitoring.css").read_text(encoding="utf-8")
         self.assertIn(".monitoring-panels .monitoring-panel", stylesheet)
-        self.assertIn("reference-monitoring.css?v=20261104_3", page)
+        self.assertIn("reference-monitoring.css?v=20261104_4", page)
+        self.assertIn(".aiops-monitoring-page .monitoring-dashboard-main > .monitoring-observation-card:hover { transform:none; }", stylesheet)
+        self.assertIn(".monitoring-panel:hover { box-shadow:var(--card-shadow-hover); transform:translateY(var(--card-hover-offset)); }", stylesheet)
+        self.assertIn("@media (prefers-reduced-motion:reduce)", stylesheet)
         main_style = stylesheet.split(".monitoring-dashboard-main {", 1)[1].split("}", 1)[0]
         self.assertIn("grid-auto-rows:max-content;", main_style)
         self.assertIn("overflow-y:auto;", main_style)
