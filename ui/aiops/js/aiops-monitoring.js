@@ -193,6 +193,7 @@
   }
   function renderGate() {
     const gate = document.getElementById("monitoring-gate");
+    document.getElementById("monitoring-quality-ledger").hidden = !state.view;
     const source = sourceById();
     if (!state.sources.length) {
       gate.hidden = false;
@@ -222,6 +223,7 @@
   function renderContext() {
     const context = document.getElementById("monitoring-context");
     context.hidden = !state.sources.length;
+    document.getElementById("monitoring-observation-card").hidden = !state.sources.length;
     document.getElementById("monitoring-workspace").classList.toggle("is-empty", !state.sources.length);
     document.getElementById("monitoring-source").innerHTML = state.sources.map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.sourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(label(source.monitoring_readiness))}</option>`).join("");
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";

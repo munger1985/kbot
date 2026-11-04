@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>实时监控 · KBot AIOps</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261104_1"><link rel="stylesheet" href="./css/reference-monitoring.css?v=20261104_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261104_1"><link rel="stylesheet" href="./css/reference-monitoring.css?v=20261104_2"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="monitoring">
   <main class="ops-main aiops-monitoring-page">
     <header class="ops-head monitoring-page-heading app-page-head">
@@ -19,12 +19,6 @@
     </header>
 
     <section id="monitoring-workspace" class="monitoring-dashboard-shell">
-      <section id="monitoring-context" class="monitoring-query-toolbar" aria-label="实时监控查询设置" hidden><p>观测设置</p><div class="monitoring-rail-fields">
-            <label class="control-field"><span class="field-label">监控源</span><select id="monitoring-source"></select></label>
-            <label class="control-field"><span class="field-label">时间窗口</span><select id="monitoring-window"><option value="15m">15 分钟</option><option value="1h" selected>1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option></select></label>
-            <label class="control-field"><span class="field-label">基线</span><select id="monitoring-baseline"><option value="1d">过去 1 天平均值</option><option value="1w" selected>过去 1 周平均值</option><option value="1m">过去 1 月平均值</option></select></label>
-            <label class="control-field"><span class="field-label">自动刷新</span><select id="monitoring-refresh-interval"><option value="0" selected>关闭</option><option value="15">15 秒</option><option value="30">30 秒</option><option value="60">1 分钟</option></select></label>
-      </div><dl class="monitoring-profile-context"><div><dt>指标范围</dt><dd id="monitoring-profile-name">统一总览</dd></div></dl></section>
       <aside class="monitoring-context-rail" aria-label="业务系统与实例导航">
         <button id="monitoring-rail-toggle" class="icon-button monitoring-rail-toggle" type="button" aria-label="收起实例导航" aria-controls="monitoring-rail-content" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
         <span class="monitoring-rail-collapsed-label">实例导航</span>
@@ -36,11 +30,19 @@
         </div>
       </aside>
       <div class="monitoring-dashboard-main">
+        <section id="monitoring-observation-card" class="monitoring-observation-card" aria-label="观测设置与运行状态" hidden>
+          <section id="monitoring-context" class="monitoring-query-toolbar" aria-label="实时监控查询设置" hidden><p>观测设置</p><div class="monitoring-rail-fields">
+            <label class="control-field"><span class="field-label">监控源</span><select id="monitoring-source"></select></label>
+            <label class="control-field"><span class="field-label">时间窗口</span><select id="monitoring-window"><option value="15m">15 分钟</option><option value="1h" selected>1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option></select></label>
+            <label class="control-field"><span class="field-label">基线</span><select id="monitoring-baseline"><option value="1d">过去 1 天平均值</option><option value="1w" selected>过去 1 周平均值</option><option value="1m">过去 1 月平均值</option></select></label>
+            <label class="control-field"><span class="field-label">自动刷新</span><select id="monitoring-refresh-interval"><option value="0" selected>关闭</option><option value="15">15 秒</option><option value="30">30 秒</option><option value="60">1 分钟</option></select></label>
+          </div><dl class="monitoring-profile-context"><div><dt>指标范围</dt><dd id="monitoring-profile-name">统一总览</dd></div></dl></section>
+          <section id="monitoring-quality-ledger" class="monitoring-summary-strip monitoring-single-summary" aria-label="数据质量概览" hidden></section>
+        </section>
     <section id="monitoring-gate" class="monitoring-gate"><div class="empty-cell">正在读取监控源目录…</div></section>
 
     <section id="monitoring-loading" class="loading-card monitoring-inline-state" hidden><div>正在查询实时指标…</div></section>
     <div id="monitoring-result" hidden>
-      <section id="monitoring-quality-ledger" class="monitoring-summary-strip monitoring-single-summary" aria-label="数据质量概览"></section>
       <section id="monitoring-panels" class="monitoring-panels" aria-label="实时监控图表"></section>
       <section id="monitoring-quality-detail" class="monitoring-quality-detail" hidden>
         <header><div><p class="eyebrow">证据边界</p><h2>数据质量与缺口</h2></div><span id="monitoring-result-state"></span></header>
@@ -78,6 +80,6 @@
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261103_3"></script>
-  <script src="./js/aiops-monitoring.js?v=20261104_1"></script>
+  <script src="./js/aiops-monitoring.js?v=20261104_2"></script>
 </body>
 </html>

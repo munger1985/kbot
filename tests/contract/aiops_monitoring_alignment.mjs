@@ -32,22 +32,30 @@ export async function verifyMonitoringNavigation(kbot, reference, compareRegions
     assert.equal(await page.getByRole('radio',{name:'选择 生产 Oracle',exact:true}).isChecked(),true);
     assert.equal(await page.evaluate(()=>fixtureRequests.length),requestCount,'搜索与折叠不得重新查询或改变观测对象');
   }
-  for (const width of [1440,1024,900,821,820,420,320]) {
+  for (const width of [1440,1280,1181,1024,900,821,820,420,320]) {
     for (const page of pages) {
       await page.setViewportSize({width,height:1000});
       const bounds=await page.evaluate(()=>{
         const rect=selector=>{const box=document.querySelector(selector).getBoundingClientRect();return {x:box.x,y:box.y,right:box.right,bottom:box.bottom,width:box.width,height:box.height};};
-        return {toolbar:rect('.monitoring-query-toolbar'),rail:rect('.monitoring-context-rail'),main:rect('.monitoring-dashboard-main'),fields:[...document.querySelectorAll('.monitoring-rail-fields .control-field')].map(node=>{const box=node.getBoundingClientRect();return {x:box.x,y:box.y,right:box.right};}),viewport:innerWidth,treeOverflow:getComputedStyle(document.querySelector('.monitoring-instance-tree')).overflowY};
+        const observation=document.querySelector('.monitoring-observation-card');
+        return {toolbar:rect('.monitoring-query-toolbar'),rail:rect('.monitoring-context-rail'),main:rect('.monitoring-dashboard-main'),card:rect('.monitoring-observation-card'),summary:rect('.monitoring-summary-strip'),panels:rect('.monitoring-panels'),gap:Number.parseFloat(getComputedStyle(document.querySelector('.monitoring-dashboard-shell')).columnGap),panelGap:Number.parseFloat(getComputedStyle(document.querySelector('.monitoring-panels')).gap),mainGap:Number.parseFloat(getComputedStyle(document.querySelector('.monitoring-dashboard-main')).rowGap),merged:observation.contains(document.querySelector('.monitoring-query-toolbar'))&&observation.contains(document.querySelector('.monitoring-summary-strip')),fields:[...document.querySelectorAll('.monitoring-rail-fields .control-field')].map(node=>{const box=node.getBoundingClientRect();return {x:box.x,y:box.y,right:box.right};}),viewport:innerWidth,treeOverflow:getComputedStyle(document.querySelector('.monitoring-instance-tree')).overflowY};
       });
-      assert.ok(bounds.toolbar.bottom<=bounds.rail.y+1,'顶部设置不得与实例导航重叠');
-      assert.ok(bounds.toolbar.bottom<=bounds.main.y+1,'顶部设置不得与图表区重叠');
+      assert.ok(bounds.merged,'观测设置和运行状态必须合并在同一张右侧卡片内');
+      assert.ok(bounds.toolbar.bottom<=bounds.summary.y+1,'观测设置不得与运行状态重叠');
+      assert.equal(bounds.gap,bounds.panelGap,'左右栏与指标卡片使用统一间距');
+      assert.equal(bounds.mainGap,bounds.panelGap,'右侧概览与指标卡片使用统一间距');
+      assert.ok(Math.abs(bounds.card.x-bounds.panels.x)<1,'合并卡片与指标卡片左边界对齐');
+      assert.ok(Math.abs(bounds.panels.y-bounds.card.bottom-bounds.gap)<1,'合并卡片与指标区的间距必须统一');
       assert.ok(bounds.fields.every(field=>field.right<=bounds.toolbar.right+1),'观测设置不得横向溢出');
       assert.ok(bounds.toolbar.right<=bounds.viewport+1,'监控工作区不得超出视口');
-      if(width>=1024) assert.ok(bounds.fields.every(field=>Math.abs(field.y-bounds.fields[0].y)<1),'桌面设置必须横排');
-      if(width<=820) assert.ok(bounds.rail.bottom<=bounds.main.y+1,'窄屏实例导航不得覆盖指标卡片');
+      if(width>=1440) assert.ok(bounds.fields.every(field=>Math.abs(field.y-bounds.fields[0].y)<1),'宽屏设置必须横排');
+      if(width>820) {
+        assert.ok(Math.abs(bounds.rail.y-bounds.card.y)<1,'实例列表必须向上延伸，与右侧合并卡片顶部对齐');
+        assert.ok(Math.abs(bounds.card.x-bounds.rail.right-bounds.gap)<1,'设置区必须缩进到右侧，保持统一栏间距');
+      } else assert.ok(Math.abs(bounds.main.y-bounds.rail.bottom-bounds.gap)<1,'窄屏实例导航与观测区保持统一间距且不重叠');
       assert.equal(bounds.treeOverflow,'auto','实例目录必须独立滚动');
     }
-    await compareRegions(kbot,reference,['.monitoring-query-toolbar','.monitoring-rail-fields','.monitoring-instance-heading','.monitoring-instance-search','.monitoring-instance-tree','.monitoring-system-toggle','.monitoring-instance-option'],{page:'monitoring',width,state:'instance-tree'});
+    await compareRegions(kbot,reference,['.monitoring-observation-card','.monitoring-summary-strip','.monitoring-query-toolbar','.monitoring-rail-fields','.monitoring-instance-heading','.monitoring-instance-search','.monitoring-instance-tree','.monitoring-system-toggle','.monitoring-instance-option'],{page:'monitoring',width,state:'instance-tree'});
     if([1440,420].includes(width)) for(const [label,page] of [['kbot',kbot],['ammolite',reference]]) await page.screenshot({path:resolve(artifacts,`${label}-monitoring-instance-tree-${width}.png`)});
   }
   for (const page of pages) {
