@@ -9,7 +9,7 @@
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
     chartObservers: new Map(),
     visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null,
-    instanceDrawerTrigger: null, railCollapsed: false,
+    railCollapsed: false, collapsedSystemIds: new Set(), loadingInstances: false, contextError: "",
   };
   const readinessLabels = {
     READY: "就绪", DISABLED: "已停用", DISCONNECTED: "连接失败",
@@ -45,7 +45,7 @@
     document.getElementById("monitoring-workspace").classList.toggle("rail-collapsed", collapsed);
     const toggle = document.getElementById("monitoring-rail-toggle");
     toggle.setAttribute("aria-expanded", String(!collapsed));
-    toggle.setAttribute("aria-label", collapsed ? "展开数据库与过滤条件" : "收起数据库与过滤条件");
+    toggle.setAttribute("aria-label", collapsed ? "展开实例导航" : "收起实例导航");
   }
   function pointQualityLabel(value) {
     return ({ GOOD: "正常", INVALID: "无效", STALE: "已过期", ESTIMATED: "估算" })[value] || value || "未知";
@@ -177,6 +177,7 @@
       metric_codes: (profileById()?.metric_codes || []).join(","),
     });
     link.href = `./chat.html?${params}`;
+    link.hidden = !enabled;
     link.classList.toggle("is-disabled", !enabled);
     link.setAttribute("aria-disabled", String(!enabled));
   }
@@ -210,7 +211,7 @@
       gate.innerHTML = gateContent(entry[0], entry[1], source.capability_gaps || []);
       return true;
     }
-    if (!state.instances.length) {
+    if (!state.instances.length && !state.loadingInstances) {
       gate.hidden = false;
       gate.innerHTML = gateContent("尚未关联数据库实例", "当前来源下没有可授权查询的 ACTIVE 实例映射。");
       return true;
@@ -226,48 +227,25 @@
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
     document.getElementById("monitoring-baseline").value = state.baseline;
-    const diagnosticDetail = diagnosticGapText(sourceById());
-    document.getElementById("monitoring-readiness").innerHTML = `${badge(sourceById()?.monitoring_readiness, `监控 ${label(sourceById()?.monitoring_readiness)}`)}<span title="${esc(diagnosticDetail)}">${badge(sourceById()?.diagnostic_readiness, `自动诊断 ${label(sourceById()?.diagnostic_readiness)}`)}</span>`;
+    document.getElementById("monitoring-baseline").disabled = sourceById()?.monitoring_readiness !== "READY";
   }
   function filteredInstances() {
     const value = state.search.trim().toLowerCase();
     return state.instances.filter((item) => !value || `${item.business_system_name || ""} ${item.resource_name || ""} ${item.display_name} ${item.db_type}`.toLowerCase().includes(value));
   }
-  function openInstanceDrawer() {
-    if (!state.instances.length) return;
-    const dialog = document.getElementById("monitoring-instance-drawer");
-    state.instanceDrawerTrigger = document.activeElement;
-    if (!dialog.open) dialog.showModal();
-    requestAnimationFrame(() => document.getElementById("monitoring-instance-search").focus());
-  }
-  function closeInstanceDrawer() {
-    const dialog = document.getElementById("monitoring-instance-drawer");
-    if (dialog.open) dialog.close();
-  }
   function renderInstances() {
-    const picker = document.getElementById("monitoring-instance-picker");
     renderGate();
-    picker.hidden = !state.sources.length;
-    if (picker.hidden) {
-      closeInstanceDrawer();
-      return;
-    }
+    const tree = document.getElementById("monitoring-instance-tree");
+    const focused = tree.contains(document.activeElement) ? document.activeElement.dataset : null;
+    tree.setAttribute("aria-busy", String(Boolean(state.contextController)));
     const instances = filteredInstances();
     const selectedInstance = state.instances.find((item) => state.selected.includes(item.instance_id)) || null;
-    document.getElementById("monitoring-current-instance").textContent = selectedInstance?.resource_name || selectedInstance?.display_name || "未选择";
-    document.getElementById("monitoring-current-instance-meta").textContent = selectedInstance?.db_type || "—";
-    document.getElementById("monitoring-collapsed-label").textContent = `${selectedInstance?.resource_name || selectedInstance?.display_name || "数据库"} · ${selectedInstance?.db_type || "—"}`;
-    document.getElementById("monitoring-current-instance-status").innerHTML = selectedInstance
-      ? `<strong><i></i>${state.view?.partial ? "监控数据部分可用" : "数据库观测就绪"}</strong><span title="${esc(diagnosticGapText(selectedInstance))}">监控 ${esc(label(selectedInstance.monitoring_readiness))} · 诊断 ${esc(label(selectedInstance.diagnostic_readiness))}</span>`
-      : "";
-    document.getElementById("monitoring-current-instance-status").classList.toggle("is-warning", Boolean(state.view?.partial || allGaps().length || state.view?.instances.some(item => item.status !== "AVAILABLE")));
-    const count = document.getElementById("monitoring-selection-count");
-    count.classList.toggle("has-selection", Boolean(state.selected.length));
-    count.innerHTML = `<strong>${instances.length}</strong> 个匹配资源${state.selected.length ? " · 已选择 1 个" : " · 请选择"}`;
+    document.getElementById("monitoring-current-instance").textContent = selectedInstance?.display_name || "未选择";
+    document.getElementById("monitoring-instance-count").textContent = `当前监控源下 ${state.instances.length} 个已授权实例`;
     const groups = new Map();
     instances.forEach((instance) => {
-      const key = `${instance.business_system_id || "unassigned"}:${instance.resource_id || "unassigned"}`;
-      const group = groups.get(key) || { systemName: instance.business_system_name || "未归属业务系统", resourceName: instance.resource_name || "未归属数据库资源", items: [] };
+      const key = instance.business_system_id || "unassigned";
+      const group = groups.get(key) || { key, systemName: instance.business_system_name || "未归属业务系统", items: [] };
       group.items.push(instance);
       groups.set(key, group);
     });
@@ -275,11 +253,24 @@
       const selected = state.selected.includes(instance.instance_id);
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
       const queryStatus = targetPickerStatus(instance, result);
-      const displayName = instance.resource_name || instance.display_name;
-      return `<label class="${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(displayName)}" ${selected ? "checked" : ""}><span><strong>${esc(displayName)}</strong><small>${esc(instance.db_type)} · 监控 ${esc(label(instance.monitoring_readiness))}</small></span>${badge(queryStatus.value, queryStatus.label, "i")}</label>`;
+      const statusClass = ({ good: "status-success", warn: "status-warning", bad: "status-danger" })[tone(queryStatus.value)];
+      return `<label class="monitoring-instance-option${selected ? " is-selected" : ""}"><input type="radio" name="monitoring-target" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span><strong title="${esc(instance.display_name)}">${esc(instance.display_name)}</strong><small title="${esc(instance.resource_name || "")}">${esc(instance.db_type)}${instance.resource_name ? ` · ${esc(instance.resource_name)}` : ""}</small><i class="${statusClass}" title="${esc(diagnosticGapText(instance))}">${esc(queryStatus.label)}</i></span></label>`;
     };
-    const cards = [...groups.values()].map((group) => `<section class="monitoring-target-group"><header><strong>${esc(group.systemName)}</strong><span>${esc(group.resourceName)} · ${group.items.length} 个数据库入口</span></header>${group.items.map(card).join("")}</section>`).join("");
-    document.getElementById("monitoring-instance-list").innerHTML = cards || '<p class="monitoring-target-empty">没有匹配的数据库资源。</p>';
+    const cards = [...groups.values()].sort((left, right) => left.systemName.localeCompare(right.systemName, "zh-CN")).map((group) => {
+      const expanded = Boolean(state.search.trim()) || !state.collapsedSystemIds.has(group.key);
+      return `<section class="monitoring-system-group"><button class="monitoring-system-toggle" type="button" data-system-id="${esc(group.key)}" aria-expanded="${expanded}"><span class="monitoring-system-chevron" aria-hidden="true">${expanded ? "⌄" : "›"}</span><strong title="${esc(group.systemName)}">${esc(group.systemName)}</strong><span class="monitoring-system-count">${group.items.length}</span></button><div class="monitoring-system-instances" ${expanded ? "" : "hidden"}>${group.items.map(card).join("")}</div></section>`;
+    }).join("");
+    document.getElementById("monitoring-instance-list").innerHTML = state.loadingInstances
+      ? '<p class="monitoring-tree-empty" role="status">正在读取实例…</p>'
+      : state.contextError
+        ? `<div class="monitoring-tree-empty" role="alert"><p>${esc(state.contextError)}</p><button class="secondary-button" data-retry-instances type="button">重新加载实例</button></div>`
+        : cards || `<p class="monitoring-tree-empty">${state.search.trim() ? "没有匹配的业务系统或实例。" : "当前监控源下暂无可访问实例。"}</p>`;
+    if (focused) {
+      const selector = focused.instanceId ? "[data-instance-id]" : "[data-system-id]";
+      [...tree.querySelectorAll(selector)].find(node => focused.instanceId
+        ? node.dataset.instanceId === focused.instanceId
+        : node.dataset.systemId === focused.systemId)?.focus({ preventScroll: true });
+    }
     renderFreshness();
   }
   function scheduleView() {
@@ -325,8 +316,9 @@
     setLoading(true);
     try {
       const params = new URLSearchParams({ source_id: state.sourceId, profile_id: state.profileId, window: state.window, baseline: state.baseline });
-      state.view = await KBotAIOpsAuth.request(`/api/v1/apps/aiops/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}`, { signal: controller.signal });
+      const view = await KBotAIOpsAuth.request(`/api/v1/apps/aiops/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}`, { signal: controller.signal });
       if (controller.signal.aborted) return;
+      state.view = view;
       renderResult();
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -345,11 +337,17 @@
     state.contextController = contextController;
     cancelViewRequest();
     state.view = null; state.instances = []; state.profiles = []; state.selected = []; state.profileId = "";
+    state.contextError = "";
+    state.search = "";
+    state.collapsedSystemIds.clear();
+    document.getElementById("monitoring-instance-search").value = "";
+    state.loadingInstances = sourceById()?.monitoring_readiness === "READY";
     disposeCharts();
     document.getElementById("monitoring-result").hidden = true;
     renderContext(); renderInstances();
     if (sourceById()?.monitoring_readiness !== "READY") {
       if (state.contextController === contextController) state.contextController = null;
+      setLoading(false);
       return;
     }
     setLoading(true, "正在读取监控实例与指标视图…");
@@ -359,6 +357,7 @@
         { signal: contextController.signal },
       );
       if (contextController.signal.aborted) return;
+      state.loadingInstances = false;
       state.instances = [...instances].sort((left, right) => left.display_name.localeCompare(right.display_name, "zh-CN"));
       const currentQuery = new URLSearchParams(location.search);
       const targetId = currentQuery.get("target_id") || currentQuery.get("targetId") || "";
@@ -366,19 +365,23 @@
       await loadSelectedTargetProfiles({ signal: contextController.signal });
       if (contextController.signal.aborted) return;
       updateLocation();
-      closeInstanceDrawer();
       renderContext(); renderInstances(); scheduleView();
     } catch (error) {
       if (contextController.signal.aborted) return;
+      state.loadingInstances = false;
+      state.contextError = error.message || "无法读取监控实例与指标视图";
+      renderInstances();
       shell.toast(error.message || "无法读取监控实例与指标视图");
     } finally {
       if (state.contextController === contextController) {
         state.contextController = null;
         setLoading(false);
+        document.getElementById("monitoring-instance-tree").setAttribute("aria-busy", "false");
       }
     }
   }
   async function selectInstance(instanceId) {
+    if (!state.instances.some((item) => item.instance_id === instanceId)) return;
     state.contextController?.abort();
     const contextController = new AbortController();
     state.contextController = contextController;
@@ -395,7 +398,6 @@
       await loadSelectedTargetProfiles({ signal: contextController.signal });
       if (contextController.signal.aborted) return;
       updateLocation();
-      closeInstanceDrawer();
       renderContext(); renderInstances(); scheduleView();
     } catch (error) {
       if (contextController.signal.aborted) return;
@@ -404,6 +406,7 @@
       if (state.contextController === contextController) {
         state.contextController = null;
         setLoading(false);
+        document.getElementById("monitoring-instance-tree").setAttribute("aria-busy", "false");
       }
     }
   }
@@ -913,15 +916,18 @@
     if (!input?.checked) return;
     void selectInstance(input.dataset.instanceId);
   };
-  document.getElementById("open-monitoring-instance-drawer").onclick = openInstanceDrawer;
-  document.getElementById("close-monitoring-instance-drawer").onclick = closeInstanceDrawer;
-  document.getElementById("monitoring-instance-drawer").addEventListener("close", () => {
-    const trigger = state.instanceDrawerTrigger?.isConnected
-      ? state.instanceDrawerTrigger
-      : document.getElementById("open-monitoring-instance-drawer");
-    state.instanceDrawerTrigger = null;
-    trigger?.focus();
-  });
+  document.getElementById("monitoring-instance-list").onclick = (event) => {
+    if (event.target.closest("[data-retry-instances]")) { void loadSourceContext(); return; }
+    const toggle = event.target.closest("[data-system-id]");
+    if (!toggle) return;
+    const key = toggle.dataset.systemId;
+    if (state.collapsedSystemIds.has(key)) state.collapsedSystemIds.delete(key);
+    else state.collapsedSystemIds.add(key);
+    const expanded = Boolean(state.search.trim()) || !state.collapsedSystemIds.has(key);
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.querySelector(".monitoring-system-chevron").textContent = expanded ? "⌄" : "›";
+    toggle.nextElementSibling.hidden = !expanded;
+  };
   document.getElementById("monitoring-panels").onclick = (event) => {
     const capacityRow = event.target.closest("[data-capacity-instance-id]");
     if (capacityRow) {

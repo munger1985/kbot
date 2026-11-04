@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {templateAlignmentFixture,verifyInspectionTemplateEditor} from './aiops_template_alignment.mjs';
+import {verifyMonitoringNavigation} from './aiops_monitoring_alignment.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const portal = resolve(process.env.AMMOLITE_ROOT || resolve(root, "../ammolite_cube"), "apps/portal-web");
@@ -83,6 +84,12 @@ fixture.inspectionTemplate={...fixture.inspectionTemplate,source_kind:'CUSTOM',t
 fixture.inspectionPreview=templateFixture.preview;
 
 function installFixture(data) {
+  const monitoringInstances = () => [
+    data.monitoringInstance,
+    {...data.monitoringInstance,instance_id:'instance-2',display_name:'生产 Oracle 备库',resource_id:'resource-2',resource_name:'MES 备库'},
+    {...data.monitoringInstance,instance_id:'instance-3',display_name:'生产 PostgreSQL',resource_id:'resource-3',resource_name:'ERP 数据库',business_system_id:'system-2',business_system_name:'ERP 业务系统',db_type:'POSTGRESQL'},
+    {...data.monitoringInstance,instance_id:'instance-4',display_name:'未归属 MySQL <实例>',resource_id:null,resource_name:null,business_system_id:null,business_system_name:null,db_type:'MYSQL'},
+  ];
   const streaming=location.search.includes('stream=1');
   const interaction = () => new URLSearchParams(location.search).get('interaction');
   globalThis.fixtureStreamRunning=streaming;
@@ -267,10 +274,24 @@ function installFixture(data) {
     if (suffix.endsWith('/session-report-templates/session-template-1')) return {...data.sessionTemplate,definition:{sections:['EXECUTIVE_SUMMARY','RECOMMENDATIONS','TREND','FINDINGS','EVIDENCE_BOUNDARY'].map(kind=>({kind}))}};
     if (suffix.endsWith('/session-report-templates/session-template-1/versions')) return [{template_version_id:'version-1',version_no:1,current:true,created_at:'2026-10-30T03:00:00Z',content_hash:'fixture-template-content-hash',definition:{sections:['EXECUTIVE_SUMMARY','FINDINGS','EVIDENCE_BOUNDARY'].map(kind=>({kind}))}}];
     if (suffix.endsWith('/assets')) return { items: rows(data.knowledgeAsset) };
-    if (suffix.endsWith('/monitoring/sources')) return rows(data.monitoringSource);
-    if (suffix.endsWith('/instances')) return rows(data.monitoringInstance);
-    if (suffix.endsWith('/monitoring/profiles')) return [{ profile_id: 'profile-1', display_name: '数据库总览', version: '1.0.0', metric_codes: [], is_default: true }];
-    if (suffix.endsWith('/monitoring/view')) return { source: data.monitoringSource, profile: { profile_id: 'profile-1', display_name: '数据库总览', version: '1.0.0' }, generated_at: '2026-10-30T03:00:00Z', window: { start: '2026-10-30T02:00:00Z', end: '2026-10-30T03:00:00Z' }, instances: [{ ...data.monitoringInstance, status: 'AVAILABLE' }], panels: location.search.includes('panels=1') ? data.monitoringPanels : [], gaps: [], partial: false };
+    if (suffix.endsWith('/monitoring/sources')) return location.search.includes('empty=1')?[]:[data.monitoringSource,{...data.monitoringSource,source_id:'source-2',display_name:'备用 Zabbix',source_type:'ZABBIX'}];
+    if (suffix.endsWith('/instances')) {
+      if (globalThis.fixtureMonitoringFailure) throw new Error('隔离测试：实例目录暂不可用');
+      if (globalThis.fixtureMonitoringEmpty) return [];
+      return globalThis.fixtureMonitoringTree
+        ? suffix.includes('/sources/source-2/')?monitoringInstances().slice(2,3):monitoringInstances()
+        : rows(data.monitoringInstance);
+    }
+    if (suffix.endsWith('/monitoring/profiles')) {
+      const targetId=suffix.match(/\/targets\/([^/]+)/)?.[1]||'instance-1';
+      if (globalThis.fixtureMonitoringHoldProfile&&targetId==='instance-2') await new Promise(resolve=>{globalThis.fixtureReleaseMonitoringProfile=resolve;});
+      return [{ profile_id: targetId==='instance-1'?'profile-1':`profile-${targetId}`, display_name: targetId==='instance-1'?'数据库总览':`总览 ${targetId}`, version: '1.0.0', metric_codes: [], is_default: true }];
+    }
+    if (suffix.endsWith('/monitoring/view')) {
+      const instance=monitoringInstances().find(item=>item.instance_id===suffix.match(/\/targets\/([^/]+)/)?.[1])||data.monitoringInstance;
+      const params=new URL(path,'http://fixture').searchParams;
+      return { source: data.monitoringSource, profile: { profile_id: params.get('profile_id'), display_name: instance.instance_id==='instance-1'?'数据库总览':`总览 ${instance.instance_id}`, version: '1.0.0' }, generated_at: '2026-10-30T03:00:00Z', window: { start: '2026-10-30T02:00:00Z', end: '2026-10-30T03:00:00Z' }, instances: [{ ...instance, status: 'AVAILABLE' }], panels: location.search.includes('panels=1') ? data.monitoringPanels : [], gaps: [], partial: false };
+    }
     fixtureFailures.push(path);
     throw new Error(`未定义的对照请求：${path}`);
   };
@@ -932,7 +953,6 @@ try {
       'knowledge-bases': { button: '新建知识库', drawer: '.knowledge-base-drawer', regions: ['.knowledge-base-form', '.drawer-form-section', '.form-grid-two'] },
       'knowledge-tags': { button: '新增标签', drawer: '.knowledge-tag-drawer', regions: ['.knowledge-tag-form', '.drawer-form-section'] },
       'operations-knowledge': { button: '上传资料', drawer: '.knowledge-upload-drawer', regions: ['.knowledge-upload-form', '.drawer-form-section', '.upload-mode-picker', '.upload-drop-zone'] },
-      'monitoring': { button: '切换数据库资源', drawer: '.monitoring-target-drawer', regions: ['.monitoring-target-drawer-body', '.monitoring-target-group'] },
       'responsibility-groups': { trigger:'.management-catalog-add-card', drawer:'.responsibility-dialog:not(.responsibility-members-dialog)', regions:['.responsibility-dialog-header','.responsibility-dialog-form','.responsibility-dialog-body','.responsibility-dialog-actions'] },
     };
     const editor = editors[name];
@@ -1503,9 +1523,10 @@ try {
         await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:/^数据质量/}).click()));
       }
       await Promise.all([kbot,reference].map(page=>page.setViewportSize({width:1440,height:1000})));
-      await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'收起数据库与过滤条件',exact:true}).click()));
+      await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'收起实例导航',exact:true}).click()));
       await compareRegions(kbot,reference,['.monitoring-dashboard-shell','.monitoring-context-rail','.monitoring-dashboard-main'],{page:name,width:1440,state:'collapsed'});
-      await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'展开数据库与过滤条件',exact:true}).click()));
+      await Promise.all([kbot,reference].map(page=>page.getByRole('button',{name:'展开实例导航',exact:true}).click()));
+      await verifyMonitoringNavigation(kbot,reference,compareRegions,artifacts);
     }
     if (panels) for (const width of [1440,420]) {
       await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
