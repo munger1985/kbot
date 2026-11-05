@@ -5,7 +5,7 @@
 """
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 import hashlib
 import json
 import re
@@ -184,7 +184,8 @@ class OEMNativeMetrics:
             expected_target_type=_expected_target_type)
 
     async def query_native_metric(self, request, *, metric_name, limit, allow_text=False,
-                                  _expected_target_type=None, _shared_budget=False, _paginate=False):
+                                  _expected_target_type=None, _shared_budget=False, _paginate=False,
+                                  _summary_only=False):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             _fail("SOURCE_CAPABILITY_FORBIDDEN")
         group, metric = parse_metric_selector(metric_name)
@@ -231,14 +232,15 @@ class OEMNativeMetrics:
         if _paginate:
             from .oem_catalog import read_pages
             series, more, response_hash = await read_pages(self, "/metricTimeSeries",
-                params=params, max_bytes=request.max_response_bytes // 2, max_pages=16)
+                params=params, max_bytes=request.max_response_bytes if _summary_only else request.max_response_bytes // 2,
+                max_pages=16)
         else:
             payload, response_hash = await self._native_get("/metricTimeSeries", params=params,
                 max_bytes=request.max_response_bytes // 2)
             series, more = _collection(payload)
             if len(series) > 10:
                 _fail()
-        points, dimensions, identities = [], [], set()
+        points, dimensions, identities, totals = [], [], set(), {}
         total = 0
         for native in series:
             if (native.get("targetName") != target["targetName"] or native.get("targetTypeName") != target["targetType"]
@@ -284,9 +286,19 @@ class OEMNativeMetrics:
                 if not request.window_start <= when < request.window_end:
                     continue
                 total += 1
+                if _summary_only:
+                    previous_total, count = totals.get(identity, (Decimal(0), 0))
+                    with localcontext() as context:
+                        context.prec = 4096
+                        totals[identity] = (previous_total + numeric, count + 1)
+                    continue
                 if len(points) < limit:
                     points.append((when.astimezone(UTC), value))
                     dimensions.append(labels.copy())
+        if _summary_only:
+            return {"series": tuple({"dimensions": dict(identity), "total": str(value), "sample_count": count}
+                    for identity, (value, count) in totals.items()), "unit": unit, "truncated": more,
+                    "response_sha256": _hash(target_hash, metadata_hash, response_hash)}
         return NativeMetricSamples(
             action_id=request.action_id, target_id=request.target_id, binding_id=request.binding_id,
             source_id=self.context.source_id, source_type="OEM", metric_name=metric_name,

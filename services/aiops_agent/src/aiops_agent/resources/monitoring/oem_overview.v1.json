@@ -1,0 +1,95 @@
+{
+  "version": "1.0.0",
+  "description": "OEM 关键指标总览；2026-11-05 按真实 host/oracle_database 目录审核，名称、类型、单位及维度必须精确匹配。不声明跨来源等价或未经配置的健康阈值。",
+  "profiles": {
+    "HOST": [
+      {
+        "panel_id": "oem.host.status", "title": "主机可用性采集值",
+        "description": "OEM Response/Status 原始状态码，保留采集时间，不将未知编码自动解释为健康。",
+        "mode": "LATEST", "baseline": false,
+        "metric": {"name": "Response/Status", "native_value_type": "NUMBER", "unit": "n/a", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.host.cpu", "title": "CPU 使用率",
+        "description": "主机整体 CPU 使用率；用于观察计算压力和负载变化。",
+        "metric": {"name": "CPUUsageSummary/OverAllUsagePct", "native_value_type": "NUMBER", "unit": "%", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.host.load", "title": "CPU 运行队列",
+        "description": "每 CPU 的 1 分钟平均运行队列长度，不等同于未归一化的系统 Load Average。",
+        "metric": {"name": "Load/cpuLoad_1min", "native_value_type": "NUMBER", "unit": null, "dimensions": []}
+      },
+      {
+        "panel_id": "oem.host.memory", "title": "内存使用率",
+        "description": "主机内存占用趋势；不以 Swap 空间占用代替换入换出速率。",
+        "metric": {"name": "Load/memUsedPct", "native_value_type": "NUMBER", "unit": "%", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.host.swap", "title": "Swap 使用率",
+        "description": "交换空间占用；占用高不单独证明正在发生内存抖动。",
+        "metric": {"name": "Load/swapUtil", "native_value_type": "NUMBER", "unit": "%", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.host.filesystem", "title": "文件系统剩余空间比例",
+        "ranking": "ASC",
+        "description": "按挂载点保留最近采集快照；比例越低，剩余空间越少。快照不替代历史趋势。",
+        "mode": "LATEST",
+        "metric": {"name": "Filesystems/pctAvailable", "native_value_type": "NUMBER", "unit": "%", "dimensions": ["mountPoint"]}
+      },
+      {
+        "panel_id": "oem.host.disk", "title": "磁盘 I/O 服务时间",
+        "description": "各磁盘平均 I/O 服务时间中的最大值；不是全机所有请求的平均延迟。",
+        "metric": {"name": "DiskActivitySummary/maxavserv", "native_value_type": "NUMBER", "unit": "ms", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.host.network", "title": "网络总吞吐量",
+        "description": "所有网络接口合计 I/O 速率，保留 OEM 的 MB per second 单位，不混同链路利用率。",
+        "metric": {"name": "NetworkSummary/totalNetworkThroughPutRate", "native_value_type": "NUMBER", "unit": "MB per second", "dimensions": []}
+      }
+    ],
+    "DATABASE": [
+      {
+        "panel_id": "oem.database.status", "title": "数据库运行状态",
+        "description": "数据库最近采集的原始文本状态；快照过期时不据此判断当前可用性。",
+        "mode": "LATEST",
+        "metric": {"name": "Response/DatabaseStatus", "native_value_type": "STRING", "unit": "n/a", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.database.load", "title": "平均活跃会话 AAS",
+        "description": "观察数据库工作负载，保留 OEM Average Active Sessions 的原生口径。",
+        "metric": {"name": "instance_throughput/avg_active_sessions", "native_value_type": "NUMBER", "unit": "n/a", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.database.sessions", "title": "会话配额使用率",
+        "description": "会话上限的使用比例，不把配额百分比当成活跃会话数量。",
+        "metric": {"name": "Database_Resource_Usage/session_usage", "native_value_type": "NUMBER", "unit": "%", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.database.blocking", "title": "阻塞会话",
+        "description": "按 SID 查看 OEM Blocking Session Count，不跨维度合并为数据库全局计数。",
+        "metric": {"name": "UserBlock/count", "native_value_type": "NUMBER", "unit": null, "dimensions": ["sid"]}
+      },
+      {
+        "panel_id": "oem.database.waits", "title": "数据库等待类别",
+        "description": "按等待类别查看数据库时间中的等待比例，帮助定位 CPU、I/O 和锁等待压力。",
+        "metric": {"name": "wait_sess_cls/dbtime_waitclass_pct", "native_value_type": "NUMBER", "unit": "%", "dimensions": ["class"]}
+      },
+      {
+        "panel_id": "oem.database.reads", "title": "物理读速率",
+        "description": "Physical Reads Per Sec 原生读取速率，不自行换算为字节吞吐量或响应时间。",
+        "metric": {"name": "instance_throughput/physreads_ps", "native_value_type": "NUMBER", "unit": "per second", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.database.tablespaces", "title": "表空间容量",
+        "description": "保留核心容量观测位置，未获得已审核的表空间使用率时明确显示缺口。",
+        "metric": null,
+        "unavailable_reason": "当前已核对的 OEM 插件目录没有已审核的表空间容量指标；不以数据库总大小代替表空间使用率。"
+      },
+      {
+        "panel_id": "oem.database.recovery", "title": "恢复区使用率",
+        "description": "OEM Recovery_Area/Free_Space 的显示定义实际为 Used Space (%)，按元数据口径展示。",
+        "metric": {"name": "Recovery_Area/Free_Space", "native_value_type": "NUMBER", "unit": "%", "dimensions": ["Recovery_Area"]}
+      }
+    ]
+  }
+}

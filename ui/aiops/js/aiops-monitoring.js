@@ -185,7 +185,7 @@
   function renderFreshness() {
     const view = state.view;
     document.getElementById("monitoring-freshness").textContent = shell.fmt(latestSampleAt());
-    document.getElementById("monitoring-profile-name").textContent = profileById()?.display_name || "统一总览";
+    document.getElementById("monitoring-profile-name").textContent = sourceById()?.source_type === "OEM" ? "OEM 关键指标总览" : profileById()?.display_name || "统一总览";
     document.getElementById("refresh-monitoring").disabled = !canQuery();
     updateDiagnosisLink();
   }
@@ -237,7 +237,11 @@
     document.getElementById("monitoring-source").disabled = !state.sources.length;
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
-    document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview" || sourceById()?.source_type === "OEM";
+    document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview";
+    const isOEM = sourceById()?.source_type === "OEM";
+    document.querySelector('#monitoring-baseline option[value="1d"]').hidden = isOEM;
+    document.querySelectorAll('#monitoring-refresh-interval option[value="15"],#monitoring-refresh-interval option[value="30"]').forEach(option => { option.hidden = isOEM; });
+    document.querySelector('#monitoring-refresh-interval option[value="300"]').hidden = !isOEM;
     document.getElementById("monitoring-baseline").value = state.baseline;
     document.getElementById("monitoring-baseline").disabled = sourceById()?.monitoring_readiness !== "READY";
   }
@@ -324,8 +328,11 @@
       return;
     }
     if (sourceById()?.source_type === "OEM") {
+      if (state.baseline === "1d") state.baseline = "1w";
+      const refresh = document.getElementById("monitoring-refresh-interval");
+      if (Number(refresh.value) > 0 && Number(refresh.value) < 60) { refresh.value = "0"; scheduleRefresh(); }
       state.profiles = []; state.profileId = "oem-native";
-      document.getElementById("monitoring-profile-name").textContent = "OEM 原生全部指标";
+      document.getElementById("monitoring-profile-name").textContent = "OEM 关键指标总览";
       return;
     }
     const profiles = await KBotAIOpsAuth.request(
@@ -348,14 +355,15 @@
       document.getElementById("monitoring-quality-ledger").hidden = true;
       document.getElementById("monitoring-quality-detail").hidden = true;
       const key = `${state.sourceId}:${state.selected[0]}`;
-      if (state.nativeView?.key === key) state.nativeView.refresh(state.window);
+      if (state.nativeView?.key === key) state.nativeView.refresh(state.window, state.baseline);
       else {
         state.nativeView?.dispose();
         document.getElementById("monitoring-native")?.remove();
         const root = document.createElement("section"); root.id = "monitoring-native";
-        root.className = "oem-metrics"; root.setAttribute("aria-label", "OEM 原生全部指标");
+        root.className = "oem-overview"; root.setAttribute("aria-label", "OEM 关键指标总览");
         document.getElementById("monitoring-result").prepend(root);
-        state.nativeView = new KBotAIOpsOEMMetrics(root, { sourceId: state.sourceId, instanceId: state.selected[0], window: state.window });
+        state.nativeView = new KBotAIOpsOEMMetrics(root, { sourceId: state.sourceId, instanceId: state.selected[0], window: state.window,
+          baseline: state.baseline, sourceName: sourceById().display_name, instanceName: state.instances.find(item => item.instance_id === state.selected[0])?.display_name || "" });
       }
       return;
     }
@@ -695,7 +703,7 @@
       ...common, tooltip,
       xAxis: { type: "time", axisTick: { show: false }, axisLine: { lineStyle: { color: cssColor("--line") } }, axisLabel: { hideOverlap: true, color: cssColor("--faint"), fontSize: 10 } },
       yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), nameTextStyle: { color: cssColor("--faint") }, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: cssColor("--faint"), fontSize: 10, formatter: (value) => axisValueLabel(value, panel.unit) }, splitNumber: 3, splitLine: { lineStyle: { color: cssColor("--line-subtle"), opacity: .62 } }, ...axisBounds },
-      series: series.map((item, index) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, lineStyle: { width: 2 }, emphasis: { focus: "series" }, smooth: .16, areaStyle: index === 0 ? { opacity: .08 } : undefined, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]), markLine: index === 0 && (panel.thresholds || panel.capacity_thresholds) ? { silent: true, symbol: "none", label: { show: false }, data: [{ yAxis: panel.thresholds?.warning_value ?? panel.capacity_thresholds?.warning_percent, lineStyle: { color: cssColor("--warning"), type: "dashed" } }, { yAxis: panel.thresholds?.critical_value ?? panel.capacity_thresholds?.critical_percent, lineStyle: { color: cssColor("--danger"), type: "dashed" } }] } : undefined })),
+      series: series.map((item, index) => ({ type: "line", name: seriesLabel(item), showSymbol: Boolean(panel.native) && item.points.length <= 2, connectNulls: false, lineStyle: { width: 2 }, emphasis: { focus: "series" }, smooth: .16, areaStyle: index === 0 ? { opacity: .08 } : undefined, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]), markLine: panel.native && item.baseline?.average !== null && item.baseline?.average !== undefined ? { silent: true, symbol: "none", label: { show: false }, data: [{ yAxis: item.baseline.average, name: "历史采样均值", lineStyle: { color: colors[index % colors.length], type: "dashed" } }] } : index === 0 && (panel.thresholds || panel.capacity_thresholds) ? { silent: true, symbol: "none", label: { show: false }, data: [{ yAxis: panel.thresholds?.warning_value ?? panel.capacity_thresholds?.warning_percent, lineStyle: { color: cssColor("--warning"), type: "dashed" } }, { yAxis: panel.thresholds?.critical_value ?? panel.capacity_thresholds?.critical_percent, lineStyle: { color: cssColor("--danger"), type: "dashed" } }] } : undefined })),
     };
   }
 
@@ -1019,5 +1027,6 @@
   document.getElementById("monitoring-rail-toggle").onclick = () => setRailCollapsed(!state.railCollapsed);
   document.getElementById("monitoring-refresh-interval").onchange = scheduleRefresh;
   addEventListener("resize", () => state.charts.forEach((chart) => chart.resize()));
+  globalThis.KBotAIOpsMonitoringChartOption = chartOption;
   shell.ready.then(initialize);
 })();

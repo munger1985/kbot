@@ -1,6 +1,7 @@
 """资源绑定范围内的 OEM 原生监控合同，不暴露来源定位符或查询地址。"""
 
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 from typing import Literal
 
@@ -24,6 +25,17 @@ class MonitoringNativeMetric(_Contract):
     latest_supported: bool = False
 
 
+class MonitoringNativePanel(_Contract):
+    panel_id: str
+    title: str
+    description: str
+    metric: MonitoringNativeMetric | None = None
+    mode: Literal["HISTORY", "LATEST"] = "HISTORY"
+    unavailable_reason: str | None = None
+    baseline_supported: bool = False
+    ranking: Literal["ASC", "DESC"] = "DESC"
+
+
 class MonitoringNativeCatalog(_Contract):
     source_id: UUID
     instance_id: UUID
@@ -34,18 +46,51 @@ class MonitoringNativeCatalog(_Contract):
     truncated: bool
     revision: str = Field(pattern=r"^[a-f0-9]{64}$")
     warnings: tuple[str, ...] = ()
+    overview_panels: tuple[MonitoringNativePanel, ...] = ()
 
 
 class MonitoringNativeQuery(_Contract):
     metric_name: str = Field(min_length=3, max_length=256)
     window: MonitoringWindowName = "1h"
     mode: Literal["HISTORY", "LATEST"] = "HISTORY"
+    baseline: Literal["1w", "1m"] | None = None
 
 
 class MonitoringNativePoint(_Contract):
     observed_at: datetime
     value: str | None
     dimensions: dict[str, str]
+
+
+class MonitoringNativeBaselineSeries(_Contract):
+    dimensions: dict[str, str]
+    average: str
+    sample_count: int = Field(gt=0)
+
+
+class MonitoringNativeBaseline(_Contract):
+    period: Literal["1w", "1m"]
+    start: datetime
+    end: datetime
+    aggregation: Literal["SAMPLE_MEAN"] = "SAMPLE_MEAN"
+    series: tuple[MonitoringNativeBaselineSeries, ...] = ()
+    truncated: bool = False
+    response_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    unavailable_reason: str | None = None
+    note: str = "按各维度的 OEM 留存采样计算算术平均；覆盖率未知，不代表完整时间加权平均。"
+
+    @model_validator(mode="after")
+    def validate_baseline(self):
+        if self.start.tzinfo is None or self.end.tzinfo is None or self.start >= self.end:
+            raise ValueError("历史基线必须包含有效且带时区的窗口")
+        if self.series and (self.truncated or self.unavailable_reason):
+            raise ValueError("截断或不可用的历史不得生成平均基线")
+        try:
+            if any(not Decimal(series.average).is_finite() for series in self.series):
+                raise ValueError("平均基线必须是有限数值")
+        except InvalidOperation as exc:
+            raise ValueError("平均基线必须是十进制文本") from exc
+        return self
 
 
 class MonitoringNativeSamples(_Contract):
@@ -61,6 +106,7 @@ class MonitoringNativeSamples(_Contract):
     query_mode: Literal["HISTORY", "LATEST"] = "HISTORY"
     history_resolution: Literal["PROVIDER_MANAGED", "LATEST_SNAPSHOT"] = "PROVIDER_MANAGED"
     warnings: tuple[str, ...] = ()
+    baseline: MonitoringNativeBaseline | None = None
 
     @model_validator(mode="after")
     def validate_mode(self):

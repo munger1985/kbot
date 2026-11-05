@@ -64,6 +64,23 @@ def test_native_catalog_proxy_preserves_context_and_enforces_budgets():
             json={"metric_name":"Load/cpu", "source_locator_key":"untrusted"})
         assert response.status_code == 422
         downstream.query_monitoring_native_metric.assert_not_awaited()
+        assert client.post(endpoint("query_monitoring_native_metric",source,instance),
+            json={"metric_name":"Load/cpu","baseline":"1d"}).status_code == 422
+
+
+def test_native_baseline_contract_forbids_partial_averages_and_false_windows():
+    import pytest
+    from platform_core.contracts.aiops.monitoring_native import MonitoringNativeBaseline, MonitoringNativeQuery
+    from pydantic import ValidationError
+    payload = {"period":"1w","start":"2026-10-29T14:00:00Z","end":"2026-11-05T14:00:00Z",
+        "series":[{"dimensions":{"mountPoint":"/"},"average":"9.125","sample_count":12}]}
+    assert MonitoringNativeBaseline.model_validate(payload).series[0].average == "9.125"
+    for change in ({"truncated":True},{"unavailable_reason":"来源不可用"}, {"start":"2026-11-05T15:00:00Z"},
+        {"series":[{"dimensions":{},"average":"NaN","sample_count":12}]}):
+        with pytest.raises(ValidationError):
+            MonitoringNativeBaseline.model_validate({**payload,**change})
+    for period in ("1w","1m"):
+        assert MonitoringNativeQuery(metric_name="Load/cpu",baseline=period).baseline == period
 
 
 def test_native_permissions_and_encoded_client_query():

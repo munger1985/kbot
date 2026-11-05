@@ -6742,6 +6742,14 @@
             ],
             "title": "Next Offset"
           },
+          "overview_panels": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringNativePanel"
+            },
+            "title": "Overview Panels",
+            "type": "array"
+          },
           "revision": {
             "pattern": "^[a-f0-9]{64}$",
             "title": "Revision",
@@ -6872,6 +6880,21 @@
       "MonitoringNativeQuery": {
         "additionalProperties": false,
         "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "enum": [
+                  "1w",
+                  "1m"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
           "metric_name": {
             "maxLength": 256,
             "minLength": 3,
@@ -6908,6 +6931,16 @@
       "MonitoringNativeSamples": {
         "additionalProperties": false,
         "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringNativeBaseline"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "captured_at": {
             "format": "date-time",
             "title": "Captured At",
@@ -16751,6 +16784,179 @@
           }
         },
         "title": "WorkloadPolicy",
+        "type": "object"
+      },
+      "MonitoringNativeBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregation": {
+            "const": "SAMPLE_MEAN",
+            "default": "SAMPLE_MEAN",
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "note": {
+            "default": "按各维度的 OEM 留存采样计算算术平均；覆盖率未知，不代表完整时间加权平均。",
+            "title": "Note",
+            "type": "string"
+          },
+          "period": {
+            "enum": [
+              "1w",
+              "1m"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "response_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Sha256"
+          },
+          "series": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringNativeBaselineSeries"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "period",
+          "start",
+          "end"
+        ],
+        "title": "MonitoringNativeBaseline",
+        "type": "object"
+      },
+      "MonitoringNativeBaselineSeries": {
+        "additionalProperties": false,
+        "properties": {
+          "average": {
+            "title": "Average",
+            "type": "string"
+          },
+          "dimensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "object"
+          },
+          "sample_count": {
+            "exclusiveMinimum": 0.0,
+            "title": "Sample Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dimensions",
+          "average",
+          "sample_count"
+        ],
+        "title": "MonitoringNativeBaselineSeries",
+        "type": "object"
+      },
+      "MonitoringNativePanel": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_supported": {
+            "default": false,
+            "title": "Baseline Supported",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringNativeMetric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "default": "HISTORY",
+            "enum": [
+              "HISTORY",
+              "LATEST"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "panel_id": {
+            "title": "Panel Id",
+            "type": "string"
+          },
+          "ranking": {
+            "default": "DESC",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "title": "Ranking",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "panel_id",
+          "title",
+          "description"
+        ],
+        "title": "MonitoringNativePanel",
         "type": "object"
       }
     }
