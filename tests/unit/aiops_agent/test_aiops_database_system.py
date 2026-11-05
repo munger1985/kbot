@@ -194,6 +194,7 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             lifecycle_status="ACTIVE",
             owner_group_id=group_id,
             location_name="上海机房",
+            attributes_json={},
             row_version=1,
         )
         target = SimpleNamespace(
@@ -235,7 +236,7 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             list_participants=AsyncMock(return_value=[]),
         )
         binding = SimpleNamespace(
-            target_source_binding_id=uuid7(), target_id=target_id, diagnostic_source_id=uuid7(),
+            resource_source_binding_id=uuid7(), resource_id=resource.resource_id, target_id=target_id, diagnostic_source_id=uuid7(),
             source_locator_key="test-candidate", source_locator_json={"target": "test"},
             role="PRIMARY", priority=100, capability_scope_json=None, mapping_overrides_json=None,
             query_budget_json=None, status="ACTIVE", health_status="UNKNOWN", row_version=1,

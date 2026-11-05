@@ -14,7 +14,7 @@ from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
 )
-from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
+from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder, freeze_source_config
 from platform_core.contracts.aiops.monitoring import (
     MonitoringBaselinePeriod,
     MonitoringGap,
@@ -117,10 +117,11 @@ class MonitoringApplicationService:
                     )
                     if target is not None and target.status == "ENABLED":
                         enabled_target_ids.add(target.target_id)
+                hardware = await self._hardware_rows(uow=uow, scope=scope, source_id=source.diagnostic_source_id)
                 summaries.append(
                     self._source_summary(
                         source,
-                        len(enabled_target_ids),
+                        len(enabled_target_ids) + len({resource.resource_id for resource, _, _ in hardware}),
                         alert_ingress_ready=(
                             bool(enabled_target_ids)
                             and enabled_target_ids.issubset(alert_ingress_targets)
@@ -183,6 +184,11 @@ class MonitoringApplicationService:
                 )
                 for target, binding in mapped_targets
             ]
+            for resource, binding, system in await self._hardware_rows(uow=uow, scope=scope, source_id=source_id):
+                if any(item.instance_id == resource.resource_id for item in instances):
+                    continue
+                hardware_source = self._source_summary(source, 1, alert_ingress_ready=False)
+                instances.append(self._hardware_summary(resource=resource, system=system, source=hardware_source))
             return tuple(
                 sorted(
                     instances,
@@ -208,9 +214,12 @@ class MonitoringApplicationService:
                 if target is None or target.status != "ENABLED":
                     continue
                 databases.append((target.db_type, target.version_code or ""))
-        if not databases:
-            return ()
-        return self._profile_catalog.list_for_databases(tuple(databases))
+            hardware = await self._hardware_rows(uow=uow, scope=scope, source_id=source_id)
+            hardware_types = tuple({resource.resource_type_key for resource, _, _ in hardware})
+        profiles = list(self._profile_catalog.list_for_databases(tuple(databases))) if databases else []
+        if hardware_types:
+            profiles.append(self._profile_catalog.resolve_resource("host-overview", hardware_types).summary())
+        return tuple(profiles)
 
     async def list_target_profiles(self, *, scope, target_id: UUID):
         async with self._uow_factory() as uow:
@@ -316,6 +325,8 @@ class MonitoringApplicationService:
         window_override: MonitoringWindow | None = None,
         reduce_observed_statuses: bool = True,
     ) -> MonitoringView:
+        if request.profile_id == "host-overview":
+            return await self._get_hardware_view(scope=scope, source_id=source_id, request=request, now=now, window_override=window_override)
         generated_at = (now or datetime.now(UTC)).astimezone(UTC)
         requested = set(request.instance_ids)
         window = window_override or resolve_monitoring_window(
@@ -483,6 +494,86 @@ class MonitoringApplicationService:
         if reduce_observed_statuses:
             await self._reduce_observed_statuses(observations)
         self._cache[cache_key] = (generated_at + timedelta(seconds=15), view)
+        return view
+
+    @staticmethod
+    async def _hardware_rows(*, uow, scope, source_id):
+        return await uow.business_systems.list_observable_hardware(
+            domain_id=scope.domain_id, source_id=source_id,
+            tenant_id=getattr(scope, "tenant_id", None),
+        )
+
+    @staticmethod
+    def _hardware_summary(*, resource, system, source):
+        return MonitoringInstanceSummary(
+            instance_id=resource.resource_id, resource_id=resource.resource_id,
+            display_name=resource.display_name, resource_name=resource.display_name,
+            resource_type_key=resource.resource_type_key, db_type=None,
+            business_system_id=system.business_system_id, business_system_name=system.display_name,
+            status="PARTIAL", monitoring_readiness=source.monitoring_readiness,
+            diagnostic_readiness="PARTIAL", diagnostic_gaps=source.diagnostic_gaps,
+            capability_gaps=source.capability_gaps,
+        )
+
+    async def _get_hardware_view(self, *, scope, source_id, request, now=None, window_override=None):
+        """每次请求重新检查系统归属，不复用撤销关联前的硬件缓存。"""
+        generated_at = now or datetime.now(UTC)
+        window = window_override or resolve_monitoring_window(request.window, now=generated_at)
+        async with self._uow_factory() as uow:
+            source = await self._source(uow, scope.domain_id, source_id)
+            if source.source_type != "PROMETHEUS":
+                raise resource_not_found("Hardware Monitoring Source")
+            rows = await self._hardware_rows(uow=uow, scope=scope, source_id=source_id)
+            by_resource = {}
+            for resource, binding, system in rows:
+                if resource.resource_id in request.instance_ids:
+                    by_resource.setdefault(resource.resource_id, (resource, binding, system))
+            if set(by_resource) != set(request.instance_ids):
+                raise resource_not_found("Monitoring Resource")
+            profile = self._profile_catalog.resolve_resource(request.profile_id, tuple(row[0].resource_type_key for row in by_resource.values()))
+            source_summary = self._source_summary(source, len(by_resource), alert_ingress_ready=False)
+            definitions = tuple(self._metric_catalog.get(code) for code in profile.metric_codes)
+            frozen_source = freeze_source_config(source)
+            instances = tuple(self._hardware_summary(resource=resource, system=system, source=source_summary) for resource, _, system in by_resource.values())
+            frozen = [(resource.resource_id, {
+                "binding_id": str(binding.resource_source_binding_id),
+                "resource_id": str(resource.resource_id), "binding_version": int(binding.row_version),
+                "source_locator_key": binding.source_locator_key,
+                "source_locator": dict(binding.source_locator_json),
+                "metrics": [definition.model_dump(mode="json") for definition in definitions],
+                "source": frozen_source,
+            }) for resource, binding, system in by_resource.values()]
+        try:
+            self._view_builder._validate_request(source_summary, profile, instances)
+        except MonitoringQueryError as exc:
+            raise AIOpsApplicationError(code=exc.code, message=str(exc), status_code=409 if exc.code == "MONITORING_SOURCE_NOT_READY" else 422) from exc
+        observations, gaps = [], []
+        for resource_id, binding_snapshot in frozen:
+            result = await self._query_binding(
+                target_id=resource_id, frozen=binding_snapshot, window=window,
+                trace_id=scope.trace_id, max_response_bytes=max(1024, self._max_response_bytes // len(frozen)),
+            )
+            observations.extend(result.observations)
+            gaps.extend(MonitoringGap(scope="METRIC" if item.metric_code else "INSTANCE", source_id=source_id, instance_id=resource_id, metric_code=item.metric_code, code=item.code, detail=item.detail, retryable=item.retryable) for item in result.gaps)
+        # 返回前再次核验归属和绑定版本，防止采集期间移除资源仍泄露结果。
+        async with self._uow_factory() as uow:
+            current_source = await self._source(uow, scope.domain_id, source_id)
+            if (current_source.status != "ENABLED" or current_source.connectivity_status != "CONNECTED"
+                    or int(current_source.row_version) != int(frozen_source["config_version"])):
+                raise AIOpsApplicationError(code="MONITORING_SOURCE_CHANGED", message="监控源状态或配置已变化，请重新查询", status_code=409)
+            current = await self._hardware_rows(uow=uow, scope=scope, source_id=source_id)
+            versions = {(str(resource.resource_id), str(binding.resource_source_binding_id), int(binding.row_version)) for resource, binding, _ in current}
+            if any((str(resource_id), snapshot["binding_id"], snapshot["binding_version"]) not in versions for resource_id, snapshot in frozen):
+                raise resource_not_found("Monitoring Resource")
+        try:
+            view = self._view_builder.build(
+                source=source_summary, profile=profile, window=window, instances=instances,
+                observations=tuple(observations), gaps=tuple(gaps), generated_at=generated_at,
+            )
+        except MonitoringQueryError as exc:
+            raise AIOpsApplicationError(code=exc.code, message=str(exc), status_code=422) from exc
+        if len(view.model_dump_json().encode("utf-8")) > self._max_response_bytes:
+            raise AIOpsApplicationError(code="MONITORING_QUERY_BUDGET_EXCEEDED", message="标准化监控视图超过单次响应预算", status_code=422)
         return view
 
     async def refresh_target_availability(

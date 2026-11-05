@@ -21,7 +21,7 @@ class MonitoringSnapshotBuilderTest(unittest.IsolatedAsyncioTestCase):
         binding_id = uuid4()
         monitor = SimpleNamespace(
             diagnostic_source_id=source_id,
-            target_source_binding_id=binding_id,
+            resource_id=uuid4(), resource_source_binding_id=binding_id,
             capability_scope_json={
                 "metric_codes": list(metric_codes),
                 "capabilities": [CAPABILITY_METRIC_QUERY_RANGE],

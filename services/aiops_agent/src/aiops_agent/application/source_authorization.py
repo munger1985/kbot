@@ -16,7 +16,7 @@ async def _validate_source_scope(*, uow, run, domain_id):
     current_bindings = await uow.targets.list_source_bindings(
         target_id=run.target_id, domain_id=domain_id, active_only=True,
     )
-    by_id = {str(item.target_source_binding_id): item for item in current_bindings}
+    by_id = {str(item.resource_source_binding_id): item for item in current_bindings}
     for frozen in bindings:
         current = by_id.get(str(frozen["binding_id"]))
         source = frozen["source"]

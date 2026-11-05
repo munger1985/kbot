@@ -86,7 +86,7 @@ async def apply_resource_monitoring(
     existing = None
     if mapping.binding_id is not None:
         existing = await uow.targets.get_source_binding_scoped(
-            target_source_binding_id=mapping.binding_id, target_id=target.target_id,
+            resource_source_binding_id=mapping.binding_id, target_id=target.target_id,
             domain_id=scope.domain_id, lock=True,
         )
         if existing is None:
@@ -97,7 +97,7 @@ async def apply_resource_monitoring(
     if mapping.candidate_ref is not None:
         prepared = await service._prepare_discovered_source_binding_in_uow(
             uow=uow, scope=scope, source_id=mapping.source_id, target_id=target.target_id,
-            candidate_ref=mapping.candidate_ref, host_candidate_ref=mapping.host_candidate_ref,
+            candidate_ref=mapping.candidate_ref,
             now=now, replacing_binding_id=mapping.binding_id,
         )
     else:
@@ -116,8 +116,8 @@ async def apply_resource_monitoring(
     existing.updated_at = now
     await uow.flush()
     await add_configuration_event(
-        uow=uow, scope=scope, aggregate_type="TARGET_SOURCE_BINDING",
-        aggregate_id=existing.target_source_binding_id, event_type="TARGET_SOURCE_BINDING_UPDATED",
+        uow=uow, scope=scope, aggregate_type="RESOURCE_SOURCE_BINDING",
+        aggregate_id=existing.resource_source_binding_id, event_type="RESOURCE_SOURCE_BINDING_UPDATED",
         row_version=int(existing.row_version), details={"target_id": str(target.target_id)},
     )
 

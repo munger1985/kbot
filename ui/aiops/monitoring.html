@@ -11,7 +11,7 @@
     <header class="ops-head monitoring-page-heading app-page-head">
       <div>
         <p class="eyebrow">监控观测工作区</p><h1>实时监控</h1>
-        <p>围绕当前数据库资源查看实时状态和关键趋势。</p>
+        <p>围绕数据库与主机资源分别查看实时状态和关键趋势。</p>
       </div>
       <div class="monitoring-page-actions">
         <button id="refresh-monitoring" class="secondary-button" type="button" disabled>刷新</button>
@@ -23,9 +23,9 @@
         <button id="monitoring-rail-toggle" class="icon-button monitoring-rail-toggle" type="button" aria-label="收起实例导航" aria-controls="monitoring-rail-content" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
         <span class="monitoring-rail-collapsed-label">实例导航</span>
         <div id="monitoring-rail-content" class="monitoring-rail-content">
-          <header class="monitoring-instance-heading"><h2>数据库实例</h2><p id="monitoring-instance-count">当前监控源下 0 个已授权实例</p></header>
+          <header class="monitoring-instance-heading"><h2>监控资源</h2><p id="monitoring-instance-count">当前监控源下 0 个已授权实例</p></header>
           <label class="control-field monitoring-instance-search"><span class="field-label">搜索业务系统或实例</span><input id="monitoring-instance-search" type="search" placeholder="业务系统 / 实例 / 数据库类型"></label>
-          <nav id="monitoring-instance-tree" class="monitoring-instance-tree" aria-label="业务系统与实例"><div id="monitoring-instance-list" role="radiogroup" aria-label="数据库实例单选"></div></nav>
+          <nav id="monitoring-instance-tree" class="monitoring-instance-tree" aria-label="业务系统与实例"><div id="monitoring-instance-list" role="radiogroup" aria-label="监控资源单选"></div></nav>
           <footer class="monitoring-rail-footer"><p>当前实例<strong id="monitoring-current-instance">未选择</strong></p><p>最新采样<time id="monitoring-freshness">—</time></p><a id="monitoring-diagnosis-link" class="primary-button" hidden href="./chat.html">进入智能运维</a></footer>
         </div>
       </aside>
@@ -80,6 +80,6 @@
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261105_confirm1"></script>
-  <script src="./js/aiops-monitoring.js?v=20261104_2"></script>
+  <script src="./js/aiops-monitoring.js?v=20261105_resources1"></script>
 </body>
 </html>

@@ -35,7 +35,7 @@ from .monitoring import (
     SituationEntity,
     SituationEventEntity,
     SignalEventEntity,
-    TargetSourceBindingEntity,
+    ResourceSourceBindingEntity,
 )
 from .runtime import (
     OpsArtifactEntity,
@@ -152,7 +152,7 @@ __all__ = [
     "RelationParticipantEntity",
     "ResourceDiscoveryJobEntity",
     "ResourceRelationEntity",
-    "TargetSourceBindingEntity",
+    "ResourceSourceBindingEntity",
     "ActivitySampleEntity",
     "WorkloadMetricEntity",
     "WorkloadSnapshotEntity",

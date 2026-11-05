@@ -726,6 +726,16 @@
             "title": "Mode",
             "type": "string"
           },
+          "monitoring": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceMonitoringInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "owner_group_id": {
             "format": "uuid",
             "title": "Owner Group Id",
@@ -5742,6 +5752,15 @@
             "title": "Page Size",
             "type": "integer"
           },
+          "resource_scope": {
+            "default": "DATABASE",
+            "enum": [
+              "DATABASE",
+              "HOST"
+            ],
+            "title": "Resource Scope",
+            "type": "string"
+          },
           "schema_version": {
             "default": "aiops.public.v1",
             "title": "Schema Version",
@@ -5759,19 +5778,6 @@
             "minLength": 1,
             "title": "Candidate Ref",
             "type": "string"
-          },
-          "host_candidate_ref": {
-            "anyOf": [
-              {
-                "maxLength": 8192,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host Candidate Ref"
           },
           "target_id": {
             "format": "uuid",
@@ -5855,19 +5861,6 @@
             ],
             "title": "Health Status",
             "type": "string"
-          },
-          "host_locator_hint": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host Locator Hint"
           },
           "locator_hint": {
             "maxLength": 256,
@@ -5990,6 +5983,18 @@
             ],
             "title": "Attributes"
           },
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
           "database": {
             "anyOf": [
               {
@@ -6042,6 +6047,16 @@
             ],
             "title": "Location Name"
           },
+          "monitoring": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceMonitoringPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "owner_group_id": {
             "anyOf": [
               {
@@ -6058,6 +6073,18 @@
             "default": "aiops.public.v1",
             "title": "Schema Version",
             "type": "string"
+          },
+          "system_resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Resource Id"
           }
         },
         "title": "ManagedResourcePatch",
@@ -6066,6 +6093,11 @@
       "ManagedResourceView": {
         "additionalProperties": false,
         "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
           "database": {
             "anyOf": [
               {
@@ -6109,6 +6141,14 @@
               }
             ],
             "title": "Location Name"
+          },
+          "monitoring_bindings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SourceBindingView"
+            },
+            "title": "Monitoring Bindings",
+            "type": "array"
           },
           "owner_group_id": {
             "format": "uuid",
@@ -6350,13 +6390,20 @@
             "type": "array"
           },
           "db_type": {
-            "enum": [
-              "ORACLE",
-              "MYSQL",
-              "POSTGRESQL"
+            "anyOf": [
+              {
+                "enum": [
+                  "ORACLE",
+                  "MYSQL",
+                  "POSTGRESQL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Db Type",
-            "type": "string"
+            "title": "Db Type"
           },
           "diagnostic_gaps": {
             "default": [],
@@ -6420,6 +6467,11 @@
             ],
             "title": "Resource Name"
           },
+          "resource_type_key": {
+            "default": "DATABASE",
+            "title": "Resource Type Key",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "AVAILABLE",
@@ -6433,7 +6485,6 @@
         "required": [
           "instance_id",
           "display_name",
-          "db_type",
           "status",
           "monitoring_readiness",
           "diagnostic_readiness"
@@ -6691,6 +6742,16 @@
               "type": "string"
             },
             "title": "Supported Db Types",
+            "type": "array"
+          },
+          "supported_resource_types": {
+            "default": [
+              "DATABASE"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Resource Types",
             "type": "array"
           },
           "version": {
@@ -10417,7 +10478,7 @@
       },
       "ResourceMonitoringInput": {
         "additionalProperties": false,
-        "description": "数据库资源的监控映射；候选引用必须由服务端签发。",
+        "description": "资源的监控映射；候选引用必须由服务端签发。",
         "properties": {
           "candidate_ref": {
             "anyOf": [
@@ -10431,19 +10492,6 @@
               }
             ],
             "title": "Candidate Ref"
-          },
-          "host_candidate_ref": {
-            "anyOf": [
-              {
-                "maxLength": 8192,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host Candidate Ref"
           },
           "source_binding": {
             "anyOf": [
@@ -10507,19 +10555,6 @@
               }
             ],
             "title": "Candidate Ref"
-          },
-          "host_candidate_ref": {
-            "anyOf": [
-              {
-                "maxLength": 8192,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host Candidate Ref"
           },
           "source_binding": {
             "anyOf": [
@@ -12161,19 +12196,6 @@
             ],
             "title": "Capability Scope"
           },
-          "host_candidate_ref": {
-            "anyOf": [
-              {
-                "maxLength": 8192,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host Candidate Ref"
-          },
           "mapping_overrides": {
             "anyOf": [
               {
@@ -12323,6 +12345,11 @@
             ],
             "title": "Query Budget"
           },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -12360,9 +12387,16 @@
             "type": "string"
           },
           "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -12372,7 +12406,7 @@
         },
         "required": [
           "binding_id",
-          "target_id",
+          "resource_id",
           "source_id",
           "source_locator_key",
           "source_locator",

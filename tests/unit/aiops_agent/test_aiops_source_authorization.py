@@ -15,7 +15,7 @@ def environment():
         "source": {"source_id": "source", "config_version": 4,
                    "declared_capabilities": {"metric.query_range": {}}},
     }
-    binding = SimpleNamespace(target_source_binding_id="binding", row_version=7,
+    binding = SimpleNamespace(resource_source_binding_id="binding", row_version=7,
         diagnostic_source_id="source", source_locator_key="database-1")
     source = SimpleNamespace(status="ENABLED", row_version=4,
         declared_capabilities_json={"metric.query_range": {}})

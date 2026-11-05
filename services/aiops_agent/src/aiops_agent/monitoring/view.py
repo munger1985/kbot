@@ -288,7 +288,7 @@ class MonitoringViewBuilder:
                 "MONITORING_QUERY_BUDGET_EXCEEDED", "实例数量无效或超过 12 个"
             )
         supported = set(profile.supported_db_types)
-        if any(item.db_type not in supported for item in instances):
+        if any((item.db_type not in supported if item.resource_type_key == "DATABASE" else item.resource_type_key not in profile.supported_resource_types) for item in instances):
             raise MonitoringQueryError(
                 "MONITORING_PROFILE_INCOMPATIBLE",
                 "Profile 与选定实例的数据库类型不兼容",

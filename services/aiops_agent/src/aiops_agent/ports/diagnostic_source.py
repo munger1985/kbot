@@ -164,6 +164,7 @@ class InstanceDiscoveryRequest(BaseModel):
     db_types: tuple[DatabaseType, ...] = ()
     locator_keys: tuple[str, ...] = ()
     include_hosts: bool = False
+    host_only: bool = False
     host_locator_keys: tuple[str, ...] = ()
     after_locator_key: str | None = None
     limit: int = Field(default=51, ge=1, le=101)

@@ -120,7 +120,7 @@ class _SnapshotBuilder:
             "initial_gaps": (),
             "bindings": (
                 {
-                    "binding_id": str(self.binding.target_source_binding_id),
+                    "binding_id": str(self.binding.resource_source_binding_id),
                     "binding_version": self.binding.row_version,
                     "source_locator_key": self.binding.source_locator_key,
                     "source_locator": {"instance": "db-01"},
@@ -205,7 +205,7 @@ def _fixture(*, connected=True, secret_ref=None):
         last_error_code=None,
     )
     binding = SimpleNamespace(
-        target_source_binding_id=uuid4(),
+        resource_source_binding_id=uuid4(),
         target_id=target_id,
         diagnostic_source_id=source_id,
         status="ACTIVE",
@@ -393,7 +393,7 @@ def test_live_availability_sample_updates_target_observed_status():
                 source_type="PROMETHEUS",
                 source_version=source.row_version,
                 target_id=str(target.target_id),
-                binding_id=str(binding.target_source_binding_id),
+                binding_id=str(binding.resource_source_binding_id),
                 external_target_fingerprint="a" * 64,
                 series=(
                     MetricSeries(

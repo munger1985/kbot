@@ -154,7 +154,7 @@ class MonitoringSnapshotBuilder:
                 effective = declared.intersection(requested_capabilities)
             else:
                 effective = declared
-            binding_id = str(monitor.target_source_binding_id)
+            binding_id = str(monitor.resource_source_binding_id)
             if (
                 CAPABILITY_EVENT_QUERY in effective
                 or CAPABILITY_METRIC_DISCOVERY in effective
@@ -183,31 +183,9 @@ class MonitoringSnapshotBuilder:
                     ),
                     "query_budget": dict(monitor.query_budget_json or {}),
                     "effective_capabilities": sorted(effective),
-                    "source": {
-                        "source_id": str(source.diagnostic_source_id),
-                        "source_type": source.source_type,
-                        "adapter_id": source.adapter_id,
-                        "adapter_version": source.adapter_version,
-                        "config_version": int(source.row_version),
-                        "connectivity_status_at_plan": (
-                            source.connectivity_status
-                        ),
-                        "endpoint": source.endpoint,
-                        "secret_ref": (
-                            AIOpsManagedCredentialService.reference(
-                                domain_id=int(source.domain_id),
-                                external_key=source.diagnostic_source_id,
-                                credential_kind="diagnostic_source",
-                                credential_id=source.auth_credential_id,
-                            )
-                            if source.auth_credential_id
-                            else None
-                        ),
-                        "declared_capabilities": dict(
-                            source.declared_capabilities_json or {}
-                        ),
-                        "config": dict(source.config_json or {}),
-                    },
+                    "resource_id": str(monitor.resource_id),
+                    "resource_type_key": "DATABASE",
+                    "source": freeze_source_config(source),
                     "metrics": [
                         item.model_dump(mode="json")
                         for item in supported
@@ -237,8 +215,37 @@ class MonitoringSnapshotBuilder:
     @staticmethod
     def _gap(monitor, code: str, detail: str) -> dict:
         return {
-            "binding_id": str(monitor.target_source_binding_id),
+            "binding_id": str(monitor.resource_source_binding_id),
             "source_id": str(monitor.diagnostic_source_id),
             "code": code,
             "detail": detail,
         }
+
+
+def freeze_source_config(source):
+    """冻结监控源配置；不将明文凭据写入快照。"""
+    return {
+        "source_id": str(source.diagnostic_source_id),
+        "source_type": source.source_type,
+        "adapter_id": source.adapter_id,
+        "adapter_version": source.adapter_version,
+        "config_version": int(source.row_version),
+        "connectivity_status_at_plan": (
+            source.connectivity_status
+        ),
+        "endpoint": source.endpoint,
+        "secret_ref": (
+            AIOpsManagedCredentialService.reference(
+                domain_id=int(source.domain_id),
+                external_key=source.diagnostic_source_id,
+                credential_kind="diagnostic_source",
+                credential_id=source.auth_credential_id,
+            )
+            if source.auth_credential_id
+            else None
+        ),
+        "declared_capabilities": dict(
+            source.declared_capabilities_json or {}
+        ),
+        "config": dict(source.config_json or {}),
+    }

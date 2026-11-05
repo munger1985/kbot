@@ -650,7 +650,7 @@
       }
     },
     {
-      "metric_code": "runtime.cpu.utilization",
+      "metric_code": "runtime.cpu.utilization", "resource_scope": "RUNTIME",
       "semantic_role": "CPU_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "运行环境 CPU 使用率",
@@ -670,7 +670,7 @@
       }
     },
     {
-      "metric_code": "runtime.memory.utilization",
+      "metric_code": "runtime.memory.utilization", "resource_scope": "RUNTIME",
       "semantic_role": "MEMORY_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "运行环境内存使用率",
@@ -690,7 +690,7 @@
       }
     },
     {
-      "metric_code": "host.cpu.utilization",
+      "metric_code": "host.cpu.utilization", "resource_scope": "HOST",
       "semantic_role": "CPU_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "主机 CPU 使用率",
@@ -721,7 +721,7 @@
       }
     },
     {
-      "metric_code": "host.memory.utilization",
+      "metric_code": "host.memory.utilization", "resource_scope": "HOST",
       "semantic_role": "MEMORY_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "主机内存使用率",
@@ -752,7 +752,7 @@
       }
     },
     {
-      "metric_code": "host.filesystem.utilization",
+      "metric_code": "host.filesystem.utilization", "resource_scope": "HOST",
       "semantic_role": "FILESYSTEM_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "主机文件系统使用率",
@@ -783,7 +783,7 @@
       }
     },
     {
-      "metric_code": "host.filesystem.used_bytes",
+      "metric_code": "host.filesystem.used_bytes", "resource_scope": "HOST",
       "semantic_role": "STORAGE_USED",
       "semantic_version": "1.0.0",
       "name": "文件系统已用容量",
@@ -814,7 +814,7 @@
       }
     },
     {
-      "metric_code": "host.filesystem.available_bytes",
+      "metric_code": "host.filesystem.available_bytes", "resource_scope": "HOST",
       "semantic_role": "STORAGE_FREE",
       "semantic_version": "1.0.0",
       "name": "文件系统可用容量",
@@ -845,7 +845,7 @@
       }
     },
     {
-      "metric_code": "host.filesystem.size_bytes",
+      "metric_code": "host.filesystem.size_bytes", "resource_scope": "HOST",
       "semantic_role": "STORAGE_MAX",
       "semantic_version": "1.0.0",
       "name": "文件系统总容量",
@@ -876,7 +876,7 @@
       }
     },
     {
-      "metric_code": "host.disk.io.utilization",
+      "metric_code": "host.disk.io.utilization", "resource_scope": "HOST",
       "semantic_role": "DISK_IO_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "主机磁盘 I/O 忙碌率",
@@ -907,7 +907,7 @@
       }
     },
     {
-      "metric_code": "host.network.throughput",
+      "metric_code": "host.network.throughput", "resource_scope": "HOST",
       "semantic_role": "NETWORK_THROUGHPUT",
       "semantic_version": "1.0.0",
       "name": "主机网络吞吐",

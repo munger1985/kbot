@@ -18,6 +18,7 @@ from aiops_agent.entities import (
     RelationParticipantEntity,
     ResourceDiscoveryJobEntity,
     ResourceRelationEntity,
+    ResourceSourceBindingEntity,
     TargetEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
@@ -26,6 +27,50 @@ from aiops_agent.repositories._base import AIOpsRepository
 class BusinessSystemRepository(AIOpsRepository):
     def __init__(self, session: AsyncSession, assert_active: Callable[[], None] | None = None) -> None:
         super().__init__(session, assert_active)
+
+    async def add_resource_source_binding(self, entity):
+        return await self._add(entity)
+
+    async def list_resource_source_bindings(self, resource_id, *, active_only=True):
+        self._check_active()
+        statement = select(ResourceSourceBindingEntity).where(ResourceSourceBindingEntity.resource_id == resource_id)
+        if active_only:
+            statement = statement.where(ResourceSourceBindingEntity.status == "ACTIVE")
+        return list((await self._session.execute(statement.order_by(ResourceSourceBindingEntity.priority, ResourceSourceBindingEntity.resource_source_binding_id))).scalars())
+
+    async def find_resource_binding_by_locator(self, *, source_id, locator_key):
+        self._check_active()
+        return (await self._session.execute(select(ResourceSourceBindingEntity).where(
+            ResourceSourceBindingEntity.diagnostic_source_id == source_id,
+            ResourceSourceBindingEntity.source_locator_key == locator_key,
+            ResourceSourceBindingEntity.status == "ACTIVE",
+        ).limit(1))).scalar_one_or_none()
+
+    async def list_observable_hardware(self, *, domain_id, source_id=None, resource_ids=None, tenant_id=None):
+        """只返回已上线业务系统内的活跃主机；不存在独立硬件 ACL。"""
+        self._check_active()
+        statement = (
+            select(ManagedResourceEntity, ResourceSourceBindingEntity, BusinessSystemEntity)
+            .join(ResourceSourceBindingEntity, ResourceSourceBindingEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .where(
+                ManagedResourceEntity.domain_id == domain_id,
+                BusinessSystemEntity.domain_id == domain_id,
+                ManagedResourceEntity.resource_type_key.in_(("PHYSICAL_SERVER", "VIRTUAL_MACHINE")),
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
+                BusinessSystemResourceEntity.status == "ACTIVE",
+                BusinessSystemEntity.status == "ENABLED",
+                ResourceSourceBindingEntity.status == "ACTIVE",
+            )
+        )
+        if source_id is not None:
+            statement = statement.where(ResourceSourceBindingEntity.diagnostic_source_id == source_id)
+        if resource_ids is not None:
+            statement = statement.where(ManagedResourceEntity.resource_id.in_(resource_ids))
+        if hasattr(ManagedResourceEntity, "tenant_id"):
+            statement = statement.where(ManagedResourceEntity.tenant_id == tenant_id, BusinessSystemEntity.tenant_id == tenant_id)
+        return list((await self._session.execute(statement.order_by(BusinessSystemEntity.business_system_id, ManagedResourceEntity.resource_id))).all())
 
     async def add_system(self, entity: BusinessSystemEntity) -> BusinessSystemEntity:
         return await self._add(entity)
@@ -38,6 +83,12 @@ class BusinessSystemRepository(AIOpsRepository):
 
     async def add_compute_resource(self, entity: ComputeResourceEntity) -> ComputeResourceEntity:
         return await self._add(entity)
+
+    async def get_compute_profile(self, resource_id: UUID) -> ComputeResourceEntity | None:
+        self._check_active()
+        return (await self._session.execute(select(ComputeResourceEntity).where(
+            ComputeResourceEntity.resource_id == resource_id,
+        ))).scalar_one_or_none()
 
     async def add_system_resources(self, entities: list[BusinessSystemResourceEntity]) -> None:
         self._check_active()

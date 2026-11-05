@@ -53,12 +53,16 @@ class MonitoringProfileDefinition(BaseModel):
     metric_thresholds: dict[str, MonitoringThresholdBand] = Field(
         default_factory=dict
     )
-    variants: tuple[MonitoringProfileVariant, ...] = Field(min_length=1)
+    variants: tuple[MonitoringProfileVariant, ...] = ()
+    resource_types: tuple[str, ...] = ("DATABASE",)
+    resource_metric_codes: tuple[str, ...] = Field(default=(), max_length=20)
 
     @model_validator(mode="after")
     def validate_variants(self):
         if self.capacity_warning_percent >= self.capacity_critical_percent:
             raise ValueError("容量关注阈值必须小于紧张阈值")
+        if bool(self.variants) == bool(self.resource_metric_codes):
+            raise ValueError("Profile 必须选择数据库 Variant 或独立资源指标集合")
         variant_ids = [item.variant_id for item in self.variants]
         if len(variant_ids) != len(set(variant_ids)):
             raise ValueError("Profile Variant ID 不能重复")
@@ -74,6 +78,7 @@ class MonitoringProfileDefinition(BaseModel):
             for variant in self.variants
             for metric_code in variant.metric_codes
         }
+        metric_codes.update(self.resource_metric_codes)
         unknown_thresholds = set(self.metric_thresholds) - metric_codes
         if unknown_thresholds:
             raise ValueError("Profile 指标阈值引用了未声明的指标")
@@ -91,6 +96,7 @@ class ResolvedMonitoringProfile(BaseModel):
     description: str
     purpose: Literal["OVERVIEW", "REPLICATION", "CAPACITY", "HOST"]
     is_default: bool
+    supported_resource_types: tuple[str, ...] = ("DATABASE",)
     supported_db_types: tuple[DatabaseType, ...]
     supported_database_versions: dict[str, tuple[str, ...]]
     resolved_variant_ids: tuple[str, ...]
@@ -144,6 +150,10 @@ class MonitoringProfileCatalog:
 
     def _validate_metrics(self, metric_catalog) -> None:
         for profile in self._profiles.values():
+            for code in profile.resource_metric_codes:
+                definition = metric_catalog.get(code)
+                if definition.resource_scope != "HOST" or "PROMETHEUS" not in definition.providers:
+                    raise ValueError(f"独立主机 Profile 指标 {code} 必须属于 HOST 并具有 Prometheus 定义")
             for variant in profile.variants:
                 for code in variant.metric_codes:
                     definition = metric_catalog.get(code)
@@ -164,6 +174,21 @@ class MonitoringProfileCatalog:
                         and zabbix.unit == definition.unit
                     ):
                         raise ValueError(f"指标 {code} 的 Zabbix 定义不完整")
+
+    def resolve_resource(self, profile_id: str, resource_types: tuple[str, ...]) -> ResolvedMonitoringProfile:
+        """独立资源不需要数据库类型或版本，也不创建虚假的数据库 Target。"""
+        profile = self.get(profile_id)
+        if not profile.resource_metric_codes or not set(resource_types).issubset(profile.resource_types):
+            raise LookupError("Profile 与资源类型不兼容")
+        return ResolvedMonitoringProfile(
+            profile_id=profile.profile_id, version=profile.version, display_name=profile.display_name,
+            description=profile.description, purpose=profile.purpose, is_default=True,
+            supported_resource_types=profile.resource_types, supported_db_types=(),
+            supported_database_versions={}, resolved_variant_ids=("host-resource",),
+            metric_codes=profile.resource_metric_codes,
+            capacity_warning_percent=profile.capacity_warning_percent, capacity_critical_percent=profile.capacity_critical_percent,
+            metric_thresholds=profile.metric_thresholds,
+        )
 
     def get(self, profile_id: str) -> MonitoringProfileDefinition:
         try:

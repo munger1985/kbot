@@ -54,7 +54,8 @@ class MonitoringSourceSummary(_Contract):
 class MonitoringInstanceSummary(_Contract):
     instance_id: UUID
     display_name: str = Field(min_length=1, max_length=256)
-    db_type: Literal["ORACLE", "MYSQL", "POSTGRESQL"]
+    db_type: Literal["ORACLE", "MYSQL", "POSTGRESQL"] | None = None
+    resource_type_key: str = "DATABASE"
     business_system_id: UUID | None = None
     business_system_name: str | None = None
     resource_id: UUID | None = None
@@ -76,6 +77,7 @@ class MonitoringProfileSummary(_Contract):
     supported_db_types: tuple[
         Literal["ORACLE", "MYSQL", "POSTGRESQL"], ...
     ]
+    supported_resource_types: tuple[str, ...] = ("DATABASE",)
     supported_database_versions: dict[str, tuple[str, ...]]
     resolved_variant_ids: tuple[str, ...] = Field(min_length=1)
     metric_codes: tuple[str, ...] = Field(min_length=1, max_length=20)

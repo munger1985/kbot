@@ -39,7 +39,7 @@ from aiops_agent.entities import (
     TargetBindingEntity,
     TargetEntity,
     TargetFactEntity,
-    TargetSourceBindingEntity,
+    ResourceSourceBindingEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.secret_store import SecretStorePort
@@ -298,9 +298,10 @@ def _target_fact_view(entity: TargetFactEntity) -> TargetFactView:
     )
 
 
-def _source_binding_view(entity: TargetSourceBindingEntity) -> SourceBindingView:
+def _source_binding_view(entity: ResourceSourceBindingEntity) -> SourceBindingView:
     return SourceBindingView(
-        binding_id=entity.target_source_binding_id,
+        binding_id=entity.resource_source_binding_id,
+        resource_id=entity.resource_id,
         target_id=entity.target_id,
         source_id=entity.diagnostic_source_id,
         source_locator_key=entity.source_locator_key,

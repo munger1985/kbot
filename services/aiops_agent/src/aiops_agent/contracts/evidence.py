@@ -82,6 +82,7 @@ class MetricDefinition(BaseModel):
     unit: str = Field(min_length=1, max_length=32)
     value_kind: Literal["GAUGE", "COUNTER", "STATE"]
     expected_dimensions: tuple[str, ...] = ()
+    resource_scope: Literal["DATABASE", "HOST", "RUNTIME"] = "DATABASE"
     supported_db_types: tuple[str, ...] = ("ORACLE", "MYSQL")
     allowed_aggregations: tuple[str, ...] = ("AVG", "MAX", "LAST")
     default_window_seconds: int = Field(ge=60, le=5_184_000)

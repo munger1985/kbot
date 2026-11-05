@@ -54,11 +54,10 @@ class ResourceTypeSummary(AIOpsContract):
 
 
 class ResourceMonitoringInput(AIOpsContract):
-    """数据库资源的监控映射；候选引用必须由服务端签发。"""
+    """资源的监控映射；候选引用必须由服务端签发。"""
 
     source_id: UUIDv7
     candidate_ref: str | None = Field(default=None, min_length=1, max_length=8192)
-    host_candidate_ref: str | None = Field(default=None, min_length=1, max_length=8192)
     source_binding: SourceBindingCreate | None = None
 
     @model_validator(mode="after")
@@ -67,8 +66,6 @@ class ResourceMonitoringInput(AIOpsContract):
             raise ValueError("监控映射必须且只能使用发现候选或稳定定位配置之一")
         if self.source_binding is not None and self.source_binding.source_id != self.source_id:
             raise ValueError("监控映射的 Source ID 不一致")
-        if self.candidate_ref is None and self.host_candidate_ref is not None:
-            raise ValueError("主机候选必须与数据库候选一起提交")
         return self
 
 
@@ -92,6 +89,7 @@ class BusinessSystemResourceCommit(AIOpsContract):
     display_order: int = Field(default=0, ge=0, le=1_000_000)
     attributes: JsonObject = Field(default_factory=dict)
     database: DatabaseResourceCommit | None = None
+    monitoring: ResourceMonitoringInput | None = None
 
     @model_validator(mode="after")
     def validate_mode(self) -> "BusinessSystemResourceCommit":
@@ -99,6 +97,8 @@ class BusinessSystemResourceCommit(AIOpsContract):
             raise ValueError("新数据库资源必须提交数据库连接配置")
         if self.resource_type_key != "DATABASE" and self.database is not None:
             raise ValueError("非数据库资源不能提交数据库连接配置")
+        if self.resource_type_key == "DATABASE" and self.monitoring is not None:
+            raise ValueError("数据库监控映射应提交在 database.monitoring 中")
         return self
 
 
@@ -178,6 +178,9 @@ class ManagedResourcePatch(AIOpsContract):
     lifecycle_status: ResourceLifecycleStatus | None = None
     attributes: JsonObject | None = None
     database: DatabaseResourcePatch | None = None
+    monitoring: ResourceMonitoringPatch | None = None
+    business_system_id: UUIDv7 | None = None
+    system_resource_id: UUIDv7 | None = None
 
 
 class BusinessSystemResourcePatch(AIOpsContract):
@@ -356,6 +359,8 @@ class ManagedResourceView(AIOpsContract):
     location_name: str | None = None
     row_version: int = Field(ge=1)
     database: DatabaseResourceView | None = None
+    monitoring_bindings: tuple[SourceBindingView, ...] = ()
+    attributes: JsonObject = Field(default_factory=dict)
 
 
 class BusinessSystemResourceView(AIOpsContract):

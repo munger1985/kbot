@@ -5932,7 +5932,7 @@ class AIOpsRuntimeService:
             last_error_code=source_error,
         )
         monitor = await uow.targets.get_source_binding_scoped(
-            target_source_binding_id=UUID(binding_id),
+            resource_source_binding_id=UUID(binding_id),
             target_id=run.target_id,
             domain_id=int(source.domain_id),
         )
@@ -5946,7 +5946,7 @@ class AIOpsRuntimeService:
             else "UNREACHABLE"
         )
         await uow.targets.reduce_source_binding_health(
-            target_source_binding_id=monitor.target_source_binding_id,
+            resource_source_binding_id=monitor.resource_source_binding_id,
             expected_config_version=int(snapshot["binding_version"]),
             expected_health_version=int(monitor.health_version),
             health_status=binding_status,

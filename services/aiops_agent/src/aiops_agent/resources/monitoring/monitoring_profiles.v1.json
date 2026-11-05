@@ -1,93 +1,122 @@
 {
-  "catalog_version": "monitoring-profiles.v5",
+  "catalog_version": "monitoring-profiles.v6-resource-ownership",
   "profiles": [
     {
       "profile_id": "oracle-overview",
-      "version": "3.2.0",
+      "version": "4.0.0",
       "purpose": "OVERVIEW",
       "display_name": "Oracle 实时总览",
-      "description": "Oracle 数据库、表空间容量和所在主机资源的统一实时总览。",
+      "description": "Oracle 数据库、表空间容量的统一实时总览。",
       "capacity_warning_percent": 80,
       "capacity_critical_percent": 90,
       "metric_thresholds": {
-        "runtime.cpu.utilization": {"warning_value": 70, "critical_value": 85},
-        "runtime.memory.utilization": {"warning_value": 75, "critical_value": 90},
-        "db.connection.utilization": {"warning_value": 70, "critical_value": 85},
-        "db.response.latency": {"warning_value": 40, "critical_value": 80},
-        "host.cpu.utilization": {"warning_value": 70, "critical_value": 85},
-        "host.memory.utilization": {"warning_value": 75, "critical_value": 90},
-        "host.filesystem.utilization": {"warning_value": 75, "critical_value": 90},
-        "host.disk.io.utilization": {"warning_value": 70, "critical_value": 85}
+        "db.connection.utilization": {
+          "warning_value": 70,
+          "critical_value": 85
+        },
+        "db.response.latency": {
+          "warning_value": 40,
+          "critical_value": 80
+        }
       },
       "variants": [
         {
           "variant_id": "oracle-19c",
           "db_type": "ORACLE",
-          "version_codes": ["19c"],
-          "metric_codes": ["db.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
+          "version_codes": [
+            "19c"
+          ],
+          "metric_codes": [
+            "db.availability",
+            "db.connection.active",
+            "db.connection.utilization",
+            "db.transaction.throughput",
+            "db.response.latency",
+            "db.storage.used_bytes",
+            "db.storage.free_bytes",
+            "db.storage.max_bytes"
+          ]
         },
         {
           "variant_id": "oracle-26ai",
           "db_type": "ORACLE",
-          "version_codes": ["26ai"],
-          "metric_codes": ["db.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
+          "version_codes": [
+            "26ai"
+          ],
+          "metric_codes": [
+            "db.availability",
+            "db.connection.active",
+            "db.connection.utilization",
+            "db.transaction.throughput",
+            "db.response.latency",
+            "db.storage.used_bytes",
+            "db.storage.free_bytes",
+            "db.storage.max_bytes"
+          ]
         }
       ]
     },
     {
       "profile_id": "mysql-overview",
-      "version": "3.4.0",
+      "version": "4.0.0",
       "purpose": "OVERVIEW",
       "display_name": "MySQL 实时总览",
-      "description": "MySQL 数据库、schema 逻辑容量和所在主机资源的统一实时总览。",
+      "description": "MySQL 数据库、schema 逻辑容量的统一实时总览。",
       "capacity_warning_percent": 80,
       "capacity_critical_percent": 90,
       "metric_thresholds": {
-        "runtime.cpu.utilization": {"warning_value": 70, "critical_value": 85},
-        "runtime.memory.utilization": {"warning_value": 75, "critical_value": 90},
-        "mysql.connection.utilization": {"warning_value": 70, "critical_value": 85},
-        "host.cpu.utilization": {"warning_value": 70, "critical_value": 85},
-        "host.memory.utilization": {"warning_value": 75, "critical_value": 90},
-        "host.filesystem.utilization": {"warning_value": 75, "critical_value": 90},
-        "host.disk.io.utilization": {"warning_value": 70, "critical_value": 85}
+        "mysql.connection.utilization": {
+          "warning_value": 70,
+          "critical_value": 85
+        }
       },
       "variants": [
         {
           "variant_id": "mysql-8-4",
           "db_type": "MYSQL",
-          "version_codes": ["8.4"],
-          "metric_codes": ["mysql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent", "db.storage.used_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
+          "version_codes": [
+            "8.4"
+          ],
+          "metric_codes": [
+            "mysql.availability",
+            "mysql.connection.utilization",
+            "mysql.transaction.throughput",
+            "mysql.sql.slow_query_rate",
+            "mysql.lock.row_wait_rate",
+            "mysql.innodb.buffer_pool_hit_percent",
+            "db.storage.used_bytes"
+          ]
         }
       ]
     },
     {
       "profile_id": "postgresql-overview",
-      "version": "3.4.0",
+      "version": "4.0.0",
       "purpose": "OVERVIEW",
       "display_name": "PostgreSQL 实时总览",
-      "description": "PostgreSQL 数据库、数据库逻辑容量和所在主机资源的统一实时总览。",
+      "description": "PostgreSQL 数据库、数据库逻辑容量的统一实时总览。",
       "capacity_warning_percent": 80,
       "capacity_critical_percent": 90,
-      "metric_thresholds": {
-        "runtime.cpu.utilization": {"warning_value": 70, "critical_value": 85},
-        "runtime.memory.utilization": {"warning_value": 75, "critical_value": 90},
-        "host.cpu.utilization": {"warning_value": 70, "critical_value": 85},
-        "host.memory.utilization": {"warning_value": 75, "critical_value": 90},
-        "host.filesystem.utilization": {"warning_value": 75, "critical_value": 90},
-        "host.disk.io.utilization": {"warning_value": 70, "critical_value": 85}
-      },
+      "metric_thresholds": {},
       "variants": [
         {
           "variant_id": "postgresql-16",
           "db_type": "POSTGRESQL",
-          "version_codes": ["16"],
-          "metric_codes": ["postgresql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.database.size_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
+          "version_codes": [
+            "16"
+          ],
+          "metric_codes": [
+            "postgresql.availability",
+            "postgresql.connection.active",
+            "postgresql.transaction.throughput",
+            "postgresql.database.size_bytes"
+          ]
         }
       ]
     },
     {
       "profile_id": "postgresql-replication",
-      "version": "2.1.0",
+      "version": "4.0.0",
       "purpose": "REPLICATION",
       "display_name": "PostgreSQL 复制状态",
       "description": "仅用于已配置流复制或复制 Slot 的 PostgreSQL 实例。",
@@ -97,10 +126,54 @@
         {
           "variant_id": "postgresql-16",
           "db_type": "POSTGRESQL",
-          "version_codes": ["16"],
-          "metric_codes": ["postgresql.replication.lag_bytes", "postgresql.replication.slot_retained_bytes"]
+          "version_codes": [
+            "16"
+          ],
+          "metric_codes": [
+            "postgresql.replication.lag_bytes",
+            "postgresql.replication.slot_retained_bytes"
+          ]
         }
-      ]
+      ],
+      "metric_thresholds": {}
+    },
+    {
+      "profile_id": "host-overview",
+      "version": "1.0.0",
+      "purpose": "HOST",
+      "display_name": "主机实时总览",
+      "description": "独立主机资源的 CPU、内存、文件系统、磁盘 IO 和网络吞吐；不代表数据库进程占用。",
+      "capacity_warning_percent": 80,
+      "capacity_critical_percent": 90,
+      "resource_types": [
+        "PHYSICAL_SERVER",
+        "VIRTUAL_MACHINE"
+      ],
+      "resource_metric_codes": [
+        "host.cpu.utilization",
+        "host.memory.utilization",
+        "host.filesystem.utilization",
+        "host.disk.io.utilization",
+        "host.network.throughput"
+      ],
+      "metric_thresholds": {
+        "host.cpu.utilization": {
+          "warning_value": 70,
+          "critical_value": 85
+        },
+        "host.memory.utilization": {
+          "warning_value": 75,
+          "critical_value": 90
+        },
+        "host.filesystem.utilization": {
+          "warning_value": 75,
+          "critical_value": 90
+        },
+        "host.disk.io.utilization": {
+          "warning_value": 70,
+          "critical_value": 85
+        }
+      }
     }
   ]
 }

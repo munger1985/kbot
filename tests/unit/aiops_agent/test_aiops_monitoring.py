@@ -625,11 +625,9 @@ class PrometheusMetricQueryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(session.queries))
         self.assertFalse(result.observations[0].provenance["fallback_used"])
 
-    async def test_host_metric_requires_explicit_host_target_mapping(self) -> None:
+    async def test_host_metric_requires_independent_resource_scope(self) -> None:
         now = datetime.now(UTC).replace(microsecond=0)
-        definition = load_metric_catalog().select(
-            ("runtime.memory.utilization",), db_type="ORACLE"
-        )[0]
+        definition = load_metric_catalog().get("host.memory.utilization")
         session = _MetricQuerySession(
             [_HealthResponse(status=200, payload=self._payload([]))]
         )
@@ -647,7 +645,7 @@ class PrometheusMetricQueryTest(unittest.IsolatedAsyncioTestCase):
             request_timeout_seconds=10,
             webhook_replay_seconds=300,
         )
-        await adapter.query_metrics(
+        result = await adapter.query_metrics(
             MetricsEvidenceRequest(
                 target_id="target-1",
                 binding_id="binding-1",
@@ -661,14 +659,17 @@ class PrometheusMetricQueryTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        self.assertIn(
-            'node_memory_MemAvailable_bytes{job="node",target_key="__unbound_host_target__"}',
-            session.queries[0],
-        )
-        self.assertNotIn(
-            'node_memory_MemAvailable_bytes{job="node",target_key="oracle-dev-190"}',
-            session.queries[0],
-        )
+        self.assertEqual([], session.queries)
+        self.assertEqual("METRIC_RESOURCE_SCOPE_MISMATCH", result.gaps[0].code)
+        await adapter.query_metrics(MetricsEvidenceRequest(
+            target_id="host-resource-1", binding_id="host-binding-1",
+            source_locator_key="host-01", source_locator={"resource_scope": "HOST"},
+            metric_definitions=(definition,), window_start=now - timedelta(minutes=10),
+            window_end=now, requested_step_seconds=300, max_response_bytes=4096, trace_id="host-test",
+        ))
+        self.assertTrue(session.queries)
+        self.assertTrue(all('target_key="host-01"' in query for query in session.queries))
+        self.assertTrue(all('oracle-dev-190' not in query for query in session.queries))
 
     async def test_no_data_gap_identifies_the_metric(self) -> None:
         now = datetime.now(UTC).replace(microsecond=0)

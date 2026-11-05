@@ -33,8 +33,9 @@
     const state = boundaryStates.get(boundaryKey(ids));
     if (!state || state.status === "loading") return "配置核验中";
     if (state.status === "error") return "配置状态未知";
-    if (!state.items.length) return "尚无数据库 Target";
-    return `${state.items.filter(item => item[field] === true).length}/${state.items.length} 个 Target 配置就绪`;
+    const items = state.items.filter(item => field === "monitoring_configured" || item.resource_type_key === "DATABASE");
+    if (!items.length) return field === "monitoring_configured" ? "尚无资源" : "无适用数据库";
+    return `${items.filter(item => item[field] === true).length}/${items.length} 个${field === "monitoring_configured" ? "资源" : "数据库"}配置就绪`;
   }
   async function loadBoundary(ids, force = false) {
     const key = boundaryKey(ids);
@@ -56,8 +57,8 @@
   }
   function targetGaps(item) {
     const form = document.getElementById("agent-form");
-    const readonly = form.elements.readonly_database_enabled.checked;
-    const change = form.elements.allow_agent_execution.checked;
+    const readonly = item.resource_type_key === "DATABASE" && form.elements.readonly_database_enabled.checked;
+    const change = item.resource_type_key === "DATABASE" && form.elements.allow_agent_execution.checked;
     return [
       !item.target_enabled && "数据库资源尚未上线，请通过所属业务系统的上线或重新上线统一管理",
       !item.scope_enabled && "业务系统未上线，不能执行诊断或变更",
@@ -84,7 +85,7 @@
     const state = boundaryStates.get(boundaryKey(ids));
     const readonly = form.elements.readonly_database_enabled.checked;
     const change = form.elements.allow_agent_execution.checked;
-    document.getElementById("agent-boundary-resources").innerHTML = `<h4>关联 Target 配置与限制</h4><p>账号和连接由业务系统资源（Target）维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type)}</strong><small>所属系统：${escape(values(item.business_system_ids).map(systemName).join("、"))}</small><small>监控：${item.monitoring_configured ? "已配置" : "未配置"} · 只读：${item.readonly_configured ? "已配置" : "未配置"} · 变更：${item.change_configured ? "已配置" : "未配置"}</small><small>${escape(targetGaps(item) || "所选边界的 Target 配置已就绪；实际执行仍需权限与审批校验")}</small><a href="business-system-workspace.html?view=readonly&id=${encodeURIComponent(item.business_system_ids[0])}" target="_blank" rel="noopener">查看业务系统资源 ↗</a></li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${!ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
+    document.getElementById("agent-boundary-resources").innerHTML = `<h4>关联资源配置与限制</h4><p>监控跟随资源；数据库账号和连接由数据库 Target 维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机",STORAGE:"存储",NETWORK_DEVICE:"网络设备"}[item.resource_type_key] || item.resource_type_key))}</strong><small>所属系统：${escape(values(item.business_system_ids).map(systemName).join("、"))}</small><small>监控：${item.monitoring_configured ? "已配置" : "未配置"} · 只读：${item.resource_type_key !== "DATABASE" ? "不适用" : item.readonly_configured ? "已配置" : "未配置"} · 变更：${item.resource_type_key !== "DATABASE" ? "不适用" : item.change_configured ? "已配置" : "未配置"}</small><small>${escape(targetGaps(item) || "所选边界的 Target 配置已就绪；实际执行仍需权限与审批校验")}</small><a href="business-system-workspace.html?view=readonly&id=${encodeURIComponent(item.business_system_ids[0])}" target="_blank" rel="noopener">查看业务系统资源 ↗</a></li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${!ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
     document.getElementById("retry-boundary")?.addEventListener("click", () => { loadBoundary(ids, true); });
   }
 

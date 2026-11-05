@@ -14,6 +14,7 @@ from aiops_agent.application.configuration.database_resource_edit import (
     apply_database_connection, apply_resource_monitoring, validate_existing_oem_bindings,
 )
 from aiops_agent.application.configuration.projections import _source_binding_view
+from aiops_agent.application.configuration.resource_monitoring import apply_hardware_monitoring
 from aiops_agent.application.errors import resource_not_found, state_conflict, validation_failed
 from aiops_agent.application.managed_credentials import AIOpsManagedCredentialError
 from aiops_agent.entities import (
@@ -354,6 +355,8 @@ class BusinessSystemConfigurationMixin:
                     location_name=resource.location_name,
                     row_version=int(resource.row_version),
                     database=database_view,
+                    attributes=dict(resource.attributes_json or {}),
+                    monitoring_bindings=tuple(_source_binding_view(binding) for binding in (bindings if database_profile is not None and target is not None else await uow.business_systems.list_resource_source_bindings(resource.resource_id))) if include_connection_metadata else (),
                 ),
             )
             resource_views.append(view)
@@ -531,6 +534,8 @@ class BusinessSystemConfigurationMixin:
                         await self._check_target_connection_now(uow=uow, scope=scope, entity=target)
                         if target.connectivity_status != "CONNECTED":
                             raise validation_failed(f"数据库 {item.display_name} 连接验证失败：{target.last_error_code or target.connectivity_status}")
+                        await uow.business_systems.add_database_resource(DatabaseResourceEntity(resource_id=resource.resource_id, target_id=target.target_id))
+                        await uow.flush()
                         mapping = item.database.monitoring
                         if mapping is None:
                             raise validation_failed(f"数据库 {item.display_name} 必须配置监控映射")
@@ -541,14 +546,12 @@ class BusinessSystemConfigurationMixin:
                                 source_id=mapping.source_id,
                                 target_id=target.target_id,
                                 candidate_ref=mapping.candidate_ref,
-                                host_candidate_ref=mapping.host_candidate_ref,
                                 now=now,
                                 allow_locator_reuse=True,
                             )
                         else:
                             assert mapping.source_binding is not None
                             await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target.target_id, request=mapping.source_binding, now=now)
-                        await uow.business_systems.add_database_resource(DatabaseResourceEntity(resource_id=resource.resource_id, target_id=target.target_id))
                     elif item.resource_type_key in {"PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER", "POD", "KUBERNETES_CLUSTER"}:
                         await uow.business_systems.add_compute_resource(ComputeResourceEntity(
                             resource_id=resource.resource_id,
@@ -556,6 +559,8 @@ class BusinessSystemConfigurationMixin:
                             platform_name=str(item.attributes.get("platform_name")) if item.attributes.get("platform_name") else None,
                             platform_version=str(item.attributes.get("platform_version")) if item.attributes.get("platform_version") else None,
                         ))
+                if item.monitoring is not None:
+                    await apply_hardware_monitoring(service=self, uow=uow, scope=scope, resource=resource, mapping=item.monitoring, now=now)
                 used_resource_ids.add(resource.resource_id)
                 link = BusinessSystemResourceEntity(
                     system_resource_id=uuid7(),
@@ -711,13 +716,15 @@ class BusinessSystemConfigurationMixin:
                     await self._check_target_connection_now(uow=uow, scope=scope, entity=target)
                     if target.connectivity_status != "CONNECTED":
                         raise validation_failed(f"数据库连接验证失败：{target.last_error_code or target.connectivity_status}")
+                    await uow.business_systems.add_database_resource(DatabaseResourceEntity(resource_id=resource.resource_id, target_id=target.target_id))
+                    await uow.flush()
                     mapping = request.database.monitoring
                     if mapping is None:
                         raise validation_failed("数据库必须配置监控映射")
                     if mapping.candidate_ref is not None:
                         await self._create_discovered_source_binding_in_uow(
                             uow=uow, scope=scope, source_id=mapping.source_id, target_id=target.target_id,
-                            candidate_ref=mapping.candidate_ref, host_candidate_ref=mapping.host_candidate_ref, now=now,
+                            candidate_ref=mapping.candidate_ref, now=now,
                             allow_locator_reuse=True,
                         )
                     else:
@@ -725,13 +732,14 @@ class BusinessSystemConfigurationMixin:
                             uow=uow, scope=scope, target_id=target.target_id,
                             request=mapping.source_binding, now=now,
                         )
-                    await uow.business_systems.add_database_resource(DatabaseResourceEntity(resource_id=resource.resource_id, target_id=target.target_id))
                 elif request.resource_type_key in {"PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER", "POD", "KUBERNETES_CLUSTER"}:
                     await uow.business_systems.add_compute_resource(ComputeResourceEntity(
                         resource_id=resource.resource_id, compute_kind=request.resource_type_key,
                         platform_name=str(request.attributes.get("platform_name")) if request.attributes.get("platform_name") else None,
                         platform_version=str(request.attributes.get("platform_version")) if request.attributes.get("platform_version") else None,
                     ))
+            if request.monitoring is not None:
+                await apply_hardware_monitoring(service=self, uow=uow, scope=scope, resource=resource, mapping=request.monitoring, now=now)
             existing = [row for row, _, _, _ in await uow.business_systems.list_system_resource_rows(business_system_id) if row.resource_id == resource.resource_id and row.status == "ACTIVE"]
             if existing:
                 raise state_conflict("该资源已经加入当前业务系统")
@@ -771,7 +779,7 @@ class BusinessSystemConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Managed Resource")
             self._check_version(entity.row_version, expected_version)
-            changes = request.model_dump(exclude_unset=True, exclude={"schema_version", "database"})
+            changes = request.model_dump(exclude_unset=True, exclude={"schema_version", "database", "monitoring", "business_system_id", "system_resource_id"})
             owner_group_id = changes.get("owner_group_id")
             if owner_group_id is not None:
                 await self._validate_group(uow=uow, scope=scope, group_id=owner_group_id, label="资源")
@@ -780,6 +788,11 @@ class BusinessSystemConfigurationMixin:
             for key, value in changes.items():
                 setattr(entity, key, value)
             database_view = None
+            if "attributes_json" in changes and entity.resource_type_key in {"PHYSICAL_SERVER", "VIRTUAL_MACHINE"}:
+                compute = await uow.business_systems.get_compute_profile(resource_id)
+                if compute is not None:
+                    compute.platform_name = str(entity.attributes_json.get("platform_name")) if entity.attributes_json.get("platform_name") else None
+                    compute.platform_version = str(entity.attributes_json.get("platform_version")) if entity.attributes_json.get("platform_version") else None
             if request.database is not None:
                 profile = await uow.business_systems.get_database_profile(resource_id)
                 if profile is None:
@@ -881,6 +894,18 @@ class BusinessSystemConfigurationMixin:
                         )
                     ),
                 )
+            if request.monitoring is not None:
+                if request.business_system_id is None or request.system_resource_id is None:
+                    raise validation_failed("修改主机绑定必须指定业务系统及其资源关联")
+                system = await uow.business_systems.get_scoped(business_system_id=request.business_system_id, lock=True, **_scope_args(scope))
+                if system is None:
+                    raise resource_not_found("Business System")
+                if system.status == "ENABLED":
+                    raise state_conflict("运行中的业务系统不能修改监控映射")
+                link = await uow.business_systems.get_system_resource_scoped(business_system_id=system.business_system_id, system_resource_id=request.system_resource_id, lock=True)
+                if link is None or link.resource_id != resource_id or link.status != "ACTIVE":
+                    raise validation_failed("主机资源不属于当前业务系统")
+                await apply_hardware_monitoring(service=self, uow=uow, scope=scope, resource=entity, mapping=request.monitoring, now=self._now())
             entity.updated_by = scope.actor_id
             entity.updated_at = self._now()
             await uow.flush()
@@ -895,6 +920,8 @@ class BusinessSystemConfigurationMixin:
                 location_name=entity.location_name,
                 row_version=int(entity.row_version),
                 database=database_view,
+                attributes=dict(entity.attributes_json or {}),
+                monitoring_bindings=tuple(_source_binding_view(binding) for binding in (await uow.targets.list_source_bindings(target_id=database_view.target_id, domain_id=scope.domain_id) if database_view is not None else await uow.business_systems.list_resource_source_bindings(entity.resource_id))),
             )
             await uow.commit()
             return result

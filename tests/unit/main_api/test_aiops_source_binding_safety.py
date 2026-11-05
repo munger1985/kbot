@@ -26,7 +26,7 @@ def test_public_source_binding_projection_only_returns_locator_hint():
 
     payload = result.model_dump(mode="json")
     assert payload["locator_hint"] == "or***ce"
-    assert payload["host_locator_hint"] == "no***ce"
+    assert "host_locator_hint" not in payload
     assert raw_locator not in result.model_dump_json()
     assert raw_host_locator not in result.model_dump_json()
     assert "source_locator" not in payload

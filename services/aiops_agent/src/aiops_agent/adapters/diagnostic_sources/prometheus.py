@@ -146,7 +146,7 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
     async def discover_instances(
         self, request: InstanceDiscoveryRequest
     ) -> InstanceDiscoveryResult:
-        db_types = request.db_types or tuple(self._DISCOVERY_SERIES)
+        db_types = () if request.host_only else (request.db_types or tuple(self._DISCOVERY_SERIES))
         params: list[tuple[str, str | float]] = []
         for db_type in db_types:
             metric_name, job, _label = self._DISCOVERY_SERIES[db_type]
@@ -196,8 +196,8 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                     host_key
                     and len(host_key) <= 512
                     and (
-                        not requested_host_keys
-                        or host_key in requested_host_keys
+                        (not requested_host_keys or host_key in requested_host_keys)
+                        and (request.after_locator_key is None or host_key > request.after_locator_key)
                     )
                 ):
                     host_candidates[host_key] = HostDiscoveryCandidate(
@@ -372,10 +372,12 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
         locator_fingerprint = hashlib.sha256(
             source_locator_key.encode("utf-8")
         ).hexdigest()[:16]
-        host_target_key = request.source_locator.get("host_target_key") or (
-            "__unbound_host_target__"
-        )
+        resource_scope = request.source_locator.get("resource_scope", "DATABASE")
+        host_target_key = request.source_locator_key if resource_scope == "HOST" else "__unbound_host_target__"
         for definition in request.metric_definitions:
+            if definition.resource_scope != resource_scope:
+                gaps.append(self._gap(request, metric_code=definition.metric_code, code="METRIC_RESOURCE_SCOPE_MISMATCH", detail="指标不属于当前资源类型"))
+                continue
             provider = definition.providers.get("PROMETHEUS")
             if provider is None or provider.query_template is None:
                 gaps.append(

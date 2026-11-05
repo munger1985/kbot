@@ -40,6 +40,7 @@ class MetricCatalog:
             for code in metric_codes
             if db_type.upper()
             in (item := self.get(code)).supported_db_types
+            and item.resource_scope == "DATABASE"
         )
 
 

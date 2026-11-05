@@ -389,7 +389,7 @@ class SignalEventIntakeService:
             domain_id=int(source.domain_id),
             target_id=target.target_id,
             diagnostic_source_id=source.diagnostic_source_id,
-            source_binding_id=source_binding.target_source_binding_id,
+            source_binding_id=source_binding.resource_source_binding_id,
             source_inbox_id=inbox.inbox_id,
             source_event_key=event.source_event_key,
             signal_kind=(

@@ -30,7 +30,7 @@ from aiops_agent.adapters.diagnostic_sources.base import (
 )
 from aiops_agent.entities import (
     DiagnosticSourceEntity,
-    TargetSourceBindingEntity,
+    ResourceSourceBindingEntity,
 )
 from aiops_agent.domain.evidence import validate_event_class_map
 from aiops_agent.persistence import AIOpsUnitOfWork
@@ -80,15 +80,11 @@ class DiagnosticSourceConfigurationMixin:
     @classmethod
     def _instance_mapping_view(cls, entity) -> InstanceMappingView:
         source_locator = dict(entity.source_locator_json or {})
-        host_locator_key = str(source_locator.get("host_target_key") or "")
         return InstanceMappingView(
-            binding_id=entity.target_source_binding_id,
+            binding_id=entity.resource_source_binding_id,
             target_id=entity.target_id,
             source_id=entity.diagnostic_source_id,
             locator_hint=cls._locator_hint(entity.source_locator_key),
-            host_locator_hint=(
-                cls._locator_hint(host_locator_key) if host_locator_key else None
-            ),
             status=entity.status,
             health_status=entity.health_status,
             row_version=int(entity.row_version),
@@ -838,7 +834,7 @@ class DiagnosticSourceConfigurationMixin:
                 actor_id=scope.actor_id,
                 purpose="cursor",
             )
-            if tuple(cursor_value.get("db_types") or ()) != filter_types:
+            if tuple(cursor_value.get("db_types") or ()) != filter_types or cursor_value.get("resource_scope", "DATABASE") != request.resource_scope:
                 raise validation_failed("实例发现游标与当前过滤条件不匹配")
             after_locator_key = str(
                 cursor_value.get("after_locator_key") or ""
@@ -861,7 +857,8 @@ class DiagnosticSourceConfigurationMixin:
                 discovered = await adapter.discover_instances(
                     ProviderInstanceDiscoveryRequest(
                         db_types=request.db_types,
-                        include_hosts=source.source_type == "PROMETHEUS",
+                        include_hosts=request.resource_scope == "HOST",
+                        host_only=request.resource_scope == "HOST",
                         after_locator_key=after_locator_key,
                         limit=request.page_size + 1,
                         trace_id=scope.trace_id,
@@ -923,18 +920,20 @@ class DiagnosticSourceConfigurationMixin:
                 display_name=item.display_name,
                 locator_key=item.source_locator_key,
             )
-            for item in discovered.host_candidates
+            for item in discovered.host_candidates[:request.page_size]
         )
-        has_more = len(discovered.candidates) > request.page_size
+        candidates_for_page = discovered.host_candidates if request.resource_scope == "HOST" else discovered.candidates
+        has_more = len(candidates_for_page) > request.page_size
         next_cursor = None
-        if has_more and page_candidates:
+        if has_more and candidates_for_page:
             next_cursor = self._instance_candidate_refs.encode(
                 domain_id=scope.domain_id,
                 source_id=source_id,
                 actor_id=scope.actor_id,
                 purpose="cursor",
                 value={
-                    "after_locator_key": page_candidates[-1].source_locator_key,
+                    "after_locator_key": candidates_for_page[request.page_size - 1].source_locator_key,
+                    "resource_scope": request.resource_scope,
                     "db_types": filter_types,
                 },
             )
@@ -946,17 +945,16 @@ class DiagnosticSourceConfigurationMixin:
             has_more=has_more,
         )
 
-    async def _create_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, host_candidate_ref: str | None, now: datetime, allow_locator_reuse: bool = False) -> TargetSourceBindingEntity:
+    async def _create_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, now: datetime, allow_locator_reuse: bool = False) -> ResourceSourceBindingEntity:
         """重新验证发现候选并在调用方事务内创建映射。"""
         entity = await self._prepare_discovered_source_binding_in_uow(
             uow=uow, scope=scope, source_id=source_id, target_id=target_id,
-            candidate_ref=candidate_ref, host_candidate_ref=host_candidate_ref,
-            now=now, allow_locator_reuse=allow_locator_reuse,
+            candidate_ref=candidate_ref, now=now, allow_locator_reuse=allow_locator_reuse,
         )
         await self._persist_source_binding_in_uow(uow=uow, scope=scope, entity=entity)
         return entity
 
-    async def _prepare_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, host_candidate_ref: str | None, now: datetime, allow_locator_reuse: bool = False, replacing_binding_id: UUID | None = None) -> TargetSourceBindingEntity:
+    async def _prepare_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, now: datetime, allow_locator_reuse: bool = False, replacing_binding_id: UUID | None = None) -> ResourceSourceBindingEntity:
         """创建与修改共用候选解签、Provider 重读和数据库身份校验。"""
         assert uow.diagnostic_sources is not None
         source = await uow.diagnostic_sources.get_scoped(diagnostic_source_id=source_id, domain_id=scope.domain_id, lock=True)
@@ -965,22 +963,14 @@ class DiagnosticSourceConfigurationMixin:
         value = self._instance_candidate_refs.decode(candidate_ref, domain_id=scope.domain_id, source_id=source_id, actor_id=scope.actor_id, purpose="candidate", now=now)
         locator_key = str(value.get("source_locator_key") or ""); locator = value.get("source_locator"); db_type = str(value.get("db_type") or "")
         if value.get("candidate_kind") != "DATABASE" or not locator_key or not isinstance(locator, dict) or db_type not in {"ORACLE", "MYSQL", "POSTGRESQL"}: raise validation_failed("实例候选引用内容无效")
-        host_key = None
-        if host_candidate_ref is not None:
-            host_value = self._instance_candidate_refs.decode(host_candidate_ref, domain_id=scope.domain_id, source_id=source_id, actor_id=scope.actor_id, purpose="candidate", now=now)
-            host_key = str(host_value.get("host_target_key") or "")
-            if host_value.get("candidate_kind") != "HOST" or not host_key: raise validation_failed("主机候选引用内容无效")
-        if source.source_type == "PROMETHEUS" and host_key is None: raise validation_failed("Prometheus 映射必须选择主机 Label")
-        if source.source_type != "PROMETHEUS" and host_key is not None: raise validation_failed("当前监控源不支持独立主机 Label")
         try:
-            verified = await adapter.discover_instances(ProviderInstanceDiscoveryRequest(db_types=(db_type,), locator_keys=(locator_key,), include_hosts=source.source_type == "PROMETHEUS", host_locator_keys=(host_key,) if host_key is not None else (), limit=1, trace_id=scope.trace_id))
+            verified = await adapter.discover_instances(ProviderInstanceDiscoveryRequest(db_types=(db_type,), locator_keys=(locator_key,), limit=1, trace_id=scope.trace_id))
         except DiagnosticSourceAdapterError as exc:
             raise AIOpsApplicationError(code="INSTANCE_DISCOVERY_FAILED", message="保存映射前重新验证实例失败", status_code=502, retryable=exc.retryable) from exc
         current = next((item for item in verified.candidates if item.source_locator_key == locator_key), None)
-        if current is None or current.db_type != db_type or canonical_json(current.source_locator) != canonical_json(locator): raise state_conflict("实例候选已变化或不存在，请重新执行发现")
-        if host_key is not None and host_key not in {item.source_locator_key for item in verified.host_candidates}: raise state_conflict("主机候选已变化或不存在，请重新执行发现")
+        if current is None or current.db_type != db_type or canonical_json(current.source_locator) != canonical_json(locator):
+            raise state_conflict("实例候选已变化或不存在，请重新执行发现")
         source_locator = dict(current.source_locator)
-        if host_key is not None: source_locator["host_target_key"] = host_key
         return await self._prepare_source_binding_in_uow(uow=uow, scope=scope, target_id=target_id, request=SourceBindingCreate(source_id=source_id, source_locator_key=locator_key, source_locator=source_locator), now=now, source=source, expected_db_type=db_type, discovery_verified=True, allow_locator_reuse=allow_locator_reuse, replacing_binding_id=replacing_binding_id)
 
     async def map_source_instances(
@@ -1025,29 +1015,7 @@ class DiagnosticSourceConfigurationMixin:
                     or db_type not in {"ORACLE", "MYSQL", "POSTGRESQL"}
                 ):
                     raise validation_failed("实例候选引用内容无效")
-                host_key = None
-                if mapping.host_candidate_ref is not None:
-                    host_value = self._instance_candidate_refs.decode(
-                        mapping.host_candidate_ref,
-                        domain_id=scope.domain_id,
-                        source_id=source_id,
-                        actor_id=scope.actor_id,
-                        purpose="candidate",
-                        now=now,
-                    )
-                    host_key = str(host_value.get("host_target_key") or "")
-                    if (
-                        host_value.get("candidate_kind") != "HOST"
-                        or not host_key
-                    ):
-                        raise validation_failed("主机候选引用内容无效")
-                if source.source_type == "PROMETHEUS" and host_key is None:
-                    raise validation_failed("Prometheus 映射必须选择主机 Label")
-                if source.source_type != "PROMETHEUS" and host_key is not None:
-                    raise validation_failed("当前监控源不支持独立主机 Label")
-                decoded.append(
-                    (mapping, locator_key, locator, db_type, host_key)
-                )
+                decoded.append((mapping, locator_key, locator, db_type))
             locator_keys = [item[1] for item in decoded]
             if len(set(locator_keys)) != len(locator_keys):
                 raise validation_failed("批量映射中的外部实例不能重复")
@@ -1056,10 +1024,7 @@ class DiagnosticSourceConfigurationMixin:
                     ProviderInstanceDiscoveryRequest(
                         db_types=tuple(sorted({item[3] for item in decoded})),
                         locator_keys=tuple(locator_keys),
-                        include_hosts=source.source_type == "PROMETHEUS",
-                        host_locator_keys=tuple(
-                            item[4] for item in decoded if item[4] is not None
-                        ),
+                        include_hosts=False,
                         limit=len(decoded),
                         trace_id=scope.trace_id,
                     )
@@ -1074,11 +1039,8 @@ class DiagnosticSourceConfigurationMixin:
             verified_by_key = {
                 item.source_locator_key: item for item in verified.candidates
             }
-            verified_host_keys = {
-                item.source_locator_key for item in verified.host_candidates
-            }
             prepared_entities = []
-            for mapping, locator_key, locator, db_type, host_key in decoded:
+            for mapping, locator_key, locator, db_type in decoded:
                 current = verified_by_key.get(locator_key)
                 if (
                     current is None
@@ -1089,13 +1051,7 @@ class DiagnosticSourceConfigurationMixin:
                     raise state_conflict(
                         "实例候选已变化或不存在，请重新执行发现"
                     )
-                if host_key is not None and host_key not in verified_host_keys:
-                    raise state_conflict(
-                        "主机候选已变化或不存在，请重新执行发现"
-                    )
                 source_locator = dict(current.source_locator)
-                if host_key is not None:
-                    source_locator["host_target_key"] = host_key
                 entity = await self._prepare_source_binding_in_uow(
                     uow=uow,
                     scope=scope,
@@ -1148,16 +1104,16 @@ class DiagnosticSourceConfigurationMixin:
         discovery_verified: bool = False,
         allow_locator_reuse: bool = False,
         replacing_binding_id: UUID | None = None,
-    ) -> TargetSourceBindingEntity:
+    ) -> ResourceSourceBindingEntity:
         assert uow.targets is not None
         assert uow.diagnostic_sources is not None
         target = await uow.targets.get_scoped(
-            target_id=target_id,
-            domain_id=scope.domain_id,
-            lock=True,
+            target_id=target_id, domain_id=scope.domain_id, lock=True,
         )
         if target is None:
             raise resource_not_found("Target")
+        if "host_target_key" in request.source_locator:
+            raise validation_failed("主机定位必须绑定到独立主机资源")
         if expected_db_type is not None and target.db_type != expected_db_type:
             raise validation_failed("候选实例数据库类型与 Target 不一致")
         if source is None:
@@ -1174,6 +1130,12 @@ class DiagnosticSourceConfigurationMixin:
             raise validation_failed(
                 "Prometheus、Zabbix 与 OEM 映射必须通过实例发现候选创建"
             )
+        resource_scope = {"domain_id": scope.domain_id}
+        if hasattr(scope, "tenant_id"):
+            resource_scope["tenant_id"] = scope.tenant_id
+        resource = await uow.business_systems.get_resource_for_target(target_id=target_id, **resource_scope)
+        if resource is None:
+            raise validation_failed("请先将数据库接入业务系统资源，再配置监控绑定")
         if source.source_type == "OEM":
             validate_oem_database_binding(target=target, locator=request.source_locator)
         existing = await uow.targets.list_source_bindings(
@@ -1183,7 +1145,7 @@ class DiagnosticSourceConfigurationMixin:
         )
         if any(
             binding.diagnostic_source_id == request.source_id
-            and binding.target_source_binding_id != replacing_binding_id
+            and binding.resource_source_binding_id != replacing_binding_id
             for binding in existing
         ):
             raise state_conflict("Target 与 Diagnostic Source 已存在映射")
@@ -1195,15 +1157,15 @@ class DiagnosticSourceConfigurationMixin:
                     lock=True,
                 )
             )
-            if locator_conflict is not None and locator_conflict.target_source_binding_id != replacing_binding_id:
+            if locator_conflict is not None and locator_conflict.resource_source_binding_id != replacing_binding_id:
                 raise state_conflict("Diagnostic Source 外部定位键已被使用")
         self._validate_source_binding_locator(
             source=source,
             source_locator=request.source_locator,
         )
-        return TargetSourceBindingEntity(
-            target_source_binding_id=uuid7(),
-            target_id=target_id,
+        return ResourceSourceBindingEntity(
+            resource_source_binding_id=uuid7(),
+            resource_id=resource.resource_id, target_id=target_id,
             diagnostic_source_id=request.source_id,
             source_locator_key=request.source_locator_key,
             source_locator_json=request.source_locator,
@@ -1227,18 +1189,18 @@ class DiagnosticSourceConfigurationMixin:
         *,
         uow: AIOpsUnitOfWork,
         scope: ConfigurationScope,
-        entity: TargetSourceBindingEntity,
+        entity: ResourceSourceBindingEntity,
     ) -> None:
         assert uow.targets is not None
         await uow.targets.add_source_binding(entity)
         await add_configuration_event(
             uow=uow,
             scope=scope,
-            aggregate_type="TARGET_SOURCE_BINDING",
-            aggregate_id=entity.target_source_binding_id,
-            event_type="TARGET_SOURCE_BINDING_CREATED",
+            aggregate_type="RESOURCE_SOURCE_BINDING",
+            aggregate_id=entity.resource_source_binding_id,
+            event_type="RESOURCE_SOURCE_BINDING_CREATED",
             row_version=1,
-            details={"target_id": str(entity.target_id)},
+            details={"resource_id": str(entity.resource_id)},
         )
 
     async def _create_source_binding_in_uow(
@@ -1253,7 +1215,7 @@ class DiagnosticSourceConfigurationMixin:
         expected_db_type: str | None = None,
         discovery_verified: bool = False,
         allow_locator_reuse: bool = False,
-    ) -> TargetSourceBindingEntity:
+    ) -> ResourceSourceBindingEntity:
         entity = await self._prepare_source_binding_in_uow(
             uow=uow,
             scope=scope,
@@ -1299,7 +1261,7 @@ class DiagnosticSourceConfigurationMixin:
 
         return await self._idempotent(
             scope=scope,
-            operation="TARGET_SOURCE_BINDING_CREATE",
+            operation="RESOURCE_SOURCE_BINDING_CREATE",
             parent_resource=str(target_id),
             idempotency_key=idempotency_key,
             payload=request.model_dump(mode="json"),
@@ -1354,11 +1316,10 @@ class DiagnosticSourceConfigurationMixin:
     ) -> SourceBindingView:
         fields = request.model_dump(exclude_unset=True, mode="json")
         fields.pop("schema_version", None)
-        host_candidate_ref = fields.pop("host_candidate_ref", None)
         requested_locator_change = bool(
             {"source_locator", "source_locator_key"} & fields.keys()
         )
-        if not fields and host_candidate_ref is None:
+        if not fields:
             raise validation_failed("PATCH 至少需要一个可修改字段")
         if "source_locator" in fields:
             fields["source_locator_json"] = fields.pop("source_locator")
@@ -1376,7 +1337,7 @@ class DiagnosticSourceConfigurationMixin:
             assert uow.targets is not None
             assert uow.diagnostic_sources is not None
             entity = await uow.targets.get_source_binding_scoped(
-                target_source_binding_id=binding_id,
+                resource_source_binding_id=binding_id,
                 target_id=target_id,
                 domain_id=scope.domain_id,
                 lock=True,
@@ -1388,7 +1349,6 @@ class DiagnosticSourceConfigurationMixin:
             if (
                 "source_locator_json" in fields
                 or "source_locator_key" in fields
-                or host_candidate_ref is not None
             ):
                 source = await uow.diagnostic_sources.get_scoped(
                     diagnostic_source_id=entity.diagnostic_source_id,
@@ -1396,55 +1356,6 @@ class DiagnosticSourceConfigurationMixin:
                 )
                 if source is None:
                     raise resource_not_found("Diagnostic Source")
-            if host_candidate_ref is not None:
-                assert source is not None
-                if source.source_type != "PROMETHEUS":
-                    raise validation_failed(
-                        "仅 Prometheus 映射支持独立主机 Label"
-                    )
-                host_value = self._instance_candidate_refs.decode(
-                    host_candidate_ref,
-                    domain_id=scope.domain_id,
-                    source_id=entity.diagnostic_source_id,
-                    actor_id=scope.actor_id,
-                    purpose="candidate",
-                )
-                host_key = str(host_value.get("host_target_key") or "")
-                if (
-                    host_value.get("candidate_kind") != "HOST"
-                    or not host_key
-                ):
-                    raise validation_failed("主机候选引用内容无效")
-                adapter = await self._instance_discovery_adapter(
-                    uow=uow, scope=scope, source=source
-                )
-                try:
-                    verified = await adapter.discover_instances(
-                        ProviderInstanceDiscoveryRequest(
-                            include_hosts=True,
-                            host_locator_keys=(host_key,),
-                            limit=1,
-                            trace_id=scope.trace_id,
-                        )
-                    )
-                except DiagnosticSourceAdapterError as exc:
-                    raise AIOpsApplicationError(
-                        code="INSTANCE_DISCOVERY_FAILED",
-                        message="保存主机映射前重新验证 Label 失败",
-                        status_code=502,
-                        retryable=exc.retryable,
-                    ) from exc
-                if not any(
-                    item.source_locator_key == host_key
-                    for item in verified.host_candidates
-                ):
-                    raise state_conflict(
-                        "主机候选已变化或不存在，请重新执行发现"
-                    )
-                fields["source_locator_json"] = {
-                    **dict(entity.source_locator_json or {}),
-                    "host_target_key": host_key,
-                }
             if "source_locator_json" in fields or "source_locator_key" in fields:
                 assert source is not None
                 if source.source_type in {"PROMETHEUS", "ZABBIX", "OEM"}:
@@ -1467,7 +1378,7 @@ class DiagnosticSourceConfigurationMixin:
                 )
                 if (
                     locator_conflict is not None
-                    and locator_conflict.target_source_binding_id != binding_id
+                    and locator_conflict.resource_source_binding_id != binding_id
                 ):
                     raise state_conflict(
                         "Diagnostic Source 外部定位键已被使用"
@@ -1480,9 +1391,9 @@ class DiagnosticSourceConfigurationMixin:
             await add_configuration_event(
                 uow=uow,
                 scope=scope,
-                aggregate_type="TARGET_SOURCE_BINDING",
+                aggregate_type="RESOURCE_SOURCE_BINDING",
                 aggregate_id=binding_id,
-                event_type="TARGET_SOURCE_BINDING_UPDATED",
+                event_type="RESOURCE_SOURCE_BINDING_UPDATED",
                 row_version=int(entity.row_version),
             )
             response = _source_binding_view(entity)
@@ -1508,7 +1419,7 @@ class DiagnosticSourceConfigurationMixin:
         ) -> SourceBindingView:
             assert uow.targets is not None
             entity = await uow.targets.get_source_binding_scoped(
-                target_source_binding_id=binding_id,
+                resource_source_binding_id=binding_id,
                 target_id=target_id,
                 domain_id=scope.domain_id,
                 lock=True,
@@ -1525,16 +1436,16 @@ class DiagnosticSourceConfigurationMixin:
             await add_configuration_event(
                 uow=uow,
                 scope=scope,
-                aggregate_type="TARGET_SOURCE_BINDING",
+                aggregate_type="RESOURCE_SOURCE_BINDING",
                 aggregate_id=binding_id,
-                event_type=f"TARGET_SOURCE_BINDING_{destination}",
+                event_type=f"RESOURCE_SOURCE_BINDING_{destination}",
                 row_version=int(entity.row_version),
             )
             return _source_binding_view(entity)
 
         return await self._idempotent(
             scope=scope,
-            operation=f"TARGET_SOURCE_BINDING_{command.upper()}",
+            operation=f"RESOURCE_SOURCE_BINDING_{command.upper()}",
             parent_resource=str(binding_id),
             idempotency_key=idempotency_key,
             payload={"row_version": expected_version},
@@ -1565,7 +1476,7 @@ class DiagnosticSourceConfigurationMixin:
             if target is None:
                 raise resource_not_found("Target")
             entity = await uow.targets.get_source_binding_scoped(
-                target_source_binding_id=binding_id,
+                resource_source_binding_id=binding_id,
                 target_id=target_id,
                 domain_id=scope.domain_id,
                 lock=True,
@@ -1583,7 +1494,7 @@ class DiagnosticSourceConfigurationMixin:
             target_auto_disabled = (
                 target.status == "ENABLED"
                 and not any(
-                    item.target_source_binding_id != binding_id
+                    item.resource_source_binding_id != binding_id
                     for item in active_bindings
                 )
             )
@@ -1596,9 +1507,9 @@ class DiagnosticSourceConfigurationMixin:
             await add_configuration_event(
                 uow=uow,
                 scope=scope,
-                aggregate_type="TARGET_SOURCE_BINDING",
+                aggregate_type="RESOURCE_SOURCE_BINDING",
                 aggregate_id=binding_id,
-                event_type="TARGET_SOURCE_BINDING_DELETED",
+                event_type="RESOURCE_SOURCE_BINDING_DELETED",
                 row_version=result.row_version,
                 details={
                     "target_id": str(target_id),
@@ -1619,7 +1530,7 @@ class DiagnosticSourceConfigurationMixin:
 
         return await self._idempotent(
             scope=scope,
-            operation="TARGET_SOURCE_BINDING_DELETE",
+            operation="RESOURCE_SOURCE_BINDING_DELETE",
             parent_resource=str(binding_id),
             idempotency_key=idempotency_key,
             payload={

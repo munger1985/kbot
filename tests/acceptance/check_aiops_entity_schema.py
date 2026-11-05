@@ -61,7 +61,7 @@ from aiops_agent.entities import (
     ReportEntity,
     TargetBindingEntity,
     TargetEntity,
-    TargetSourceBindingEntity,
+    ResourceSourceBindingEntity,
 )
 from platform_core.config import get_settings
 from platform_core.database.oracle import create_database_runtime

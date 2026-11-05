@@ -46,7 +46,7 @@ from aiops_agent.entities import (
     TargetBindingEntity,
     TargetEntity,
     TargetFactEntity,
-    TargetSourceBindingEntity,
+    ResourceSourceBindingEntity,
     WorkItemActivityEntity,
     WorkItemEntity,
     WorkItemLinkEntity,
@@ -165,8 +165,8 @@ class TargetRepository(AIOpsRepository):
             WorkItemEntity.target_id == target_id
         )
         source_binding_ids = select(
-            TargetSourceBindingEntity.target_source_binding_id
-        ).where(TargetSourceBindingEntity.target_id == target_id)
+            ResourceSourceBindingEntity.resource_source_binding_id
+        ).where(ResourceSourceBindingEntity.target_id == target_id)
         signal_ids = select(SignalEventEntity.signal_event_id).where(
             or_(
                 SignalEventEntity.target_id == target_id,
@@ -444,7 +444,7 @@ class TargetRepository(AIOpsRepository):
             NotificationSubscriptionEntity,
             TargetFactEntity,
             TargetBindingEntity,
-            TargetSourceBindingEntity,
+            ResourceSourceBindingEntity,
         ):
             await self._execute_delete(model, model.target_id == target_id)
         await self._execute_delete(
@@ -474,8 +474,8 @@ class TargetRepository(AIOpsRepository):
         return await self._add(entity)
 
     async def add_source_binding(
-        self, entity: TargetSourceBindingEntity
-    ) -> TargetSourceBindingEntity:
+        self, entity: ResourceSourceBindingEntity
+    ) -> ResourceSourceBindingEntity:
         return await self._add(entity)
 
     async def add_target_fact(
@@ -494,26 +494,26 @@ class TargetRepository(AIOpsRepository):
         if not normalized:
             return []
         rows = await self._session.execute(
-            select(TargetSourceBindingEntity.target_id)
+            select(ResourceSourceBindingEntity.target_id)
             .join(
                 TargetEntity,
-                TargetEntity.target_id == TargetSourceBindingEntity.target_id,
+                TargetEntity.target_id == ResourceSourceBindingEntity.target_id,
             )
             .where(
                 TargetEntity.domain_id == domain_id,
-                TargetSourceBindingEntity.status == "ACTIVE",
-                TargetSourceBindingEntity.diagnostic_source_id.in_(normalized),
+                ResourceSourceBindingEntity.status == "ACTIVE",
+                ResourceSourceBindingEntity.diagnostic_source_id.in_(normalized),
             )
-            .group_by(TargetSourceBindingEntity.target_id)
+            .group_by(ResourceSourceBindingEntity.target_id)
             .having(
                 func.count(
                     func.distinct(
-                        TargetSourceBindingEntity.diagnostic_source_id
+                        ResourceSourceBindingEntity.diagnostic_source_id
                     )
                 )
                 == len(normalized)
             )
-            .order_by(TargetSourceBindingEntity.target_id)
+            .order_by(ResourceSourceBindingEntity.target_id)
         )
         return list(rows.scalars())
 
@@ -566,17 +566,17 @@ class TargetRepository(AIOpsRepository):
         statement = (
             select(TargetEntity.target_id, TargetEntity.domain_id)
             .join(
-                TargetSourceBindingEntity,
-                TargetSourceBindingEntity.target_id == TargetEntity.target_id,
+                ResourceSourceBindingEntity,
+                ResourceSourceBindingEntity.target_id == TargetEntity.target_id,
             )
             .join(
                 DiagnosticSourceEntity,
                 DiagnosticSourceEntity.diagnostic_source_id
-                == TargetSourceBindingEntity.diagnostic_source_id,
+                == ResourceSourceBindingEntity.diagnostic_source_id,
             )
             .where(
                 TargetEntity.status == "ENABLED",
-                TargetSourceBindingEntity.status == "ACTIVE",
+                ResourceSourceBindingEntity.status == "ACTIVE",
                 DiagnosticSourceEntity.status == "ENABLED",
                 DiagnosticSourceEntity.source_type.in_(
                     {"PROMETHEUS", "ZABBIX"}
@@ -987,28 +987,28 @@ class TargetRepository(AIOpsRepository):
         target_id: UUID,
         domain_id: int,
         active_only: bool = True,
-    ) -> list[TargetSourceBindingEntity]:
+    ) -> list[ResourceSourceBindingEntity]:
         self._check_active()
         statement = (
-            select(TargetSourceBindingEntity)
+            select(ResourceSourceBindingEntity)
             .join(
                 TargetEntity,
-                TargetEntity.target_id == TargetSourceBindingEntity.target_id,
+                TargetEntity.target_id == ResourceSourceBindingEntity.target_id,
             )
             .where(
-                TargetSourceBindingEntity.target_id == target_id,
+                ResourceSourceBindingEntity.target_id == target_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
         if active_only:
-            statement = statement.where(TargetSourceBindingEntity.status == "ACTIVE")
+            statement = statement.where(ResourceSourceBindingEntity.status == "ACTIVE")
         statement = statement.order_by(
             case(
-                (TargetSourceBindingEntity.role == "PRIMARY", 0),
+                (ResourceSourceBindingEntity.role == "PRIMARY", 0),
                 else_=1,
             ),
-            TargetSourceBindingEntity.priority,
-            TargetSourceBindingEntity.target_source_binding_id,
+            ResourceSourceBindingEntity.priority,
+            ResourceSourceBindingEntity.resource_source_binding_id,
         )
         return list((await self._session.execute(statement)).scalars())
 
@@ -1017,23 +1017,23 @@ class TargetRepository(AIOpsRepository):
         *,
         diagnostic_source_id: UUID,
         domain_id: int,
-    ) -> list[TargetSourceBindingEntity]:
+    ) -> list[ResourceSourceBindingEntity]:
         """按监控数据源列出 Domain 内全部 Target 映射。"""
         self._check_active()
         statement = (
-            select(TargetSourceBindingEntity)
+            select(ResourceSourceBindingEntity)
             .join(
                 TargetEntity,
-                TargetEntity.target_id == TargetSourceBindingEntity.target_id,
+                TargetEntity.target_id == ResourceSourceBindingEntity.target_id,
             )
             .where(
-                TargetSourceBindingEntity.diagnostic_source_id
+                ResourceSourceBindingEntity.diagnostic_source_id
                 == diagnostic_source_id,
                 TargetEntity.domain_id == domain_id,
             )
             .order_by(
-                TargetSourceBindingEntity.created_at.desc(),
-                TargetSourceBindingEntity.target_source_binding_id.desc(),
+                ResourceSourceBindingEntity.created_at.desc(),
+                ResourceSourceBindingEntity.resource_source_binding_id.desc(),
             )
         )
         return list((await self._session.execute(statement)).scalars())
@@ -1041,21 +1041,21 @@ class TargetRepository(AIOpsRepository):
     async def get_source_binding_scoped(
         self,
         *,
-        target_source_binding_id: UUID,
+        resource_source_binding_id: UUID,
         target_id: UUID,
         domain_id: int,
         lock: bool = False,
-    ) -> TargetSourceBindingEntity | None:
+    ) -> ResourceSourceBindingEntity | None:
         self._check_active()
         statement: Select = (
-            select(TargetSourceBindingEntity)
+            select(ResourceSourceBindingEntity)
             .join(
                 TargetEntity,
-                TargetEntity.target_id == TargetSourceBindingEntity.target_id,
+                TargetEntity.target_id == ResourceSourceBindingEntity.target_id,
             )
             .where(
-                TargetSourceBindingEntity.target_source_binding_id == target_source_binding_id,
-                TargetSourceBindingEntity.target_id == target_id,
+                ResourceSourceBindingEntity.resource_source_binding_id == resource_source_binding_id,
+                ResourceSourceBindingEntity.target_id == target_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -1065,14 +1065,14 @@ class TargetRepository(AIOpsRepository):
 
     async def delete_source_binding_with_history(
         self,
-        entity: TargetSourceBindingEntity,
+        entity: ResourceSourceBindingEntity,
     ) -> None:
         """删除监控映射，并保留已接收信号的历史事实。"""
         self._check_active()
         await self._execute_update(
             SignalEventEntity,
             SignalEventEntity.source_binding_id
-            == entity.target_source_binding_id,
+            == entity.resource_source_binding_id,
             {"source_binding_id": None},
         )
         await self._session.delete(entity)
@@ -1084,13 +1084,13 @@ class TargetRepository(AIOpsRepository):
         diagnostic_source_id: UUID,
         source_locator_key: str,
         lock: bool = False,
-    ) -> TargetSourceBindingEntity | None:
+    ) -> ResourceSourceBindingEntity | None:
         """同一 Source 下只允许精确外部目标映射。"""
         self._check_active()
-        statement: Select = select(TargetSourceBindingEntity).where(
-            TargetSourceBindingEntity.diagnostic_source_id == diagnostic_source_id,
-            TargetSourceBindingEntity.source_locator_key == source_locator_key,
-            TargetSourceBindingEntity.status == "ACTIVE",
+        statement: Select = select(ResourceSourceBindingEntity).where(
+            ResourceSourceBindingEntity.diagnostic_source_id == diagnostic_source_id,
+            ResourceSourceBindingEntity.source_locator_key == source_locator_key,
+            ResourceSourceBindingEntity.status == "ACTIVE",
         )
         if lock:
             statement = statement.with_for_update()
@@ -1102,13 +1102,13 @@ class TargetRepository(AIOpsRepository):
         diagnostic_source_id: UUID,
         source_locator_key: str,
         lock: bool = False,
-    ) -> TargetSourceBindingEntity | None:
+    ) -> ResourceSourceBindingEntity | None:
         """映射自然键在停用后也不能被另一个 Target 复用。"""
         self._check_active()
-        statement: Select = select(TargetSourceBindingEntity).where(
-            TargetSourceBindingEntity.diagnostic_source_id
+        statement: Select = select(ResourceSourceBindingEntity).where(
+            ResourceSourceBindingEntity.diagnostic_source_id
             == diagnostic_source_id,
-            TargetSourceBindingEntity.source_locator_key
+            ResourceSourceBindingEntity.source_locator_key
             == source_locator_key,
         )
         if lock:
@@ -1118,7 +1118,7 @@ class TargetRepository(AIOpsRepository):
     async def update_monitor(
         self,
         *,
-        target_source_binding_id: UUID,
+        resource_source_binding_id: UUID,
         target_id: UUID,
         expected_version: int,
         values: dict,
@@ -1127,16 +1127,16 @@ class TargetRepository(AIOpsRepository):
         update_values = dict(values)
         update_values.update(
             {
-                "row_version": TargetSourceBindingEntity.row_version + 1,
+                "row_version": ResourceSourceBindingEntity.row_version + 1,
                 "updated_at": datetime.now(UTC),
             }
         )
         statement = (
-            update(TargetSourceBindingEntity)
+            update(ResourceSourceBindingEntity)
             .where(
-                TargetSourceBindingEntity.target_source_binding_id == target_source_binding_id,
-                TargetSourceBindingEntity.target_id == target_id,
-                TargetSourceBindingEntity.row_version == expected_version,
+                ResourceSourceBindingEntity.resource_source_binding_id == resource_source_binding_id,
+                ResourceSourceBindingEntity.target_id == target_id,
+                ResourceSourceBindingEntity.row_version == expected_version,
             )
             .values(**update_values)
             .execution_options(synchronize_session=False)
@@ -1147,7 +1147,7 @@ class TargetRepository(AIOpsRepository):
     async def reduce_source_binding_health(
         self,
         *,
-        target_source_binding_id: UUID,
+        resource_source_binding_id: UUID,
         expected_config_version: int,
         expected_health_version: int,
         health_status: str,
@@ -1156,20 +1156,20 @@ class TargetRepository(AIOpsRepository):
     ) -> bool:
         self._check_active()
         statement = (
-            update(TargetSourceBindingEntity)
+            update(ResourceSourceBindingEntity)
             .where(
-                TargetSourceBindingEntity.target_source_binding_id
-                == target_source_binding_id,
-                TargetSourceBindingEntity.row_version
+                ResourceSourceBindingEntity.resource_source_binding_id
+                == resource_source_binding_id,
+                ResourceSourceBindingEntity.row_version
                 == expected_config_version,
-                TargetSourceBindingEntity.health_version
+                ResourceSourceBindingEntity.health_version
                 == expected_health_version,
             )
             .values(
                 health_status=health_status,
                 last_health_check_at=checked_at,
                 last_error_code=last_error_code,
-                health_version=TargetSourceBindingEntity.health_version + 1,
+                health_version=ResourceSourceBindingEntity.health_version + 1,
             )
             .execution_options(synchronize_session=False)
         )

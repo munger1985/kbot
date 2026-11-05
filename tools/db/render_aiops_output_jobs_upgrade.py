@@ -11,8 +11,8 @@ OUTPUT_PATH = ROOT / "database/oracle/operations/upgrade_aiops_output_jobs_56.sq
 
 def render_upgrade_sql() -> str:
     manifest, sections = _load_canonical_sections()
-    if manifest["schema_version"] != 56:
-        raise ValueError("输出任务增量升级只对应规范 Schema 56")
+    if manifest["schema_version"] < 56:
+        raise ValueError("输出任务增量升级要求规范已包含 Schema 56 的任务表")
     scripts = dict(sections)
     messaging = scripts["005_ops_messaging.sql"]
     start = messaging.index("-- 独立产物任务不复用诊断 Run 身份")
@@ -24,6 +24,9 @@ def render_upgrade_sql() -> str:
     )
     if version_view is None:
         raise ValueError("规范 Schema 缺少版本视图")
+    # 此历史升级只完成 55 至 56，不能因主干推进就宣称已安装后续资源绑定结构。
+    pinned_version_view = re.sub(r"\d+ AS SCHEMA_VERSION", "56 AS SCHEMA_VERSION", version_view.group(0))
+    pinned_version_view = re.sub(r"'aiops-oracle-[^']+'", "'aiops-oracle-v56-output-jobs'", pinned_version_view)
     return """-- 自动生成：tools/db/render_aiops_output_jobs_upgrade.py
 -- 仅适用于已验收的 Schema 55；新增两张任务表，不删除或回填现有数据。
 -- 由 Schema 所有者在备份后、停止受影响写入的发布窗口中执行；Oracle DDL 会自动提交。
@@ -50,7 +53,7 @@ BEGIN
 END;
 /
 
-""" + additions + "\n\n" + version_view.group(0) + "\n"
+""" + additions + "\n\n" + pinned_version_view + "\n"
 
 
 def main() -> int:

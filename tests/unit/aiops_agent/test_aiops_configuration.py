@@ -176,7 +176,7 @@ class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
                 for item in sql
             )
         )
-        self.assertTrue(any("delete from kbot_ops_target_source_binding" in item for item in sql))
+        self.assertTrue(any("delete from kbot_ops_resource_source_binding" in item for item in sql))
         self.assertTrue(any("delete from kbot_ops_work_item" in item for item in sql))
         self.assertTrue(any("delete from kbot_ops_target" in item for item in sql))
         self.assertIn("delete from kbot_ops_target", sql[-1])
@@ -184,7 +184,7 @@ class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_source_binding_delete_keeps_signal_history(self) -> None:
         session = _DeletionSession()
-        binding = SimpleNamespace(target_source_binding_id=uuid7())
+        binding = SimpleNamespace(resource_source_binding_id=uuid7())
 
         await TargetRepository(session).delete_source_binding_with_history(
             binding

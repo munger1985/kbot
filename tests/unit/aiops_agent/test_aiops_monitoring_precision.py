@@ -90,6 +90,7 @@ async def pipeline(*, microsecond, metric_code, defect=None):
     request = MetricsEvidenceRequest(
         target_id=target_id, binding_id=binding_id, source_locator_key="mysql-test",
         metric_definitions=(load_metric_catalog().get(metric_code),),
+        source_locator={"resource_scope": "HOST"} if metric_code.startswith("host.") else {},
         window_start=window["start"], window_end=window["end"],
         requested_step_seconds=60, max_response_bytes=65536, trace_id="precision-test",
     )
@@ -111,7 +112,7 @@ async def pipeline(*, microsecond, metric_code, defect=None):
     policy = {"checks": [], "required_metric_roles": {"CPU_UTILIZATION": "CPU"} if metric_code != "mysql.availability" else {},
               "minimum_monitoring_coverage_ratio": .8}
     checks = monitoring_checks(facts, profile={"metric_thresholds": {
-        "runtime.cpu.utilization": {"warning_value": 70, "critical_value": 85},
+        "host.cpu.utilization": {"warning_value": 70, "critical_value": 85},
     }}, policy=policy)
     assessment = assess_inspection(checks, policy=policy)
     from aiops_agent.application.diagnosis.monitoring_calculations import validate_monitoring_trace_sources
@@ -128,7 +129,7 @@ async def pipeline(*, microsecond, metric_code, defect=None):
 
 
 @pytest.mark.parametrize("microsecond", [540001, 540186, 540499, 540500, 540999, 999999])
-@pytest.mark.parametrize("metric_code", ["mysql.availability", "runtime.cpu.utilization"])
+@pytest.mark.parametrize("metric_code", ["mysql.availability", "host.cpu.utilization"])
 def test_prometheus_rounding_does_not_reject_fresh_normal_snapshot(microsecond, metric_code):
     now, snapshot, session, facts, checks, assessment = asyncio.run(
         pipeline(microsecond=microsecond, metric_code=metric_code))

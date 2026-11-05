@@ -19,7 +19,7 @@ def boundary_fixture():
     if "tenant_id" in CreateAIOpsAgentCommand.model_fields:
         scope["tenant_id"] = uuid7()
     system = SimpleNamespace(business_system_id=uuid7(), status="ENABLED", tenant_id=scope.get("tenant_id"))
-    resource = SimpleNamespace(resource_id=uuid7(), display_name="MES", lifecycle_status="ACTIVE", resource_type_key="POSTGRESQL", domain_id=domain_id, tenant_id=scope.get("tenant_id"))
+    resource = SimpleNamespace(resource_id=uuid7(), display_name="MES", lifecycle_status="ACTIVE", resource_type_key="DATABASE", domain_id=domain_id, tenant_id=scope.get("tenant_id"))
     target = SimpleNamespace(target_id=uuid7(), status="ENABLED", db_type="POSTGRESQL",
         endpoint_json={"host": "not-returned"}, diagnostic_credential_id=uuid7(), execution_credential_id=uuid7(),
         readonly_connection_enabled=True, controlled_change_enabled=False)

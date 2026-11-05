@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from aiops_agent.application.configuration import AIOpsConfigurationService, ConfigurationScope
 from aiops_agent.application.errors import AIOpsApplicationError
-from aiops_agent.entities import TargetSourceBindingEntity
+from aiops_agent.entities import ResourceSourceBindingEntity
 from aiops_agent.ports.diagnostic_source import InstanceDiscoveryCandidate, InstanceDiscoveryResult
 from platform_core.contracts.aiops import ManagedResourcePatch, TargetConnectionTest, TargetConnectionTestResult
 from platform_core.identity import uuid7
@@ -25,7 +25,7 @@ class DatabaseResourceEditTest(IsolatedAsyncioTestCase):
         self.scope = ConfigurationScope(**scope_args)
         self.system = SimpleNamespace(status="DISABLED")
         self.link = SimpleNamespace(resource_id=self.resource_id, status="ACTIVE")
-        self.resource = SimpleNamespace(resource_id=self.resource_id, resource_code="DB-001", resource_type_key="DATABASE", display_name="ERP", identity_kind="STABLE", lifecycle_status="ACTIVE", owner_group_id=uuid7(), location_name=None, row_version=3)
+        self.resource = SimpleNamespace(attributes_json={}, resource_id=self.resource_id, resource_code="DB-001", resource_type_key="DATABASE", display_name="ERP", identity_kind="STABLE", lifecycle_status="ACTIVE", owner_group_id=uuid7(), location_name=None, row_version=3)
         self.endpoint = {"host": "db.example", "port": 1521, "service": "ERP", "database": None, "tls_enabled": False, "tls_profile_ref": None}
         self.target = SimpleNamespace(target_id=self.target_id, db_type="ORACLE", version_code="19c", environment="PROD", deployment_type="SINGLE_INSTANCE", rac_node_number=None, db_role="PRIMARY", connectivity_status="CONNECTED", connectivity_version=2, row_version=7, endpoint_json=dict(self.endpoint), oracle_container_scope="PDB", oracle_pdb_name="ERP", observed_oracle_container_scope="PDB", observed_oracle_container_name="ERP", observed_oracle_database_name="ERPDB", diagnostic_credential_id=uuid7())
         self.locator = {"database_type": "ORACLE", "target_id": "1"*32, "oracle_container_scope": "PDB", "oracle_pdb_name": "ERP", "database_name": "ERPDB"}
@@ -34,7 +34,7 @@ class DatabaseResourceEditTest(IsolatedAsyncioTestCase):
         self.other = self.make_binding(uuid7())
         self.other.role = "SUPPLEMENTARY"
         self.bindings = [self.binding, self.other]
-        self.systems = SimpleNamespace(get_scoped=AsyncMock(return_value=self.system), get_system_resource_scoped=AsyncMock(return_value=self.link), get_resource_scoped=AsyncMock(return_value=self.resource), get_database_profile=AsyncMock(return_value=SimpleNamespace(target_id=self.target_id)))
+        self.systems = SimpleNamespace(get_scoped=AsyncMock(return_value=self.system), get_system_resource_scoped=AsyncMock(return_value=self.link), get_resource_scoped=AsyncMock(return_value=self.resource), get_database_profile=AsyncMock(return_value=SimpleNamespace(target_id=self.target_id)), get_resource_for_target=AsyncMock(return_value=self.resource))
         self.targets = SimpleNamespace(get_scoped=AsyncMock(return_value=self.target), list_source_bindings=AsyncMock(side_effect=lambda **_: list(self.bindings)), get_source_binding_scoped=AsyncMock(return_value=self.binding), get_source_binding_by_locator_any_status=AsyncMock(return_value=None), add_source_binding=AsyncMock())
         self.sources = SimpleNamespace(get_scoped=AsyncMock(return_value=self.source))
         self.uow = SimpleNamespace(business_systems=self.systems, targets=self.targets, diagnostic_sources=self.sources, flush=AsyncMock(), commit=AsyncMock())
@@ -54,13 +54,13 @@ class DatabaseResourceEditTest(IsolatedAsyncioTestCase):
         self.service._instance_discovery_adapter = AsyncMock(return_value=self.provider)
 
     def make_binding(self, source_id):
-        return TargetSourceBindingEntity(target_source_binding_id=uuid7(), target_id=self.target_id, diagnostic_source_id=source_id, source_locator_key="old", source_locator_json={"old": True}, role="PRIMARY", priority=100, status="ACTIVE", health_status="HEALTHY", row_version=4, health_version=1, capability_scope_json=None, mapping_overrides_json=None, query_budget_json=None, created_at=self.now, updated_at=self.now, created_by="operator", updated_by="operator")
+        return ResourceSourceBindingEntity(resource_id=self.resource_id, resource_source_binding_id=uuid7(), target_id=self.target_id, diagnostic_source_id=source_id, source_locator_key="old", source_locator_json={"old": True}, role="PRIMARY", priority=100, status="ACTIVE", health_status="HEALTHY", row_version=4, health_version=1, capability_scope_json=None, mapping_overrides_json=None, query_budget_json=None, created_at=self.now, updated_at=self.now, created_by="operator", updated_by="operator")
 
     def request(self, **changes):
         return ManagedResourcePatch(database={"target_row_version": 7, "business_system_id": self.system_id, "system_resource_id": self.link_id, **changes})
 
     def mapping(self, **changes):
-        return {"source_id": self.source_id, "candidate_ref": "signed-reference", "binding_id": self.binding.target_source_binding_id, "binding_row_version": 4, **changes}
+        return {"source_id": self.source_id, "candidate_ref": "signed-reference", "binding_id": self.binding.resource_source_binding_id, "binding_row_version": 4, **changes}
 
     async def save(self, request):
         with patch("aiops_agent.application.configuration.database_resource_edit.add_configuration_event", new_callable=AsyncMock), patch("aiops_agent.application.configuration.business_system_service.add_configuration_event", new_callable=AsyncMock), patch("aiops_agent.application.configuration.diagnostic_source_service.add_configuration_event", new_callable=AsyncMock):
@@ -90,10 +90,10 @@ class DatabaseResourceEditTest(IsolatedAsyncioTestCase):
             TargetConnectionTest(**values, saved_target_id=self.target_id, diagnostic_credential={"username": "reader", "password": "fixture-only"})
 
     async def test_oem_rebind_revalidates_candidate_preserves_identity_and_other_mapping(self):
-        old_id = self.binding.target_source_binding_id
+        old_id = self.binding.resource_source_binding_id
         self.binding.mapping_overrides_json = {"preserved": True}
         result = await self.save(self.request(monitoring=self.mapping(source_id=uuid7())))
-        self.assertEqual(old_id, self.binding.target_source_binding_id)
+        self.assertEqual(old_id, self.binding.resource_source_binding_id)
         self.assertEqual(self.target_id, result.database.target_id)
         self.assertEqual("1"*32, self.binding.source_locator_key)
         self.assertEqual({"old": True}, self.other.source_locator_json)
@@ -165,7 +165,7 @@ class DatabaseResourceEditTest(IsolatedAsyncioTestCase):
         self.uow.commit.assert_awaited_once()
 
     async def test_raw_oem_guid_cannot_bypass_discovery(self):
-        mapping = {"source_id": self.source_id, "binding_id": self.binding.target_source_binding_id, "binding_row_version": 4, "source_binding": {"source_id": self.source_id, "source_locator_key": "1"*32, "source_locator": self.locator}}
+        mapping = {"source_id": self.source_id, "binding_id": self.binding.resource_source_binding_id, "binding_row_version": 4, "source_binding": {"source_id": self.source_id, "source_locator_key": "1"*32, "source_locator": self.locator}}
         with self.assertRaises(AIOpsApplicationError):
             await self.save(self.request(monitoring=mapping))
         self.uow.commit.assert_not_awaited()

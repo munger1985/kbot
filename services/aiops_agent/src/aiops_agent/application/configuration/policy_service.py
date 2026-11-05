@@ -37,7 +37,7 @@ from aiops_agent.entities import (
     PolicyEntity,
     TargetBindingEntity,
     TargetEntity,
-    TargetSourceBindingEntity,
+    ResourceSourceBindingEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.secret_store import SecretStorePort

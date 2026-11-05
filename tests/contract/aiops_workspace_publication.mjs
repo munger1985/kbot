@@ -38,6 +38,7 @@ function fixture(id = 'new') {
     KBotAIOpsTopology: { dispose() {}, mount() {}, render() { return ''; } },
     crypto: { getRandomValues(bytes) { return bytes.fill(1); } }, addEventListener() {}, setTimeout() {},
   };
+  runInNewContext(readFileSync(new URL("../../ui/aiops/js/aiops-hardware-resources.js", import.meta.url), "utf8"), context);
   runInNewContext(instrumented, context, { filename: file });
   return { api: context.workspaceTest, node, calls, notifications, navigations, location, handle(value) { handler = value; } };
 }
@@ -245,7 +246,7 @@ for (const failure of ['PATCH', 'DELETE']) {
   f.handle(async () => ({ items: [{ candidate_ref: 'new-database-reference', locator_key: 'mysql-main', display_name: '生产数据库' }], host_items: [{ candidate_ref: 'new-host-reference', locator_key: 'host-main' }] }));
   await f.api.refreshDiscoveryReferences();
   assert.equal(item.database.candidate_ref, 'new-database-reference');
-  assert.equal(item.database.host_candidate_ref, 'new-host-reference');
+  assert.equal(Object.hasOwn(f.api.monitoringPayload(item), 'host_candidate_ref'), false);
   f.handle(async () => ({ items: [], host_items: [] }));
   await assert.rejects(f.api.refreshDiscoveryReferences(), /原数据库监控 Target 已不存在/);
 }
@@ -299,7 +300,7 @@ for (const policy of [{ enabled: true, interval_minutes: 0 }, { top_statement_li
   assert.ok(saved);
   const binding = saved.payload.payload.publish.resources[0].database.monitoring;
   assert.equal(binding.candidate_ref, 'fresh-ref');
-  assert.equal(binding.host_candidate_ref, null);
+  assert.equal(Object.hasOwn(binding, "host_candidate_ref"), false);
   assert.equal(binding.source_binding, undefined);
   assert.equal(binding.source_locator_key, undefined);
 }

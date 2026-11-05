@@ -1,7 +1,7 @@
 """业务系统发布与上下线的事务回归；SQLite 仅验证本地事务，不冒充 Oracle/PG 并发验收。"""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -16,9 +16,9 @@ from aiops_agent.application.configuration import AIOpsConfigurationService, Con
 from aiops_agent.application.configuration.common import IdempotencyGuard
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.entities import (
-    BusinessSystemEntity, BusinessSystemResourceEntity, DatabaseResourceEntity,
+    BusinessSystemEntity, BusinessSystemResourceEntity, ComputeResourceEntity, DatabaseResourceEntity,
     DiagnosticSourceEntity, InboxEntity, ManagedResourceEntity, OutboxEntity,
-    RelationParticipantEntity, ResourceRelationEntity, TargetEntity, TargetSourceBindingEntity,
+    RelationParticipantEntity, ResourceRelationEntity, TargetEntity, ResourceSourceBindingEntity,
 )
 from aiops_agent.repositories.business_system import BusinessSystemRepository
 from aiops_agent.repositories.messaging import InboxRepository, OutboxRepository
@@ -29,9 +29,9 @@ from platform_core.identity import uuid7
 from platform_core.managed_credentials import ManagedCredentialCipher
 
 TABLES = (
-    BusinessSystemEntity, BusinessSystemResourceEntity, DatabaseResourceEntity, DiagnosticSourceEntity,
+    BusinessSystemEntity, BusinessSystemResourceEntity, ComputeResourceEntity, DatabaseResourceEntity, DiagnosticSourceEntity,
     InboxEntity, ManagedResourceEntity, OutboxEntity, RelationParticipantEntity,
-    ResourceRelationEntity, TargetEntity, TargetSourceBindingEntity,
+    ResourceRelationEntity, TargetEntity, ResourceSourceBindingEntity,
 )
 
 
@@ -102,6 +102,7 @@ def lab():
         session.commit()
     service = object.__new__(AIOpsConfigurationService)
     service._uow_factory = lambda: LocalUow(engine)
+    service._now = lambda: datetime.now(UTC)
     service._idempotency = IdempotencyGuard()
     service._credential_cipher = ManagedCredentialCipher(key=b"l" * 32, key_version="test-v1")
     service._managed_credentials = SimpleNamespace(read=AsyncMock(return_value={"username": "reader"}))
@@ -117,7 +118,8 @@ def lab():
         return await uow.targets.add_target(target)
 
     async def bind(*, uow, target_id, **kwargs):
-        return await uow.targets._add(TargetSourceBindingEntity(target_id=target_id,
+        resource = await uow.business_systems.get_resource_for_target(target_id=target_id, **owned)
+        return await uow.targets._add(ResourceSourceBindingEntity(resource_id=resource.resource_id, target_id=target_id,
             diagnostic_source_id=source_id, source_locator_key="candidate-" + str(target_id),
             source_locator_json={"target_guid": str(target_id)}, created_by=scope.actor_id, updated_by=scope.actor_id))
 
@@ -192,7 +194,7 @@ def test_offline_and_reonline_replace_separate_target_toggles(lab):
             target = session.get(TargetEntity, target_id)
             assert target.status == "DISABLED"
             assert target.diagnostic_credential_id == credential_id and target.endpoint_json == endpoint
-            assert session.scalar(select(func.count()).select_from(TargetSourceBindingEntity)) == 1
+            assert session.scalar(select(func.count()).select_from(ResourceSourceBindingEntity)) == 1
         online = await transition(lab, offline, "enable")
         row = await readiness(lab, online)
         assert row["monitoring_configured"] and row["readonly_configured"]

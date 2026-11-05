@@ -246,6 +246,7 @@ def _mapping_service(*, decoded, verified, targets):
     uow = SimpleNamespace(
         targets=target_repository,
         diagnostic_sources=diagnostic_sources,
+        business_systems=SimpleNamespace(get_resource_for_target=AsyncMock(return_value=SimpleNamespace(resource_id=uuid7()))),
     )
     adapter = AsyncMock()
     adapter.discover_instances.return_value = InstanceDiscoveryResult(
@@ -263,7 +264,7 @@ def _mapping_service(*, decoded, verified, targets):
     )
     service = object.__new__(AIOpsConfigurationService)
     service._instance_candidate_refs = Mock()
-    service._instance_candidate_refs.decode.side_effect = decoded
+    service._instance_candidate_refs.decode.side_effect = [item for item in decoded if item.get("candidate_kind") != "HOST"]
     service._instance_discovery_adapter = AsyncMock(return_value=adapter)
     service._validate_source_binding_locator = Mock()
 
@@ -302,6 +303,7 @@ def test_business_system_binding_can_reuse_a_monitor_locator():
             uow=SimpleNamespace(
                 targets=target_repository,
                 diagnostic_sources=AsyncMock(),
+                business_systems=SimpleNamespace(get_resource_for_target=AsyncMock(return_value=SimpleNamespace(resource_id=uuid7()))),
             ),
             scope=scope,
             target_id=uuid7(),
@@ -348,7 +350,6 @@ def test_batch_mapping_revalidates_changed_candidate_before_writes():
                         "mappings": [
                             {
                                 "candidate_ref": "candidate-a",
-                                "host_candidate_ref": "host-a",
                                 "target_id": target_id,
                             }
                         ]
@@ -401,7 +402,6 @@ def test_batch_mapping_preflights_all_target_types_before_writes():
                         "mappings": [
                         {
                             "candidate_ref": f"candidate-{index}",
-                            "host_candidate_ref": f"host-{index}",
                             "target_id": target_id,
                         }
                             for index, target_id in enumerate(target_ids)
@@ -415,7 +415,7 @@ def test_batch_mapping_preflights_all_target_types_before_writes():
     repository.add_source_binding.assert_not_awaited()
 
 
-def test_prometheus_mapping_persists_reverified_host_label():
+def test_prometheus_database_mapping_does_not_embed_host_locator():
     source_id = uuid7()
     target_id = uuid7()
     binding_id = uuid7()
@@ -433,13 +433,13 @@ def test_prometheus_mapping_persists_reverified_host_label():
         targets=[],
     )
     entity = SimpleNamespace(
-        target_source_binding_id=binding_id,
+        resource_source_binding_id=binding_id,
+        resource_id=uuid7(),
         target_id=target_id,
         diagnostic_source_id=source_id,
         source_locator_key="db-1",
         source_locator_json={
             "target_key": "db-1",
-            "host_target_key": "host-1",
         },
         status="ACTIVE",
         health_status="UNKNOWN",
@@ -457,7 +457,6 @@ def test_prometheus_mapping_persists_reverified_host_label():
                     "mappings": [
                         {
                             "candidate_ref": "candidate-a",
-                            "host_candidate_ref": "host-a",
                             "target_id": target_id,
                         }
                     ]
@@ -472,97 +471,14 @@ def test_prometheus_mapping_persists_reverified_host_label():
     ]
     assert prepared.source_locator == {
         "target_key": "db-1",
-        "host_target_key": "host-1",
     }
     assert result.items[0].binding_id == binding_id
-    assert result.items[0].host_locator_hint == "ho***-1"
+    assert "host_target_key" not in prepared.source_locator
 
 
-def test_patch_binding_reverifies_host_candidate_before_persisting():
-    now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
-    source_id = uuid7()
-    target_id = uuid7()
-    binding_id = uuid7()
-    entity = SimpleNamespace(
-        target_source_binding_id=binding_id,
-        target_id=target_id,
-        diagnostic_source_id=source_id,
-        source_locator_key="db-1",
-        source_locator_json={"target_key": "db-1"},
-        role="PRIMARY",
-        priority=100,
-        capability_scope_json=None,
-        mapping_overrides_json=None,
-        query_budget_json=None,
-        status="ACTIVE",
-        health_status="UNKNOWN",
-        row_version=3,
-        created_at=now,
-        updated_at=now,
-        updated_by="old-user",
-    )
-    source = SimpleNamespace(
-        source_type="PROMETHEUS",
-        declared_capabilities_json={},
-    )
-    uow = SimpleNamespace(
-        targets=AsyncMock(),
-        diagnostic_sources=AsyncMock(),
-        session=AsyncMock(),
-        outbox=AsyncMock(),
-        commit=AsyncMock(),
-    )
-    uow.targets.get_source_binding_scoped.return_value = entity
-    uow.diagnostic_sources.get_scoped.return_value = source
-
-    class _UowContext:
-        async def __aenter__(self):
-            return uow
-
-        async def __aexit__(self, *_args):
-            return None
-
-    adapter = AsyncMock()
-    adapter.discover_instances.return_value = InstanceDiscoveryResult(
-        host_candidates=(
-            ProviderHostDiscoveryCandidate(
-                source_locator_key="host-1",
-                display_name="主机 1",
-            ),
-        )
-    )
-    service = object.__new__(AIOpsConfigurationService)
-    service._uow_factory = Mock(return_value=_UowContext())
-    service._instance_discovery_adapter = AsyncMock(return_value=adapter)
-    service._instance_candidate_refs = Mock()
-    service._instance_candidate_refs.decode.return_value = {
-        "candidate_kind": "HOST",
-        "host_target_key": "host-1",
-    }
-    scope = ConfigurationScope(
-        domain_id=100,
-        principal_id="PORTAL:aiops",
-        actor_id="user-1",
-        request_id="request-host-patch",
-        trace_id="trace-host-patch",
-    )
-
-    result = asyncio.run(
-        service.patch_source_binding(
-            scope=scope,
-            target_id=target_id,
-            binding_id=binding_id,
-            request=SourceBindingPatch(host_candidate_ref="host-ref"),
-            expected_version=3,
-        )
-    )
-
-    assert entity.source_locator_json == {
-        "target_key": "db-1",
-        "host_target_key": "host-1",
-    }
-    assert result.source_locator["host_target_key"] == "host-1"
-    uow.commit.assert_awaited_once()
+def test_database_binding_patch_rejects_nested_host_candidate():
+    with pytest.raises(ValueError):
+        SourceBindingPatch(host_candidate_ref="host-ref")
 
 
 def test_delete_last_active_binding_disables_enabled_target():
@@ -578,7 +494,8 @@ def test_delete_last_active_binding_disables_enabled_target():
         updated_at=now,
     )
     binding = SimpleNamespace(
-        target_source_binding_id=binding_id,
+        resource_source_binding_id=binding_id,
+        resource_id=uuid7(),
         target_id=target_id,
         diagnostic_source_id=source_id,
         source_locator_key="db-1",
@@ -635,7 +552,8 @@ def test_delete_binding_keeps_enabled_target_when_another_active_mapping_exists(
     target_id = uuid7()
     binding_id = uuid7()
     binding = SimpleNamespace(
-        target_source_binding_id=binding_id,
+        resource_source_binding_id=binding_id,
+        resource_id=uuid7(),
         target_id=target_id,
         diagnostic_source_id=uuid7(),
         source_locator_key="db-1",
@@ -651,7 +569,7 @@ def test_delete_binding_keeps_enabled_target_when_another_active_mapping_exists(
         created_at=now,
         updated_at=now,
     )
-    other = SimpleNamespace(target_source_binding_id=uuid7(), status="ACTIVE")
+    other = SimpleNamespace(resource_source_binding_id=uuid7(), status="ACTIVE")
     target = SimpleNamespace(
         target_id=target_id,
         status="ENABLED",

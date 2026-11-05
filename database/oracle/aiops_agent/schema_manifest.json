@@ -1,18 +1,18 @@
 {
   "component": "aiops_agent",
-  "schema_version": 56,
-  "contract_version": "aiops-oracle-v56-output-jobs",
+  "schema_version": 57,
+  "contract_version": "aiops-oracle-v57-resource-monitoring",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
       "statements": 54,
-      "sha256": "a125c51e44f1882abefeda2b2a4fde7c431a4e43a4da91a21dba5c1ecf328642"
+      "sha256": "059c040e08eaec87b2a70d27a81fd9f85843cb1877e8984eb7a8ac1cd2ee07b6"
     },
     {
       "name": "002_ops_runtime.sql",
       "statements": 38,
-      "sha256": "40fd93af2b5a338f98a1d4ef67d720d92c7f5b36d6a911c3b2849c60aa31b2f2"
+      "sha256": "13f75d4bcdfbd6555335caf5817dcea6cbb21a9e6ccb0aab49287d138dafae68"
     },
     {
       "name": "003_ops_change.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "ca1049f3bef9f61d349dab76151db024b49bd68969155c6ef1ac34b6df782db6"
+      "sha256": "5915f562f5f772f81139f9b63160e91770ba4c5a7a83a803962e14d38c3c38f0"
     },
     {
       "name": "007_ops_agents.sql",
@@ -79,7 +79,7 @@
     "KBOT_OPS_TARGET_BINDING",
     "KBOT_OPS_NOTIFICATION_SUBSCRIPTION",
     "KBOT_OPS_DIAGNOSTIC_SOURCE",
-    "KBOT_OPS_TARGET_SOURCE_BINDING",
+    "KBOT_OPS_RESOURCE_SOURCE_BINDING",
     "KBOT_OPS_BUSINESS_SYSTEM",
     "KBOT_OPS_MANAGED_RESOURCE",
     "KBOT_OPS_DATABASE_RESOURCE",
@@ -196,7 +196,10 @@
       "constraint": "FK_OPS_OUTPUT_ATTEMPT_JOB",
       "index": "IX_OPS_OUTPUT_ATTEMPT_JOB",
       "table": "KBOT_OPS_OUTPUT_JOB_ATTEMPT",
-      "columns": ["JOB_ID", "ATTEMPT_NO"]
+      "columns": [
+        "JOB_ID",
+        "ATTEMPT_NO"
+      ]
     },
     {
       "constraint": "FK_OPS_TARGET_FACT_OWNER",
@@ -361,7 +364,9 @@
       "constraint": "FK_OPS_INSP_PLAN_SYSTEM",
       "index": "IX_OPS_INSP_PLAN_SYSTEM",
       "table": "KBOT_OPS_INSPECTION_PLAN",
-      "columns": ["BUSINESS_SYSTEM_ID"]
+      "columns": [
+        "BUSINESS_SYSTEM_ID"
+      ]
     },
     {
       "constraint": "FK_OPS_INSP_PLAN_AGENT",

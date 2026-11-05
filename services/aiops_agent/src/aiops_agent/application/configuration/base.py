@@ -43,7 +43,7 @@ from aiops_agent.entities import (
     PolicyEntity,
     TargetBindingEntity,
     TargetEntity,
-    TargetSourceBindingEntity,
+    ResourceSourceBindingEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.agent_catalog import AgentCatalogPort

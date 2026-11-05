@@ -312,7 +312,7 @@ def test_graph_budget_remains_explicit_and_retains_both_sources():
 def test_identity_query_is_frozen_only_when_explicit_binding_metric_scope_allows_it(authorized):
     source_id, binding_id = uuid7(), uuid7()
     monitor = SimpleNamespace(
-        diagnostic_source_id=source_id, target_source_binding_id=binding_id,
+        diagnostic_source_id=source_id, resource_source_binding_id=binding_id, resource_id=uuid7(),
         capability_scope_json={"metric_codes": ["db.identity.info"] if authorized else ["postgresql.availability"],
                                "capabilities": ["metric.query_range"]},
         role="PRIMARY", priority=10, source_locator_key="mes", source_locator_json={"instance": "mes"},

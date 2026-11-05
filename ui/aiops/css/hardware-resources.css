@@ -1,0 +1,7 @@
+.hardware-resource-editor { min-width: 0; margin: 0; padding: 0; border: 0; }
+.hardware-resource-editor .editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.hardware-resource-editor label { display: grid; gap: 7px; min-width: 0; }
+.hardware-resource-editor label > span, .hardware-resource-editor p { color: var(--muted); font-size: var(--type-meta); }
+.hardware-resource-editor section { display: grid; gap: 12px; margin-top: 24px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); }
+.hardware-resource-editor section > label:has(input[type="checkbox"]) { display: flex; align-items: center; }
+@media (max-width: 640px) { .hardware-resource-editor .editor-grid { grid-template-columns: 1fr; } }

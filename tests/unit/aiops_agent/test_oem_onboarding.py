@@ -243,7 +243,6 @@ def test_revalidation_rejects_changed_guid_identity_before_creating_any_binding(
     with pytest.raises(AIOpsApplicationError):
         asyncio.run(service._create_discovered_source_binding_in_uow(
             uow=uow, scope=SimpleNamespace(tenant_id=uuid7(), domain_id=1, actor_id=uuid7(), trace_id="test"),
-            source_id=source_id, target_id=uuid7(), candidate_ref="opaque", host_candidate_ref=None,
-            now=datetime.now(UTC),
+            source_id=source_id, target_id=uuid7(), candidate_ref="opaque", now=datetime.now(UTC),
         ))
     service._create_source_binding_in_uow.assert_not_awaited()

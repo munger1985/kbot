@@ -5,7 +5,9 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Numeric, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column
+from sqlalchemy import select
+from .business_system import DatabaseResourceEntity
 
 from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
@@ -80,13 +82,19 @@ class DiagnosticSourceEntity(BaseEntity):
     __mapper_args__ = {"version_id_col": row_version}
 
 
-class TargetSourceBindingEntity(BaseEntity):
-    __tablename__ = "KBOT_OPS_TARGET_SOURCE_BINDING"
+class ResourceSourceBindingEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_RESOURCE_SOURCE_BINDING"
 
-    target_source_binding_id: Mapped[UUID] = mapped_column(
+    resource_source_binding_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    resource_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    # 数据库专用用例的只读投影；绑定只持久化资源身份。
+    target_id = column_property(
+        select(DatabaseResourceEntity.target_id)
+        .where(DatabaseResourceEntity.resource_id == resource_id)
+        .correlate_except(DatabaseResourceEntity).scalar_subquery(), expire_on_flush=False,
+    )
     diagnostic_source_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), nullable=False
     )

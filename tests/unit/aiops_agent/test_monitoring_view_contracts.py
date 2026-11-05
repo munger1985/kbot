@@ -95,11 +95,9 @@ class MonitoringProfileContractTest(unittest.TestCase):
             ["mysql-overview"],
             [item.profile_id for item in mysql],
         )
-        self.assertEqual("3.4.0", mysql[0].version)
+        self.assertEqual("4.0.0", mysql[0].version)
         oracle = self.profiles.get("oracle-overview")
-        self.assertEqual("3.2.0", oracle.version)
-        self.assertEqual(70, oracle.metric_thresholds["runtime.cpu.utilization"].warning_value)
-        self.assertEqual(85, oracle.metric_thresholds["runtime.cpu.utilization"].critical_value)
+        self.assertEqual("4.0.0", oracle.version)
         self.assertEqual(
             "oracle-overview",
             self.profiles.list_for_databases((("ORACLE", "19c"),))[0].profile_id,
@@ -110,8 +108,8 @@ class MonitoringProfileContractTest(unittest.TestCase):
             "mysql-overview", (("MYSQL", "8.4"),)
         ).metric_codes
         self.assertIn("db.storage.used_bytes", mysql_codes)
-        self.assertIn("host.cpu.utilization", mysql_codes)
-        self.assertIn("host.memory.utilization", mysql_codes)
+        self.assertNotIn("host.cpu.utilization", mysql_codes)
+        self.assertNotIn("host.memory.utilization", mysql_codes)
         mysql_used_provider = self.metrics.get(
             "db.storage.used_bytes"
         ).providers["PROMETHEUS"]
@@ -140,13 +138,13 @@ class MonitoringProfileContractTest(unittest.TestCase):
         oracle_codes = self.profiles.resolve(
             "oracle-overview", (("ORACLE", "19c"),)
         ).metric_codes
-        self.assertIn("runtime.cpu.utilization", oracle_codes)
-        self.assertIn("runtime.memory.utilization", oracle_codes)
+        self.assertNotIn("runtime.cpu.utilization", oracle_codes)
+        self.assertNotIn("runtime.memory.utilization", oracle_codes)
         self.assertIn("db.storage.used_bytes", oracle_codes)
         self.assertIn("db.storage.free_bytes", oracle_codes)
         self.assertIn("db.storage.max_bytes", oracle_codes)
-        self.assertIn("host.cpu.utilization", oracle_codes)
-        self.assertIn("host.memory.utilization", oracle_codes)
+        self.assertNotIn("host.cpu.utilization", oracle_codes)
+        self.assertNotIn("host.memory.utilization", oracle_codes)
 
     def test_host_filesystem_capacity_metrics_use_real_provider_values(self):
         expected = {
@@ -195,20 +193,20 @@ class MonitoringProfileContractTest(unittest.TestCase):
         mysql_codes = self.profiles.resolve(
             "mysql-overview", (("MYSQL", "8.4"),)
         ).metric_codes
-        self.assertIn("runtime.cpu.utilization", mysql_codes)
-        self.assertIn("runtime.memory.utilization", mysql_codes)
+        self.assertNotIn("runtime.cpu.utilization", mysql_codes)
+        self.assertNotIn("runtime.memory.utilization", mysql_codes)
         self.assertIn("db.storage.used_bytes", mysql_codes)
-        self.assertIn("host.filesystem.utilization", mysql_codes)
+        self.assertNotIn("host.filesystem.utilization", mysql_codes)
         self.assertNotIn("host.filesystem.used_bytes", mysql_codes)
         self.assertNotIn("host.filesystem.available_bytes", mysql_codes)
         self.assertNotIn("host.filesystem.size_bytes", mysql_codes)
         postgresql_codes = self.profiles.resolve(
             "postgresql-overview", (("POSTGRESQL", "16"),)
         ).metric_codes
-        self.assertIn("runtime.cpu.utilization", postgresql_codes)
-        self.assertIn("runtime.memory.utilization", postgresql_codes)
+        self.assertNotIn("runtime.cpu.utilization", postgresql_codes)
+        self.assertNotIn("runtime.memory.utilization", postgresql_codes)
         self.assertIn("postgresql.database.size_bytes", postgresql_codes)
-        self.assertIn("host.filesystem.utilization", postgresql_codes)
+        self.assertNotIn("host.filesystem.utilization", postgresql_codes)
         self.assertNotIn("host.filesystem.used_bytes", postgresql_codes)
         self.assertNotIn("host.filesystem.available_bytes", postgresql_codes)
         self.assertNotIn("host.filesystem.size_bytes", postgresql_codes)

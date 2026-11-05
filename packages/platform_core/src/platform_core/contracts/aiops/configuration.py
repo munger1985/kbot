@@ -789,9 +789,6 @@ class SourceBindingPatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_locator_key: str | None = Field(default=None, min_length=1, max_length=512)
     source_locator: JsonObject | None = None
-    host_candidate_ref: str | None = Field(
-        default=None, min_length=1, max_length=8192
-    )
     role: Literal["PRIMARY", "SUPPLEMENTARY", "FALLBACK"] | None = None
     priority: int | None = Field(default=None, ge=0)
     capability_scope: JsonObject | None = None
@@ -802,7 +799,8 @@ class SourceBindingPatch(AIOpsContract):
 class SourceBindingView(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     binding_id: UUIDv7
-    target_id: UUIDv7
+    resource_id: UUIDv7
+    target_id: UUIDv7 | None = None
     source_id: UUIDv7
     source_locator_key: str
     source_locator: JsonObject
@@ -823,6 +821,7 @@ class InstanceDiscoveryRequest(AIOpsContract):
 
     schema_version: str = PUBLIC_SCHEMA_VERSION
     db_types: tuple[DatabaseType, ...] = ()
+    resource_scope: Literal["DATABASE", "HOST"] = "DATABASE"
     page_size: int = Field(default=50, ge=1, le=100)
     cursor: str | None = Field(default=None, min_length=1, max_length=8192)
 
@@ -859,9 +858,6 @@ class InstanceDiscoveryPage(CursorPage):
 
 class InstanceMappingItem(AIOpsContract):
     candidate_ref: str = Field(min_length=1, max_length=8192)
-    host_candidate_ref: str | None = Field(
-        default=None, min_length=1, max_length=8192
-    )
     target_id: UUIDv7
 
 
@@ -888,9 +884,6 @@ class InstanceMappingView(AIOpsContract):
     target_id: UUIDv7
     source_id: UUIDv7
     locator_hint: str = Field(min_length=1, max_length=256)
-    host_locator_hint: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
     status: SourceBindingStatus
     health_status: HealthStatus
     row_version: int = Field(ge=1)

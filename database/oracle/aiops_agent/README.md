@@ -1,5 +1,9 @@
 # AIOps Agent Oracle Schema
 
+本轮规范为 Schema 57（`aiops-oracle-v57-resource-monitoring`），统一使用资源监控绑定表。
+不提供已有数据迁移或回填；旧 Schema 不能直接运行新版代码，部署前须单独安排切换。
+下文历史升级仅用于对应版本，不能直接升级到 57；保留配置的重建也只适用于同版表结构。
+
 本目录当前拥有 AIOps 服务的 78 张表和 10 个只读视图，按以下顺序在空 Schema
 一次性执行：
 
@@ -45,7 +49,7 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 全部十三份规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 53 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 57 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系以及 `diagnosis-cases` 固定 KC Collection 位于共享平台/KC 表；用户创建的运维知识库各自拥有独立 KC Collection，
@@ -82,7 +86,7 @@ SQL Developer 中使用 Run Script（F5）执行，会保留下列配置数据�
 - `KBOT_OPS_TARGET`：运维目标及其 Managed Credential 引用；
 - `KBOT_OPS_TARGET_FACT`：人工确认或发现的目标事实；
 - `KBOT_OPS_DIAGNOSTIC_SOURCE`：监控源、Webhook 和能力配置；
-- `KBOT_OPS_TARGET_SOURCE_BINDING`：目标与监控源的定位和能力绑定；
+- `KBOT_OPS_RESOURCE_SOURCE_BINDING`：资源与监控源的定位和能力绑定；
 - `KBOT_OPS_BUSINESS_SYSTEM`、`KBOT_OPS_MANAGED_RESOURCE` 及资源拓扑表；
 - `KBOT_OPS_RECOVERY_PROFILE`：数据库组件当前及历史恢复目标版本。
 

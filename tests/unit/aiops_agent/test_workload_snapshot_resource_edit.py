@@ -19,7 +19,7 @@ class WorkloadSnapshotResourceEditTest(unittest.IsolatedAsyncioTestCase):
         self.scope = ConfigurationScope(domain_id=100, principal_id="PORTAL:aiops", actor_id="operator-1", request_id="test", trace_id="test")
         self.system = SimpleNamespace(status="DISABLED")
         self.link = SimpleNamespace(resource_id=self.resource_id, status="ACTIVE")
-        self.resource = SimpleNamespace(resource_id=self.resource_id, resource_code="DB-001", resource_type_key="DATABASE", display_name="DB", identity_kind="STABLE", lifecycle_status="ACTIVE", owner_group_id=uuid7(), location_name=None, row_version=3)
+        self.resource = SimpleNamespace(resource_id=self.resource_id, resource_code="DB-001", resource_type_key="DATABASE", display_name="DB", identity_kind="STABLE", lifecycle_status="ACTIVE", owner_group_id=uuid7(), location_name=None, row_version=3, attributes_json={})
         self.target = SimpleNamespace(target_id=self.target_id, db_type="POSTGRESQL", version_code="16", environment="PROD", deployment_type="SINGLE_INSTANCE", rac_node_number=None, db_role="PRIMARY", connectivity_status="CONNECTED", row_version=7, workload_snapshot_policy_json={}, workload_next_run_at=None, workload_consecutive_failures=4)
         self.systems = SimpleNamespace(get_scoped=AsyncMock(return_value=self.system), get_system_resource_scoped=AsyncMock(return_value=self.link), get_resource_scoped=AsyncMock(return_value=self.resource), get_database_profile=AsyncMock(return_value=SimpleNamespace(target_id=self.target_id)))
         self.systems.find_system_for_target = AsyncMock(return_value=self.system)

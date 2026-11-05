@@ -58,7 +58,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_database_resource_editor_uses_workspace_public_contract_fields(self):
         script = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(encoding="utf-8")
-        for field in ("db_type", "version_code", "oracle_scope", "oracle_pdb_name", "username", "password", "source_id", "candidate_ref", "host_candidate_ref"):
+        for field in ("db_type", "version_code", "oracle_scope", "oracle_pdb_name", "username", "password", "source_id", "candidate_ref"):
             self.assertIn('name="' + field + '"', script)
         self.assertIn("diagnostic_credential:", script)
         self.assertIn("oracle_container_scope:", script)
@@ -100,17 +100,19 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         confirmation = workspace.split("function factConfirmationHtml")[1].split("function reportArtifactLinksHtml")[0]
         self.assertNotIn("command_preview", confirmation)
 
-    def test_resource_publication_requires_database_and_host_monitor_bindings(self):
+    def test_resource_publication_separates_database_and_host_monitor_bindings(self):
         script = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(encoding="utf-8")
         self.assertIn('name="source_id" required', script)
         self.assertIn('name="candidate_ref"', script)
-        self.assertIn('name="host_candidate_ref"', script)
+        self.assertNotIn('name="host_candidate_ref"', script)
+        self.assertIn('id="hardware-candidate"', script)
+        self.assertIn("hardware.mapping(item)", script)
         self.assertIn("monitoringPayload(item)", script)
         self.assertIn("resourceConfigurationError(item)", script)
-        self.assertIn("未配置主机监控 Target", script)
+        self.assertIn("hardware.error(item)", script)
         self.assertIn("instance-discoveries", script)
         self.assertIn("candidate_locator_key", script)
-        self.assertIn("host_candidate_locator_key", script)
+        self.assertNotIn("host_candidate_locator_key", script)
 
     def test_alignment_inventory_covers_all_pages_without_pending_entries(self):
         manifest = json.loads((AIOPS_ROOT / "reference-pages.json").read_text(encoding="utf-8"))
@@ -267,7 +269,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(33, len(scripts))
+        self.assertEqual(34, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -351,7 +353,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn('id="monitoring-compare-source"', page)
         self.assertNotIn("monitoring-query-drawer", page)
         self.assertIn("aiops.css?v=20261020_3", page)
-        self.assertIn("aiops-monitoring.js?v=20261104_2", page)
+        self.assertIn("aiops-monitoring.js?v=20261105_resources1", page)
         self.assertIn('class="ops-main aiops-monitoring-page"', page)
         self.assertIn('id="monitoring-workspace" class="monitoring-dashboard-shell"', page)
         self.assertIn('id="monitoring-rail-toggle"', page)
@@ -432,7 +434,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("const rows = capacityRows(panel)", script)
         self.assertNotIn('id="monitoring-profile"', page)
         self.assertNotIn("function renderCapacityTable", script)
-        self.assertIn('role="radiogroup" aria-label="数据库实例单选"', page)
+        self.assertIn('role="radiogroup" aria-label="监控资源单选"', page)
         self.assertIn('class="monitoring-query-toolbar"', page)
         self.assertLess(page.index('class="monitoring-context-rail"'), page.index('class="monitoring-dashboard-main"'))
         self.assertLess(page.index('class="monitoring-dashboard-main"'), page.index('class="monitoring-observation-card"'))
@@ -459,7 +461,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("state.selected.length === 1", script)
         self.assertIn("void loadView()", script)
         self.assertIn('/targets/${encodeURIComponent(targetId)}/monitoring/profiles', script)
-        self.assertNotIn('/sources/${encodeURIComponent(state.sourceId)}/profiles', script)
+        self.assertIn('/sources/${encodeURIComponent(state.sourceId)}/profiles', script)
+        self.assertIn('state.profileId === "host-overview"', script)
         self.assertIn("void selectInstance(input.dataset.instanceId)", script)
         self.assertIn("void selectInstance(instanceId)", script)
         self.assertNotIn("setTimeout(loadView, 250)", script)
@@ -489,7 +492,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         ).read_text(encoding="utf-8"))
         for text in (
             "尚未配置监控源", "监控源未启用", "监控源连接失败",
-            "尚未关联数据库实例", "无有效采样", "部分成功",
+            "尚未关联监控资源", "无有效采样", "部分成功",
         ):
             self.assertIn(text, script)
         self.assertNotIn("<iframe", page.lower())
@@ -1033,7 +1036,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('id="business-resource-drawer"', workspace)
         self.assertIn(".resource-card-grid", reference)
         self.assertIn("overflow-y:auto", forms)
-        self.assertIn('activeLayer === "DATA"', systems)
+        self.assertIn("catalogTypesByLayer", systems)
+        self.assertIn("hardware.create(catalogType, activeLayer", systems)
         self.assertIn("catalogTypesByLayer[activeLayer].includes(item[0])", systems)
         self.assertIn('DATA: ["DATABASE", "CACHE"]', systems)
         self.assertNotIn('["DATA_WAREHOUSE", "数据仓库"', systems)
@@ -1042,7 +1046,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("复用已有数据库", systems)
         self.assertIn("function supportsRelationEndpoints", systems)
         self.assertIn('return `${label}：未配置数据库监控 Target。`', systems)
-        self.assertIn('return `${label}：未配置主机监控 Target。`', systems)
+        self.assertNotIn('return `${label}：未配置主机监控 Target。`', systems)
+        self.assertIn("hardware.error(item)", systems)
         self.assertIn('id="resource-connection-result"', systems)
         self.assertIn('"数据库连接测试通过；正式提交前不会创建资源。"', systems)
         self.assertIn("连接测试为可选项，不影响保存", systems)
@@ -1138,8 +1143,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("诊断用户名（所有节点共用）", systems)
         self.assertIn("诊断密码（所有节点共用）", systems)
         self.assertIn("监控源（所有节点共用）", systems)
-        for label in ("Host", "Service Name", "数据库监控 Target", "主机监控 Target"):
+        for label in ("Host", "Service Name", "数据库监控 Target"):
             self.assertIn(f"<span>{label}</span>", systems)
+        self.assertNotIn("<span>主机监控 Target</span>", systems)
 
         configuration_validation = systems.split("function resourceConfigurationError", 1)[1].split(
             "async function validateResource", 1

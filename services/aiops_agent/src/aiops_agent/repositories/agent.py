@@ -19,7 +19,7 @@ from aiops_agent.entities import (
     ManagedResourceEntity,
     PolicyEntity,
     TargetEntity,
-    TargetSourceBindingEntity,
+    ResourceSourceBindingEntity,
 )
 
 
@@ -113,8 +113,8 @@ class AIOpsAgentRepository:
     ) -> list[UUID]:
         """由 Agent 版本关联的 Target 动态解析有效监控源。"""
         statement = (
-            select(TargetSourceBindingEntity.diagnostic_source_id)
-            .join(TargetEntity, TargetEntity.target_id == TargetSourceBindingEntity.target_id)
+            select(ResourceSourceBindingEntity.diagnostic_source_id)
+            .join(TargetEntity, TargetEntity.target_id == ResourceSourceBindingEntity.target_id)
             .join(DatabaseResourceEntity, DatabaseResourceEntity.target_id == TargetEntity.target_id)
             .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
             .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
@@ -125,14 +125,14 @@ class AIOpsAgentRepository:
                 BusinessSystemResourceEntity.status == "ACTIVE",
                 ManagedResourceEntity.lifecycle_status == "ACTIVE",
                 TargetEntity.status == "ENABLED",
-                TargetSourceBindingEntity.status == "ACTIVE",
+                ResourceSourceBindingEntity.status == "ACTIVE",
             )
             .distinct()
-            .order_by(TargetSourceBindingEntity.diagnostic_source_id)
+            .order_by(ResourceSourceBindingEntity.diagnostic_source_id)
         )
         if target_id is not None:
             statement = statement.where(
-                TargetSourceBindingEntity.target_id == target_id
+                ResourceSourceBindingEntity.target_id == target_id
             )
         rows = await self._session.scalars(statement)
         return list(rows)

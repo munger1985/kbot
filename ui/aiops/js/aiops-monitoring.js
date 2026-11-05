@@ -168,7 +168,7 @@
   }
   function updateDiagnosisLink() {
     const link = document.getElementById("monitoring-diagnosis-link");
-    const enabled = state.selected.length === 1;
+    const enabled = state.selected.length === 1 && state.instances.find(item => item.instance_id === state.selected[0])?.resource_type_key === "DATABASE";
     const params = new URLSearchParams({
       target_id: enabled ? state.selected[0] : "",
       source_id: state.sourceId,
@@ -214,7 +214,7 @@
     }
     if (!state.instances.length && !state.loadingInstances) {
       gate.hidden = false;
-      gate.innerHTML = gateContent("尚未关联数据库实例", "当前来源下没有可授权查询的 ACTIVE 实例映射。");
+      gate.innerHTML = gateContent("尚未关联监控资源", "当前来源下没有可授权查询的 ACTIVE 实例映射。");
       return true;
     }
     gate.hidden = true;
@@ -228,6 +228,7 @@
     document.getElementById("monitoring-source").innerHTML = state.sources.map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.sourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(label(source.monitoring_readiness))}</option>`).join("");
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
+    document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview";
     document.getElementById("monitoring-baseline").value = state.baseline;
     document.getElementById("monitoring-baseline").disabled = sourceById()?.monitoring_readiness !== "READY";
   }
@@ -256,7 +257,7 @@
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
       const queryStatus = targetPickerStatus(instance, result);
       const statusClass = ({ good: "status-success", warn: "status-warning", bad: "status-danger" })[tone(queryStatus.value)];
-      return `<label class="monitoring-instance-option${selected ? " is-selected" : ""}"><input type="radio" name="monitoring-target" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span><strong title="${esc(instance.display_name)}">${esc(instance.display_name)}</strong><small title="${esc(instance.resource_name || "")}">${esc(instance.db_type)}${instance.resource_name ? ` · ${esc(instance.resource_name)}` : ""}</small><i class="${statusClass}" title="${esc(diagnosticGapText(instance))}">${esc(queryStatus.label)}</i></span></label>`;
+      return `<label class="monitoring-instance-option${selected ? " is-selected" : ""}"><input type="radio" name="monitoring-target" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span><strong title="${esc(instance.display_name)}">${esc(instance.display_name)}</strong><small title="${esc(instance.resource_name || "")}">${esc(instance.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机"}[instance.resource_type_key] || instance.resource_type_key))}${instance.resource_name ? ` · ${esc(instance.resource_name)}` : ""}</small><i class="${statusClass}" title="${esc(diagnosticGapText(instance))}">${esc(queryStatus.label)}</i></span></label>`;
     };
     const cards = [...groups.values()].sort((left, right) => left.systemName.localeCompare(right.systemName, "zh-CN")).map((group) => {
       const expanded = Boolean(state.search.trim()) || !state.collapsedSystemIds.has(group.key);
@@ -302,11 +303,13 @@
       return;
     }
     const profiles = await KBotAIOpsAuth.request(
-      `/api/v1/apps/aiops/targets/${encodeURIComponent(targetId)}/monitoring/profiles`,
+      state.instances.find(item => item.instance_id === targetId)?.resource_type_key !== "DATABASE"
+        ? `${api}/sources/${encodeURIComponent(state.sourceId)}/profiles`
+        : `/api/v1/apps/aiops/targets/${encodeURIComponent(targetId)}/monitoring/profiles`,
       { signal },
     );
     if (signal.aborted) return;
-    state.profiles = profiles;
+    state.profiles = profiles.filter(item => state.instances.find(row => row.instance_id === targetId)?.resource_type_key !== "DATABASE" ? item.purpose === "HOST" : item.purpose !== "HOST");
     state.profileId = state.profiles.find((item) => item.is_default)?.profile_id
       || state.profiles[0]?.profile_id || "";
   }
@@ -318,7 +321,8 @@
     setLoading(true);
     try {
       const params = new URLSearchParams({ source_id: state.sourceId, profile_id: state.profileId, window: state.window, baseline: state.baseline });
-      const view = await KBotAIOpsAuth.request(`/api/v1/apps/aiops/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}`, { signal: controller.signal });
+      const hardwareView = state.instances.find(item => item.instance_id === state.selected[0])?.resource_type_key !== "DATABASE";
+      const view = await KBotAIOpsAuth.request(hardwareView ? `${api}/sources/${encodeURIComponent(state.sourceId)}/views` : `/api/v1/apps/aiops/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}`, hardwareView ? { method: "POST", body: JSON.stringify({ profile_id: state.profileId, instance_ids: state.selected, window: state.window }), signal: controller.signal } : { signal: controller.signal });
       if (controller.signal.aborted) return;
       state.view = view;
       renderResult();
@@ -838,7 +842,7 @@
       const hasData = panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null));
       const thresholdHtml = threshold ? `<div class="monitoring-threshold-rail" style="--warning-at:${threshold.warningAt};--critical-at:${threshold.criticalAt};--current-at:${threshold.currentAt};--baseline-at:${threshold.baselineAt || "0%"}"><div class="monitoring-threshold-track"><i class="is-${toneValue}"></i>${threshold.baselineAt ? '<b title="所选周期基线"></b>' : ""}</div><div><span>0</span><span>关注 ${esc(threshold.warningLabel)}</span><span>紧张 ${esc(threshold.criticalLabel)}</span><span>${esc(threshold.maximumLabel)}</span></div></div>` : "";
       const heading = conclusionTitle(panel, toneValue, presentation);
-      return `<article class="monitoring-panel tone-${toneValue} ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><header><div><h2 title="${esc(heading)}">${esc(heading)}</h2><p>${esc(cardSubtitle(panel, toneValue))}</p></div><div class="monitoring-panel-actions">${badge(statusValue, statusLabel)}<button class="row-action" type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></header><p class="sr-only">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p><div class="monitoring-current-value"><strong>${esc(snapshot ? formatValue(snapshot.current, snapshot.unit) : "—")}</strong><span>${esc(snapshot?.subject || "当前值")}</span></div><div class="monitoring-baseline"><span>${esc(baselineLabel())}均值 <strong>${esc(snapshot?.average === null || snapshot?.average === undefined ? "无有效采样" : formatValue(snapshot.average, snapshot.unit))}</strong></span><b>${esc(presentation.differenceText)}</b></div>${thresholdHtml}${panel.visualization === "CAPACITY_BAR" ? capacityPanelHtml(panel) : hasData ? `<div id="monitoring-chart-${index}" class="monitoring-chart-canvas" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<footer><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span><span>覆盖率 ${(averageCoverage * 100).toFixed(1)} %</span></footer></article>`;
+      return `<article class="monitoring-panel tone-${toneValue} ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><header><div><h2 title="${esc(heading)}">${esc(heading)}</h2><p>${esc(cardSubtitle(panel, toneValue))}</p></div><div class="monitoring-panel-actions">${badge(statusValue, statusLabel)}<button class="row-action" type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></header><p class="sr-only">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p><div class="monitoring-current-value"><strong>${esc(snapshot ? formatValue(snapshot.current, snapshot.unit) : "—")}</strong><span>${esc(snapshot?.subject || "当前值")}</span></div>${state.profileId === "host-overview" ? "" : `<div class="monitoring-baseline"><span>${esc(baselineLabel())}均值 <strong>${esc(snapshot?.average === null || snapshot?.average === undefined ? "无有效采样" : formatValue(snapshot.average, snapshot.unit))}</strong></span><b>${esc(presentation.differenceText)}</b></div>`}${thresholdHtml}${panel.visualization === "CAPACITY_BAR" ? capacityPanelHtml(panel) : hasData ? `<div id="monitoring-chart-${index}" class="monitoring-chart-canvas" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<footer><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span><span>覆盖率 ${(averageCoverage * 100).toFixed(1)} %</span></footer></article>`;
     }).join("");
     panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);
