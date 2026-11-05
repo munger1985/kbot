@@ -76,6 +76,19 @@ def serialized(value) -> str:
     return json.dumps(value, default=encode, ensure_ascii=False, sort_keys=True)
 
 
+def decode(value: dict):
+    if len(value) == 1:
+        if "$uuid" in value:
+            return UUID(value["$uuid"])
+        if "$datetime" in value:
+            return datetime.fromisoformat(value["$datetime"])
+        if "$bytes" in value:
+            return bytes.fromhex(value["$bytes"])
+        if "$decimal" in value:
+            return Decimal(value["$decimal"])
+    return value
+
+
 def digest(rows: list[dict]) -> str:
     return hashlib.sha256("\n".join(sorted(serialized(row) for row in rows)).encode()).hexdigest()
 
@@ -272,6 +285,14 @@ async def insert_plan(conn, plan: dict) -> None:
             await conn.execute(entity.__table__.insert().values(**row))
 
 
+async def compile_invalid_views(conn) -> None:
+    result = await conn.execute(text("SELECT OBJECT_NAME FROM USER_OBJECTS WHERE STATUS='INVALID' AND OBJECT_TYPE='VIEW' AND OBJECT_NAME LIKE 'KBOT%OPS%'"))
+    for name in result.scalars():
+        if not re.fullmatch(r"KBOT_V_OPS_[A-Z0-9_]+", name):
+            raise ValueError("发现非规范视图名称，停止自动重编译")
+        await conn.execute(text(f"ALTER VIEW {name} COMPILE"))
+
+
 async def verify(conn, backend: str, original: dict, plan: dict) -> dict:
     current = await inventory(conn, backend, archived=True)
     for key in PROTECTED:
@@ -330,6 +351,15 @@ async def run(args) -> None:
     runtime.engine.sync_engine.hide_parameters = True
     try:
         async with runtime.engine.connect() as conn:
+            if args.verify_only:
+                if not args.backup_dir:
+                    raise ValueError("独立验收必须指定备份目录")
+                original = json.loads((args.backup_dir / "snapshot.json").read_text(), object_hook=decode)["data"]
+                plan = json.loads((args.backup_dir / "plan.json").read_text(), object_hook=decode)
+                result = await verify(conn, args.backend, original, plan)
+                private_json(args.backup_dir / f"verified-{datetime.now(UTC).strftime('%H%M%S%f')}.json", result)
+                print(json.dumps(result, ensure_ascii=False), flush=True)
+                return
             data = await inventory(conn, args.backend)
             host_types = json.loads(args.host_types.read_text()) if args.host_types else {}
             plan = build_plan(data, host_types, defer_unknown=args.defer_unknown_hosts)
@@ -364,6 +394,7 @@ async def run(args) -> None:
                 await conn.execute(text("ALTER TABLE KBOT_OPS_SIGNAL_EVENT ADD CONSTRAINT FK_OPS_SIG_BINDING FOREIGN KEY (SOURCE_BINDING_ID) REFERENCES KBOT_OPS_RESOURCE_SOURCE_BINDING (RESOURCE_SOURCE_BINDING_ID)"))
                 for statement in oracle_views():
                     await conn.execute(text(statement))
+                await compile_invalid_views(conn)
             result = await verify(conn, args.backend, data, plan)
             await conn.commit()
             private_json(args.backup_dir / "result.json", result)
@@ -381,9 +412,12 @@ def main() -> None:
     parser.add_argument("--defer-unknown-hosts", action="store_true")
     parser.add_argument("--backup-dir", type=Path)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--verify-only", action="store_true")
     args = parser.parse_args()
     if args.project_root:
         ROOT = args.project_root.resolve()
+    if args.verify_only and args.apply:
+        parser.error("--verify-only 不能与 --apply 同用")
     try:
         asyncio.run(run(args))
     except Exception as exc:

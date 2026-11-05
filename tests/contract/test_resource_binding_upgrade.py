@@ -1,9 +1,13 @@
 """统一资源绑定的定向升级不能丢失身份、归属和业务配置。"""
 
 from copy import deepcopy
+import asyncio
+from datetime import UTC, datetime
 import importlib.util
+import json
 from pathlib import Path
 import unittest
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 
@@ -101,6 +105,19 @@ class ResourceBindingUpgradeTest(unittest.TestCase):
             self.assertEqual(len(upgrade.oracle_statements()), 3)
             self.assertEqual(len(upgrade.oracle_views()), 3)
             self.assertNotRegex("\n".join(upgrade.oracle_statements()), r"\b(?:CHECK|UNIQUE)\s*\(")
+
+    def test_backup_round_trip_preserves_identifiers_and_timestamps(self):
+        value = {"id": uuid4(), "created_at": datetime.now(UTC), "raw": b"example"}
+        self.assertEqual(json.loads(upgrade.serialized(value), object_hook=upgrade.decode), value)
+
+    def test_only_existing_invalid_aiops_views_are_recompiled(self):
+        result = Mock()
+        result.scalars.return_value = ["KBOT_V_OPS_CHAT_PENDING", "KBOT_V_OPS_PENDING_APPROVAL"]
+        connection = Mock()
+        connection.execute = AsyncMock(side_effect=[result, None, None])
+        asyncio.run(upgrade.compile_invalid_views(connection))
+        self.assertEqual([str(call.args[0]) for call in connection.execute.call_args_list[1:]],
+                         ["ALTER VIEW KBOT_V_OPS_CHAT_PENDING COMPILE", "ALTER VIEW KBOT_V_OPS_PENDING_APPROVAL COMPILE"])
 
 
 if __name__ == "__main__":
