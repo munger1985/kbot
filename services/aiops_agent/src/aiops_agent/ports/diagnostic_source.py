@@ -185,6 +185,7 @@ class HostDiscoveryCandidate(BaseModel):
 
     source_locator_key: str = Field(min_length=1, max_length=512)
     display_name: str = Field(min_length=1, max_length=256)
+    source_locator: dict[str, Any] = Field(default_factory=dict)
 
 
 class InstanceDiscoveryResult(BaseModel):

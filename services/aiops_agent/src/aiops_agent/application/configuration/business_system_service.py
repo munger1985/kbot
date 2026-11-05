@@ -186,8 +186,14 @@ def _architecture_labels(resources: list[BusinessSystemResourceView], relations:
         labels.append("POSTGRES_STREAMING")
     if "OGG" in relation_types:
         labels.append("OGG")
+    for cross_database_type in ("DEBEZIUM_CDC", "FLINK_CDC", "DATAX"):
+        if cross_database_type in relation_types:
+            labels.append(cross_database_type)
     databases = [item.resource.database for item in resources if item.resource.database is not None]
-    if len(databases) == 1 and not relation_types:
+    database_relations = {"ORACLE_RAC", "DATA_GUARD", "MYSQL_REPLICATION", "POSTGRES_STREAMING", "OGG",
+                          "DEBEZIUM_CDC", "FLINK_CDC", "DATAX"}
+    if (len(databases) == 1 and databases[0].deployment_type == "SINGLE_INSTANCE"
+            and not relation_types.intersection(database_relations)):
         labels.append("SINGLE_INSTANCE")
     versions = {(str(item.db_type), item.version_code) for item in databases}
     if len(versions) > 1:
@@ -788,7 +794,7 @@ class BusinessSystemConfigurationMixin:
             for key, value in changes.items():
                 setattr(entity, key, value)
             database_view = None
-            if "attributes_json" in changes and entity.resource_type_key in {"PHYSICAL_SERVER", "VIRTUAL_MACHINE"}:
+            if "attributes_json" in changes and entity.resource_type_key in {"PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"}:
                 compute = await uow.business_systems.get_compute_profile(resource_id)
                 if compute is not None:
                     compute.platform_name = str(entity.attributes_json.get("platform_name")) if entity.attributes_json.get("platform_name") else None

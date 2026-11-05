@@ -104,6 +104,41 @@ def test_mysql_plugin_candidate_is_not_an_oracle_target():
     assert "oracle_container_scope" not in candidate.source_locator
 
 
+def test_oem_host_discovery_uses_host_guid_and_skips_database_properties():
+    host = target(HOST, "oracle19c.lab", "host")
+    value, calls = adapter(collection([target(), host]), host)
+    result = discover(value, include_hosts=True, host_only=True)
+    assert not result.candidates
+    candidate, = result.host_candidates
+    assert candidate.source_locator_key == HOST
+    assert candidate.display_name == "oracle19c.lab"
+    assert candidate.source_locator == {
+        "resource_scope": "HOST", "target_id": HOST, "target_type": "host",
+        "target_name": "oracle19c.lab", "host_name": "oracle19c.lab",
+    }
+    assert len(calls) == 2 and not any("properties" in url for url, _ in calls)
+
+
+def test_exact_oem_host_revalidation_never_accepts_a_database_guid():
+    value, calls = adapter(target())
+    result = discover(value, include_hosts=True, host_only=True, host_locator_keys=(CDB,))
+    assert not result.host_candidates and not result.candidates and len(calls) == 1
+
+
+def test_oem_host_pagination_applies_cursor_before_detail_and_respects_limit():
+    first, second = target(HOST, "host-1", "host"), target("5" * 32, "host-2", "host")
+    value, calls = adapter(collection([first, second]), second)
+    result = discover(value, include_hosts=True, host_only=True, after_locator_key=HOST, limit=1)
+    assert [item.source_locator_key for item in result.host_candidates] == ["5" * 32]
+    assert len(calls) == 2
+
+
+def test_oem_host_detail_identity_change_is_rejected():
+    value, _ = adapter(collection([target(HOST, "host-1", "host")]), target(HOST, "host-2", "host"))
+    with pytest.raises(DiagnosticSourceAdapterError):
+        discover(value, include_hosts=True, host_only=True)
+
+
 def test_exact_guid_revalidation_reads_only_requested_identity():
     value, calls = adapter(target(), *cdb_payloads())
     candidate, = discover(value, db_types=("ORACLE",), locator_keys=(CDB,)).candidates

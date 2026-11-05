@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const hostTypes = new Set(["PHYSICAL_SERVER", "VIRTUAL_MACHINE"]);
+  const hostTypes = new Set(["PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"]);
   const hardwareTypes = new Set([...hostTypes, "STORAGE", "NETWORK_DEVICE"]);
   function draft(bindings = []) {
     const binding = bindings.find(row => row.status === "ACTIVE") || bindings[0];
@@ -33,13 +33,17 @@
     const [type, sourceRole, targetRole] = relationSpec(item);
     return relations.filter(row => row.relation_type_key === type && row.participants.some(p => p.participant_role === targetRole && p.draft_resource_id === item.draft_resource_id)).flatMap(row => row.participants.filter(p => p.participant_role === sourceRole).map(p => p.draft_resource_id));
   }
+  function workloads(item, resources) {
+    return resources.filter(row => row.draft_resource_id !== item.draft_resource_id && (row.database || row.resource_type_key === "DATABASE" || (hostTypes.has(item.resource_type_key) && row.resource_type_key === "CONTAINER")));
+  }
   function setLinked(item, ids, resources, relations, uuid) {
     const [type, sourceRole, targetRole] = relationSpec(item);
-    const current = relations.filter(row => row.relation_type_key === type && row.participants.some(p => p.participant_role === targetRole && p.draft_resource_id === item.draft_resource_id));
+    const visible = new Set(workloads(item, resources).map(row => row.draft_resource_id));
+    const current = relations.filter(row => row.relation_type_key === type && row.participants.some(p => p.participant_role === targetRole && p.draft_resource_id === item.draft_resource_id) && row.participants.some(p => p.participant_role === sourceRole && visible.has(p.draft_resource_id)));
     const retained = relations.filter(row => !current.includes(row));
     for (const id of ids) {
       const workload = resources.find(row => row.draft_resource_id === id);
-      if (!workload || id === item.draft_resource_id) continue;
+      if (!workload || !visible.has(id)) continue;
       const existing = current.find(row => row.participants.length === 2 && row.participants.some(p => p.participant_role === sourceRole && p.draft_resource_id === id));
       retained.push(existing || { draft_relation_id: uuid(), relation_type_key: type, display_name: `${workload.display_name} → ${item.display_name}`, origin: "MANUAL", confirmation_status: "CONFIRMED", responsibility_group_id: "", attributes: {}, participants: [{ draft_resource_id: id, participant_role: sourceRole, display_order: 0 }, { draft_resource_id: item.draft_resource_id, participant_role: targetRole, display_order: 1 }] });
     }
@@ -63,5 +67,5 @@
       state.candidate_ref = candidates.find(row => row.locator_key === state.locator_key)?.candidate_ref || "";
     } finally { if (ticket === state.revision) state.discovering = false; }
   }
-  globalThis.KBotAIOpsHardware = { hostTypes, hardwareTypes, draft, create, changed, mapping, error, relationSpec, linked, setLinked, discover };
+  globalThis.KBotAIOpsHardware = { hostTypes, hardwareTypes, draft, create, changed, mapping, error, relationSpec, linked, workloads, setLinked, discover };
 })();

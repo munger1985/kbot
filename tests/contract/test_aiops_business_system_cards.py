@@ -93,7 +93,7 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
         self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
         self.assertIn(
-            "aiops-business-system-workspace.js?v=20261105_topology3",
+            "aiops-business-system-workspace.js?v=20261105_hardware2",
             WORKSPACE_PAGE,
         )
 

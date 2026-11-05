@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import aiohttp
 
-from aiops_agent.ports.diagnostic_source import InstanceDiscoveryCandidate, InstanceDiscoveryResult
+from aiops_agent.ports.diagnostic_source import HostDiscoveryCandidate, InstanceDiscoveryCandidate, InstanceDiscoveryResult
 from .base import DiagnosticSourceAdapterError
 from .oem_target_identity import normalize_target, target_error, target_text
 
@@ -24,6 +24,22 @@ IDENTITY_PROPERTIES = frozenset({
 
 
 class OEMInstanceDiscovery:
+    async def _host_candidate(self, target):
+        guid = target["targetId"]
+        detail, _ = await self._native_get("/targets/" + guid, max_bytes=65536)
+        detail = normalize_target(detail, expected_guid=guid)
+        if detail["targetType"] != "host" or detail["targetName"] != target["targetName"]:
+            target_error("SOURCE_TARGET_MISMATCH")
+        return HostDiscoveryCandidate(
+            source_locator_key=guid,
+            display_name=target_text(detail.get("displayName") or detail["targetName"]),
+            source_locator={
+                "resource_scope": "HOST", "target_id": guid,
+                "target_type": "host", "target_name": detail["targetName"],
+                "host_name": target_text(detail.get("hostName") or detail["targetName"]),
+            },
+        )
+
     async def _target_pages(self, suffix, *, limit=100):
         from .oem_native import _collection
 
@@ -120,10 +136,11 @@ class OEMInstanceDiscovery:
             async with asyncio.timeout(45):
                 requested = set(request.db_types)
                 targets = {}
-                if request.locator_keys:
-                    if len(request.locator_keys) > 100:
+                locator_keys = (*request.locator_keys, *request.host_locator_keys)
+                if locator_keys:
+                    if len(locator_keys) > 100:
                         target_error("SOURCE_QUERY_INVALID")
-                    for guid in request.locator_keys:
+                    for guid in locator_keys:
                         if not re.fullmatch(r"[0-9a-fA-F]{32}", guid):
                             target_error("SOURCE_TARGET_LOCATOR_INVALID")
                         payload, _ = await self._native_get("/targets/" + guid, max_bytes=65536)
@@ -137,19 +154,25 @@ class OEMInstanceDiscovery:
                             if guid in targets:
                                 target_error("SOURCE_PAGINATION_INVALID")
                             targets[guid] = target
-                candidates = []
+                candidates, host_candidates = [], []
                 for guid, target in sorted(targets.items()):
+                    if request.after_locator_key is not None and guid <= request.after_locator_key:
+                        continue
+                    if target["targetType"] == "host" and (request.include_hosts or request.host_locator_keys):
+                        if len(host_candidates) < request.limit:
+                            host_candidates.append(await self._host_candidate(target))
+                        continue
+                    if request.host_only:
+                        continue
                     db_type = DATABASE_TARGET_TYPES.get(target["targetType"])
                     if db_type is None or (requested and db_type not in requested):
                         continue
-                    if request.after_locator_key is not None and guid <= request.after_locator_key:
+                    if len(candidates) >= request.limit:
                         continue
                     candidate = await self._database_candidate(target)
                     if candidate is not None:
                         candidates.append(candidate)
-                    if len(candidates) >= request.limit:
-                        break
-                return InstanceDiscoveryResult(candidates=tuple(candidates))
+                return InstanceDiscoveryResult(candidates=tuple(candidates), host_candidates=tuple(host_candidates))
         except (aiohttp.ClientError, TimeoutError) as exc:
             raise DiagnosticSourceAdapterError(
                 "SOURCE_UNREACHABLE", "OEM 数据库发现超时或连接失败", retryable=True

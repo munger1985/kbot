@@ -38,8 +38,8 @@ assert.deepEqual(pages.map(page => page.resource_scope), ['HOST', 'HOST']);
 assert.equal(host.hardware.candidate_ref, 'fresh-host');
 assert.deepEqual(copy(hardware.mapping(host)), { source_id: 'prometheus', candidate_ref: 'fresh-host' });
 assert.equal(hardware.error(host), '');
-const db1 = { draft_resource_id: 'db1', display_name: '主库' };
-const db2 = { draft_resource_id: 'db2', display_name: '从库' };
+const db1 = { draft_resource_id: 'db1', resource_type_key: 'DATABASE', display_name: '主库' };
+const db2 = { draft_resource_id: 'db2', resource_type_key: 'DATABASE', display_name: '从库' };
 const resources = [db1, db2, host];
 let relations = hardware.setLinked(host, ['db1', 'db2'], resources, [], uuid);
 assert.equal(relations.length, 2);
@@ -49,6 +49,24 @@ relations = hardware.setLinked(host, ['db1'], resources, relations, uuid);
 assert.equal(relations.length, 1);
 assert.equal(relations[0].draft_relation_id, retainedId);
 assert.deepEqual(copy(hardware.linked(host, relations)), ['db1']);
+const container = hardware.create('CONTAINER', 'INFRASTRUCTURE', 'ops', uuid);
+container.display_name = 'Oracle 容器';
+const app = { draft_resource_id: 'app', resource_type_key: 'APPLICATION_SERVICE', display_name: '已有应用' };
+const all = [...resources, container, app];
+assert.deepEqual(copy(hardware.workloads(host, all).map(row => row.draft_resource_id)), ['db1', 'db2', container.draft_resource_id]);
+assert.ok(!hardware.workloads(container, all).some(row => row.draft_resource_id === container.draft_resource_id));
+const appRelation = { draft_relation_id: 'existing-app', relation_type_key: 'RUNS_ON', participants: [
+  { draft_resource_id: app.draft_resource_id, participant_role: 'WORKLOAD' },
+  { draft_resource_id: host.draft_resource_id, participant_role: 'HOST' },
+] };
+const nested = hardware.setLinked(host, ['db1', container.draft_resource_id], all, [...relations, appRelation], uuid);
+assert.equal(nested.length, 3);
+assert.ok(nested.includes(appRelation));
+assert.ok(hardware.linked(host, nested).includes(container.draft_resource_id));
+assert.deepEqual(copy(hardware.linked(host, hardware.setLinked(host, [container.draft_resource_id], all, nested, uuid))).sort(), ['app', container.draft_resource_id].sort());
+const containerDb = hardware.setLinked(container, ['db2'], all, nested, uuid);
+assert.deepEqual(copy(hardware.linked(container, containerDb)), ['db2']);
+assert.ok(containerDb.some(row => row.participants.some(p => p.draft_resource_id === host.draft_resource_id && p.participant_role === 'HOST')));
 const saved = { binding_id: 'binding', row_version: 7, source_id: 'prometheus', source_locator_key: 'host-01', status: 'ACTIVE' };
 host.hardware = hardware.draft([saved]);
 assert.equal(hardware.changed(host), false);

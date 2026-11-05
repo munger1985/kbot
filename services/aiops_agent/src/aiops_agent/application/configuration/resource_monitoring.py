@@ -8,13 +8,13 @@ from aiops_agent.application.errors import AIOpsApplicationError, resource_not_f
 from .common import add_configuration_event
 
 
-HOST_RESOURCE_TYPES = {"PHYSICAL_SERVER", "VIRTUAL_MACHINE"}
+HOST_RESOURCE_TYPES = {"PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"}
 
 
 async def apply_hardware_monitoring(*, service, uow, scope, resource, mapping, now):
     """候选签名、资源归属、Provider 重读和乐观锁在同一事务内校验。"""
     if resource.resource_type_key not in HOST_RESOURCE_TYPES:
-        raise validation_failed("当前 Prometheus 主机监控仅支持物理服务器和虚拟机")
+        raise validation_failed("主机监控仅支持物理服务器、虚拟机和 OEM 容器主机")
     if mapping.candidate_ref is None:
         raise validation_failed("主机监控必须从发现候选中选择")
     source = await uow.diagnostic_sources.get_scoped(
@@ -22,8 +22,10 @@ async def apply_hardware_monitoring(*, service, uow, scope, resource, mapping, n
     )
     if source is None or (hasattr(scope, "tenant_id") and source.tenant_id != scope.tenant_id):
         raise resource_not_found("Diagnostic Source")
-    if source.source_type != "PROMETHEUS":
-        raise validation_failed("本阶段独立主机监控仅支持 Prometheus")
+    if source.source_type not in {"PROMETHEUS", "OEM"}:
+        raise validation_failed("独立主机监控仅支持 Prometheus 和 OEM")
+    if resource.resource_type_key == "CONTAINER" and source.source_type != "OEM":
+        raise validation_failed("容器内主机仅支持独立 OEM 目标，不能借用 Node Exporter 宿主机身份")
     adapter = await service._instance_discovery_adapter(uow=uow, scope=scope, source=source)
     value = service._instance_candidate_refs.decode(
         mapping.candidate_ref, domain_id=scope.domain_id, source_id=mapping.source_id,
@@ -39,8 +41,15 @@ async def apply_hardware_monitoring(*, service, uow, scope, resource, mapping, n
         ))
     except DiagnosticSourceAdapterError as exc:
         raise AIOpsApplicationError(code="INSTANCE_DISCOVERY_FAILED", message="保存前重新验证主机失败", status_code=502, retryable=exc.retryable) from exc
-    if key not in {item.source_locator_key for item in result.host_candidates}:
+    candidate = next((item for item in result.host_candidates if item.source_locator_key == key), None)
+    if candidate is None:
         raise state_conflict("主机候选已变化或不存在，请重新发现")
+    locator = {"target_key": key, "resource_scope": "HOST"}
+    if source.source_type == "OEM":
+        locator = dict(candidate.source_locator)
+        if (locator.get("target_id") != key or locator.get("target_type") != "host"
+                or locator.get("resource_scope") != "HOST"):
+            raise state_conflict("OEM 主机身份未核验，请重新发现")
     existing = await uow.business_systems.list_resource_source_bindings(resource.resource_id, active_only=False)
     binding_id = getattr(mapping, "binding_id", None)
     binding = next((item for item in existing if item.resource_source_binding_id == binding_id), None)
@@ -59,7 +68,7 @@ async def apply_hardware_monitoring(*, service, uow, scope, resource, mapping, n
         binding = ResourceSourceBindingEntity(
             resource_source_binding_id=uuid7(), resource_id=resource.resource_id, target_id=None,
             diagnostic_source_id=mapping.source_id, role="PRIMARY", priority=100,
-            source_locator_key=key, source_locator_json={"target_key": key, "resource_scope": "HOST"},
+            source_locator_key=key, source_locator_json=locator,
             capability_scope_json={}, mapping_overrides_json={}, query_budget_json={},
             status="ACTIVE", health_status="UNKNOWN", row_version=1, health_version=1,
             created_by=scope.actor_id, created_at=now, updated_by=scope.actor_id, updated_at=now,
@@ -67,7 +76,7 @@ async def apply_hardware_monitoring(*, service, uow, scope, resource, mapping, n
         await uow.business_systems.add_resource_source_binding(binding)
     binding.diagnostic_source_id = mapping.source_id
     binding.source_locator_key = key
-    binding.source_locator_json = {"target_key": key, "resource_scope": "HOST"}
+    binding.source_locator_json = locator
     binding.health_status = "UNKNOWN"
     binding.updated_by, binding.updated_at = scope.actor_id, now
     await uow.flush()

@@ -81,9 +81,76 @@ def test_database_and_host_publish_as_distinct_resources_and_topology(lab):
     assert binding.source_locator == {"target_key": "node-01", "resource_scope": "HOST"}
     assert "host_target_key" not in db.resource.monitoring_bindings[0].source_locator
     assert detail.relations[0].relation_type_key == "RUNS_ON"
+    assert detail.architecture_labels == ("SINGLE_INSTANCE",)
     with Session(lab.engine) as session:
         rows = session.execute(select(ResourceSourceBindingEntity)).scalars().all()
         assert len(rows) == 2 and len({row.resource_id for row in rows}) == 2
+
+
+def configure_oem_host(lab):
+    configure_host(lab)
+    guid = "4" * 32
+    locator = {
+        "resource_scope": "HOST", "target_id": guid, "target_type": "host",
+        "target_name": "oracle19c.lab", "host_name": "oracle19c.lab",
+    }
+    with Session(lab.engine) as session:
+        source = session.get(DiagnosticSourceEntity, lab.source_id)
+        source.source_type = "OEM"
+        source.adapter_id = "oem"
+        source.endpoint = "https://oem.test/em"
+        session.commit()
+    lab.adapter.discover_instances.return_value = InstanceDiscoveryResult(
+        host_candidates=(HostDiscoveryCandidate(source_locator_key=guid, display_name="oracle19c.lab", source_locator=locator),),
+    )
+    reference = lab.service._instance_candidate_refs.encode(
+        **lab.owned, source_id=lab.source_id, actor_id=lab.scope.actor_id,
+        purpose="candidate", value={"candidate_kind": "HOST", "host_target_key": guid},
+    )
+    payload = lab.request.model_dump(mode="json")
+    payload["resources"][1]["monitoring"]["candidate_ref"] = reference
+    lab.request = BusinessSystemResourceGraphCommit.model_validate(payload)
+    return locator
+
+
+@pytest.mark.parametrize("resource_type", ["PHYSICAL_SERVER", "CONTAINER"])
+def test_oem_database_and_host_keep_distinct_guids_and_confirmed_topology(lab, resource_type):
+    locator = configure_oem_host(lab)
+    payload = lab.request.model_dump(mode="json")
+    payload["resources"][1]["resource_type_key"] = resource_type
+    lab.request = BusinessSystemResourceGraphCommit.model_validate(payload)
+    detail = asyncio.run(publish(lab))
+    db, host = detail.resources
+    binding = host.resource.monitoring_bindings[0]
+    assert binding.source_locator == locator
+    assert binding.source_locator_key == locator["target_id"]
+    assert binding.target_id is None and host.resource.database is None
+    assert binding.resource_id != db.resource.resource_id
+    assert detail.relations[0].relation_type_key == "RUNS_ON"
+    assert detail.architecture_labels == ("SINGLE_INSTANCE",)
+
+
+def test_container_cannot_reuse_prometheus_node_exporter_identity(lab):
+    configure_host(lab)
+    payload = lab.request.model_dump(mode="json")
+    payload["resources"][1]["resource_type_key"] = "CONTAINER"
+    lab.request = BusinessSystemResourceGraphCommit.model_validate(payload)
+    with pytest.raises(AIOpsApplicationError, match="不能借用 Node Exporter"):
+        asyncio.run(publish(lab))
+    with Session(lab.engine) as session:
+        assert not session.execute(select(ResourceSourceBindingEntity)).scalars().all()
+
+
+def test_oem_hardware_mapping_rejects_non_host_identity_even_with_host_reference(lab):
+    configure_oem_host(lab)
+    candidate = lab.adapter.discover_instances.return_value.host_candidates[0]
+    lab.adapter.discover_instances.return_value = InstanceDiscoveryResult(host_candidates=(
+        candidate.model_copy(update={"source_locator": {**candidate.source_locator, "target_type": "oracle_database"}}),
+    ))
+    with pytest.raises(AIOpsApplicationError, match="OEM 主机身份"):
+        asyncio.run(publish(lab))
+    with Session(lab.engine) as session:
+        assert not session.execute(select(ResourceSourceBindingEntity)).scalars().all()
 
 
 def test_host_discovery_failure_rolls_back_whole_publication(lab):
@@ -163,8 +230,15 @@ def test_hardware_query_uses_own_binding_and_respects_system_offline(lab):
     asyncio.run(run())
 
 
-def test_hardware_binding_edit_requires_offline_system_and_current_version(lab):
-    configure_host(lab)
+@pytest.mark.parametrize("container", [False, True])
+def test_hardware_binding_edit_requires_offline_system_and_current_version(lab, container):
+    if container:
+        configure_oem_host(lab)
+        payload = lab.request.model_dump(mode="json")
+        payload["resources"][1]["resource_type_key"] = "CONTAINER"
+        lab.request = BusinessSystemResourceGraphCommit.model_validate(payload)
+    else:
+        configure_host(lab)
 
     async def run():
         detail = await publish(lab)
