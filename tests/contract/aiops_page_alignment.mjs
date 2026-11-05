@@ -154,7 +154,7 @@ function installFixture(data) {
     }
     if (/\/proposals\/proposal-[12]\/effect$/.test(suffix)) return {frozen_plan:globalThis.fixtureEffectFrozen?{business_effect:{signals:[{key:'primary',role:'PRIMARY'}]}}:{},result:globalThis.fixtureEffectFrozen?{measured_effect:'IMPROVED',guardrails_passed:true,attribution_strength:'LIMITED',measurements:{primary:{baseline:100,after:80,unit:'ms',passed:true}},gap_codes:['CONTROL_NOT_AVAILABLE']}:{},evidence_candidates:[{artifact_id:'workload-1',target_id:'target-1',schema_version:'AIOPS_WORKLOAD_REPORT.v2',period_start:'2026-10-30T02:00:00Z',period_end:'2026-10-30T03:00:00Z',status:'READY',metrics:[{metric:'latency',label:'数据库响应耗时',statement_identity:{}}]}]};
     if (/\/proposals\/proposal-[12]$/.test(suffix)) return {target_id:'target-1',row_version:3};
-    if (suffix.endsWith("/business-systems")) return { items: rows(data.system) };
+    if (suffix.endsWith("/business-systems")) return { items: rows(globalThis.fixtureBusinessSystem || data.system) };
     if (suffix.endsWith('/business-systems/system-1') && location.pathname.includes('business-system-workspace')) {
       const mode=new URLSearchParams(location.search).get('interaction'),rac=mode==='rac';
       return {...data.system,status:mode?'DISABLED':'ENABLED',description:'生产核心系统的数据库运维。',resources:(rac?[1,2,3]:[1,2]).map(index=>({system_resource_id:`system-resource-${index}`,architecture_layer_key:'DATA',status:'ACTIVE',display_order:index-1,row_version:1,resource:{resource_id:`resource-${index}`,row_version:1,display_name:rac&&index<3?`MES 主库 · 节点 ${index}`:index===1?'MES 数据库':'MES 备库',owner_group_id:'group-1',resource_type_key:'DATABASE',database:{target_id:`target-${index}`,db_type:'ORACLE',version_code:'19c',environment:'PROD',deployment_type:rac&&index<3?'RAC':'SINGLE_INSTANCE',rac_node_number:rac&&index<3?index:null,db_role:index===(rac?3:2)?'STANDBY':'PRIMARY',connectivity_status:'CONNECTED',monitoring_ready:true,oracle_container_scope:'NON_CDB',endpoint:{host:`db${index}.internal`,port:1521,service:'MES',tls_enabled:false},diagnostic_username:'readonly_user'}}})),relations:rac?[{relation_id:'rac-1',row_version:1,relation_type_key:'ORACLE_RAC',display_name:'MES 主库',origin:'DISCOVERY',attributes:{auto_inferred:true,inference_rule:'RAC_DEPLOYMENT'},participants:[1,2].map(index=>({system_resource_id:`system-resource-${index}`,participant_role:'MEMBER',display_order:index-1}))}]:[]};
@@ -417,6 +417,36 @@ try {
     await reference.waitForFunction(() => globalThis.referenceMounted);
     await kbot.evaluate(() => KBotAIOpsShell.ready);
     await kbot.addStyleTag({ content: "*,*::before,*::after{transition:none!important;animation:none!important}" });
+    if (name === 'business-systems' && !empty) {
+      const types = [
+        { resource_type_key: 'DATABASE', display_name: '数据库', count: 2 },
+        { resource_type_key: 'VIRTUAL_MACHINE', display_name: '虚拟机', count: 3 },
+        { resource_type_key: 'APPLICATION', display_name: '应用服务', count: 4 },
+        { resource_type_key: 'NETWORK', display_name: '网络设备', count: 1 },
+      ];
+      for (const count of [0, 10, 1234]) {
+        for (const page of [kbot, reference]) {
+          await page.evaluate(system => { globalThis.fixtureBusinessSystem = system; }, {
+            ...fixture.system, resource_count: count, resource_type_summary: count ? types : [],
+          });
+          await page.getByRole('button', { name: '刷新目录', exact: true }).click();
+          const value = page.locator('.business-system-card dl > div')
+            .filter({ has: page.locator('dt', { hasText: /^资源数量$/ }) }).locator('dd');
+          await value.getByText(`${count} 个资源`, { exact: true }).waitFor();
+          assert.equal(await page.locator('.business-system-card dt', { hasText: /^资源构成$/ }).count(), 0);
+          for (const width of [1440, 420, 320]) {
+            await page.setViewportSize({ width, height: 1000 });
+            assert.equal(await value.evaluate(node => node.scrollWidth <= node.clientWidth), true,
+              `资源总数不能被截断：${count} / ${width}`);
+          }
+        }
+      }
+      for (const page of [kbot, reference]) {
+        await page.evaluate(() => { delete globalThis.fixtureBusinessSystem; });
+        await page.getByRole('button', { name: '刷新目录', exact: true }).click();
+        await page.getByText('2 个资源', { exact: true }).waitFor();
+      }
+    }
     if(name==='dashboard') {
       await Promise.all([kbot,reference].map(page=>page.locator('.operational-summary-card').first().waitFor()));
       await kbot.waitForFunction(()=>!document.querySelector('#work-item-body').textContent.includes('正在读取'));

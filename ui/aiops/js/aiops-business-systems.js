@@ -36,9 +36,7 @@
 
   function resourceScale(item) {
     const count = Number(item.resource_count || 0);
-    if (!count) return "尚未添加资源";
-    const details = (item.resource_type_summary || []).slice(0, 2).map((row) => `${Number(row.count)} 个${row.display_name}`);
-    return details.length ? details.join(" · ") : `${count} 个资源`;
+    return `${count} 个资源`;
   }
 
   function protectionLabel(value) {
@@ -82,7 +80,7 @@
       <div class="architecture-tags">${labels}</div>
       <dl>
         <div><dt>环境 / 重要级</dt><dd class="business-system-context"><span>${shell.escape(environmentLabel(item.environment))}</span><strong class="business-importance">${shell.escape(importanceLabel(importanceLevel))}</strong></dd></div>
-        <div><dt>资源构成</dt><dd>${shell.escape(resourceScale(item))}</dd></div>
+        <div><dt>资源数量</dt><dd>${shell.escape(resourceScale(item))}</dd></div>
         <div><dt>业务责任组</dt><dd>${shell.escape(responsibilityGroupName(item.responsibility_group_id, groupsById))}</dd></div>
         <div><dt>${item.draft_id ? "发布状态" : "数据保护"}</dt><dd>${item.draft_id ? "尚未写入生产资源表" : shell.escape(protectionLabel(item.protection_status))}</dd></div>
       </dl>

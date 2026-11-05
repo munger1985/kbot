@@ -30,6 +30,17 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn('"数据保护"', SCRIPT)
         self.assertNotIn("<dt>恢复目标</dt>", SCRIPT)
 
+    def test_cards_show_total_resource_count_instead_of_a_truncated_type_list(self):
+        self.assertIn("<dt>资源数量</dt>", SCRIPT)
+        self.assertNotIn("<dt>资源构成</dt>", SCRIPT)
+        scale = SCRIPT.split("function resourceScale(item)", 1)[1].split(
+            "function protectionLabel", 1
+        )[0]
+        self.assertIn("item.resource_count", scale)
+        self.assertIn("return `${count} 个资源`", scale)
+        self.assertNotIn("resource_type_summary", scale)
+        self.assertNotIn("尚未添加资源", scale)
+
     def test_cards_resolve_responsibility_groups_and_reuse_global_tokens(self):
         self.assertIn('request("/responsibility-groups")', SCRIPT)
         self.assertIn("responsibilityGroupName", SCRIPT)
@@ -77,12 +88,12 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
         self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
         self.assertIn(
-            "aiops-business-system-workspace.js?v=20261105_confirm1",
+            "aiops-business-system-workspace.js?v=20261105_topology3",
             WORKSPACE_PAGE,
         )
 
     def test_running_workspace_is_read_only_but_all_tabs_remain_available(self):
-        self.assertIn("aiops-business-systems.js?v=20261105_confirm1", PAGE)
+        self.assertIn("aiops-business-systems.js?v=20261105_resourcecount1", PAGE)
         self.assertIn(
             'workspaceReadOnly = !creating && value.status === "ENABLED"',
             WORKSPACE_SCRIPT,
