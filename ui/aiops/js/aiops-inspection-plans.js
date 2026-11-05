@@ -11,7 +11,7 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
   const drawer = document.getElementById("inspection-plan-dialog"), form = document.getElementById("inspection-plan-form");
   const timePicker = mountTimePicker(form.querySelector(".time-picker"));
   const systemFilter = new URLSearchParams(location.search).get("businessSystemId") || "";
-  const state = {systems:[],scopeRows:[],scopeLoading:false,scopeError:"",scopeSequence:0,plans:[],agents:[],templates:[],fires:[],editing:null,busy:false,loading:false,sequence:0,editSequence:0,confirm:null};
+  const state = {systems:[],scopeRows:[],scopeLoading:false,scopeError:"",scopeSequence:0,plans:[],agents:[],templates:[],fires:[],editing:null,busy:false,loading:false,sequence:0,editSequence:0};
   const weekdays = [{value:"1",label:"一"},{value:"2",label:"二"},{value:"3",label:"三"},{value:"4",label:"四"},{value:"5",label:"五"},{value:"6",label:"六"},{value:"0",label:"日"}];
   const activeAgents = () => state.agents.filter(item => item.status === "ACTIVE");
   const eligibleAgents = () => activeAgents().filter(agent => rows(agent.allowed_business_system_ids).includes(form.elements.business_system_id.value) && rows(agent.capabilities).includes("ACTIVE_DIAGNOSIS"));
@@ -149,16 +149,11 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     } catch (error) {shell.toast(error.message || (current ? "无法更新巡检计划" : "无法创建巡检计划"));}
     finally {state.busy = false;updateForm();}
   }
-  function settleConfirmation(value) {const resolve = state.confirm;state.confirm = null;document.getElementById("inspection-plan-confirm").close();resolve?.(value);}
   async function command(plan,action) {
-    if (state.busy || state.confirm) return;
+    if (state.busy) return;
     const copy = ({activate:{title:"启用巡检计划？",message:"系统将重新计算下一次执行时间并恢复调度。",label:"启用",tone:"warning"},pause:{title:"暂停巡检计划？",message:"暂停后不会创建新的巡检批次，既有运行记录和报告不受影响。",label:"暂停",tone:"warning"},disable:{title:"停用巡检计划？",message:"停用后计划不会继续调度，既有运行记录和报告不受影响。",label:"停用",tone:"danger"},delete:{title:"删除巡检计划？",message:`将永久删除“${plan.display_name}”。只有已停用且从未产生执行记录的计划可以删除。`,label:"删除计划",tone:"danger"}})[action];
     if (!copy) return;
-    const dialog = document.getElementById("inspection-plan-confirm");dialog.className = `confirm-dialog confirm-dialog--${copy.tone}`;
-    document.getElementById("inspection-plan-confirm-title").textContent = copy.title;document.getElementById("inspection-plan-confirm-message").textContent = copy.message;
-    const button = dialog.querySelector("[data-confirm-plan]");button.className = copy.tone === "danger" ? "danger-button" : "primary-button";button.textContent = copy.label;
-    dialog.showModal();dialog.querySelector("[data-cancel-plan-confirm]").focus();
-    if (!await new Promise(resolve => {state.confirm = resolve;})) return;
+    if (!await shell.confirmAction({ title: copy.title, message: copy.message, confirmLabel: copy.label, tone: copy.tone })) return;
     state.busy = true;render();
     try {
       await request(`/inspection-plans/${encodeURIComponent(plan.plan_id)}${action === "delete" ? "" : `/${action}`}`,{method:action === "delete" ? "DELETE" : "POST",headers:{"Idempotency-Key":KBotAIOpsAuth.uuid(),"If-Match":`"rv-${plan.row_version}"`}});
@@ -187,7 +182,7 @@ import { mountTimePicker, normalizeTime } from "../../shared/time-picker.js?v=20
     };
     document.addEventListener("pointerdown",event => {if (!event.target.closest(".management-catalog-overflow")) closeMenus();});
     document.addEventListener("keydown",event => {if (event.key === "Escape") closeMenus();});
-    const confirm = document.getElementById("inspection-plan-confirm");confirm.querySelector("[data-cancel-plan-confirm]").onclick = () => settleConfirmation(false);confirm.querySelector("[data-confirm-plan]").onclick = () => settleConfirmation(true);confirm.addEventListener("cancel",event => {event.preventDefault();settleConfirmation(false);});
+
     await load();const planId = new URLSearchParams(location.search).get("id");if (planId) await openEdit(planId);else if (new URLSearchParams(location.search).get("create") === "1") openCreate();
   }).catch(error => shell.toast(error.message));
 })();

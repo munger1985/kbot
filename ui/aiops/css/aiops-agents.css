@@ -38,7 +38,5 @@ body[data-page="agents"] .agent-selection-summary>.agent-empty-selection { width
 @media(max-width:760px) { .data-toolbar{align-items:stretch}.data-toolbar .search-field{min-width:0}.agent-catalog-entries .resource-list-empty{grid-column:1/-1}.form-grid-two{grid-template-columns:1fr} }
 @media(prefers-reduced-motion:reduce) { .agent-editor-panel,.agent-picker { animation:none; } }
 
-#agent-confirm-dialog { width:min(468px,calc(100vw - 48px));max-width:none;padding:0; }
-#agent-confirm-dialog::backdrop { background:rgba(18,31,25,.48);backdrop-filter:blur(4px); }
 
 .agent-trigger-fields{margin-top:16px}.agent-review-issues{padding:16px;border:1px solid var(--line);border-radius:8px}.agent-review-issues h4{margin:0 0 8px}.agent-review-issues li{overflow-wrap:anywhere}

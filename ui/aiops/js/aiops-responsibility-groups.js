@@ -7,7 +7,6 @@
   let editing = null;
   let selected = null;
   let candidates = [];
-  let confirmResolver = null;
   let saving = false;
 
   const values = (value) => Array.isArray(value) ? value : [];
@@ -163,22 +162,8 @@
     }
   }
 
-  function askConfirmation({ title, message, confirmLabel }) {
-    if (confirmResolver) settleConfirmation(false);
-    document.getElementById("group-confirm-title").textContent = title;
-    document.getElementById("group-confirm-message").textContent = message;
-    document.getElementById("group-confirm-submit").textContent = confirmLabel;
-    document.getElementById("group-confirm-dialog").showModal();
-    document.querySelector('[data-cancel-group-confirm]').focus();
-    return new Promise((resolve) => { confirmResolver = resolve; });
-  }
-
-  function settleConfirmation(confirmed) {
-    const resolve = confirmResolver;
-    confirmResolver = null;
-    const dialog = document.getElementById("group-confirm-dialog");
-    if (dialog.open) dialog.close();
-    resolve?.(confirmed);
+  function askConfirmation(options) {
+    return shell.confirmAction({ ...options, tone: "danger" });
   }
 
   async function removeMember(userId) {
@@ -238,15 +223,6 @@
     document.getElementById("group-member-form").addEventListener("submit", (event) => {
       event.preventDefault();
       void addMember(event.currentTarget);
-    });
-    document.getElementById("group-confirm-form").addEventListener("submit", (event) => {
-      event.preventDefault();
-      settleConfirmation(true);
-    });
-    document.querySelector("[data-cancel-group-confirm]").addEventListener("click", () => settleConfirmation(false));
-    document.getElementById("group-confirm-dialog").addEventListener("cancel", (event) => {
-      event.preventDefault();
-      settleConfirmation(false);
     });
     void load();
   });

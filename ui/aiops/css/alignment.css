@@ -15,10 +15,6 @@ body.aiops-static-page dialog:not([open]) { display: none !important; }
 /* Portal 的居中模态框用 HTML dialog 保留键盘焦点与顶层模态语义。 */
 body.aiops-static-page dialog.responsibility-dialog { position: fixed; inset: 0; max-width: calc(100vw - 48px); margin: auto; padding: 0; }
 body.aiops-static-page dialog.responsibility-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
-body.aiops-static-page #group-confirm-dialog { width: min(468px,calc(100vw - 48px)); max-width: none; padding: 0; }
-body.aiops-static-page #group-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
-body.aiops-static-page #recovery-confirm-dialog { width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
-body.aiops-static-page #recovery-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
 .business-app-shell .catalog-entries { display: contents; }
 .business-app-shell .ops-current-domain { cursor: default; }
 .business-app-shell .ops-current-domain:hover { border-color: color-mix(in srgb,var(--accent) 30%,var(--line)); background: var(--surface-subtle); box-shadow: none; }
@@ -111,10 +107,6 @@ body.aiops-static-page :is(#diagnostic-source-dialog,#source-webhook-drawer) { w
 body.aiops-static-page :is(#diagnostic-source-dialog,#source-webhook-drawer)::backdrop { background: rgb(20 35 27 / 26%); }
 body.aiops-static-page #source-webhook-drawer[open] { display: block; }
 body.aiops-static-page #diagnostic-source-dialog[open] { display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; }
-body.aiops-static-page #source-confirm-dialog { position: fixed; inset: 0; width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
-body.aiops-static-page #source-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
-body.aiops-static-page #workspace-leave-dialog { position: fixed; inset: 0; width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
-body.aiops-static-page #workspace-leave-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
 body.aiops-static-page #business-resource-drawer { width: min(760px,100vw); box-shadow: -18px 0 42px rgb(22 43 31 / 16%); font: var(--type-body)/1.6 var(--font-ui); }
 body.aiops-static-page #business-resource-drawer::backdrop { background: rgb(20 35 27 / 26%); }
 body.aiops-static-page dialog.reference-drawer > form { display: flex; height: 100%; min-height: 0; flex-direction: column; }
@@ -166,8 +158,6 @@ body.aiops-static-page #inspection-plan-confirm::backdrop { background: rgb(18 3
 body.aiops-static-page #run-drawer { width: min(760px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; box-shadow: -18px 0 42px rgba(22,43,31,.16); }
 body.aiops-static-page #run-drawer::backdrop { background: rgba(20,35,27,.26); }
 body.aiops-static-page #run-drawer[open] { display: block; }
-body.aiops-static-page #run-confirm-dialog { position: fixed; inset: 0; width: min(468px,calc(100vw - 48px)); max-width: none; margin: auto; padding: 0; }
-body.aiops-static-page #run-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
 body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer) { width: min(700px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; box-shadow: -18px 0 42px rgba(22,43,31,.16); }
 body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer)::backdrop { background: rgba(20,35,27,.26); }
 body.aiops-static-page :is(#report-generate-drawer,#report-import-drawer)[open] { display: block; }

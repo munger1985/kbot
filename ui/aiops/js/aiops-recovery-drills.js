@@ -12,7 +12,6 @@
   };
   const form = document.getElementById("recovery-drill-form");
   const select = document.getElementById("recovery-target-select");
-  const confirmDialog = document.getElementById("recovery-confirm-dialog");
   const rows = value => Array.isArray(value) ? value : [];
   const seconds = value => value == null ? "—" : `${value} 秒`;
   const assuranceLabels = {BACKUP_METADATA:"备份记录核对",RESTORE_VALIDATE:"介质恢复校验",DATABASE_OPEN:"数据库启动验证",APPLICATION_VALIDATED:"业务可用性验证"};
@@ -75,18 +74,21 @@
     } catch (error) {shell.toast(error.message || "无法提交恢复演练记录");}
     finally {state.submitting = false;controls();}
   }
-  function openReview(button) {
+  async function openReview(button) {
     if (state.reviewingId || state.pendingReview) return;
     const item = state.drills.find(item => item.drill_id === button.dataset.reviewDrill);if (!item) return;
     const decision = button.dataset.decision;state.pendingReview = {item,decision};
-    document.getElementById("recovery-confirm-title").textContent = decision === "VERIFY" ? "确认审核通过？" : "确认驳回？";
-    document.getElementById("recovery-confirm-message").textContent = decision === "VERIFY" ? "满足当前恢复策略的记录会关闭本周期工单并生成下一周期工单。" : "来源工单会退回处理中，由原处理人补充或重新演练。";
-    confirmDialog.querySelector("[data-confirm-review]").textContent = decision === "VERIFY" ? "审核通过" : "驳回";
-    confirmDialog.showModal();confirmDialog.querySelector("[data-cancel-review]").focus();
+    const approved = await shell.confirmAction({
+      title: decision === "VERIFY" ? "确认审核通过？" : "确认驳回？",
+      message: decision === "VERIFY" ? "满足当前恢复策略的记录会关闭本周期工单并生成下一周期工单。" : "来源工单会退回处理中，由原处理人补充或重新演练。",
+      confirmLabel: decision === "VERIFY" ? "审核通过" : "驳回", tone: decision === "VERIFY" ? "warning" : "danger",
+    });
+    if (approved) await reviewDrill();
+    else state.pendingReview = null;
   }
   async function reviewDrill() {
     const pending = state.pendingReview;if (!pending || state.reviewingId) return;
-    const {item,decision} = pending;state.pendingReview = null;state.reviewingId = item.drill_id;confirmDialog.close();controls();
+    const {item,decision} = pending;state.pendingReview = null;state.reviewingId = item.drill_id;controls();
     try {
       await request(`/managed-resources/${encodeURIComponent(state.resourceId)}/recovery-drills/${encodeURIComponent(item.drill_id)}:review`,{method:"POST",headers:{"If-Match":`"rv-${item.row_version}"`,"Idempotency-Key":KBotAIOpsAuth.uuid()},body:JSON.stringify({decision,review_note:null})});
       shell.toast(decision === "VERIFY" ? "演练记录已审核" : "演练记录已驳回");await loadWorkspace();
@@ -111,8 +113,6 @@
     select.onchange = () => {if (state.submitting || state.reviewingId) return;state.resourceId = select.value;void loadWorkspace();};
     document.getElementById("refresh-recovery").onclick = loadWorkspace;
     document.getElementById("recovery-drill-history").onclick = event => {const button = event.target.closest("[data-review-drill]");if (button) openReview(button);};
-    confirmDialog.onclick = event => {if (event.target.closest("[data-cancel-review]")) {state.pendingReview = null;confirmDialog.close();}else if (event.target.closest("[data-confirm-review]")) void reviewDrill();};
-    confirmDialog.addEventListener("close",() => {state.pendingReview = null;});
     return initialize();
   }).catch(error => shell.toast(error.message));
 })();

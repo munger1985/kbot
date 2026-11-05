@@ -4,7 +4,7 @@
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
   const request = (path, options) => KBotAIOpsAuth.request(`${api}${path}`, options);
-  const state = { items: [], groupsById: new Map(), status: "", search: "", busyId: "", offlineItem: null };
+  const state = { items: [], groupsById: new Map(), status: "", search: "", busyId: "" };
   const environmentLabels = { PROD: "生产", STG: "预发布", DEV: "开发" };
   const importanceLabels = { 1: "低", 2: "一般", 3: "重要", 4: "关键", 5: "核心" };
   const architectureLabels = {
@@ -137,15 +137,7 @@
   }
 
   function confirmAction(title, message, confirmLabel, danger = false) {
-    const dialog = document.getElementById("business-system-action-dialog");
-    document.getElementById("business-system-action-title").textContent = title;
-    document.getElementById("business-system-action-message").textContent = message;
-    const confirm = document.getElementById("business-system-action-confirm");
-    confirm.textContent = confirmLabel;
-    confirm.className = danger ? "danger" : "primary";
-    dialog.returnValue = "";
-    dialog.showModal();
-    return new Promise((resolve) => dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true }));
+    return shell.confirmAction({ title, message, confirmLabel, tone: danger ? "danger" : "warning" });
   }
 
   async function command(item, action, reason = null) {
@@ -157,20 +149,20 @@
         body: JSON.stringify(reason ? { reason } : {}),
       });
       shell.toast(action === "enable" ? (item.status === "DRAFT" ? "业务系统已上线" : "业务系统已重新上线") : "业务系统已下线");
-      state.offlineItem = null;
-      document.getElementById("business-system-offline-dialog").close();
       await load();
     } catch (error) { shell.toast(error.message); }
     finally { state.busyId = ""; }
   }
 
   async function enable(item) {
+    if (!item || state.busyId) return;
     const first = item.status === "DRAFT";
     if (!await confirmAction(first ? "上线业务系统？" : "重新上线业务系统？", `确认${first ? "上线" : "重新上线"}“${item.display_name}”？系统会先校验资源与拓扑配置。`, first ? "确认上线" : "重新上线")) return;
     await command(item, "enable");
   }
 
   async function removeDraft(item) {
+    if (!item || state.busyId) return;
     if (!await confirmAction("删除草稿业务系统？", `“${item.display_name}”将从业务系统目录中移除。已接入的资源会保留，不会删除资源、拓扑或历史数据。`, "删除草稿", true)) return;
     state.busyId = item.business_system_id;
     try {
@@ -182,6 +174,7 @@
   }
 
   async function removeUnpublishedDraft(item) {
+    if (!item || state.busyId) return;
     if (!await confirmAction("删除未发布草稿？", `“${item.display_name}”及其中尚未发布的资源配置将被删除，不会影响任何已上线资源。`, "删除草稿", true)) return;
     state.busyId = item.draft_id;
     try {
@@ -190,6 +183,16 @@
       await load();
     } catch (error) { shell.toast(error.message); }
     finally { state.busyId = ""; }
+  }
+
+  async function offline(item) {
+    if (!item || state.busyId) return;
+    const result = await shell.confirmActionWithReason({
+      title: "下线业务系统？", tone: "danger", confirmLabel: "确认下线",
+      message: `确认下线“${item.display_name}”？下线后不再作为运行中的业务系统展示；资源、拓扑与历史数据保持不变。`,
+      reason: { label: "下线原因", maxLength: 1000, placeholder: "请说明本次下线的业务背景或变更依据" },
+    });
+    if (result.confirmed) await command(item, "disable", result.reason);
   }
 
   document.getElementById("system-status-filter").onclick = (event) => {
@@ -206,23 +209,8 @@
     if (enableButton) enable(itemById(enableButton.dataset.enableSystem));
     if (deleteButton) removeDraft(itemById(deleteButton.dataset.deleteSystem));
     if (deleteDraftButton) removeUnpublishedDraft(state.items.find((item) => item.draft_id === deleteDraftButton.dataset.deleteDraft));
-    if (offlineButton) {
-      state.offlineItem = itemById(offlineButton.dataset.offlineSystem);
-      document.getElementById("business-system-offline-title").textContent = `下线 ${state.offlineItem.display_name}`;
-      const form = document.getElementById("business-system-offline-form");
-      form.reset();
-      document.getElementById("business-system-offline-dialog").showModal();
-    }
+    if (offlineButton) void offline(itemById(offlineButton.dataset.offlineSystem));
   };
-  document.getElementById("business-system-offline-form").onsubmit = async (event) => {
-    event.preventDefault();
-    const reason = String(new FormData(event.currentTarget).get("reason") || "").trim();
-    if (!reason) { shell.toast("请填写下线原因"); return; }
-    if (state.offlineItem) await command(state.offlineItem, "disable", reason);
-  };
-  document.querySelectorAll("[data-close-offline]").forEach((button) => button.onclick = () => {
-    if (!state.busyId) document.getElementById("business-system-offline-dialog").close();
-  });
 
   document.getElementById("refresh-systems").onclick = load;
   document.getElementById("system-search").oninput = (event) => { state.search = event.target.value; render(); };

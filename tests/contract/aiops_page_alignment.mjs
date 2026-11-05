@@ -878,7 +878,7 @@ try {
           await page.evaluate(()=>{fixtureHoldWrites=true;});await page.getByRole('button',{name:'创建监控源',exact:true}).click();await page.waitForFunction(()=>Boolean(globalThis.fixtureReleaseWrite));
           const request=await page.evaluate(()=>fixtureRequests.filter(row=>row.method==='POST').at(-1)),payload=JSON.parse(request.body);
           assert.ok(request.path.endsWith('/diagnostic-sources'));assert.ok(request.headers['Idempotency-Key']);assert.equal(payload.source_type,type);assert.equal(payload.endpoint,'https://monitor.example.com');assert.equal(payload.display_name,'新增监控源测试');
-          assert.deepEqual(payload.credentials,type==='OEM'?{username:'fixture',password:'not-a-real-secret'}:{token:'not-a-real-token'});assert.deepEqual(payload.config,type==='OEM'?{standard_metric_mappings:{}}:type==='LOKI'?{tenant_id:'tenant-test'}:{});
+          assert.deepEqual(payload.credentials,type==='OEM'?{username:'fixture',password:'not-a-real-secret'}:{token:'not-a-real-token'});assert.deepEqual(payload.config,type==='LOKI'?{tenant_id:'tenant-test'}:{});
           assert.ok(!payload.webhook_credentials,'创建和 Webhook 凭据生成必须独立');assert.equal(await page.getByRole('button',{name:'正在提交…',exact:true}).isDisabled(),true);
           await page.evaluate(()=>{fixtureHoldWrites=false;fixtureReleaseWrite();});await page.getByRole('button',{name:'创建监控源',exact:true}).waitFor();assert.equal(await inputs.nth(0).inputValue(),'新增监控源测试');
           await page.locator('.aiops-target-detail-drawer .admin-drawer-header button').click();

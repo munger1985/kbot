@@ -126,7 +126,7 @@
       return;
     }
     if (action === "delete") {
-      const confirmed = globalThis.confirm(`删除会将 Domain 停用，不会物理删除。确认停用「${row.name}」？`);
+      const confirmed = await KBotKnowledgeShell.confirmAction({ title: "停用 Domain？", message: `删除会将 Domain 停用，不会物理删除。确认停用「${row.name}」？`, confirmLabel: "确认停用", tone: "danger" });
       if (!confirmed) return;
       await KBotKnowledgeApi.json(
         KBotKnowledgeApi.withQuery(`/domains/${row.domain_id}`, {

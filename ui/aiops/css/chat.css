@@ -176,5 +176,3 @@ body[data-page="chat"] #starter-dialog .ops-starter-card { border-color: var(--l
 body[data-page="chat"] #starter-dialog .ops-starter-card:hover:not(:disabled) { border-color: var(--line-strong); box-shadow: var(--shadow-soft); }
 body[data-page="chat"] #starter-dialog .ops-starter-card span { margin: 0; }
 body[data-page="chat"] [data-starter-target-options] { display: contents; }
-body[data-page="chat"] #conversation-confirm-dialog { width: min(468px, calc(100vw - 48px)); max-width: none; padding: 0; }
-body[data-page="chat"] #conversation-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }

@@ -77,12 +77,12 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
         self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
         self.assertIn(
-            "aiops-business-system-workspace.js?v=20261105_2",
+            "aiops-business-system-workspace.js?v=20261105_confirm1",
             WORKSPACE_PAGE,
         )
 
     def test_running_workspace_is_read_only_but_all_tabs_remain_available(self):
-        self.assertIn("aiops-business-systems.js?v=20261030_1", PAGE)
+        self.assertIn("aiops-business-systems.js?v=20261105_confirm1", PAGE)
         self.assertIn(
             'workspaceReadOnly = !creating && value.status === "ENABLED"',
             WORKSPACE_SCRIPT,

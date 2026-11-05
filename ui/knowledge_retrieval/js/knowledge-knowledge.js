@@ -180,7 +180,7 @@
   }
 
   async function deleteConversation(row) {
-    if (!globalThis.confirm(`确认永久删除会话“${row.title || "未命名会话"}”吗？\n\n会话内容删除后无法恢复；正在执行的会话不能删除。`)) return;
+    if (!await KBotKnowledgeShell.confirmAction({ title: "永久删除会话？", message: `确认永久删除会话“${row.title || "未命名会话"}”吗？\n\n会话内容删除后无法恢复；正在执行的会话不能删除。`, confirmLabel: "永久删除", tone: "danger" })) return;
     await KBotKnowledgeApi.request(`/conversations/${row.conversation_id}?expected_row_version=${row.row_version}`, { method: "DELETE" });
     if (String(state.active?.conversation_id) === String(row.conversation_id)) state.active = null;
     toast("会话已删除", "info");

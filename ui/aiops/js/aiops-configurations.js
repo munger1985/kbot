@@ -6,7 +6,7 @@
   const api = "/api/v1/apps/aiops/diagnostic-sources", shell = globalThis.KBotAIOpsShell, auth = globalThis.KBotAIOpsAuth;
   const esc = value => shell.escape(value ?? ""), rows = value => Array.isArray(value) ? value : value?.items || [];
   const drawer = document.getElementById("diagnostic-source-dialog"), form = document.getElementById("diagnostic-source-form"), webhookDrawer = document.getElementById("source-webhook-drawer");
-  const state = {items:[],editing:null,loading:false,busy:false,search:"",sequence:0,opening:0,openingWebhook:"",poll:null,attempts:0,confirm:null,webhook:null,reveal:null,generating:false,webhookError:"",rotationKey:"",copied:{},copyTimers:[],manage:false};
+  const state = {items:[],editing:null,loading:false,busy:false,search:"",sequence:0,opening:0,openingWebhook:"",poll:null,attempts:0,webhook:null,reveal:null,generating:false,webhookError:"",rotationKey:"",copied:{},copyTimers:[],manage:false};
   const request = (path = "",init) => auth.request(api + path,init), versionHeaders = item => ({"If-Match":`"rv-${item.row_version}"`});
   function showError(message = "") {const node = document.getElementById("source-error");node.textContent = message;node.hidden = !message;}
   function connectivity(item) {
@@ -69,12 +69,8 @@
     try {const editing = state.editing;await request(editing ? `/${encodeURIComponent(editing.source_id)}` : "",{method:editing ? "PATCH" : "POST",headers:editing ? versionHeaders(editing) : {"Idempotency-Key":auth.uuid()},body:JSON.stringify(body)});state.busy = false;closeSource();await load();}
     catch (error) {showError(error.message);shell.toast(error.message);} finally {state.busy = false;syncBusy();}
   }
-  function settleConfirmation(value) {const resolve = state.confirm;state.confirm = null;document.getElementById("source-confirm-dialog").close();resolve?.(value);}
-  async function confirmAction(copy) {
-    if (state.confirm) return false;const dialog = document.getElementById("source-confirm-dialog");dialog.className = `confirm-dialog confirm-dialog--${copy.tone}`;
-    dialog.querySelector(".confirm-dialog-mark").textContent = copy.tone === "danger" ? "!" : "?";dialog.querySelector(".confirm-dialog-kicker").textContent = copy.tone === "danger" ? "请确认此操作" : "需要你的确认";
-    document.getElementById("source-confirm-title").textContent = copy.title;document.getElementById("source-confirm-message").textContent = copy.message;const button = dialog.querySelector("[data-confirm-source]");button.textContent = copy.label;button.className = copy.tone === "danger" ? "danger-button" : "primary-button";
-    dialog.showModal();dialog.querySelector("[data-cancel-source-confirm]").focus();return new Promise(resolve => {state.confirm = resolve;});
+  function confirmAction(copy) {
+    return shell.confirmAction({ title: copy.title, message: copy.message, confirmLabel: copy.label, tone: copy.tone });
   }
   async function command(item,action) {
     if (state.busy || !state.manage) return;
@@ -142,7 +138,7 @@
     };
     document.addEventListener("pointerdown",event => {if (!event.target.closest(".management-catalog-overflow")) closeMenus();});document.addEventListener("keydown",event => {if (event.key === "Escape") closeMenus();});
     webhookDrawer.onclick = event => {if (event.target.closest("[data-close-webhook]")) closeWebhook();else if (event.target.closest("[data-generate-webhook]")) generateWebhook();else if (event.target.closest("[data-retry-webhook]")) generateWebhook(true);else {const copy = event.target.closest("[data-copy-webhook]");if (copy) copyWebhook(copy.dataset.copyWebhook);}};webhookDrawer.addEventListener("cancel",event => {event.preventDefault();closeWebhook();});webhookDrawer.addEventListener("close",closeWebhook);
-    const confirm = document.getElementById("source-confirm-dialog");confirm.querySelector("[data-cancel-source-confirm]").onclick = () => settleConfirmation(false);confirm.querySelector("[data-confirm-source]").onclick = () => settleConfirmation(true);confirm.addEventListener("cancel",event => {event.preventDefault();settleConfirmation(false);});
+
     window.addEventListener("pagehide",() => {clearTimeout(state.poll);++state.sequence;++state.opening;state.webhook = null;state.reveal = null;form.reset();document.getElementById("source-webhook-content").replaceChildren();clearCopied();});
     await load();const sourceId = new URLSearchParams(location.search).get("sourceId");if (sourceId) await openEdit(sourceId);
   });

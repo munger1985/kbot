@@ -258,5 +258,8 @@
       "DOMContentLoaded", () => initialize().then(resolve).catch(reject), { once: true },
     )),
     escape, fmt, short, badge, toast,
+    confirmAction: options => import("../../shared/kbot-confirm.js?v=20261105_1").then(module => module.confirmAction(options)),
+    confirmActionWithOption: options => import("../../shared/kbot-confirm.js?v=20261105_1").then(module => module.confirmActionWithOption(options)),
+    confirmActionWithReason: options => import("../../shared/kbot-confirm.js?v=20261105_1").then(module => module.confirmActionWithReason(options)),
   };
 })();

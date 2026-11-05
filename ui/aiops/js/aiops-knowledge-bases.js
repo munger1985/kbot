@@ -86,7 +86,7 @@
     finally { saving = false; updateSaveState(); }
   }
   async function remove(row) {
-    if (!confirm(`确认删除知识库“${row.display_name}”？只有无资料且未被统一 Agent 引用的知识库可以删除。`)) return;
+    if (!await shell.confirmAction({ title: "删除知识库？", message: `确认删除知识库“${row.display_name}”？只有无资料且未被统一 Agent 引用的知识库可以删除。`, confirmLabel: "删除知识库", tone: "danger" })) return;
     try { await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(row.knowledge_base_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${row.row_version}"` } }); shell.toast("知识库已删除"); await load(); } catch (error) { shell.toast(error.message); }
   }
   shell.ready.then(async () => {

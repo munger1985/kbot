@@ -249,7 +249,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261103_3"
+        expected = "./js/aiops-shell.js?v=20261105_confirm1"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
         for path in pages:
             parser = _Parser()
@@ -615,7 +615,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("Target 的责任归属在运维目标中维护", page)
         self.assertIn('<dialog id="group-editor-dialog"', page)
         self.assertIn('<dialog id="group-members-dialog"', page)
-        self.assertIn('<dialog id="group-confirm-dialog"', page)
+        self.assertNotIn('<dialog id="group-confirm-dialog"', page)
+        self.assertIn("shell.confirmAction", script)
         self.assertIn('id="group-create-open"', page)
         self.assertNotIn('id="group-create"', page)
         self.assertNotIn("ops-work-item-detail-grid", page)
@@ -758,11 +759,11 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn(f"workspaces.css?v={stylesheet_version}", page)
-            self.assertIn("aiops-shell.js?v=20261103_3", page)
-            self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
+            self.assertIn("aiops-shell.js?v=20261105_confirm1", page)
+            self.assertIn("aiops-workspaces.js?v=20261105_confirm1", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
         self.assertIn("reference-inspections.css?v=20261103_1", inspections)
-        self.assertIn("aiops-workspaces.js?v=20261104_1", inspections)
+        self.assertIn("aiops-workspaces.js?v=20261105_confirm1", inspections)
         self.assertIn("aiops-chat-charts.js?v=20261030_1", inspections)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
@@ -1059,8 +1060,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("function message(", systems)
         self.assertNotIn('id="workspace-result"', workspace)
         self.assertNotIn("business-validation-list", systems)
-        self.assertIn('id="workspace-leave-dialog"', workspace)
-        self.assertIn('id="workspace-leave-form"', workspace)
+        self.assertNotIn('id="workspace-leave-dialog"', workspace)
+        self.assertIn("await shell.confirmAction", systems)
+        self.assertIn("放弃修改", systems)
         self.assertIn('document.addEventListener("click"', systems)
         self.assertIn('addEventListener("beforeunload"', systems)
         self.assertNotIn("架构层是当前系统中的展示位置，不会改变资源类型。", systems)
@@ -1073,7 +1075,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("rac_node_number", systems)
         self.assertIn("locator_key", systems)
         single_connection = systems.split(
-            'if (item.mode === "NEW" && database && !rac)', 1
+            'if (database && !rac)', 1
         )[1].split('if (item.mode === "NEW" && database && rac)', 1)[0]
         first_row = [
             single_connection.index("数据库地址"),
@@ -1164,7 +1166,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("tls_enabled: database.tls_enabled === true", systems)
         self.assertIn("tls_enabled: false", systems)
         self.assertIn('name === "tls_enabled" ? input.value === "true"', systems)
-        self.assertIn("tls_enabled: !oracle && database.tls_enabled === true", systems)
+        self.assertIn("tls_enabled: oracle ? database.tls_enabled === true : (database.tls_enabled ?? true)", systems)
         self.assertNotIn("tls_enabled: !oracle }", systems)
         self.assertIn("无法连接数据库，请检查地址、端口和 TLS 设置。", systems)
 
@@ -1218,7 +1220,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
 
         for label in ("全部", "运行中", "草稿", "已下线"):
             self.assertIn(label, page + script)
-        self.assertIn("下线原因", page)
+        self.assertIn("下线原因", script)
+        self.assertIn("shell.confirmActionWithReason", script)
         self.assertIn("删除草稿", script)
         self.assertIn("重新上线", script)
         self.assertIn("已接入的资源会保留，不会删除资源、拓扑或历史数据", script)
@@ -1376,7 +1379,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('value="INTERVAL"', page)
         for text in ("业务系统", "Cron 表达式", "巡检内容模板", "运行策略", "创建并启用"):
             self.assertIn(text, page)
-        for field in ("inspection-schedule-summary", "inspection-plan-catalog", "inspection-plan-confirm"):
+        for field in ("inspection-schedule-summary", "inspection-plan-catalog"):
             self.assertIn(f'id="{field}"', page)
         self.assertIn("management-catalog-card", script)
         self.assertIn("最近执行：", script)
@@ -1742,7 +1745,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-delete-id="${esc(item.conversation_id)}"', workspace)
         self.assertIn("将从会话列表中删除", workspace)
         self.assertIn("已保存的诊断审计记录不受影响", workspace)
-        self.assertIn("conversation-confirm-dialog", workspace)
+        self.assertIn("shell.confirmAction", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (
             "fleet.html",

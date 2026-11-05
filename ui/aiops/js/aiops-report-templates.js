@@ -136,12 +136,8 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
   const detailRoot=document.createElement("section");
   detailRoot.className="ops-main daily-template-editor aiops-page inspection-template-detail";detailRoot.hidden=true;document.querySelector("main.aiops-template-page").after(detailRoot);
   let detailData=null,detailVersions=[],detailPlans=[],detailSeq=0;
-  async function confirmTemplate(title,message,confirmLabel="确认",destructive=false) {
-    const dialog=document.createElement("dialog");dialog.className="confirm-dialog";
-    dialog.innerHTML='<h2 id="template-confirm-title">'+escape(title)+'</h2><p>'+escape(message)+'</p><footer><button class="secondary-button" data-no>取消</button><button class="'+(destructive ? "danger-button":"primary-button")+'" data-yes>'+escape(confirmLabel)+'</button></footer>';
-    dialog.setAttribute("aria-labelledby","template-confirm-title");
-    document.body.append(dialog);dialog.showModal();dialog.querySelector("[data-no]").focus();
-    return await new Promise(resolve=>{const finish=value=>{dialog.close();dialog.remove();resolve(value);};dialog.querySelector("[data-no]").onclick=()=>finish(false);dialog.querySelector("[data-yes]").onclick=()=>finish(true);dialog.oncancel=event=>{event.preventDefault();finish(false);};});
+  function confirmTemplate(title, message, confirmLabel = "确认", destructive = false) {
+    return shell.confirmAction({ title, message, confirmLabel, tone: destructive ? "danger" : "warning" });
   }
   function businessDiff(version,previous) {
     if(!previous)return "初始版本";

@@ -112,6 +112,9 @@
   }
   function sourceFor(item) { return sources.find((source) => source.source_id === item.database?.source_id); }
   function usesDiscovery(item) { return ["PROMETHEUS", "ZABBIX", "OEM"].includes(sourceFor(item)?.source_type || ""); }
+  function databaseCandidateLabel(item, candidate) {
+    return sourceFor(item)?.source_type === "OEM" ? candidate.display_name : `${candidate.display_name} · ${candidate.locator_key}`;
+  }
   function isRacResource(item) { return item?.database?.deployment_type === "RAC" && Boolean(item.rac_group_id); }
   function racMembers(item) {
     if (!item) return [];
@@ -709,7 +712,7 @@
       const pdb = oracle && database.oracle_scope === "PDB";
       const endpointFields = `<label><span>数据库地址</span><input name="host" value="${esc(database.host)}" placeholder="主机名或 IP"></label><label><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label><span>${oracle ? "Service Name" : "Database"}</span><input name="database" value="${esc(database.database)}"></label>${oracle ? `<label><span>容器范围</span><select name="oracle_scope">${selectOptions(oracleScopeOptions, database.oracle_scope)}</select></label>` : ""}`;
       const accessFields = `${pdb ? `<label><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label><span>诊断用户名</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label><span>诊断密码</span><input name="password" placeholder="${editing ? "留空保留原密码" : ""}" value="${esc(database.password)}" type="password" autocomplete="new-password"></label>`;
-      const monitoringFields = `<label><span>监控源（必选）</span><select name="source_id" required><option value="">请选择</option>${database.source_id && !sourceFor(item) ? `<option value="${esc(database.source_id)}" selected>原监控源（已停用或不可用）</option>` : ""}${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<label><span>数据库候选</span><select name="candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>${sourceFor(item)?.source_type === "PROMETHEUS" ? `<label><span>承载主机候选</span><select name="host_candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>` : ""}`}`;
+      const monitoringFields = `<label><span>监控源（必选）</span><select name="source_id" required><option value="">请选择</option>${database.source_id && !sourceFor(item) ? `<option value="${esc(database.source_id)}" selected>原监控源（已停用或不可用）</option>` : ""}${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<label><span>数据库候选</span><select name="candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(databaseCandidateLabel(item, row))}</option>`).join("")}</select></label>${sourceFor(item)?.source_type === "PROMETHEUS" ? `<label><span>承载主机候选</span><select name="host_candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>` : ""}`}`;
       const bindingChoice = editing ? `<label><span>编辑哪条监控映射</span><select name="editing_binding_id"><option value="">新增映射（保留现有映射）</option>${(database.monitoring_bindings || []).map(binding => `<option value="${esc(binding.binding_id)}" ${binding.binding_id === database.original_binding?.binding_id ? "selected" : ""}>${esc(sources.find(source => source.source_id === binding.source_id)?.display_name || binding.source_id)} · ${esc(binding.source_locator_key)}</option>`).join("")}</select></label><small>仅修改所选映射，其他监控源保持不变；数据库引擎、部署形态与 RAC 节点编号不可直接修改。</small>` : "";
       connection = `<div class="connection-layout"><section class="connection-field-group"><p>连接端点</p><div class="connection-row connection-endpoint-row ${oracle ? "oracle" : ""}">${endpointFields}</div>${!oracle ? `<div class="connection-row"><label>TLS<select name="tls_enabled"><option value="true" ${database.tls_enabled ? "selected" : ""}>启用</option><option value="false" ${!database.tls_enabled ? "selected" : ""}>不启用</option></select></label>${database.db_type === "POSTGRESQL" && database.tls_enabled ? `<label>TLS Profile（可选）<input name="tls_profile_ref" value="${esc(database.tls_profile_ref || "")}" placeholder="已配置的 TLS Profile 标识"></label>` : ""}</div>` : ""}</section><section class="connection-field-group"><p>数据库访问</p><div class="connection-row connection-access-row ${pdb ? "pdb" : ""}">${accessFields}</div></section><section class="connection-field-group"><p>监控映射</p>${bindingChoice}${discovery ? `<button id="rediscover-databases" type="button" class="secondary-button" ${database.discovering ? "disabled" : ""}>重新发现数据库</button>` : ""}<div class="connection-row connection-monitoring-row ${discovery ? "discovery" : ""}">${monitoringFields}</div>${database.discovering ? `<p class="discovery-status">正在从监控源发现数据库和承载主机…</p>` : ""}</section></div>`;
     }
@@ -719,7 +722,7 @@
         const nodeDatabase = node.database;
         const nodeId = esc(node.draft_resource_id);
         const monitoring = discovery
-          ? `<label class="span-6"><span>数据库监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>${sourceFor(node)?.source_type === "PROMETHEUS" ? `<label class="span-6"><span>主机监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="host_candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>` : ""}`
+          ? `<label class="span-6"><span>数据库监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.candidate_ref ? "selected" : ""}>${esc(databaseCandidateLabel(node, row))}</option>`).join("")}</select></label>${sourceFor(node)?.source_type === "PROMETHEUS" ? `<label class="span-6"><span>主机监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="host_candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>` : ""}`
           : `<label class="span-all"><span>监控定位键</span><input data-rac-node="${nodeId}" data-rac-field="locator_key" value="${esc(nodeDatabase.locator_key)}"></label>`;
         return `<article class="rac-node-card"><header><div><strong>RAC 节点 ${esc(nodeDatabase.rac_node_number)}</strong><small>${esc(node.display_name || "待命名节点")}</small></div>${racMembers(item).length > 2 ? `<button type="button" class="danger-link" data-remove-rac-node="${nodeId}">移除节点</button>` : ""}</header><div class="editor-grid"><label class="span-2"><span>节点编号</span><input type="number" min="1" max="1024" required data-rac-node="${nodeId}" data-rac-field="rac_node_number" value="${esc(nodeDatabase.rac_node_number)}"></label><label class="span-4"><span>Host</span><input data-rac-node="${nodeId}" data-rac-field="host" value="${esc(nodeDatabase.host)}" placeholder="节点主机名或 IP"></label><label class="span-6"><span>Service Name</span><input data-rac-node="${nodeId}" data-rac-field="database" value="${esc(nodeDatabase.database)}"></label>${monitoring}</div></article>`;
       }).join("");
@@ -1512,30 +1515,23 @@
   document.getElementById("commit").onclick = () => void commit();
   document.getElementById("save-draft").onclick = () => void saveDraft();
   document.querySelectorAll("#wizard-steps [data-step]").forEach((button) => button.onclick = () => { const next = Number(button.dataset.step); if (isPublishedView() || next <= furthest) { if (!isPublishedView() && next === 2 && syncInferredDatabaseRelations()) mark(); step = next; render(); } });
-  document.addEventListener("click", (event) => {
+  document.addEventListener("click", async (event) => {
     const anchor = event.target.closest?.("a[href]");
     if (anchor && snapshotState?.mutating) { event.preventDefault(); shell.toast("采集配置操作正在进行，请稍候。"); return; }
     if (!dirty || !anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
     const destination = new URL(anchor.href, location.href);
     if (destination.href === location.href || (destination.origin === location.origin && destination.pathname === location.pathname && destination.search === location.search)) return;
     event.preventDefault();
+    if (pendingLeaveHref) return;
     pendingLeaveHref = destination.href;
-    const dialog = document.getElementById("workspace-leave-dialog");
-    if (!dialog.open) dialog.showModal();
-    document.getElementById("cancel-workspace-leave").focus();
-  });
-  document.getElementById("workspace-leave-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    const destination = pendingLeaveHref;
+    const confirmed = await shell.confirmAction({ title: "离开业务系统编辑页？", message: "当前页面还有未保存修改，离开后这些修改将丢失。", confirmLabel: "放弃修改", tone: "warning" });
     pendingLeaveHref = "";
+    if (!confirmed || snapshotState?.mutating) return;
     dirty = false;
     snapshotGeneration += 1;
     snapshotState = null;
-    document.getElementById("workspace-leave-dialog").close();
-    if (destination) location.assign(destination);
+    location.assign(destination.href);
   });
-  document.getElementById("cancel-workspace-leave").onclick = () => { pendingLeaveHref = ""; document.getElementById("workspace-leave-dialog").close(); };
-  document.getElementById("workspace-leave-dialog").addEventListener("cancel", (event) => { event.preventDefault(); pendingLeaveHref = ""; event.currentTarget.close(); });
   addEventListener("beforeunload", (event) => { if (dirty || snapshotState?.mutating) event.preventDefault(); });
   addEventListener("pagehide",() => { KBotAIOpsTopology.dispose();snapshotGeneration += 1;snapshotState = null; });
   let operationsPlanAllowed = false;

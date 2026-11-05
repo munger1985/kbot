@@ -224,7 +224,7 @@
       return;
     }
     if (action === "delete") {
-      const confirmed = globalThis.confirm(`删除会进入清理流程，不能撤销。确认删除「${row.display_name}」？`);
+      const confirmed = await KBotKnowledgeShell.confirmAction({ title: "删除 Knowledge Core？", message: `删除会进入清理流程，不能撤销。确认删除「${row.display_name}」？`, confirmLabel: "确认删除", tone: "danger" });
       if (!confirmed) return;
       await KBotKnowledgeApi.json(`/knowledge-cores/${row.collection_id}`, "DELETE");
       await loadPage();

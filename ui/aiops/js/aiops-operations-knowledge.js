@@ -262,14 +262,12 @@
   }
 
   async function confirmAssetDeletion(displayName) {
-    const dialog = document.getElementById("delete-asset-dialog");
-    const purge = document.getElementById("purge-source-objects");
-    document.getElementById("delete-asset-message").textContent = `“${displayName}”及其尚未发布的 AIOps 版本记录将被删除，此操作不可撤销。KC 审计记录会保留。`;
-    purge.checked = false;
-    dialog.returnValue = "cancel";
-    dialog.showModal();
-    await new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
-    return { confirmed: dialog.returnValue === "confirm", purgeSourceObjects: purge.checked };
+    const result = await shell.confirmActionWithOption({
+      title: "删除运维资料？", confirmLabel: "删除资料", tone: "danger",
+      message: "“" + displayName + "”及其尚未发布的 AIOps 版本记录将被删除，此操作不可撤销。KC 审计记录会保留。",
+      option: { label: "同时删除物理文件", description: "仅删除未被其他知识版本引用的 KC 源文件；共享文件会保留。", defaultSelected: false },
+    });
+    return { confirmed: result.confirmed, purgeSourceObjects: result.optionSelected };
   }
 
   async function runDetailAction(action) {

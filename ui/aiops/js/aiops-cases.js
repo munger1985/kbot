@@ -133,7 +133,7 @@
       return;
     }
     const version = state.detail.version;
-    if (action === "publish" && !confirm("确认已核对脱敏预览、来源有效性、适用条件及失败风险，再发布供 Agent 检索？自动脱敏不保证识别全部敏感信息。")) return;
+    if (action === "publish" && !await shell.confirmAction({ title: "发布诊断案例？", message: "确认已核对脱敏预览、来源有效性、适用条件及失败风险，再发布供 Agent 检索？自动脱敏不保证识别全部敏感信息。", confirmLabel: "确认发布", tone: "warning" })) return;
     const options = action === "reconcile" ? { method: "POST" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_row_version: Number(version.row_version), comment: null }) };
     await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}:${action}`, options);
     shell.toast("案例状态已更新");

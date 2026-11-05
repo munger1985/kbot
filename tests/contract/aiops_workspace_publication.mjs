@@ -49,6 +49,40 @@ const resource = (db_type = 'ORACLE', overrides = {}) => ({
 });
 const monitor = { source_id: 'source-1', source_type: 'ALERTMANAGER', status: 'ENABLED' };
 
+// OEM 候选只显示可读名称；新增、编辑及 RAC 仍保留原候选引用和稳定定位键。
+for (const sourceType of ['OEM', 'PROMETHEUS', 'ZABBIX']) {
+  for (const mode of ['NEW', 'EXISTING']) {
+    for (const deployment of ['SINGLE_INSTANCE', 'RAC']) {
+      const f = fixture(mode === 'NEW' ? 'new' : 'system-1');
+      const candidate = { candidate_ref: 'signed-database-reference', locator_key: '44bc8bf5d569de338cce77db1db5cb1c', display_name: 'ERP · CDB_ROOT · ORCLCDB · 19.3.0.0.0 · oracle19c.lab' };
+      const item = resource('ORACLE', { deployment_type: deployment, candidate_ref: candidate.candidate_ref, candidate_locator_key: candidate.locator_key, candidates: [candidate] });
+      item.mode = mode;
+      if (mode === 'EXISTING') item.system_resource_id = 'system-resource-1';
+      const members = [item];
+      if (deployment === 'RAC') {
+        item.rac_group_id = 'rac-1';
+        item.database.rac_node_number = 1;
+        const other = copy(item);
+        other.draft_resource_id = 'draft-resource-2';
+        other.database.rac_node_number = 2;
+        members.push(other);
+      }
+      f.api.seed({ system: copy(system), resources: members, sources: [{ ...monitor, source_type: sourceType }] });
+      const before = copy(item.database);
+      const html = f.api.resourceEditorHtml(item);
+      const selects = [...html.matchAll(/<select\b[^>]*(?:name="candidate_ref"|data-rac-field="candidate_ref")[^>]*>([\s\S]*?)<\/select>/g)];
+      assert.equal(selects.length, mode === 'NEW' && deployment === 'RAC' ? 2 : 1);
+      for (const [, options] of selects) {
+        assert.ok(options.includes(`value="${candidate.candidate_ref}" selected`));
+        assert.ok(options.includes(candidate.display_name));
+        assert.equal(options.includes(candidate.locator_key), sourceType !== 'OEM');
+      }
+      assert.deepEqual(copy(item.database), before);
+      assert.equal(f.api.monitoringPayload(item).candidate_ref, candidate.candidate_ref);
+    }
+  }
+}
+
 // 草稿失败不能丢失页面内容；成功后下一次保存必须带服务端返回的 revision。
 {
   const f = fixture();

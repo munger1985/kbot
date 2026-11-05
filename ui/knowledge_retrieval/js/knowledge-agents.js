@@ -291,7 +291,7 @@
       return;
     }
     if (action === "archive") {
-      if (!globalThis.confirm(`删除将归档 Agent，不能在页面恢复，但会保留历史版本和运行记录。确认删除「${row.display_name}」？`)) return;
+      if (!await KBotKnowledgeShell.confirmAction({ title: "删除 Agent？", message: `删除将归档 Agent，不能在页面恢复，但会保留历史版本和运行记录。确认删除「${row.display_name}」？`, confirmLabel: "删除 Agent", tone: "danger" })) return;
       await KBotKnowledgeApi.json(
         KBotKnowledgeApi.withQuery(`/agents/${encodeURIComponent(agentId)}`, { expected_row_version: row.row_version }),
         "DELETE",

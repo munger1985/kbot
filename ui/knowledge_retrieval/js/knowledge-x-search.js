@@ -323,7 +323,7 @@
   }
 
   async function deleteRun(runId) {
-    const confirmed = globalThis.confirm("删除后无法恢复。确认删除这条搜索记录？");
+    const confirmed = await KBotKnowledgeShell.confirmAction({ title: "删除搜索记录？", message: "删除后无法恢复。确认删除这条搜索记录？", confirmLabel: "删除记录", tone: "danger" });
     if (!confirmed) return;
     try {
       await KBotKnowledgeApi.json(`/x-search/runs/${runId}`, "DELETE");

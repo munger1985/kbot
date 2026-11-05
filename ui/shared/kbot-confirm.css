@@ -1,0 +1,42 @@
+/* 与 Portal ConfirmDialog 保持同一规格；选择器限定到共享组件，不影响业务表单和抽屉。 */
+dialog.kbot-confirm-dialog {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0;
+  width: min(468px, calc(100vw - 48px));
+  min-width: 0;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line-strong, #d3dbd7);
+  border-radius: 16px;
+  color: var(--ink, #172a22);
+  background: var(--surface-raised, #fff);
+  box-shadow: 0 28px 88px rgb(12 24 18 / 30%), 0 2px 8px rgb(12 24 18 / 8%);
+  font: 400 15px/1.6 var(--font-ui, system-ui, sans-serif);
+}
+dialog.kbot-confirm-dialog:not([open]), dialog.kbot-confirm-dialog [hidden] { display: none !important; }
+dialog.kbot-confirm-dialog::backdrop { background: rgb(18 31 25 / 48%); backdrop-filter: blur(4px); }
+.kbot-confirm-dialog .kbot-confirm-form { display: block; margin: 0; padding: 0; }
+.kbot-confirm-dialog .confirm-dialog-header { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 14px; align-items: start; padding: 26px 28px 0; border: 0; }
+.kbot-confirm-dialog .confirm-dialog-header > div { min-width: 0; }
+.kbot-confirm-dialog .confirm-dialog-mark { display: grid; box-sizing: border-box; width: 40px; height: 40px; place-items: center; border: 1px solid color-mix(in srgb, var(--danger, #c13f42) 34%, var(--line, #e1e7e3)); border-radius: 12px; color: var(--danger, #c13f42); background: var(--danger-soft, #fff0f0); font-size: 22px; font-weight: 700; line-height: 1; }
+.kbot-confirm-dialog.confirm-dialog--warning .confirm-dialog-mark { border-color: color-mix(in srgb, var(--warning, #94651c) 34%, var(--line, #e1e7e3)); color: var(--warning, #94651c); background: var(--warning-soft, #fff6df); }
+.kbot-confirm-dialog .confirm-dialog-kicker { margin: 2px 0 4px; color: var(--danger, #c13f42); font-size: 13px; font-weight: 800; letter-spacing: .1em; line-height: 1.3; }
+.kbot-confirm-dialog.confirm-dialog--warning .confirm-dialog-kicker { color: var(--warning, #94651c); }
+.kbot-confirm-dialog h2 { margin: 0; color: inherit; font-family: inherit; font-size: 23px; font-weight: 700; letter-spacing: -.035em; line-height: 1.3; overflow-wrap: anywhere; }
+.kbot-confirm-dialog .confirm-dialog-message { margin: 17px 28px 24px; color: var(--muted, #65736c); font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; }
+.kbot-confirm-dialog .confirm-dialog-option { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; margin: -8px 28px 24px; padding: 14px; border: 1px solid var(--line, #e1e7e3); border-radius: 12px; background: var(--surface, #f8faf9); cursor: pointer; }
+.kbot-confirm-dialog .confirm-dialog-option input { width: auto; min-height: 0; margin-top: 3px; accent-color: var(--danger, #c13f42); }
+.kbot-confirm-dialog .confirm-dialog-option span { display: grid; min-width: 0; gap: 3px; overflow-wrap: anywhere; }
+.kbot-confirm-dialog .confirm-dialog-option strong { color: inherit; font-size: 14px; }
+.kbot-confirm-dialog .confirm-dialog-option small { color: var(--muted, #65736c); font-size: 12px; line-height: 1.55; }
+.kbot-confirm-dialog .kbot-confirm-reason { display: grid; gap: 8px; margin: -8px 28px 24px; font-weight: 600; }
+.kbot-confirm-dialog textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 112px; max-height: 240px; resize: vertical; padding: 10px 12px; border: 1px solid var(--line-strong, #d3dbd7); border-radius: 9px; color: inherit; background: var(--surface-raised, #fff); font: inherit; }
+.kbot-confirm-dialog .confirm-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 15px 28px 18px; border: 0; border-top: 1px solid var(--line, #e1e7e3); background: var(--surface, #f8faf9); }
+.kbot-confirm-dialog .confirm-dialog-actions button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-width: 88px; min-height: 40px; max-width: 100%; padding: 0 15px; border: 1px solid var(--line-strong, #d3dbd7); border-radius: 7px; color: var(--ink, #172a22); background: var(--surface-raised, #fff); font: 600 14px/1.6 var(--font-ui, system-ui, sans-serif); white-space: normal; cursor: pointer; }
+.kbot-confirm-dialog .confirm-dialog-actions .danger-button { border-color: var(--danger, #c13f42); color: #fff; background: var(--danger, #c13f42); }
+.kbot-confirm-dialog .confirm-dialog-actions .primary-button { border-color: var(--accent, #34674f); color: #fff; background: var(--accent, #34674f); }
+.kbot-confirm-dialog :is(button, textarea, input):focus-visible { outline: 2px solid var(--accent, #34674f); outline-offset: 3px; }

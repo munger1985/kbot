@@ -571,14 +571,7 @@
   }
 
   function confirmDelete(agent) {
-    const dialog = document.getElementById("agent-confirm-dialog");
-    document.getElementById("agent-confirm-message").textContent = `“${agent.display_name}”将停止接收新任务，历史运行与报告仍会保留。`;
-    dialog.returnValue = "cancel";
-    return new Promise((resolve) => {
-      dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
-      dialog.showModal();
-      dialog.querySelector('[value="cancel"]').focus();
-    });
+    return shell.confirmAction({ title: "删除 Agent？", message: "“" + agent.display_name + "”将停止接收新任务，历史运行与报告仍会保留。", confirmLabel: "删除 Agent", tone: "danger" });
   }
 
   async function commandAgent(agent, command) {
@@ -653,7 +646,7 @@
     if (!access) return;
     const dialog = document.getElementById("agent-dialog");
     dialog.querySelectorAll("[data-close-dialog]").forEach((button) => { button.onclick = () => { if (!saving) dialog.close(); }; });
-    [dialog, document.getElementById("agent-picker-dialog"), document.getElementById("agent-confirm-dialog")].forEach((panel) => {
+    [dialog, document.getElementById("agent-picker-dialog")].forEach((panel) => {
       panel.addEventListener("cancel", (event) => { if (saving) event.preventDefault(); });
       panel.addEventListener("click", (event) => {
         if (event.target !== panel || saving) return;

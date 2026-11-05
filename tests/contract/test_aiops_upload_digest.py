@@ -49,7 +49,7 @@ Promise.all(samples.map(async ([input, expected]) => {
     def test_upload_page_loads_digest_utility_before_upload_logic(self) -> None:
         page = UPLOAD_PAGE.read_text(encoding="utf-8")
         utility = "../shared/kbot-sha256.js?v=20261019_1"
-        upload = "./js/aiops-operations-knowledge.js?v=20261030_1"
+        upload = "./js/aiops-operations-knowledge.js?v=20261105_confirm1"
         self.assertIn(utility, page)
         self.assertLess(page.index(utility), page.index(upload))
         self.assertIn(
@@ -64,9 +64,11 @@ Promise.all(samples.map(async ([input, expected]) => {
         self.assertIn('id="submit-upload" class="primary" type="submit">上传</button>', page)
         self.assertNotIn("上传并识别标签", page)
         self.assertIn("资料已上传，等待人工审批", script)
-        self.assertIn('id="delete-asset-dialog"', page)
-        self.assertIn("同时删除物理文件", page)
-        self.assertIn("共享文件会保留", page)
+        self.assertNotIn('id="delete-asset-dialog"', page)
+        self.assertIn("shell.confirmActionWithOption", script)
+        self.assertIn("defaultSelected: false", script)
+        self.assertIn("同时删除物理文件", script)
+        self.assertIn("共享文件会保留", script)
         self.assertIn("purge_source_objects=true", script)
         self.assertNotIn("confirm(`确认删除运维资料", script)
 

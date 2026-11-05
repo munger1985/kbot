@@ -81,7 +81,7 @@
     $("library-detail-title").textContent=row.title || row.file_name || "资料详情";
     $("library-detail-body").innerHTML='<div class="processing-stage-strip">' + ["审核通过","解析","索引","可检索"].map(label=>'<span>' + label + '</span>').join("") + '</div><section class="key-value-card"><dl class="key-value-table"><div><dt>当前阶段</dt><dd>' + status(row.current_stage || row.status) + '</dd></div><div><dt>审核通过</dt><dd>' + time(row.reviewed_at) + '</dd></div><div><dt>处理完成</dt><dd>' + time(row.completed_at) + '</dd></div></dl></section><section class="table-card processing-file-table"><table><thead><tr><th>文件</th><th>状态</th><th>操作</th></tr></thead><tbody>' + (row.files || []).map((file,index)=>'<tr><td>' + esc(file.name) + (file.failure_message ? '<small class="table-error">' + esc(file.failure_message) + '</small>' : '') + '</td><td>' + status(file.status) + '</td><td>' + (file.status === "FAILED" && file.document_version_id ? '<button type="button" class="row-action" data-reprocess="' + index + '">重新解析</button>' : '—') + '</td></tr>').join("") + '</tbody></table></section>';
     $("library-detail-body").querySelectorAll("[data-reprocess]").forEach(node => node.addEventListener("click",async () => {
-      if (!confirm("确认重新解析这个失败文件？")) return;
+      if (!await KBotKnowledgeShell.confirmAction({ title: "重新解析文件？", message: "确认重新解析这个失败文件？", confirmLabel: "重新解析", tone: "warning" })) return;
       node.disabled=true;
       try {
         await KBotKnowledgeApi.json(bundlePath(row) + "/reprocess","POST",{document_version_id:row.files[Number(node.dataset.reprocess)].document_version_id});

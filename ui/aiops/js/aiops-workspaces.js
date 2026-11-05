@@ -486,7 +486,7 @@
     }
     if (document.body.dataset.page === "chat") {
       if (!await confirmChatAction({title:"确认写入运维记忆？",message:"系统只会记下来，不会执行 SQL。",confirmLabel:"确认写入"})) return;
-    } else if (!confirm("确认把这条事实写入 Target 运维记忆吗？系统只会记下来，不会执行 SQL。")) return;
+    } else if (!await shell.confirmAction({ title: "确认操作？", message: "确认把这条事实写入 Target 运维记忆吗？系统只会记下来，不会执行 SQL。", confirmLabel: "确认", tone: "warning" })) return;
     form.dataset.busy = "true";
     const button = form.querySelector("button[type=submit]");
     if (button) button.disabled = true;
@@ -545,7 +545,7 @@
       if (skipping) {
         const confirmed = document.body.dataset.page === "chat"
           ? await confirmChatAction({title:"跳过人工补证？",message:"系统将只基于已经保存的证据继续分析，可能无法给出确定根因。",confirmLabel:"跳过补证",tone:"warning"})
-          : confirm("跳过人工补证？系统将只基于已保存证据继续分析。");
+          : await shell.confirmAction({ title: "确认操作？", message: "跳过人工补证？系统将只基于已保存证据继续分析。", confirmLabel: "确认", tone: "warning" });
         if (!confirmed) return;
       }
       busy = true;
@@ -565,23 +565,7 @@
     skip.onclick=()=>respond(true);
   }
 
-  function confirmChatAction({title,message,confirmLabel,tone="danger"}) {
-    const dialog = document.getElementById("conversation-confirm-dialog");
-    document.getElementById("conversation-confirm-title").textContent = title;
-    document.getElementById("conversation-confirm-message").textContent = message;
-    dialog.className = `confirm-dialog confirm-dialog--${tone}`;
-    dialog.querySelector(".confirm-dialog-mark").textContent = tone === "danger" ? "!" : "?";
-    dialog.querySelector(".confirm-dialog-kicker").textContent = tone === "danger" ? "请确认此操作" : "需要你的确认";
-    const button = dialog.querySelector('[value="confirm"]');
-    button.className = tone === "danger" ? "danger-button" : "primary-button";
-    button.textContent = confirmLabel;
-    return new Promise(resolve => {
-      dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), {once:true});
-      dialog.returnValue = "";
-      dialog.showModal();
-      dialog.querySelector('[value="cancel"]').focus();
-    });
-  }
+  function confirmChatAction(options) { return shell.confirmAction(options); }
 
   async function proposalAction(button, rejectionReason) {
     if (state.actingProposal) return;
@@ -602,7 +586,7 @@
     }
     if (approving) {
       if (chat) {if (!await confirmChatAction({title:"批准并执行这一条受控变更？",message:"系统会继续执行前置校验，并在完成后验证效果。",confirmLabel:"批准并执行",tone:"warning"})) return;}
-      else if (!confirm("确认批准并执行这一条受控变更吗？系统会继续执行前置校验，并在完成后验证效果。")) return;
+      else if (!await shell.confirmAction({ title: "确认操作？", message: "确认批准并执行这一条受控变更吗？系统会继续执行前置校验，并在完成后验证效果。", confirmLabel: "确认", tone: "warning" })) return;
     }
     const reason = approving ? "用户在诊断对话中逐条确认" : rejectionReason ?? prompt("请输入拒绝原因");
     if (!reason) return;
@@ -636,7 +620,7 @@
     const boundedOutput = proposal.querySelector("[data-manual-output]").value.trim();
     if(document.body.dataset.page === "chat") {
       if(!await confirmChatAction({title:`确认回填人工处理结果为“${status}”吗？`,message:"系统不会执行页面中的命令。",confirmLabel:"回填结果",tone:"warning"})) return;
-    } else if (!confirm(`确认回填人工处理结果为“${status}”吗？系统不会执行页面中的命令。`)) return;
+    } else if (!await shell.confirmAction({ title: "确认操作？", message: `确认回填人工处理结果为“${status}”吗？系统不会执行页面中的命令。`, confirmLabel: "确认", tone: "warning" })) return;
     state.actingProposal = button.dataset.manualProposal;
     button.disabled = true;
     const controls = document.querySelectorAll(".ops-proposal-actions button,.ops-manual-result button,.ops-reject-form button");
@@ -2311,21 +2295,7 @@
   }
 
   async function archiveConversation(id, title) {
-    const dialog = document.getElementById('conversation-confirm-dialog');
-    dialog.className = "confirm-dialog confirm-dialog--danger";
-    document.getElementById("conversation-confirm-title").textContent = "删除会话？";
-    dialog.querySelector(".confirm-dialog-mark").textContent = "!";
-    dialog.querySelector(".confirm-dialog-kicker").textContent = "请确认此操作";
-    const confirmButton = dialog.querySelector('[value="confirm"]');
-    confirmButton.className = "danger-button";
-    confirmButton.textContent = "删除会话";
-    document.getElementById('conversation-confirm-message').textContent = `“${title || '未命名诊断会话'}”将从会话列表中删除。已保存的诊断审计记录不受影响。`;
-    dialog.returnValue = 'cancel';
-    const approved = await new Promise(resolve => {
-      dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), {once:true});
-      dialog.showModal();
-      dialog.querySelector('[value="cancel"]').focus();
-    });
+    const approved = await shell.confirmAction({ title: "删除会话？", message: "“" + (title || "未命名诊断会话") + "”将从会话列表中删除。已保存的诊断审计记录不受影响。", confirmLabel: "删除会话", tone: "danger" });
     if (!approved) return;
     await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}`, {
       method: "DELETE",

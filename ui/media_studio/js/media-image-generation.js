@@ -195,7 +195,7 @@
   }
 
   async function deleteRun(runId) {
-    const confirmed = globalThis.confirm("删除后无法恢复。确认删除这条文生图记录？");
+    const confirmed = await KBotMediaShell.confirmAction({ title: "删除文生图记录？", message: "删除后无法恢复。确认删除这条文生图记录？", confirmLabel: "删除记录", tone: "danger" });
     if (!confirmed) return;
     try {
       await KBotMediaApi.json(`/image-generations/runs/${runId}`, "DELETE");

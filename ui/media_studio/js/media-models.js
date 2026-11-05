@@ -442,7 +442,7 @@
   async function changeStatus(row) {
     const next = row.status === "ACTIVE" ? "DRAFT" : "ACTIVE";
     const verb = next === "ACTIVE" ? "启用" : "停用";
-    if (!confirm(`确认${verb}模型“${row.display_name}”？`)) return;
+    if (!await KBotMediaShell.confirmAction({ title: "确认模型操作？", message: `确认${verb}模型“${row.display_name}”？`, confirmLabel: "确认", tone: "danger" })) return;
     await KBotMediaApi.json(`/models/${row.category}/${row.model_id}/status`, "PATCH", {
       expected_row_version: row.row_version,
       status: next,
@@ -452,7 +452,7 @@
   }
 
   async function archiveModel(row) {
-    if (!confirm(`确认归档模型“${row.display_name}”？归档不可逆。`)) return;
+    if (!await KBotMediaShell.confirmAction({ title: "确认模型操作？", message: `确认归档模型“${row.display_name}”？归档不可逆。`, confirmLabel: "确认", tone: "danger" })) return;
     await KBotMediaApi.json(`/models/${row.category}/${row.model_id}/archive`, "POST", {
       expected_row_version: row.row_version,
     });
@@ -461,7 +461,7 @@
   }
 
   async function deleteModel(row) {
-    if (!confirm(`确认永久删除已归档模型“${row.display_name}”？此操作不可恢复。`)) return;
+    if (!await KBotMediaShell.confirmAction({ title: "确认模型操作？", message: `确认永久删除已归档模型“${row.display_name}”？此操作不可恢复。`, confirmLabel: "确认", tone: "danger" })) return;
     await KBotMediaApi.json(`/models/${row.category}/${row.model_id}`, "DELETE", {
       expected_row_version: row.row_version,
     });

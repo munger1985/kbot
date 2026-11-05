@@ -6,7 +6,7 @@
   const request = (path,init) => KBotAIOpsAuth.request(api + path,init);
   const rows = value => Array.isArray(value) ? value : [];
   const terminal = new Set(["COMPLETED","PARTIAL","FAILED","CANCELLED","EXPIRED"]);
-  const state = {items:[],selected:null,result:null,activeId:"",timer:null,terminalRefreshes:0,sequence:0,selectionSequence:0,busy:false,confirm:null};
+  const state = {items:[],selected:null,result:null,activeId:"",timer:null,terminalRefreshes:0,sequence:0,selectionSequence:0,busy:false};
   const drawer = document.getElementById("run-drawer");
   const task = document.createElement("section");
   task.className = "key-value-card"; task.hidden = true;
@@ -110,11 +110,9 @@
     }
   }
   function close() {state.activeId = "";++state.selectionSequence;clearRefresh();state.selected = null;state.result = null;if (drawer.open) drawer.close();}
-  function settleConfirmation(value) {const resolve = state.confirm;state.confirm = null;document.getElementById("run-confirm-dialog").close();resolve?.(value);}
   async function cancelObservation() {
-    const run = state.selected;if (!run || state.busy || state.confirm || run.workflow_kind !== "EVIDENCE_FOLLOWUP" || terminal.has(run.status)) return;
-    const confirm = document.getElementById("run-confirm-dialog");confirm.showModal();confirm.querySelector("[data-cancel-run-confirm]").focus();
-    if (!await new Promise(resolve => {state.confirm = resolve;})) return;
+    const run = state.selected;if (!run || state.busy || run.workflow_kind !== "EVIDENCE_FOLLOWUP" || terminal.has(run.status)) return;
+    if (!await shell.confirmAction({ title: "取消未来观察", message: "停止后续采样，已采集的原始结果仍保留。", confirmLabel: "取消采样", tone: "warning" })) return;
     state.busy = true;renderDetail();
     try {await request(`/runs/${encodeURIComponent(run.ops_run_id)}/commands`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command_id:KBotAIOpsAuth.uuid(),idempotency_key:KBotAIOpsAuth.uuid(),ops_run_id:run.ops_run_id,command:{command_type:"CANCEL_RUN",expected_row_version:run.row_version}})});shell.toast("已请求取消后续采样，已采集结果仍保留");if (state.activeId === run.ops_run_id) await open(run.ops_run_id);}
     catch (error) {shell.toast(error.message || "无法取消未来观察");}
@@ -126,7 +124,7 @@
     document.getElementById("refresh-run-detail").onclick = () => {if (state.activeId) open(state.activeId);};
     document.getElementById("continue-run-diagnosis").onclick = () => {const run = state.selected;if (run && state.result?.final_artifact) location.href = `./chat.html?${new URLSearchParams({targetId:run.target_id,sourceType:"RUN",sourceId:run.ops_run_id})}`;};
     document.getElementById("cancel-future-observation").onclick = cancelObservation;
-    const confirm = document.getElementById("run-confirm-dialog");confirm.querySelector("[data-cancel-run-confirm]").onclick = () => settleConfirmation(false);confirm.querySelector("[data-confirm-run]").onclick = () => settleConfirmation(true);confirm.addEventListener("cancel",event => {event.preventDefault();settleConfirmation(false);});
+
     addEventListener("pagehide",close,{once:true});await load();const params = new URLSearchParams(location.search), runId = params.get("runId") || params.get("run_id");if (runId) await open(runId);
   }).catch(error => shell.toast(error.message));
 })();

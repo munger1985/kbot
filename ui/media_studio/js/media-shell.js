@@ -39,5 +39,5 @@
     const required = PAGE_PERMISSIONS[page]; if (required && !granted.has(required)) location.replace("./dashboard.html");
     document.body.dataset.access = "ready"; return access;
   }
-  globalThis.KBotMediaShell = { PAGE_PERMISSIONS, badge, capability, capabilityLabel, escapeHtml, toast, ready: new Promise((resolve, reject) => { const start=()=>initialize().then(resolve,reject); document.readyState === "loading" ? addEventListener("DOMContentLoaded", start, {once:true}) : start(); }) };
+  globalThis.KBotMediaShell = { PAGE_PERMISSIONS, badge, capability, capabilityLabel, escapeHtml, toast, confirmAction: options => import("../../shared/kbot-confirm.js?v=20261105_1").then(module => module.confirmAction(options)), ready: new Promise((resolve, reject) => { const start=()=>initialize().then(resolve,reject); document.readyState === "loading" ? addEventListener("DOMContentLoaded", start, {once:true}) : start(); }) };
 })();
