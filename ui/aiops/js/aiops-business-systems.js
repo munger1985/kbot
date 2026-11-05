@@ -39,12 +39,6 @@
     return `${count} 个资源`;
   }
 
-  function protectionLabel(value) {
-    if (value === "CONFIGURED") return "已配置";
-    if (value === "PARTIAL") return "部分已配置";
-    return "未配置";
-  }
-
   function statusLabel(value) {
     if (value === "ENABLED") return "运行中";
     if (value === "DRAFT") return "草稿";
@@ -82,7 +76,7 @@
         <div><dt>环境 / 重要级</dt><dd class="business-system-context"><span>${shell.escape(environmentLabel(item.environment))}</span><strong class="business-importance">${shell.escape(importanceLabel(importanceLevel))}</strong></dd></div>
         <div><dt>资源数量</dt><dd>${shell.escape(resourceScale(item))}</dd></div>
         <div><dt>业务责任组</dt><dd>${shell.escape(responsibilityGroupName(item.responsibility_group_id, groupsById))}</dd></div>
-        <div><dt>${item.draft_id ? "发布状态" : "数据保护"}</dt><dd>${item.draft_id ? "尚未写入生产资源表" : shell.escape(protectionLabel(item.protection_status))}</dd></div>
+        <div><dt>${item.draft_id ? "发布状态" : "数据保护"}</dt><dd>${item.draft_id ? "尚未写入生产资源表" : "开发中"}</dd></div>
       </dl>
       <footer class="management-catalog-action-bar is-compact business-system-card-actions"><div class="management-catalog-meta"><span class="management-catalog-note">更新于 ${shell.escape(shell.fmt(item.updated_at))}</span></div><div class="management-catalog-primary-actions"><a class="row-action" href="${workspaceHref}">${workspaceLabel}</a>${lifecycleAction}</div></footer>
     </article>`;

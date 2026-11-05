@@ -30,11 +30,16 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn('"数据保护"', SCRIPT)
         self.assertNotIn("<dt>恢复目标</dt>", SCRIPT)
 
+    def test_data_protection_is_a_development_placeholder_not_a_real_status(self):
+        self.assertIn('item.draft_id ? "尚未写入生产资源表" : "开发中"', SCRIPT)
+        self.assertNotIn("protectionLabel", SCRIPT)
+        self.assertNotIn("item.protection_status", SCRIPT)
+
     def test_cards_show_total_resource_count_instead_of_a_truncated_type_list(self):
         self.assertIn("<dt>资源数量</dt>", SCRIPT)
         self.assertNotIn("<dt>资源构成</dt>", SCRIPT)
         scale = SCRIPT.split("function resourceScale(item)", 1)[1].split(
-            "function protectionLabel", 1
+            "function statusLabel", 1
         )[0]
         self.assertIn("item.resource_count", scale)
         self.assertIn("return `${count} 个资源`", scale)
@@ -93,7 +98,7 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         )
 
     def test_running_workspace_is_read_only_but_all_tabs_remain_available(self):
-        self.assertIn("aiops-business-systems.js?v=20261105_resourcecount1", PAGE)
+        self.assertIn("aiops-business-systems.js?v=20261105_protection1", PAGE)
         self.assertIn(
             'workspaceReadOnly = !creating && value.status === "ENABLED"',
             WORKSPACE_SCRIPT,

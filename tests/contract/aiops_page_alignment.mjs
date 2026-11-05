@@ -424,16 +424,20 @@ try {
         { resource_type_key: 'APPLICATION', display_name: '应用服务', count: 4 },
         { resource_type_key: 'NETWORK', display_name: '网络设备', count: 1 },
       ];
-      for (const count of [0, 10, 1234]) {
+      for (const [count, protectionStatus] of [[0, 'UNCONFIGURED'], [10, 'PARTIAL'], [1234, 'CONFIGURED']]) {
         for (const page of [kbot, reference]) {
           await page.evaluate(system => { globalThis.fixtureBusinessSystem = system; }, {
             ...fixture.system, resource_count: count, resource_type_summary: count ? types : [],
+            protection_status: protectionStatus,
           });
           await page.getByRole('button', { name: '刷新目录', exact: true }).click();
           const value = page.locator('.business-system-card dl > div')
             .filter({ has: page.locator('dt', { hasText: /^资源数量$/ }) }).locator('dd');
           await value.getByText(`${count} 个资源`, { exact: true }).waitFor();
           assert.equal(await page.locator('.business-system-card dt', { hasText: /^资源构成$/ }).count(), 0);
+          const protection = page.locator('.business-system-card dl > div')
+            .filter({ has: page.locator('dt', { hasText: /^数据保护$/ }) }).locator('dd');
+          assert.equal(await protection.innerText(), '开发中', '规划功能不能展示实际保护状态');
           for (const width of [1440, 420, 320]) {
             await page.setViewportSize({ width, height: 1000 });
             assert.equal(await value.evaluate(node => node.scrollWidth <= node.clientWidth), true,
