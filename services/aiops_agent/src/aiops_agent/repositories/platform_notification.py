@@ -55,12 +55,10 @@ class PlatformNotificationRepository:
     ):
         """按平台通知信封上限稳定拆分订阅者，避免阻断业务事务。"""
         normalized = tuple(sorted(set(recipients)))
-        if not normalized:
-            return None
         batches = tuple(
             normalized[index : index + _MAX_RECIPIENTS_PER_EVENT]
             for index in range(0, len(normalized), _MAX_RECIPIENTS_PER_EVENT)
-        )
+        ) or ((),)
         results = []
         for index, batch in enumerate(batches, start=1):
             effective_key = (
@@ -88,11 +86,17 @@ class PlatformNotificationRepository:
         event_type: str,
         summary: str,
         actor_id: str,
+        hitl_id=None,
+        source_status=None,
+        now=None,
     ):
+        if event_type.startswith("aiops.diagnostic.input_") and (hitl_id is None or source_status is None):
+            raise ValueError("人工交互通知必须绑定确切 HITL 与来源状态")
         return await publish_notification(
             uow=self._uow,
             producer_service="aiops",
-            event_key=f"aiops-run:{run.ops_run_id}:{event_type}",
+            event_key=(f"aiops-hitl:{hitl_id}:{event_type}" if hitl_id is not None
+                else f"aiops-run:{run.ops_run_id}:{event_type}"),
             envelope=NotificationEnvelope(
                 domain_id=int(run.domain_id),
                 event_type=event_type,
@@ -104,6 +108,9 @@ class PlatformNotificationRepository:
                 summary=summary,
                 correlation_id=run.trace_id,
                 operation_id=str(run.ops_run_id),
+                safe_data=({"hitl_id": str(hitl_id), "source_status": source_status}
+                    if hitl_id is not None else {}),
+                **({"occurred_at": now} if now is not None else {}),
             ),
         )
 
@@ -141,10 +148,8 @@ class PlatformNotificationRepository:
             stage=stage,
             severity=situation.severity,
         )
-        if not recipients:
-            return None
         return await self._publish_for_recipients(
-            event_key=f"aiops-situation:{situation.situation_id}:{event_type}",
+            event_key=f"aiops-situation:{situation.situation_id}:{event_type}:{situation.severity}",
             recipients=recipients,
             envelope_data=dict(
                 domain_id=int(target.domain_id),
@@ -179,8 +184,6 @@ class PlatformNotificationRepository:
             stage="DIAGNOSIS_STARTED",
             severity=severity,
         )
-        if not recipients:
-            return None
         return await self._publish_for_recipients(
             event_key=f"aiops-run:{run.ops_run_id}:aiops.diagnosis.started",
             recipients=recipients,
@@ -194,7 +197,7 @@ class PlatformNotificationRepository:
                 summary="已根据严重故障信号启动主动根因诊断",
                 correlation_id=run.trace_id,
                 operation_id=str(run.ops_run_id),
-                safe_data={"target_id": str(run.target_id)},
+                safe_data={"target_id": str(run.target_id), "severity": severity},
             ),
         )
 
@@ -206,11 +209,14 @@ class PlatformNotificationRepository:
         event_type: str,
         summary: str,
         actor_id: str,
+        execution=None,
+        now=None,
     ):
         return await publish_notification(
             uow=self._uow,
             producer_service="aiops",
-            event_key=f"aiops-proposal:{proposal.proposal_id}:{event_type}",
+            event_key=(f"aiops-execution:{execution.execution_id}:{int(execution.status_version)}:{event_type}"
+                if execution is not None else f"aiops-proposal:{proposal.proposal_id}:{event_type}"),
             envelope=NotificationEnvelope(
                 domain_id=int(run.domain_id),
                 event_type=event_type,
@@ -218,10 +224,14 @@ class PlatformNotificationRepository:
                 resource_id=str(proposal.proposal_id),
                 resource_name="AIOps 变更方案",
                 initiator_actor_id=run.actor_id,
-                recipient_actor_ids=[actor_id],
+                recipient_actor_ids=([] if event_type == "aiops.proposal.review_required"
+                    else sorted({value for value in (actor_id, run.actor_id) if value and not str(value).startswith("system:")})),
                 summary=summary,
                 correlation_id=run.trace_id,
-                safe_data={"run_id": str(run.ops_run_id)},
+                safe_data={"run_id": str(run.ops_run_id),
+                    **({"execution_id": str(execution.execution_id), "source_status": execution.status,
+                        "aggregate_version": int(execution.status_version)} if execution is not None else {})},
+                **({"occurred_at": now} if now is not None else {}),
             ),
         )
 
@@ -251,8 +261,6 @@ class PlatformNotificationRepository:
                     severity=severity,
                 )
             )
-        if not recipients:
-            return None
         return await self._publish_for_recipients(
             event_key=(f"output-job:{output_job.job_id}:aiops.report.ready"
                 if output_job is not None else f"aiops-report:{report.report_id}"),

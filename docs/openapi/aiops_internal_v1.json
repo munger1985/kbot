@@ -20867,6 +20867,89 @@
         "title": "WorkflowKind",
         "type": "string"
       },
+      "WorkflowProjectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "enum": [
+              "aiops_hitl",
+              "aiops_proposal",
+              "aiops_run"
+            ],
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "required": [
+          "resource_type",
+          "resource_id",
+          "domain_id"
+        ],
+        "title": "WorkflowProjectionRequest",
+        "type": "object"
+      },
+      "WorkflowProjectionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/WorkflowProjectionRequest"
+          },
+          "source_status": {
+            "title": "Source Status",
+            "type": "string"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "work_item_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "COMPLETED",
+                  "CANCELLED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Item Status"
+          }
+        },
+        "required": [
+          "request",
+          "source_status",
+          "source_version"
+        ],
+        "title": "WorkflowProjectionSnapshot",
+        "type": "object"
+      },
       "WorkloadPolicy": {
         "additionalProperties": false,
         "properties": {
@@ -28355,6 +28438,47 @@
         "summary": "Get View",
         "tags": [
           "AIOps Monitoring"
+        ]
+      }
+    },
+    "/internal/v1/aiops/notifications:projection": {
+      "post": {
+        "operationId": "workflow_projection_internal_v1_aiops_notifications_projection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowProjectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowProjectionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workflow Projection",
+        "tags": [
+          "AIOps Notifications"
         ]
       }
     },

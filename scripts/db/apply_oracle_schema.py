@@ -59,6 +59,7 @@ PLATFORM_FOUNDATION_PERMISSIONS = {
     "platform:role_manage",
     "platform:domain_manage",
     "platform:app_manage",
+    "platform:notification_manage",
     "platform:app_grant_manage",
 } | {
     item.code

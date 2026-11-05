@@ -50,6 +50,7 @@ from aiops_agent.api.conversation_starters import (
 from aiops_agent.api.report_templates import router as report_template_router
 from aiops_agent.api.operations_knowledge import router as operations_knowledge_router
 from aiops_agent.api.output_jobs import router as output_jobs_router
+from aiops_agent.api.notification_projection import router as notification_projection_router
 from aiops_agent.application.output_jobs import OutputJobService
 from aiops_agent.application.output_job_sources import OutputJobSourceValidator
 from aiops_agent.api.workload import (
@@ -318,6 +319,9 @@ def create_aiops_api(
         from aiops_agent.application.output_projection import OutputProjectionService
         app.state.output_projection_service = OutputProjectionService(
             uow_factory=runtime.uow_factory, tenant_scoped=False)
+        from aiops_agent.application.notification_projection import WorkflowProjectionService
+        app.state.workflow_projection_service = WorkflowProjectionService(
+            uow_factory=runtime.uow_factory, tenant_scoped=False)
         app.state.output_job_service = OutputJobService(uow_factory=runtime.uow_factory)
         app.state.output_job_source_validator = OutputJobSourceValidator(plan_capture_reader=plan_capture_reader)
         app.state.operations_knowledge_service = OperationsKnowledgeService(
@@ -429,6 +433,7 @@ def create_aiops_api(
                         "aiops.approve",
                         "aiops.monitor.intake",
                         "aiops.output.reconcile",
+                        "aiops.notification.reconcile",
                     }
                 ),
                 "kbot-agent-runtime-api": frozenset({"aiops.delegate"}),
@@ -469,6 +474,7 @@ def create_aiops_api(
     app.include_router(report_template_router)
     app.include_router(operations_knowledge_router)
     app.include_router(output_jobs_router)
+    app.include_router(notification_projection_router)
     app.include_router(runtime_router)
     app.include_router(intake_router)
     app.include_router(changes_router)

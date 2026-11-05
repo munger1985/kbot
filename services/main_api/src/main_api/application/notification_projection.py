@@ -12,12 +12,14 @@ from main_api.entities import (
     WorkItemEntity,
 )
 from platform_core.notifications import NotificationEnvelope, event_definition
+from platform_core.notifications.aiops import presentation_severity, work_item_identity
 from platform_core.notifications.source_order import output_event_version, source_version_decision
 from platform_core.contracts.aiops.output_projection import OutputProjectionRequest
+from platform_core.contracts.aiops.notification_projection import WorkflowProjectionRequest
 from main_api.application.aiops_output_reconciliation import projection_presentation
 
 
-_TERMINAL = {"SUCCEEDED", "FAILED"}
+_TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"}
 
 
 class NotificationProjectionService:
@@ -30,6 +32,13 @@ class NotificationProjectionService:
             raise ValueError("NOTIFICATION_EVENT_PRODUCER_INVALID")
         if int(outbox.domain_id) != envelope.domain_id:
             raise ValueError("NOTIFICATION_EVENT_DOMAIN_MISMATCH")
+        if (outbox.producer_service == "aiops" and definition.work_item_action
+            and not definition.resolve_work_item):
+            resource_type, resource_id = work_item_identity(resource_type=envelope.resource_type,
+                resource_id=envelope.resource_id, facts=envelope.safe_data)
+            if await uow.notifications.resource_work_item_closed(domain_id=envelope.domain_id,
+                resource_type=resource_type, resource_id=resource_id, action_type=definition.work_item_action):
+                return
 
         operation, deliver = await self._project_operation(
             repository=uow.notifications,
@@ -40,6 +49,12 @@ class NotificationProjectionService:
         if not deliver:
             return
         recipients = set(envelope.recipient_actor_ids)
+        if envelope.event_type == "aiops.proposal.review_required":
+            recipients = await uow.access.notification_approvers(
+                domain_id=envelope.domain_id, exclude_user_id=envelope.initiator_actor_id)
+            if not recipients:
+                # 进入隔离队列并暴露稳定错误码，不能向申请人伪装审批已送达。
+                raise ValueError("NOTIFICATION_APPROVER_UNAVAILABLE")
         if operation is not None and definition.operation_status in _TERMINAL:
             recipients.update(await uow.notifications.watcher_actor_ids(
                 operation_id=operation.operation_id,
@@ -48,6 +63,12 @@ class NotificationProjectionService:
         title = definition.title
         if envelope.resource_name:
             title = f"{title}：{envelope.resource_name}"[:300]
+
+        if definition.resolve_work_item and envelope.event_type.startswith("aiops."):
+            # 结果通知的收件人可能为空或不同，仍需关闭全部审批人的同一资源待办。
+            await self._project_work_item(repository=uow.notifications, outbox=outbox,
+                envelope=envelope, definition=definition,
+                actor_id=envelope.initiator_actor_id or "system:notification", title=title)
 
         for actor_id in sorted(recipients):
             if definition.notify and await uow.notifications.preference_enabled(
@@ -64,7 +85,9 @@ class NotificationProjectionService:
                         recipient_actor_id=actor_id,
                         event_type=envelope.event_type,
                         category=definition.category,
-                        severity=definition.severity,
+                        severity=presentation_severity(envelope.safe_data, definition.severity)
+                            if outbox.producer_service == "aiops" and envelope.event_type.startswith("aiops.situation.")
+                            else definition.severity,
                         title=title,
                         summary=envelope.summary,
                         resource_type=envelope.resource_type,
@@ -162,11 +185,18 @@ class NotificationProjectionService:
         action_type = definition.work_item_action
         if action_type is None:
             return
+        resource_type, resource_id = work_item_identity(resource_type=envelope.resource_type,
+            resource_id=envelope.resource_id, facts=envelope.safe_data)
+        if definition.resolve_work_item and envelope.event_type.startswith("aiops."):
+            await repository.resolve_resource_work_items(domain_id=envelope.domain_id,
+                resource_type=resource_type, resource_id=resource_id, action_type=action_type,
+                outbox_id=outbox.outbox_id, occurred_at=envelope.occurred_at,
+                status=definition.work_item_resolution)
         item = await repository.work_item_for_update(
             domain_id=envelope.domain_id,
             actor_id=actor_id,
-            resource_type=envelope.resource_type,
-            resource_id=envelope.resource_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
             action_type=action_type,
         )
         if definition.resolve_work_item:
@@ -174,12 +204,12 @@ class NotificationProjectionService:
                 item = WorkItemEntity(
                     domain_id=envelope.domain_id,
                     actor_id=actor_id,
-                    resource_type=envelope.resource_type,
-                    resource_id=envelope.resource_id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
                     action_type=action_type,
                     title=title,
                     summary=envelope.summary,
-                    status="COMPLETED",
+                    status=definition.work_item_resolution,
                     opened_outbox_id=outbox.outbox_id,
                     resolved_outbox_id=outbox.outbox_id,
                     last_occurred_at=envelope.occurred_at,
@@ -190,17 +220,21 @@ class NotificationProjectionService:
                 item.status == "OPEN"
                 and envelope.occurred_at >= item.last_occurred_at
             ):
-                item.status = "COMPLETED"
+                item.status = definition.work_item_resolution
                 item.resolved_outbox_id = outbox.outbox_id
                 item.last_occurred_at = envelope.occurred_at
                 item.row_version = int(item.row_version) + 1
+            return
+        if envelope.event_type.startswith("aiops.") and await repository.resource_work_item_closed(
+            domain_id=envelope.domain_id, resource_type=resource_type, resource_id=resource_id,
+            action_type=action_type):
             return
         if item is None:
             await repository.add_work_item(WorkItemEntity(
                 domain_id=envelope.domain_id,
                 actor_id=actor_id,
-                resource_type=envelope.resource_type,
-                resource_id=envelope.resource_id,
+                resource_type=resource_type,
+                resource_id=resource_id,
                 action_type=action_type,
                 title=title,
                 summary=envelope.summary,
@@ -256,7 +290,8 @@ class NotificationDispatcher:
                     await uow.notifications.mark_published(row)
                     await uow.commit()
             except Exception as exc:
-                error_code = type(exc).__name__.upper()[:128]
+                error_code = ("NOTIFICATION_APPROVER_UNAVAILABLE"
+                    if str(exc) == "NOTIFICATION_APPROVER_UNAVAILABLE" else type(exc).__name__.upper()[:128])
                 async with self._uow_factory() as uow:
                     if uow.notifications is None:
                         raise RuntimeError("Notification Repository 未初始化")
@@ -311,4 +346,42 @@ async def reconcile_output_operations(*, uow_factory, resolver, limit: int = 50)
                     operation_id=row["operation_id"], domain_id=int(row["domain_id"]),
                     expected_row_version=int(row["row_version"]))
                 await uow.commit()
+    return applied
+
+
+async def reconcile_workflow_items(*, uow_factory, resolver, limit: int = 50) -> int:
+    """外部读取不持有数据库锁；成功和失败均按观察版本轮转候选。"""
+    async with uow_factory() as uow:
+        rows = await uow.notifications.workflow_candidates(limit=limit)
+        operations = await uow.notifications.workflow_operation_candidates(limit=limit)
+    applied = 0
+    for row in rows:
+        status = None
+        try:
+            snapshot = await resolver.resolve(WorkflowProjectionRequest(
+                resource_type=row["resource_type"], resource_id=row["resource_id"],
+                domain_id=str(row["domain_id"])))
+            status = snapshot.work_item_status
+        except Exception as exc:
+            logger.warning("AIOps 待办对账失败 | work_item_id={} | error={}",
+                row["work_item_id"], type(exc).__name__)
+        async with uow_factory() as uow:
+            changed = await uow.notifications.reconcile_workflow_item(row=row, status=status)
+            await uow.commit()
+            applied += int(changed and status is not None)
+    for row in operations:
+        status = None
+        try:
+            snapshot = await resolver.resolve(WorkflowProjectionRequest(resource_type="aiops_run",
+                resource_id=row["resource_id"], domain_id=str(row["domain_id"])))
+            status = {"CREATED": "RUNNING", "QUEUED": "RUNNING", "RUNNING": "RUNNING",
+                "WAITING_INPUT": "WAITING_USER", "WAITING_APPROVAL": "WAITING_USER",
+                "COMPLETED": "SUCCEEDED", "PARTIAL": "PARTIAL", "FAILED": "FAILED",
+                "CANCELLED": "CANCELLED", "EXPIRED": "EXPIRED"}[snapshot.source_status]
+        except Exception as exc:
+            logger.warning("AIOps 运行投影对账失败 | operation_id={} | error={}",
+                row["operation_id"], type(exc).__name__)
+        async with uow_factory() as uow:
+            await uow.notifications.reconcile_workflow_operation(row=row, status=status)
+            await uow.commit()
     return applied

@@ -118,7 +118,7 @@ class HitlEntity(BaseEntity):
     ops_task_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     proposal_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     request_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    assignee_user_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    assignee_user_id: Mapped[str | None] = mapped_column(String(256))
     prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
     response_schema_json: Mapped[dict[str, Any] | None] = mapped_column(
         OracleNativeJSON

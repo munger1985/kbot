@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from typing import Any
 from uuid import UUID
 
 from platform_core.notifications import event_definition
-from main_api.application.aiops_notification_routes import AIOPS_OUTPUT_EVENTS, aiops_notification_route
+from platform_core.identity import uuid7
+from main_api.entities.access_control import AccessAuditEventEntity
+from main_api.application.aiops_notification_routes import AIOPS_OUTPUT_EVENTS, AIOPS_RESOURCE_EVENTS, aiops_notification_route
 
 
 class NotificationCenterError(ValueError):
@@ -38,7 +41,7 @@ class NotificationCenterService:
     @staticmethod
     async def _serialize_inbox(repository, rows, *, domain_id, actor_id):
         """在授权页内批量补白名单定位，不泄露整个事件信封。"""
-        ids = [row.inbox_id for row in rows if row.event_type in AIOPS_OUTPUT_EVENTS]
+        ids = [row.inbox_id for row in rows if row.event_type in AIOPS_OUTPUT_EVENTS | AIOPS_RESOURCE_EVENTS.keys()]
         payloads = await repository.inbox_route_payloads(
             domain_id=domain_id, actor_id=actor_id, inbox_ids=ids) if ids else {}
         return [serialize_entity(row) | aiops_notification_route(
@@ -162,6 +165,9 @@ class NotificationCenterService:
                 raise NotificationCenterError(
                     "OPERATION_NOT_FOUND", "后台任务不存在", 404,
                 )
+            if operation.initiator_actor_id != actor_id:
+                # 关注关系不能成为获得其他用户任务可见性的入口。
+                raise NotificationCenterError("OPERATION_NOT_FOUND", "后台任务不存在", 404)
             await repository.watch(
                 operation_id=operation_id, domain_id=domain_id,
                 actor_id=actor_id, notify_terminal=notify_terminal,
@@ -215,9 +221,12 @@ class NotificationCenterService:
     async def quarantine(self, *, domain_id: int, limit: int) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
             rows = await self._repo(uow).quarantine(domain_id=domain_id, limit=limit)
-            return [serialize_entity(row) for row in rows]
+            allowed = {"outbox_id", "producer_service", "event_type", "domain_id", "status",
+                "attempt_count", "last_error_code", "created_at", "updated_at"}
+            return [{key: value for key, value in serialize_entity(row).items() if key in allowed}
+                for row in rows]
 
-    async def retry_quarantined(self, *, domain_id: int, outbox_id: UUID) -> None:
+    async def retry_quarantined(self, *, domain_id: int, outbox_id: UUID, actor_id: str) -> None:
         async with self._uow_factory() as uow:
             changed = await self._repo(uow).retry_quarantined(
                 domain_id=domain_id, outbox_id=outbox_id,
@@ -226,6 +235,11 @@ class NotificationCenterService:
                 raise NotificationCenterError(
                     "NOTIFICATION_QUARANTINE_NOT_FOUND", "隔离事件不存在", 404,
                 )
+            await uow.access.add_access_audit_event(AccessAuditEventEntity(
+                event_id=str(uuid7()), actor_id=actor_id, app_id="platform",
+                action="NOTIFICATION_RETRY", resource_type="notification_outbox",
+                resource_id=str(outbox_id), summary_json=json.dumps({"domain_id": domain_id}),
+                affected_member_count=0))
             await uow.commit()
 
     @staticmethod

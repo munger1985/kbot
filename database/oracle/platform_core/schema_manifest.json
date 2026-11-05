@@ -17,7 +17,7 @@
     {
       "name": "003_notifications.sql",
       "statements": 13,
-      "sha256": "edc5e0a0da73d9fb5e12dd3c1887974c394aa123f3991f800077b0543c8a3b17"
+      "sha256": "f9aa4c7ddcf464c52e0c5eae2c64e32dc962e367b38452017afbde203e08448d"
     },
     {
       "name": "004_managed_credentials.sql",

@@ -179,8 +179,18 @@ class AIOpsChangeService(ChangeEffectVerification):
             if (
                 run is None
                 or proposal is None
-                or run.actor_id != actor_id
             ):
+                raise resource_not_found("Proposal")
+            approval_hitl = await uow.changes.get_pending_hitl(
+                ops_task_id=proposal.ops_task_id, request_type="CHANGE_APPROVAL", lock=True)
+            if proposal.status == "PENDING_APPROVAL":
+                if approval_hitl is None or approval_hitl.proposal_id != proposal.proposal_id:
+                    raise state_conflict("Proposal 缺少有效审批节点")
+                if approval_hitl.assignee_user_id not in {None, actor_id}:
+                    raise resource_not_found("Proposal")
+                if actor_id in {run.actor_id, approval_hitl.requested_by}:
+                    raise state_conflict("Proposal 申请人与审批人必须为不同用户")
+            elif run.actor_id != actor_id:
                 raise resource_not_found("Proposal")
             if int(proposal.row_version) != command.expected_row_version:
                 raise state_conflict("Proposal 版本已变化")
@@ -196,11 +206,6 @@ class AIOpsChangeService(ChangeEffectVerification):
                 uow=uow,
                 proposal=proposal,
                 status="REJECTED",
-            )
-            approval_hitl = await uow.changes.get_pending_hitl(
-                ops_task_id=proposal.ops_task_id,
-                request_type="CHANGE_APPROVAL",
-                lock=True,
             )
             if (
                 approval_hitl is not None
@@ -228,7 +233,7 @@ class AIOpsChangeService(ChangeEffectVerification):
                 },
             )
             assert uow.platform_notifications is not None
-            await uow.platform_notifications.emit_proposal_event(
+            await uow.platform_notifications.emit_proposal_event(now=now,
                 run=run,
                 proposal=proposal,
                 event_type="aiops.proposal.rejected",
@@ -275,6 +280,12 @@ class AIOpsChangeService(ChangeEffectVerification):
                 )
                 if token is None:
                     raise state_conflict("审批幂等记录不完整")
+                if token.approver_id != actor_id:
+                    raise resource_not_found("Proposal")
+                scoped = await uow.changes.get_proposal_scoped(
+                    proposal_id=proposal_id, domain_id=domain_id)
+                if scoped is None:
+                    raise resource_not_found("Proposal")
                 return self._approval_receipt(replay, token)
 
             preliminary = await uow.changes.get_proposal_scoped(
@@ -316,8 +327,10 @@ class AIOpsChangeService(ChangeEffectVerification):
             )
             if hitl is None or hitl.proposal_id != proposal_id:
                 raise state_conflict("Proposal 缺少有效审批节点")
-            if hitl.assignee_user_id != actor_id:
+            if hitl.assignee_user_id is not None and hitl.assignee_user_id != actor_id:
                 raise resource_not_found("Proposal")
+            if actor_id in {run.actor_id, hitl.requested_by}:
+                raise state_conflict("Proposal 申请人与审批人必须为不同用户")
 
             target = await uow.targets.get_scoped(
                 target_id=proposal.target_id,
@@ -560,7 +573,7 @@ class AIOpsChangeService(ChangeEffectVerification):
                 },
             )
             assert uow.platform_notifications is not None
-            await uow.platform_notifications.emit_proposal_event(
+            await uow.platform_notifications.emit_proposal_event(now=now,
                 run=run,
                 proposal=proposal,
                 event_type="aiops.proposal.approved",
@@ -743,6 +756,10 @@ class AIOpsChangeService(ChangeEffectVerification):
                     "trace_id": trace_id,
                 },
             )
+            await uow.platform_notifications.emit_proposal_event(now=now, run=run, proposal=proposal,
+                event_type="aiops.proposal.manual_result_recorded",
+                summary={"EXECUTED": "人工执行已登记，实际效果仍需验证。", "FAILED": "人工执行失败已登记。",
+                    "CANCELLED": "人工执行取消已登记。"}[str(command.status)], actor_id=actor_id)
             if str(command.status) == "EXECUTED":
                 outbox_payload = {
                     "proposal_id": str(proposal_id),
@@ -1258,6 +1275,13 @@ class AIOpsChangeService(ChangeEffectVerification):
                     "trace_id": trace_id,
                 },
             )
+            notification_type = {"RUNNING": "started", "SUCCEEDED": "succeeded",
+                "FAILED": "failed", "CANCELLED": "cancelled", "TIMED_OUT": "timed_out",
+                "UNKNOWN": "unknown"}.get(execution.status)
+            if notification_type is not None:
+                await uow.platform_notifications.emit_proposal_event(now=now, run=run, proposal=proposal,
+                    event_type=f"aiops.execution.{notification_type}", execution=execution,
+                    summary="变更执行状态已更新；执行成功不代表效果验证通过。", actor_id=run.actor_id)
             await uow.commit()
             return EventReceipt(
                 event_id=event.event_id,

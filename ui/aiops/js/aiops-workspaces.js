@@ -517,12 +517,15 @@
     const event = [...values(turn.events)].reverse().find(item => item.event_type === "diagnostic.input_required");
     if (!event?.payload?.hitl_id) return;
     const pending = await KBotAIOpsAuth.request(`${api}/hitl/${encodeURIComponent(event.payload.hitl_id)}`);
+    const anchor = panel.querySelector(`[data-evidence-request-turn="${CSS.escape(String(turn.turn_id))}"]`);
+    if (anchor) mountManualEvidence(pending, anchor, () => loadConversation(turn.conversation_id));
+  }
+
+  function mountManualEvidence(pending, anchor, onResolved) {
     if (pending.hitl_type !== "MANUAL_DIAGNOSTIC_SQL" || pending.status !== "PENDING") return;
     const request = pending.request || {};
     const queries = values(request.queries);
     if (!queries.length) return;
-    const anchor = panel.querySelector(`[data-evidence-request-turn="${CSS.escape(String(turn.turn_id))}"]`);
-    if (!anchor) return;
     const card = document.createElement("section");
     card.className = "key-value-card aiops-action-card aiops-evidence-request";
     card.innerHTML = `<header><div><h3>需要补充数据库证据</h3><p>${esc(values(request.instructions).join("\n"))}</p></div><span class="status-pill status-warning">等待补证</span></header><p class="table-secondary">请只使用目标数据库的只读账号执行以下冻结 SQL；每项粘贴完整原始输出。${pending.expires_at ? ` 请求截止：${esc(shell.fmt(pending.expires_at))}` : ""}</p>${queries.map(item=>`<div class="aiops-query-card"><strong>${esc(item.purpose)}</strong><p><code>${esc(item.query_id)}</code> · 最多 ${esc(item.max_rows)} 行 · 超时 ${esc(item.timeout_hint_seconds)} 秒</p><pre class="technical-value">${esc(item.sql_text)}</pre><label>原始数据库输出<textarea data-evidence-output="${esc(item.query_id)}" rows="7" maxlength="65536" placeholder="粘贴 ${esc(item.query_id)} 的完整原始输出"></textarea></label></div>`).join("")}<footer><button class="secondary-button" type="button" data-skip-evidence>跳过补证</button><button class="primary-button" type="button" data-submit-evidence disabled>提交并继续诊断</button></footer>`;
@@ -539,7 +542,12 @@
     card.oninput = refresh;
     const respond = async skipping => {
       if (busy || !skipping && submit.disabled) return;
-      if (skipping && !await confirmChatAction({title:"跳过人工补证？",message:"系统将只基于已经保存的证据继续分析，可能无法给出确定根因。",confirmLabel:"跳过补证",tone:"warning"})) return;
+      if (skipping) {
+        const confirmed = document.body.dataset.page === "chat"
+          ? await confirmChatAction({title:"跳过人工补证？",message:"系统将只基于已经保存的证据继续分析，可能无法给出确定根因。",confirmLabel:"跳过补证",tone:"warning"})
+          : confirm("跳过人工补证？系统将只基于已保存证据继续分析。");
+        if (!confirmed) return;
+      }
       busy = true;
       refresh();
       try {
@@ -548,7 +556,7 @@
           headers:{"Idempotency-Key":KBotAIOpsAuth.uuid(),...(skipping ? {"If-Match":`"rv-${pending.row_version}"`} : {})},
           ...(!skipping ? {body:JSON.stringify({expected_row_version:pending.row_version,responses:outputs().map(input=>({query_id:input.dataset.evidenceOutput,status:"SUCCEEDED",raw_output:input.value}))})} : {}),
         });
-        await loadConversation(turn.conversation_id);
+        await onResolved();
         shell.toast(skipping ? "已跳过人工补证，诊断将继续执行" : "人工证据已提交，诊断将继续执行");
       } catch (error) {shell.toast(error.message || "无法提交人工证据");}
       finally {busy=false;refresh();}
@@ -608,6 +616,7 @@
         body: JSON.stringify(approving ? { expected_row_version: Number(button.dataset.version), expected_proposal_hash: button.dataset.hash, note: reason } : { expected_row_version: Number(button.dataset.version), reason }),
       });
       shell.toast(approving ? "审批已提交，等待执行与验证" : "已拒绝该变更");
+      dispatchEvent(new CustomEvent("aiops:proposal-resolved", {detail: {proposalId}}));
       if (state.conversation) await loadConversation(state.conversation.conversation_id);
       else button.closest(".ops-message,.aiops-chat-message")?.remove();
     } catch (error) {
@@ -645,6 +654,7 @@
         }),
       });
       shell.toast(status === "EXECUTED" ? "人工结果已回填，系统将进行只读验证" : "人工结果已回填");
+      dispatchEvent(new CustomEvent("aiops:proposal-resolved", {detail: {proposalId: button.dataset.manualProposal}}));
       if (state.conversation) await loadConversation(state.conversation.conversation_id);
     } catch (error) { shell.toast(error.message); }
     finally {
@@ -1097,7 +1107,7 @@
       ? `<div class="ops-manual-result"><strong>DBA 人工执行结果</strong><label>处理结果<select data-manual-status><option value="EXECUTED">已执行</option><option value="FAILED">执行失败</option><option value="CANCELLED">已取消</option></select></label><label>处理说明（可选）<textarea data-manual-note maxlength="4000" rows="3" placeholder="处理说明（可选）"></textarea></label><label>受限输出（可选，请勿填写密码或密钥）<textarea data-manual-output maxlength="16000" rows="4" placeholder="受限输出（可选，请勿填写密码或密钥）"></textarea></label><button class="primary-button" type="button" data-manual-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">回填结果</button></div>`
       : `<p class="ops-proposal-status">当前状态：${text(payload.status || "UNKNOWN")}</p>`;
     const effect = canApprove && payload.proposal_id ? `<details class="effect-verification" data-effect-proposal="${esc(payload.proposal_id)}"><summary data-effect-open>业务效果验证</summary><p>执行前冻结基线、主要效果、负载条件、护栏与停止条件。动作成功不等于业务恢复；没有对照实验时不能排除混杂因素。</p><div data-effect-body><button class="secondary-button" type="button" data-effect-refresh-initial>刷新受控证据</button></div></details>` : "";
-    return `<section class="key-value-card aiops-action-card ops-proposal"><header><div><h3>${title}</h3><p>${esc(payload.action_template_id || "Action Template")} · ${text(payload.risk_level || "UNKNOWN")}</p></div><span class="status-pill status-warning">${payload.status === "ADVISORY_READY" ? "建议语句已就绪" : pending ? "待审批" : text(payload.status || "未知")}</span></header>${payload.rationale ? `<p>${text(payload.rationale)}</p>` : ""}${payload.impact ? `<p><strong>影响范围：</strong>${text(payload.impact)}</p>` : ""}${payload.lock_impact ? `<p><strong>锁影响：</strong>${text(payload.lock_impact)}</p>` : ""}${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${payload.command_preview ? `<p class="table-secondary">${manual ? "仅供 DBA 人工核对并在系统外执行" : "仅供 DBA 人工核对"}</p><pre class="technical-value">${esc(payload.command_preview)}</pre>` : ""}${values(payload.verification_plan).length ? `<p><strong>验证计划：</strong>${payload.verification_plan.map(text).join("、")}</p>` : ""}${actions}${effect}</section>`;
+    return `<section class="key-value-card aiops-action-card ops-proposal"><header><div><h3>${title}</h3><p>${esc(payload.action_template_id || "Action Template")} · ${text(payload.risk_level || "UNKNOWN")}</p></div><span class="status-pill status-warning">${payload.status === "ADVISORY_READY" ? "建议语句已就绪" : pending ? "待审批" : text(payload.status || "未知")}</span></header>${payload.rationale ? `<p>${text(payload.rationale)}</p>` : ""}${payload.impact ? `<p><strong>影响范围：</strong>${text(payload.impact)}</p>` : ""}${payload.lock_impact ? `<p><strong>锁影响：</strong>${text(payload.lock_impact)}</p>` : ""}${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${payload.command_preview ? `<p class="table-secondary">${manual ? "仅供 DBA 人工核对并在系统外执行" : "仅供 DBA 人工核对"}</p><pre class="technical-value">${esc(payload.command_preview)}</pre>` : ""}${values(payload.verification_plan).length ? `<p><strong>验证计划：</strong>${payload.verification_plan.map(text).join("、")}</p>` : ""}${payload.risk ? `<p><strong>风险：</strong>${text(payload.risk)}</p>` : ""}${payload.rollback_plan ? `<p><strong>回退计划：</strong>${text(payload.rollback_plan)}</p>` : ""}${actions}${effect}</section>`;
   }
 
   function answerBlockHtml(block, turn) {
@@ -2765,4 +2775,9 @@
     if (page === "chat") return initChat();
     return null;
   }).catch((error) => shell.toast(error.message));
+  globalThis.KBotAIOpsTaskCards = {
+    proposalHtml: payload => chatProposalHtml(payload, {}),
+    queryHtml: diagnosticQueryApprovalHtml,
+    bindQuery: bindDiagnosticQueryActions, mountManualEvidence,
+  };
 })();

@@ -12,7 +12,8 @@ from time import monotonic
 from loguru import logger
 
 from main_api.application import NotificationDispatcher
-from main_api.application.notification_projection import reconcile_output_operations
+from main_api.application.notification_projection import reconcile_output_operations, reconcile_workflow_items
+from main_api.application.aiops_workflow_reconciliation import AIOpsWorkflowReconciliation
 from main_api.application.aiops_output_reconciliation import AIOpsOutputReconciliation
 from main_api.application.output_authority import OutputAuthorityService
 from main_api.config import get_main_api_settings
@@ -53,10 +54,12 @@ async def main() -> None:
     projection_client = AIOpsManagementClient(
         base_url=settings.aiops.base_url, timeout_seconds=min(settings.aiops.timeout_seconds, 10),
         auth=AIOpsClientAuth(caller_service=settings.api.service_name, audience=settings.aiops.audience,
-            scopes=("aiops.output.reconcile",), auth_context_codec=create_auth_context_codec(),
+            scopes=("aiops.output.reconcile", "aiops.notification.reconcile"), auth_context_codec=create_auth_context_codec(),
             service_identity_codec=create_service_identity_codec()))
     resolver = AIOpsOutputReconciliation(client=projection_client,
         authority=OutputAuthorityService(uow_factory=uow_factory),
+        caller_service=settings.api.service_name)
+    workflow_resolver = AIOpsWorkflowReconciliation(client=projection_client,
         caller_service=settings.api.service_name)
     case_session = aiohttp.ClientSession()
     case_lifecycle = CaseResourceLifecycle(uow_factory=uow_factory,
@@ -71,6 +74,7 @@ async def main() -> None:
             if monotonic() >= next_reconciliation:
                 try:
                     await reconcile_output_operations(uow_factory=uow_factory, resolver=resolver)
+                    await reconcile_workflow_items(uow_factory=uow_factory, resolver=workflow_resolver)
                 except Exception:
                     logger.exception("AIOps 通知任务对账批次失败")
                 next_reconciliation = monotonic() + config.output_reconcile_seconds

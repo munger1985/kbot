@@ -5628,9 +5628,10 @@ class AIOpsRuntimeService:
                 },
             )
             assert uow.platform_notifications is not None
-            await uow.platform_notifications.emit_run_event(
+            await uow.platform_notifications.emit_run_event(now=now,
                 run=run,
                 event_type="aiops.diagnostic.input_required",
+                hitl_id=command.hitl_id, source_status="PENDING",
                 summary=(
                     "诊断查询等待用户审批"
                     if waiting_for_approval
@@ -5818,7 +5819,7 @@ class AIOpsRuntimeService:
         )
         if status == "PENDING_APPROVAL":
             assert uow.platform_notifications is not None
-            await uow.platform_notifications.emit_proposal_event(
+            await uow.platform_notifications.emit_proposal_event(now=now,
                 run=run,
                 proposal=proposal,
                 event_type="aiops.proposal.review_required",
@@ -5833,7 +5834,7 @@ class AIOpsRuntimeService:
                     ops_task_id=task.ops_task_id,
                     proposal_id=proposal.proposal_id,
                     request_type="CHANGE_APPROVAL",
-                    assignee_user_id=run.actor_id,
+                    assignee_user_id=None,
                     prompt_text="请查看权威 Proposal 后逐条确认是否执行",
                     response_schema_json={
                         "schema_version": "APPROVAL_DECISION.v1"
@@ -5845,7 +5846,7 @@ class AIOpsRuntimeService:
                     idempotency_key=(
                         f"proposal:{proposal.proposal_id}:approval"
                     ),
-                    requested_by="aiops.change-service",
+                    requested_by=run.actor_id,
                     requested_at=now,
                     expires_at=snapshot.expires_at,
                 )
@@ -6141,7 +6142,7 @@ class AIOpsRuntimeService:
                         uow, run=run, trace_id=command.trace_id, now=now
                     )
                     assert uow.platform_notifications is not None
-                    await uow.platform_notifications.emit_run_event(
+                    await uow.platform_notifications.emit_run_event(now=now,
                         run=run,
                         event_type="aiops.run.failed",
                         summary=policy.safe_message,
@@ -6331,6 +6332,9 @@ class AIOpsRuntimeService:
                     return False
                 proposal.status = "EXPIRED"
                 proposal.updated_at = now
+                await uow.platform_notifications.emit_proposal_event(now=now, run=run, proposal=proposal,
+                    event_type="aiops.proposal.expired", summary="变更方案已过期，不能继续审批执行。",
+                    actor_id=run.actor_id)
                 approval_hitl = await uow.changes.get_pending_hitl(
                     ops_task_id=proposal.ops_task_id,
                     request_type="CHANGE_APPROVAL",
@@ -6417,6 +6421,10 @@ class AIOpsRuntimeService:
                     # Reconciler 必须能够清理旧版本或并发遗留的孤儿 HITL，
                     # 不能尝试把终态 Task/Run 重新推进到诊断态。
                     hitl.status = "EXPIRED"
+                    await uow.platform_notifications.emit_run_event(now=now, run=run,
+                        event_type="aiops.diagnostic.input_expired", summary="人工请求已过期。",
+                        actor_id=hitl.assignee_user_id or run.actor_id,
+                        hitl_id=hitl.hitl_id, source_status="EXPIRED")
                     hitl.responded_by = "aiops.reconciler"
                     hitl.responded_at = now
                     hitl.response_json = {
@@ -6470,6 +6478,10 @@ class AIOpsRuntimeService:
                     )
                 )
                 hitl.status = "EXPIRED"
+                await uow.platform_notifications.emit_run_event(now=now, run=run,
+                    event_type="aiops.diagnostic.input_expired", summary="人工请求已过期。",
+                    actor_id=hitl.assignee_user_id or run.actor_id,
+                    hitl_id=hitl.hitl_id, source_status="EXPIRED")
                 hitl.responded_by = "aiops.reconciler"
                 hitl.responded_at = now
                 hitl.response_json = {
@@ -6668,6 +6680,12 @@ class AIOpsRuntimeService:
                         "trace_id": trace_id,
                     },
                 )
+                await uow.platform_notifications.emit_proposal_event(now=now, run=run, proposal=proposal,
+                    event_type=("aiops.execution.unknown" if execution.status == "UNKNOWN"
+                        else "aiops.execution.timed_out"), execution=execution,
+                    summary=("数据库动作已开始，但执行结果未知，必须核验。"
+                        if execution.status == "UNKNOWN" else "数据库动作开始前授权已超时。"),
+                    actor_id=run.actor_id)
                 await uow.commit()
                 return True
             task = await uow.runs.lock_expired_task(now=now)
@@ -6809,7 +6827,7 @@ class AIOpsRuntimeService:
                         uow, run=run, trace_id=trace_id, now=now
                     )
                     assert uow.platform_notifications is not None
-                    await uow.platform_notifications.emit_run_event(
+                    await uow.platform_notifications.emit_run_event(now=now,
                         run=run,
                         event_type="aiops.run.failed",
                         summary=run.error_message or "诊断运行失败",
@@ -8561,6 +8579,9 @@ class AIOpsRuntimeService:
             await self._project_turn_interaction_status(uow=uow, run=run,
                 status="WAITING_USER" if run.budget_paused_at is not None else "COLLECTING",
                 event_type="diagnostic.input_received", payload={"hitl_id": str(hitl.hitl_id), "status": "ANSWERED"})
+            await uow.platform_notifications.emit_run_event(now=now, run=run,
+                event_type="aiops.diagnostic.input_resolved", summary="人工补充输入已提交，诊断继续进行。",
+                actor_id=actor_id, hitl_id=hitl.hitl_id, source_status="ANSWERED")
             await uow.commit()
             return HitlResult(
                 hitl_id=hitl.hitl_id,
@@ -8768,6 +8789,9 @@ class AIOpsRuntimeService:
                     "status": target_status,
                 },
             )
+            await uow.platform_notifications.emit_run_event(now=now, run=run,
+                event_type="aiops.diagnostic.input_resolved", summary="诊断查询审批已处理。",
+                actor_id=actor_id, hitl_id=hitl.hitl_id, source_status=target_status)
             await uow.commit()
             return HitlResult(
                 hitl_id=hitl.hitl_id,
@@ -9025,6 +9049,9 @@ class AIOpsRuntimeService:
             await self._project_turn_interaction_status(uow=uow, run=run,
                 status="WAITING_USER" if run.budget_paused_at is not None else "COLLECTING",
                 event_type="diagnostic.input_skipped", payload={"hitl_id": str(hitl.hitl_id), "status": "SKIPPED"})
+            await uow.platform_notifications.emit_run_event(now=now, run=run,
+                event_type="aiops.diagnostic.input_resolved", summary="该人工补证已跳过，诊断按证据缺口继续。",
+                actor_id=actor_id, hitl_id=hitl.hitl_id, source_status="SKIPPED")
             await uow.commit()
             return HitlResult(
                 hitl_id=hitl.hitl_id,
@@ -9365,6 +9392,24 @@ class AIOpsRuntimeService:
             hitl.responded_by = None
             hitl.response_json = {"reason": f"RUN_{status}"}
             hitl.response_hash = sha256_json(hitl.response_json)
+
+            if hitl.request_type == "CHANGE_APPROVAL":
+                proposal = await uow.changes.get_proposal(proposal_id=hitl.proposal_id, lock=True)
+                if proposal is None or proposal.ops_run_id != run.ops_run_id:
+                    raise state_conflict("审批节点缺少同一运行的变更方案")
+                if proposal.status == "PENDING_APPROVAL":
+                    proposal.status = "EXPIRED" if status == "EXPIRED" else "SUPERSEDED"
+                    proposal.updated_at = now
+                    await uow.platform_notifications.emit_proposal_event(now=now, run=run, proposal=proposal,
+                        event_type=("aiops.proposal.expired" if status == "EXPIRED"
+                            else "aiops.proposal.invalidated"),
+                        summary="运行已终止，尚未审批的变更方案已失效。", actor_id=run.actor_id)
+            else:
+                await uow.platform_notifications.emit_run_event(now=now, run=run,
+                    event_type=("aiops.diagnostic.input_expired" if status == "EXPIRED"
+                        else "aiops.diagnostic.input_cancelled"), summary="运行已终止，该人工请求已关闭。",
+                    actor_id=hitl.assignee_user_id or run.actor_id,
+                    hitl_id=hitl.hitl_id, source_status=status)
 
     @staticmethod
     def _stale_lease() -> AIOpsApplicationError:

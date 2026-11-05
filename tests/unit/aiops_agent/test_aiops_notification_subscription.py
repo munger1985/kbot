@@ -220,7 +220,7 @@ class NotificationSubscriptionRoutingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["portal-user-1"], envelope.recipient_actor_ids)
         self.assertNotIn("system:signal-intake", envelope.recipient_actor_ids)
 
-    async def test_system_report_without_subscriber_creates_no_notification(
+    async def test_system_report_without_subscriber_keeps_empty_audience_event(
         self,
     ) -> None:
         uow = SimpleNamespace(
@@ -254,8 +254,9 @@ class NotificationSubscriptionRoutingTest(unittest.IsolatedAsyncioTestCase):
                 actor_id=run.actor_id,
             )
 
-        self.assertIsNone(result)
-        publish.assert_not_awaited()
+        self.assertIsNotNone(result)
+        publish.assert_awaited_once()
+        self.assertEqual(publish.await_args.kwargs["envelope"].recipient_actor_ids, [])
 
     async def test_report_notification_truncates_long_summary(self) -> None:
         uow = SimpleNamespace(

@@ -260,6 +260,66 @@ class NotificationRepository:
         self._session.add(entity)
         await self._session.flush()
 
+    async def resolve_resource_work_items(self, *, domain_id, resource_type, resource_id,
+        action_type, outbox_id, occurred_at, status):
+        """业务终态关闭该交互的所有收件人待办，不依赖本次结果通知名单。"""
+        await self._session.execute(update(WorkItemEntity).where(
+            WorkItemEntity.domain_id == domain_id, WorkItemEntity.resource_type == resource_type,
+            WorkItemEntity.resource_id == resource_id, WorkItemEntity.action_type == action_type,
+            WorkItemEntity.status == "OPEN", WorkItemEntity.last_occurred_at <= occurred_at,
+        ).values(status=status, resolved_outbox_id=outbox_id, last_occurred_at=occurred_at,
+            row_version=WorkItemEntity.row_version + 1))
+
+    async def resource_work_item_closed(self, *, domain_id, resource_type, resource_id, action_type):
+        return await self._session.scalar(select(WorkItemEntity.work_item_id).where(
+            WorkItemEntity.domain_id == domain_id, WorkItemEntity.resource_type == resource_type,
+            WorkItemEntity.resource_id == resource_id, WorkItemEntity.action_type == action_type,
+            WorkItemEntity.status.in_(("COMPLETED", "CANCELLED"))).limit(1)) is not None
+
+    async def workflow_candidates(self, *, limit=50):
+        cutoff = _now() - timedelta(minutes=2)
+        items = (await self._session.execute(select(WorkItemEntity).where(
+            WorkItemEntity.status == "OPEN",
+            WorkItemEntity.action_type.in_(("aiops.run.input", "aiops.proposal.review")),
+            WorkItemEntity.updated_at < cutoff,
+        ).order_by(WorkItemEntity.updated_at, WorkItemEntity.work_item_id).limit(limit))).scalars()
+        return [dict(work_item_id=item.work_item_id, domain_id=int(item.domain_id),
+            resource_type=item.resource_type, resource_id=item.resource_id,
+            row_version=int(item.row_version)) for item in items]
+
+    async def workflow_operation_candidates(self, *, limit=50):
+        operation = BackgroundOperationEntity
+        cutoff = _now() - timedelta(minutes=2)
+        rows = (await self._session.execute(select(operation).where(
+            operation.producer_service == "aiops", operation.source_version.is_(None),
+            operation.resource_type == "aiops_run",
+            operation.status.in_(("RUNNING", "WAITING_USER", "PARTIAL")),
+            or_(operation.last_reconciled_at.is_(None), operation.last_reconciled_at < cutoff),
+        ).order_by(func.coalesce(operation.last_reconciled_at, operation.created_at),
+            operation.operation_id).limit(limit))).scalars()
+        return [dict(operation_id=item.operation_id, domain_id=int(item.domain_id),
+            resource_id=item.source_operation_id, row_version=int(item.row_version)) for item in rows]
+
+    async def reconcile_workflow_operation(self, *, row, status):
+        operation = BackgroundOperationEntity
+        await self._session.execute(update(operation).where(
+            operation.operation_id == row["operation_id"], operation.domain_id == row["domain_id"],
+            operation.row_version == row["row_version"], operation.source_version.is_(None),
+        ).values(status=status if status is not None else operation.status,
+            last_reconciled_at=_now(), row_version=operation.row_version + 1))
+
+    async def reconcile_workflow_item(self, *, row, status):
+        result = await self._session.execute(update(WorkItemEntity).where(
+            WorkItemEntity.work_item_id == row["work_item_id"],
+            WorkItemEntity.domain_id == row["domain_id"],
+            WorkItemEntity.resource_type == row["resource_type"],
+            WorkItemEntity.resource_id == row["resource_id"],
+            WorkItemEntity.row_version == row["row_version"],
+            WorkItemEntity.status == "OPEN",
+        ).values(status=status or "OPEN", updated_at=_now(),
+            row_version=WorkItemEntity.row_version + 1))
+        return bool(result.rowcount)
+
     async def summary(self, *, domain_id: int, actor_id: str) -> dict[str, int]:
         unread = await self._session.scalar(
             select(func.count()).select_from(NotificationInboxEntity).where(

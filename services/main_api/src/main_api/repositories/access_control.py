@@ -196,6 +196,25 @@ class AccessControlRepository:
         )
         return set(rows)
 
+    async def notification_approvers(self, *, domain_id: int, exclude_user_id: str | None) -> set[str]:
+        """复用当前 Domain 成员与权限事实；审批收件人不得包括申请人。"""
+        members = await self.list_app_members(app_id="aiops")
+        result = set()
+        from platform_core.authorization import built_in_role_permissions
+        for member in members:
+            if member.status != "ACTIVE" or member.user_id == exclude_user_id:
+                continue
+            user = await self.get_user(member.user_id)
+            if user is None or user.status != "ACTIVE":
+                continue
+            permissions = await self.permissions_for(app_id="aiops", domain_id=domain_id, user_id=member.user_id)
+            for role in await self.list_roles(app_id="aiops", domain_id=domain_id, user_id=member.user_id):
+                if role in BUILT_IN_APP_ROLE_CODES:
+                    permissions.update(built_in_role_permissions("aiops", role))
+            if {"aiops:use", "aiops:proposal:approve"} <= permissions:
+                result.add(member.user_id)
+        return result
+
     async def permissions_for(self, *, app_id: str, domain_id: int, user_id: str) -> set[str]:
         """返回自定义角色权限；内置角色权限由统一授权策略实时展开。"""
         rows = await self._session.scalars(

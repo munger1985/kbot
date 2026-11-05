@@ -8,7 +8,7 @@ from typing import Literal
 
 
 ProjectionStatus = Literal[
-    "RUNNING", "WAITING_USER", "SUCCEEDED", "PARTIAL", "FAILED"
+    "RUNNING", "WAITING_USER", "SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED"
 ]
 
 
@@ -23,6 +23,7 @@ class NotificationEventDefinition:
     operation_status: ProjectionStatus | None = None
     work_item_action: str | None = None
     resolve_work_item: bool = False
+    work_item_resolution: str = "COMPLETED"
     retention_days: int = 90
     allowed_channels: tuple[str, ...] = ("IN_APP",)
 
@@ -46,6 +47,10 @@ def _event(
 
 
 _EVENTS = (
+    _event("aiops.proposal.invalidated", "aiops", "RESULT", "WARNING", "AIOps 变更方案已失效", work_item_action="aiops.proposal.review", resolve_work_item=True, work_item_resolution="CANCELLED"),
+    _event("aiops.diagnostic.input_cancelled", "aiops", "RESULT", "WARNING", "AIOps 人工交互已取消", work_item_action="aiops.run.input", resolve_work_item=True, work_item_resolution="CANCELLED"),
+    _event("aiops.execution.unknown", "aiops", "RESULT", "CRITICAL", "AIOps 变更执行结果未知，需核验"),
+    _event("aiops.execution.timed_out", "aiops", "RESULT", "WARNING", "AIOps 变更执行开始前已超时"),
     _event("aiops.output_job.started", "aiops", "TASK", "INFO", "AIOps 输出已排队", notify=False, operation_status="RUNNING"),
     _event("aiops.output_job.failed", "aiops", "RESULT", "WARNING", "AIOps 输出未完成", operation_status="FAILED"),
     _event("aiops.case.draft_ready", "aiops", "RESULT", "INFO", "诊断案例草稿已生成", operation_status="SUCCEEDED"),
@@ -81,12 +86,21 @@ _EVENTS = (
     _event("model.catalog.delete_blocked", "model-serving", "ACTION_REQUIRED", "WARNING", "模型删除被引用阻止"),
     _event("model.runtime.reload_failed", "model-serving", "SYSTEM", "CRITICAL", "模型运行时重新加载失败"),
     _event("aiops.diagnostic.input_required", "aiops", "ACTION_REQUIRED", "WARNING", "AIOps 诊断等待补充证据", operation_status="WAITING_USER", work_item_action="aiops.run.input"),
+    _event("aiops.diagnostic.input_resolved", "aiops", "TASK", "INFO", "AIOps 人工交互已处理", notify=False, work_item_action="aiops.run.input", resolve_work_item=True),
+    _event("aiops.diagnostic.input_expired", "aiops", "RESULT", "WARNING", "AIOps 人工交互已过期", work_item_action="aiops.run.input", resolve_work_item=True, work_item_resolution="CANCELLED"),
     _event("aiops.situation.detected", "aiops", "SYSTEM", "WARNING", "数据库异常已确认"),
+    _event("aiops.situation.escalated", "aiops", "SYSTEM", "CRITICAL", "数据库异常严重程度已升级"),
     _event("aiops.diagnosis.started", "aiops", "TASK", "WARNING", "AIOps 主动诊断已启动", operation_status="RUNNING"),
     _event("aiops.situation.recovered", "aiops", "RESULT", "INFO", "数据库异常已恢复"),
     _event("aiops.proposal.review_required", "aiops", "ACTION_REQUIRED", "WARNING", "AIOps 变更方案等待审批", work_item_action="aiops.proposal.review"),
     _event("aiops.proposal.approved", "aiops", "TASK", "INFO", "AIOps 变更方案已批准", work_item_action="aiops.proposal.review", resolve_work_item=True),
     _event("aiops.proposal.rejected", "aiops", "RESULT", "WARNING", "AIOps 变更方案已拒绝", work_item_action="aiops.proposal.review", resolve_work_item=True),
+    _event("aiops.proposal.expired", "aiops", "RESULT", "WARNING", "AIOps 变更方案已过期", work_item_action="aiops.proposal.review", resolve_work_item=True, work_item_resolution="CANCELLED"),
+    _event("aiops.execution.started", "aiops", "TASK", "INFO", "AIOps 变更开始执行"),
+    _event("aiops.execution.succeeded", "aiops", "RESULT", "INFO", "AIOps 变更执行成功，效果待验证"),
+    _event("aiops.execution.failed", "aiops", "RESULT", "CRITICAL", "AIOps 变更执行失败"),
+    _event("aiops.execution.cancelled", "aiops", "RESULT", "WARNING", "AIOps 变更执行已取消"),
+    _event("aiops.proposal.manual_result_recorded", "aiops", "RESULT", "INFO", "AIOps 人工执行结果已登记"),
     _event("aiops.knowledge.review_required", "aiops", "ACTION_REQUIRED", "WARNING", "AIOps 案例来源需要重新核验"),
     _event("aiops.report.ready", "aiops", "RESULT", "INFO", "AIOps 报告已生成", operation_status="SUCCEEDED"),
     _event("aiops.run.failed", "aiops", "RESULT", "WARNING", "AIOps 诊断失败", operation_status="FAILED", work_item_action="aiops.run.input", resolve_work_item=True),

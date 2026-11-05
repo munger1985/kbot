@@ -13,7 +13,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from main_api.application import NotificationCenterError, NotificationCenterService
-from platform_core.contracts import PUBLIC_API_V1
+from main_api.application.access_control import AccessDeniedError
+from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
 
 
 router = APIRouter(prefix=PUBLIC_API_V1, tags=["Notifications"])
@@ -62,6 +63,19 @@ def _raise(exc: NotificationCenterError) -> None:
     raise HTTPException(
         exc.status_code, {"code": exc.code, "message": exc.message}
     ) from exc
+
+
+async def _require_management(request: Request) -> tuple[int, str]:
+    """隔离队列只允许具有明确平台通知管理权限的人类主体操作。"""
+    domain_id, actor_id = _scope(request)
+    if request.state.auth_context.principal_kind != PrincipalKind.PORTAL:
+        raise HTTPException(403, {"code": "NOTIFICATION_MANAGEMENT_DENIED"})
+    try:
+        await request.app.state.access_control_service.require_platform(
+            user_id=actor_id, permission_code="platform:notification_manage")
+    except AccessDeniedError as exc:
+        raise HTTPException(403, {"code": "NOTIFICATION_MANAGEMENT_DENIED"}) from exc
+    return domain_id, actor_id
 
 
 def _cursor(sequence: int) -> str:
@@ -196,7 +210,7 @@ async def forget_notification_actor(request: Request):
 async def notification_quarantine(
     request: Request, limit: int = Query(default=50, ge=1, le=100),
 ):
-    domain_id, _ = _scope(request)
+    domain_id, _ = await _require_management(request)
     return {"items": await _service(request).quarantine(
         domain_id=domain_id, limit=limit,
     )}
@@ -204,10 +218,10 @@ async def notification_quarantine(
 
 @router.post("/notifications/quarantine/{outbox_id}/retry")
 async def retry_notification(outbox_id: UUID, request: Request):
-    domain_id, _ = _scope(request)
+    domain_id, actor_id = await _require_management(request)
     try:
         await _service(request).retry_quarantined(
-            domain_id=domain_id, outbox_id=outbox_id,
+            domain_id=domain_id, outbox_id=outbox_id, actor_id=actor_id,
         )
     except NotificationCenterError as exc:
         _raise(exc)

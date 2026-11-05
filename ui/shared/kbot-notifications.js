@@ -6,7 +6,12 @@
     const scope = String(domainId ?? "");
     if (!/^[1-9]\d*$/.test(scope) || String(item.domain_id) !== scope || String(params.domain_id) !== scope) return null;
     if (item.route_key === "aiops.run.detail") {
-      return isUuid(params.run_id) ? "./runs.html?" + new URLSearchParams({ runId: params.run_id }) : null;
+      if (!isUuid(params.run_id)) return null;
+      const query = new URLSearchParams({ runId: params.run_id });
+      for (const key of ["proposal_id", "hitl_id", "execution_id"]) {
+        if (params[key]) { if (!isUuid(params[key])) return null; query.set(key, params[key]); }
+      }
+      return "./runs.html?" + query;
     }
     if (item.route_key === "aiops.situation.detail") {
       return isUuid(params.situation_id) ? "./situations.html?" + new URLSearchParams({ situationId: params.situation_id }) : null;
@@ -72,6 +77,11 @@
             const title = document.createElement("strong"); title.textContent = item.title || "通知";
             const summaryText = document.createElement("p"); summaryText.textContent = item.summary || "";
             article.append(title, summaryText);
+            if (["INFO", "WARNING", "HIGH", "CRITICAL"].includes(item.source_severity)) {
+              const severity = document.createElement("small");
+              severity.textContent = "原始告警级别：" + item.source_severity;
+              article.append(severity);
+            }
             if (href(item, domainId)) {
               const action = document.createElement("button"); action.type = "button"; action.className = "row-action";
               action.textContent = "查看结果"; action.onclick = () => openItem(item); article.append(action);

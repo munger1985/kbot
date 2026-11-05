@@ -8,6 +8,45 @@
   const terminal = new Set(["COMPLETED","PARTIAL","FAILED","CANCELLED","EXPIRED"]);
   const state = {items:[],selected:null,result:null,activeId:"",timer:null,terminalRefreshes:0,sequence:0,selectionSequence:0,busy:false,confirm:null};
   const drawer = document.getElementById("run-drawer");
+  const task = document.createElement("section");
+  task.className = "key-value-card"; task.hidden = true;
+  document.getElementById("run-detail-facts").after(task);
+  async function loadNotificationTask(runId) {
+    task.replaceChildren(); task.hidden = true;
+    const params = new URLSearchParams(location.search);
+    if (runId !== params.get("runId")) return;
+    const proposalId = params.get("proposal_id"), hitlId = params.get("hitl_id");
+    if (!proposalId && !hitlId) return;
+    task.hidden = false; task.textContent = "正在核验通知指向的任务…";
+    try {
+      const resource = await request(proposalId ? `/proposals/${encodeURIComponent(proposalId)}` : `/hitl/${encodeURIComponent(hitlId)}`);
+      if (state.activeId !== runId) return;
+      if (resource.ops_run_id !== runId || (proposalId ? resource.proposal_id !== proposalId : resource.hitl_id !== hitlId)) throw new Error("通知资源与当前运行不一致。");
+      if (proposalId) {
+        task.innerHTML = KBotAIOpsTaskCards.proposalHtml(resource);
+        if (params.get("execution_id")) {
+          const execution = document.createElement("p");
+          execution.textContent = "通知关联执行：" + params.get("execution_id");
+          task.prepend(execution);
+        }
+      }
+      else if (resource.hitl_type === "DIAGNOSTIC_QUERY_APPROVAL") {
+        task.innerHTML = KBotAIOpsTaskCards.queryHtml(resource);
+        KBotAIOpsTaskCards.bindQuery(task);
+      } else {
+        task.textContent = "请根据该人工请求补充证据。";
+        const anchor = document.createElement("div"); task.append(anchor);
+        KBotAIOpsTaskCards.mountManualEvidence(resource, anchor, async () => {
+          task.textContent = "人工请求已处理，原诊断将继续执行。";
+          await open(runId);
+        });
+      }
+    } catch (error) {
+      if (state.activeId === runId) task.textContent = error.status === 404
+        ? "该任务已处理、已过期或当前账号无权处理，请核对运行状态。" : error.message;
+    }
+  }
+  addEventListener("aiops:proposal-resolved", () => { if (state.activeId) void loadNotificationTask(state.activeId); });
   const text = (id,value) => {document.getElementById(id).textContent = value ?? "";};
   const workflowLabel = value => ({CHAT_TURN:"智能诊断",ALERT_DIAGNOSIS:"告警诊断",INSPECTION:"日常巡检",CHANGE:"受控变更",VERIFICATION:"结果验证",EVIDENCE_FOLLOWUP:"后台未来观察"})[value] || value;
   const triggerLabel = value => ({CHAT:"对话发起",API:"接口触发",ROOT:"根任务",ALERT:"监控告警",SCHEDULE:"巡检计划"})[value] || value;
@@ -50,7 +89,7 @@
   }
   function clearRefresh() {clearTimeout(state.timer);state.timer = null;}
   async function open(runId,{background=false}={}) {
-    if (!background) {state.activeId = runId;state.terminalRefreshes = 0;clearRefresh();}
+    if (!background) {state.activeId = runId;state.terminalRefreshes = 0;clearRefresh();task.replaceChildren();task.hidden = true;}
     if (state.activeId !== runId) return;
     const sequence = ++state.selectionSequence;
     const current = () => state.activeId === runId && sequence === state.selectionSequence;
@@ -61,6 +100,7 @@
       try {const output = await request(`/runs/${encodeURIComponent(runId)}/result`);if (!current()) return;state.result = output;}
       catch (error) {if (![404,409].includes(error.status)) throw error;if (!current()) return;state.result = null;}
       if (!current()) return;renderDetail();
+      if (!background) await loadNotificationTask(runId);
       const pending = rows(detail.readonly_lifecycle?.items).some(item => ["IN_PROGRESS","CANCEL_REQUESTED","TERMINATION_UNKNOWN"].includes(item.status));
       if (!terminal.has(detail.status) || (pending && state.terminalRefreshes++ < 3)) {clearRefresh();state.timer = setTimeout(() => open(runId,{background:true}),3000);}
     } catch (error) {

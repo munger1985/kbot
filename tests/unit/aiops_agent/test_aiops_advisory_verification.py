@@ -997,6 +997,7 @@ class ProposalExpiryTest(unittest.TestCase):
             ops_task_id=task.ops_task_id,
             status="PENDING",
             expires_at=now - timedelta(seconds=1),
+            assignee_user_id="portal:applicant",
             responded_by=None,
             responded_at=None,
             response_json=None,
@@ -1015,6 +1016,7 @@ class ProposalExpiryTest(unittest.TestCase):
                 find_expired_hitl=AsyncMock(return_value=hitl),
                 get_hitl=AsyncMock(return_value=hitl),
             ),
+            platform_notifications=SimpleNamespace(emit_proposal_event=AsyncMock(), emit_run_event=AsyncMock()),
             commit=AsyncMock(),
         )
         context = AsyncMock()
@@ -1047,7 +1049,7 @@ class ProposalExpiryTest(unittest.TestCase):
             expires_at=now - timedelta(seconds=1),
             updated_at=now - timedelta(minutes=1),
         )
-        run = SimpleNamespace(ops_run_id=proposal.ops_run_id)
+        run = SimpleNamespace(ops_run_id=proposal.ops_run_id, actor_id="portal:applicant")
         uow = SimpleNamespace(
             runs=SimpleNamespace(
                 database_now=AsyncMock(return_value=now),
@@ -1062,6 +1064,7 @@ class ProposalExpiryTest(unittest.TestCase):
                 get_proposal=AsyncMock(return_value=proposal),
                 get_pending_hitl=AsyncMock(return_value=None),
             ),
+            platform_notifications=SimpleNamespace(emit_proposal_event=AsyncMock(), emit_run_event=AsyncMock()),
             commit=AsyncMock(),
         )
         context = AsyncMock()
@@ -1144,6 +1147,7 @@ class ProposalExpiryTest(unittest.TestCase):
             outbox=SimpleNamespace(
                 add=AsyncMock(side_effect=lambda entity: entity)
             ),
+            platform_notifications=SimpleNamespace(emit_proposal_event=AsyncMock(), emit_run_event=AsyncMock()),
             commit=AsyncMock(),
         )
         context = AsyncMock()

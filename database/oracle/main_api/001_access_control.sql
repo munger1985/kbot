@@ -198,6 +198,7 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('platform:role_manage', 'platform', '管理平台角色')
     INTO KBOT_PERMISSION VALUES ('platform:domain_manage', 'platform', '管理平台 Domain')
     INTO KBOT_PERMISSION VALUES ('platform:app_manage', 'platform', '管理 App 生命周期和初始管理员')
+    INTO KBOT_PERMISSION VALUES ('platform:notification_manage', 'platform', '管理通知隔离事件与重试')
     INTO KBOT_PERMISSION VALUES ('platform:app_grant_manage', 'platform', '显式授予平台用户 App 权限')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:use', 'knowledge_retrieval', '使用知识检索')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:upload', 'knowledge_retrieval', '上传知识文件')

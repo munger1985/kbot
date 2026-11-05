@@ -17,6 +17,17 @@ class _Repository:
         self.watchers = set()
         self.disabled = set()
 
+    async def resource_work_item_closed(self, **scope):
+        return any(item.status in {"COMPLETED", "CANCELLED"} and all(
+            getattr(item, key) == value for key, value in scope.items()) for item in self.work_items.values())
+
+    async def resolve_resource_work_items(self, *, outbox_id, occurred_at, status, **scope):
+        for item in self.work_items.values():
+            if item.status == "OPEN" and all(getattr(item, key) == value for key, value in scope.items()):
+                item.status = status
+                item.resolved_outbox_id = outbox_id
+                item.last_occurred_at = occurred_at
+
     async def operation_for_update(self, *, producer, source_operation_id):
         return self.operations.get((producer, source_operation_id))
 
@@ -206,6 +217,67 @@ class NotificationCenterS6Test(unittest.IsolatedAsyncioTestCase):
             {row.recipient_actor_id for row in repository.inbox},
         )
 
+
+class AIOpsWorkflowProjectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_closes_every_reviewer_not_only_result_recipients(self):
+        from unittest.mock import AsyncMock
+        repository = _Repository()
+        uow = _Uow(repository)
+        uow.access = SimpleNamespace(notification_approvers=AsyncMock(return_value={"reviewer-a", "reviewer-b"}))
+        proposal_id = str(uuid7())
+        def event(kind, recipients):
+            envelope = NotificationEnvelope(domain_id=10, event_type=kind, resource_type="aiops_proposal",
+                resource_id=proposal_id, initiator_actor_id="applicant", recipient_actor_ids=recipients,
+                summary="方案已更新", correlation_id="trace", safe_data={"run_id": str(uuid7())})
+            return SimpleNamespace(outbox_id=uuid7(), producer_service="aiops", domain_id=10,
+                payload_json=envelope.model_dump(mode="json"))
+        projection = NotificationProjectionService()
+        await projection.project(uow=uow, outbox=event("aiops.proposal.review_required", ["applicant"]))
+        assert {item.actor_id for item in repository.work_items.values()} == {"reviewer-a", "reviewer-b"}
+        await projection.project(uow=uow, outbox=event("aiops.proposal.approved", ["applicant"]))
+        assert all(item.status == "COMPLETED" for item in repository.work_items.values())
+        await projection.project(uow=uow, outbox=event("aiops.proposal.review_required", ["applicant"]))
+        assert all(item.status == "COMPLETED" for item in repository.work_items.values())
+        assert len(repository.inbox) == 3
+
+    async def test_close_before_open_and_multiple_requests(self):
+        repository = _Repository(); uow = _Uow(repository)
+        run_id, first, second = map(str, (uuid7(), uuid7(), uuid7()))
+        def event(kind, hitl, recipients):
+            envelope = NotificationEnvelope(domain_id=10, event_type=kind, resource_type="aiops_run",
+                resource_id=run_id, initiator_actor_id="applicant", recipient_actor_ids=recipients,
+                summary="人工请求", correlation_id="trace",
+                safe_data={"hitl_id": hitl, "source_status": "PENDING" if kind.endswith("required") else "ANSWERED"})
+            return SimpleNamespace(outbox_id=uuid7(), producer_service="aiops", domain_id=10,
+                payload_json=envelope.model_dump(mode="json"))
+        projection = NotificationProjectionService()
+        await projection.project(uow=uow, outbox=event("aiops.diagnostic.input_resolved", first, []))
+        await projection.project(uow=uow, outbox=event("aiops.diagnostic.input_required", first, ["applicant"]))
+        await projection.project(uow=uow, outbox=event("aiops.diagnostic.input_required", second, ["applicant"]))
+        assert len(repository.work_items) == 2
+        assert {item.resource_id: item.status for item in repository.work_items.values()} == {first: "COMPLETED", second: "OPEN"}
+        assert len(repository.inbox) == 1
+
+    async def test_missing_approver_is_not_replaced_by_applicant(self):
+        from unittest.mock import AsyncMock
+        repository = _Repository(); uow = _Uow(repository)
+        uow.access = SimpleNamespace(notification_approvers=AsyncMock(return_value=set()))
+        envelope = NotificationEnvelope(domain_id=10, event_type="aiops.proposal.review_required",
+            resource_type="aiops_proposal", resource_id=str(uuid7()), initiator_actor_id="applicant",
+            recipient_actor_ids=["applicant"], summary="待审批", correlation_id="trace")
+        with self.assertRaisesRegex(ValueError, "NOTIFICATION_APPROVER_UNAVAILABLE"):
+            await NotificationProjectionService().project(uow=uow, outbox=SimpleNamespace(
+                outbox_id=uuid7(), producer_service="aiops", domain_id=10, payload_json=envelope.model_dump(mode="json")))
+        assert not repository.inbox and not repository.work_items
+
+    async def test_critical_situation_keeps_urgency(self):
+        envelope = NotificationEnvelope(domain_id=10, event_type="aiops.situation.escalated",
+            resource_type="aiops_situation", resource_id=str(uuid7()), recipient_actor_ids=["applicant"],
+            summary="严重故障", correlation_id="trace", safe_data={"severity": "CRITICAL"})
+        repository = _Repository()
+        await NotificationProjectionService().project(uow=_Uow(repository), outbox=SimpleNamespace(
+            outbox_id=uuid7(), producer_service="aiops", domain_id=10, payload_json=envelope.model_dump(mode="json")))
+        assert repository.inbox[0].severity == "CRITICAL"
 
 if __name__ == "__main__":
     unittest.main()

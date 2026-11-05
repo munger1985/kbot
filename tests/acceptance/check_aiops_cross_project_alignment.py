@@ -13,6 +13,13 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("packages/platform_core/src/platform_core/contracts/aiops/notification_projection.py"),
+    Path("packages/platform_core/src/platform_core/notifications/aiops.py"),
+    Path("services/aiops_agent/src/aiops_agent/api/notification_projection.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/notification_projection.py"),
+    Path("services/main_api/src/main_api/application/aiops_workflow_reconciliation.py"),
+    Path("tests/unit/aiops_agent/test_aiops_workflow_projection.py"),
+    Path("docs/operations/aiops-notification-foundation-phase-1.md"),
     Path("services/aiops_agent/src/aiops_agent/application/top_sql_hotspots.py"),
     Path("tests/unit/aiops_agent/test_aiops_top_sql_hotspots.py"),
     Path("services/aiops_agent/src/aiops_agent/application/top_sql_collection.py"),

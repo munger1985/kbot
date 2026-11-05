@@ -160,7 +160,8 @@ class ApprovalServiceTest(unittest.TestCase):
         hitl = SimpleNamespace(
             hitl_id=uuid7(),
             proposal_id=proposal_id,
-            assignee_user_id="portal:user-1",
+            assignee_user_id=None,
+            requested_by="portal:user-1",
             status="PENDING",
             responded_by=None,
             responded_at=None,
@@ -264,11 +265,18 @@ class ApprovalServiceTest(unittest.TestCase):
         changes.add_approval_token.assert_not_awaited()
         changes.add_execution.assert_not_awaited()
         target.controlled_change_enabled = True
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            asyncio.run(service.approve_proposal(
+                proposal_id=proposal_id, domain_id=200, actor_id="portal:user-1",
+                command=ApprovalCommand(expected_row_version=1, expected_proposal_hash="a" * 64),
+                idempotency_key="self-approval-denied", trace_id="trace-self-denied"))
+        self.assertIn("申请人与审批人", caught.exception.message)
+        changes.add_approval_token.assert_not_awaited()
         receipt = asyncio.run(
             service.approve_proposal(
                 proposal_id=proposal_id,
                 domain_id=200,
-                actor_id="portal:user-1",
+                actor_id="portal:reviewer",
                 command=ApprovalCommand(
                     expected_row_version=1,
                     expected_proposal_hash="a" * 64,
@@ -575,6 +583,7 @@ class ExecutionCallbackTest(unittest.TestCase):
             outbox=SimpleNamespace(
                 add=AsyncMock(side_effect=lambda entity: entity)
             ),
+            platform_notifications=SimpleNamespace(emit_proposal_event=AsyncMock()),
             commit=AsyncMock(),
         )
         context = AsyncMock()

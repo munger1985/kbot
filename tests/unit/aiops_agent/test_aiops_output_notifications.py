@@ -29,7 +29,8 @@ def test_diagnostic_notifications_keep_the_authoritative_domain_and_resource(kin
         if kind in {"failed", "input"}:
             await repo.emit_run_event(run=source,
                 event_type="aiops.run.failed" if kind == "failed" else "aiops.diagnostic.input_required",
-                summary="安全摘要", actor_id=job.actor_id)
+                summary="安全摘要", actor_id=job.actor_id,
+                **({"hitl_id": uuid7(), "source_status": "PENDING"} if kind != "failed" else {}))
         elif kind == "started":
             await repo.emit_run_started(run=source, target_name="运维目标")
         elif kind == "situation":
@@ -63,6 +64,46 @@ def test_diagnostic_notifications_keep_the_authoritative_domain_and_resource(kin
 
 
 NOW = datetime(2026, 11, 3, 3, tzinfo=timezone.utc)
+def test_input_notifications_require_concrete_identity_and_dedupe_per_hitl():
+    async def run():
+        repo, job, payload, count = adapter()
+        source = SimpleNamespace(ops_run_id=uuid7(), domain_id=job.domain_id,
+            tenant_id=job.tenant_id, actor_id=job.actor_id, trace_id="trace")
+        with pytest.raises(ValueError):
+            await repo.emit_run_event(run=source, event_type="aiops.diagnostic.input_required",
+                summary="等待补证", actor_id=job.actor_id)
+        assert count() == 0
+        keys = []
+        for hitl_id in (uuid7(), uuid7()):
+            await repo.emit_run_event(run=source, event_type="aiops.diagnostic.input_required",
+                summary="等待补证", actor_id=job.actor_id, hitl_id=hitl_id, source_status="PENDING")
+            data = payload()
+            facts = data.get("safe_payload") or data.get("safe_data")
+            assert facts["hitl_id"] == str(hitl_id)
+            keys.append(data["dedupe_key"] if job.tenant_id else repo._uow.notification_outbox.add.await_args.kwargs["event_key"])
+        assert keys[0] != keys[1]
+    asyncio.run(run())
+
+
+def test_no_subscriber_does_not_erase_business_events_or_original_severity():
+    async def run():
+        repo, job, payload, count = adapter()
+        subscriptions = SimpleNamespace(recipient_actor_ids=AsyncMock(return_value=[]))
+        if job.tenant_id:
+            repo._notification_subscriptions = subscriptions
+        else:
+            repo._uow.notification_subscriptions = subscriptions
+        target = SimpleNamespace(target_id=uuid7(), domain_id=job.domain_id,
+            tenant_id=job.tenant_id, display_name="运维目标")
+        situation = SimpleNamespace(situation_id=uuid7(), severity="CRITICAL")
+        await repo.emit_situation_event(target=target, situation=situation,
+            event_type="aiops.situation.escalated", stage="SITUATION_DETECTED", summary="严重程度已升级", trace_id="trace")
+        assert count() == 1
+        data = payload()
+        assert (data.get("safe_payload") or data.get("safe_data"))["severity"] == "CRITICAL"
+        assert (data["recipient_user_ids"] if job.tenant_id else data["recipient_actor_ids"]) == []
+    asyncio.run(run())
+
 
 
 def adapter():

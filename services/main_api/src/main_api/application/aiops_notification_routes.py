@@ -12,6 +12,7 @@ AIOPS_OUTPUT_EVENTS = frozenset({
 })
 AIOPS_RESOURCE_EVENTS = {
     "aiops.situation.detected": ("aiops_situation", "aiops.situation.detail", "situation_id"),
+    "aiops.situation.escalated": ("aiops_situation", "aiops.situation.detail", "situation_id"),
     "aiops.situation.recovered": ("aiops_situation", "aiops.situation.detail", "situation_id"),
     "aiops.diagnosis.started": ("aiops_run", "aiops.run.detail", "run_id"),
     "aiops.diagnostic.input_required": ("aiops_run", "aiops.run.detail", "run_id"),
@@ -20,6 +21,13 @@ AIOPS_RESOURCE_EVENTS = {
     "aiops.proposal.review_required": ("aiops_proposal", "aiops.run.detail", "proposal_id"),
     "aiops.proposal.approved": ("aiops_proposal", "aiops.run.detail", "proposal_id"),
     "aiops.proposal.rejected": ("aiops_proposal", "aiops.run.detail", "proposal_id"),
+    "aiops.proposal.expired": ("aiops_proposal", "aiops.run.detail", "proposal_id"),
+    "aiops.proposal.invalidated": ("aiops_proposal", "aiops.run.detail", "proposal_id"),
+    "aiops.proposal.manual_result_recorded": ("aiops_proposal", "aiops.run.detail", "proposal_id"),
+    **{f"aiops.execution.{status}": ("aiops_proposal", "aiops.run.detail", "proposal_id")
+        for status in ("started", "succeeded", "failed", "cancelled", "unknown", "timed_out")},
+    **{f"aiops.diagnostic.input_{status}": ("aiops_run", "aiops.run.detail", "run_id")
+        for status in ("resolved", "expired", "cancelled")},
 }
 
 
@@ -41,7 +49,11 @@ def aiops_notification_route(row, payload, *, domain_id: int):
             params[id_key] = str(UUID(row.resource_id))
             if resource_type == "aiops_proposal":
                 params["run_id"] = str(UUID(safe["run_id"]))
-            return {"route_key": route_key, "route_params": params}
+            for key in ("hitl_id", "execution_id"):
+                if safe.get(key) is not None:
+                    params[key] = str(UUID(safe[key]))
+            return {"route_key": route_key, "route_params": params,
+                **({"source_severity": safe["severity"]} if "severity" in safe else {})}
         if row.event_type == "aiops.report.ready":
             if row.resource_type != "aiops_report":
                 return {}

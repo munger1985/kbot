@@ -443,6 +443,7 @@ class SignalEventIntakeService:
             correlation_hash=correlation.correlation_hash,
             lock=True,
         )
+        previous_severity = situation.severity if situation is not None else None
         if event.event_status == "RESOLVED":
             if situation is not None:
                 situation.last_observed_at = max(
@@ -625,6 +626,13 @@ class SignalEventIntakeService:
                     )[:1000],
                     trace_id=trace_id,
                 )
+            elif not situation_resolved and previous_severity is not None and (
+                _SEVERITY_RANK[situation.severity] > _SEVERITY_RANK[previous_severity]
+            ):
+                await notifier.emit_situation_event(target=target, situation=situation,
+                    event_type="aiops.situation.escalated", stage="SITUATION_DETECTED",
+                    summary=f"{target.display_name} 的异常严重程度已升级为 {situation.severity}",
+                    trace_id=trace_id)
             elif situation_resolved:
                 await notifier.emit_situation_event(
                     target=target,

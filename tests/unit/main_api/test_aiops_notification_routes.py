@@ -131,6 +131,23 @@ def test_run_situation_and_proposal_routes_preserve_exact_domain_and_resource(ev
     assert aiops_notification_route(row, payload, domain_id=73) == {}
 
 
+@pytest.mark.parametrize("event", AIOPS_RESOURCE_EVENTS)
+def test_public_resource_notifications_load_their_envelope(event):
+    async def run():
+        resource_type, route_key, _ = AIOPS_RESOURCE_EVENTS[event]
+        row, _ = fixture()
+        row.event_type, row.resource_type = event, resource_type
+        payload = NotificationEnvelope(domain_id=73, event_type=event,
+            resource_type=resource_type, resource_id=row.resource_id,
+            summary="安全摘要", correlation_id="trace",
+            safe_data={"run_id": str(uuid7())} if resource_type == "aiops_proposal" else {}).model_dump(mode="json")
+        repository = SimpleNamespace(inbox_route_payloads=AsyncMock(return_value={row.inbox_id: payload}))
+        result = await NotificationCenterService._serialize_inbox(repository, [row], domain_id=73, actor_id="alice")
+        assert result[0]["route_key"] == route_key
+        repository.inbox_route_payloads.assert_awaited_once()
+    asyncio.run(run())
+
+
 def test_proposal_without_valid_run_cannot_navigate_to_another_resource():
     row, _ = fixture()
     row.event_type, row.resource_type = "aiops.proposal.review_required", "aiops_proposal"
