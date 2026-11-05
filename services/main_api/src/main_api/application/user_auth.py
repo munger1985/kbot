@@ -413,6 +413,21 @@ class UserAuthService:
             "apps": entries,
         }
 
+    async def list_session_domains(self, *, claims: UserTokenClaims) -> dict[str, object]:
+        """列出当前业务会话所属 App 中已授权且启用的工作域，无需管理权限。"""
+        if claims.entry_kind != "BUSINESS" or not claims.app_id or claims.domain_id is None:
+            raise UserAuthenticationError(
+                "BUSINESS_SESSION_REQUIRED", "只有业务会话可以读取可切换工作域", status_code=409,
+            )
+        async with self._uow_factory() as uow:
+            domain_ids = await uow.access.list_active_domain_ids(claims.user_id, app_id=claims.app_id)
+            domains = await uow.domains.list_by_ids(domain_ids=domain_ids)
+            items = [
+                {"domain_id": int(row.domain_id), "name": row.name, "status": row.status}
+                for row in domains if row.status == "ACTIVE"
+            ]
+        return {"app_id": claims.app_id, "domain_id": claims.domain_id, "domains": items}
+
     async def switch_domain(self, *, claims: UserTokenClaims, domain_id: int) -> dict[str, object]:
         if claims.entry_kind != "BUSINESS" or not claims.app_id:
             raise UserAuthenticationError("BUSINESS_SESSION_REQUIRED", "平台会话不能切换 Domain", status_code=409)

@@ -1,3 +1,37 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>知识检索</title><link rel="stylesheet" href="./css/knowledge.css"></head>
-<body data-page="dashboard"><main class="knowledge-main"><header class="knowledge-page-head"><div><h1>知识检索</h1><p>统一使用内部 Knowledge Core、治理后的问数模型与 X 外部实时来源。</p></div></header><section class="knowledge-grid" aria-label="能力入口"><article class="knowledge-entry span-6"><span class="eyebrow">GROUNDED KNOWLEDGE</span><h2>知识问答</h2><p>通过 ACTIVE Agent 在唯一 Knowledge Core 与已发布问数模型范围内问文、问数或进行一般对话。</p><footer><a class="knowledge-button primary" href="./knowledge.html">进入问答</a></footer></article><article class="knowledge-entry x-search span-6"><span class="eyebrow">EXTERNAL KNOWLEDGE</span><h2>X 实时搜索</h2><p>以 [X] 来源获取外部实时知识；结果不会自动写入 Knowledge Core。</p><footer><a class="knowledge-button primary" href="./x-search.html">开始搜索</a></footer></article></section></main>
-<script src="../runtime-config.js"></script><script src="./js/knowledge-auth.js"></script><script src="./js/knowledge-api.js"></script><script src="./js/knowledge-shell.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>工作台 · 知识检索</title>
+  <link rel="stylesheet" href="../aiops/css/ammolite-shared.css?v=20261103_2">
+  <link rel="stylesheet" href="./css/knowledge.css?v=20261105_2">
+</head>
+<body class="business-app-aiops" data-page="dashboard">
+  <main class="knowledge-main">
+    <header class="knowledge-page-head">
+      <div><p class="eyebrow">知识工作区</p><h1>知识检索</h1><p>连接企业知识、治理后的问数模型与 X 外部实时来源。</p></div>
+    </header>
+    <section class="knowledge-grid" aria-label="能力入口">
+      <article class="knowledge-entry span-6">
+        <span class="knowledge-entry-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H11v17H7.5A2.5 2.5 0 0 0 5 21z"></path><path d="M19 4.5A2.5 2.5 0 0 0 16.5 2H13v17h3.5A2.5 2.5 0 0 1 19 21z"></path></svg></span>
+        <span class="eyebrow">企业知识</span>
+        <h2>知识问答</h2>
+        <p>通过已启用 Agent，在绑定的 Knowledge Core 与已发布问数模型范围内问文、问数或进行一般对话。</p>
+        <footer><a class="knowledge-button primary" href="./knowledge.html" data-permission="knowledge_retrieval:knowledge_chat">进入问答 →</a></footer>
+      </article>
+      <article class="knowledge-entry x-search span-6">
+        <span class="knowledge-entry-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 21l-5-5"></path><circle cx="11" cy="11" r="7"></circle></svg></span>
+        <span class="eyebrow">外部实时来源</span>
+        <h2>X 实时搜索</h2>
+        <p>通过 Agent 绑定的 Grok 模型获取可追溯的 [X] 外部线索；搜索结果不会自动写入企业 Knowledge Core。</p>
+        <footer><a class="knowledge-button primary" href="./x-search.html" data-permission="knowledge_retrieval:x_search">开始搜索 →</a></footer>
+      </article>
+    </section>
+  </main>
+  <script src="../runtime-config.js"></script>
+  <script src="./js/knowledge-auth.js"></script>
+  <script src="./js/knowledge-api.js"></script>
+  <script src="./js/knowledge-shell.js?v=20261105_2"></script>
+</body>
+</html>

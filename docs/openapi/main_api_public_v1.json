@@ -18652,6 +18652,59 @@
         "title": "SemanticModelValidationRequest",
         "type": "object"
       },
+      "SessionDomainItem": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "exclusiveMinimum": 0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain_id",
+          "name",
+          "status"
+        ],
+        "title": "SessionDomainItem",
+        "type": "object"
+      },
+      "SessionDomainsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "exclusiveMinimum": 0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/SessionDomainItem"
+            },
+            "title": "Domains",
+            "type": "array"
+          }
+        },
+        "required": [
+          "app_id",
+          "domain_id",
+          "domains"
+        ],
+        "title": "SessionDomainsResponse",
+        "type": "object"
+      },
       "SessionReportTemplateCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -45172,6 +45225,28 @@
           }
         },
         "summary": "App Login",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/domains": {
+      "get": {
+        "description": "读取当前业务 App 的可切换工作域，不复用 Domain 管理接口。",
+        "operationId": "list_session_domains_api_v1_auth_domains_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDomainsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Session Domains",
         "tags": [
           "Authentication"
         ]

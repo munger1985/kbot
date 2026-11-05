@@ -37,6 +37,18 @@ class SwitchDomainPayload(_Payload):
     domain_id: int = Field(gt=0)
 
 
+class SessionDomainItem(_Payload):
+    domain_id: int = Field(gt=0)
+    name: str
+    status: str
+
+
+class SessionDomainsResponse(_Payload):
+    app_id: str
+    domain_id: int = Field(gt=0)
+    domains: list[SessionDomainItem]
+
+
 class ExchangeAppPayload(_Payload):
     app_id: str = Field(min_length=1, max_length=128)
     domain_id: int = Field(gt=0)
@@ -124,6 +136,12 @@ async def exchange_app_session(payload: ExchangeAppPayload, request: Request):
 async def refresh_session(request: Request):
     """在当前 Token 仍有效时续签相同入口上下文。"""
     return await _service(request).refresh_session(claims=_claims(request))
+
+
+@router.get("/domains", response_model=SessionDomainsResponse)
+async def list_session_domains(request: Request):
+    """读取当前业务 App 的可切换工作域，不复用 Domain 管理接口。"""
+    return await _service(request).list_session_domains(claims=_claims(request))
 
 
 @router.post("/switch-domain")

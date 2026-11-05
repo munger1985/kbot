@@ -101,12 +101,7 @@
   }
 
   async function switchDomain(row) {
-    const current = session();
-    const next = await KBotKnowledgeApi.json("/api/v1/auth/switch-domain", "POST", {
-      domain_id: Number(row.domain_id),
-    });
-    KBotKnowledgeAuth.save({ ...current, ...next });
-    location.reload();
+    await KBotKnowledgeShell.switchDomain(row.domain_id);
   }
 
   async function handleAction(action, domainId) {

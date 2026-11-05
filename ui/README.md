@@ -7,6 +7,23 @@ AIOps 和多媒体创作的正式页面。浏览器只调用 Main API 的 `/api/
 页面使用仓库内锁定的 Marked GFM 与 DOMPurify 渲染流式 Markdown，第三方浏览器
 构建产物位于 `ui/vendor/`，运行时不从 CDN 下载代码。
 
+## 知识检索视觉规范
+
+知识检索 App 直接复用 AIOps 的 `ui/aiops/css/ammolite-shared.css` 与蓝色主题 Token，
+共用顶栏、浅色分组导航、账户菜单和移动端导航样式。`knowledge.css` 只负责业务组件
+适配及知识问答、X 搜索、资源配置的布局，不维护独立的配色基础；认证、权限与 API
+仍属于知识检索 App，不调用 AIOps 接口。
+
+顶部“当前工作域”可直接切换 Domain。候选项通过 `GET /api/v1/auth/domains`
+按当前登录用户、当前 App 的有效授权返回，不要求 Domain 管理权限；切换复用
+`POST /api/v1/auth/switch-domain`，保存新会话后重载当前页面，重新获取知识库与权限。
+加载或切换失败时保留原工作域，不在浏览器自行改写隔离上下文。
+
+静态检查：`python3 tests/contract/test_knowledge_retrieval_ui_style.py`。
+浏览器回归：`node tests/contract/knowledge_retrieval_ui_style.mjs`，全部 API 使用隔离数据，
+覆盖 8 个页面的桌面、平板、手机布局并输出临时截图。默认复用同级 Ammolite Portal 的
+Playwright 依赖，也可用 `KBOT_BROWSER_REQUIRE_FROM` 指向已安装依赖的 `package.json`。
+
 ## 通用时分控件
 
 只选择小时、分钟的字段统一使用 `ui/shared/time-picker.js` 与 `time-picker.css`，
