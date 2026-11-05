@@ -37,6 +37,16 @@ assert.ok(model.resourceNodes.find(node => node.resource.draft_resource_id === '
 model = graphModel([resource('db1'), resource('db2'), resource('host', 'PHYSICAL_SERVER')], [runs('db1', 'host'), runs('db2', 'host')]);
 uniqueNodes(model, ['db1', 'db2', 'host']);
 assert.equal(model.edges.filter(edge => edge.contained).length, 2);
+const nestedInput = { systemName: '同机多数据库', resources: [resource('db1'), resource('db2'), resource('host', 'PHYSICAL_SERVER')], relations: [runs('db1', 'host'), runs('db2', 'host')] };
+for (const view of ['deployment', 'host']) {
+  const html = renderTopology(nestedInput, { ...createState(), view });
+  assert.ok(html.includes('业务系统视角') && html.includes('主机视角'));
+  assert.ok(!html.includes('graph-edge-label') && !html.includes('运行于'), '内嵌承载不重复显示标签，两个视角都适用');
+}
+const hostNode = model.resourceNodes.find(node => node.resource.draft_resource_id === 'host');
+const childNodes = model.resourceNodes.filter(node => node.resource.draft_resource_id !== 'host');
+assert.ok(childNodes[0].y - (hostNode.y + hostNode.height) <= 16, '主机标题与首个实例之间无需预留关系标签空位');
+assert.equal(childNodes[1].y - (childNodes[0].y + childNodes[0].height), 16);
 const ids = ['db1', 'db2', 'dr1', 'dr2'];
 const resources = ids.map(id => resource(id, 'DATABASE', id.startsWith('dr') ? '机房 B' : '机房 A'));
 resources.push(...ids.map(id => resource(`host-${id}`, 'PHYSICAL_SERVER', id.startsWith('dr') ? '机房 B' : '机房 A')));
@@ -65,6 +75,8 @@ uniqueNodes(model, cycleResources);
 model = graphModel([resource('db'), resource('h1', 'VIRTUAL_MACHINE'), resource('h2', 'VIRTUAL_MACHINE')], [runs('db', 'h1'), runs('db', 'h2')]);
 uniqueNodes(model, ['db', 'h1', 'h2']);
 assert.equal(model.edges.filter(edge => edge.contained).length, 0);
+const multiHostHtml = renderTopology({ systemName: '多承载', resources: [resource('db'), resource('h1', 'VIRTUAL_MACHINE'), resource('h2', 'VIRTUAL_MACHINE')], relations: [runs('db', 'h1'), runs('db', 'h2')] }, createState());
+assert.equal((multiHostHtml.match(/class="graph-edge-label hosting/g) || []).length, 2, '非嵌套承载必须保留可见连线与标签');
 const malicious = resource('unsafe'); malicious.display_name = '<img src=x onerror=alert(1)>';
 const html = renderTopology({ systemName: '<script>alert(1)</script>', resources: [malicious], relations: [] }, createState());
 assert.ok(!html.includes('<script>') && !html.includes('<img'));

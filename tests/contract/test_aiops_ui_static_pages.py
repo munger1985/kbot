@@ -1206,7 +1206,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         topology = (AIOPS_ROOT / "js" / "aiops-business-system-topology.js").read_text(encoding="utf-8")
         layout = (AIOPS_ROOT / "js" / "aiops-topology-layout.js").read_text(encoding="utf-8")
         view = (AIOPS_ROOT / "js" / "aiops-topology-view.js").read_text(encoding="utf-8")
-        for contract in ("TOPOLOGY PREVIEW", "系统部署", "主机视角", "unified-graph", "graph-edges", "standalone-strip", "data-topology-relation", "查看跨系统承载"):
+        for contract in ("TOPOLOGY PREVIEW", "业务系统视角", "主机视角", "unified-graph", "graph-edges", "standalone-strip", "data-topology-relation", "查看跨系统承载"):
             self.assertIn(contract, view)
         for contract in ("graphModel", "resourceNodes", "sharedParents", "replicationTypes"):
             self.assertIn(contract, layout)

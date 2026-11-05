@@ -84,11 +84,12 @@ function graphModel(resources, relations, view = 'deployment') {
             if (sharedParents.includes(parent))
                 parents.delete(id);
     }
+    const hostHeaderHeight = 86, hostChildGap = 16;
     const makeTree = (id) => {
         const children = childrenOf(id).map(makeTree);
         if (!children.length)
             return { id, children, width: 264, height: 84 };
-        return { id, children, width: Math.max(296, ...children.map(child => child.width + 32)), height: 94 + children.reduce((height, child) => height + child.height + 34, 0) };
+        return { id, children, width: Math.max(296, ...children.map(child => child.width + 32)), height: hostHeaderHeight + children.reduce((height, child) => height + child.height + hostChildGap, 0) };
     };
     const roots = network.filter(resource => !parents.has(resource.draft_resource_id)).map(resource => makeTree(resource.draft_resource_id));
     const treeIds = (tree) => [tree.id, ...tree.children.flatMap(treeIds)];
@@ -163,10 +164,10 @@ function graphModel(resources, relations, view = 'deployment') {
         if (nested)
             boxes.push({ id: `host:${tree.id}`, kind: 'host', title: '', subtitle: '', x, y, width: tree.width, height: tree.height, resourceId: tree.id });
         resourceNodes.push({ resource, role: rolesFor(tree.id), host: nested, x: x + (nested ? 12 : 0), y: y + (nested ? 10 : 0), width: tree.width - (nested ? 24 : 0), height: nested ? 64 : 84 });
-        let top = y + 94;
+        let top = y + hostHeaderHeight;
         for (const child of tree.children) {
             placeTree(child, x + 16, top);
-            top += child.height + 34;
+            top += child.height + hostChildGap;
         }
     };
     let top = 52, width = 0;
