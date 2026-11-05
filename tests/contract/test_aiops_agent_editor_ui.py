@@ -14,6 +14,11 @@ MAIN_API = ROOT / "services" / "main_api" / "src" / "main_api" / "api" / "aiops_
 
 
 class AIOpsAgentEditorUiTest(unittest.TestCase):
+    def test_scope_change_note_explains_revocation_without_transferring_authorization(self) -> None:
+        script = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("移出范围的授权将撤销，不会转授给新资源", script)
+        self.assertNotIn("保存时沿用服务端现有配置", script)
+
     def test_initialization_uses_real_shell_and_handles_loading_failures(self) -> None:
         result = subprocess.run(
             ["node", str(ROOT / "tests" / "contract" / "aiops_agents_initialization.mjs")],

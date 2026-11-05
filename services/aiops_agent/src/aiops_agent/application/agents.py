@@ -619,7 +619,15 @@ class AIOpsAgentService:
                 command.domain_id,
                 str(changes.get("status", agent.status)),
                 effective,
+                inherit_action_policies="controlled_action_execution" not in changes,
             )
+            if (
+                "controlled_action_execution" not in changes
+                and set(current_action_policies)
+                != set(self._controlled_action_policies(effective))
+            ):
+                # 只在新版本撤销离开授权范围的旧资源策略，不修改历史版本或转授给新资源。
+                changes["controlled_action_execution"] = effective["controlled_action_execution"]
             version_fields = {
                 "readonly_database_enabled",
                 "allow_agent_execution",
@@ -793,26 +801,11 @@ class AIOpsAgentService:
                 ) from exc
 
     async def _validate_resources(
-        self, uow, domain_id: int, status: str, values
+        self, uow, domain_id: int, status: str, values, *, inherit_action_policies: bool = False,
     ) -> None:
         capabilities = {
             AIOpsCapability(item) for item in values.get("capabilities") or ()
         }
-        policies = self._controlled_action_policies(values)
-        enabled_policies = {
-            resource_id: policy
-            for resource_id, policy in policies.items()
-            if policy.get("enabled")
-        }
-        if (
-            enabled_policies
-            and AIOpsCapability.CONTROLLED_CHANGE not in capabilities
-        ):
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_CHANGE_CAPABILITY_REQUIRED",
-                "配置受控动作前必须启用 CONTROLLED_CHANGE 能力",
-                status_code=422,
-            )
         # 能力声明不等于执行授权；零授权仍可运行诊断，变更由资源策略与执行门禁拒绝。
         if (
             status == "ACTIVE"
@@ -913,6 +906,18 @@ class AIOpsAgentService:
             )
             if link.status == "ACTIVE" and resource.lifecycle_status == "ACTIVE"
         }
+        policies = self._resolve_resource_action_policies(
+            values, active_resource_ids=set(resources_by_id), inherit=inherit_action_policies,
+        )
+        if (
+            any(policy.get("enabled") for policy in policies.values())
+            and AIOpsCapability.CONTROLLED_CHANGE not in capabilities
+        ):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_CHANGE_CAPABILITY_REQUIRED",
+                "配置受控动作前必须启用 CONTROLLED_CHANGE 能力",
+                status_code=422,
+            )
         for resource_id, action_policy in policies.items():
             resource_context = resources_by_id.get(resource_id)
             if resource_context is None:
@@ -1050,6 +1055,22 @@ class AIOpsAgentService:
                 in template.definition.environment_allowlist
             }
         )
+
+    @classmethod
+    def _resolve_resource_action_policies(
+        cls, values, *, active_resource_ids: set[UUID], inherit: bool,
+    ) -> dict[UUID, dict[str, Any]]:
+        """继承策略只做授权收缩；显式新增或修改的越界策略仍交给校验拒绝。"""
+        policies = cls._controlled_action_policies(values)
+        if inherit:
+            policies = {
+                resource_id: policy for resource_id, policy in policies.items()
+                if resource_id in active_resource_ids
+            }
+            values["controlled_action_execution"] = [
+                {"resource_id": resource_id, **policy} for resource_id, policy in policies.items()
+            ]
+        return policies
 
     @staticmethod
     def _controlled_action_policies(values) -> dict[UUID, dict[str, Any]]:
