@@ -97,8 +97,8 @@ class BusinessSystemRepository(BusinessSystemDeletionRepositoryMixin, AIOpsRepos
         self._session.add_all(entities)
 
     async def add_relations(self, entities: list[ResourceRelationEntity]) -> None:
-        self._check_active()
-        self._session.add_all(entities)
+        """先刷新关系父记录，避免后续参与者先入库而触发即时外键。"""
+        await self._add_all(entities)
 
     async def add_participants(self, entities: list[RelationParticipantEntity]) -> None:
         self._check_active()
