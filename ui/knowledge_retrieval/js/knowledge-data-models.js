@@ -34,7 +34,7 @@
   function closeDialog(id) { element(id)?.close(); }
 
   function emptyRow(columns, title, copy) {
-    return `<tr><td colspan="${columns}"><div class="knowledge-empty"><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div></div></td></tr>`;
+    return `<tr><td colspan="${columns}" class="empty-cell">${escapeHtml(title)}</td></tr>`;
   }
 
   function statusView(value) {
@@ -185,17 +185,14 @@
 
   function renderSources() {
     const node = element("data-source-list");
+    if (!node) return;
     if (!state.sources.length) {
-      node.innerHTML = '<div class="knowledge-empty"><div><strong>尚无数据库连接</strong><p>配置只读连接并完成测试后，才能发现表和建立问数模型。</p></div></div>';
+      node.innerHTML = '<tr><td colspan="5" class="empty-cell">尚未配置数据源。</td></tr>';
       setWorkflowStep("source");
       return;
     }
     node.innerHTML = state.sources.map((row) => {
-      const current = String(row.data_source_id) === String(state.sourceId);
-      return `<button type="button" class="data-source-option" data-source-id="${escapeHtml(row.data_source_id)}" aria-current="${current ? "true" : "false"}">
-        <span><strong>${escapeHtml(row.display_name)}</strong><small>${escapeHtml(row.source_type)} · v${escapeHtml(row.current_version)}</small></span>
-        ${statusBadge(row.status)}
-      </button>`;
+      return `<tr><td><button type="button" class="table-primary-button" data-source-id="${escapeHtml(row.data_source_id)}">${escapeHtml(row.display_name)}</button></td><td>${escapeHtml(row.source_type)}</td><td>${escapeHtml(row.status || "ACTIVE")}</td><td>v${escapeHtml(row.current_version || 1)}</td><td><button class="row-action" type="button" data-source-id="${escapeHtml(row.data_source_id)}">进入配置流程</button></td></tr>`;
     }).join("");
     node.querySelectorAll("[data-source-id]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -331,6 +328,7 @@
   }
 
   async function selectSource(sourceId) {
+    openDialog("schema-workspace-dialog");
     state.sourceId = String(sourceId || "");
     state.snapshot = null;
     state.selectedObjectIds.clear();
@@ -479,9 +477,10 @@
 
   function renderModels() {
     const body = element("data-model-rows");
+    if (!body) return;
     element("data-model-count").textContent = `${state.models.length} 个模型`;
     if (!state.models.length) {
-      body.innerHTML = emptyRow(6, "尚无语义数据模型", "完成数据库连接、对象选择和结构采集后，点击“建立数据模型”。");
+      body.innerHTML = emptyRow(4, "尚无语义数据模型", "完成数据库连接、对象选择和结构采集后，点击“建立数据模型”。");
       return;
     }
     body.innerHTML = state.models.map((row) => {
@@ -489,12 +488,10 @@
       const version = latestVersion(detail);
       const datasets = version?.definition?.datasets?.length || 0;
       return `<tr>
-        <td><strong>${escapeHtml(row.display_name)}</strong><small class="data-model-description">${escapeHtml(row.description || "未填写说明")}</small></td>
-        <td>${escapeHtml(sourceName(version?.data_source_id))}</td>
-        <td>${version ? `v${escapeHtml(version.version_no)}` : "—"}</td>
-        <td>${statusBadge(version?.status || "DRAFT")}</td>
-        <td>${escapeHtml(datasets)}</td>
-        <td><button type="button" class="small" data-open-model="${escapeHtml(row.semantic_model_id)}">配置</button></td>
+        <td><button type="button" class="table-primary-button" data-open-model="${escapeHtml(row.semantic_model_id)}">${escapeHtml(row.display_name)}</button></td>
+        <td>${escapeHtml(row.description || "—")}</td>
+        <td>${row.active_version ? `v${escapeHtml(row.active_version)}` : (version ? `v${escapeHtml(version.version_no)}` : "草稿")}</td>
+        <td>${statusBadge(row.status || version?.status || "DRAFT")}</td>
       </tr>`;
     }).join("");
     body.querySelectorAll("[data-open-model]").forEach((button) => {
@@ -659,11 +656,6 @@
     await loadReferenceData();
     await loadSources();
     await loadModels();
-    if (state.sourceId && state.sources.some((row) => String(row.data_source_id) === state.sourceId)) {
-      await selectSource(state.sourceId);
-    } else if (state.sources.length) {
-      await selectSource(state.sources[0].data_source_id);
-    }
   }
 
   function showError(error) {
@@ -677,7 +669,7 @@
     document.querySelectorAll("[data-close-dialog]").forEach((button) => {
       button.addEventListener("click", () => closeDialog(button.dataset.closeDialog));
     });
-    element("data-source-type").addEventListener("change", () => {
+    element("data-source-type")?.addEventListener("change", () => {
       setDefaultPort();
       invalidateConnectionTest();
     });
@@ -693,11 +685,11 @@
     ].forEach((id) => {
       element(id).addEventListener("input", invalidateConnectionTest);
     });
-    element("data-source-form").addEventListener("submit", (event) => createSource(event).catch(showError));
-    element("test-data-source").addEventListener("click", () => testConnection().catch(showError));
-    element("request-snapshot").addEventListener("click", () => requestSnapshot().catch(showError));
-    element("schema-object-filter").addEventListener("input", renderSchemaObjects);
-    element("schema-select-all").addEventListener("change", (event) => {
+    element("data-source-form")?.addEventListener("submit", (event) => createSource(event).catch(showError));
+    element("test-data-source")?.addEventListener("click", () => testConnection().catch(showError));
+    element("request-snapshot")?.addEventListener("click", () => requestSnapshot().catch(showError));
+    element("schema-object-filter")?.addEventListener("input", renderSchemaObjects);
+    element("schema-select-all")?.addEventListener("change", (event) => {
       filteredObjects().forEach((row) => {
         const id = String(row.schema_snapshot_object_id);
         if (event.target.checked) state.selectedObjectIds.add(id);
@@ -705,15 +697,15 @@
       });
       renderSchemaObjects();
     });
-    element("confirm-schema-selection").addEventListener("click", () => confirmSelection().catch(showError));
-    element("open-model-draft").addEventListener("click", openModelDraft);
-    element("data-model-form").addEventListener("submit", (event) => generateModel(event).catch(showError));
-    element("save-model-definition").addEventListener("click", () => saveDefinition().catch(showError));
-    element("run-model-validation").addEventListener("click", () => runValidation().catch(showError));
-    element("submit-model-review").addEventListener("click", () => submitReview().catch(showError));
-    element("publish-model").addEventListener("click", () => publishModel().catch(showError));
-    element("manual-ddl-form").addEventListener("submit", (event) => saveManualDdl(event).catch(showError));
-    element("data-model-refresh").addEventListener("click", () => loadPage().catch(showError));
+    element("confirm-schema-selection")?.addEventListener("click", () => confirmSelection().catch(showError));
+    element("open-model-draft")?.addEventListener("click", openModelDraft);
+    element("data-model-form")?.addEventListener("submit", (event) => generateModel(event).catch(showError));
+    element("save-model-definition")?.addEventListener("click", () => saveDefinition().catch(showError));
+    element("run-model-validation")?.addEventListener("click", () => runValidation().catch(showError));
+    element("submit-model-review")?.addEventListener("click", () => submitReview().catch(showError));
+    element("publish-model")?.addEventListener("click", () => publishModel().catch(showError));
+    element("manual-ddl-form")?.addEventListener("submit", (event) => saveManualDdl(event).catch(showError));
+    element("data-model-refresh")?.addEventListener("click", () => loadPage().catch(showError));
   }
 
   KBotKnowledgeShell.ready.then(async (access) => {
@@ -723,8 +715,8 @@
       await loadPage();
     } catch (error) {
       showError(error);
-      element("data-source-list").innerHTML = '<div class="knowledge-empty"><div><strong>无法读取问数配置</strong><p>请确认 Data Query API 与 Worker 均已启动。</p></div></div>';
-      element("data-model-rows").innerHTML = emptyRow(6, "无法读取语义模型", "请检查 Data Query 服务状态和当前 Domain 权限。");
+      if (element("data-source-list")) element("data-source-list").innerHTML = '<div class="knowledge-empty"><div><strong>无法读取问数配置</strong><p>请确认 Data Query API 与 Worker 均已启动。</p></div></div>';
+      if (element("data-model-rows")) element("data-model-rows").innerHTML = emptyRow(6, "无法读取语义模型", "请检查 Data Query 服务状态和当前 Domain 权限。");
     }
   });
 })();

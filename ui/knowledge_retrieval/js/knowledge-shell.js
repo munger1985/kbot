@@ -1,23 +1,34 @@
-/* 知识检索公共 Shell：复用 AIOps 的应用壳层与设计规格。 */
+/* 知识检索公共 Shell：对齐 Ammolite 知识检索的应用壳层、业务导航与设计规格。 */
 (function () {
   "use strict";
   const PAGE_PERMISSIONS = {
     dashboard: "knowledge_retrieval:use", knowledge: "knowledge_retrieval:knowledge_chat",
     "x-search": "knowledge_retrieval:x_search", domains: "knowledge_retrieval:domain_manage",
     "knowledge-cores": "knowledge_retrieval:knowledge_core_manage",
+    upload: "knowledge_retrieval:knowledge_core_manage", reviews: "knowledge_retrieval:knowledge_core_manage",
+    processing: "knowledge_retrieval:knowledge_core_manage", files: "knowledge_retrieval:knowledge_core_manage",
+    "data-sources": "knowledge_retrieval:data_model_manage",
     "data-models": "knowledge_retrieval:data_model_manage", agents: "knowledge_retrieval:agent_manage",
   };
   const sections = [
-    ["workspace", "知识工作区", "knowledge", [
-      ["dashboard", "工作台", "overview"], ["knowledge", "知识问答", "knowledge"], ["x-search", "X 实时搜索", "search"],
+    ["workspace", "业务功能", "knowledge", [
+      ["knowledge", "知识检索", "knowledge"], ["upload", "上传资料", "upload"],
+      ["reviews", "资料审核", "review"], ["processing", "解析任务", "processing"], ["files", "知识库文件", "files"],
     ]],
-    ["resources", "资源配置", "models", [
-      ["domains", "Domains", "domains"], ["knowledge-cores", "Knowledge Cores", "knowledge"],
-      ["data-models", "问数模型", "data"], ["agents", "Agents", "agents"],
+    ["resources", "管理配置", "models", [
+      ["knowledge-cores", "知识库管理", "knowledge"], ["data-sources", "数据源", "data"],
+      ["data-models", "语义模型", "models"], ["agents", "Agent 管理", "agents"],
+    ]],
+    ["extensions", "扩展功能", "overview", [
+      ["dashboard", "工作台", "overview"], ["x-search", "X 实时搜索", "search"], ["domains", "Domain 管理", "domains"],
     ]],
   ];
   // 沿用 AIOps 的线性图标，不引入另一套图标资源。
   const iconPaths = {
+    upload: ["M12 16V3", "m7 8 5-5 5 5", "M4 16v5h16v-5"],
+    review: ["M5 3h14v18H5z", "m8 12 3 3 5-6"],
+    processing: ["M12 3a9 9 0 1 0 9 9", "M12 7v5l3 2"],
+    files: ["M4 3h10l6 6v12H4z", "M14 3v6h6"],
     overview: ["M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"],
     knowledge: ["M5 4.5A2.5 2.5 0 0 1 7.5 2H11v17H7.5A2.5 2.5 0 0 0 5 21z", "M19 4.5A2.5 2.5 0 0 0 16.5 2H13v17h3.5A2.5 2.5 0 0 1 19 21z"],
     search: ["M21 21l-5-5", "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z"],
@@ -247,7 +258,8 @@
     document.body.insertAdjacentHTML("afterbegin", `<div id="knowledge-app-shell" class="business-app-shell knowledge-app-shell">${shellMarkup(session, access, page)}</div>`);
     const main = document.querySelector("main.knowledge-main");
     if (main) {
-      main.classList.add("page-shell");
+      main.classList.add("platform-home-page", "knowledge-retrieval-page");
+      if (page === "knowledge") document.getElementById("knowledge-shell-content").classList.add("is-viewport-contained", "is-agent-chat");
       main.querySelector(".knowledge-page-head")?.classList.add("app-page-head");
       document.getElementById("knowledge-shell-content").append(main);
     }
@@ -276,7 +288,7 @@
   }
 
   globalThis.KBotKnowledgeShell = {
-    PAGE_PERMISSIONS, badge, capability, capabilityLabel, escapeHtml, toast, switchDomain,
+    PAGE_PERMISSIONS, badge, capability, capabilityLabel, escapeHtml, icon, toast, switchDomain,
     ready: new Promise((resolve, reject) => {
       const start = () => initialize().then(resolve, reject);
       document.readyState === "loading" ? addEventListener("DOMContentLoaded", start, { once: true }) : start();

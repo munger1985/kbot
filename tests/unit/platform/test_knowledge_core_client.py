@@ -40,6 +40,19 @@ class _Session:
 
 
 class KnowledgeCoreClientTest(unittest.IsolatedAsyncioTestCase):
+    async def test_library_catalog_encodes_filters_and_keeps_domain_scope(self):
+        from urllib.parse import parse_qs, urlsplit
+
+        session = _Session()
+        client = KnowledgeCoreClient(base_url="http://knowledge-core.internal", caller_service="main-api", audience="knowledge-core", session=session)
+        client._headers = lambda context: {}
+        collection_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
+        for method, suffix in ((client.list_library_files, "files"), (client.list_processing, "processing")):
+            await method(domain_id=100, collection_id=collection_id, page=2, page_size=50, query="销售 & 产品", status="READY", auth_context=object())
+            url = urlsplit(session.url)
+            self.assertTrue(url.path.endswith(f"/domains/100/catalog/{suffix}"))
+            self.assertEqual({"collection_id": [str(collection_id)], "page": ["2"], "page_size": ["50"], "q": ["销售 & 产品"], "status": ["READY"]}, parse_qs(url.query))
+
     async def test_get_collection_model_policy_uses_scoped_route(self):
         session = _Session()
         client = KnowledgeCoreClient(

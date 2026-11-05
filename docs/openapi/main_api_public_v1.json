@@ -1330,7 +1330,7 @@
         "additionalProperties": false,
         "properties": {
           "domain_id": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Domain Id",
             "type": "integer"
           },
@@ -18656,7 +18656,7 @@
         "additionalProperties": false,
         "properties": {
           "domain_id": {
-            "exclusiveMinimum": 0,
+            "exclusiveMinimum": 0.0,
             "title": "Domain Id",
             "type": "integer"
           },
@@ -41549,6 +41549,156 @@
         ]
       }
     },
+    "/api/v1/apps/knowledge-retrieval/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/documents/{document_version_id}/content": {
+      "get": {
+        "description": "按当前会话权限读取源文件，不向页面暴露存储地址或内部路由。",
+        "operationId": "stream_knowledge_core_file_api_v1_apps_knowledge_retrieval_knowledge_cores__collection_id__bundles__bundle_id__revisions__bundle_revision_id__documents__document_version_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Range"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Knowledge Core File",
+        "tags": [
+          "Knowledge Retrieval App"
+        ]
+      }
+    },
+    "/api/v1/apps/knowledge-retrieval/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/preview": {
+      "get": {
+        "description": "审核预览和文件详情均由 KC 校验知识库及资料包归属。",
+        "operationId": "preview_knowledge_core_bundle_api_v1_apps_knowledge_retrieval_knowledge_cores__collection_id__bundles__bundle_id__revisions__bundle_revision_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Knowledge Core Bundle",
+        "tags": [
+          "Knowledge Retrieval App"
+        ]
+      }
+    },
     "/api/v1/apps/knowledge-retrieval/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/reprocess": {
       "post": {
         "description": "重新调度一个失败文件的 KC 解析与后续索引流水线。",
@@ -41621,6 +41771,103 @@
         ]
       }
     },
+    "/api/v1/apps/knowledge-retrieval/knowledge-cores/{collection_id}/files": {
+      "get": {
+        "description": "复用 KC 文件目录，不用处理任务模拟知识库文件。",
+        "operationId": "list_knowledge_core_files_api_v1_apps_knowledge_retrieval_knowledge_cores__collection_id__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Knowledge Core Files",
+        "tags": [
+          "Knowledge Retrieval App"
+        ]
+      }
+    },
     "/api/v1/apps/knowledge-retrieval/knowledge-cores/{collection_id}/ingestions/user-files": {
       "post": {
         "description": "将 KnowledgeRetrieval App 的用户文件流式转发至 KC，不在 Main API 落盘。",
@@ -41675,6 +41922,61 @@
               "format": "uuid",
               "title": "Collection Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           }
         ],

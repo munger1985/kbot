@@ -83,7 +83,7 @@ async function newPage(width, granted = permissions, session = true, switchMode 
 
 try {
   browser = await chromium.launch({ headless: true });
-  const pages = ["dashboard", "knowledge", "x-search", "domains", "knowledge-cores", "data-models", "agents", "login"];
+  const pages = Object.keys(JSON.parse(await readFile(resolve(root, "ui/knowledge_retrieval/reference-pages.json"), "utf8")).pages);
   if (!process.env.KNOWLEDGE_UI_SWITCH_ONLY) for (const width of [1440, 1024, 390, 320]) {
     for (const name of pages) {
       console.log(`检查：${name}/${width}`);
@@ -92,7 +92,7 @@ try {
       if (name !== "login") await page.waitForFunction(() => document.body.dataset.access === "ready");
       await page.waitForLoadState("networkidle");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${name}/${width} 页面横向溢出`);
-      assert.equal(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--accent").trim()), "#465f9e");
+      assert.equal(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--accent").trim()), "#087f74");
       if (name !== "login") {
         assert.equal(await page.locator("#knowledge-shell-content > main").count(), 1);
         assert.equal(await page.locator('.business-nav-item[aria-current="page"]').count(), 1);
@@ -129,7 +129,7 @@ try {
         await page.screenshot({ path: resolve(artifacts, `agent-dialog-${width}.png`), fullPage: true });
         await page.locator('#agent-dialog .knowledge-close').click();
       }
-      await page.locator("main h1").first().click();
+      await page.locator("main h1:visible").first().click();
       await page.screenshot({ path: resolve(artifacts, `${name}-${width}.png`), fullPage: true });
       await page.close();
     }
@@ -160,7 +160,7 @@ try {
   await navigation.locator('a[href="./agents.html"]').click();
   await navigation.waitForURL("**/agents.html");
   await navigation.waitForFunction(() => document.body.dataset.access === "ready");
-  assert.equal((await navigation.locator('#knowledge-nav-resources a[aria-current="page"]').textContent()).trim(), "Agents");
+  assert.equal((await navigation.locator('#knowledge-nav-resources a[aria-current="page"]').textContent()).trim(), "Agent 管理");
   assert.equal(await navigation.locator("#knowledge-app-navigation").isVisible(), false);
   // 未登录仍跳登录；首次改密仍在原有流程内完成。
   const anonymous = await newPage(390, permissions, false);
@@ -215,7 +215,7 @@ try {
   assert.deepEqual(unexpected, [], "出现未声明 API 请求");
   assert.deepEqual(writes, [], "样式验收不得写入业务数据");
   assert.deepEqual(errors, [], "页面出现浏览器错误");
-  console.log(`通过：${process.env.KNOWLEDGE_UI_SWITCH_ONLY ? "工作域定向回归" : "8 个页面 × 4 个宽度"}、导航、权限、登录与知识库工作域切换（含失败保留原会话）。截图：${artifacts}`);
+  console.log(`通过：${process.env.KNOWLEDGE_UI_SWITCH_ONLY ? "工作域定向回归" : "13 个页面 × 4 个宽度"}、导航、权限、登录与知识库工作域切换（含失败保留原会话）。截图：${artifacts}`);
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));

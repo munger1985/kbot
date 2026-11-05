@@ -2,7 +2,7 @@
 (function () {
   "use strict";
 
-  const { escapeHtml, toast } = KBotKnowledgeShell;
+  const { escapeHtml, icon, toast } = KBotKnowledgeShell;
   const $ = (id) => document.getElementById(id);
   const state = {
     agents: [],
@@ -81,14 +81,9 @@
     const agent = selectedAgent();
     const modelCount = Array.isArray(agent?.data_model_ids) ? agent.data_model_ids.length : 0;
     $("knowledge-context-agent").textContent = agent?.display_name || "尚未选择";
-    $("knowledge-context-core").textContent = agent?.knowledge_core_id || "未绑定";
-    $("knowledge-context-models").textContent = modelCount ? `${modelCount} 个已发布模型` : "未绑定";
-    $("knowledge-agent-summary").innerHTML = agent
-      ? `<strong>${escapeHtml(agent.display_name || "未命名 Agent")}</strong><p>v${escapeHtml(agent.version_no || 1)} · ${modelCount ? `问文、问数与对话（${modelCount} 个模型）` : "问文与对话"}</p>`
-      : "<strong>尚无可用 Agent</strong><p>请先在 Agents 页面创建并启用 Agent。</p>";
     $("knowledge-new-conversation").disabled = !agent || state.sending;
     $("knowledge-input").disabled = !agent || state.sending;
-    $("knowledge-send").disabled = !agent || state.sending;
+    $("knowledge-send").disabled = !agent || state.sending || !$("knowledge-input").value.trim();
     $("knowledge-input-hint").textContent = agent
       ? (state.active ? "Enter 换行，点击发送提交本轮问题。" : "可直接输入并发送，系统会自动创建会话。")
       : "请选择已启用 Agent。";
@@ -99,6 +94,10 @@
     select.disabled = true;
     const payload = await KBotKnowledgeApi.request("/agents");
     state.agents = KBotKnowledgeApi.items(payload).filter((row) => row.status === "ACTIVE");
+    $("knowledge-workspace").hidden = !state.agents.length;
+    if (!state.agents.length && !$("knowledge-no-access")) {
+      $("knowledge-workspace").insertAdjacentHTML("afterend", '<section class="empty-state knowledge-chat-no-access" id="knowledge-no-access"><h2>没有可用于问答的 Agent</h2><p>请先在 Agent 管理中启用一个已绑定 ACTIVE 知识库的 Agent。</p></section>');
+    }
     const previous = selectedAgentId();
     select.innerHTML = state.agents.length
       ? state.agents.map((row) => `<option value="${escapeHtml(row.agent_id)}">${escapeHtml(row.display_name || row.agent_id)}</option>`).join("")
@@ -113,8 +112,9 @@
 
   function renderConversationList() {
     const list = $("knowledge-conversation-list");
+    $("knowledge-session-count").textContent = state.conversations.length + " 条记录";
     if (!state.conversations.length) {
-      list.innerHTML = '<li class="knowledge-chat-empty">当前 Agent 暂无会话</li>';
+      list.innerHTML = `<li class="knowledge-session-empty">${icon("agents")}<strong>还没有会话</strong><span>发送第一条消息后，会话会保存在这里。</span></li>`;
       return;
     }
     list.innerHTML = state.conversations.map((row) => `
@@ -129,11 +129,8 @@
 
   function renderEmptyChat() {
     state.active = null;
-    $("knowledge-title").textContent = "请选择或创建会话";
-    $("knowledge-conversation-meta").textContent = selectedAgent()
-      ? `当前 Agent：${agentName(selectedAgentId())}`
-      : "会话由 Agent Runtime 持久化";
-    $("knowledge-chat-stream").innerHTML = `<div class="knowledge-chat-empty">${selectedAgent() ? "新建会话后即可开始问文、问数或普通对话。" : "当前没有可用 Agent。"}</div>`;
+    $("knowledge-title").textContent = "新会话";
+    $("knowledge-chat-stream").innerHTML = selectedAgent() ? `<div class="knowledge-chat-welcome"><span class="knowledge-welcome-mark">${icon("knowledge")}</span><p class="eyebrow">${escapeHtml(selectedAgent().display_name)}</p><h2>从问题开始问文或问数</h2><p>${escapeHtml(selectedAgent().description || "输入业务问题。系统会按 Agent 绑定的知识库和问数模型检索，并保留可追溯的资料引用。")}</p></div>` : '<div class="empty-state knowledge-chat-no-access"><h2>没有可用于问答的 Agent</h2><p>请先在 Agent 管理中启用一个已绑定 ACTIVE 知识库的 Agent。</p></div>';
     renderConversationList();
     renderAgentContext();
   }
@@ -178,7 +175,6 @@
     state.active = await KBotKnowledgeApi.request(`/conversations/${row.conversation_id}`);
     renderConversationList();
     $("knowledge-title").textContent = state.active.title || "未命名会话";
-    $("knowledge-conversation-meta").textContent = `${agentName(state.active.agent_id)} · ${state.active.status} · v${state.active.row_version}`;
     renderAgentContext();
     await loadTurns();
   }
@@ -195,7 +191,7 @@
     const content = role === "knowledge" ? renderMarkdown(text) : escapeHtml(text);
     const run = runId ? ` data-run-id="${escapeHtml(runId)}"` : "";
     const references = runId ? `<div class="knowledge-message-references" data-references-for="${escapeHtml(runId)}"></div>` : "";
-    return `<div class="knowledge-message ${role}"${run}><div class="knowledge-message-meta">${escapeHtml(label)}</div><div class="knowledge-message-content">${content}</div>${references}</div>`;
+    return `<article class="knowledge-message ${role === "knowledge" ? "assistant" : role}"${run}><div class="chat-message-avatar">${role === "user" ? "我" : "AI"}</div><div class="knowledge-message-body"><header><strong>${escapeHtml(label)}</strong></header><div class="knowledge-message-content chat-message-bubble">${content}</div>${references}</div></article>`;
   }
 
   function referenceRows(source) {
@@ -240,12 +236,12 @@
 
   function appendPending(input) {
     const stream = $("knowledge-chat-stream");
-    if (stream.querySelector(".knowledge-chat-empty")) stream.innerHTML = "";
+    if (stream.querySelector(".knowledge-chat-empty, .knowledge-chat-welcome")) stream.innerHTML = "";
     stream.insertAdjacentHTML("beforeend", messageMarkup("user", "你", input));
     const wrapper = document.createElement("div");
-    wrapper.className = "knowledge-message knowledge pending";
+    wrapper.className = "knowledge-message assistant pending";
     wrapper.setAttribute("aria-busy", "true");
-    wrapper.innerHTML = `<div class="knowledge-message-meta">${escapeHtml(agentName(selectedAgentId()))}</div><div class="knowledge-message-content" aria-live="polite">正在分析问题并选择问文、问数或普通对话路径…</div><div class="knowledge-message-references"></div>`;
+    wrapper.innerHTML = `<div class="chat-message-avatar">AI</div><div class="knowledge-message-body"><header><strong>${escapeHtml(agentName(selectedAgentId()))}</strong></header><div class="knowledge-message-content chat-message-bubble" aria-live="polite">正在分析问题并选择问文、问数或普通对话路径…</div><div class="knowledge-message-references"></div></div>`;
     stream.append(wrapper);
     stream.scrollTop = stream.scrollHeight;
     return {
@@ -305,7 +301,6 @@
     else state.conversations.unshift(state.active);
     renderConversationList();
     $("knowledge-title").textContent = state.active.title || "未命名会话";
-    $("knowledge-conversation-meta").textContent = `${agentName(state.active.agent_id)} · ${state.active.status} · v${state.active.row_version}`;
   }
 
   async function send(event) {
@@ -392,13 +387,10 @@
   }
   async function openReferenceContent(button) {
     const popup = window.open("about:blank", "_blank");
+    if (popup) popup.opener = null;
     try {
       const blob = await KBotKnowledgeApi.requestBlob(button.dataset.openReferenceContent);
-      const url = URL.createObjectURL(blob);
-      const target = button.dataset.previewType === "PDF" && button.dataset.pageNo ? `${url}#page=${button.dataset.pageNo}` : url;
-      if (popup) popup.location.href = target;
-      else window.open(target, "_blank");
-      window.setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+      KBotKnowledgeApi.presentBlob(blob, "引用原文", popup, button.dataset.pageNo);
     } catch (error) {
       popup?.close();
       showError(error, "引用原文打开失败");
@@ -412,7 +404,24 @@
       try { await loadConversations(); }
       catch (error) { showError(error, "会话列表加载失败"); renderEmptyChat(); }
     });
-    $("knowledge-new-conversation").addEventListener("click", createConversation);
+    $("knowledge-new-conversation").addEventListener("click", () => { if (!state.sending) { renderEmptyChat(); $("knowledge-input").focus(); } });
+    let sidebarOpen = false;
+    const setSidebar = open => {
+      sidebarOpen = open;
+      $("knowledge-workspace").classList.toggle("sidebar-collapsed", !open);
+      $("knowledge-workspace").classList.toggle("is-session-collapsed", !open);
+      $("knowledge-retrieval-sessions").classList.toggle("open", open);
+      $("knowledge-session-overlay").hidden = !open;
+      $("knowledge-session-toggle").setAttribute("aria-expanded", String(open));
+      $("knowledge-session-toggle").setAttribute("aria-label", open ? "收起会话列表" : "展开会话列表");
+      $("knowledge-session-open").setAttribute("aria-expanded", String(open));
+    };
+    $("knowledge-session-toggle").addEventListener("click", () => setSidebar(!sidebarOpen));
+    $("knowledge-session-open").addEventListener("click", () => setSidebar(!sidebarOpen));
+    $("knowledge-session-overlay").addEventListener("click", () => setSidebar(false));
+    document.addEventListener("keydown", event => { if (event.key === "Escape" && matchMedia("(max-width: 800px)").matches) setSidebar(false); });
+    setSidebar(sidebarOpen);
+    $("knowledge-input").addEventListener("input", renderAgentContext);
     $("knowledge-refresh").addEventListener("click", () => loadConversations(state.active?.conversation_id).catch((error) => showError(error, "会话列表刷新失败")));
     $("knowledge-form").addEventListener("submit", send);
     $("knowledge-conversation-list").addEventListener("click", (event) => {

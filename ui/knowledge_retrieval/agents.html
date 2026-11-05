@@ -3,54 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>知识检索 · Agents</title>
-  <link rel="stylesheet" href="../aiops/css/ammolite-shared.css?v=20261103_2">
-  <link rel="stylesheet" href="./css/knowledge.css?v=20261105_2">
+  <title>知识检索 · Agent 管理</title>
+  <link rel="stylesheet" href="./css/knowledge.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/reference-agents.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/alignment.css?v=20261105_3">
 </head>
-<body class="business-app-aiops" data-page="agents">
-<main class="knowledge-main">
-  <header class="knowledge-page-head">
-    <div>
-      <h1>Agents</h1>
-      <p>统一管理知识问答 Agent。选择 Knowledge Core 和已发布的问数模型后，系统会自动同步当前版本的能力。</p>
-    </div>
-    <div class="knowledge-actions">
-      <button type="button" id="agent-refresh">刷新</button>
-      <button type="button" id="agent-create" class="primary">创建 Agent</button>
-    </div>
-  </header>
-
-  <section class="knowledge-grid">
-    <article class="knowledge-panel span-9">
-      <div class="knowledge-panel-head">
-        <div><h2>当前 Domain 的 Agents</h2><p><span id="agent-count">0</span> 个 Agent；删除采用归档，不清理历史版本和运行记录。</p></div>
-      </div>
-      <div class="knowledge-filter-bar">
-        <div class="knowledge-field"><label for="agent-filter">搜索</label><input id="agent-filter" type="search" placeholder="名称或说明"></div>
-        <div class="knowledge-field compact"><label for="agent-status-filter">状态</label><select id="agent-status-filter"><option value="">全部</option><option value="DRAFT">草稿</option><option value="ACTIVE">已启用</option><option value="DISABLED">已停用</option><option value="ARCHIVED">已归档</option></select></div>
-      </div>
-      <div class="knowledge-table-wrap">
-        <table class="knowledge-table agent-table">
-          <thead><tr><th>名称</th><th>状态</th><th>能力与资源</th><th>运行模型</th><th>版本</th><th>操作</th></tr></thead>
-          <tbody id="agent-rows"><tr><td colspan="6"><div class="knowledge-empty"><div><strong>正在加载</strong><p>正在读取当前 Domain 的 Agent。</p></div></div></td></tr></tbody>
-        </table>
-      </div>
-    </article>
-    <aside class="knowledge-panel span-3">
-      <div class="knowledge-panel-head"><div><h2>启用检查</h2><p>最终约束由服务端验证。</p></div></div>
-      <div class="knowledge-panel-body">
-        <dl class="knowledge-key-value">
-          <div><dt>Knowledge Core</dt><dd>必须为 ACTIVE</dd></div>
-          <div><dt>问数模型</dt><dd>必须已有发布版本</dd></div>
-          <div><dt>运行模型</dt><dd>按职责绑定已启用模型</dd></div>
-        </dl>
-        <div class="knowledge-notice warn">修改 Knowledge Core、问数模型、指令、配置或运行模型会生成新版本；问数能力由系统自动同步。</div>
-      </div>
-    </aside>
-  </section>
+<body class="business-app-knowledge_retrieval" data-page="agents">
+<main class="knowledge-main platform-home-page knowledge-retrieval-page agent-management-page">
+<header class="platform-home-header"><div class="login-brand"><span class="brand-mark">K</span><strong>Agent 管理</strong></div><a class="text-button" href="./knowledge.html">返回知识检索</a></header><section class="platform-home-hero"><div><p class="eyebrow">当前业务空间</p><h1>Agent 管理</h1><p>在一个列表中完成 Agent 的创建、模型职责、知识库、问数模型和发布管理；问数绑定由平台自动维护。</p></div></section>
+<section class="section-toolbar"><p>绑定当前空间已启用知识库和可选问数模型后，平台会自动维护当前版本的问数绑定。</p><div class="toolbar-actions"><button class="text-button" id="agent-refresh" type="button">刷新</button><button class="primary-button" id="agent-create" type="button">新建 Agent</button></div></section>
+<section class="table-card"><header class="table-card-header"><div><h2>Agent 列表</h2><p>点击编辑，在右侧抽屉中完成全部配置。</p></div><span><span id="agent-count">0</span> 个</span></header>
+<div class="table-scroll"><table><thead><tr><th>名称</th><th>说明</th><th>能力</th><th>状态</th><th>操作</th></tr></thead><tbody id="agent-rows"><tr><td colspan="5" class="empty-cell">正在读取 Agent…</td></tr></tbody></table></div></section>
 </main>
 
-<dialog class="knowledge-dialog wide agent-dialog" id="agent-dialog">
+<dialog class="knowledge-dialog knowledge-drawer admin-drawer admin-drawer-wide agent-dialog" id="agent-dialog">
   <form id="agent-form">
     <input id="agent-id" type="hidden">
     <input id="agent-row-version" type="hidden">
@@ -101,9 +68,9 @@
 </dialog>
 
 <script src="../runtime-config.js"></script>
-<script src="./js/knowledge-auth.js"></script>
-<script src="./js/knowledge-api.js"></script>
-<script src="./js/knowledge-shell.js?v=20261105_2"></script>
-<script src="./js/knowledge-agents.js"></script>
+<script src="./js/knowledge-auth.js?v=20261105_3"></script>
+<script src="./js/knowledge-api.js?v=20261105_3"></script>
+<script src="./js/knowledge-shell.js?v=20261105_3"></script>
+<script src="./js/knowledge-agents.js?v=20261105_3"></script>
 </body>
 </html>

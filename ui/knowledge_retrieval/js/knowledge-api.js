@@ -102,6 +102,23 @@
     return response.blob();
   }
 
+  function presentBlob(blob, fileName, popup, pageNo) {
+    const url = URL.createObjectURL(blob);
+    // Blob 不携带源响应的 CSP；可执行文档必须下载，不能以 App 同源页面打开。
+    const inline = /^(application\/pdf|image\/(png|jpeg|gif|webp)|text\/plain)(;|$)/i.test(blob.type);
+    if (inline && popup) {
+      popup.opener = null;
+      popup.location.href = pageNo && blob.type === "application/pdf" ? `${url}#page=${encodeURIComponent(pageNo)}` : url;
+    } else {
+      popup?.close();
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName || "资料文件";
+      link.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
   async function stream(path, handlers = {}, signal) {
     const response = await fetch(resolveUrl(path), {
       credentials: "same-origin",
@@ -195,7 +212,7 @@
   }
 
   globalThis.KBotKnowledgeApi = {
-    basePath, json, request, requestBlob, requestId, stream, withQuery,
+    basePath, json, request, requestBlob, presentBlob, requestId, stream, withQuery,
     ModelCategory, items, modelCategory, isActiveModel, isGrokModel,
   };
 })();

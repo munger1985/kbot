@@ -943,14 +943,69 @@ async def get_knowledge_core(collection_id: UUID, request: Request):
 
 
 @router.get("/knowledge-cores/{collection_id}/processing")
-async def list_knowledge_core_processing(collection_id: UUID, request: Request):
+async def list_knowledge_core_processing(
+    collection_id: UUID, request: Request,
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    q: str | None = None, status: str | None = None,
+):
     domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
     return await _knowledge(request).list_processing(
         domain_id=domain_id,
         collection_id=collection_id,
-        page=1,
-        page_size=100,
+        page=page,
+        page_size=page_size,
+        query=q,
+        status=status,
         auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/knowledge-cores/{collection_id}/files")
+async def list_knowledge_core_files(
+    collection_id: UUID, request: Request,
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    q: str | None = None, status: str | None = None,
+):
+    """复用 KC 文件目录，不用处理任务模拟知识库文件。"""
+    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
+    return await _knowledge(request).list_library_files(
+        domain_id=domain_id, collection_id=collection_id, page=page, page_size=page_size,
+        query=q, status=status, auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/preview")
+async def preview_knowledge_core_bundle(
+    collection_id: UUID, bundle_id: UUID, bundle_revision_id: UUID, request: Request,
+):
+    """审核预览和文件详情均由 KC 校验知识库及资料包归属。"""
+    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
+    return await _knowledge(request).get_bundle_revision_preview(
+        domain_id=domain_id, collection_id=collection_id, bundle_id=bundle_id,
+        bundle_revision_id=bundle_revision_id, auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/documents/{document_version_id}/content")
+async def stream_knowledge_core_file(
+    collection_id: UUID, bundle_id: UUID, bundle_revision_id: UUID,
+    document_version_id: UUID, request: Request,
+    range_header: str | None = Header(default=None, alias="Range"),
+):
+    """按当前会话权限读取源文件，不向页面暴露存储地址或内部路由。"""
+    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
+    upstream = await _knowledge(request).stream_source_file(
+        domain_id=domain_id, collection_id=collection_id, bundle_id=bundle_id,
+        bundle_revision_id=bundle_revision_id, document_version_id=document_version_id,
+        range_header=range_header, auth_context=request.state.auth_context,
+    )
+    return StreamingResponse(
+        upstream.body, status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/octet-stream"),
+        headers={name: upstream.headers[name] for name in (
+            "accept-ranges", "cache-control", "content-disposition", "content-length",
+            "content-range", "content-security-policy", "x-content-type-options",
+        ) if name in upstream.headers},
     )
 
 

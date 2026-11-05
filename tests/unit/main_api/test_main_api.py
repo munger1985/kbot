@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import AsyncMock
 from datetime import datetime, timezone
 from typing import Any
 from types import SimpleNamespace
@@ -1034,6 +1035,58 @@ class MainApiTest(unittest.TestCase):
             USER_ID_HEADER: "portal-user-1",
             "X-Request-ID": "main-request-1",
         }
+
+    def test_knowledge_library_catalog_forwards_scope_filters_and_pagination(self):
+        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:knowledge_core_manage"}
+        for suffix, method in (("files", "list_library_files"), ("processing", "list_processing")):
+            with self.subTest(suffix=suffix):
+                upstream = AsyncMock(return_value={"items": [], "page": 2, "page_size": 50, "total": 100})
+                setattr(self.kc, method, upstream)
+                response = self.client.get(
+                    f"/api/v1/apps/knowledge-retrieval/knowledge-cores/{TEST_COLLECTION_ID}/{suffix}",
+                    params={"page": 2, "page_size": 50, "q": "销售 & 产品", "status": "READY"},
+                    headers=self._headers(),
+                )
+                self.assertEqual(200, response.status_code, response.text)
+                values = upstream.await_args.kwargs
+                self.assertEqual((100, TEST_COLLECTION_ID, 2, 50), (values["domain_id"], values["collection_id"], values["page"], values["page_size"]))
+                self.assertEqual("销售 & 产品", values["query"])
+                self.assertEqual("READY", values["status"])
+                self.assertEqual("portal-user-1", values["auth_context"].asserted_user_id)
+
+    def test_knowledge_library_rejects_unbounded_pagination(self):
+        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:knowledge_core_manage"}
+        for suffix in ("files", "processing"):
+            for query in ("page=0", "page_size=101"):
+                response = self.client.get(f"/api/v1/apps/knowledge-retrieval/knowledge-cores/{TEST_COLLECTION_ID}/{suffix}?{query}", headers=self._headers())
+                self.assertEqual(422, response.status_code, response.text)
+
+    def test_knowledge_library_preview_and_range_content_keep_scoped_ids(self):
+        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:knowledge_core_manage"}
+        base = f"/api/v1/apps/knowledge-retrieval/knowledge-cores/{TEST_COLLECTION_ID}/bundles/{TEST_BUNDLE_ID}/revisions/{TEST_BUNDLE_REVISION_ID}"
+        response = self.client.get(base + "/preview", headers=self._headers())
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(TEST_COLLECTION_ID, self.kc.last_collection_id)
+        self.assertEqual(TEST_BUNDLE_ID, self.kc.last_bundle_id)
+        self.assertEqual(TEST_BUNDLE_REVISION_ID, self.kc.last_bundle_revision_id)
+        content = self.client.get(base + f"/documents/{TEST_DOCUMENT_VERSION_ID}/content", headers={**self._headers(), "Range": "bytes=0-11"})
+        self.assertEqual(206, content.status_code, content.text)
+        self.assertEqual("bytes 0-11/12", content.headers["content-range"])
+        self.assertEqual(b"%PDF-preview", content.content)
+
+    def test_knowledge_library_requires_management_permission_for_all_read_surfaces(self):
+        self.app.state.access_control_service.permissions = frozenset({"knowledge_retrieval:use", "knowledge_retrieval:knowledge_chat"})
+        self.kc.list_library_files = AsyncMock()
+        self.kc.list_processing = AsyncMock()
+        self.kc.get_bundle_revision_preview = AsyncMock()
+        self.kc.stream_source_file = AsyncMock()
+        root = f"/api/v1/apps/knowledge-retrieval/knowledge-cores/{TEST_COLLECTION_ID}"
+        bundle = f"/bundles/{TEST_BUNDLE_ID}/revisions/{TEST_BUNDLE_REVISION_ID}"
+        for suffix in ("/files", "/processing", bundle + "/preview", bundle + f"/documents/{TEST_DOCUMENT_VERSION_ID}/content"):
+            response = self.client.get(root + suffix, headers=self._headers())
+            self.assertEqual(403, response.status_code, response.text)
+        for method in (self.kc.list_library_files, self.kc.list_processing, self.kc.get_bundle_revision_preview, self.kc.stream_source_file):
+            method.assert_not_awaited()
 
     def test_cors_preflight_allows_aiops_upload_metadata_headers(self) -> None:
         requested_headers = (

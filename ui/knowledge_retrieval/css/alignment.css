@@ -1,0 +1,60 @@
+/* 页面规格来自 Ammolite 生产样式；这里只处理 KBot 静态 DOM、原生 dialog 与平台差异。 */
+[hidden] { display: none !important; }
+.knowledge-main { min-width: 0; }
+.knowledge-app-shell .business-app-content { container: knowledge-content / inline-size; }
+.knowledge-app-shell .business-app-sidebar nav .nav-group-items { position: static; min-height: auto; flex: none; overflow: visible; }
+.knowledge-app-shell .business-context-action svg { transform: rotate(90deg); }
+.knowledge-app-shell .icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.knowledge-app-shell .business-app-content .table-scroll { max-width: 100%; overflow-x: auto; }
+.knowledge-app-shell .section-toolbar .toolbar-actions { flex-wrap: wrap; }
+.knowledge-app-shell .table-card table { width: 100%; }
+.knowledge-main .knowledge-row-actions { flex-wrap: wrap; }
+.knowledge-main .knowledge-row-actions button { min-height: auto; padding: 0; border: 0; color: var(--accent-strong); background: transparent; box-shadow: none; }
+.knowledge-main .knowledge-row-actions button.danger { color: var(--danger); }
+dialog.knowledge-drawer { position: fixed; inset: 0 0 0 auto; width: min(640px,100vw); height: 100dvh; max-width: 100vw; max-height: 100dvh; margin: 0; padding: 0; overflow-y: auto; border: 0; border-left: 1px solid var(--line); border-radius: 0; color: var(--ink); background: var(--surface); box-shadow: var(--shadow-soft); }
+dialog.knowledge-drawer.admin-drawer-wide { width: min(900px,100vw); }
+dialog.knowledge-drawer::backdrop { background: rgb(15 23 42 / 28%); }
+.knowledge-drawer > .admin-drawer-header { top: 0; margin: 0; padding: 24px; }
+.knowledge-drawer > .admin-drawer-body { padding: 24px; }
+.knowledge-drawer > .admin-drawer-footer { margin: 0; padding: 20px 24px; }
+.knowledge-drawer .knowledge-dialog-head { position: sticky; top: 0; z-index: 2; padding: 24px; background: var(--surface); }
+.knowledge-drawer .knowledge-dialog-body { padding: 24px; }
+.knowledge-drawer .knowledge-dialog-foot { position: sticky; bottom: 0; padding: 20px 24px; background: var(--surface); }
+.knowledge-drawer .data-source-workspace { border: 0; border-radius: 0; }
+.knowledge-drawer .admin-drawer-body { overflow-x: auto; }
+.knowledge-drawer .quick-create-form { padding: 24px; }
+.knowledge-drawer .agent-editor-section { box-shadow: none; }
+.knowledge-drawer .knowledge-form-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.knowledge-chat-page .knowledge-conversation-panel { min-height: 0; }
+.knowledge-chat-page .knowledge-conversation-list { flex: 1; max-height: none; border: 0; padding: 8px; }
+.knowledge-chat-page .knowledge-conversation-row { border: 0; }
+.knowledge-chat-page .knowledge-conversation-select { min-height: 57px; border-radius: 8px; }
+.knowledge-chat-workspace.sidebar-collapsed .knowledge-session-header .secondary-button { font-size: 0; }
+.knowledge-chat-workspace.sidebar-collapsed .knowledge-session-header .secondary-button::before { content: "+"; font-size: 20px; }
+.knowledge-chat-workspace.sidebar-collapsed .agent-chat-session-toggle-row #knowledge-refresh { display: none; }
+.knowledge-chat-page .knowledge-message-viewport { padding: 0 22px; }
+.knowledge-chat-page .knowledge-message { max-width: 1200px; margin: 24px auto; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.knowledge-chat-page .knowledge-message.user { margin-left: auto; background: transparent; }
+.knowledge-chat-page .knowledge-message-body { min-width: 0; flex: 1; }
+.knowledge-chat-page .knowledge-composer { margin: 0; padding: 0; border: 0; }
+.knowledge-chat-page .knowledge-composer textarea { min-height: 26px; resize: none; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.knowledge-chat-page .knowledge-composer .knowledge-send-button { padding: 0; }
+.knowledge-chat-page .knowledge-conversation-header .chat-session-button { display: inline-flex; }
+.knowledge-chat-page .knowledge-composer-wrap > p { margin-bottom: 0; }
+.knowledge-chat-page .knowledge-chat-welcome { min-height: 100%; }
+.knowledge-chat-page .knowledge-session-header .button-compact { min-height: 30px; }
+.knowledge-chat-page .agent-chat-session-toggle-row { justify-content: space-between; }
+.knowledge-app-shell .knowledge-list-toolbar .control-field { min-width: 0; }
+.upload-drop-zone.dragging { border-color: var(--accent); background: var(--accent-soft); }
+.upload-receipt { display: grid; gap: 6px; margin-bottom: 20px; overflow-wrap: anywhere; }
+.upload-file-identity { min-width: 0; overflow-wrap: anywhere; }
+.knowledge-library-files-page .table-secondary { display: block; }
+.table-error { display: block; color: var(--danger); }
+@media (max-width: 800px) {
+  .knowledge-drawer .knowledge-form-grid { grid-template-columns: minmax(0,1fr); }
+  .knowledge-chat-page .knowledge-message-viewport { padding: 0 12px; }
+  .knowledge-chat-page .knowledge-message { margin: 18px auto; }
+  .knowledge-chat-page .knowledge-session-overlay:not([hidden]) { display: block; }
+  .knowledge-chat-page .knowledge-agent-picker { min-width: 0; }
+  .knowledge-app-shell .section-toolbar { align-items: flex-start; flex-direction: column; }
+}

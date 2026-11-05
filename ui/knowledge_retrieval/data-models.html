@@ -3,85 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>知识检索 · 问数模型</title>
-  <link rel="stylesheet" href="../aiops/css/ammolite-shared.css?v=20261103_2">
-  <link rel="stylesheet" href="./css/knowledge.css?v=20261105_2">
+  <title>知识检索 · 语义模型</title>
+  <link rel="stylesheet" href="./css/knowledge.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/reference-data-models.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/alignment.css?v=20261105_3">
 </head>
-<body class="business-app-aiops" data-page="data-models">
-<main class="knowledge-main">
-  <header class="knowledge-page-head">
-    <div>
-      <h1>问数模型</h1>
-      <p>先建立只读数据库连接，选择允许采集的表或视图，再生成、验证并发布语义数据模型。</p>
-    </div>
-    <div class="knowledge-actions">
-      <button type="button" id="data-model-refresh">刷新</button>
-      <button type="button" data-open-dialog="data-source-dialog" class="primary">配置数据库连接</button>
-    </div>
-  </header>
+<body class="business-app-knowledge_retrieval" data-page="data-models">
+<main class="knowledge-main platform-home-page knowledge-retrieval-page"><header class="platform-home-header"><div class="login-brand"><span class="brand-mark">K</span><strong>语义模型</strong></div><a class="text-button" href="./knowledge.html">返回知识检索</a></header><section class="platform-home-hero"><div><p class="eyebrow">当前业务空间</p><h1>语义模型</h1><p>查看当前业务空间的模型草稿和已发布版本；新模型从已完成配置的数据源创建。</p></div></section>
+<section class="section-toolbar"><p>选择一个已完成配置的数据源即可新建模型；同一数据源可以服务于多份不同业务口径的语义模型。</p><div class="toolbar-actions"><button class="text-button" id="data-model-refresh" type="button">刷新</button><a class="secondary-button" href="./data-sources.html">前往数据源</a></div></section><section class="table-card"><div class="table-scroll"><table><thead><tr><th>名称</th><th>说明</th><th>在用版本</th><th>状态</th></tr></thead><tbody id="data-model-rows"><tr><td colspan="4" class="empty-cell">正在读取语义模型…</td></tr></tbody></table></div><span id="data-model-count" class="visually-hidden"></span></section></main>
 
-  <section class="knowledge-panel data-model-workflow" aria-label="问数模型配置流程">
-    <ol class="data-model-steps">
-      <li data-workflow-step="source"><strong>1. 数据库连接</strong><span>测试并保存只读连接</span></li>
-      <li data-workflow-step="discover"><strong>2. 发现对象</strong><span>读取允许 Schema 的表和视图</span></li>
-      <li data-workflow-step="capture"><strong>3. 采集结构</strong><span>选择对象并读取字段与约束</span></li>
-      <li data-workflow-step="model"><strong>4. 数据建模</strong><span>生成并复核指标、维度和映射</span></li>
-      <li data-workflow-step="publish"><strong>5. 验证发布</strong><span>真实问题验证并发布供 Agent 选择</span></li>
-    </ol>
-  </section>
-
-  <section class="knowledge-grid data-model-grid">
-    <article class="knowledge-panel span-4">
-      <div class="knowledge-panel-head">
-        <div><h2>数据库连接</h2><p>凭据加密保存，页面不会回显用户名、密码或完整 DSN。</p></div>
-        <button class="small" type="button" data-open-dialog="data-source-dialog">新增</button>
-      </div>
-      <div id="data-source-list" class="data-source-list">
-        <div class="knowledge-empty"><div><strong>正在读取数据源</strong><p>请稍候。</p></div></div>
-      </div>
-    </article>
-
-    <article class="knowledge-panel span-8">
-      <div class="knowledge-panel-head">
-        <div>
-          <h2 id="schema-panel-title">Schema 与表对象</h2>
-          <p id="schema-panel-copy">选择左侧数据库连接后，查看自动发现与结构采集进度。</p>
-        </div>
-        <div class="knowledge-actions">
-          <button class="small" type="button" id="request-snapshot" disabled>重新发现</button>
-          <button class="small primary" type="button" id="open-model-draft" disabled>建立数据模型</button>
-        </div>
-      </div>
-      <div id="schema-summary" class="data-schema-summary"></div>
-      <div class="knowledge-filter-bar data-object-toolbar">
-        <label class="knowledge-field"><span>筛选表或视图</span><input id="schema-object-filter" placeholder="输入 Schema、表名或视图名"></label>
-        <label class="data-check-all"><input type="checkbox" id="schema-select-all"> 选择当前结果</label>
-        <button type="button" id="confirm-schema-selection" class="primary" disabled>确认选择并采集结构</button>
-      </div>
-      <div class="knowledge-table-wrap">
-        <table class="knowledge-table data-object-table">
-          <thead><tr><th>选择</th><th>Schema</th><th>对象</th><th>类型</th><th>字段</th><th>状态</th><th>处理</th></tr></thead>
-          <tbody id="schema-object-rows"><tr><td colspan="7"><div class="knowledge-empty"><div><strong>尚未选择数据库连接</strong><p>先在左侧选择数据源。</p></div></div></td></tr></tbody>
-        </table>
-      </div>
-    </article>
-
-    <article class="knowledge-panel span-12">
-      <div class="knowledge-panel-head">
-        <div><h2>语义数据模型</h2><p>只有完成审核并处于“已发布”的版本才能绑定 Agent。</p></div>
-        <span id="data-model-count" class="knowledge-badge">0 个模型</span>
-      </div>
-      <div class="knowledge-table-wrap">
-        <table class="knowledge-table">
-          <thead><tr><th>名称</th><th>数据源</th><th>版本</th><th>状态</th><th>数据集</th><th>操作</th></tr></thead>
-          <tbody id="data-model-rows"><tr><td colspan="6"><div class="knowledge-empty"><div><strong>正在读取语义模型</strong><p>请稍候。</p></div></div></td></tr></tbody>
-        </table>
-      </div>
-    </article>
-  </section>
-</main>
-
-<dialog class="knowledge-dialog" id="data-source-dialog">
+<dialog class="knowledge-dialog knowledge-drawer admin-drawer" id="data-source-dialog">
   <form id="data-source-form">
     <div class="knowledge-dialog-head"><h2>配置只读数据库连接</h2><button class="knowledge-close" type="button" data-close-dialog="data-source-dialog" aria-label="关闭">×</button></div>
     <div class="knowledge-dialog-body">
@@ -105,7 +37,7 @@
   </form>
 </dialog>
 
-<dialog class="knowledge-dialog" id="data-model-dialog">
+<dialog class="knowledge-dialog knowledge-drawer admin-drawer" id="data-model-dialog">
   <form id="data-model-form">
     <div class="knowledge-dialog-head"><h2>建立语义数据模型</h2><button class="knowledge-close" type="button" data-close-dialog="data-model-dialog" aria-label="关闭">×</button></div>
     <div class="knowledge-dialog-body">
@@ -122,7 +54,7 @@
   </form>
 </dialog>
 
-<dialog class="knowledge-dialog wide" id="semantic-model-dialog">
+<dialog class="knowledge-dialog knowledge-drawer admin-drawer admin-drawer-wide" id="semantic-model-dialog">
   <div class="knowledge-dialog-head"><div><h2 id="semantic-model-title">语义模型详情</h2><p id="semantic-model-meta" class="dialog-subtitle"></p></div><button class="knowledge-close" type="button" data-close-dialog="semantic-model-dialog" aria-label="关闭">×</button></div>
   <div class="knowledge-dialog-body semantic-model-body">
     <section>
@@ -147,7 +79,7 @@
   </div>
 </dialog>
 
-<dialog class="knowledge-dialog" id="manual-ddl-dialog">
+<dialog class="knowledge-dialog knowledge-drawer admin-drawer" id="manual-ddl-dialog">
   <form id="manual-ddl-form">
     <div class="knowledge-dialog-head"><h2>补录失败对象结构</h2><button class="knowledge-close" type="button" data-close-dialog="manual-ddl-dialog" aria-label="关闭">×</button></div>
     <div class="knowledge-dialog-body">
@@ -159,10 +91,34 @@
   </form>
 </dialog>
 
+<dialog class="knowledge-dialog knowledge-drawer admin-drawer admin-drawer-wide" id="schema-workspace-dialog"><header class="admin-drawer-header"><div><p class="eyebrow">数据源配置</p><h2>对象发现与结构采集</h2><p>选择允许采集的表或视图，再建立数据模型。</p></div><button class="icon-button" type="button" data-close-dialog="schema-workspace-dialog" aria-label="关闭数据源配置">×</button></header>    <article class="table-card data-source-workspace">
+      <div class="knowledge-panel-head">
+        <div>
+          <h2 id="schema-panel-title">Schema 与表对象</h2>
+          <p id="schema-panel-copy">选择左侧数据库连接后，查看自动发现与结构采集进度。</p>
+        </div>
+        <div class="knowledge-actions">
+          <button class="small" type="button" id="request-snapshot" disabled>重新发现</button>
+          <button class="small primary" type="button" id="open-model-draft" disabled>建立数据模型</button>
+        </div>
+      </div>
+      <div id="schema-summary" class="data-schema-summary"></div>
+      <div class="knowledge-filter-bar data-object-toolbar">
+        <label class="knowledge-field"><span>筛选表或视图</span><input id="schema-object-filter" placeholder="输入 Schema、表名或视图名"></label>
+        <label class="data-check-all"><input type="checkbox" id="schema-select-all"> 选择当前结果</label>
+        <button type="button" id="confirm-schema-selection" class="primary" disabled>确认选择并采集结构</button>
+      </div>
+      <div class="knowledge-table-wrap">
+        <table class="knowledge-table data-object-table">
+          <thead><tr><th>选择</th><th>Schema</th><th>对象</th><th>类型</th><th>字段</th><th>状态</th><th>处理</th></tr></thead>
+          <tbody id="schema-object-rows"><tr><td colspan="7"><div class="knowledge-empty"><div><strong>尚未选择数据库连接</strong><p>先在左侧选择数据源。</p></div></div></td></tr></tbody>
+        </table>
+      </div>
+    </article></dialog>
 <script src="../runtime-config.js"></script>
-<script src="./js/knowledge-auth.js"></script>
-<script src="./js/knowledge-api.js"></script>
-<script src="./js/knowledge-shell.js?v=20261105_2"></script>
-<script src="./js/knowledge-data-models.js"></script>
+<script src="./js/knowledge-auth.js?v=20261105_3"></script>
+<script src="./js/knowledge-api.js?v=20261105_3"></script>
+<script src="./js/knowledge-shell.js?v=20261105_3"></script>
+<script src="./js/knowledge-data-models.js?v=20261105_3"></script>
 </body>
 </html>

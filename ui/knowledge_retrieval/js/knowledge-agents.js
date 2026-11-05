@@ -23,7 +23,7 @@
   function closeDialog() { element("agent-dialog")?.close(); }
 
   function emptyRow(title, copy) {
-    return `<tr><td colspan="6"><div class="knowledge-empty"><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div></div></td></tr>`;
+    return `<tr><td colspan="5" class="empty-cell">${escapeHtml(title)}</td></tr>`;
   }
 
   function statusLabel(status) {
@@ -36,40 +36,6 @@
     return "warn";
   }
 
-  function knowledgeCore(id) {
-    return state.options.knowledge_cores.find((row) => String(row.collection_id) === String(id));
-  }
-
-  function dataModel(id) {
-    return state.options.data_models.find((row) => String(row.semantic_model_id) === String(id));
-  }
-
-  function catalogModel(id) {
-    return state.options.models.find((row) => String(row.model_id) === String(id));
-  }
-
-  function resourceMarkup(row) {
-    const core = knowledgeCore(row.knowledge_core_id);
-    const coreLabel = core?.display_name || row.knowledge_core_id || "未绑定 Knowledge Core";
-    const models = (row.data_model_ids || []).map((id) => dataModel(id)?.display_name || id);
-    const dataMarkup = models.length
-      ? `<span class="agent-resource-list"><strong>问数</strong>${models.map((name) => `<span>${escapeHtml(name)}</span>`).join("")}</span>`
-      : '<span class="agent-resource-list muted"><strong>问数</strong><span>未绑定</span></span>';
-    return `<div class="agent-resource-stack">
-      <span class="agent-resource-list"><strong>知识</strong><span>${escapeHtml(coreLabel)}</span></span>
-      ${dataMarkup}
-    </div>`;
-  }
-
-  function modelMarkup(row) {
-    const labels = Object.entries(row.models || {}).map(([role, id]) => {
-      const model = catalogModel(id);
-      const name = model?.display_name || model?.served_model_name || id;
-      return `<span title="${escapeHtml(role)}">${escapeHtml(name)}</span>`;
-    });
-    return labels.length ? `<div class="agent-model-list">${labels.join("")}</div>` : "—";
-  }
-
   function actionButtons(row) {
     const id = escapeHtml(row.agent_id);
     if (row.status === "ARCHIVED") return '<span class="knowledge-badge">只读</span>';
@@ -79,7 +45,7 @@
     return `<div class="knowledge-row-actions">
       <button class="small" type="button" data-agent-action="edit" data-agent-id="${id}">编辑</button>
       ${lifecycle}
-      <button class="small danger" type="button" data-agent-action="archive" data-agent-id="${id}">删除</button>
+      ${row.status === "ACTIVE" ? "" : `<button class="small danger" type="button" data-agent-action="archive" data-agent-id="${id}">删除</button>`}
     </div>`;
   }
 
@@ -106,11 +72,10 @@
       return;
     }
     node.innerHTML = rows.map((row) => `<tr>
-      <td><strong>${escapeHtml(row.display_name || "未命名")}</strong><small class="agent-cell-copy">${escapeHtml(row.description || "无说明")}</small></td>
+      <td><strong class="table-primary">${escapeHtml(row.display_name || "未命名")}</strong></td>
+      <td>${escapeHtml(row.description || "—")}</td>
+      <td><div class="tag-list">${(row.enabled_capabilities || []).map(key => `<span class="tag">${escapeHtml(({KNOWLEDGE_CHAT:"知识检索",DOCUMENT:"知识检索",DATA_QUERY:"数据查询",CONVERSATION:"通用对话",X_SEARCH:"X 实时搜索"})[key] || key)}</span>`).join("") || '<span class="tag">待配置</span>'}</div></td>
       <td>${badge(statusLabel(row.status), statusTone(row.status))}</td>
-      <td>${resourceMarkup(row)}</td>
-      <td>${modelMarkup(row)}</td>
-      <td><strong>v${escapeHtml(row.version_no || 1)}</strong><small class="agent-cell-copy">配置版本 ${escapeHtml(row.row_version || "—")}</small></td>
       <td>${actionButtons(row)}</td>
     </tr>`).join("");
     node.querySelectorAll("[data-agent-action]").forEach((button) => {

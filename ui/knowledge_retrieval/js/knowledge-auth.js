@@ -115,7 +115,7 @@
     const passwordForm = document.getElementById("password-form");
     const session = load();
     if (session?.access_token && !session.must_change_password) {
-      location.replace("./dashboard.html");
+      location.replace("./knowledge.html");
       return;
     }
     if (session?.access_token && session.must_change_password) {
@@ -136,7 +136,7 @@
           reveal("password-section", true);
           return;
         }
-        location.replace("./dashboard.html");
+        location.replace("./knowledge.html");
       } catch (error) {
         showError("login-error", error);
       }
@@ -157,7 +157,7 @@
           current_password: values.current_password,
           new_password: values.new_password,
         });
-        location.replace("./dashboard.html");
+        location.replace("./knowledge.html");
       } catch (error) {
         showError("password-error", error);
       }

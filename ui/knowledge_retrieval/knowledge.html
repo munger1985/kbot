@@ -3,68 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>知识检索 · 知识问答</title>
-  <link rel="stylesheet" href="../aiops/css/ammolite-shared.css?v=20261103_2">
-  <link rel="stylesheet" href="./css/knowledge.css?v=20261105_2">
+  <title>知识检索</title>
+  <link rel="stylesheet" href="./css/knowledge.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/reference-knowledge.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/alignment.css?v=20261105_3">
 </head>
-<body class="business-app-aiops" data-page="knowledge">
-<main class="knowledge-main">
-  <header class="knowledge-page-head">
-    <div>
-      <h1>知识问答</h1>
-      <p>由已启用 Agent 在绑定的 Knowledge Core、问数模型和普通对话能力之间自动选择执行路径。</p>
-    </div>
-    <div class="knowledge-actions">
-      <select id="knowledge-agent" aria-label="当前 Agent" disabled>
-        <option value="">正在读取已启用 Agent</option>
-      </select>
-      <button class="primary" id="knowledge-new-conversation" type="button" disabled>新建会话</button>
-    </div>
-  </header>
-
-  <section class="knowledge-chat-layout">
-    <aside class="knowledge-panel knowledge-conversation-panel">
-      <div class="knowledge-panel-head">
-        <div><h2>最近会话</h2><p>当前 Agent 范围</p></div>
-        <button class="small" type="button" id="knowledge-refresh">刷新</button>
-      </div>
-      <ul class="knowledge-conversation-list" id="knowledge-conversation-list">
-        <li class="knowledge-chat-empty">等待读取会话</li>
-      </ul>
-      <div class="knowledge-agent-context" id="knowledge-agent-summary">
-        <strong>正在读取 Agent</strong>
-        <p>仅显示当前 Domain 已启用的 Agent。</p>
-      </div>
-      <dl class="knowledge-chat-context">
-        <div><dt>当前 Agent</dt><dd id="knowledge-context-agent">尚未选择</dd></div>
-        <div><dt>Knowledge Core</dt><dd id="knowledge-context-core">尚未选择</dd></div>
-        <div><dt>问数模型</dt><dd id="knowledge-context-models">尚未选择</dd></div>
-      </dl>
+<body class="business-app-knowledge_retrieval" data-page="knowledge">
+<main class="knowledge-main platform-home-page agent-chat-page knowledge-retrieval-page knowledge-chat-page">
+  <header class="app-page-head"><div><p class="eyebrow">知识检索工作区</p><h1>知识检索</h1><p>围绕当前知识 Agent 开展连续问答，并保留完整会话上下文。</p></div></header>
+  <section class="agent-chat-workspace knowledge-chat-workspace" id="knowledge-workspace">
+    <div class="knowledge-session-overlay" id="knowledge-session-overlay" hidden></div>
+    <aside id="knowledge-retrieval-sessions" class="agent-chat-session-rail knowledge-session-sidebar open" aria-label="会话历史">
+      <header class="knowledge-session-header">
+        <div><strong>会话</strong><span id="knowledge-session-count">0 条记录</span></div>
+        <button class="secondary-button button-compact" id="knowledge-new-conversation" type="button" disabled>＋ 新建</button>
+      </header>
+      <div class="knowledge-session-agent"><span>当前 Agent</span><strong id="knowledge-context-agent">尚未选择</strong></div>
+      <ul class="conversation-list knowledge-conversation-list" id="knowledge-conversation-list"></ul>
+      <footer class="agent-chat-session-toggle-row"><button class="icon-button agent-chat-session-toggle" id="knowledge-session-toggle" type="button" aria-label="收起会话列表" aria-controls="knowledge-retrieval-sessions" aria-expanded="true">☰</button><button class="text-button" id="knowledge-refresh" type="button">刷新</button></footer>
     </aside>
-
-    <article class="knowledge-panel knowledge-chat-panel">
-      <div class="knowledge-panel-head">
-        <div>
-          <h2 id="knowledge-title">请选择或创建会话</h2>
-          <p id="knowledge-conversation-meta">会话由 Agent Runtime 持久化</p>
-        </div>
-      </div>
-      <div class="knowledge-chat-stream" id="knowledge-chat-stream">
-        <div class="knowledge-chat-empty">选择 Agent 后可创建会话，也可以先在输入框中准备问题。</div>
-      </div>
-      <div class="knowledge-chat-progress" id="knowledge-progress" hidden>等待处理</div>
-      <form class="knowledge-composer knowledge-chat-composer" id="knowledge-form">
-        <textarea id="knowledge-input" required maxlength="32000" placeholder="询问客户沟通文档、CRM 数据，或发起普通对话…" disabled></textarea>
-        <footer>
-          <span id="knowledge-input-hint">请选择已启用 Agent。</span>
-          <button class="primary" type="submit" disabled id="knowledge-send">发送</button>
-        </footer>
-      </form>
-    </article>
+    <section class="agent-chat-conversation knowledge-conversation-panel">
+      <header class="agent-chat-conversation-head knowledge-conversation-header">
+        <button class="secondary-button chat-session-button" id="knowledge-session-open" type="button" aria-expanded="false">选择会话</button>
+        <div class="knowledge-conversation-title"><h1>知识检索</h1><span id="knowledge-title">新会话</span></div>
+        <label class="knowledge-agent-picker"><span>Agent</span><select id="knowledge-agent" aria-label="当前 Agent" disabled><option value="">正在读取 Agent</option></select></label>
+      </header>
+      <div class="agent-chat-transcript knowledge-message-viewport" id="knowledge-chat-stream" aria-live="polite"></div>
+      <footer class="agent-chat-composer knowledge-composer-wrap">
+        <div class="knowledge-stream-progress" id="knowledge-progress" role="status" hidden>等待处理</div>
+        <form class="agent-chat-composer-row agent-chat-composer-row-simple knowledge-composer" id="knowledge-form">
+          <label class="agent-chat-composer-input"><span class="visually-hidden">问题</span><textarea class="chat-composer-textarea" rows="1" id="knowledge-input" required maxlength="32000" placeholder="输入问题，Enter 换行，点击发送" disabled></textarea></label>
+          <button class="primary-button agent-chat-composer-action knowledge-send-button" type="submit" disabled id="knowledge-send" aria-label="发送问题" title="发送问题"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9zM7 12h14"/></svg></button>
+        </form>
+        <p id="knowledge-input-hint">请选择已启用 Agent。</p>
+      </footer>
+    </section>
   </section>
 </main>
 
-<dialog class="knowledge-dialog knowledge-reference-dialog" id="knowledge-reference-dialog">
+<dialog class="knowledge-dialog knowledge-reference-dialog knowledge-drawer" id="knowledge-reference-dialog">
   <div class="knowledge-dialog-head">
     <div>
       <h2 id="knowledge-reference-title">文档引用</h2>
@@ -76,12 +54,12 @@
 </dialog>
 
 <script src="../runtime-config.js"></script>
-<script src="./js/knowledge-auth.js"></script>
-<script src="./js/knowledge-api.js"></script>
-<script src="./js/knowledge-shell.js?v=20261105_2"></script>
+<script src="./js/knowledge-auth.js?v=20261105_3"></script>
+<script src="./js/knowledge-api.js?v=20261105_3"></script>
+<script src="./js/knowledge-shell.js?v=20261105_3"></script>
 <script src="../vendor/marked.umd.js?v=18.0.9"></script>
 <script src="../vendor/purify.min.js?v=3.4.13"></script>
 <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
-<script src="./js/knowledge-knowledge.js"></script>
+<script src="./js/knowledge-knowledge.js?v=20261105_3"></script>
 </body>
 </html>

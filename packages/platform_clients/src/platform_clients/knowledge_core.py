@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from typing import Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 import aiohttp
@@ -377,14 +378,33 @@ class KnowledgeCoreClient:
         page: int,
         page_size: int,
         auth_context: AuthContext,
+        query: str | None = None,
+        status: str | None = None,
     ) -> dict[str, Any]:
+        params = urlencode({key: value for key, value in {
+            "collection_id": collection_id, "page": page, "page_size": page_size,
+            "q": query, "status": status,
+        }.items() if value is not None})
         return await self._json(
             "GET",
             (
                 f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
-                f"/catalog/processing?collection_id={collection_id}"
-                f"&page={page}&page_size={page_size}"
+                f"/catalog/processing?{params}"
             ),
+            auth_context=auth_context,
+        )
+
+    async def list_library_files(
+        self, *, domain_id: int, collection_id: UUID, page: int, page_size: int,
+        auth_context: AuthContext, query: str | None = None, status: str | None = None,
+    ) -> dict[str, Any]:
+        """读取当前 Domain 的知识库文件，筛选与分页由 KC 执行。"""
+        params = urlencode({key: value for key, value in {
+            "collection_id": collection_id, "page": page, "page_size": page_size,
+            "q": query, "status": status,
+        }.items() if value is not None})
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}/catalog/files?{params}",
             auth_context=auth_context,
         )
 
