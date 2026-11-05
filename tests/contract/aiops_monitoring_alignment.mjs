@@ -107,7 +107,8 @@ export async function verifyMonitoringNavigation(kbot, reference, compareRegions
     assert.equal(await page.locator('.monitoring-system-group').count(),3,'同一业务系统的多个资源必须合并为一个分组');
     const mes=page.locator('.monitoring-system-group').filter({has:page.locator('.monitoring-system-toggle strong',{hasText:'MES 生产系统'})});
     assert.equal(await mes.getByRole('radio').count(),2);
-    assert.equal(await page.locator('.monitoring-system-group').filter({hasText:'未归属业务系统'}).getByRole('radio').count(),1);
+    assert.equal(await page.locator('.monitoring-system-group').filter({hasText:'未归属业务系统'}).getByRole('radio',{includeHidden:true}).count(),1);
+    assert.equal(await page.locator('.monitoring-system-toggle[aria-expanded="true"]').count(),1,'初始仅展开当前资源所属业务系统');
     assert.equal(await page.locator('.monitoring-instance-tree img,.monitoring-instance-tree script').count(),0);
     const requestCount=await page.evaluate(()=>fixtureRequests.length);
     await mes.getByRole('button').click();
@@ -116,6 +117,7 @@ export async function verifyMonitoringNavigation(kbot, reference, compareRegions
     const search=page.getByRole('searchbox',{name:'搜索业务系统或实例'});
     await search.fill('MES');
     assert.equal(await mes.getByRole('button').getAttribute('aria-expanded'),'true','搜索应展开命中分组');
+    assert.equal(await page.locator('.monitoring-system-toggle[aria-expanded="true"]').count(),1,'搜索不得展开多个业务系统');
     await search.fill('ERP');
     assert.equal(await page.locator('.monitoring-system-group').count(),1);
     assert.equal(await page.getByRole('radio',{name:'选择 生产 PostgreSQL',exact:true}).isVisible(),true);
@@ -158,6 +160,7 @@ export async function verifyMonitoringNavigation(kbot, reference, compareRegions
     await page.evaluate(()=>{globalThis.fixtureMonitoringHoldProfile=true;});
     await page.getByRole('radio',{name:'选择 生产 Oracle 备库',exact:true}).check();
     await page.waitForFunction(()=>typeof fixtureReleaseMonitoringProfile==='function');
+    await page.locator('.monitoring-system-group').filter({has:page.locator('.monitoring-system-toggle strong',{hasText:'ERP'})}).getByRole('button').click();
     await page.getByRole('radio',{name:'选择 生产 PostgreSQL',exact:true}).check();
     await page.locator('.monitoring-profile-context dd').getByText('总览 instance-3',{exact:true}).waitFor();
     await page.evaluate(()=>{fixtureMonitoringHoldProfile=false;fixtureReleaseMonitoringProfile();});

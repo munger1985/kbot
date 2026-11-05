@@ -9,7 +9,7 @@
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
     chartObservers: new Map(),
     visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null,
-    railCollapsed: false, collapsedSystemIds: new Set(), loadingInstances: false, contextError: "",
+    railCollapsed: false, expandedSystemId: null, searchExpandedSystemId: null, loadingInstances: false, contextError: "",
   };
   const readinessLabels = {
     READY: "就绪", DISABLED: "已停用", DISCONNECTED: "连接失败",
@@ -236,22 +236,27 @@
     const value = state.search.trim().toLowerCase();
     return state.instances.filter((item) => !value || `${item.business_system_name || ""} ${item.resource_name || ""} ${item.display_name} ${item.db_type}`.toLowerCase().includes(value));
   }
-  function renderInstances() {
-    renderGate();
-    const tree = document.getElementById("monitoring-instance-tree");
-    const focused = tree.contains(document.activeElement) ? document.activeElement.dataset : null;
-    tree.setAttribute("aria-busy", String(Boolean(state.contextController)));
-    const instances = filteredInstances();
-    const selectedInstance = state.instances.find((item) => state.selected.includes(item.instance_id)) || null;
-    document.getElementById("monitoring-current-instance").textContent = selectedInstance?.display_name || "未选择";
-    document.getElementById("monitoring-instance-count").textContent = `当前监控源下 ${state.instances.length} 个已授权实例`;
+  function filteredInstanceGroups() {
     const groups = new Map();
-    instances.forEach((instance) => {
+    filteredInstances().forEach((instance) => {
       const key = instance.business_system_id || "unassigned";
       const group = groups.get(key) || { key, systemName: instance.business_system_name || "未归属业务系统", items: [] };
       group.items.push(instance);
       groups.set(key, group);
     });
+    return [...groups.values()].sort((left, right) => left.systemName.localeCompare(right.systemName, "zh-CN"));
+  }
+  function systemExpanded(key) {
+    return key === (state.search.trim() ? state.searchExpandedSystemId : state.expandedSystemId);
+  }
+  function renderInstances() {
+    renderGate();
+    const tree = document.getElementById("monitoring-instance-tree");
+    const focused = tree.contains(document.activeElement) ? document.activeElement.dataset : null;
+    tree.setAttribute("aria-busy", String(Boolean(state.contextController)));
+    const selectedInstance = state.instances.find((item) => state.selected.includes(item.instance_id)) || null;
+    document.getElementById("monitoring-current-instance").textContent = selectedInstance?.display_name || "未选择";
+    document.getElementById("monitoring-instance-count").textContent = `当前监控源下 ${state.instances.length} 个已授权实例`;
     const card = (instance) => {
       const selected = state.selected.includes(instance.instance_id);
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
@@ -259,8 +264,8 @@
       const statusClass = ({ good: "status-success", warn: "status-warning", bad: "status-danger" })[tone(queryStatus.value)];
       return `<label class="monitoring-instance-option${selected ? " is-selected" : ""}"><input type="radio" name="monitoring-target" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span><strong title="${esc(instance.display_name)}">${esc(instance.display_name)}</strong><small title="${esc(instance.resource_name || "")}">${esc(instance.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机"}[instance.resource_type_key] || instance.resource_type_key))}${instance.resource_name ? ` · ${esc(instance.resource_name)}` : ""}</small><i class="${statusClass}" title="${esc(diagnosticGapText(instance))}">${esc(queryStatus.label)}</i></span></label>`;
     };
-    const cards = [...groups.values()].sort((left, right) => left.systemName.localeCompare(right.systemName, "zh-CN")).map((group) => {
-      const expanded = Boolean(state.search.trim()) || !state.collapsedSystemIds.has(group.key);
+    const cards = filteredInstanceGroups().map((group) => {
+      const expanded = systemExpanded(group.key);
       return `<section class="monitoring-system-group"><button class="monitoring-system-toggle" type="button" data-system-id="${esc(group.key)}" aria-expanded="${expanded}"><span class="monitoring-system-chevron" aria-hidden="true">${expanded ? "⌄" : "›"}</span><strong title="${esc(group.systemName)}">${esc(group.systemName)}</strong><span class="monitoring-system-count">${group.items.length}</span></button><div class="monitoring-system-instances" ${expanded ? "" : "hidden"}>${group.items.map(card).join("")}</div></section>`;
     }).join("");
     document.getElementById("monitoring-instance-list").innerHTML = state.loadingInstances
@@ -345,7 +350,8 @@
     state.view = null; state.instances = []; state.profiles = []; state.selected = []; state.profileId = "";
     state.contextError = "";
     state.search = "";
-    state.collapsedSystemIds.clear();
+    state.expandedSystemId = null;
+    state.searchExpandedSystemId = null;
     document.getElementById("monitoring-instance-search").value = "";
     state.loadingInstances = sourceById()?.monitoring_readiness === "READY";
     disposeCharts();
@@ -367,7 +373,9 @@
       state.instances = [...instances].sort((left, right) => left.display_name.localeCompare(right.display_name, "zh-CN"));
       const currentQuery = new URLSearchParams(location.search);
       const targetId = currentQuery.get("target_id") || currentQuery.get("targetId") || "";
-      state.selected = [(state.instances.find((item) => item.instance_id === targetId) || state.instances[0])?.instance_id].filter(Boolean);
+      const preferred = state.instances.find((item) => item.instance_id === targetId) || state.instances[0];
+      state.selected = [preferred?.instance_id].filter(Boolean);
+      state.expandedSystemId = preferred ? preferred.business_system_id || "unassigned" : null;
       await loadSelectedTargetProfiles({ signal: contextController.signal });
       if (contextController.signal.aborted) return;
       updateLocation();
@@ -388,6 +396,8 @@
   }
   async function selectInstance(instanceId) {
     if (!state.instances.some((item) => item.instance_id === instanceId)) return;
+    state.expandedSystemId = state.instances.find(item => item.instance_id === instanceId)?.business_system_id || "unassigned";
+    if (state.search.trim()) state.searchExpandedSystemId = state.expandedSystemId;
     state.contextController?.abort();
     const contextController = new AbortController();
     state.contextController = contextController;
@@ -916,7 +926,14 @@
   document.getElementById("monitoring-source").onchange = (event) => { state.sourceId = event.target.value; loadSourceContext(); };
   document.getElementById("monitoring-window").onchange = (event) => { state.window = event.target.value; updateLocation(); scheduleView(); };
   document.getElementById("monitoring-baseline").onchange = (event) => { state.baseline = event.target.value; updateLocation(); scheduleView(); };
-  document.getElementById("monitoring-instance-search").oninput = (event) => { state.search = event.target.value; renderInstances(); };
+  document.getElementById("monitoring-instance-search").oninput = (event) => {
+    state.search = event.target.value;
+    const groups = filteredInstanceGroups();
+    state.searchExpandedSystemId = state.search.trim()
+      ? (groups.find(group => group.key === state.expandedSystemId)?.key || groups[0]?.key || null)
+      : null;
+    renderInstances();
+  };
   document.getElementById("monitoring-instance-list").onchange = (event) => {
     const input = event.target.closest("[data-instance-id]");
     if (!input?.checked) return;
@@ -927,12 +944,14 @@
     const toggle = event.target.closest("[data-system-id]");
     if (!toggle) return;
     const key = toggle.dataset.systemId;
-    if (state.collapsedSystemIds.has(key)) state.collapsedSystemIds.delete(key);
-    else state.collapsedSystemIds.add(key);
-    const expanded = Boolean(state.search.trim()) || !state.collapsedSystemIds.has(key);
-    toggle.setAttribute("aria-expanded", String(expanded));
-    toggle.querySelector(".monitoring-system-chevron").textContent = expanded ? "⌄" : "›";
-    toggle.nextElementSibling.hidden = !expanded;
+    const field = state.search.trim() ? "searchExpandedSystemId" : "expandedSystemId";
+    state[field] = state[field] === key ? null : key;
+    document.querySelectorAll(".monitoring-system-toggle").forEach(button => {
+      const expanded = systemExpanded(button.dataset.systemId);
+      button.setAttribute("aria-expanded", String(expanded));
+      button.querySelector(".monitoring-system-chevron").textContent = expanded ? "⌄" : "›";
+      button.nextElementSibling.hidden = !expanded;
+    });
   };
   document.getElementById("monitoring-panels").onclick = (event) => {
     const capacityRow = event.target.closest("[data-capacity-instance-id]");
