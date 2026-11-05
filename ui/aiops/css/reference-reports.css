@@ -1,6 +1,18 @@
 /* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
 
 /* business/AIOpsRecordsView.vue */
+/* 标题保留阅读宽度，短字段紧凑排列，摘要使用剩余空间。 */
+:is([data-page="reports"]) .aiops-page .table-scroll .aiops-reports-table { min-width:1360px; table-layout:fixed; }
+:is([data-page="reports"]) .aiops-reports-table .report-title-column { width:26%; }
+:is([data-page="reports"]) .aiops-reports-table .report-type-column { width:8rem; }
+:is([data-page="reports"]) .aiops-reports-table .report-template-column { width:11rem; }
+:is([data-page="reports"]) .aiops-reports-table .report-status-column { width:8rem; }
+:is([data-page="reports"]) .aiops-reports-table .report-time-column { width:12rem; }
+:is([data-page="reports"]) .aiops-reports-table .report-actions-column { width:14rem; }
+:is([data-page="reports"]) .aiops-reports-table :is(th,td) { overflow-wrap:anywhere; }
+:is([data-page="reports"]) .aiops-reports-table .table-summary { min-width:0; }
+:is([data-page="reports"]) .aiops-reports-table td:nth-child(5) { white-space:nowrap; }
+:is([data-page="reports"]) .aiops-reports-table .button-row { display:flex; flex-wrap:nowrap; align-items:center; justify-content:flex-end; gap:var(--form-label-control-gap); }
 :is([data-page="reports"]) .inspection-tabs { display:flex; gap:4px; width:max-content; padding:4px; border:1px solid var(--line); border-radius:10px; background:var(--surface-subtle); }
 :is([data-page="reports"]) .inspection-tabs button { min-height:36px; padding:7px 16px; border:0; border-radius:7px; color:var(--muted); background:transparent; font-weight:650; }
 :is([data-page="reports"]) .inspection-tabs button.active { color:var(--accent-strong); background:var(--surface); box-shadow:var(--shadow-soft); }

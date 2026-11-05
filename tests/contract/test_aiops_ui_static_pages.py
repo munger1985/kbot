@@ -1773,6 +1773,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("<h1>报告中心</h1>", page)
         self.assertIn('id="reports-body"', page)
         self.assertIn("报告生成时间", page)
+        self.assertIn('class="aiops-reports-table"', page)
+        for column in ("title", "type", "template", "status", "time", "summary", "actions"):
+            self.assertIn(f'<col class="report-{column}-column">', page)
         for text in ('request(`/reports?${query}`)', 'new URLSearchParams({limit:"50"})', 'query.set("category",state.category)', 'query.set("template_ref",state.filter)', 'query.set("cursor",state.cursors[pageIndex])', "/postgresql/pgbadger-artifacts?", '"Idempotency-Key"', '"X-File-Name"', "state.downloading", "state.busy", "date-time-picker-control"):
             self.assertIn(text, records)
         for text in ('id="report-category-filter"', 'id="report-previous"', 'id="report-next"', "巡检报告", "诊断报告", "专项分析报告"):
