@@ -1,5 +1,9 @@
 # Knowledge Core
 
+> 本文记录当前实现，不是下一代算法模块的目标边界。已批准的新方向及待实施详细设计见
+> [App 独占数据的解析、索引与多模态召回算法设计](../proposals/app-owned-knowledge-algorithm-design.md)：
+> 只复用算法，各 App 独占解析数据与索引，不提供跨 App 检索；目前尚未切换运行实现。
+
 ## 边界与数据模型
 
 Knowledge Core（KC）是封闭的知识生成与检索服务。Domain 是强隔离边界，一个
