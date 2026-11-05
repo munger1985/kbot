@@ -44,7 +44,7 @@ class MonitoringGap(_Contract):
 class MonitoringSourceSummary(_Contract):
     source_id: UUID
     display_name: str = Field(min_length=1, max_length=256)
-    source_type: Literal["PROMETHEUS", "ZABBIX"]
+    source_type: Literal["PROMETHEUS", "ZABBIX", "OEM"]
     monitoring_readiness: MonitoringReadiness
     diagnostic_readiness: DiagnosticReadiness
     capability_gaps: tuple[MonitoringGap, ...] = ()
@@ -65,6 +65,18 @@ class MonitoringInstanceSummary(_Contract):
     diagnostic_readiness: DiagnosticReadiness
     capability_gaps: tuple[MonitoringGap, ...] = ()
     diagnostic_gaps: tuple[MonitoringGap, ...] = ()
+
+
+class MonitoringResourceSummary(MonitoringInstanceSummary):
+    """业务系统内资源及其可切换的真实监控来源，不包含来源定位符或凭据。"""
+
+    sources: tuple[MonitoringSourceSummary, ...] = ()
+
+
+class MonitoringBusinessSystemSummary(_Contract):
+    business_system_id: UUID
+    display_name: str
+    resources: tuple[MonitoringResourceSummary, ...] = ()
 
 
 class MonitoringProfileSummary(_Contract):

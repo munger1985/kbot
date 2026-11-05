@@ -147,7 +147,8 @@
       "capacity_critical_percent": 90,
       "resource_types": [
         "PHYSICAL_SERVER",
-        "VIRTUAL_MACHINE"
+        "VIRTUAL_MACHINE",
+        "CONTAINER"
       ],
       "resource_metric_codes": [
         "host.cpu.utilization",

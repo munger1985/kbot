@@ -142,6 +142,7 @@ from platform_core.contracts.aiops import (
 )
 from platform_core.contracts.aiops.internal import CreateOpsRunCommand
 from platform_core.contracts.aiops.monitoring import (
+    MonitoringBusinessSystemSummary,
     MonitoringInstanceSummary,
     MonitoringProfileSummary,
     MonitoringSourceSummary,
@@ -170,7 +171,7 @@ def _route_permissions() -> dict[str, str]:
             "list_reports", "list_report_versions", "list_inspection_fires",
             "get_inspection_fire", "create_ops_run", "list_ops_runs",
             "get_dashboard",
-            "list_monitoring_sources", "list_monitoring_instances",
+            "list_monitoring_business_systems", "list_monitoring_sources", "list_monitoring_instances",
             "list_monitoring_profiles", "get_monitoring_view",
             "list_target_monitoring_profiles", "get_target_monitoring_view",
             "list_situations", "get_situation", "get_ops_run",
@@ -635,6 +636,13 @@ async def get_dashboard(request: Request) -> OpsDashboard:
         auth_context=request.state.auth_context,
     )
     return OpsDashboard.model_validate(payload)
+
+
+@router.get("/monitoring/business-systems", response_model=tuple[MonitoringBusinessSystemSummary, ...])
+async def list_monitoring_business_systems(request: Request):
+    return await _client(request).list_monitoring_business_systems(
+        auth_context=request.state.auth_context
+    )
 
 
 @router.get(

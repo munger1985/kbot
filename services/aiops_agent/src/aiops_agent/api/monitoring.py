@@ -16,6 +16,7 @@ from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.monitoring_views import MonitoringApplicationService
 from platform_core.contracts.aiops.monitoring import (
     MonitoringInstanceSummary,
+    MonitoringBusinessSystemSummary,
     MonitoringProfileSummary,
     MonitoringSourceSummary,
     MonitoringView,
@@ -48,6 +49,11 @@ def get_scope(
 
 Service = Annotated[MonitoringApplicationService, Depends(get_service)]
 Scope = Annotated[ConfigurationScope, Depends(get_scope)]
+
+
+@router.get("/business-systems", response_model=tuple[MonitoringBusinessSystemSummary, ...])
+async def list_business_systems(service: Service, scope: Scope):
+    return await service.list_business_systems(scope=scope)
 
 
 @router.get("/sources", response_model=tuple[MonitoringSourceSummary, ...])

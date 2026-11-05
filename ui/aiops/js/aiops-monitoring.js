@@ -4,7 +4,7 @@
   const api = "/api/v1/apps/aiops/monitoring";
   const shell = globalThis.KBotAIOpsShell;
   const state = {
-    sources: [], instances: [], profiles: [], view: null,
+    systems: [], sources: [], instances: [], profiles: [], view: null, systemId: "",
     sourceId: "", baseline: "1w", profileId: "", window: "1h", selected: [], search: "",
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
     chartObservers: new Map(),
@@ -195,9 +195,16 @@
     const gate = document.getElementById("monitoring-gate");
     document.getElementById("monitoring-quality-ledger").hidden = !state.view;
     const source = sourceById();
-    if (!state.sources.length) {
+    if (!state.systems.length) {
       gate.hidden = false;
-      gate.innerHTML = gateContent("尚未配置监控源", "请先接入并启用 Prometheus 或 Zabbix，再返回查看实时指标。");
+      gate.innerHTML = gateContent("尚无已发布业务系统", "请先发布业务系统与资源，再返回查看实时指标。");
+      return true;
+    }
+    const resource = state.instances.find(item => item.business_system_id === state.systemId && state.selected.includes(item.instance_id));
+    if (!resource || !state.sources.length || resource.capability_gaps?.length) {
+      gate.hidden = false;
+      gate.innerHTML = gateContent(!resource ? "请选择监控资源" : !state.sources.length ? "尚未配置监控源" : "资源暂不可监控",
+        resource?.capability_gaps?.[0]?.detail || "先选择业务系统内的资源，再选择该资源的监控源。");
       return true;
     }
     const mapping = {
@@ -222,10 +229,11 @@
   }
   function renderContext() {
     const context = document.getElementById("monitoring-context");
-    context.hidden = !state.sources.length;
-    document.getElementById("monitoring-observation-card").hidden = !state.sources.length;
-    document.getElementById("monitoring-workspace").classList.toggle("is-empty", !state.sources.length);
-    document.getElementById("monitoring-source").innerHTML = state.sources.map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.sourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(label(source.monitoring_readiness))}</option>`).join("");
+    context.hidden = !state.systems.length;
+    document.getElementById("monitoring-observation-card").hidden = !state.systems.length;
+    document.getElementById("monitoring-workspace").classList.toggle("is-empty", !state.systems.length);
+    document.getElementById("monitoring-source").innerHTML = state.sources.length ? state.sources.map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.sourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(label(source.monitoring_readiness))}</option>`).join("") : '<option value="">当前资源尚未绑定监控源</option>';
+    document.getElementById("monitoring-source").disabled = !state.sources.length;
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
     document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview";
@@ -238,6 +246,10 @@
   }
   function filteredInstanceGroups() {
     const groups = new Map();
+    const query = state.search.trim().toLowerCase();
+    state.systems.filter(system => !query || system.display_name.toLowerCase().includes(query)).forEach(system => {
+      groups.set(system.business_system_id, { key: system.business_system_id, systemName: system.display_name, items: [] });
+    });
     filteredInstances().forEach((instance) => {
       const key = instance.business_system_id || "unassigned";
       const group = groups.get(key) || { key, systemName: instance.business_system_name || "未归属业务系统", items: [] };
@@ -254,25 +266,24 @@
     const tree = document.getElementById("monitoring-instance-tree");
     const focused = tree.contains(document.activeElement) ? document.activeElement.dataset : null;
     tree.setAttribute("aria-busy", String(Boolean(state.contextController)));
-    const selectedInstance = state.instances.find((item) => state.selected.includes(item.instance_id)) || null;
+    const selectedInstance = state.instances.find((item) => item.business_system_id === state.systemId && state.selected.includes(item.instance_id)) || null;
     document.getElementById("monitoring-current-instance").textContent = selectedInstance?.display_name || "未选择";
-    document.getElementById("monitoring-instance-count").textContent = `当前监控源下 ${state.instances.length} 个已授权实例`;
+    document.getElementById("monitoring-instance-count").textContent = `${state.systems.length} 个业务系统 · ${state.instances.length} 项资源关联`;
     const card = (instance) => {
-      const selected = state.selected.includes(instance.instance_id);
+      const selected = instance.business_system_id === state.systemId && state.selected.includes(instance.instance_id);
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
       const queryStatus = targetPickerStatus(instance, result);
       const statusClass = ({ good: "status-success", warn: "status-warning", bad: "status-danger" })[tone(queryStatus.value)];
-      return `<label class="monitoring-instance-option${selected ? " is-selected" : ""}"><input type="radio" name="monitoring-target" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span><strong title="${esc(instance.display_name)}">${esc(instance.display_name)}</strong><small title="${esc(instance.resource_name || "")}">${esc(instance.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机"}[instance.resource_type_key] || instance.resource_type_key))}${instance.resource_name ? ` · ${esc(instance.resource_name)}` : ""}</small><i class="${statusClass}" title="${esc(diagnosticGapText(instance))}">${esc(queryStatus.label)}</i></span></label>`;
+      return `<label class="monitoring-instance-option${selected ? " is-selected" : ""}"><input type="radio" name="monitoring-target" data-instance-id="${esc(instance.instance_id)}" data-owner-system-id="${esc(instance.business_system_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span><strong title="${esc(instance.display_name)}">${esc(instance.display_name)}</strong><small>${esc(instance.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机",CONTAINER:"容器内主机"}[instance.resource_type_key] || instance.resource_type_key))} · ${instance.sources.length} 个监控源</small><i class="${statusClass}" title="${esc(diagnosticGapText(instance))}">${esc(queryStatus.label)}</i></span></label>`;
     };
     const cards = filteredInstanceGroups().map((group) => {
       const expanded = systemExpanded(group.key);
-      return `<section class="monitoring-system-group"><button class="monitoring-system-toggle" type="button" data-system-id="${esc(group.key)}" aria-expanded="${expanded}"><span class="monitoring-system-chevron" aria-hidden="true">${expanded ? "⌄" : "›"}</span><strong title="${esc(group.systemName)}">${esc(group.systemName)}</strong><span class="monitoring-system-count">${group.items.length}</span></button><div class="monitoring-system-instances" ${expanded ? "" : "hidden"}>${group.items.map(card).join("")}</div></section>`;
+      return `<section class="monitoring-system-group"><button class="monitoring-system-toggle" type="button" data-system-id="${esc(group.key)}" aria-expanded="${expanded}"><span class="monitoring-system-chevron" aria-hidden="true">${expanded ? "⌄" : "›"}</span><strong title="${esc(group.systemName)}">${esc(group.systemName)}</strong><span class="monitoring-system-count">${group.items.length}</span></button><div class="monitoring-system-instances" ${expanded ? "" : "hidden"}>${group.items.map(card).join("") || '<p class="monitoring-tree-empty">该业务系统暂无可访问资源。</p>'}</div></section>`;
     }).join("");
+    const contextError = state.contextError ? `<div class="monitoring-tree-empty" role="alert"><p>${esc(state.contextError)}</p><button class="secondary-button" data-retry-instances type="button">重新加载指标范围</button></div>` : "";
     document.getElementById("monitoring-instance-list").innerHTML = state.loadingInstances
       ? '<p class="monitoring-tree-empty" role="status">正在读取实例…</p>'
-      : state.contextError
-        ? `<div class="monitoring-tree-empty" role="alert"><p>${esc(state.contextError)}</p><button class="secondary-button" data-retry-instances type="button">重新加载实例</button></div>`
-        : cards || `<p class="monitoring-tree-empty">${state.search.trim() ? "没有匹配的业务系统或实例。" : "当前监控源下暂无可访问实例。"}</p>`;
+      : contextError + (cards || `<p class="monitoring-tree-empty">${state.search.trim() ? "没有匹配的业务系统或实例。" : "暂无可访问资源。"}</p>`);
     if (focused) {
       const selector = focused.instanceId ? "[data-instance-id]" : "[data-system-id]";
       [...tree.querySelectorAll(selector)].find(node => focused.instanceId
@@ -294,6 +305,7 @@
     const next = new URLSearchParams(location.search);
     next.set("source_id", state.sourceId);
     next.set("target_id", state.selected[0] || "");
+    next.set("businessSystemId", state.systemId);
     next.delete("profile_id");
     next.delete("profileId");
     next.set("window", state.window);
@@ -302,7 +314,8 @@
   }
   async function loadSelectedTargetProfiles({ signal }) {
     const targetId = state.selected[0];
-    if (!targetId) {
+    const resource = state.instances.find(item => item.business_system_id === state.systemId && item.instance_id === targetId);
+    if (!targetId || sourceById()?.monitoring_readiness !== "READY" || resource?.capability_gaps?.length) {
       state.profiles = [];
       state.profileId = "";
       return;
@@ -347,35 +360,20 @@
     const contextController = new AbortController();
     state.contextController = contextController;
     cancelViewRequest();
-    state.view = null; state.instances = []; state.profiles = []; state.selected = []; state.profileId = "";
+    state.view = null; state.profiles = []; state.profileId = "";
     state.contextError = "";
-    state.search = "";
-    state.expandedSystemId = null;
-    state.searchExpandedSystemId = null;
-    document.getElementById("monitoring-instance-search").value = "";
-    state.loadingInstances = sourceById()?.monitoring_readiness === "READY";
+    state.loadingInstances = false;
     disposeCharts();
     document.getElementById("monitoring-result").hidden = true;
     renderContext(); renderInstances();
     if (sourceById()?.monitoring_readiness !== "READY") {
+      updateLocation();
       if (state.contextController === contextController) state.contextController = null;
       setLoading(false);
       return;
     }
     setLoading(true, "正在读取监控实例与指标视图…");
     try {
-      const instances = await KBotAIOpsAuth.request(
-        `${api}/sources/${encodeURIComponent(state.sourceId)}/instances`,
-        { signal: contextController.signal },
-      );
-      if (contextController.signal.aborted) return;
-      state.loadingInstances = false;
-      state.instances = [...instances].sort((left, right) => left.display_name.localeCompare(right.display_name, "zh-CN"));
-      const currentQuery = new URLSearchParams(location.search);
-      const targetId = currentQuery.get("target_id") || currentQuery.get("targetId") || "";
-      const preferred = state.instances.find((item) => item.instance_id === targetId) || state.instances[0];
-      state.selected = [preferred?.instance_id].filter(Boolean);
-      state.expandedSystemId = preferred ? preferred.business_system_id || "unassigned" : null;
       await loadSelectedTargetProfiles({ signal: contextController.signal });
       if (contextController.signal.aborted) return;
       updateLocation();
@@ -394,15 +392,22 @@
       }
     }
   }
-  async function selectInstance(instanceId) {
-    if (!state.instances.some((item) => item.instance_id === instanceId)) return;
-    state.expandedSystemId = state.instances.find(item => item.instance_id === instanceId)?.business_system_id || "unassigned";
+  async function selectInstance(instanceId, systemId = state.systemId) {
+    const instance = state.instances.find(item => item.instance_id === instanceId && item.business_system_id === systemId);
+    if (!instance) return;
+    state.systemId = systemId;
+    state.contextError = "";
+    state.expandedSystemId = systemId;
     if (state.search.trim()) state.searchExpandedSystemId = state.expandedSystemId;
     state.contextController?.abort();
     const contextController = new AbortController();
     state.contextController = contextController;
     cancelViewRequest();
     state.selected = [instanceId];
+    state.sources = instance.sources;
+    const preferredSource = state.sourceId || query.get("source_id") || query.get("sourceId");
+    state.sourceId = state.sources.find(source => source.source_id === preferredSource)?.source_id
+      || state.sources.find(source => source.monitoring_readiness === "READY")?.source_id || state.sources[0]?.source_id || "";
     state.view = null;
     state.profiles = [];
     state.profileId = "";
@@ -417,6 +422,8 @@
       renderContext(); renderInstances(); scheduleView();
     } catch (error) {
       if (contextController.signal.aborted) return;
+      state.contextError = error.message || "无法读取所选资源的指标范围";
+      renderInstances();
       shell.toast(error.message || "无法读取所选实例的 Monitoring Profile");
     } finally {
       if (state.contextController === contextController) {
@@ -911,15 +918,18 @@
     document.getElementById("monitoring-window").value = state.window;
     document.getElementById("monitoring-baseline").value = state.baseline;
     try {
-      state.sources = await KBotAIOpsAuth.request(`${api}/sources`);
-      const requested = query.get("source_id") || query.get("sourceId") || "";
-      state.sourceId = state.sources.find((item) => item.source_id === requested)?.source_id || state.sources.find((item) => item.monitoring_readiness === "READY")?.source_id || state.sources[0]?.source_id || "";
+      state.systems = await KBotAIOpsAuth.request(`${api}/business-systems`);
+      state.instances = state.systems.flatMap(system => system.resources);
+      const targetId = query.get("target_id") || query.get("targetId");
+      const systemId = query.get("businessSystemId");
+      const preferred = state.instances.find(item => item.instance_id === targetId && (!systemId || item.business_system_id === systemId)) || state.instances[0];
       renderContext();
-      await loadSourceContext();
+      if (preferred) await selectInstance(preferred.instance_id, preferred.business_system_id);
+      else { state.expandedSystemId = state.systems[0]?.business_system_id || null; renderInstances(); }
       renderGate(); renderFreshness();
     } catch (error) {
-      document.getElementById("monitoring-gate").innerHTML = gateContent("监控源目录加载失败", error.message || "请稍后重试。");
-      shell.toast(error.message || "无法读取监控源目录");
+      document.getElementById("monitoring-gate").innerHTML = gateContent("业务系统目录加载失败", error.message || "请稍后重试。");
+      shell.toast(error.message || "无法读取业务系统目录");
     }
   }
 
@@ -937,7 +947,7 @@
   document.getElementById("monitoring-instance-list").onchange = (event) => {
     const input = event.target.closest("[data-instance-id]");
     if (!input?.checked) return;
-    void selectInstance(input.dataset.instanceId);
+    void selectInstance(input.dataset.instanceId, input.dataset.ownerSystemId);
   };
   document.getElementById("monitoring-instance-list").onclick = (event) => {
     if (event.target.closest("[data-retry-instances]")) { void loadSourceContext(); return; }

@@ -10284,6 +10284,34 @@
         "title": "MeasurementSemantics",
         "type": "string"
       },
+      "MonitoringBusinessSystemSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "resources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringResourceSummary"
+            },
+            "title": "Resources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "business_system_id",
+          "display_name"
+        ],
+        "title": "MonitoringBusinessSystemSummary",
+        "type": "object"
+      },
       "MonitoringGap": {
         "additionalProperties": false,
         "properties": {
@@ -10780,6 +10808,152 @@
         "title": "MonitoringProfileSummary",
         "type": "object"
       },
+      "MonitoringResourceSummary": {
+        "additionalProperties": false,
+        "description": "业务系统内资源及其可切换的真实监控来源，不包含来源定位符或凭据。",
+        "properties": {
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
+          "business_system_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Name"
+          },
+          "capability_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Capability Gaps",
+            "type": "array"
+          },
+          "db_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ORACLE",
+                  "MYSQL",
+                  "POSTGRESQL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Type"
+          },
+          "diagnostic_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Diagnostic Gaps",
+            "type": "array"
+          },
+          "diagnostic_readiness": {
+            "enum": [
+              "READY",
+              "PARTIAL",
+              "UNAVAILABLE"
+            ],
+            "title": "Diagnostic Readiness",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "monitoring_readiness": {
+            "enum": [
+              "READY",
+              "DISABLED",
+              "DISCONNECTED",
+              "CAPABILITY_MISSING",
+              "NO_MAPPED_INSTANCE"
+            ],
+            "title": "Monitoring Readiness",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "resource_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Name"
+          },
+          "resource_type_key": {
+            "default": "DATABASE",
+            "title": "Resource Type Key",
+            "type": "string"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringSourceSummary"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "AVAILABLE",
+              "UNAVAILABLE",
+              "PARTIAL"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_id",
+          "display_name",
+          "status",
+          "monitoring_readiness",
+          "diagnostic_readiness"
+        ],
+        "title": "MonitoringResourceSummary",
+        "type": "object"
+      },
       "MonitoringSeries": {
         "additionalProperties": false,
         "properties": {
@@ -10971,7 +11145,8 @@
           "source_type": {
             "enum": [
               "PROMETHEUS",
-              "ZABBIX"
+              "ZABBIX",
+              "OEM"
             ],
             "title": "Source Type",
             "type": "string"
@@ -28761,6 +28936,31 @@
         "summary": "Intake Signal Event",
         "tags": [
           "AIOps Signal Intake"
+        ]
+      }
+    },
+    "/internal/v1/aiops/monitoring/business-systems": {
+      "get": {
+        "operationId": "list_business_systems_internal_v1_aiops_monitoring_business_systems_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitoringBusinessSystemSummary"
+                  },
+                  "title": "Response List Business Systems Internal V1 Aiops Monitoring Business Systems Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Business Systems",
+        "tags": [
+          "AIOps Monitoring"
         ]
       }
     },

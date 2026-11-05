@@ -17,6 +17,8 @@ from aiops_agent.application.errors import (
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder, freeze_source_config
 from platform_core.contracts.aiops.monitoring import (
     MonitoringBaselinePeriod,
+    MonitoringBusinessSystemSummary,
+    MonitoringResourceSummary,
     MonitoringGap,
     MonitoringInstanceSummary,
     MonitoringSourceSummary,
@@ -86,6 +88,69 @@ class MonitoringApplicationService:
         )
         self._cache: dict[str, tuple[datetime, MonitoringView]] = {}
 
+    async def list_business_systems(self, *, scope) -> tuple[MonitoringBusinessSystemSummary, ...]:
+        """先列出授权系统与资源，再投影每个资源的监控来源；目录读取不发起采集。"""
+        async with self._uow_factory() as uow:
+            rows = await uow.business_systems.list_monitoring_catalog(
+                tenant_id=getattr(scope, "tenant_id", None), domain_id=scope.domain_id,
+            )
+            systems, resources, source_cache = {}, {}, {}
+            for system, resource, target, binding in rows:
+                systems.setdefault(system.business_system_id, system)
+                if resource is None:
+                    continue
+                key = (system.business_system_id, resource.resource_id)
+                record = resources.setdefault(key, [resource, target, []])
+                if binding is None:
+                    continue
+                source_id = binding.diagnostic_source_id
+                if source_id not in source_cache:
+                    source_cache[source_id] = await uow.diagnostic_sources.get_scoped(
+                        diagnostic_source_id=source_id, domain_id=scope.domain_id,
+                    )
+                source = source_cache[source_id]
+                if source is None or source.source_type not in {"PROMETHEUS", "ZABBIX", "OEM"}:
+                    continue
+                if getattr(source, "tenant_id", None) != getattr(scope, "tenant_id", None):
+                    continue
+                record[2].append(self._source_summary(
+                    source, 1, alert_ingress_ready=False,
+                ))
+            result = []
+            for system_id, system in systems.items():
+                items = []
+                for (owner_id, _), (resource, target, bound_sources) in resources.items():
+                    if owner_id != system_id:
+                        continue
+                    instance_id = target.target_id if target is not None else resource.resource_id
+                    ready = next((source for source in bound_sources if source.monitoring_readiness == "READY"), None)
+                    supported = resource.resource_type_key in {"DATABASE", "PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"}
+                    enabled = resource.resource_type_key != "DATABASE" or target is not None and target.status == "ENABLED"
+                    gaps = ()
+                    if not supported or not enabled or not bound_sources:
+                        gaps = (MonitoringGap(
+                            scope="INSTANCE", instance_id=instance_id,
+                            code="RESOURCE_MONITORING_UNAVAILABLE",
+                            detail=("该资源类型暂无实时监控视图" if not supported else
+                                    "数据库资源已停用" if not enabled else "该资源尚未绑定可查询指标的监控源"),
+                        ),)
+                    items.append(MonitoringResourceSummary(
+                        instance_id=instance_id, display_name=resource.display_name,
+                        db_type=target.db_type if target is not None else None,
+                        resource_type_key=resource.resource_type_key,
+                        business_system_id=system_id, business_system_name=system.display_name,
+                        resource_id=resource.resource_id, resource_name=resource.display_name,
+                        status="PARTIAL",
+                        monitoring_readiness="CAPABILITY_MISSING" if gaps else
+                            "READY" if ready else bound_sources[0].monitoring_readiness,
+                        diagnostic_readiness="PARTIAL", capability_gaps=gaps,
+                        sources=tuple(bound_sources),
+                    ))
+                result.append(MonitoringBusinessSystemSummary(
+                    business_system_id=system_id, display_name=system.display_name, resources=tuple(items),
+                ))
+            return tuple(result)
+
     async def list_sources(self, *, scope) -> tuple[MonitoringSourceSummary, ...]:
         async with self._uow_factory() as uow:
             sources = await uow.diagnostic_sources.page_scoped(
@@ -102,7 +167,7 @@ class MonitoringApplicationService:
             )
             summaries = []
             for source in sources:
-                if source.source_type not in {"PROMETHEUS", "ZABBIX"}:
+                if source.source_type not in {"PROMETHEUS", "ZABBIX", "OEM"}:
                     continue
                 bindings = await uow.targets.list_source_bindings_by_source(
                     diagnostic_source_id=source.diagnostic_source_id,
@@ -521,7 +586,7 @@ class MonitoringApplicationService:
         window = window_override or resolve_monitoring_window(request.window, now=generated_at)
         async with self._uow_factory() as uow:
             source = await self._source(uow, scope.domain_id, source_id)
-            if source.source_type != "PROMETHEUS":
+            if source.source_type not in {"PROMETHEUS", "OEM"}:
                 raise resource_not_found("Hardware Monitoring Source")
             rows = await self._hardware_rows(uow=uow, scope=scope, source_id=source_id)
             by_resource = {}
@@ -886,7 +951,7 @@ class MonitoringApplicationService:
         source = await uow.diagnostic_sources.get_scoped(
             diagnostic_source_id=source_id, domain_id=domain_id
         )
-        if source is None or source.source_type not in {"PROMETHEUS", "ZABBIX"}:
+        if source is None or source.source_type not in {"PROMETHEUS", "ZABBIX", "OEM"}:
             raise resource_not_found("Monitoring Source")
         return source
 

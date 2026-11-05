@@ -59,7 +59,7 @@ class BusinessSystemRepository(BusinessSystemDeletionRepositoryMixin, AIOpsRepos
             .where(
                 ManagedResourceEntity.domain_id == domain_id,
                 BusinessSystemEntity.domain_id == domain_id,
-                ManagedResourceEntity.resource_type_key.in_(("PHYSICAL_SERVER", "VIRTUAL_MACHINE")),
+                ManagedResourceEntity.resource_type_key.in_(("PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER")),
                 ManagedResourceEntity.lifecycle_status == "ACTIVE",
                 BusinessSystemResourceEntity.status == "ACTIVE",
                 BusinessSystemEntity.status == "ENABLED",
@@ -73,6 +73,37 @@ class BusinessSystemRepository(BusinessSystemDeletionRepositoryMixin, AIOpsRepos
         if hasattr(ManagedResourceEntity, "tenant_id"):
             statement = statement.where(ManagedResourceEntity.tenant_id == tenant_id, BusinessSystemEntity.tenant_id == tenant_id)
         return list((await self._session.execute(statement.order_by(BusinessSystemEntity.business_system_id, ManagedResourceEntity.resource_id))).all())
+
+    async def list_monitoring_catalog(self, *, tenant_id, domain_id):
+        """以已上线系统为根保留无绑定资源和空系统；所有关联均受业务空间限制。"""
+        self._check_active()
+        return list((await self._session.execute(
+            select(BusinessSystemEntity, ManagedResourceEntity, TargetEntity, ResourceSourceBindingEntity)
+            .outerjoin(BusinessSystemResourceEntity, (
+                (BusinessSystemResourceEntity.business_system_id == BusinessSystemEntity.business_system_id)
+                & (BusinessSystemResourceEntity.status == "ACTIVE")
+            ))
+            .outerjoin(ManagedResourceEntity, (
+                (ManagedResourceEntity.resource_id == BusinessSystemResourceEntity.resource_id)
+                & (ManagedResourceEntity.domain_id == domain_id)
+                & (ManagedResourceEntity.lifecycle_status == "ACTIVE")
+            ))
+            .outerjoin(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .outerjoin(TargetEntity, (
+                (TargetEntity.target_id == DatabaseResourceEntity.target_id)
+                & (TargetEntity.domain_id == domain_id)
+            ))
+            .outerjoin(ResourceSourceBindingEntity, (
+                (ResourceSourceBindingEntity.resource_id == ManagedResourceEntity.resource_id)
+                & (ResourceSourceBindingEntity.status == "ACTIVE")
+            ))
+            .where(
+                BusinessSystemEntity.domain_id == domain_id,
+                BusinessSystemEntity.status == "ENABLED",
+            )
+            .order_by(BusinessSystemEntity.display_name, ManagedResourceEntity.display_name,
+                      ResourceSourceBindingEntity.priority, ResourceSourceBindingEntity.resource_source_binding_id)
+        )).all())
 
     async def add_system(self, entity: BusinessSystemEntity) -> BusinessSystemEntity:
         return await self._add(entity)

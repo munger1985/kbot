@@ -280,12 +280,12 @@ class MonitoringProfileContractTest(unittest.TestCase):
                     any(raw_metric in query for query in fallbacks)
                 )
 
-    def test_oem_is_not_a_first_phase_monitoring_source(self):
+    def test_event_only_source_is_not_a_monitoring_source(self):
         with self.assertRaises(MonitoringQueryError) as raised:
             project_source_readiness(
                 source_id=str(uuid7()),
-                display_name="OEM",
-                source_type="OEM",
+                display_name="告警接入",
+                source_type="ALERTMANAGER",
                 status="ENABLED",
                 connectivity_status="CONNECTED",
                 capabilities={CAPABILITY_METRIC_QUERY_RANGE},

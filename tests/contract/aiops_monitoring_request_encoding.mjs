@@ -55,7 +55,11 @@ try {
       monitoring_readiness: 'READY', diagnostic_readiness: 'READY', capability_gaps: [], diagnostic_gaps: [] }
     const instances = [instance,
       { ...instance, instance_id: '019ffff0-0000-7000-8000-000000000004', business_system_id: 'system-a', business_system_name: '测试业务系统甲' },
-      { ...instance, instance_id: '019ffff0-0000-7000-8000-000000000005', business_system_id: null, business_system_name: null }]
+      { ...instance, instance_id: '019ffff0-0000-7000-8000-000000000005', business_system_id: 'system-c', business_system_name: '测试业务系统丙' }]
+    const catalog = instances.map(item => ({
+      business_system_id: item.business_system_id, display_name: item.business_system_name,
+      resources: [{ ...item, sources: [source] }],
+    }))
     const profile = { profile_id: hardware ? 'host-overview' : 'database-overview', version: '1.0.0',
       display_name: '测试指标范围', description: '', purpose: hardware ? 'HOST' : 'OVERVIEW', is_default: true,
       metric_codes: [], supported_db_types: ['ORACLE'], supported_database_versions: {}, resolved_variant_ids: [],
@@ -66,7 +70,8 @@ try {
       const request = route.request(), url = new URL(request.url()), path = url.pathname
       if (path === '/monitoring') return route.fulfill({ contentType: 'text/html', body: html })
       let body
-      if (path.endsWith('/sources')) body = [source]
+      if (path.endsWith('/monitoring/business-systems')) body = catalog
+      else if (path.endsWith('/sources')) body = [source]
       else if (path.endsWith('/instances')) body = instances
       else if (path.endsWith('/profiles')) body = [profile]
       else if (path.endsWith('/views') || path.endsWith('/monitoring/view')) {
@@ -139,7 +144,7 @@ try {
     const toggles = page.locator('.monitoring-system-toggle')
     const expanded = page.locator('.monitoring-system-toggle[aria-expanded="true"]')
     const system = name => page.locator('.monitoring-system-group').filter({ has: page.locator('.monitoring-system-toggle strong', { hasText: name }) })
-    const current = system('测试业务系统乙'), other = system('测试业务系统甲'), unassigned = system('未归属业务系统')
+    const current = system('测试业务系统乙'), other = system('测试业务系统甲'), unassigned = system('测试业务系统丙')
     const search = page.getByRole('searchbox', { name: '搜索业务系统或实例' })
     await expect(toggles).toHaveCount(3)
     await expect(expanded).toHaveCount(1)

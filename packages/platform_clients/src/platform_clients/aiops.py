@@ -363,6 +363,13 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     _CONFIG = f"{INTERNAL_API_V1}/aiops/config"
     _MONITORING = f"{INTERNAL_API_V1}/aiops/monitoring"
 
+    async def list_monitoring_business_systems(
+        self, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET", f"{self._MONITORING}/business-systems", auth_context=auth_context
+        )
+
     async def list_monitoring_sources(
         self, *, auth_context: AuthContext
     ) -> list[dict[str, Any]]:

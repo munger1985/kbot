@@ -79,10 +79,10 @@ def project_source_readiness(
     metrics_aligned: bool,
     alert_ingress_ready: bool,
 ) -> MonitoringSourceSummary:
-    if source_type not in {"PROMETHEUS", "ZABBIX"}:
+    if source_type not in {"PROMETHEUS", "ZABBIX", "OEM"}:
         raise MonitoringQueryError(
             "MONITORING_SOURCE_TYPE_UNSUPPORTED",
-            "一期实时监控只支持 Prometheus 和 Zabbix",
+            "该来源不支持实时监控指标查询",
         )
     gaps: list[MonitoringGap] = []
     diagnostic_gaps: list[MonitoringGap] = []
