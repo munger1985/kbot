@@ -23,9 +23,8 @@
           <label id="source-token-field" class="control-field form-span"><span class="field-label">访问令牌（可选）</span><input name="access_token" type="password" autocomplete="new-password"><small class="field-help">仅用于 KBot 主动访问上方监控源 Endpoint；服务端要求 Bearer Token 时才填写。保存后不会再次显示。</small></label>
           <label id="source-oem-username-field" class="control-field" hidden><span class="field-label">OEM 用户名（可选）</span><input name="source_username" autocomplete="off"></label>
           <label id="source-oem-password-field" class="control-field" hidden><span class="field-label">OEM 密码（可选）</span><input name="source_password" type="password" autocomplete="new-password"><small class="field-help">用户名和密码需同时填写；编辑时同时留空保持原凭据，保存后不会回显。</small></label>
-          <label id="source-oem-mappings-field" class="control-field form-span" hidden><span class="field-label">标准指标原生映射（JSON，可选）</span><textarea name="oem_standard_mappings" rows="8" spellcheck="false">{}</textarea><small class="field-help">按指标编码配置精确 Target 类型、指标组、名称、原生/目标单位、scale、value_kind 和 dimensions/filters。空对象表示仅使用原生目录；不猜测默认映射，也不证明原始窗口覆盖。</small></label>
           <label id="source-tenant-field" class="control-field form-span" hidden><span class="field-label">日志租户 ID（可选）</span><input name="loki_tenant_id"><small class="field-help">仅多租户 Loki 需要填写；单租户部署请留空。</small></label>
-          <p class="field-help form-span">先保存并启用监控源，再到运维目标的“监控映射”中绑定具体 Label。</p>
+          <p class="field-help form-span">这里只配置监控服务连接。保存、测试并启用后，到业务系统的数据库资源中选择具体监控数据库。</p>
         </section>
         <footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close-source>取消</button><button id="save-diagnostic-source" class="primary-button" type="submit">创建监控源</button></footer>
       </form>
@@ -36,6 +35,6 @@
     <div id="source-webhook-content"></div>
   </dialog>
   <dialog id="source-confirm-dialog" class="confirm-dialog" role="alertdialog" aria-labelledby="source-confirm-title" aria-describedby="source-confirm-message"><header class="confirm-dialog-header"><span class="confirm-dialog-mark" aria-hidden="true"></span><div><p class="confirm-dialog-kicker"></p><h2 id="source-confirm-title"></h2></div></header><p id="source-confirm-message" class="confirm-dialog-message"></p><footer class="confirm-dialog-actions"><button class="secondary-button" type="button" data-cancel-source-confirm>取消</button><button class="primary-button" type="button" data-confirm-source></button></footer></dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261103_3"></script><script src="./js/aiops-configurations.js?v=20261030_1"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261103_3"></script><script src="./js/aiops-configurations.js?v=20261105_1"></script>
 </body>
 </html>

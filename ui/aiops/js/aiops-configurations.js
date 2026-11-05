@@ -40,12 +40,12 @@
   }
   function renderType() {
     const type = form.elements.source_type.value, oem = type === "OEM";document.getElementById("source-token-field").hidden = oem;
-    ["username","password","mappings"].forEach(key => {document.getElementById(`source-oem-${key}-field`).hidden = !oem;});document.getElementById("source-tenant-field").hidden = type !== "LOKI";
-    document.getElementById("source-endpoint-help").textContent = oem ? "OEM 13.5 官方 API 地址，例如 https://oem.example.com/em/api；目标映射填写 32 位 Target GUID。" : "填写监控源的根地址，例如 https://monitor.example.com。";
+    ["username","password"].forEach(key => {document.getElementById(`source-oem-${key}-field`).hidden = !oem;});document.getElementById("source-tenant-field").hidden = type !== "LOKI";
+    document.getElementById("source-endpoint-help").textContent = oem ? "OEM 官方 API 地址，例如 https://oem.example.com/em/api。这里只接入 OEM 服务，具体数据库在业务系统中选择。" : "填写监控源的根地址，例如 https://monitor.example.com。";
   }
   function fillForm(item = null) {
     state.editing = item;form.reset();form.elements.display_name.value = item?.display_name || "";form.elements.source_type.value = item?.source_type || "PROMETHEUS";form.elements.endpoint.value = item?.endpoint || "";
-    form.elements.loki_tenant_id.value = item?.config?.tenant_id || "";form.elements.oem_standard_mappings.value = JSON.stringify(item?.config?.standard_metric_mappings || {},null,2);
+    form.elements.loki_tenant_id.value = item?.config?.tenant_id || "";
     document.getElementById("diagnostic-source-dialog-title").textContent = item ? "编辑监控源" : "新增监控源";renderType();syncBusy();if (!drawer.open) drawer.showModal();drawer.scrollTop = 0;renderCatalog();
   }
   function closeSource() {if (state.busy) return;++state.opening;if (drawer.open) drawer.close();state.editing = null;form.reset();showError();renderCatalog();}
@@ -60,9 +60,8 @@
     if (type === "OEM") {const username = value("source_username"), password = form.elements.source_password.value;if (username || password) {if (!username || !password) throw new Error("OEM 用户名和密码需要同时填写；编辑时同时留空保持原凭据。");credentials = {username,password};}}
     else if (value("access_token")) credentials = {token:value("access_token")};
     let config = {};
-    if (type === "OEM") {const mappings = JSON.parse(form.elements.oem_standard_mappings.value || "{}");if (!mappings || typeof mappings !== "object" || Array.isArray(mappings)) throw new Error("OEM标准指标映射必须为JSON对象");config = {standard_metric_mappings:mappings};}
-    else if (type === "LOKI" && value("loki_tenant_id")) config = {tenant_id:value("loki_tenant_id")};
-    return {display_name:value("display_name"),...(!state.editing ? {source_type:type} : {}),endpoint:value("endpoint") || undefined,...(credentials ? {credentials} : {}),config};
+    if (type === "LOKI" && value("loki_tenant_id")) config = {tenant_id:value("loki_tenant_id")};
+    return {display_name:value("display_name"),...(!state.editing ? {source_type:type} : {}),endpoint:value("endpoint") || undefined,...(credentials ? {credentials} : {}),...(type === "OEM" && state.editing ? {} : {config})};
   }
   async function save(event) {
     event.preventDefault();if (state.busy || !state.manage) return;let body;try {body = payload();} catch (error) {showError(error.message);shell.toast(error.message);return;}

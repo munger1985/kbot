@@ -67,6 +67,7 @@ from .projections import (
     _diagnostic_source_summary,
     _source_binding_view,
 )
+from .oem_binding import validate_oem_database_binding
 
 
 class DiagnosticSourceConfigurationMixin:
@@ -96,7 +97,7 @@ class DiagnosticSourceConfigurationMixin:
     async def _instance_discovery_adapter(
         self, *, uow, scope: ConfigurationScope, source
     ):
-        if source.source_type not in {"PROMETHEUS", "ZABBIX"}:
+        if source.source_type not in {"PROMETHEUS", "ZABBIX", "OEM"}:
             raise validation_failed("该 Diagnostic Source 不支持实例发现")
         if source.status != "ENABLED":
             raise state_conflict("Diagnostic Source 未启用，不能发现实例")
@@ -1156,12 +1157,14 @@ class DiagnosticSourceConfigurationMixin:
         if source is None:
             raise resource_not_found("Diagnostic Source")
         if (
-            source.source_type in {"PROMETHEUS", "ZABBIX"}
+            source.source_type in {"PROMETHEUS", "ZABBIX", "OEM"}
             and not discovery_verified
         ):
             raise validation_failed(
-                "Prometheus 与 Zabbix 映射必须通过实例发现候选创建"
+                "Prometheus、Zabbix 与 OEM 映射必须通过实例发现候选创建"
             )
+        if source.source_type == "OEM":
+            validate_oem_database_binding(target=target, locator=request.source_locator)
         existing = await uow.targets.list_source_bindings(
             target_id=target_id,
             domain_id=scope.domain_id,
@@ -1432,10 +1435,10 @@ class DiagnosticSourceConfigurationMixin:
                 }
             if "source_locator_json" in fields or "source_locator_key" in fields:
                 assert source is not None
-                if source.source_type in {"PROMETHEUS", "ZABBIX"}:
+                if source.source_type in {"PROMETHEUS", "ZABBIX", "OEM"}:
                     if requested_locator_change:
                         raise validation_failed(
-                            "Prometheus 与 Zabbix 外部定位只能通过实例发现重新映射"
+                            "Prometheus、Zabbix 与 OEM 外部定位只能通过实例发现重新映射"
                         )
                 if "source_locator_json" in fields:
                     self._validate_source_binding_locator(

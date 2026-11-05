@@ -101,6 +101,7 @@ class DiagnosticSourceAdapterCatalog:
             capabilities=frozenset(
                 {
                     CAPABILITY_HEALTH_CHECK,
+                    CAPABILITY_INSTANCE_DISCOVERY,
                     CAPABILITY_EVENT_QUERY,
                     CAPABILITY_METRIC_QUERY_RANGE,
                     CAPABILITY_METRIC_DISCOVERY,
@@ -165,9 +166,6 @@ class DiagnosticSourceAdapterCatalog:
     def normalize_config(
         *, source_type: str, config: dict[str, object]
     ) -> dict[str, object]:
-        if source_type == "OEM":
-            from .oem_standard import normalize_oem_config
-            return normalize_oem_config(config)
         allowed_fields = {
             "LOKI": {"tenant_id"},
         }.get(source_type, set())

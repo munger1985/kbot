@@ -4,9 +4,10 @@ from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
 from .oem_native import OEMNativeMetrics
 from .oem_events import OEMEvents
 from .oem_standard import OEMStandardMetrics
+from .oem_discovery import OEMInstanceDiscovery
 
 
-class OEMAdapter(OEMEvents, OEMStandardMetrics, OEMNativeMetrics, BaseDiagnosticSourceAdapter):
+class OEMAdapter(OEMInstanceDiscovery, OEMEvents, OEMStandardMetrics, OEMNativeMetrics, BaseDiagnosticSourceAdapter):
     async def verify_and_normalize_webhook(self, request):
         raise DiagnosticSourceAdapterError(
             "SOURCE_QUERY_UNSUPPORTED", "OEM不直接接收Incident Webhook",

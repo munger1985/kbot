@@ -111,7 +111,7 @@
     shell.toast(value.validation_issues.map((item) => item.message).join("；"));
   }
   function sourceFor(item) { return sources.find((source) => source.source_id === item.database?.source_id); }
-  function usesDiscovery(item) { return ["PROMETHEUS", "ZABBIX"].includes(sourceFor(item)?.source_type || ""); }
+  function usesDiscovery(item) { return ["PROMETHEUS", "ZABBIX", "OEM"].includes(sourceFor(item)?.source_type || ""); }
   function isRacResource(item) { return item?.database?.deployment_type === "RAC" && Boolean(item.rac_group_id); }
   function racMembers(item) {
     if (!item) return [];
@@ -709,7 +709,7 @@
       const pdb = oracle && database.oracle_scope === "PDB";
       const endpointFields = `<label><span>数据库地址</span><input name="host" value="${esc(database.host)}" placeholder="主机名或 IP"></label><label><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label><span>${oracle ? "Service Name" : "Database"}</span><input name="database" value="${esc(database.database)}"></label>${oracle ? `<label><span>容器范围</span><select name="oracle_scope">${selectOptions(oracleScopeOptions, database.oracle_scope)}</select></label>` : ""}`;
       const accessFields = `${pdb ? `<label><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label><span>诊断用户名</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label><span>诊断密码</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label>`;
-      const monitoringFields = `<label><span>监控源（必选）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<label><span>数据库候选</span><select name="candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label><label><span>承载主机候选</span><select name="host_candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>`}`;
+      const monitoringFields = `<label><span>监控源（必选）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<label><span>数据库候选</span><select name="candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>${sourceFor(item)?.source_type === "PROMETHEUS" ? `<label><span>承载主机候选</span><select name="host_candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>` : ""}`}`;
       connection = `<div class="connection-layout"><section class="connection-field-group"><p>连接端点</p><div class="connection-row connection-endpoint-row ${oracle ? "oracle" : ""}">${endpointFields}</div></section><section class="connection-field-group"><p>数据库访问</p><div class="connection-row connection-access-row ${pdb ? "pdb" : ""}">${accessFields}</div></section><section class="connection-field-group"><p>监控映射</p><div class="connection-row connection-monitoring-row ${discovery ? "discovery" : ""}">${monitoringFields}</div>${database.discovering ? `<p class="discovery-status">正在从监控源发现数据库和承载主机…</p>` : ""}</section></div>`;
     }
     if (item.mode === "NEW" && database && rac) {
@@ -718,7 +718,7 @@
         const nodeDatabase = node.database;
         const nodeId = esc(node.draft_resource_id);
         const monitoring = discovery
-          ? `<label class="span-6"><span>数据库监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label><label class="span-6"><span>主机监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="host_candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>`
+          ? `<label class="span-6"><span>数据库监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>${sourceFor(node)?.source_type === "PROMETHEUS" ? `<label class="span-6"><span>主机监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="host_candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>` : ""}`
           : `<label class="span-all"><span>监控定位键</span><input data-rac-node="${nodeId}" data-rac-field="locator_key" value="${esc(nodeDatabase.locator_key)}"></label>`;
         return `<article class="rac-node-card"><header><div><strong>RAC 节点 ${esc(nodeDatabase.rac_node_number)}</strong><small>${esc(node.display_name || "待命名节点")}</small></div>${racMembers(item).length > 2 ? `<button type="button" class="danger-link" data-remove-rac-node="${nodeId}">移除节点</button>` : ""}</header><div class="editor-grid"><label class="span-2"><span>节点编号</span><input type="number" min="1" max="1024" required data-rac-node="${nodeId}" data-rac-field="rac_node_number" value="${esc(nodeDatabase.rac_node_number)}"></label><label class="span-4"><span>Host</span><input data-rac-node="${nodeId}" data-rac-field="host" value="${esc(nodeDatabase.host)}" placeholder="节点主机名或 IP"></label><label class="span-6"><span>Service Name</span><input data-rac-node="${nodeId}" data-rac-field="database" value="${esc(nodeDatabase.database)}"></label>${monitoring}</div></article>`;
       }).join("");
@@ -842,6 +842,8 @@
     const key = name === "db_environment" ? "environment" : name;
     item.database[key] = name === "tls_enabled" ? input.value === "true" : ["port", "rac_node_number"].includes(name) ? Number(input.value) : input.value;
     if (name === "db_type") {
+      item.database.discovery_revision += 1;
+      Object.assign(item.database, { candidate_ref: "", candidate_locator_key: "", host_candidate_ref: "", host_candidate_locator_key: "", candidates: [], host_candidates: [], discovering: false });
       item.database.version_code = versions[item.database.db_type][0];
       item.database.port = item.database.db_type === "ORACLE" ? 1521 : item.database.db_type === "MYSQL" ? 3306 : 5432;
       if (item.database.db_type !== "ORACLE") {
@@ -933,6 +935,25 @@
     return { candidates, hostCandidates };
   }
 
+  async function loadDiscoveryCandidates(sourceId, dbType) {
+    const items = [], hosts = new Map(), cursors = new Set(), locators = new Set();
+    let cursor = null;
+    for (let page = 0; page < 20; page += 1) {
+      const found = await request('/diagnostic-sources/' + encodeURIComponent(sourceId) + '/instance-discoveries', {
+        method: "POST", body: JSON.stringify({ db_types: [dbType], page_size: 100, ...(cursor ? { cursor } : {}) }),
+      });
+      for (const candidate of found.items || []) {
+        if (locators.has(candidate.locator_key)) throw new Error("监控目录在分页期间变化，请重新发现数据库。");
+        locators.add(candidate.locator_key); items.push(candidate);
+      }
+      for (const host of found.host_items || []) hosts.set(host.locator_key, host);
+      if (!found.has_more) return { items, host_items: [...hosts.values()] };
+      if (!found.next_cursor || cursors.has(found.next_cursor)) throw new Error("监控目录分页无效，请重新发现数据库。");
+      cursor = found.next_cursor; cursors.add(cursor);
+    }
+    throw new Error("监控数据库目录超过本次读取上限，请缩小监控账号可见范围后重试。");
+  }
+
   async function discover(item, options = {}) {
     if (!item.database?.source_id) { shell.toast("请先选择监控源。"); return; }
     const members = racMembers(item);
@@ -943,7 +964,7 @@
     members.forEach((member) => { if (member.database) member.database.discovering = true; });
     renderComposition();
     try {
-      const found = await request(`/diagnostic-sources/${encodeURIComponent(sourceId)}/instance-discoveries`, { method: "POST", body: JSON.stringify({ db_types: [dbType], page_size: 100 }) });
+      const found = await loadDiscoveryCandidates(sourceId, dbType);
       if (revision !== item.database.discovery_revision || sourceId !== item.database.source_id || dbType !== item.database.db_type) return;
       const { candidates, hostCandidates } = applyDiscoveryResult(members, found, selections, Boolean(options.requireSelections));
       if (!options.quiet) shell.toast(`发现 ${candidates.length} 个数据库候选、${hostCandidates.length} 个主机候选。`);
@@ -968,7 +989,7 @@
     await Promise.all([...groups.values()].map(async (items) => {
       const sample = items[0];
       const selections = new Map(items.map((item) => [item.draft_resource_id, selectedDiscoveryLocators(item.database)]));
-      const found = await request(`/diagnostic-sources/${encodeURIComponent(sample.database.source_id)}/instance-discoveries`, { method: "POST", body: JSON.stringify({ db_types: [sample.database.db_type], page_size: 100 }) });
+      const found = await loadDiscoveryCandidates(sample.database.source_id, sample.database.db_type);
       applyDiscoveryResult(items, found, selections, true);
     }));
   }

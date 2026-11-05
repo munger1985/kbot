@@ -7,7 +7,7 @@ import { runInNewContext } from 'node:vm';
 const file = fileURLToPath(new URL('../../ui/aiops/js/aiops-business-system-workspace.js', import.meta.url));
 const source = readFileSync(file, 'utf8');
 const instrumented = source.replace(/\}\)\(\);\s*$/, `globalThis.workspaceTest = {
-  saveDraft, commit, validateResource, refreshDiscoveryReferences, draftPayload,
+  saveDraft, commit, validateResource, refreshDiscoveryReferences, draftPayload, loadDiscoveryCandidates, monitoringPayload, usesDiscovery,
   seed(value) {
     system = value.system; resources = value.resources; relations = value.relations || []; sources = value.sources || [];
     detail = value.detail || null; draftId = value.draftId || ''; draftRevision = value.draftRevision || 0;
@@ -47,7 +47,7 @@ const resource = (db_type = 'ORACLE', overrides = {}) => ({
   draft_resource_id: 'draft-resource-1', mode: 'NEW', resource_type_key: 'DATABASE', display_name: 'MES 主库', architecture_layer_key: 'DATA', owner_group_id: 'group-2', location_name: '生产机房', display_order: 0, saved: false,
   database: { db_type, version_code: { ORACLE: '19c', MYSQL: '8.4', POSTGRESQL: '16' }[db_type], environment: 'PROD', deployment_type: 'SINGLE_INSTANCE', rac_node_number: null, db_role: 'PRIMARY', host: 'db.example.invalid', port: db_type === 'ORACLE' ? 1521 : db_type === 'MYSQL' ? 3306 : 5432, database: 'MES', oracle_scope: 'PDB', oracle_pdb_name: 'MESPDB', tls_enabled: db_type !== 'ORACLE', username: 'fixture_readonly', password: 'fixture-only-not-a-real-secret', source_id: 'source-1', locator_key: 'mes-production', candidate_ref: '', host_candidate_ref: '', candidates: [], host_candidates: [], ...overrides },
 });
-const monitor = { source_id: 'source-1', source_type: 'OEM', status: 'ENABLED' };
+const monitor = { source_id: 'source-1', source_type: 'ALERTMANAGER', status: 'ENABLED' };
 
 // 草稿失败不能丢失页面内容；成功后下一次保存必须带服务端返回的 revision。
 {
@@ -237,4 +237,53 @@ for (const policy of [{ enabled: true, interval_minutes: 0 }, { top_statement_li
   assert.equal(f.calls.length, 0, '无效采集策略不能进入发布写操作');
   assert.ok(f.notifications.some(value => value.includes('历史 SQL 采集策略无效')));
 }
-console.log('通过：草稿失败恢复与 revision、三引擎发布载荷、未发布资源采集策略、发布互斥、上下文与草稿 URL、监控候选稳定定位合同。');
+// OEM 使用服务级 Source，数据库在业务系统中选取；发布前刷新引用，不要求主机 Label。
+{
+  const f = fixture(), guid = '1'.repeat(32);
+  const item = resource('ORACLE', {
+    candidate_ref: 'expired-ref', candidate_locator_key: guid,
+    candidates: [{ candidate_ref: 'expired-ref', locator_key: guid }],
+  });
+  f.api.seed({ system: copy(system), resources: [item], sources: [{ ...monitor, source_type: 'OEM' }] });
+  let discoveries = 0;
+  f.handle(async call => {
+    if (call.path.endsWith('/instance-discoveries')) {
+      discoveries++;
+      assert.deepEqual(call.payload.db_types, ['ORACLE']);
+      assert.equal(call.payload.source_locator_key, undefined);
+      if (!call.payload.cursor) return { items: [], host_items: [], has_more: true, next_cursor: 'page-2' };
+      return { items: [{ candidate_ref: 'fresh-ref', locator_key: guid, display_name: 'CDB / PDB' }], host_items: [], has_more: false };
+    }
+    if (call.path === '/business-system-drafts') return { draft_id: 'draft-oem', revision: 1 };
+    if (call.path.endsWith(':commit')) return { business_system_id: 'published-oem' };
+    throw new Error('不允许额外请求：' + call.path);
+  });
+  assert.equal(f.api.usesDiscovery(item), true);
+  await f.api.commit();
+  assert.equal(discoveries, 2);
+  const saved = f.calls.find(call => call.path === '/business-system-drafts');
+  assert.ok(saved);
+  const binding = saved.payload.payload.publish.resources[0].database.monitoring;
+  assert.equal(binding.candidate_ref, 'fresh-ref');
+  assert.equal(binding.host_candidate_ref, null);
+  assert.equal(binding.source_binding, undefined);
+  assert.equal(binding.source_locator_key, undefined);
+}
+{
+  const f = fixture(), item = resource('ORACLE', {
+    candidate_ref: 'old-ref', candidate_locator_key: '1'.repeat(32),
+    candidates: [{ candidate_ref: 'old-ref', locator_key: '1'.repeat(32), display_name: 'same-name' }],
+  });
+  f.api.seed({ system: copy(system), resources: [item], sources: [{ ...monitor, source_type: 'OEM' }] });
+  f.handle(async () => ({ items: [{ candidate_ref: 'replacement', locator_key: '2'.repeat(32), display_name: 'same-name' }], host_items: [], has_more: false }));
+  await f.api.commit();
+  assert.equal(f.calls.some(call => !call.path.endsWith('/instance-discoveries')), false);
+  assert.match(f.notifications.at(-1), /原数据库监控 Target 已不存在/);
+}
+{
+  const f = fixture();
+  f.handle(async () => ({ items: [], has_more: true, next_cursor: 'repeat' }));
+  await assert.rejects(f.api.loadDiscoveryCandidates('source-1', 'ORACLE'), /分页无效/);
+  assert.equal(f.calls.length, 2);
+}
+console.log('通过：草稿恢复、三引擎发布、OEM 分页候选与短期引用刷新、GUID 重建拒绝、无手填定位键及主机 Label 要求。');

@@ -1,4 +1,4 @@
-"""OEM 13.5 官方指标目录与历史接口；只读取已冻结 Target GUID。
+"""OEM 官方指标目录与历史接口；只读取已冻结 Target GUID。
 
 目录与数值类型不证明 counter/gauge；metricTimeSeries 的留存层自动聚合
 必须沿证据链保留。只做有界读取，不跟随响应 URL，不伪造分页。
@@ -15,6 +15,7 @@ import aiohttp
 from aiops_agent.contracts.evidence import DiscoveredMetric, MetricDiscoveryResult, NativeMetricSamples
 from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_DISCOVERY, CAPABILITY_METRIC_QUERY_RANGE
 from .base import DiagnosticSourceAdapterError
+from .oem_target_identity import normalize_target
 
 
 def _fail(code="SOURCE_RESPONSE_INVALID"):
@@ -106,12 +107,7 @@ class OEMNativeMetrics:
         if not isinstance(locator, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", locator):
             _fail("SOURCE_TARGET_LOCATOR_INVALID")
         target, digest = await self._native_get("/targets/" + locator, max_bytes=request.max_response_bytes // 4)
-        if (not isinstance(target, dict) or not isinstance(target.get("targetName"), str)
-            or not 0 < len(target["targetName"]) <= 256
-            or not isinstance(target.get("targetType"), str) or not 0 < len(target["targetType"]) <= 64
-            or ("targetId" in target and str(target["targetId"]).casefold() != locator.casefold())):
-            _fail("SOURCE_TARGET_MISMATCH")
-        return target, digest
+        return normalize_target(target, expected_guid=locator), digest
 
     async def discover_metrics(self, request):
         if CAPABILITY_METRIC_DISCOVERY not in self.context.declared_capabilities:
