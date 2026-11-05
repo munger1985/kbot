@@ -350,7 +350,7 @@
     const name = item.rac_cluster_name || "";
     racMembers(item).forEach((member) => {
       member.rac_cluster_name = name;
-      member.display_name = name.trim() ? `${name.trim()} · 节点 ${member.database?.rac_node_number}` : "";
+      if (!member.system_resource_id) member.display_name = name.trim() ? `${name.trim()} · 节点 ${member.database?.rac_node_number}` : "";
       member.saved = Boolean(member.system_resource_id);
     });
     updateRacRelation(item);
@@ -695,7 +695,7 @@
     if (!item) return `<aside class="resource-guidance"><h3>选择资源查看详情</h3><p>大型系统仍以列表为主；拓扑确认页只加载当前焦点范围。</p></aside>`;
     const database = item.database;
     const editing = Boolean(item.system_resource_id);
-    const rac = isRacResource(item);
+    const rac = isRacResource(item) && !editing;
     const connectionTestState = connectionTestStates.get(item.draft_resource_id);
     const connectionTestMessage = connectionTestState?.message || (editing ? "修改将在保存业务系统时提交" : item.saved ? "数据库连接已测试" : "连接测试为可选项，不影响保存");
     const connectionTestTone = connectionTestState?.status === "SUCCEEDED" ? "good" : connectionTestState?.status === "FAILED" ? "bad" : "";
@@ -703,14 +703,15 @@
     const baseFields = `<div class="editor-grid"><label class="span-6"><span>${rac ? "RAC 名称" : "数据库名称"}</span><input name="${rac ? "rac_cluster_name" : "resource_name"}" value="${esc(rac ? item.rac_cluster_name : item.display_name)}"></label><label class="span-6"><span>技术责任组</span><select name="owner_group_id">${groupOptions(item.owner_group_id, "请选择")}</select></label><label class="span-all"><span>位置（可选）</span><input name="location_name" value="${esc(item.location_name)}" placeholder="机房、地域或可用区"></label></div>`;
     const databaseFields = database ? `<div class="editor-grid database-grid"><label class="span-3"><span>数据库引擎</span><select name="db_type" ${editing || rac ? "disabled" : ""}>${selectOptions([["ORACLE", "Oracle"], ["MYSQL", "MySQL"], ["POSTGRESQL", "PostgreSQL"]], database.db_type)}</select></label><label class="span-3"><span>数据库版本</span><select name="version_code">${selectOptions(versions[database.db_type], database.version_code)}</select></label><label class="span-3"><span>数据库环境</span><select name="db_environment">${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], database.environment)}</select></label><label class="span-3"><span>部署形态</span><select name="deployment_type" ${database.db_type !== "ORACLE" || editing ? "disabled" : ""}>${selectOptions([["SINGLE_INSTANCE", "单实例"], ["RAC", "RAC（多节点）"]], database.deployment_type)}</select></label><label class="span-3"><span>数据库角色</span><select name="db_role">${selectOptions([["UNKNOWN", "待识别"], ["PRIMARY", "主库"], ["STANDBY", "备库"]], database.db_role)}</select></label></div>` : "";
     let connection = "";
-    if (item.mode === "NEW" && database && !rac) {
+    if (database && !rac) {
       const discovery = usesDiscovery(item);
       const oracle = database.db_type === "ORACLE";
       const pdb = oracle && database.oracle_scope === "PDB";
       const endpointFields = `<label><span>数据库地址</span><input name="host" value="${esc(database.host)}" placeholder="主机名或 IP"></label><label><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label><span>${oracle ? "Service Name" : "Database"}</span><input name="database" value="${esc(database.database)}"></label>${oracle ? `<label><span>容器范围</span><select name="oracle_scope">${selectOptions(oracleScopeOptions, database.oracle_scope)}</select></label>` : ""}`;
-      const accessFields = `${pdb ? `<label><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label><span>诊断用户名</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label><span>诊断密码</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label>`;
-      const monitoringFields = `<label><span>监控源（必选）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<label><span>数据库候选</span><select name="candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>${sourceFor(item)?.source_type === "PROMETHEUS" ? `<label><span>承载主机候选</span><select name="host_candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>` : ""}`}`;
-      connection = `<div class="connection-layout"><section class="connection-field-group"><p>连接端点</p><div class="connection-row connection-endpoint-row ${oracle ? "oracle" : ""}">${endpointFields}</div></section><section class="connection-field-group"><p>数据库访问</p><div class="connection-row connection-access-row ${pdb ? "pdb" : ""}">${accessFields}</div></section><section class="connection-field-group"><p>监控映射</p><div class="connection-row connection-monitoring-row ${discovery ? "discovery" : ""}">${monitoringFields}</div>${database.discovering ? `<p class="discovery-status">正在从监控源发现数据库和承载主机…</p>` : ""}</section></div>`;
+      const accessFields = `${pdb ? `<label><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label><span>诊断用户名</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label><span>诊断密码</span><input name="password" placeholder="${editing ? "留空保留原密码" : ""}" value="${esc(database.password)}" type="password" autocomplete="new-password"></label>`;
+      const monitoringFields = `<label><span>监控源（必选）</span><select name="source_id" required><option value="">请选择</option>${database.source_id && !sourceFor(item) ? `<option value="${esc(database.source_id)}" selected>原监控源（已停用或不可用）</option>` : ""}${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<label><span>数据库候选</span><select name="candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>${sourceFor(item)?.source_type === "PROMETHEUS" ? `<label><span>承载主机候选</span><select name="host_candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>` : ""}`}`;
+      const bindingChoice = editing ? `<label><span>编辑哪条监控映射</span><select name="editing_binding_id"><option value="">新增映射（保留现有映射）</option>${(database.monitoring_bindings || []).map(binding => `<option value="${esc(binding.binding_id)}" ${binding.binding_id === database.original_binding?.binding_id ? "selected" : ""}>${esc(sources.find(source => source.source_id === binding.source_id)?.display_name || binding.source_id)} · ${esc(binding.source_locator_key)}</option>`).join("")}</select></label><small>仅修改所选映射，其他监控源保持不变；数据库引擎、部署形态与 RAC 节点编号不可直接修改。</small>` : "";
+      connection = `<div class="connection-layout"><section class="connection-field-group"><p>连接端点</p><div class="connection-row connection-endpoint-row ${oracle ? "oracle" : ""}">${endpointFields}</div>${!oracle ? `<div class="connection-row"><label>TLS<select name="tls_enabled"><option value="true" ${database.tls_enabled ? "selected" : ""}>启用</option><option value="false" ${!database.tls_enabled ? "selected" : ""}>不启用</option></select></label>${database.db_type === "POSTGRESQL" && database.tls_enabled ? `<label>TLS Profile（可选）<input name="tls_profile_ref" value="${esc(database.tls_profile_ref || "")}" placeholder="已配置的 TLS Profile 标识"></label>` : ""}</div>` : ""}</section><section class="connection-field-group"><p>数据库访问</p><div class="connection-row connection-access-row ${pdb ? "pdb" : ""}">${accessFields}</div></section><section class="connection-field-group"><p>监控映射</p>${bindingChoice}${discovery ? `<button id="rediscover-databases" type="button" class="secondary-button" ${database.discovering ? "disabled" : ""}>重新发现数据库</button>` : ""}<div class="connection-row connection-monitoring-row ${discovery ? "discovery" : ""}">${monitoringFields}</div>${database.discovering ? `<p class="discovery-status">正在从监控源发现数据库和承载主机…</p>` : ""}</section></div>`;
     }
     if (item.mode === "NEW" && database && rac) {
       const discovery = usesDiscovery(item);
@@ -724,7 +725,7 @@
       }).join("");
       connection = `<div class="editor-grid connection-grid rac-editor"><p class="span-all rac-guidance">公共凭据与监控源只填写一次；每个节点分别配置 Host、Service Name、数据库监控 Target 和主机监控 Target。</p><label class="span-3"><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label class="span-3"><span>容器范围</span><select name="oracle_scope">${selectOptions(oracleScopeOptions, database.oracle_scope)}</select></label>${database.oracle_scope === "PDB" ? `<label class="span-6"><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label class="span-6"><span>诊断用户名（所有节点共用）</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label class="span-6"><span>诊断密码（所有节点共用）</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label><label class="span-all"><span>监控源（所有节点共用）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${database.discovering ? `<p class="span-all discovery-status">正在从监控源发现数据库和承载主机…</p>` : ""}<section class="span-all rac-node-list">${nodeCards}<button id="add-rac-node" class="secondary-button rac-add-node" type="button">＋ 增加 RAC 节点</button></section></div>`;
     }
-    return `<header class="admin-drawer-header"><div><p class="eyebrow">${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</p><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "配置连接与监控映射，可按需测试连接"}</p></div><button id="close-resource-drawer" class="icon-button" type="button" aria-label="关闭资源配置">×</button></header><form id="resource-editor" class="resource-editor resource-drawer-form"><div class="resource-drawer-body">${baseFields}${databaseFields}${connection}${item.database ? snapshotHtml(item) : ""}</div><footer class="admin-drawer-footer resource-drawer-editor-footer"><span id="resource-connection-result" data-tone="${connectionTestTone}">${esc(connectionTestMessage)}</span><div class="resource-drawer-editor-actions"><button id="remove-resource" class="danger-button" type="button">移除资源</button><button id="finish-resource-drawer" class="secondary-button" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary-button" type="submit" ${saving || connectionTestRunning ? "disabled" : ""}>${connectionTestRunning ? "正在测试…" : "测试连接"}</button>` : ""}</div></footer></form>`;
+    return `<header class="admin-drawer-header"><div><p class="eyebrow">${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</p><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "配置连接与监控映射，可按需测试连接"}</p></div><button id="close-resource-drawer" class="icon-button" type="button" aria-label="关闭资源配置">×</button></header><form id="resource-editor" class="resource-editor resource-drawer-form"><div class="resource-drawer-body">${baseFields}${editing && isRacResource(item) ? `<label>RAC 名称<input name="rac_cluster_name" value="${esc(item.rac_cluster_name || "")}"></label>` : ""}${databaseFields}${editing && database?.deployment_type === "RAC" ? `<label>RAC 节点编号<input value="${esc(database.rac_node_number)}" disabled></label>` : ""}${connection}${item.database ? snapshotHtml(item) : ""}</div><footer class="admin-drawer-footer resource-drawer-editor-footer"><span id="resource-connection-result" data-tone="${connectionTestTone}">${esc(connectionTestMessage)}</span><div class="resource-drawer-editor-actions"><button id="remove-resource" class="danger-button" type="button">移除资源</button><button id="finish-resource-drawer" class="secondary-button" type="button">完成</button>${`<button id="validate-resource" class="primary-button" type="submit" ${saving || connectionTestRunning ? "disabled" : ""}>${connectionTestRunning ? "正在测试…" : "测试连接"}</button>`}</div></footer></form>`;
   }
 
   function renderComposition() {
@@ -793,6 +794,8 @@
     if (snapshotStatusRefresh) snapshotStatusRefresh.onclick = () => void loadSnapshotPolicy();
     const snapshotReload = document.getElementById("snapshot-reload");
     if (snapshotReload) snapshotReload.onclick = () => void loadSnapshotPolicy();
+    const rediscover = document.getElementById("rediscover-databases");
+    if (rediscover) rediscover.onclick = () => void discover(item);
     const editor = document.getElementById("resource-editor");
     if (!editor) return;
     editor.querySelectorAll("[name]").forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => updateResourceField(item, input)));
@@ -821,6 +824,7 @@
 
   function updateResourceField(item, input) {
     const name = input.name;
+    if (name === "editing_binding_id") { selectMonitoringBinding(item, input.value); mark(); renderComposition(); return; }
     connectionTestStates.delete(item.draft_resource_id);
     if (name === "rac_cluster_name") {
       item.rac_cluster_name = input.value;
@@ -850,7 +854,7 @@
         item.database.deployment_type = "SINGLE_INSTANCE";
         item.database.rac_node_number = null;
       }
-      item.database.tls_enabled = false;
+      item.database.tls_enabled = item.database.db_type !== "ORACLE";
       syncInferredDatabaseRelations();
       item.saved = false; mark(); renderComposition();
       if (item.database.source_id && usesDiscovery(item)) void discover(item);
@@ -874,7 +878,7 @@
       item.saved = Boolean(item.system_resource_id); mark(); renderComposition(); return;
     }
     if (name === "source_id") {
-      racMembers(item).forEach((member) => {
+      (item.system_resource_id ? [item] : racMembers(item)).forEach((member) => {
         if (!member.database) return;
         member.database.source_id = item.database.source_id;
         member.database.discovery_revision += 1;
@@ -891,11 +895,11 @@
     if (name === "host_candidate_ref") {
       item.database.host_candidate_locator_key = item.database.host_candidates.find((row) => row.candidate_ref === input.value)?.locator_key || "";
     }
-    if (isRacResource(item)) syncRacDatabaseField(item, key);
+    if (isRacResource(item) && !item.system_resource_id) syncRacDatabaseField(item, key);
     if (name === "db_role") syncInferredDatabaseRelations();
-    if (name === "oracle_scope") { item.saved = false; mark(); renderComposition(); return; }
+    if (name === "tls_enabled" || name === "oracle_scope") { item.saved = false; mark(); renderComposition(); return; }
     item.saved = Boolean(item.system_resource_id);
-    if (["host", "port", "database", "oracle_pdb_name", "username", "password", "locator_key", "candidate_ref", "host_candidate_ref"].includes(name)) item.saved = false;
+    if (["host", "port", "database", "oracle_pdb_name", "username", "password", "locator_key", "candidate_ref", "host_candidate_ref", "tls_profile_ref"].includes(name)) item.saved = false;
     mark();
   }
 
@@ -956,7 +960,7 @@
 
   async function discover(item, options = {}) {
     if (!item.database?.source_id) { shell.toast("请先选择监控源。"); return; }
-    const members = racMembers(item);
+    const members = item.system_resource_id ? [item] : racMembers(item);
     const selections = new Map(members.map((member) => [member.draft_resource_id, selectedDiscoveryLocators(member.database)]));
     const sourceId = item.database.source_id;
     const dbType = item.database.db_type;
@@ -981,7 +985,7 @@
 
   async function refreshDiscoveryReferences() {
     const groups = new Map();
-    resources.filter((item) => item.mode === "NEW" && usesDiscovery(item)).forEach((item) => {
+    resources.filter((item) => (item.mode === "NEW" || monitoringChanged(item)) && usesDiscovery(item)).forEach((item) => {
       const key = `${item.database.source_id}:${item.database.db_type}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(item);
@@ -997,7 +1001,7 @@
   function targetPayload(item) {
     const database = item.database;
     const oracle = database.db_type === "ORACLE";
-    return { display_name: item.display_name.trim(), db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number, db_role: database.db_role, importance_level: Number(system.importance_level), responsibility_group_id: item.owner_group_id, readonly_connection_enabled: true, controlled_change_enabled: false, endpoint: { host: database.host.trim(), port: Number(database.port), service: oracle ? database.database.trim() : null, database: oracle ? null : database.database.trim(), tls_enabled: !oracle && database.tls_enabled === true }, oracle_container_scope: oracle ? database.oracle_scope : null, oracle_pdb_name: oracle && database.oracle_scope === "PDB" ? database.oracle_pdb_name.trim() : null, diagnostic_credential: { username: database.username, password: database.password }, capabilities: {}, workload_snapshot_policy: createWorkloadPolicy(database.workload_snapshot_policy) };
+    return { display_name: item.display_name.trim(), db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number, db_role: database.db_role, importance_level: Number(system.importance_level), responsibility_group_id: item.owner_group_id, readonly_connection_enabled: true, controlled_change_enabled: false, endpoint: { host: database.host.trim(), port: Number(database.port), service: oracle ? database.database.trim() : null, database: oracle ? null : database.database.trim(), tls_enabled: oracle ? database.tls_enabled === true : (database.tls_enabled ?? true), tls_profile_ref: database.db_type === "POSTGRESQL" && database.tls_enabled ? database.tls_profile_ref?.trim() || null : null }, oracle_container_scope: oracle ? database.oracle_scope : null, oracle_pdb_name: oracle && database.oracle_scope === "PDB" ? database.oracle_pdb_name.trim() : null, diagnostic_credential: { username: database.username, password: database.password }, capabilities: {}, workload_snapshot_policy: createWorkloadPolicy(database.workload_snapshot_policy) };
   }
   function monitoringPayload(item) {
     const database = item.database;
@@ -1006,7 +1010,64 @@
     return { source_id: database.source_id, source_binding: { source_id: database.source_id, source_locator_key: database.locator_key.trim(), source_locator: source?.source_type === "LOKI" ? { labels: { target_key: database.locator_key.trim() } } : { target_key: database.locator_key.trim() } } };
   }
 
+
+  function monitoringDraft(database) {
+    const bindings = [...(database.monitoring_bindings || [])].sort((a, b) => (a.role === "PRIMARY" ? 0 : 1) - (b.role === "PRIMARY" ? 0 : 1) || a.priority - b.priority || a.binding_id.localeCompare(b.binding_id));
+    const binding = bindings[0] || null;
+    const locator = binding?.source_locator || {};
+    const reference = binding ? "saved:" + binding.binding_id : "";
+    const host = locator.host_target_key || "";
+    return { monitoring_bindings: bindings, original_binding: binding, source_id: binding?.source_id || "", locator_key: binding?.source_locator_key || "", candidate_locator_key: binding?.source_locator_key || "", host_candidate_locator_key: host, candidate_ref: reference, host_candidate_ref: host ? reference + ":host" : "", candidates: binding ? [{ candidate_ref: reference, locator_key: binding.source_locator_key, display_name: "当前绑定" }] : [], host_candidates: host ? [{ candidate_ref: reference + ":host", locator_key: host, display_name: "当前承载主机" }] : [] };
+  }
+  function selectMonitoringBinding(item, bindingId) {
+    const database = item.database;
+    const bindings = database.monitoring_bindings || [];
+    const selected = bindings.find(binding => binding.binding_id === bindingId);
+    Object.assign(database, monitoringDraft({ monitoring_bindings: selected ? [selected] : [] }), { monitoring_bindings: bindings });
+    database.discovery_revision += 1;
+  }
+  function monitoringChanged(item) {
+    if (!item.database || item.mode === "NEW") return false;
+    const database = item.database, original = database.original_binding;
+    const selected = selectedDiscoveryLocators(database);
+    return database.source_id !== (original?.source_id || "") || (usesDiscovery(item) ? selected.candidate : database.locator_key) !== (original?.source_locator_key || "") || selected.host !== (original?.source_locator?.host_target_key || "");
+  }
+  function existingDatabasePatch(item) {
+    const database = item.database;
+    const original = detail?.resources?.find(row => row.system_resource_id === item.system_resource_id)?.resource.database;
+    const patch = { version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number, db_role: database.db_role };
+    if (original?.endpoint) {
+      const endpoint = { ...original.endpoint, host: database.host.trim(), port: Number(database.port), service: database.db_type === "ORACLE" ? database.database.trim() : null, database: database.db_type === "ORACLE" ? null : database.database.trim(), tls_enabled: database.db_type === "ORACLE" ? original.endpoint.tls_enabled : database.tls_enabled === true, tls_profile_ref: database.db_type === "POSTGRESQL" && database.tls_enabled ? database.tls_profile_ref?.trim() || null : null };
+      if (JSON.stringify(endpoint) !== JSON.stringify(original.endpoint)) patch.endpoint = endpoint;
+      const scope = database.db_type === "ORACLE" ? (database.oracle_scope === "CDB" ? "CDB_ROOT" : database.oracle_scope) : null;
+      const pdbName = scope === "PDB" ? database.oracle_pdb_name.trim() : null;
+      if (scope !== (original.oracle_container_scope || null)) patch.oracle_container_scope = scope;
+      if (pdbName !== (original.oracle_pdb_name || null)) patch.oracle_pdb_name = pdbName;
+      if (database.username !== (original.diagnostic_username || "")) patch.diagnostic_username = database.username;
+    }
+    if (database.password) patch.diagnostic_password = database.password;
+    if (monitoringChanged(item)) patch.monitoring = { ...monitoringPayload(item), binding_id: database.original_binding?.binding_id || null, binding_row_version: database.original_binding?.row_version || null };
+    if (item.workload_snapshot) patch.workload_snapshot_policy = createWorkloadPolicy(item.workload_snapshot.policy);
+    const scoped = ["endpoint", "oracle_container_scope", "oracle_pdb_name", "diagnostic_username", "diagnostic_password", "monitoring", "workload_snapshot_policy"].some(key => key in patch);
+    if (scoped) Object.assign(patch, { target_row_version: database.target_row_version || original?.target_row_version || item.workload_snapshot?.target_row_version, business_system_id: systemId, system_resource_id: item.system_resource_id });
+    return patch;
+  }
+  function existingConfigurationError(item) {
+    const database = item.database;
+    if (!item.display_name.trim() || !item.owner_group_id) return item.display_name + "：请填写名称和技术责任组。";
+    if (!database.host.trim() || !database.database.trim() || !Number.isInteger(Number(database.port)) || Number(database.port) < 1 || Number(database.port) > 65535) return item.display_name + "：请填写有效的连接地址、端口和数据库服务。";
+    if (database.db_type === "ORACLE" && database.oracle_scope === "PDB" && !database.oracle_pdb_name.trim()) return item.display_name + "：请填写 PDB 名称。";
+    if (monitoringChanged(item)) {
+      if (!sourceFor(item)) return item.display_name + "：请选择可用监控源。";
+      if (usesDiscovery(item) && !database.candidate_ref) return item.display_name + "：请选择数据库候选。";
+      if (sourceFor(item)?.source_type === "PROMETHEUS" && !database.host_candidate_ref) return item.display_name + "：请选择承载主机候选。";
+      if (!usesDiscovery(item) && !database.locator_key.trim()) return item.display_name + "：请填写监控定位键。";
+    }
+    return "";
+  }
+
   function resourceConfigurationError(item) {
+    if (item.system_resource_id) return existingConfigurationError(item);
     const members = isRacResource(item) ? racMembers(item) : [item];
     const database = item.database;
     const source = sourceFor(item);
@@ -1049,13 +1110,13 @@
       renderComposition();
       return;
     }
-    const members = isRacResource(item) ? racMembers(item) : [item];
+    const members = item.system_resource_id ? [item] : isRacResource(item) ? racMembers(item) : [item];
     connectionTestStates.set(item.draft_resource_id, { status: "CHECKING", message: "正在测试数据库连接…" });
     saving = true; renderComposition(); updateFooter();
     try {
       for (const member of members) {
         const target = targetPayload(member);
-        const response = await request("/targets/test-connection", { method: "POST", body: JSON.stringify({ db_type: target.db_type, version_code: target.version_code, endpoint: target.endpoint, oracle_container_scope: target.oracle_container_scope, oracle_pdb_name: target.oracle_pdb_name, diagnostic_credential: target.diagnostic_credential }) });
+        const response = await request("/targets/test-connection", { method: "POST", body: JSON.stringify({ db_type: target.db_type, version_code: target.version_code, endpoint: target.endpoint, oracle_container_scope: target.oracle_container_scope, oracle_pdb_name: target.oracle_pdb_name, ...(member.system_resource_id && !member.database.password ? { saved_target_id: detail.resources.find(row => row.system_resource_id === member.system_resource_id).resource.database.target_id, ...(member.database.username ? { diagnostic_username: member.database.username } : {}) } : { diagnostic_credential: target.diagnostic_credential }) }) });
         if (!response.ok) {
           const messages = {
             TARGET_UNREACHABLE: "无法连接数据库，请检查地址、端口和 TLS 设置。",
@@ -1215,6 +1276,7 @@
       if (error) errors.push(error);
     });
     resources.forEach((item) => {
+      if (item.system_resource_id && item.database) { const error = existingConfigurationError(item); if (error) errors.push(error); }
       if (!item.system_resource_id && item.database && !validWorkloadPolicy(createWorkloadPolicy(item.database.workload_snapshot_policy))) {
         errors.push(`${item.display_name}：历史 SQL 采集策略无效，请检查间隔、保留天数和候选数量。`);
       }
@@ -1276,7 +1338,8 @@
 
   async function updateSystem() {
     if (isPublishedView()) throw new Error("运行中的业务系统仅支持查看。");
-    await request(`/business-systems/${encodeURIComponent(systemId)}`, { method: "PATCH", headers: { "If-Match": `"rv-${detail.row_version}"` }, body: JSON.stringify(systemPayload()) });
+    const updatedSystem = await request(`/business-systems/${encodeURIComponent(systemId)}`, { method: "PATCH", headers: { "If-Match": `"rv-${detail.row_version}"` }, body: JSON.stringify(systemPayload()) });
+    detail.row_version = updatedSystem.row_version || detail.row_version;
     const originalResources = new Map(detail.resources.map((item) => [item.system_resource_id, item]));
     const retainedSystemIds = new Set(resources.map((item) => item.system_resource_id).filter(Boolean));
     const retainedRelationIds = new Set(relations.map((item) => item.relation_id).filter(Boolean));
@@ -1284,8 +1347,18 @@
     let current = await request(`/business-systems/${encodeURIComponent(systemId)}`);
     for (const item of resources) {
       if (item.system_resource_id) {
-        await request(`/managed-resources/${encodeURIComponent(item.resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.resource_row_version}"` }, body: JSON.stringify({ display_name: item.display_name.trim(), owner_group_id: item.owner_group_id, location_name: item.location_name.trim() || null, database: item.database ? { version_code: item.database.version_code, environment: item.database.environment, deployment_type: item.database.deployment_type, rac_node_number: item.database.rac_node_number, db_role: item.database.db_role, ...(item.workload_snapshot ? { workload_snapshot_policy: createWorkloadPolicy(item.workload_snapshot.policy), target_row_version: item.workload_snapshot.target_row_version, business_system_id: systemId, system_resource_id: item.system_resource_id } : {}) } : null }) });
+        const updatedResource = await request(`/managed-resources/${encodeURIComponent(item.resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.resource_row_version}"` }, body: JSON.stringify({ display_name: item.display_name.trim(), owner_group_id: item.owner_group_id, location_name: item.location_name.trim() || null, database: item.database ? existingDatabasePatch(item) : null }) });
+        if (updatedResource.row_version) {
+          item.resource_row_version = updatedResource.row_version;
+          const original = originalResources.get(item.system_resource_id)?.resource;
+          if (original && updatedResource.database) original.database = { ...original.database, ...updatedResource.database, diagnostic_username: item.database.username };
+          if (item.database && updatedResource.database) {
+            Object.assign(item.database, monitoringDraft(updatedResource.database), { target_row_version: updatedResource.database.target_row_version, password: "" });
+            if (item.workload_snapshot) item.workload_snapshot.target_row_version = updatedResource.database.target_row_version;
+          }
+        }
         current = await request(`/business-systems/${encodeURIComponent(systemId)}/resources/${encodeURIComponent(item.system_resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.system_row_version}"` }, body: JSON.stringify({ architecture_layer_key: item.architecture_layer_key, responsibility_group_id: null, display_order: item.display_order }) });
+        item.system_row_version = current.resources.find(row => row.system_resource_id === item.system_resource_id)?.row_version || item.system_row_version;
       } else {
         const before = new Set(current.resources.map((row) => row.system_resource_id));
         current = await request(`/business-systems/${encodeURIComponent(systemId)}/resources`, { method: "POST", headers: { "Idempotency-Key": uuid7() }, body: JSON.stringify(resourcePayload(item)) });
@@ -1363,7 +1436,7 @@
     resources = value.resources.filter((item) => item.status === "ACTIVE").map((item, index) => {
       const draftId = uuid7(); draftBySystem.set(item.system_resource_id, draftId);
       const database = item.resource.database;
-      return { draft_resource_id: draftId, mode: "EXISTING", resource_id: item.resource.resource_id, system_resource_id: item.system_resource_id, resource_row_version: item.resource.row_version, system_row_version: item.row_version, resource_type_key: item.resource.resource_type_key, display_name: item.resource.display_name, owner_group_id: item.resource.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: item.responsibility_group_id || "", location_name: item.resource.location_name || "", display_order: item.display_order ?? index, saved: true, database: database ? { db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number ?? null, db_role: database.db_role, host: database.endpoint?.host || "", port: database.endpoint?.port || 0, database: database.endpoint?.service || database.endpoint?.database || "", oracle_scope: database.oracle_container_scope || "NON_CDB", oracle_pdb_name: database.oracle_pdb_name || "", username: database.diagnostic_username || "", password: "", source_id: "", locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false, discovery_revision: 0, connectivity_status: database.connectivity_status, monitoring_ready: database.monitoring_ready } : undefined };
+      return { draft_resource_id: draftId, mode: "EXISTING", resource_id: item.resource.resource_id, system_resource_id: item.system_resource_id, resource_row_version: item.resource.row_version, system_row_version: item.row_version, resource_type_key: item.resource.resource_type_key, display_name: item.resource.display_name, owner_group_id: item.resource.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: item.responsibility_group_id || "", location_name: item.resource.location_name || "", display_order: item.display_order ?? index, saved: true, database: database ? { db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number ?? null, db_role: database.db_role, host: database.endpoint?.host || "", port: database.endpoint?.port || 0, database: database.endpoint?.service || database.endpoint?.database || "", oracle_scope: database.oracle_container_scope || "NON_CDB", oracle_pdb_name: database.oracle_pdb_name || "", username: database.diagnostic_username || "", password: "", source_id: "", locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false, discovery_revision: 0, connectivity_status: database.connectivity_status, monitoring_ready: database.monitoring_ready, target_row_version: database.target_row_version, tls_enabled: database.endpoint?.tls_enabled === true, tls_profile_ref: database.endpoint?.tls_profile_ref || "", ...monitoringDraft(database) } : undefined };
     });
     relations = value.relations.map((item) => ({ draft_relation_id: uuid7(), relation_id: item.relation_id, row_version: item.row_version, origin: item.origin || "MANUAL", relation_type_key: item.relation_type_key, display_name: item.display_name || "", responsibility_group_id: item.responsibility_group_id || "", attributes: item.attributes || {}, participants: item.participants.map((participant) => ({ draft_resource_id: draftBySystem.get(participant.system_resource_id) || "", participant_role: participant.participant_role, display_order: participant.display_order })) }));
     relations.filter((item) => item.relation_type_key === "ORACLE_RAC").forEach((relation) => {

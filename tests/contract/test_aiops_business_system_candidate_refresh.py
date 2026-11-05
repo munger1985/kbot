@@ -32,7 +32,7 @@ class BusinessSystemCandidateRefreshTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("aiops-business-system-workspace.js?v=20261105_1", page)
+        self.assertIn("aiops-business-system-workspace.js?v=20261105_2", page)
 
 
 if __name__ == "__main__":

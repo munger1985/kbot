@@ -948,6 +948,16 @@ class DiagnosticSourceConfigurationMixin:
 
     async def _create_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, host_candidate_ref: str | None, now: datetime, allow_locator_reuse: bool = False) -> TargetSourceBindingEntity:
         """重新验证发现候选并在调用方事务内创建映射。"""
+        entity = await self._prepare_discovered_source_binding_in_uow(
+            uow=uow, scope=scope, source_id=source_id, target_id=target_id,
+            candidate_ref=candidate_ref, host_candidate_ref=host_candidate_ref,
+            now=now, allow_locator_reuse=allow_locator_reuse,
+        )
+        await self._persist_source_binding_in_uow(uow=uow, scope=scope, entity=entity)
+        return entity
+
+    async def _prepare_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, host_candidate_ref: str | None, now: datetime, allow_locator_reuse: bool = False, replacing_binding_id: UUID | None = None) -> TargetSourceBindingEntity:
+        """创建与修改共用候选解签、Provider 重读和数据库身份校验。"""
         assert uow.diagnostic_sources is not None
         source = await uow.diagnostic_sources.get_scoped(diagnostic_source_id=source_id, domain_id=scope.domain_id, lock=True)
         if source is None: raise resource_not_found("Diagnostic Source")
@@ -971,7 +981,7 @@ class DiagnosticSourceConfigurationMixin:
         if host_key is not None and host_key not in {item.source_locator_key for item in verified.host_candidates}: raise state_conflict("主机候选已变化或不存在，请重新执行发现")
         source_locator = dict(current.source_locator)
         if host_key is not None: source_locator["host_target_key"] = host_key
-        return await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target_id, request=SourceBindingCreate(source_id=source_id, source_locator_key=locator_key, source_locator=source_locator), now=now, source=source, expected_db_type=db_type, discovery_verified=True, allow_locator_reuse=allow_locator_reuse)
+        return await self._prepare_source_binding_in_uow(uow=uow, scope=scope, target_id=target_id, request=SourceBindingCreate(source_id=source_id, source_locator_key=locator_key, source_locator=source_locator), now=now, source=source, expected_db_type=db_type, discovery_verified=True, allow_locator_reuse=allow_locator_reuse, replacing_binding_id=replacing_binding_id)
 
     async def map_source_instances(
         self,
@@ -1137,6 +1147,7 @@ class DiagnosticSourceConfigurationMixin:
         expected_db_type: str | None = None,
         discovery_verified: bool = False,
         allow_locator_reuse: bool = False,
+        replacing_binding_id: UUID | None = None,
     ) -> TargetSourceBindingEntity:
         assert uow.targets is not None
         assert uow.diagnostic_sources is not None
@@ -1172,6 +1183,7 @@ class DiagnosticSourceConfigurationMixin:
         )
         if any(
             binding.diagnostic_source_id == request.source_id
+            and binding.target_source_binding_id != replacing_binding_id
             for binding in existing
         ):
             raise state_conflict("Target 与 Diagnostic Source 已存在映射")
@@ -1183,7 +1195,7 @@ class DiagnosticSourceConfigurationMixin:
                     lock=True,
                 )
             )
-            if locator_conflict is not None:
+            if locator_conflict is not None and locator_conflict.target_source_binding_id != replacing_binding_id:
                 raise state_conflict("Diagnostic Source 外部定位键已被使用")
         self._validate_source_binding_locator(
             source=source,

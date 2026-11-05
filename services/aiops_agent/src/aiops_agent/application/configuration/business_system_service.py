@@ -10,6 +10,10 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from aiops_agent.application.configuration.common import ConfigurationScope, add_configuration_event
+from aiops_agent.application.configuration.database_resource_edit import (
+    apply_database_connection, apply_resource_monitoring, validate_existing_oem_bindings,
+)
+from aiops_agent.application.configuration.projections import _source_binding_view
 from aiops_agent.application.errors import resource_not_found, state_conflict, validation_failed
 from aiops_agent.application.managed_credentials import AIOpsManagedCredentialError
 from aiops_agent.entities import (
@@ -311,6 +315,8 @@ class BusinessSystemConfigurationMixin:
                             pass
                     database_view = DatabaseResourceView(
                         target_id=target.target_id,
+                        target_row_version=int(target.row_version) if include_connection_metadata else None,
+                        monitoring_bindings=tuple(_source_binding_view(binding) for binding in bindings) if include_connection_metadata else (),
                         db_type=target.db_type,
                         version_code=target.version_code or "UNKNOWN",
                         environment=target.environment,
@@ -707,14 +713,15 @@ class BusinessSystemConfigurationMixin:
         async with self._uow_factory() as uow:
             assert uow.business_systems is not None
             assert uow.targets is not None
-            if request.database is not None and request.database.workload_snapshot_policy is not None:
+            scoped_edit = request.database is not None and request.database.target_row_version is not None
+            if scoped_edit:
                 system_id = request.database.business_system_id
                 link_id = request.database.system_resource_id
                 system = await uow.business_systems.get_scoped(business_system_id=system_id, lock=True, **_scope_args(scope))
                 if system is None:
                     raise resource_not_found("Business System")
                 if system.status == "ENABLED":
-                    raise state_conflict("运行中的业务系统不能修改历史 SQL 采集策略")
+                    raise state_conflict("运行中的业务系统不能修改数据库连接、监控映射或历史 SQL 采集策略")
                 link = await uow.business_systems.get_system_resource_scoped(business_system_id=system_id, system_resource_id=link_id, lock=True)
                 if link is None or link.resource_id != resource_id or link.status != "ACTIVE":
                     raise validation_failed("数据库资源不属于当前业务系统")
@@ -748,6 +755,15 @@ class BusinessSystemConfigurationMixin:
                 database_changes.pop("workload_snapshot_policy", None)
                 database_changes.pop("business_system_id", None)
                 database_changes.pop("system_resource_id", None)
+                for name in ("monitoring", "endpoint", "oracle_container_scope", "oracle_pdb_name", "diagnostic_username", "diagnostic_password"):
+                    database_changes.pop(name, None)
+                if scoped_edit:
+                    self._check_version(target.row_version, target_version)
+                if database_changes.get("deployment_type", target.deployment_type) != target.deployment_type or database_changes.get("rac_node_number", target.rac_node_number) != target.rac_node_number:
+                    raise validation_failed("已有数据库的部署形态和 RAC 节点身份不能直接修改")
+                connection_changed = await apply_database_connection(
+                    service=self, uow=uow, scope=scope, target=target, request=request.database,
+                )
                 if policy is not None:
                     self._check_version(target.row_version, target_version)
                     target.workload_snapshot_policy_json = policy.model_dump(mode="json")
@@ -786,8 +802,29 @@ class BusinessSystemConfigurationMixin:
                     raise validation_failed(str(exc)) from exc
                 for key, value in database_changes.items():
                     setattr(target, key, value)
+                if request.database.monitoring is not None:
+                    await apply_resource_monitoring(
+                        service=self, uow=uow, scope=scope, target=target, mapping=request.database.monitoring,
+                    )
+                if connection_changed:
+                    await validate_existing_oem_bindings(uow=uow, scope=scope, target=target)
+                target.updated_by = scope.actor_id
+                target.updated_at = self._now()
+                await uow.flush()
+                if connection_changed:
+                    await add_configuration_event(
+                        uow=uow, scope=scope, aggregate_type="TARGET", aggregate_id=target.target_id,
+                        event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED", row_version=int(target.row_version),
+                        details={"connectivity_check_request_id": str(target.connectivity_check_request_id), "connectivity_version": target.connectivity_version},
+                    )
                 database_view = DatabaseResourceView(
                     target_id=target.target_id,
+                    target_row_version=int(target.row_version),
+                    monitoring_bindings=tuple(_source_binding_view(binding) for binding in await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)),
+                    endpoint=getattr(target, "endpoint_json", None),
+                    oracle_container_scope=getattr(target, "oracle_container_scope", None),
+                    oracle_pdb_name=getattr(target, "oracle_pdb_name", None),
+                    diagnostic_username=request.database.diagnostic_username,
                     db_type=target.db_type,
                     version_code=target.version_code,
                     environment=target.environment,

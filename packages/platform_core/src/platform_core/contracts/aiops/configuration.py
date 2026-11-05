@@ -214,12 +214,18 @@ class TargetConnectionTest(AIOpsContract):
     db_type: DatabaseType
     version_code: SupportedDatabaseVersion
     endpoint: TargetEndpoint
-    diagnostic_credential: DatabaseCredentialInput
+    diagnostic_credential: DatabaseCredentialInput | None = None
+    saved_target_id: UUIDv7 | None = None
+    diagnostic_username: str | None = Field(default=None, min_length=1, max_length=256)
     oracle_container_scope: OracleContainerScope | None = None
     oracle_pdb_name: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetConnectionTest":
+        if (self.diagnostic_credential is None) == (self.saved_target_id is None):
+            raise ValueError("连接测试必须且只能使用新凭据或当前 Target 的已保存凭据")
+        if self.diagnostic_username is not None and self.saved_target_id is None:
+            raise ValueError("用户名覆盖只用于已保存的诊断凭据")
         validate_supported_database_version(self.db_type, self.version_code)
         if self.db_type == DatabaseType.ORACLE:
             if self.endpoint.tls_profile_ref is not None:

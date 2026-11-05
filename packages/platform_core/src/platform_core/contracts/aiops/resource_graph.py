@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .configuration import SourceBindingCreate, TargetCreate, TargetEndpoint
+from .configuration import SourceBindingCreate, SourceBindingView, TargetCreate, TargetEndpoint
 from .workload import WorkloadPolicy
 from .types import AIOpsContract, CursorPage, DatabaseType, JsonObject, PUBLIC_SCHEMA_VERSION, UUIDv7, UtcDatetime
 
@@ -126,12 +126,31 @@ class ResourceRelationCommit(AIOpsContract):
         return self
 
 
+class ResourceMonitoringPatch(ResourceMonitoringInput):
+    """更新选定映射；未指定原绑定时只允许新增。"""
+
+    binding_id: UUIDv7 | None = None
+    binding_row_version: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_binding_version(self) -> "ResourceMonitoringPatch":
+        if (self.binding_id is None) != (self.binding_row_version is None):
+            raise ValueError("修改监控映射必须同时提交绑定 ID 和版本")
+        return self
+
+
 class DatabaseResourcePatch(AIOpsContract):
     version_code: str | None = Field(default=None, min_length=1, max_length=64)
     environment: Literal["PROD", "STG", "DEV"] | None = None
     deployment_type: Literal["SINGLE_INSTANCE", "RAC"] | None = None
     rac_node_number: int | None = Field(default=None, ge=1, le=1024)
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] | None = None
+    endpoint: TargetEndpoint | None = None
+    oracle_container_scope: Literal["CDB_ROOT", "PDB", "NON_CDB"] | None = None
+    oracle_pdb_name: str | None = Field(default=None, min_length=1, max_length=128)
+    diagnostic_username: str | None = Field(default=None, min_length=1, max_length=256)
+    diagnostic_password: str | None = Field(default=None, min_length=1, max_length=4096, repr=False)
+    monitoring: ResourceMonitoringPatch | None = None
     workload_snapshot_policy: WorkloadPolicy | None = None
     target_row_version: int | None = Field(default=None, ge=1)
     business_system_id: UUIDv7 | None = None
@@ -140,8 +159,14 @@ class DatabaseResourcePatch(AIOpsContract):
     @model_validator(mode="after")
     def validate_workload_version(self) -> "DatabaseResourcePatch":
         fields = (self.target_row_version, self.business_system_id, self.system_resource_id)
-        if (self.workload_snapshot_policy is None and any(value is not None for value in fields)) or (self.workload_snapshot_policy is not None and any(value is None for value in fields)):
-            raise ValueError("修改历史 SQL 采集策略必须同时提交 Target 版本和业务系统资源")
+        scoped_change = self.workload_snapshot_policy is not None or bool(
+            self.model_fields_set & {"endpoint", "oracle_container_scope", "oracle_pdb_name", "diagnostic_username", "diagnostic_password", "monitoring"}
+        )
+        if (not scoped_change and any(value is not None for value in fields)) or (scoped_change and any(value is None for value in fields)):
+            raise ValueError("修改数据库连接、监控映射或采集策略必须同时提交 Target 版本和业务系统资源")
+        for name in ("endpoint", "diagnostic_username", "diagnostic_password", "monitoring"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} 不能显式清空")
         return self
 
 
@@ -304,6 +329,8 @@ class ResourceDiscoveryJobView(AIOpsContract):
 
 class DatabaseResourceView(AIOpsContract):
     target_id: UUIDv7
+    target_row_version: int | None = Field(default=None, ge=1)
+    monitoring_bindings: tuple[SourceBindingView, ...] = ()
     db_type: DatabaseType
     version_code: str
     environment: str

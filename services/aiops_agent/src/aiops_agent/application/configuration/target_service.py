@@ -170,7 +170,23 @@ class TargetConfigurationMixin:
         request: TargetConnectionTest,
     ) -> TargetConnectionTestResult:
         """验证数据库连通性；Domain Scope 仅用于授权，不持久化测试数据。"""
-        del scope
+        if request.saved_target_id is not None:
+            async with self._uow_factory() as uow:
+                target = await uow.targets.get_scoped(target_id=request.saved_target_id, domain_id=scope.domain_id)
+                if target is None:
+                    raise resource_not_found("Target")
+                if target.db_type != request.db_type or target.diagnostic_credential_id is None:
+                    raise validation_failed("测试引擎与已保存的数据库或诊断凭据不一致")
+                values = dict(await self._managed_credentials.read(
+                    uow=uow, domain_id=scope.domain_id, credential_id=target.diagnostic_credential_id,
+                    credential_kind="target_diagnostic", external_key=target.target_id,
+                ))
+                if request.diagnostic_username is not None:
+                    values["username"] = request.diagnostic_username
+                request = TargetConnectionTest.model_validate({
+                    **request.model_dump(exclude={"saved_target_id", "diagnostic_username", "diagnostic_credential"}),
+                    "diagnostic_credential": values,
+                })
         return await self._target_connection_tester(request)
 
     @staticmethod

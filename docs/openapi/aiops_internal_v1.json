@@ -5017,6 +5017,42 @@
             ],
             "title": "Deployment Type"
           },
+          "diagnostic_password": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Password"
+          },
+          "diagnostic_username": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Username"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "environment": {
             "anyOf": [
               {
@@ -5032,6 +5068,45 @@
               }
             ],
             "title": "Environment"
+          },
+          "monitoring": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceMonitoringPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
           },
           "rac_node_number": {
             "anyOf": [
@@ -5145,6 +5220,14 @@
             "title": "Environment",
             "type": "string"
           },
+          "monitoring_bindings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SourceBindingView"
+            },
+            "title": "Monitoring Bindings",
+            "type": "array"
+          },
           "monitoring_ready": {
             "title": "Monitoring Ready",
             "type": "boolean"
@@ -5188,6 +5271,18 @@
             "format": "uuid",
             "title": "Target Id",
             "type": "string"
+          },
+          "target_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Row Version"
           },
           "version_code": {
             "title": "Version Code",
@@ -14824,6 +14919,82 @@
         "title": "ResourceMonitoringInput",
         "type": "object"
       },
+      "ResourceMonitoringPatch": {
+        "additionalProperties": false,
+        "description": "更新选定映射；未指定原绑定时只允许新增。",
+        "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "binding_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Row Version"
+          },
+          "candidate_ref": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Ref"
+          },
+          "host_candidate_ref": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Candidate Ref"
+          },
+          "source_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceBindingCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "ResourceMonitoringPatch",
+        "type": "object"
+      },
       "ResourceProtectionProfileUpsert": {
         "additionalProperties": false,
         "properties": {
@@ -17243,7 +17414,27 @@
             "$ref": "#/components/schemas/DatabaseType"
           },
           "diagnostic_credential": {
-            "$ref": "#/components/schemas/DatabaseCredentialInput"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatabaseCredentialInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostic_username": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Username"
           },
           "endpoint": {
             "$ref": "#/components/schemas/TargetEndpoint"
@@ -17277,6 +17468,18 @@
             ],
             "title": "Oracle Pdb Name"
           },
+          "saved_target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved Target Id"
+          },
           "version_code": {
             "enum": [
               "19c",
@@ -17291,8 +17494,7 @@
         "required": [
           "db_type",
           "version_code",
-          "endpoint",
-          "diagnostic_credential"
+          "endpoint"
         ],
         "title": "TargetConnectionTest",
         "type": "object"

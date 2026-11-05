@@ -7,7 +7,7 @@ import { runInNewContext } from 'node:vm';
 const file = fileURLToPath(new URL('../../ui/aiops/js/aiops-business-system-workspace.js', import.meta.url));
 const source = readFileSync(file, 'utf8');
 const instrumented = source.replace(/\}\)\(\);\s*$/, `globalThis.workspaceTest = {
-  saveDraft, commit, validateResource, refreshDiscoveryReferences, draftPayload, loadDiscoveryCandidates, monitoringPayload, usesDiscovery,
+  saveDraft, commit, validateResource, refreshDiscoveryReferences, draftPayload, loadDiscoveryCandidates, monitoringPayload, usesDiscovery, monitoringDraft, monitoringChanged, existingDatabasePatch, selectMonitoringBinding, resourceEditorHtml, updateResourceField,
   seed(value) {
     system = value.system; resources = value.resources; relations = value.relations || []; sources = value.sources || [];
     detail = value.detail || null; draftId = value.draftId || ''; draftRevision = value.draftRevision || 0;
@@ -153,7 +153,7 @@ for (const engine of ['ORACLE', 'MYSQL', 'POSTGRESQL']) {
   });
   const pending = f.api.commit();
   await flush();
-  assert.equal(typeof finishCleanup, 'function');
+  assert.equal(typeof finishCleanup, 'function', f.notifications.join('；'));
   assert.equal(f.navigations.length, 0, '编辑保存及草稿清理全部成功后才能返回列表');
   finishCleanup({});
   await pending;
@@ -287,3 +287,99 @@ for (const policy of [{ enabled: true, interval_minutes: 0 }, { top_statement_li
   assert.equal(f.calls.length, 2);
 }
 console.log('通过：草稿恢复、三引擎发布、OEM 分页候选与短期引用刷新、GUID 重建拒绝、无手填定位键及主机 Label 要求。');
+
+// 已有资源与新建资源显示同一组可编辑连接字段，改绑走原资源 PATCH，不重建 Target。
+{
+  const f = fixture('system-1');
+  const oldBinding = { binding_id: 'binding-1', source_id: 'source-1', source_locator_key: 'old-instance', source_locator: { host_target_key: 'old-host' }, row_version: 6, role: 'PRIMARY', priority: 100 };
+  const database = { ...resource().database, target_id: 'target-1', target_row_version: 7, diagnostic_username: 'fixture_readonly', oracle_container_scope: 'PDB', oracle_pdb_name: 'MESPDB', endpoint: { host: 'db.example.invalid', port: 1521, service: 'MES', database: null, tls_enabled: false, tls_profile_ref: null }, monitoring_bindings: [oldBinding] };
+  const item = resource();
+  Object.assign(item, { mode: 'EXISTING', resource_id: 'resource-1', system_resource_id: 'sr-1', resource_row_version: 4, system_row_version: 5 });
+  Object.assign(item.database, { ...f.api.monitoringDraft(database), target_row_version: 7, password: '' });
+  const detail = { ...copy(system), business_system_id: 'system-1', status: 'DISABLED', row_version: 3, resources: [{ system_resource_id: 'sr-1', row_version: 5, resource: { resource_id: 'resource-1', database: copy(database) } }], relations: [] };
+  f.api.seed({ system: copy(system), resources: [item], detail, sources: [{ ...monitor, source_type: 'PROMETHEUS' }, { source_id: 'oem-1', source_type: 'OEM', display_name: 'OEM' }] });
+  const html = f.api.resourceEditorHtml(item);
+  for (const name of ['host', 'port', 'database', 'oracle_scope', 'oracle_pdb_name', 'username', 'password', 'source_id', 'candidate_ref', 'version_code', 'db_role', 'owner_group_id', 'location_name']) {
+    assert.match(html, new RegExp('name="' + name + '"'), name + ' 在已有资源编辑中不能消失');
+  }
+  assert.match(html, /name="db_type" disabled/);
+  assert.match(html, /name="deployment_type" disabled/);
+  assert.match(html, /留空保留原密码/);
+  assert.equal(f.api.monitoringChanged(item), false);
+  let patch = f.api.existingDatabasePatch(item);
+  assert.equal(patch.monitoring, undefined);
+  assert.equal(patch.diagnostic_password, undefined);
+  assert.equal(patch.endpoint, undefined);
+  f.handle(async () => { throw new Error('未修改映射不应请求 OEM'); });
+  await f.api.refreshDiscoveryReferences();
+  assert.equal(f.calls.length, 0);
+
+  item.database.source_id = 'oem-1';
+  item.database.candidate_ref = 'old-ref';
+  item.database.candidate_locator_key = '1'.repeat(32);
+  item.database.candidates = [{ candidate_ref: 'old-ref', locator_key: '1'.repeat(32) }];
+  item.database.host_candidate_ref = '';
+  item.database.host_candidate_locator_key = '';
+  item.database.host_candidates = [];
+  item.database.host = 'new.example.invalid';
+  item.database.port = 1522;
+  item.database.username = 'new_reader';
+  assert.equal(f.api.monitoringChanged(item), true);
+  f.handle(async call => {
+    if (call.path.includes('instance-discoveries')) return { items: [{ candidate_ref: 'fresh-ref', locator_key: '1'.repeat(32) }], host_items: [] };
+    if (call.path === '/targets/test-connection') return { ok: true };
+    if (call.path === '/managed-resources/resource-1') return { row_version: 5, database: { ...database, target_row_version: 8, monitoring_bindings: [{ ...oldBinding, source_id: 'oem-1', source_locator_key: '1'.repeat(32), source_locator: {}, row_version: 7 }], endpoint: { ...database.endpoint, host: 'new.example.invalid', port: 1522 } } };
+    if (call.path.includes('/business-systems/system-1')) return copy(detail);
+    throw new Error('不应重建资源：' + call.path);
+  });
+  await f.api.validateResource(item);
+  const test = f.calls.find(call => call.path === '/targets/test-connection');
+  assert.equal(test.payload.saved_target_id, 'target-1');
+  assert.equal(test.payload.diagnostic_username, 'new_reader');
+  assert.equal(test.payload.diagnostic_credential, undefined);
+  await f.api.commit();
+  assert.equal(f.navigations.length, 1, f.notifications.join('；'));
+  patch = f.calls.find(call => call.path === '/managed-resources/resource-1').payload.database;
+  assert.equal(patch.monitoring.source_id, 'oem-1');
+  assert.equal(patch.monitoring.candidate_ref, 'fresh-ref');
+  assert.equal(patch.monitoring.binding_id, 'binding-1');
+  assert.equal(patch.monitoring.binding_row_version, 6);
+  assert.equal(patch.target_row_version, 7);
+  assert.equal(patch.business_system_id, 'system-1');
+  assert.equal(patch.system_resource_id, 'sr-1');
+  assert.equal(patch.endpoint.host, 'new.example.invalid');
+  assert.equal(patch.endpoint.port, 1522);
+  assert.equal(patch.diagnostic_username, 'new_reader');
+  assert.equal(patch.diagnostic_password, undefined);
+  assert.equal(f.calls.some(call => call.path.endsWith('/resources') && call.method === 'POST'), false);
+  assert.equal(item.database.original_binding.source_id, 'oem-1');
+
+  // 其他映射可单独选择，也可以新增；不会被隐式删除。
+  item.database.monitoring_bindings.push({ ...oldBinding, binding_id: 'binding-2', role: 'SUPPLEMENTARY' });
+  f.api.selectMonitoringBinding(item, 'binding-2');
+  assert.equal(item.database.original_binding.binding_id, 'binding-2');
+  f.api.selectMonitoringBinding(item, '');
+  assert.equal(item.database.original_binding, null);
+  assert.equal(item.database.monitoring_bindings.length, 2);
+}
+
+// 已有 RAC 节点独立显示与编辑连接和监控，不能广播到同组其他节点。
+{
+  const f = fixture('system-1'), item = resource();
+  Object.assign(item, { mode: 'EXISTING', resource_id: 'r-1', system_resource_id: 'sr-1', rac_group_id: 'rac-1' });
+  Object.assign(item.database, { deployment_type: 'RAC', rac_node_number: 1, password: '' });
+  const other = copy(item); other.draft_resource_id = 'node-2'; other.database.rac_node_number = 2;
+  f.api.seed({ system: copy(system), resources: [item, other], sources: [monitor] });
+  const html = f.api.resourceEditorHtml(item);
+  assert.match(html, /RAC 节点编号/);
+  assert.match(html, /name="rac_cluster_name"/);
+  assert.match(html, /name="host"/);
+  assert.match(html, /name="source_id"/);
+  f.api.updateResourceField(item, { name: 'source_id', value: '' });
+  assert.equal(other.database.source_id, 'source-1');
+  const previousName = other.display_name;
+  f.api.updateResourceField(item, { name: 'rac_cluster_name', value: 'ERP RAC 新名称' });
+  assert.equal(other.rac_cluster_name, 'ERP RAC 新名称');
+  assert.equal(other.display_name, previousName, '改集群名称不能覆盖已有节点资源名称');
+}
+console.log('通过：已有数据库字段完整性、原绑定回显、OEM 改绑发布、密码留空和连接测试、多映射保留、RAC 节点隔离。');
