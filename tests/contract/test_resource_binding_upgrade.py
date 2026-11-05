@@ -101,6 +101,7 @@ class ResourceBindingUpgradeTest(unittest.TestCase):
     def test_table_names_and_canonical_oracle_ddl_are_narrow(self):
         self.assertEqual(upgrade.table_name("agent_system", "postgresql"), "aiops_agent_version_business_system")
         self.assertEqual(upgrade.table_name("agent_system", "oracle"), "KBOT_OPS_AGENT_VERSION_SYSTEM")
+        self.assertEqual(upgrade.archive_table_name("postgresql"), "aiops_upgrade_archive.aiops_bak_resource_binding_57")
         if (ROOT / "database/oracle/aiops_agent/001_ops_roots.sql").exists():
             self.assertEqual(len(upgrade.oracle_statements()), 3)
             self.assertEqual(len(upgrade.oracle_views()), 3)

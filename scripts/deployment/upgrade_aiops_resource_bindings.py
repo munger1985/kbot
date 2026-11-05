@@ -42,6 +42,11 @@ def archive_name(backend: str) -> str:
     return "KBOT_BAK_RESOURCE_BINDING_57" if backend == "oracle" else "aiops_bak_resource_binding_57"
 
 
+def archive_table_name(backend: str) -> str:
+    name = archive_name(backend)
+    return name if backend == "oracle" else f"aiops_upgrade_archive.{name}"
+
+
 def normalize(row: dict) -> dict:
     result = {}
     for key, value in row.items():
@@ -113,7 +118,7 @@ async def read_rows(conn, name: str) -> list[dict]:
 async def inventory(conn, backend: str, *, archived: bool = False) -> dict:
     data = {}
     for key in SUFFIXES:
-        name = archive_name(backend) if key == "binding" and archived else table_name(key, backend)
+        name = archive_table_name(backend) if key == "binding" and archived else table_name(key, backend)
         data[key] = await read_rows(conn, name)
     return data
 
@@ -262,6 +267,11 @@ def oracle_views() -> list[str]:
 
 async def apply_structure(conn, backend: str) -> None:
     old, new = table_name("binding", backend), table_name("resource_source_binding", backend)
+    if backend == "postgresql":
+        owner = (await conn.execute(text("SELECT pg_get_userbyid(nspowner)=current_user FROM pg_namespace WHERE nspname='aiops_upgrade_archive'"))).scalar_one_or_none()
+        if owner is False:
+            raise ValueError("归档 Schema 不属于当前数据库身份，停止升级")
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS aiops_upgrade_archive"))
     await conn.execute(text(f"ALTER TABLE {old} RENAME TO {archive_name(backend)}"))
     if backend == "oracle":
         await conn.execute(text(f"ALTER TABLE {archive_name(backend)} RENAME CONSTRAINT FK_OPS_TSRC_MONITOR TO FK_BAK_RSB57_MONITOR"))
@@ -270,6 +280,7 @@ async def apply_structure(conn, backend: str) -> None:
             await conn.execute(text(statement))
     else:
         from aiops_agent.entities import ResourceSourceBindingEntity
+        await conn.execute(text(f"ALTER TABLE {archive_name(backend)} SET SCHEMA aiops_upgrade_archive"))
         await conn.run_sync(lambda c: ResourceSourceBindingEntity.__table__.create(c))
 
 
@@ -383,6 +394,10 @@ async def run(args) -> None:
             names = await conn.run_sync(lambda c: inspect(c).get_table_names())
             if archive_name(args.backend).lower() in {name.lower() for name in names} or table_name("resource_source_binding", args.backend).lower() in {name.lower() for name in names}:
                 raise ValueError("检测到已有新表或归档表，请先核验已有升级状态")
+            if args.backend == "postgresql":
+                existing = (await conn.execute(text("SELECT to_regclass('aiops_upgrade_archive.aiops_bak_resource_binding_57')"))).scalar_one_or_none()
+                if existing is not None:
+                    raise ValueError("独立归档 Schema 已存在恢复表，请先核验升级状态")
             await backup(conn, args.backend, data, plan, args.backup_dir)
             print("备份完成；开始定向升级", flush=True)
             await apply_structure(conn, args.backend)

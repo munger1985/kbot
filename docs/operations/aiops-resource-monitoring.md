@@ -75,7 +75,8 @@ OEM 指标扩展、ODA/Exadata 专用采集及硬件诊断编排留到下一阶�
    保留无关服务和数据库实例运行。部署与资源模型对应的新代码。
 4. 指定 `--apply --backup-dir <0700目录> --host-types <文件>` 执行。
    脚本先保存 0600 的数据快照、结构元数据、受保护对象摘要和拆分计划，再升级。
-5. 旧绑定表改名为 `KBOT_BAK_RESOURCE_BINDING_57` / `aiops_bak_resource_binding_57`，
+5. 旧绑定表改名为 `KBOT_BAK_RESOURCE_BINDING_57` /
+   `aiops_upgrade_archive.aiops_bak_resource_binding_57`（PG 使用独立归档 Schema），
    新建规范资源绑定表并录入数据。归档表只作恢复点，不参与应用读写。
    原数据库绑定 ID、状态、版本、预算和审计字段保留；资源 ID 通过数据库扩展表关联，
    不假设它等于 Target ID。数据库 locator 移除 `host_target_key`。
