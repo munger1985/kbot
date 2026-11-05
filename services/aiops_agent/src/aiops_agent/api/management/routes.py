@@ -23,6 +23,8 @@ from aiops_agent.application.configuration.source_connection_test import (
     test_diagnostic_source_connection as run_source_connection_test,
 )
 from platform_core.contracts import AuthContext
+from platform_core.contracts.aiops.host_topology import HostTopologyView
+from aiops_agent.application.configuration.host_topology import read_host_topology
 from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
@@ -191,6 +193,11 @@ async def patch_resource_relation(business_system_id: UUID, relation_id: UUID, b
 async def delete_resource_relation(business_system_id: UUID, relation_id: UUID, service: Service, scope: Scope, if_match: IfMatch = None) -> Response:
     await service.delete_resource_relation(scope=scope, business_system_id=business_system_id, relation_id=relation_id, expected_version=parse_etag(if_match))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/business-systems/{business_system_id}/hosts/{resource_id}/topology", response_model=HostTopologyView)
+async def get_host_topology(business_system_id: UUID, resource_id: UUID, service: Service, scope: Scope, max_nodes: int = Query(default=200, ge=1, le=500), max_depth: int = Query(default=4, ge=1, le=6)) -> HostTopologyView:
+    return await read_host_topology(service, scope=scope, business_system_id=business_system_id, resource_id=resource_id, max_nodes=max_nodes, max_depth=max_depth)
 
 
 @router.get("/business-systems/{business_system_id}/topology", response_model=TopologySubgraph)

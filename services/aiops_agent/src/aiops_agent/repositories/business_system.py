@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from aiops_agent.entities import (
     BusinessSystemDraftChangeEntity,
@@ -260,6 +261,38 @@ class BusinessSystemRepository(AIOpsRepository):
             .order_by(BusinessSystemResourceEntity.display_order, BusinessSystemResourceEntity.system_resource_id)
         )
         return list((await self._session.execute(statement)).all())
+
+    async def list_host_workload_rows(self, *, resource_id: UUID, domain_id: int, limit: int) -> list[tuple[ManagedResourceEntity, BusinessSystemEntity, ResourceRelationEntity]]:
+        """在当前管理空间内读取显式承载关系，不按地址或名称推断共享。"""
+        self._check_active()
+        host = aliased(ManagedResourceEntity)
+        host_link = aliased(BusinessSystemResourceEntity)
+        workload_link = aliased(BusinessSystemResourceEntity)
+        host_participant = aliased(RelationParticipantEntity)
+        workload_participant = aliased(RelationParticipantEntity)
+        statement = (
+            select(ManagedResourceEntity, BusinessSystemEntity, ResourceRelationEntity)
+            .select_from(ResourceRelationEntity)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == ResourceRelationEntity.business_system_id)
+            .join(host_participant, host_participant.relation_id == ResourceRelationEntity.relation_id)
+            .join(host_link, (host_link.system_resource_id == host_participant.system_resource_id) & (host_link.business_system_id == BusinessSystemEntity.business_system_id))
+            .join(host, host.resource_id == host_link.resource_id)
+            .join(workload_participant, workload_participant.relation_id == ResourceRelationEntity.relation_id)
+            .join(workload_link, (workload_link.system_resource_id == workload_participant.system_resource_id) & (workload_link.business_system_id == BusinessSystemEntity.business_system_id))
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == workload_link.resource_id)
+            .where(
+                host.resource_id == resource_id, host.domain_id == domain_id,
+                ManagedResourceEntity.domain_id == domain_id, BusinessSystemEntity.domain_id == domain_id,
+                host.lifecycle_status == "ACTIVE", ManagedResourceEntity.lifecycle_status == "ACTIVE",
+                host_link.status == "ACTIVE", workload_link.status == "ACTIVE",
+                BusinessSystemEntity.status != "DELETED",
+                ResourceRelationEntity.relation_type_key == "RUNS_ON",
+                ResourceRelationEntity.confirmation_status == "CONFIRMED",
+                host_participant.participant_role == "HOST", workload_participant.participant_role == "WORKLOAD",
+            )
+        )
+
+        return list((await self._session.execute(statement.order_by(BusinessSystemEntity.business_system_id, ManagedResourceEntity.resource_id, ResourceRelationEntity.relation_id).limit(limit))).all())
 
     async def list_relations(self, business_system_id: UUID) -> list[ResourceRelationEntity]:
         self._check_active()

@@ -32,6 +32,7 @@ from starlette.responses import StreamingResponse
 
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1
+from platform_core.contracts.aiops.host_topology import HostTopologyView
 from platform_core.contracts.aiops.effect import (
     EffectEvaluationCommand,
     EffectPlanCommand,
@@ -182,7 +183,7 @@ def _route_permissions() -> dict[str, str]:
             "stream_ops_run_events", "list_targets",
             "get_recovery_profile", "list_recovery_drills",
             "list_business_systems", "get_business_system",
-            "list_managed_resources", "get_business_system_topology",
+            "list_managed_resources", "get_business_system_topology", "get_host_topology",
         },
         "aiops:work_item_handle": {
             "claim_work_item", "return_work_item", "complete_work_item",
@@ -1376,6 +1377,12 @@ async def patch_resource_relation(business_system_id: UUID, relation_id: UUID, b
 async def delete_resource_relation(business_system_id: UUID, relation_id: UUID, request: Request, if_match: IfMatch) -> Response:
     await _client(request).delete_resource_relation(business_system_id, relation_id, if_match=if_match, auth_context=request.state.auth_context)
     return Response(status_code=204)
+
+
+@router.get("/business-systems/{business_system_id}/hosts/{resource_id}/topology", response_model=HostTopologyView)
+async def get_host_topology(business_system_id: UUID, resource_id: UUID, request: Request, max_nodes: int = Query(default=200, ge=1, le=500), max_depth: int = Query(default=4, ge=1, le=6)) -> HostTopologyView:
+    payload = await _client(request).get_host_topology(business_system_id, resource_id, max_nodes=max_nodes, max_depth=max_depth, auth_context=request.state.auth_context)
+    return HostTopologyView.model_validate(payload)
 
 
 @router.get("/business-systems/{business_system_id}/topology", response_model=TopologySubgraph)

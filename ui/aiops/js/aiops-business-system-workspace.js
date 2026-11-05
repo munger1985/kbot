@@ -1253,7 +1253,7 @@
   }
 
   function topologyBoardHtml() {
-    return KBotAIOpsTopology.render({systemName:system.display_name || "未命名业务系统",resources,relations,selectedResourceId:activeResourceId,selectedRelationId:activeRelationId});
+    return KBotAIOpsTopology.render({systemName:system.display_name || "未命名业务系统",resources,relations,selectedResourceId:activeResourceId,selectedRelationId:activeRelationId,contextKey:systemId,loadHostTopology:creating ? undefined : resourceId => request(`/business-systems/${encodeURIComponent(systemId)}/hosts/${encodeURIComponent(resourceId)}/topology`)});
   }
   function relationEditorHtml(relation) {
     if (["RUNS_ON", "USES_STORAGE", "DEPENDS_ON"].includes(relation.relation_type_key)) return `<header><h3>${esc(relationName(relation.relation_type_key))}</h3></header><p>资源关系由“系统构成”中的硬件关联维护。</p><p>${relation.participants.map(p => esc(resources.find(r => r.draft_resource_id === p.draft_resource_id)?.display_name || "资源")).join(" → ")}</p>`;

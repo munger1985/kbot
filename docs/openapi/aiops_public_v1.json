@@ -4272,6 +4272,188 @@
         "title": "HostDiscoveryCandidate",
         "type": "object"
       },
+      "HostTopologyParticipant": {
+        "additionalProperties": false,
+        "properties": {
+          "display_order": {
+            "title": "Display Order",
+            "type": "integer"
+          },
+          "participant_role": {
+            "title": "Participant Role",
+            "type": "string"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "participant_role",
+          "display_order"
+        ],
+        "title": "HostTopologyParticipant",
+        "type": "object"
+      },
+      "HostTopologyRelation": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/HostTopologyParticipant"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "relation_id": {
+            "format": "uuid",
+            "title": "Relation Id",
+            "type": "string"
+          },
+          "relation_type_key": {
+            "title": "Relation Type Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation_id",
+          "business_system_id",
+          "relation_type_key",
+          "participants"
+        ],
+        "title": "HostTopologyRelation",
+        "type": "object"
+      },
+      "HostTopologyResource": {
+        "additionalProperties": false,
+        "properties": {
+          "business_systems": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/HostTopologySystem"
+            },
+            "title": "Business Systems",
+            "type": "array"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "location_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Name"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type_key": {
+            "title": "Resource Type Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "resource_type_key",
+          "display_name"
+        ],
+        "title": "HostTopologyResource",
+        "type": "object"
+      },
+      "HostTopologySystem": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "business_system_id",
+          "display_name",
+          "status"
+        ],
+        "title": "HostTopologySystem",
+        "type": "object"
+      },
+      "HostTopologyView": {
+        "additionalProperties": false,
+        "properties": {
+          "host_resource_id": {
+            "format": "uuid",
+            "title": "Host Resource Id",
+            "type": "string"
+          },
+          "max_nodes": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Max Nodes",
+            "type": "integer"
+          },
+          "relations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/HostTopologyRelation"
+            },
+            "title": "Relations",
+            "type": "array"
+          },
+          "resources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/HostTopologyResource"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "host_resource_id",
+          "max_nodes"
+        ],
+        "title": "HostTopologyView",
+        "type": "object"
+      },
       "InspectionCheckCatalogGroup": {
         "additionalProperties": false,
         "properties": {
@@ -16818,6 +17000,83 @@
           }
         },
         "summary": "Enable Business System",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/business-systems/{business_system_id}/hosts/{resource_id}/topology": {
+      "get": {
+        "operationId": "get_host_topology_api_v1_apps_aiops_business_systems__business_system_id__hosts__resource_id__topology_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "business_system_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Business System Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_nodes",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Max Nodes",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_depth",
+            "required": false,
+            "schema": {
+              "default": 4,
+              "maximum": 6,
+              "minimum": 1,
+              "title": "Max Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostTopologyView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Host Topology",
         "tags": [
           "AIOps"
         ]

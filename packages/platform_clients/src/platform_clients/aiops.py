@@ -947,6 +947,10 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def delete_resource_relation(self, business_system_id: UUID, relation_id: UUID, *, if_match: str, auth_context: AuthContext) -> None:
         await self._json("DELETE", f"{self._CONFIG}/business-systems/{business_system_id}/relations/{relation_id}", if_match=if_match, auth_context=auth_context)
 
+    async def get_host_topology(self, business_system_id: UUID, resource_id: UUID, *, max_nodes: int, max_depth: int, auth_context: AuthContext) -> dict[str, Any]:
+        query = urlencode({"max_nodes": max_nodes, "max_depth": max_depth})
+        return await self._json("GET", f"{self._CONFIG}/business-systems/{business_system_id}/hosts/{resource_id}/topology?{query}", auth_context=auth_context)
+
     async def get_business_system_topology(self, business_system_id: UUID, *, focus_resource_id: UUID | None, max_depth: int, max_nodes: int, auth_context: AuthContext) -> dict[str, Any]:
         query = {"max_depth": str(max_depth), "max_nodes": str(max_nodes)}
         if focus_resource_id is not None:

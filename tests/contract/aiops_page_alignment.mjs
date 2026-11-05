@@ -775,7 +775,7 @@ try {
         for(const width of [1440,1024,900,420]) {
           await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
           for(const page of [kbot,reference]) {await page.locator('.graph-edge-label').waitFor();assert.equal(await page.locator('.topology-node').count(),interaction==='rac'?3:2,'同一数据库在统一画布中只能出现一次');}
-          await compareRegions(kbot,reference,['.graph-stage','.graph-node-grid','.graph-node','.graph-node.cluster','.graph-node header','.graph-edge-label','.cluster-members'],{page:name,width,empty,state:`related-${interaction}`});
+          await compareRegions(kbot,reference,['.graph-stage','.graph-group','.graph-group.cluster','.graph-group header','.topology-toolbar','.topology-node','.graph-edge-label'],{page:name,width,empty,state:`related-${interaction}`});
           const paths=await Promise.all([kbot,reference].map(page=>page.locator('.graph-edge > path').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('d').match(/-?\d+(?:\.\d+)?/g).map(Number)))));
           assert.equal(paths[0].length,paths[1].length);
           for(let i=0;i<paths[0].length;i++) for(let j=0;j<paths[0][i].length;j++) assert.ok(Math.abs(paths[0][i][j]-paths[1][i][j])<=1,`${width}px 拓扑曲线坐标应与参照相同`);
@@ -787,7 +787,7 @@ try {
         for(const page of [kbot,reference]) {await page.getByRole('button',{name:'恢复自动推导',exact:true}).click();await page.getByRole('button',{name:'删除关系',exact:true}).click();await page.getByRole('button',{name:'恢复自动识别',exact:true}).click();}
         for(const page of [kbot,reference]) {await page.locator('.graph-edge-label').waitFor();assert.equal(await page.locator('.graph-edge').count(),1);}
         if(interaction==='rac') {
-          for(const page of [kbot,reference]) await page.locator('.graph-node.cluster header button').click();
+          for(const page of [kbot,reference]) await page.locator('.graph-group.cluster header button').click();
           await compareRegions(kbot,reference,['.inferred-relation-note','.relation-readonly-summary','.rac-relation-members','.rac-relation-members article'],{page:name,width:420,empty,state:'fixed-rac'});
           for(const page of [kbot,reference]) assert.equal(await page.getByRole('button',{name:'删除关系',exact:true}).count(),0,'受管 RAC 不能在拓扑中删除');
         }

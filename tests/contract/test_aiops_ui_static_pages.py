@@ -85,7 +85,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("系统构成", workspace)
         self.assertIn("topology-properties", systems)
         self.assertIn("点击数据库查看已有关系，点击连线修改或删除关系。", systems)
-        self.assertIn("data-topology-relation", (AIOPS_ROOT / "js" / "aiops-business-system-topology.js").read_text(encoding="utf-8"))
+        self.assertIn("data-topology-relation", (AIOPS_ROOT / "js" / "aiops-topology-view.js").read_text(encoding="utf-8"))
         self.assertIn("function renderTopology()", systems)
         self.assertIn('searchParams.get("id")', systems)
         self.assertFalse((AIOPS_ROOT / "data-protection.html").exists())
@@ -269,7 +269,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(34, len(scripts))
+        self.assertTrue({"aiops-topology-layout.js", "aiops-topology-view.js", "aiops-business-system-topology.js"}.issubset({path.name for path in scripts}))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -1204,8 +1204,13 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('origin: "DISCOVERY"', systems)
         self.assertIn('inference_rule: "RAC_DEPLOYMENT"', systems)
         topology = (AIOPS_ROOT / "js" / "aiops-business-system-topology.js").read_text(encoding="utf-8")
-        for contract in ("TOPOLOGY PREVIEW", "graphModel", "unified-graph", "graph-edges", "ResizeObserver", "standalone-strip", "resourceNodes", "data-topology-relation"):
-            self.assertIn(contract, topology)
+        layout = (AIOPS_ROOT / "js" / "aiops-topology-layout.js").read_text(encoding="utf-8")
+        view = (AIOPS_ROOT / "js" / "aiops-topology-view.js").read_text(encoding="utf-8")
+        for contract in ("TOPOLOGY PREVIEW", "系统部署", "主机视角", "unified-graph", "graph-edges", "standalone-strip", "data-topology-relation", "查看跨系统承载"):
+            self.assertIn(contract, view)
+        for contract in ("graphModel", "resourceNodes", "sharedParents", "replicationTypes"):
+            self.assertIn(contract, layout)
+        self.assertIn("KBotAIOpsTopologyView", topology)
 
     def test_aiops_importance_labels_increase_from_low_to_core(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
