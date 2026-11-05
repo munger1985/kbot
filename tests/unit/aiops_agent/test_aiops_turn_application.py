@@ -1823,6 +1823,70 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(uow.turns.turns))
         self.assertEqual("QUEUED", uow.turns.turns[0].status)
 
+    async def test_shared_resource_catalog_flow_completes_without_a_run(self) -> None:
+        uow = _Uow()
+        second_system = SimpleNamespace(
+            business_system_id=uuid7(),
+            status="ENABLED",
+            system_code="ERP",
+            display_name="ERP",
+            environment="PROD",
+        )
+        second_link = SimpleNamespace(
+            system_resource_id=uuid7(),
+            resource_id=uow.resource.resource_id,
+            status="ACTIVE",
+        )
+        systems = {
+            uow.system.business_system_id: uow.system,
+            second_system.business_system_id: second_system,
+        }
+        links = {
+            uow.system.business_system_id: uow.system_resource,
+            second_system.business_system_id: second_link,
+        }
+        uow.agents.version_business_system_ids = AsyncMock(
+            return_value=list(systems)
+        )
+        uow.business_systems.get_scoped = AsyncMock(
+            side_effect=lambda **kwargs: systems.get(kwargs["business_system_id"])
+        )
+        uow.business_systems.list_system_resource_rows = AsyncMock(
+            side_effect=lambda system_id: [(
+                links[system_id], uow.resource, uow.database_resource, uow.target,
+            )]
+        )
+        _, receipt = await self._start(uow)
+        uow.turns.messages[0].payload_json["text"] = (
+            "列出我有权访问的业务系统及其系统资源、资源类型和拓扑关系。"
+        )
+        created_payload = dict(uow.outbox.rows[0].payload_json)
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(created_payload)
+        planner = _turn_planner(uow, AIOpsCapability.RESOURCE_CATALOG_QUERY)
+
+        result = await planner.begin(dict(uow.outbox.rows[1].payload_json))
+
+        turn = uow.turns.turns[0]
+        self.assertEqual("COMPLETED", result["status"])
+        self.assertEqual("COMPLETED", turn.status)
+        self.assertEqual([], uow.runs.rows)
+        self.assertEqual([], uow.turns.run_links)
+        scope = turn.scope_resolution_json
+        self.assertEqual(2, len(scope["business_systems"]))
+        self.assertEqual(2, len(scope["resources"]))
+        self.assertEqual(
+            {str(link.system_resource_id) for link in links.values()},
+            {item["system_resource_id"] for item in scope["resources"]},
+        )
+        self.assertEqual(
+            {str(uow.resource.resource_id)},
+            {item["resource_id"] for item in scope["resources"]},
+        )
+        markdown = uow.turns.answer_blocks[0].payload_json["markdown"]
+        self.assertIn("- MES（PROD）", markdown)
+        self.assertIn("- ERP（PROD）", markdown)
+        self.assertEqual(2, markdown.count("数据库类型 ORACLE"))
+
     async def test_resource_catalog_flow_completes_without_a_run(self) -> None:
         uow = _Uow()
         _, receipt = await self._start(uow)

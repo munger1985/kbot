@@ -284,7 +284,7 @@ class ResourceCatalogAdapter:
         del plan
         lines = ["### 业务系统资源"]
         details = {
-            item["resource_id"]: item
+            item["system_resource_id"]: item
             for item in internal_scope.get("resource_catalog", [])
         }
         by_system: dict[UUID, list[ResourceRefV1]] = {}
@@ -299,7 +299,7 @@ class ResourceCatalogAdapter:
             environment = f"（{system.environment}）" if system.environment else ""
             lines.append(f"- {system.display_name}{environment}")
             for resource in by_system.get(system.business_system_id, []):
-                item = details.get(str(resource.resource_id), {})
+                item = details.get(str(resource.system_resource_id), {})
                 facts = []
                 if item.get("resource_code"):
                     facts.append(f"编码 {item['resource_code']}")

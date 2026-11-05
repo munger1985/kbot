@@ -306,10 +306,18 @@ class ScopeResolutionV1(AIOpsContract):
     def validate_resolution(self) -> "ScopeResolutionV1":
         system_ids = tuple(item.business_system_id for item in self.business_systems)
         resource_ids = tuple(item.resource_id for item in self.resources)
+        system_resource_ids = tuple(item.system_resource_id for item in self.resources)
+        resource_keys = tuple(
+            (item.business_system_id, item.resource_id) for item in self.resources
+        )
         relation_ids = tuple(item.relation_id for item in self.relations)
         if len(set(system_ids)) != len(system_ids):
             raise ValueError("业务系统范围不能重复")
-        if len(set(resource_ids)) != len(resource_ids):
+        # 共享资源保留各业务系统的关联，不能按底层资源身份全局判重。
+        if (
+            len(set(system_resource_ids)) != len(system_resource_ids)
+            or len(set(resource_keys)) != len(resource_keys)
+        ):
             raise ValueError("资源范围不能重复")
         if len(set(relation_ids)) != len(relation_ids):
             raise ValueError("拓扑关系范围不能重复")
