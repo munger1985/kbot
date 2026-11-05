@@ -7,6 +7,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import hashlib
+import json
 import re
 from urllib.parse import quote, unquote
 
@@ -68,6 +69,14 @@ def _collection(payload):
 
 class OEMNativeMetrics:
     """复用 Adapter 网络及总字节预算，模型不能控制地址、Target 或认证。"""
+
+    @staticmethod
+    def _json(body):
+        """直接保留 OEM 小数的十进制文本，避免先转浮点再丢失精度。"""
+        try:
+            return json.loads(body, parse_float=str)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            _fail()
 
     async def health_check(self, request):
         self._remaining_response_bytes = 65536
@@ -159,8 +168,23 @@ class OEMNativeMetrics:
                 "OEM 按实际留存自动选择原始、小时或日均值；不能据请求窗口宣称原始执行明细或精确窗口增量。"),
         )
 
+    async def discover_monitoring_metrics(self, request):
+        """监控目录不受诊断单轮 100 项展示限额限制，仍受总字节与页数约束。"""
+        from .oem_catalog import discover_catalog
+
+        if CAPABILITY_METRIC_DISCOVERY not in self.context.declared_capabilities:
+            _fail("SOURCE_CAPABILITY_FORBIDDEN")
+        return await discover_catalog(self, request)
+
+    async def query_latest_metric(self, request, *, metric_name, limit=1000, _expected_target_type=None):
+        from .oem_latest import query_latest
+        if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
+            _fail("SOURCE_CAPABILITY_FORBIDDEN")
+        return await query_latest(self, request, metric_name=metric_name, limit=limit,
+            expected_target_type=_expected_target_type)
+
     async def query_native_metric(self, request, *, metric_name, limit, allow_text=False,
-                                  _expected_target_type=None, _shared_budget=False):
+                                  _expected_target_type=None, _shared_budget=False, _paginate=False):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             _fail("SOURCE_CAPABILITY_FORBIDDEN")
         group, metric = parse_metric_selector(metric_name)
@@ -199,14 +223,21 @@ class OEMNativeMetrics:
         upper = request.window_end + timedelta(microseconds=(-request.window_end.microsecond) % 1000)
         def stamp(value):
             return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        payload, response_hash = await self._native_get("/metricTimeSeries", params={
+        params = {
             "targetId": request.source_locator_key, "metricGroupName": group, "metricName": metric,
             "timeCollectedGreaterThanOrEqualTo": stamp(lower),
-            "timeCollectedLessThan": stamp(upper), "limit": 20,
-        }, max_bytes=request.max_response_bytes // 2)
-        series, more = _collection(payload)
-        if len(series) > 20:
-            _fail()
+            "timeCollectedLessThan": stamp(upper), "limit": 10,
+        }
+        if _paginate:
+            from .oem_catalog import read_pages
+            series, more, response_hash = await read_pages(self, "/metricTimeSeries",
+                params=params, max_bytes=request.max_response_bytes // 2, max_pages=16)
+        else:
+            payload, response_hash = await self._native_get("/metricTimeSeries", params=params,
+                max_bytes=request.max_response_bytes // 2)
+            series, more = _collection(payload)
+            if len(series) > 10:
+                _fail()
         points, dimensions, identities = [], [], set()
         total = 0
         for native in series:

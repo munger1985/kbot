@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "description": "OEM 原生面板默认选项；只选择精确目录元数据，不生成标准指标等价声明。其他指标始终可搜索与采样。",
+  "defaults": {
+    "HOST": [
+      {"name": "CPUUsageSummary/OverAllUsagePct", "unit": "%", "native_value_type": "NUMBER"}
+    ],
+    "DATABASE": [
+      {"name": "Database_Resource_Usage/session_usage", "unit": "%", "native_value_type": "NUMBER"}
+    ]
+  }
+}

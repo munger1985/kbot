@@ -87,6 +87,8 @@ class MonitoringApplicationService:
             metric_catalog=metric_catalog
         )
         self._cache: dict[str, tuple[datetime, MonitoringView]] = {}
+        from aiops_agent.application.monitoring_native import NativeMonitoringService
+        self.native = NativeMonitoringService(self)
 
     async def list_business_systems(self, *, scope) -> tuple[MonitoringBusinessSystemSummary, ...]:
         """先列出授权系统与资源，再投影每个资源的监控来源；目录读取不发起采集。"""

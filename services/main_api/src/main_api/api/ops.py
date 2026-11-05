@@ -5,6 +5,9 @@ from __future__ import annotations
 from platform_core.http_cache import NoStoreAPIRoute
 from platform_core.contracts.aiops.report_filters import ReportCategory
 from platform_core.contracts.aiops.types import ReportType
+from platform_core.contracts.aiops.monitoring_native import (
+    MonitoringNativeCatalog, MonitoringNativeQuery, MonitoringNativeSamples,
+)
 
 from platform_core.contracts.aiops.sql_plan_material import (
     SqlPlanMaterialPage, SqlPlanMaterialView,
@@ -173,6 +176,7 @@ def _route_permissions() -> dict[str, str]:
             "get_dashboard",
             "list_monitoring_business_systems", "list_monitoring_sources", "list_monitoring_instances",
             "list_monitoring_profiles", "get_monitoring_view",
+            "list_monitoring_native_metrics", "query_monitoring_native_metric",
             "list_target_monitoring_profiles", "get_target_monitoring_view",
             "list_situations", "get_situation", "get_ops_run",
             "list_work_items", "get_work_item", "route_run_to_work_items",
@@ -643,6 +647,25 @@ async def list_monitoring_business_systems(request: Request):
     return await _client(request).list_monitoring_business_systems(
         auth_context=request.state.auth_context
     )
+
+
+@router.get("/monitoring/sources/{source_id}/resources/{instance_id}/metrics", response_model=MonitoringNativeCatalog)
+async def list_monitoring_native_metrics(
+    source_id: UUID, instance_id: UUID, request: Request,
+    search: str = Query(default="", max_length=128),
+    offset: int = Query(default=0, ge=0, le=100000),
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    return await _client(request).list_monitoring_native_metrics(source_id, instance_id,
+        search=search, offset=offset, limit=limit, auth_context=request.state.auth_context)
+
+
+@router.post("/monitoring/sources/{source_id}/resources/{instance_id}/metric-samples", response_model=MonitoringNativeSamples)
+async def query_monitoring_native_metric(
+    source_id: UUID, instance_id: UUID, body: MonitoringNativeQuery, request: Request,
+):
+    return await _client(request).query_monitoring_native_metric(source_id, instance_id,
+        body.model_dump(mode="json"), auth_context=request.state.auth_context)
 
 
 @router.get(

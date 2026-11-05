@@ -1,8 +1,9 @@
 # AIOps 原生实时监控与统一 Profile 详细设计
 
 2026-11-05：OEM 的服务级接入与业务系统数据库候选绑定已实现，见
-[OEM 接入说明](../operations/aiops-oem-onboarding.md)。OEM 指标映射、原生实时监控面板、
-专业指标和硬件观测仍待后续设计与实施，不以接入验收代替指标验收。
+[OEM 接入说明](../operations/aiops-oem-onboarding.md)。后续已补充 OEM 数据库/主机原生目录
+与数值监控面板，见 [OEM 原生指标监控](../operations/aiops-oem-native-monitoring.md)。
+标准指标自动语义映射、文本历史及 ODA/Exadata 仍未实现，不以目录验收代替完整采样验收。
 
 版本：2.0
 

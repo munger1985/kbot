@@ -5,6 +5,7 @@
   const shell = globalThis.KBotAIOpsShell;
   const state = {
     systems: [], sources: [], instances: [], profiles: [], view: null, systemId: "",
+    nativeView: null,
     sourceId: "", baseline: "1w", profileId: "", window: "1h", selected: [], search: "",
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
     chartObservers: new Map(),
@@ -236,7 +237,7 @@
     document.getElementById("monitoring-source").disabled = !state.sources.length;
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
-    document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview";
+    document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview" || sourceById()?.source_type === "OEM";
     document.getElementById("monitoring-baseline").value = state.baseline;
     document.getElementById("monitoring-baseline").disabled = sourceById()?.monitoring_readiness !== "READY";
   }
@@ -313,11 +314,18 @@
     history.replaceState(null, "", `${location.pathname}?${next}`);
   }
   async function loadSelectedTargetProfiles({ signal }) {
+    state.nativeView?.dispose(); state.nativeView = null;
+    document.getElementById("monitoring-native")?.remove();
     const targetId = state.selected[0];
     const resource = state.instances.find(item => item.business_system_id === state.systemId && item.instance_id === targetId);
     if (!targetId || sourceById()?.monitoring_readiness !== "READY" || resource?.capability_gaps?.length) {
       state.profiles = [];
       state.profileId = "";
+      return;
+    }
+    if (sourceById()?.source_type === "OEM") {
+      state.profiles = []; state.profileId = "oem-native";
+      document.getElementById("monitoring-profile-name").textContent = "OEM 原生全部指标";
       return;
     }
     const profiles = await KBotAIOpsAuth.request(
@@ -333,6 +341,25 @@
   }
   async function loadView() {
     if (!canQuery()) return;
+    if (sourceById()?.source_type === "OEM") {
+      document.getElementById("monitoring-result").hidden = false;
+      document.getElementById("monitoring-gate").hidden = true;
+      document.getElementById("monitoring-panels").hidden = true;
+      document.getElementById("monitoring-quality-ledger").hidden = true;
+      document.getElementById("monitoring-quality-detail").hidden = true;
+      const key = `${state.sourceId}:${state.selected[0]}`;
+      if (state.nativeView?.key === key) state.nativeView.refresh(state.window);
+      else {
+        state.nativeView?.dispose();
+        document.getElementById("monitoring-native")?.remove();
+        const root = document.createElement("section"); root.id = "monitoring-native";
+        root.className = "oem-metrics"; root.setAttribute("aria-label", "OEM 原生全部指标");
+        document.getElementById("monitoring-result").prepend(root);
+        state.nativeView = new KBotAIOpsOEMMetrics(root, { sourceId: state.sourceId, instanceId: state.selected[0], window: state.window });
+      }
+      return;
+    }
+    document.getElementById("monitoring-panels").hidden = false;
     cancelViewRequest();
     const controller = new AbortController();
     state.controller = controller;
@@ -356,6 +383,8 @@
     }
   }
   async function loadSourceContext() {
+    state.nativeView?.dispose(); state.nativeView = null;
+    document.getElementById("monitoring-native")?.remove();
     state.contextController?.abort();
     const contextController = new AbortController();
     state.contextController = contextController;
@@ -393,6 +422,8 @@
     }
   }
   async function selectInstance(instanceId, systemId = state.systemId) {
+    state.nativeView?.dispose(); state.nativeView = null;
+    document.getElementById("monitoring-native")?.remove();
     const instance = state.instances.find(item => item.instance_id === instanceId && item.business_system_id === systemId);
     if (!instance) return;
     state.systemId = systemId;

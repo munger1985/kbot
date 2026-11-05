@@ -157,7 +157,7 @@ def test_native_history_preserves_exact_values_units_dimensions_and_unknown_rete
     params = calls[-1][1]["params"]
     assert params == {"targetId":GUID, "metricGroupName":"Filesystems", "metricName":"size",
         "timeCollectedGreaterThanOrEqualTo":"2026-10-28T06:45:00.000Z",
-        "timeCollectedLessThan":"2026-10-28T07:00:00.000Z", "limit":20}
+        "timeCollectedLessThan":"2026-10-28T07:00:00.000Z", "limit":10}
     assert calls[-1][0].endswith("/em/api/metricTimeSeries")
 
 

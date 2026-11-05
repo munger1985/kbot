@@ -6702,6 +6702,310 @@
         "title": "MonitoringInstanceSummary",
         "type": "object"
       },
+      "MonitoringNativeCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "default_metric": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringNativeMetric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "discovered_count": {
+            "title": "Discovered Count",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/MonitoringNativeMetric"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "revision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Revision",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_id",
+          "instance_id",
+          "entries",
+          "discovered_count",
+          "truncated",
+          "revision"
+        ],
+        "title": "MonitoringNativeCatalog",
+        "type": "object"
+      },
+      "MonitoringNativeMetric": {
+        "additionalProperties": false,
+        "properties": {
+          "dimensions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "latest_supported": {
+            "default": false,
+            "title": "Latest Supported",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "native_value_type": {
+            "title": "Native Value Type",
+            "type": "string"
+          },
+          "query_supported": {
+            "title": "Query Supported",
+            "type": "boolean"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "group",
+          "native_value_type",
+          "query_supported"
+        ],
+        "title": "MonitoringNativeMetric",
+        "type": "object"
+      },
+      "MonitoringNativePoint": {
+        "additionalProperties": false,
+        "properties": {
+          "dimensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "object"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "observed_at",
+          "value",
+          "dimensions"
+        ],
+        "title": "MonitoringNativePoint",
+        "type": "object"
+      },
+      "MonitoringNativeQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "metric_name": {
+            "maxLength": 256,
+            "minLength": 3,
+            "title": "Metric Name",
+            "type": "string"
+          },
+          "mode": {
+            "default": "HISTORY",
+            "enum": [
+              "HISTORY",
+              "LATEST"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "window": {
+            "default": "1h",
+            "enum": [
+              "15m",
+              "1h",
+              "6h",
+              "24h"
+            ],
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_name"
+        ],
+        "title": "MonitoringNativeQuery",
+        "type": "object"
+      },
+      "MonitoringNativeSamples": {
+        "additionalProperties": false,
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "history_resolution": {
+            "default": "PROVIDER_MANAGED",
+            "enum": [
+              "PROVIDER_MANAGED",
+              "LATEST_SNAPSHOT"
+            ],
+            "title": "History Resolution",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/MonitoringNativeMetric"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/MonitoringNativePoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "query_mode": {
+            "default": "HISTORY",
+            "enum": [
+              "HISTORY",
+              "LATEST"
+            ],
+            "title": "Query Mode",
+            "type": "string"
+          },
+          "response_sha256": {
+            "title": "Response Sha256",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          }
+        },
+        "required": [
+          "source_id",
+          "instance_id",
+          "metric",
+          "window_start",
+          "window_end",
+          "captured_at",
+          "points",
+          "truncated",
+          "response_sha256"
+        ],
+        "title": "MonitoringNativeSamples",
+        "type": "object"
+      },
       "MonitoringPanel": {
         "additionalProperties": false,
         "properties": {
@@ -20006,6 +20310,157 @@
           }
         },
         "summary": "List Monitoring Profiles",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/monitoring/sources/{source_id}/resources/{instance_id}/metric-samples": {
+      "post": {
+        "operationId": "query_monitoring_native_metric_api_v1_apps_aiops_monitoring_sources__source_id__resources__instance_id__metric_samples_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitoringNativeQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringNativeSamples"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Monitoring Native Metric",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/monitoring/sources/{source_id}/resources/{instance_id}/metrics": {
+      "get": {
+        "operationId": "list_monitoring_native_metrics_api_v1_apps_aiops_monitoring_sources__source_id__resources__instance_id__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 128,
+              "title": "Search",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringNativeCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitoring Native Metrics",
         "tags": [
           "AIOps"
         ]

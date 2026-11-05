@@ -35,9 +35,9 @@ target_id 由 DatabaseResource 关系只读投影获得，不存在旧绑定表�
 不返回定位符、凭据、Endpoint 或查询配置，不触发采集。无绑定、断连及暂不支持采集的资源
 仍显示在系统内并解释缺口，空系统也保留。租户/业务空间边界由可信请求上下文限定。
 
-Prometheus、Zabbix 和 OEM 数据库沿用统一指标查询；Prometheus/OEM 主机使用各自独立绑定。
-OEM 容器内主机不借用宿主机身份。缺少 OEM 标准指标精确映射时返回指标缺口，
-不猜测原生指标名、不制造采样或健康状态。
+Prometheus、Zabbix 数据库沿用统一指标查询；OEM 使用独立的原生完整目录与数值采样面板，
+见 [OEM 原生指标监控](aiops-oem-native-monitoring.md)。Prometheus/OEM 主机使用各自独立绑定。
+OEM 容器内主机不借用宿主机身份；缺少标准指标语义依据时不冒充 Prometheus 等价指标。
 
 ## 配置流程
 
@@ -86,8 +86,8 @@ PostgreSQL 规范由当前 ORM 和初始化实体注册生成。公共合同与 
 旧库不能直接运行新代码，部署时必须协调 Schema 与应用版本切换。
 历史升级文件不作为本轮迁移入口，生成的重建 SQL 也没有执行。
 
-OEM 指标扩展、ODA/Exadata 专用采集及硬件诊断编排留到下一阶段。
-本次 OEM 主机发现与资产绑定不代表 OEM 实时主机指标或 Node Exporter 指标映射已实现。
+OEM 原生数值指标已扩展到数据库和主机监控。ODA/Exadata 专用采集及硬件诊断编排仍未实现。
+原生指标可读不代表 Node Exporter 指标等价映射或完整采样覆盖。
 
 ## 已有环境的定向升级
 

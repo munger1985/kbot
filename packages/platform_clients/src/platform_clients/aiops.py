@@ -363,6 +363,22 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     _CONFIG = f"{INTERNAL_API_V1}/aiops/config"
     _MONITORING = f"{INTERNAL_API_V1}/aiops/monitoring"
 
+    async def list_monitoring_native_metrics(
+        self, source_id: UUID, instance_id: UUID, *, search: str = "", offset: int = 0,
+        limit: int = 100, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        query = urlencode({"search": search, "offset": offset, "limit": limit})
+        return await self._json("GET",
+            f"{self._MONITORING}/sources/{source_id}/resources/{instance_id}/metrics?{query}",
+            auth_context=auth_context)
+
+    async def query_monitoring_native_metric(
+        self, source_id: UUID, instance_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json("POST",
+            f"{self._MONITORING}/sources/{source_id}/resources/{instance_id}/metric-samples",
+            payload=payload, auth_context=auth_context)
+
     async def list_monitoring_business_systems(
         self, *, auth_context: AuthContext
     ) -> list[dict[str, Any]]:
