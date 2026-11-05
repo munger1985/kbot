@@ -1235,10 +1235,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("shell.confirmActionWithReason", script)
         self.assertIn("删除草稿", script)
         self.assertIn("重新上线", script)
-        self.assertIn("已接入的资源会保留，不会删除资源、拓扑或历史数据", script)
+        self.assertIn("删除业务系统", script)
+        self.assertIn("不再被其他系统使用的资源将逻辑退役", script)
         self.assertIn('request("/business-system-drafts?limit=200")', script)
         self.assertIn('"未发布草稿"', script)
-        self.assertIn("尚未发布的资源配置将被删除", script)
+        self.assertIn("尚未发布的修改将被永久删除", script)
         self.assertNotIn("已停用", script)
 
     def test_report_center_uses_reference_sections_and_presentation_labels(self):

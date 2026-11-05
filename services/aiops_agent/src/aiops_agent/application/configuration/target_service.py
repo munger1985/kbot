@@ -773,6 +773,8 @@ class TargetConfigurationMixin:
             )
             if assigned_system is not None:
                 raise state_conflict("Target 已属于业务系统组件，请先从资源拓扑中移除该成员")
+            if await uow.business_systems.target_has_resource(target_id=target_id):
+                raise state_conflict("Target 属于受管资源，包含已退役资源；必须保留资源与运行历史，不能物理删除")
             if await uow.targets.has_active_runs(target_id=target_id):
                 raise state_conflict("Target 仍有运行中的任务，请先等待完成或取消运行")
             result = _target_detail(target)

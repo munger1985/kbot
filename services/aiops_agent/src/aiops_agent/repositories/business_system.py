@@ -23,9 +23,10 @@ from aiops_agent.entities import (
     TargetEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
+from aiops_agent.repositories.business_system_deletion import BusinessSystemDeletionRepositoryMixin
 
 
-class BusinessSystemRepository(AIOpsRepository):
+class BusinessSystemRepository(BusinessSystemDeletionRepositoryMixin, AIOpsRepository):
     def __init__(self, session: AsyncSession, assert_active: Callable[[], None] | None = None) -> None:
         super().__init__(session, assert_active)
 
@@ -122,6 +123,7 @@ class BusinessSystemRepository(AIOpsRepository):
             statement = statement.where(BusinessSystemEntity.status != "DELETED")
         if lock:
             statement = statement.with_for_update()
+            statement = statement.execution_options(populate_existing=True)
         return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def list_scoped(self, *, domain_id: int, status: str | None, limit: int) -> list[BusinessSystemEntity]:
@@ -160,6 +162,7 @@ class BusinessSystemRepository(AIOpsRepository):
         )
         if lock:
             statement = statement.with_for_update()
+            statement = statement.execution_options(populate_existing=True)
         return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def get_database_profile(self, resource_id: UUID) -> DatabaseResourceEntity | None:
@@ -344,6 +347,7 @@ class BusinessSystemRepository(AIOpsRepository):
                 DatabaseResourceEntity.target_id == target_id,
                 BusinessSystemEntity.domain_id == domain_id,
                 BusinessSystemResourceEntity.status == "ACTIVE",
+                BusinessSystemEntity.status != "DELETED",
             )
             .order_by(BusinessSystemEntity.updated_at.desc())
             .limit(1)

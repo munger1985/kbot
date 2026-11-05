@@ -261,8 +261,8 @@ async def disable_business_system(business_system_id: UUID, body: BusinessSystem
 
 
 @router.delete("/business-systems/{business_system_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_business_system_draft(business_system_id: UUID, service: Service, scope: Scope, if_match: IfMatch = None) -> Response:
-    await service.delete_business_system_draft(scope=scope, business_system_id=business_system_id, expected_version=parse_etag(if_match))
+async def delete_business_system(business_system_id: UUID, service: Service, scope: Scope, if_match: IfMatch = None) -> Response:
+    await service.delete_business_system(scope=scope, business_system_id=business_system_id, expected_version=parse_etag(if_match))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

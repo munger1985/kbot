@@ -477,7 +477,10 @@
     form.elements.knowledge_enabled.checked = policy.enabled !== false;
     form.elements.max_security_level.value = String(policy.max_security_level || 3);
     form.elements.maximum_references.value = String(policy.maximum_references || 8);
-    setChecked("allowed_business_system_ids", editing.allowed_business_system_ids);
+    const availableSystemIds = new Set(systems.map(item => String(item.business_system_id)));
+    const selectedSystemIds = values(editing.allowed_business_system_ids).filter(id => availableSystemIds.has(String(id)));
+    setChecked("allowed_business_system_ids", selectedSystemIds);
+    if (selectedSystemIds.length !== values(editing.allowed_business_system_ids).length) shell.toast("部分业务系统已删除或不可用，已从编辑草稿中移除；保存时请重新确认工作范围。");
     setChecked("capabilities", editing.capabilities);
     setChecked("knowledge_source_kinds", policy.source_kinds || ["MANUAL", "DIAGNOSIS_CASE"]);
     setChecked("knowledge_base_ids", policy.knowledge_base_ids);

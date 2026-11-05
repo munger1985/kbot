@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from aiops_agent.application.configuration.common import ConfigurationScope, add_configuration_event
+from aiops_agent.application.configuration.business_system_deletion import BusinessSystemDeletionMixin
 from aiops_agent.application.configuration.database_resource_edit import (
     apply_database_connection, apply_resource_monitoring, validate_existing_oem_bindings,
 )
@@ -201,7 +202,7 @@ def _architecture_labels(resources: list[BusinessSystemResourceView], relations:
     return tuple(dict.fromkeys(labels))
 
 
-class BusinessSystemConfigurationMixin:
+class BusinessSystemConfigurationMixin(BusinessSystemDeletionMixin):
     _DRAFT_CREDENTIAL_NAMESPACE = "aiops-business-system-draft"
 
     def _seal_draft_payload(self, *, scope: ConfigurationScope, draft_id: UUID, payload: dict) -> dict:
@@ -471,9 +472,18 @@ class BusinessSystemConfigurationMixin:
             changed.append(str(target_id))
         return changed
 
-    async def commit_business_system(self, *, scope: ConfigurationScope, request: BusinessSystemResourceGraphCommit, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+    async def commit_business_system(self, *, scope: ConfigurationScope, request: BusinessSystemResourceGraphCommit, idempotency_key: str, _draft_id: UUID | None = None, _draft_revision: int | None = None) -> BusinessSystemResourceGraphDetail:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemResourceGraphDetail:
             assert uow.business_systems is not None and uow.targets is not None
+            draft = None
+            if _draft_id is not None:
+                draft = await uow.business_systems.get_draft_scoped(
+                    draft_id=_draft_id, lock=True, **_scope_args(scope),
+                )
+                if draft is None or draft.status != "ACTIVE" or int(draft.revision) != _draft_revision or draft.expires_at <= now:
+                    raise state_conflict("草稿已删除、提交、修改或过期，请刷新后继续")
+                if draft.mode != "CREATE":
+                    raise state_conflict("只有新增草稿可以发布新系统")
             if await uow.business_systems.get_by_name(display_name=request.system.display_name, **_scope_args(scope)) is not None:
                 raise state_conflict("当前 Domain 已存在同名业务系统")
             await self._validate_group(uow=uow, scope=scope, group_id=request.system.responsibility_group_id, label="业务系统")
@@ -623,6 +633,12 @@ class BusinessSystemConfigurationMixin:
             if blockers:
                 raise validation_failed("；".join(blockers))
             await self._sync_system_target_lifecycle(uow=uow, scope=scope, system=system, now=now)
+            if draft is not None:
+                # 草稿提交与系统发布处于同一事务，删除草稿不会留下已发布的孤儿系统。
+                draft.status = "COMMITTED"
+                draft.business_system_id = system.business_system_id
+                draft.updated_by, draft.updated_at = scope.actor_id, now
+                await uow.flush()
             await add_configuration_event(
                 uow=uow,
                 scope=scope,
@@ -639,7 +655,7 @@ class BusinessSystemConfigurationMixin:
             operation="BUSINESS_SYSTEM_RESOURCE_GRAPH_COMMIT",
             parent_resource="business-systems",
             idempotency_key=idempotency_key,
-            payload=request.model_dump(mode="json"),
+            payload={**request.model_dump(mode="json"), **({"draft_id": str(_draft_id), "draft_revision": _draft_revision} if _draft_id is not None else {})},
             response_type=BusinessSystemResourceGraphDetail,
             handler=handler,
         )
@@ -1151,7 +1167,7 @@ class BusinessSystemConfigurationMixin:
             assert uow.business_systems is not None
             base_row_version = None
             if request.business_system_id is not None:
-                system = await uow.business_systems.get_scoped(business_system_id=request.business_system_id, **_scope_args(scope))
+                system = await uow.business_systems.get_scoped(business_system_id=request.business_system_id, lock=True, **_scope_args(scope))
                 if system is None:
                     raise resource_not_found("Business System")
                 base_row_version = int(system.row_version)
@@ -1254,9 +1270,14 @@ class BusinessSystemConfigurationMixin:
                 raise state_conflict("草稿已被其他会话修改，请刷新后继续")
             if entity.status != "ACTIVE":
                 raise state_conflict("草稿已结束")
-            entity.status = "ABANDONED"
-            entity.updated_by = scope.actor_id
-            entity.updated_at = self._now()
+            if await uow.business_systems.draft_has_pending_discovery(draft_id):
+                raise state_conflict("草稿仍有资源发现任务，请等待完成后再删除")
+            await uow.business_systems.delete_draft_workspace(draft_id)
+            await add_configuration_event(
+                uow=uow, scope=scope, aggregate_type="BUSINESS_SYSTEM_DRAFT", aggregate_id=draft_id,
+                event_type="BUSINESS_SYSTEM_WORKSPACE_DELETED", row_version=int(entity.revision),
+                details={"deletion_mode": "PHYSICAL", "mode": entity.mode, "original_system_preserved": True},
+            )
             await uow.commit()
 
     async def commit_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID, expected_revision: int, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
@@ -1272,17 +1293,10 @@ class BusinessSystemConfigurationMixin:
             request = BusinessSystemResourceGraphCommit.model_validate(publish_payload)
         except ValidationError as exc:
             raise validation_failed(self._publish_validation_message(publish_payload, exc)) from exc
-        result = await self.commit_business_system(scope=scope, request=request, idempotency_key=idempotency_key)
-        async with self._uow_factory() as uow:
-            assert uow.business_systems is not None
-            entity = await uow.business_systems.get_draft_scoped(draft_id=draft_id, lock=True, **_scope_args(scope))
-            if entity is not None and entity.status == "ACTIVE" and int(entity.revision) == expected_revision:
-                entity.status = "COMMITTED"
-                entity.business_system_id = result.business_system_id
-                entity.updated_by = scope.actor_id
-                entity.updated_at = self._now()
-                await uow.commit()
-        return result
+        return await self.commit_business_system(
+            scope=scope, request=request, idempotency_key=idempotency_key,
+            _draft_id=draft_id, _draft_revision=expected_revision,
+        )
 
     async def patch_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, request: BusinessSystemInfoPatch, expected_version: int) -> BusinessSystemResourceGraphDetail:
         async with self._uow_factory() as uow:
@@ -1347,32 +1361,3 @@ class BusinessSystemConfigurationMixin:
             response_type=BusinessSystemResourceGraphDetail,
             handler=handler,
         )
-
-    async def delete_business_system_draft(self, *, scope: ConfigurationScope, business_system_id: UUID, expected_version: int) -> None:
-        async with self._uow_factory() as uow:
-            assert uow.business_systems is not None
-            entity = await uow.business_systems.get_scoped(
-                business_system_id=business_system_id,
-                lock=True,
-                include_deleted=True,
-                **_scope_args(scope),
-            )
-            if entity is None or entity.status == "DELETED":
-                raise resource_not_found("Business System")
-            self._check_version(entity.row_version, expected_version)
-            if entity.status != "DRAFT":
-                raise state_conflict("只有草稿业务系统可以删除")
-            entity.status = "DELETED"
-            entity.updated_by = scope.actor_id
-            entity.updated_at = self._now()
-            await uow.flush()
-            await add_configuration_event(
-                uow=uow,
-                scope=scope,
-                aggregate_type="BUSINESS_SYSTEM",
-                aggregate_id=entity.business_system_id,
-                event_type="BUSINESS_SYSTEM_DRAFT_DELETED",
-                row_version=int(entity.row_version),
-                details={"cascade": False},
-            )
-            await uow.commit()

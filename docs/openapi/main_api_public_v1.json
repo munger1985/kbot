@@ -25973,7 +25973,7 @@
     },
     "/api/v1/apps/aiops/business-systems/{business_system_id}": {
       "delete": {
-        "operationId": "delete_business_system_draft_api_v1_apps_aiops_business_systems__business_system_id__delete",
+        "operationId": "delete_business_system_api_v1_apps_aiops_business_systems__business_system_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -26017,7 +26017,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Business System Draft",
+        "summary": "Delete Business System",
         "tags": [
           "AIOps"
         ]

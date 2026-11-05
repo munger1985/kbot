@@ -19,12 +19,14 @@ from aiops_agent.entities import (
     BusinessSystemEntity, BusinessSystemResourceEntity, ComputeResourceEntity, DatabaseResourceEntity,
     DiagnosticSourceEntity, InboxEntity, ManagedResourceEntity, OutboxEntity,
     RelationParticipantEntity, ResourceRelationEntity, TargetEntity, ResourceSourceBindingEntity,
+    AIOpsAgentVersionBusinessSystemEntity, BusinessSystemDraftEntity, BusinessSystemDraftChangeEntity,
+    InspectionPlanEntity, InspectionFireEntity, OpsRunEntity, ResourceDiscoveryJobEntity,
 )
 from aiops_agent.repositories.business_system import BusinessSystemRepository
 from aiops_agent.repositories.messaging import InboxRepository, OutboxRepository
 from aiops_agent.repositories.monitoring import DiagnosticSourceRepository
 from aiops_agent.repositories.target import TargetRepository
-from platform_core.contracts.aiops import BusinessSystemLifecycleCommand, BusinessSystemResourceGraphCommit
+from platform_core.contracts.aiops import BusinessSystemDraftCreate, BusinessSystemLifecycleCommand, BusinessSystemResourceGraphCommit
 from platform_core.identity import uuid7
 from platform_core.managed_credentials import ManagedCredentialCipher
 
@@ -32,6 +34,8 @@ TABLES = (
     BusinessSystemEntity, BusinessSystemResourceEntity, ComputeResourceEntity, DatabaseResourceEntity, DiagnosticSourceEntity,
     InboxEntity, ManagedResourceEntity, OutboxEntity, RelationParticipantEntity,
     ResourceRelationEntity, TargetEntity, ResourceSourceBindingEntity,
+    AIOpsAgentVersionBusinessSystemEntity, BusinessSystemDraftEntity, BusinessSystemDraftChangeEntity,
+    InspectionPlanEntity, InspectionFireEntity, OpsRunEntity, ResourceDiscoveryJobEntity,
 )
 
 
@@ -55,12 +59,19 @@ class SessionBridge:
     async def flush(self):
         self.sync.flush()
 
+    async def scalar(self, *args, **kwargs):
+        return self.sync.scalar(*args, **kwargs)
+
+    async def scalars(self, *args, **kwargs):
+        return self.sync.scalars(*args, **kwargs)
+
 
 class LocalUow:
     def __init__(self, engine):
         self.sync = Session(engine, expire_on_commit=False, autoflush=False)
         self.session = SessionBridge(self.sync)
         self.targets = TargetRepository(self.session)
+        self.managed_credentials = object()
         self.business_systems = BusinessSystemRepository(self.session)
         self.diagnostic_sources = DiagnosticSourceRepository(self.session)
         self.inbox = InboxRepository(self.session)
@@ -105,7 +116,7 @@ def lab():
     service._now = lambda: datetime.now(UTC)
     service._idempotency = IdempotencyGuard()
     service._credential_cipher = ManagedCredentialCipher(key=b"l" * 32, key_version="test-v1")
-    service._managed_credentials = SimpleNamespace(read=AsyncMock(return_value={"username": "reader"}))
+    service._managed_credentials = SimpleNamespace(read=AsyncMock(return_value={"username": "reader"}), revoke=AsyncMock())
     service._validate_group = AsyncMock()
 
     async def create_target(*, uow, scope, request, now):
@@ -412,4 +423,336 @@ def test_shared_reference_query_is_scoped_and_lock_refreshes_identity_map(lab, d
             assert "TENANT_ID" in sql
         await TargetRepository(session).get_scoped(target_id=uuid7(), domain_id=lab.scope.domain_id, lock=True, refresh=True)
         assert session.execute.await_args.args[0].get_execution_options()["populate_existing"]
+    asyncio.run(run())
+
+
+async def remove_system(f, detail):
+    await f.service.delete_business_system(
+        scope=f.scope, business_system_id=detail.business_system_id, expected_version=detail.row_version,
+    )
+
+
+def test_offline_deletion_preserves_history_and_retires_exclusive_resources(lab):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "准备删除")
+        resource_id = detail.resources[0].resource.resource_id
+        target_id = detail.resources[0].resource.database.target_id
+        await remove_system(lab, offline)
+        with Session(lab.engine) as session:
+            system = session.get(BusinessSystemEntity, detail.business_system_id)
+            resource = session.get(ManagedResourceEntity, resource_id)
+            target = session.get(TargetEntity, target_id)
+            binding = session.scalar(select(ResourceSourceBindingEntity))
+            link = session.scalar(select(BusinessSystemResourceEntity))
+            assert system.status == "DELETED" and resource.lifecycle_status == "RETIRED"
+            assert target.status == "DISABLED" and not target.readonly_connection_enabled
+            assert binding.status == "DISABLED" and link.status == "INACTIVE"
+            event = session.scalar(select(OutboxEntity).where(OutboxEntity.event_type == "BUSINESS_SYSTEM_DELETED"))
+            assert event.payload_json["details"]["deletion_mode"] == "LOGICAL"
+            assert event.payload_json["details"]["retired_resource_ids"] == [str(resource_id)]
+            assert session.scalar(select(func.count()).select_from(OutboxEntity)) >= 4
+        lab.service._managed_credentials.revoke.assert_awaited_once()
+        assert not (await lab.service.list_business_systems(scope=lab.scope, status=None, limit=200)).items
+        assert not await lab.service.list_managed_resources(scope=lab.scope, resource_type_key=None, limit=200)
+        with pytest.raises(AIOpsApplicationError):
+            await transition(lab, offline, "enable")
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("other_status", ["ENABLED", "DISABLED", "DRAFT"])
+def test_deletion_preserves_resources_owned_by_any_undeleted_system(lab, other_status):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除共享系统")
+        resource_id = detail.resources[0].resource.resource_id
+        other_id = uuid7()
+        with Session(lab.engine) as session:
+            original = session.get(BusinessSystemEntity, detail.business_system_id)
+            session.add(BusinessSystemEntity(**lab.owned, business_system_id=other_id,
+                system_code="SYS-SHARED", display_name="共享归属系统", environment="DEV",
+                responsibility_group_id=original.responsibility_group_id, status=other_status,
+                created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.add(BusinessSystemResourceEntity(business_system_id=other_id, resource_id=resource_id,
+                architecture_layer_key="DATA", status="ACTIVE",
+                created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.commit()
+        await remove_system(lab, offline)
+        with Session(lab.engine) as session:
+            assert session.get(ManagedResourceEntity, resource_id).lifecycle_status == "ACTIVE"
+            assert session.scalar(select(ResourceSourceBindingEntity)).status == "ACTIVE"
+            assert session.scalar(select(BusinessSystemResourceEntity).where(
+                BusinessSystemResourceEntity.business_system_id == other_id)).status == "ACTIVE"
+        lab.service._managed_credentials.revoke.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_last_shared_owner_deletion_retires_resource(lab):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除")
+        resource_id = detail.resources[0].resource.resource_id
+        other_id = uuid7()
+        with Session(lab.engine) as session:
+            original = session.get(BusinessSystemEntity, detail.business_system_id)
+            session.add(BusinessSystemEntity(**lab.owned, business_system_id=other_id, system_code="SYS-LAST",
+                display_name="最后引用", environment="DEV", responsibility_group_id=original.responsibility_group_id,
+                status="DISABLED", created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.add(BusinessSystemResourceEntity(business_system_id=other_id, resource_id=resource_id,
+                architecture_layer_key="DATA", status="ACTIVE", created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.commit()
+        await remove_system(lab, offline)
+        await lab.service.delete_business_system(scope=lab.scope, business_system_id=other_id, expected_version=1)
+        with Session(lab.engine) as session:
+            assert session.get(ManagedResourceEntity, resource_id).lifecycle_status == "RETIRED"
+            assert session.scalar(select(ResourceSourceBindingEntity)).status == "DISABLED"
+    asyncio.run(run())
+
+
+def test_never_published_system_is_physically_deleted_but_resources_are_retired(lab):
+    async def run():
+        system_id, resource_id, relation_id, link_id = uuid7(), uuid7(), uuid7(), uuid7()
+        with Session(lab.engine) as session:
+            session.add(BusinessSystemEntity(**lab.owned, business_system_id=system_id,
+                system_code="SYS-DRAFT", display_name="未发布系统", environment="DEV", status="DRAFT",
+                responsibility_group_id=lab.request.system.responsibility_group_id,
+                created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.add(ManagedResourceEntity(**lab.owned, resource_id=resource_id,
+                resource_type_key="VIRTUAL_MACHINE", display_name="草稿主机", identity_kind="STABLE",
+                owner_group_id=lab.request.system.responsibility_group_id,
+                created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.add(BusinessSystemResourceEntity(system_resource_id=link_id,
+                business_system_id=system_id, resource_id=resource_id, architecture_layer_key="INFRASTRUCTURE",
+                created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.add(ResourceRelationEntity(relation_id=relation_id, business_system_id=system_id,
+                relation_type_key="DEPENDS_ON", created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.add(RelationParticipantEntity(relation_id=relation_id, system_resource_id=link_id, participant_role="CONSUMER"))
+            session.commit()
+        await lab.service.delete_business_system(scope=lab.scope, business_system_id=system_id, expected_version=1)
+        with Session(lab.engine) as session:
+            assert session.get(BusinessSystemEntity, system_id) is None
+            assert session.get(ManagedResourceEntity, resource_id).lifecycle_status == "RETIRED"
+            assert session.get(BusinessSystemResourceEntity, link_id) is None
+            assert session.get(ResourceRelationEntity, relation_id) is None
+            assert not session.scalar(select(func.count()).select_from(RelationParticipantEntity))
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("mode", ["CREATE", "EDIT"])
+def test_unpublished_workspace_is_physically_deleted_without_touching_original(lab, mode):
+    async def run():
+        detail = await publish(lab)
+        draft = await lab.service.create_business_system_draft(
+            scope=lab.scope,
+            request=BusinessSystemDraftCreate(
+                mode=mode, business_system_id=detail.business_system_id if mode == "EDIT" else None),
+        )
+        with Session(lab.engine) as session:
+            session.add(BusinessSystemDraftChangeEntity(draft_id=draft.draft_id, sequence_no=1,
+                change_type="SAVE", payload_json={}, created_by=lab.scope.actor_id))
+            session.add(ResourceDiscoveryJobEntity(draft_id=draft.draft_id, connector_type="OEM",
+                status="SUCCEEDED", created_by=lab.scope.actor_id))
+            session.commit()
+        await lab.service.abandon_business_system_draft(scope=lab.scope, draft_id=draft.draft_id, expected_revision=1)
+        with Session(lab.engine) as session:
+            assert session.get(BusinessSystemDraftEntity, draft.draft_id) is None
+            assert not session.scalar(select(func.count()).select_from(BusinessSystemDraftChangeEntity))
+            assert not session.scalar(select(func.count()).select_from(ResourceDiscoveryJobEntity))
+            assert session.get(BusinessSystemEntity, detail.business_system_id).status == "ENABLED"
+            assert session.get(ManagedResourceEntity, detail.resources[0].resource.resource_id).lifecycle_status == "ACTIVE"
+    asyncio.run(run())
+
+
+def test_delete_rejects_stale_version_and_pending_discovery(lab):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除")
+        with pytest.raises(AIOpsApplicationError):
+            await remove_system(lab, detail)
+        from platform_core.contracts.aiops import BusinessSystemDraftCreate
+        draft = await lab.service.create_business_system_draft(scope=lab.scope,
+            request=BusinessSystemDraftCreate(mode="EDIT", business_system_id=detail.business_system_id))
+        with Session(lab.engine) as session:
+            session.add(ResourceDiscoveryJobEntity(draft_id=draft.draft_id, connector_type="OEM",
+                status="RUNNING", created_by=lab.scope.actor_id))
+            session.commit()
+        with pytest.raises(AIOpsApplicationError, match="资源发现任务"):
+            await remove_system(lab, offline)
+        with Session(lab.engine) as session:
+            assert session.get(BusinessSystemEntity, detail.business_system_id).status == "DISABLED"
+            assert session.get(ManagedResourceEntity, detail.resources[0].resource.resource_id).lifecycle_status == "ACTIVE"
+    asyncio.run(run())
+
+
+def test_deleted_system_frozen_authorization_cannot_access_a_shared_target(lab):
+    async def run():
+        from aiops_agent.repositories.agent import AIOpsAgentRepository
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除")
+        resource_id = detail.resources[0].resource.resource_id
+        target_id = detail.resources[0].resource.database.target_id
+        version_id, other_id = uuid7(), uuid7()
+        with Session(lab.engine) as session:
+            session.add(AIOpsAgentVersionBusinessSystemEntity(agent_version_id=version_id,
+                business_system_id=detail.business_system_id))
+            session.add(BusinessSystemEntity(**lab.owned, business_system_id=other_id, system_code="SYS-AUTH",
+                display_name="共享在线系统", environment="DEV", responsibility_group_id=lab.request.system.responsibility_group_id,
+                status="ENABLED", created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.add(BusinessSystemResourceEntity(business_system_id=other_id, resource_id=resource_id,
+                architecture_layer_key="DATA", status="ACTIVE", created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.get(TargetEntity, target_id).status = "ENABLED"
+            session.commit()
+        await remove_system(lab, offline)
+        async with LocalUow(lab.engine) as uow:
+            agent_repo = AIOpsAgentRepository(uow.session, lambda: None)
+            assert not await agent_repo.version_has_target(agent_version_id=version_id, target_id=target_id)
+            assert not await agent_repo.version_has_business_system(agent_version_id=version_id,
+                business_system_id=detail.business_system_id)
+            assert not await agent_repo.version_source_ids(agent_version_id=version_id)
+            assert await agent_repo.version_business_system_ids(agent_version_id=version_id) == [detail.business_system_id]
+        with Session(lab.engine) as session:
+            assert session.get(TargetEntity, target_id).status == "ENABLED"
+            assert session.get(ManagedResourceEntity, resource_id).lifecycle_status == "ACTIVE"
+    asyncio.run(run())
+
+
+def test_deletion_disables_plans_cleans_edit_drafts_and_keeps_completed_history(lab):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除")
+        plan_id, run_id = uuid7(), uuid7()
+        draft = await lab.service.create_business_system_draft(scope=lab.scope,
+            request=BusinessSystemDraftCreate(mode="EDIT", business_system_id=detail.business_system_id))
+        with Session(lab.engine) as session:
+            session.add(InspectionPlanEntity(**lab.owned, inspection_plan_id=plan_id,
+                display_name="历史巡检", agent_id=uuid7(), business_system_id=detail.business_system_id,
+                schedule_type="CRON", cron_expression="0 * * * *", timezone="Asia/Shanghai",
+                inspection_template_id=uuid7(), inspection_template_version_id=uuid7(),
+                timeout_seconds=300, overlap_policy="SKIP", misfire_policy="SKIP", status="ACTIVE",
+                next_run_at=datetime.now(UTC), created_by=lab.scope.actor_id, updated_by=lab.scope.actor_id))
+            session.add(OpsRunEntity(**lab.owned, ops_run_id=run_id,
+                target_id=detail.resources[0].resource.database.target_id, agent_id=uuid7(), agent_version_id=uuid7(),
+                trigger_type="MANUAL", interaction_mode="INTERACTIVE", workflow_kind="DIAGNOSIS",
+                actor_id=lab.scope.actor_id, idempotency_key=str(run_id), status="COMPLETED", trace_id="deletion-history"))
+            session.commit()
+        await remove_system(lab, offline)
+        with Session(lab.engine) as session:
+            assert session.get(InspectionPlanEntity, plan_id).status == "DISABLED"
+            assert session.get(InspectionPlanEntity, plan_id).next_run_at is None
+            assert session.get(BusinessSystemDraftEntity, draft.draft_id) is None
+            assert session.get(OpsRunEntity, run_id).status == "COMPLETED"
+    asyncio.run(run())
+
+
+def test_running_target_blocks_deletion_and_rolls_back_retirement(lab):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除")
+        run_id = uuid7()
+        with Session(lab.engine) as session:
+            session.add(OpsRunEntity(**lab.owned, ops_run_id=run_id,
+                target_id=detail.resources[0].resource.database.target_id, agent_id=uuid7(), agent_version_id=uuid7(),
+                trigger_type="MANUAL", interaction_mode="INTERACTIVE", workflow_kind="DIAGNOSIS",
+                actor_id=lab.scope.actor_id, idempotency_key=str(run_id), status="WAITING_APPROVAL", trace_id="deletion-block"))
+            session.commit()
+        with pytest.raises(AIOpsApplicationError, match="未结束"):
+            await remove_system(lab, offline)
+        with Session(lab.engine) as session:
+            assert session.get(BusinessSystemEntity, detail.business_system_id).status == "DISABLED"
+            assert session.get(ManagedResourceEntity, detail.resources[0].resource.resource_id).lifecycle_status == "ACTIVE"
+            assert session.scalar(select(ResourceSourceBindingEntity)).status == "ACTIVE"
+            assert not session.scalar(select(func.count()).select_from(OutboxEntity).where(
+                OutboxEntity.event_type == "BUSINESS_SYSTEM_DELETED"))
+    asyncio.run(run())
+
+
+def test_shared_monitor_source_credential_is_not_revoked(lab):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除")
+        with Session(lab.engine) as session:
+            target = session.get(TargetEntity, detail.resources[0].resource.database.target_id)
+            session.get(DiagnosticSourceEntity, lab.source_id).auth_credential_id = target.diagnostic_credential_id
+            session.commit()
+        await remove_system(lab, offline)
+        lab.service._managed_credentials.revoke.assert_not_awaited()
+        with Session(lab.engine) as session:
+            assert session.get(DiagnosticSourceEntity, lab.source_id).status == "ENABLED"
+    asyncio.run(run())
+
+
+def test_draft_publication_and_commit_marker_are_atomic(lab):
+    async def run():
+        draft = await lab.service.create_business_system_draft(scope=lab.scope,
+            request=BusinessSystemDraftCreate(payload={"publish": lab.request.model_dump(mode="json")}))
+        detail = await lab.service.commit_business_system_draft(scope=lab.scope,
+            draft_id=draft.draft_id, expected_revision=1, idempotency_key=lab.key)
+        with Session(lab.engine) as session:
+            row = session.get(BusinessSystemDraftEntity, draft.draft_id)
+            assert row.status == "COMMITTED" and row.business_system_id == detail.business_system_id
+        with pytest.raises(AIOpsApplicationError):
+            await lab.service.abandon_business_system_draft(scope=lab.scope, draft_id=draft.draft_id, expected_revision=1)
+    asyncio.run(run())
+
+
+def test_target_physical_delete_cannot_bypass_retired_resource_history(lab):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除")
+        await remove_system(lab, offline)
+        target_id = detail.resources[0].resource.database.target_id
+        with Session(lab.engine) as session:
+            version = session.get(TargetEntity, target_id).row_version
+        with pytest.raises(AIOpsApplicationError, match="受管资源"):
+            await lab.service.delete_target(scope=lab.scope, target_id=target_id,
+                expected_version=int(version), idempotency_key=str(uuid7()))
+        with Session(lab.engine) as session:
+            assert session.get(TargetEntity, target_id) is not None
+            assert session.get(ManagedResourceEntity, detail.resources[0].resource.resource_id).lifecycle_status == "RETIRED"
+    asyncio.run(run())
+
+
+def test_missing_system_cannot_be_deleted_from_another_scope(lab):
+    async def run():
+        detail = await publish(lab)
+        offline = await transition(lab, detail, "disable", "删除")
+        from dataclasses import replace
+        other_scope = replace(lab.scope, domain_id=uuid7() if hasattr(lab.scope, "tenant_id") else 999)
+        with pytest.raises(AIOpsApplicationError):
+            await lab.service.delete_business_system(scope=other_scope,
+                business_system_id=detail.business_system_id, expected_version=offline.row_version)
+        with Session(lab.engine) as session:
+            assert session.get(BusinessSystemEntity, detail.business_system_id).status == "DISABLED"
+    asyncio.run(run())
+
+
+def test_draft_status_with_publication_history_is_never_physically_deleted(lab):
+    async def run():
+        detail = await publish(lab)
+        await transition(lab, detail, "disable", "删除")
+        with Session(lab.engine) as session:
+            system = session.get(BusinessSystemEntity, detail.business_system_id)
+            system.status = "DRAFT"
+            session.commit()
+            version = int(system.row_version)
+        await lab.service.delete_business_system(scope=lab.scope,
+            business_system_id=detail.business_system_id, expected_version=version)
+        with Session(lab.engine) as session:
+            assert session.get(BusinessSystemEntity, detail.business_system_id).status == "DELETED"
+            event = session.scalar(select(OutboxEntity).where(OutboxEntity.event_type == "BUSINESS_SYSTEM_DELETED"))
+            assert event.payload_json["details"]["deletion_mode"] == "LOGICAL"
+    asyncio.run(run())
+
+
+def test_deleted_workspace_cannot_publish_an_orphan_system(lab):
+    async def run():
+        draft = await lab.service.create_business_system_draft(scope=lab.scope, request=BusinessSystemDraftCreate())
+        await lab.service.abandon_business_system_draft(scope=lab.scope, draft_id=draft.draft_id, expected_revision=1)
+        with pytest.raises(AIOpsApplicationError, match="草稿已删除"):
+            await lab.service.commit_business_system(scope=lab.scope, request=lab.request,
+                idempotency_key=lab.key, _draft_id=draft.draft_id, _draft_revision=1)
+        with Session(lab.engine) as session:
+            assert not session.scalar(select(func.count()).select_from(BusinessSystemEntity))
+            assert not session.scalar(select(func.count()).select_from(ManagedResourceEntity))
+            assert not session.scalar(select(func.count()).select_from(TargetEntity))
     asyncio.run(run())

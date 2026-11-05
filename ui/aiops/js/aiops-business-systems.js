@@ -65,7 +65,7 @@
         ? `<button type="button" data-enable-system="${shell.escape(item.business_system_id)}">上线</button><details class="business-system-more"><summary>更多⌄</summary><div><button class="danger" type="button" data-delete-system="${shell.escape(item.business_system_id)}">删除草稿</button></div></details>`
         : item.draft_id
           ? `<details class="business-system-more"><summary>更多⌄</summary><div><button class="danger" type="button" data-delete-draft="${shell.escape(item.draft_id)}">删除草稿</button></div></details>`
-        : `<button type="button" data-enable-system="${shell.escape(item.business_system_id)}">重新上线</button>`;
+        : `<button type="button" data-enable-system="${shell.escape(item.business_system_id)}">重新上线</button><details class="business-system-more"><summary>更多⌄</summary><div><button class="danger" type="button" data-delete-system="${shell.escape(item.business_system_id)}">删除业务系统</button></div></details>`;
     const workspaceHref = item.draft_id
       ? `./business-system-workspace.html?id=${encodeURIComponent(item.draft_mode === "EDIT" && item.business_system_id ? item.business_system_id : "new")}&draft=${encodeURIComponent(item.draft_id)}`
       : `./business-system-workspace.html?id=${encodeURIComponent(item.business_system_id)}${item.status === "ENABLED" ? "&view=readonly" : ""}`;
@@ -125,7 +125,7 @@
   }
 
   function itemById(id) {
-    return state.items.find((item) => String(item.business_system_id) === String(id));
+    return state.items.find((item) => !item.draft_id && String(item.business_system_id) === String(id));
   }
 
   function confirmAction(title, message, confirmLabel, danger = false) {
@@ -155,11 +155,16 @@
 
   async function removeDraft(item) {
     if (!item || state.busyId) return;
-    if (!await confirmAction("删除草稿业务系统？", `“${item.display_name}”将从业务系统目录中移除。已接入的资源会保留，不会删除资源、拓扑或历史数据。`, "删除草稿", true)) return;
+    const draft = item.status === "DRAFT";
+    const title = draft ? "删除草稿业务系统？" : "删除业务系统？";
+    const message = draft
+      ? `“${item.display_name}”的未发布系统记录将被永久删除。`
+      : `“${item.display_name}”将被逻辑删除，无法重新上线；拓扑和诊断、巡检等历史记录保留。`;
+    if (!await confirmAction(title, `${message} 不再被其他系统使用的资源将逻辑退役并停用监控与访问；共享资源完整保留，不会删除真实数据库或主机。`, draft ? "删除草稿" : "确认删除", true)) return;
     state.busyId = item.business_system_id;
     try {
       await request(`/business-systems/${encodeURIComponent(item.business_system_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${item.row_version}"` } });
-      shell.toast("草稿业务系统已删除，已接入资源仍然保留");
+      shell.toast("业务系统已删除；独占资源已退役，共享资源和历史记录保留");
       await load();
     } catch (error) { shell.toast(error.message); }
     finally { state.busyId = ""; }
@@ -167,7 +172,7 @@
 
   async function removeUnpublishedDraft(item) {
     if (!item || state.busyId) return;
-    if (!await confirmAction("删除未发布草稿？", `“${item.display_name}”及其中尚未发布的资源配置将被删除，不会影响任何已上线资源。`, "删除草稿", true)) return;
+    if (!await confirmAction(item.draft_mode === "EDIT" ? "丢弃编辑草稿？" : "删除未发布草稿？", `“${item.display_name}”及其中尚未发布的修改将被永久删除，不会影响原业务系统、已有资源或历史记录。`, "删除草稿", true)) return;
     state.busyId = item.draft_id;
     try {
       await request(`/business-system-drafts/${encodeURIComponent(item.draft_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${item.row_version}"` } });

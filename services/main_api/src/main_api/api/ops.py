@@ -216,7 +216,7 @@ def _route_permissions() -> dict[str, str]:
             "list_business_system_drafts", "get_business_system_draft",
             "save_business_system_draft", "commit_business_system_draft",
             "abandon_business_system_draft", "enable_business_system",
-            "disable_business_system", "delete_business_system_draft",
+            "disable_business_system", "delete_business_system",
         },
         "aiops:diagnostic_source_manage": {
             "create_diagnostic_source", "test_diagnostic_source_connection",
@@ -1443,8 +1443,8 @@ async def disable_business_system(business_system_id: UUID, body: BusinessSystem
 
 
 @router.delete("/business-systems/{business_system_id}", status_code=204)
-async def delete_business_system_draft(business_system_id: UUID, request: Request, if_match: IfMatch) -> Response:
-    await _client(request).delete_business_system_draft(business_system_id, if_match=if_match, auth_context=request.state.auth_context)
+async def delete_business_system(business_system_id: UUID, request: Request, if_match: IfMatch) -> Response:
+    await _client(request).delete_business_system(business_system_id, if_match=if_match, auth_context=request.state.auth_context)
     return Response(status_code=204)
 
 

@@ -477,20 +477,10 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             )
         service._idempotent.assert_not_awaited()
 
-    async def test_delete_draft_is_soft_and_does_not_delete_resources(self) -> None:
-        entity = SimpleNamespace(
-            business_system_id=uuid7(),
-            status="DRAFT",
-            row_version=1,
-            updated_by=None,
-            updated_at=None,
-        )
+    async def test_delete_online_system_is_rejected_before_cleanup(self) -> None:
+        entity = SimpleNamespace(business_system_id=uuid7(), status="ENABLED", row_version=1)
         repository = SimpleNamespace(get_scoped=AsyncMock(return_value=entity))
-        uow = SimpleNamespace(
-            business_systems=repository,
-            flush=AsyncMock(),
-            commit=AsyncMock(),
-        )
+        uow = SimpleNamespace(business_systems=repository, targets=object(), commit=AsyncMock())
 
         class UowContext:
             async def __aenter__(self):
@@ -501,28 +491,12 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
 
         service = object.__new__(AIOpsConfigurationService)
         service._uow_factory = UowContext
-        service._now = lambda: datetime.now(UTC)
-        scope = self.scope()
-        with patch(
-            "aiops_agent.application.configuration.business_system_service.add_configuration_event",
-            new_callable=AsyncMock,
-        ) as add_event:
-            await service.delete_business_system_draft(
-                scope=scope,
-                business_system_id=entity.business_system_id,
-                expected_version=1,
+        with self.assertRaisesRegex(Exception, "必须先下线"):
+            await service.delete_business_system(
+                scope=self.scope(), business_system_id=entity.business_system_id, expected_version=1,
             )
-
-        self.assertEqual("DELETED", entity.status)
-        repository.get_scoped.assert_awaited_once_with(
-            business_system_id=entity.business_system_id,
-            lock=True,
-            include_deleted=True,
-            domain_id=scope.domain_id,
-        )
-        uow.flush.assert_awaited_once()
-        uow.commit.assert_awaited_once()
-        self.assertEqual({"cascade": False}, add_event.await_args.kwargs["details"])
+        self.assertEqual("ENABLED", entity.status)
+        uow.commit.assert_not_awaited()
 
     async def test_list_business_systems_awaits_each_detail_projection(self) -> None:
         now = datetime.now(UTC)

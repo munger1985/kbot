@@ -13,6 +13,7 @@ from aiops_agent.entities import (
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionKnowledgeBaseEntity,
     AIOpsAgentVersionResourceActionPolicyEntity,
+    BusinessSystemEntity,
     BusinessSystemResourceEntity,
     DatabaseResourceEntity,
     InspectionPlanEntity,
@@ -119,6 +120,8 @@ class AIOpsAgentRepository:
             .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
             .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
             .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .where(BusinessSystemEntity.status == "ENABLED")
             .where(
                 AIOpsAgentVersionBusinessSystemEntity.agent_version_id
                 == agent_version_id,
@@ -144,6 +147,8 @@ class AIOpsAgentRepository:
             .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
             .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
             .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .where(BusinessSystemEntity.status == "ENABLED")
             .where(
                 AIOpsAgentVersionBusinessSystemEntity.agent_version_id == agent_version_id,
                 BusinessSystemResourceEntity.status == "ACTIVE",
@@ -171,7 +176,10 @@ class AIOpsAgentRepository:
         self, *, agent_version_id: UUID, business_system_id: UUID
     ) -> bool:
         value = await self._session.scalar(
-            select(AIOpsAgentVersionBusinessSystemEntity.business_system_id).where(
+            select(AIOpsAgentVersionBusinessSystemEntity.business_system_id)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == AIOpsAgentVersionBusinessSystemEntity.business_system_id)
+            .where(BusinessSystemEntity.status == "ENABLED")
+            .where(
                 AIOpsAgentVersionBusinessSystemEntity.agent_version_id
                 == agent_version_id,
                 AIOpsAgentVersionBusinessSystemEntity.business_system_id
@@ -237,6 +245,8 @@ class AIOpsAgentRepository:
             .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
             .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
             .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .where(BusinessSystemEntity.status == "ENABLED")
             .join(
                 TargetEntity,
                 TargetEntity.target_id == DatabaseResourceEntity.target_id,
@@ -261,6 +271,8 @@ class AIOpsAgentRepository:
             .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
             .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
             .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .where(BusinessSystemEntity.status == "ENABLED")
             .where(
                 AIOpsAgentVersionBusinessSystemEntity.agent_version_id == agent_version_id,
                 DatabaseResourceEntity.target_id == target_id,
@@ -311,6 +323,8 @@ class AIOpsAgentRepository:
                 BusinessSystemResourceEntity,
                 BusinessSystemResourceEntity.business_system_id == AIOpsAgentVersionBusinessSystemEntity.business_system_id,
             )
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .where(BusinessSystemEntity.status == "ENABLED")
             .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == BusinessSystemResourceEntity.resource_id)
             .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
             .join(TargetEntity, TargetEntity.target_id == DatabaseResourceEntity.target_id)
@@ -556,6 +570,8 @@ class AIOpsAgentRepository:
             )
             .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.agent_version_id == AIOpsAgentVersionEntity.agent_version_id)
             .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.business_system_id == AIOpsAgentVersionBusinessSystemEntity.business_system_id)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .where(BusinessSystemEntity.status == "ENABLED")
             .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == BusinessSystemResourceEntity.resource_id)
             .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
             .join(PolicyEntity, PolicyEntity.policy_id == AIOpsAgentVersionEntity.policy_id)
