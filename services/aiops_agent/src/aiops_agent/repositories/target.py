@@ -523,6 +523,7 @@ class TargetRepository(AIOpsRepository):
         target_id: UUID,
         domain_id: int,
         lock: bool = False,
+        refresh: bool = False,
     ) -> TargetEntity | None:
         self._check_active()
         statement: Select = select(TargetEntity).where(
@@ -531,6 +532,9 @@ class TargetRepository(AIOpsRepository):
         )
         if lock:
             statement = statement.with_for_update()
+        if refresh:
+            # 资源生命周期先读取图谱，再在锁内刷新状态和版本。
+            statement = statement.execution_options(populate_existing=True)
         return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def list_scoped(

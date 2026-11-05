@@ -198,6 +198,7 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         target = SimpleNamespace(
             target_id=target_id,
+            row_version=1,
             db_type="ORACLE",
             version_code="19c",
             environment="PROD",
@@ -233,7 +234,14 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             list_relations=AsyncMock(return_value=[]),
             list_participants=AsyncMock(return_value=[]),
         )
-        targets = SimpleNamespace(list_source_bindings=AsyncMock(return_value=[SimpleNamespace()]))
+        binding = SimpleNamespace(
+            target_source_binding_id=uuid7(), target_id=target_id, diagnostic_source_id=uuid7(),
+            source_locator_key="test-candidate", source_locator_json={"target": "test"},
+            role="PRIMARY", priority=100, capability_scope_json=None, mapping_overrides_json=None,
+            query_budget_json=None, status="ACTIVE", health_status="UNKNOWN", row_version=1,
+            created_at=now, updated_at=now,
+        )
+        targets = SimpleNamespace(list_source_bindings=AsyncMock(return_value=[binding]))
         credential_reader = AsyncMock(return_value={"username": "aiops_reader", "password": "not-returned"})
         service = object.__new__(AIOpsConfigurationService)
         service._managed_credentials = SimpleNamespace(read=credential_reader)

@@ -59,7 +59,7 @@
     const readonly = form.elements.readonly_database_enabled.checked;
     const change = form.elements.allow_agent_execution.checked;
     return [
-      !item.target_enabled && "Target 未启用，不能执行数据库诊断或变更",
+      !item.target_enabled && "数据库资源尚未上线，请通过所属业务系统的上线或重新上线统一管理",
       !item.scope_enabled && "业务系统未上线，不能执行诊断或变更",
       !item.monitoring_configured && "尚未绑定监控源，无法读取监控数据",
       readonly && !item.readonly_connection_enabled && "Agent 已允许只读，但 Target 未开放只读连接",

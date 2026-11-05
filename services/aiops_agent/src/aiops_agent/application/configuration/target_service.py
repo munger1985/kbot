@@ -791,6 +791,30 @@ class TargetConfigurationMixin:
             return result
         return await self._idempotent(scope=scope, operation="TARGET_DELETE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version}, response_type=TargetDetail, handler=handler)
 
+    async def _validate_target_enablement(self, *, uow, scope, entity, now) -> None:
+        """统一校验内部端点上线条件，业务系统发布不得绕过监控与连接门禁。"""
+        monitor_bindings = await uow.targets.list_source_bindings(
+            target_id=entity.target_id, domain_id=scope.domain_id, active_only=True,
+        )
+        if not monitor_bindings:
+            raise state_conflict("数据库资源必须先绑定至少一个有效监控映射才能上线")
+        monitor_sources = [
+            await uow.diagnostic_sources.get_scoped(
+                diagnostic_source_id=binding.diagnostic_source_id, domain_id=scope.domain_id,
+            )
+            for binding in monitor_bindings
+        ]
+        if any(source is None or source.status != "ENABLED" for source in monitor_sources):
+            raise state_conflict("数据库资源的全部有效监控映射必须引用已启用的监控源")
+        if entity.readonly_connection_enabled:
+            if entity.connectivity_status not in {"CONNECTED", "DEGRADED"}:
+                raise state_conflict("数据库资源连通性检查通过后才能上线")
+            if (
+                entity.last_connectivity_success_at is None
+                or entity.last_connectivity_success_at < now - timedelta(hours=2)
+            ):
+                raise state_conflict("数据库资源连通性结果已过期，请重新检查")
+
     async def command_target(
         self,
         *,
@@ -825,46 +849,13 @@ class TargetConfigurationMixin:
                 raise state_conflict(
                     f"Target 不能从 {entity.status} 执行 {command}"
                 )
+            assigned_system = await uow.business_systems.find_system_for_target(
+                target_id=target_id, domain_id=scope.domain_id,
+            )
+            if assigned_system is not None:
+                raise state_conflict("数据库资源的运行状态由所属业务系统的上线、下线和重新上线统一管理")
             if destination == "ENABLED":
-                monitor_bindings = await uow.targets.list_source_bindings(
-                    target_id=entity.target_id,
-                    domain_id=scope.domain_id,
-                    active_only=True,
-                )
-                if not monitor_bindings:
-                    raise state_conflict(
-                        "Target 必须先绑定至少一个有效监控 Label 才能启用"
-                    )
-                monitor_sources = [
-                    await uow.diagnostic_sources.get_scoped(
-                        diagnostic_source_id=binding.diagnostic_source_id,
-                        domain_id=scope.domain_id,
-                    )
-                    for binding in monitor_bindings
-                ]
-                if any(
-                    source is None or source.status != "ENABLED"
-                    for source in monitor_sources
-                ):
-                    raise state_conflict(
-                        "Target 的全部有效监控映射必须引用已启用的监控源"
-                    )
-            if (
-                destination == "ENABLED"
-                and entity.readonly_connection_enabled
-                and entity.connectivity_status not in {"CONNECTED", "DEGRADED"}
-            ):
-                raise state_conflict("Target 连通性检查通过后才能启用")
-            if (
-                destination == "ENABLED"
-                and entity.readonly_connection_enabled
-                and (
-                    entity.last_connectivity_success_at is None
-                    or entity.last_connectivity_success_at
-                    < now - timedelta(hours=2)
-                )
-            ):
-                raise state_conflict("Target 连通性结果已过期，请重新检查")
+                await self._validate_target_enablement(uow=uow, scope=scope, entity=entity, now=now)
             entity.status = destination
             entity.updated_by = scope.actor_id
             entity.updated_at = now

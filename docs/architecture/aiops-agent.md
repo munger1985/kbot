@@ -193,13 +193,16 @@ Domain 隔离的 Repository，不直接访问 SQLAlchemy Session；原始工作�
 
 ## 配置资源生命周期与连通性
 
-Target 和 Diagnostic Source 的人工管理状态统一为 `ENABLED`、`DISABLED`，不使用
-“维护中”表示未启用或连接失败。连通性独立使用 `UNKNOWN`、`CHECKING`、
+业务系统通过“发布资源”“上线”“下线”“重新上线”统一维护运行意图；所属数据库的内部
+Target 同步为 `ENABLED`、`DISABLED`，不再要求用户独立启停。新资源发布通过连接与监控门禁后
+在同一事务上线；下线只停用没有其他上线系统引用的端点，保留配置及历史。Diagnostic Source
+仍有独立接入开关。不使用“维护中”表示未上线或连接失败。连通性独立使用 `UNKNOWN`、`CHECKING`、
 `CONNECTED`、`DEGRADED`、`UNREACHABLE`；Target 从监控证据归并出的业务观测状态
-另行使用 `UNKNOWN`、`UP`、`DOWN`、`DEGRADED`。新建资源默认停用；Target 立即写入
+另行使用 `UNKNOWN`、`UP`、`DOWN`、`DEGRADED`。Target 构建期间默认停用；Target 立即写入
 持久化连通性检查请求，Diagnostic Source 的新建、连接配置变更及人工连接测试则在当前
 HTTP 请求内完成 Adapter 健康检查并直接返回最终连通性，不投递异步任务。只有最近两小时内
-成功连接的资源允许人工启用。
+成功连接的只读数据库端点允许随业务系统上线。详见
+[业务系统发布与运行生命周期](../operations/aiops-business-system-publication-lifecycle.md)。
 
 Scheduler 默认每小时重新检查 Target 和 Diagnostic Source，并加入最多十分钟抖动；
 实际网络调用由 Worker 消费 Outbox 执行。周期失败只更新连通性，不改变人工启用

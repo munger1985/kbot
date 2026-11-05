@@ -422,6 +422,46 @@ class BusinessSystemConfigurationMixin:
             updated_at=system.updated_at,
         )
 
+    async def _sync_system_target_lifecycle(self, *, uow, scope, system, now) -> list[str]:
+        """内部 Target 随系统发布、上线和下线同步，不要求用户重复启停。"""
+        rows = await uow.business_systems.list_system_resource_rows(system.business_system_id)
+        target_ids = {
+            database.target_id for link, resource, database, _target in rows
+            if link.status == "ACTIVE" and resource.lifecycle_status == "ACTIVE"
+            and database is not None and database.target_id is not None
+        }
+        changed = []
+        # 跨系统共享端点时使用稳定锁顺序，并在锁内重新判断剩余上线引用。
+        for target_id in sorted(target_ids, key=str):
+            target = await uow.targets.get_scoped(
+                target_id=target_id, domain_id=scope.domain_id, lock=True, refresh=True,
+            )
+            if target is None or (
+                hasattr(scope, "tenant_id") and target.tenant_id != scope.tenant_id
+            ):
+                raise resource_not_found("Target")
+            if system.status == "ENABLED":
+                await self._validate_target_enablement(uow=uow, scope=scope, entity=target, now=now)
+                desired = "ENABLED"
+            else:
+                if await uow.business_systems.has_enabled_system_for_target(
+                    target_id=target_id, **_scope_args(scope),
+                ):
+                    continue
+                desired = "DISABLED"
+            if target.status == desired:
+                continue
+            target.status = desired
+            target.updated_by, target.updated_at = scope.actor_id, now
+            await uow.flush()
+            await add_configuration_event(
+                uow=uow, scope=scope, aggregate_type="TARGET", aggregate_id=target_id,
+                event_type=f"TARGET_{desired}", row_version=int(target.row_version),
+                details={"business_system_id": str(system.business_system_id), "lifecycle_owner": "BUSINESS_SYSTEM"},
+            )
+            changed.append(str(target_id))
+        return changed
+
     async def commit_business_system(self, *, scope: ConfigurationScope, request: BusinessSystemResourceGraphCommit, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemResourceGraphDetail:
             assert uow.business_systems is not None and uow.targets is not None
@@ -571,6 +611,7 @@ class BusinessSystemConfigurationMixin:
             blockers = [item.message for item in detail.validation_issues if item.severity == "BLOCKING"]
             if blockers:
                 raise validation_failed("；".join(blockers))
+            await self._sync_system_target_lifecycle(uow=uow, scope=scope, system=system, now=now)
             await add_configuration_event(
                 uow=uow,
                 scope=scope,
@@ -580,7 +621,7 @@ class BusinessSystemConfigurationMixin:
                 row_version=int(system.row_version),
                 details={"resource_count": detail.resource_count, "relation_count": len(detail.relations)},
             )
-            return detail
+            return await self._system_detail(uow=uow, scope=scope, system=system)
 
         return await self._idempotent(
             scope=scope,
@@ -702,6 +743,7 @@ class BusinessSystemConfigurationMixin:
                 created_at=now, updated_at=now,
             )])
             await uow.flush()
+            await self._sync_system_target_lifecycle(uow=uow, scope=scope, system=system, now=now)
             return await self._system_detail(uow=uow, scope=scope, system=system)
         return await self._idempotent(
             scope=scope, operation="BUSINESS_SYSTEM_RESOURCE_ADD", parent_resource=str(business_system_id),
@@ -1233,6 +1275,8 @@ class BusinessSystemConfigurationMixin:
             return result
 
     async def command_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, command: str, request: BusinessSystemLifecycleCommand, expected_version: int, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+        if command not in {"enable", "disable"}:
+            raise validation_failed("未知业务系统生命周期命令")
         reason = request.reason.strip() if request.reason else None
         if command == "disable" and not reason:
             raise validation_failed("请填写下线原因")
@@ -1257,7 +1301,8 @@ class BusinessSystemConfigurationMixin:
             entity.updated_by = scope.actor_id
             entity.updated_at = now
             await uow.flush()
-            await add_configuration_event(uow=uow, scope=scope, aggregate_type="BUSINESS_SYSTEM", aggregate_id=entity.business_system_id, event_type=f"BUSINESS_SYSTEM_{desired}", row_version=int(entity.row_version), details={"cascade": False, "reason": reason})
+            changed_targets = await self._sync_system_target_lifecycle(uow=uow, scope=scope, system=entity, now=now)
+            await add_configuration_event(uow=uow, scope=scope, aggregate_type="BUSINESS_SYSTEM", aggregate_id=entity.business_system_id, event_type=f"BUSINESS_SYSTEM_{desired}", row_version=int(entity.row_version), details={"target_lifecycle": "SYNCHRONIZED", "changed_target_ids": changed_targets, "resource_deletion": False, "reason": reason})
             return await self._system_detail(uow=uow, scope=scope, system=entity)
 
         return await self._idempotent(

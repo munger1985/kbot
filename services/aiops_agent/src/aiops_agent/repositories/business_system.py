@@ -230,6 +230,26 @@ class BusinessSystemRepository(AIOpsRepository):
         )
         return int((await self._session.execute(statement)).scalar_one())
 
+    async def has_enabled_system_for_target(self, *, target_id: UUID, domain_id: int) -> bool:
+        """只要同一空间内仍有上线系统引用活跃资源，就保留共享 Target 的运行状态。"""
+        self._check_active()
+        statement = (
+            select(BusinessSystemEntity.business_system_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.business_system_id == BusinessSystemEntity.business_system_id)
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == BusinessSystemResourceEntity.resource_id)
+            .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .where(
+                DatabaseResourceEntity.target_id == target_id,
+                BusinessSystemEntity.domain_id == domain_id,
+                ManagedResourceEntity.domain_id == domain_id,
+                BusinessSystemEntity.status == "ENABLED",
+                BusinessSystemResourceEntity.status == "ACTIVE",
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
+            )
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none() is not None
+
     async def find_system_for_target(self, *, target_id: UUID, domain_id: int) -> BusinessSystemEntity | None:
         self._check_active()
         statement = (

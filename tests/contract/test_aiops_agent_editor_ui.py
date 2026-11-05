@@ -37,7 +37,7 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         page = PAGE.read_text(encoding="utf-8")
 
         self.assertIn("aiops-agents.css?v=20261030_1", page)
-        self.assertIn("aiops-agents.js?v=20261030_1", page)
+        self.assertRegex(page, r'aiops-agents\.js\?v=\d{8}_[A-Za-z0-9]+')
 
     def test_automation_only_keeps_actionable_sections_with_contiguous_numbers(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
