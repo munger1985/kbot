@@ -1831,20 +1831,30 @@ class AIOpsRuntimeService:
                 }})
             return lease
 
-    async def _project_turn_task_started(self, *, uow, run, task) -> None:
-        """把后台 Task 领取投影为用户可见阶段，并同步 Tool 运行状态。"""
+    async def _turn_for_projection(self, *, uow, run):
+        """仅投影实际属于对话的 Run，独立巡检与告警仍沿用自身生命周期。"""
         link = await uow.turns.get_run_link_by_ops_run_id(
             ops_run_id=run.ops_run_id
         )
         if link is None:
-            raise state_conflict("Agent Turn Run 缺少 Primary Turn 关联")
+            snapshot = dict(getattr(run, "plan_snapshot_json", None) or {})
+            if snapshot.get("turn_id") or snapshot.get("conversation_id"):
+                raise state_conflict("Agent Turn Run 缺少 Primary Turn 关联")
+            return None
         turn = await uow.turns.get_turn(
             domain_id=int(run.domain_id),
             turn_id=link.turn_id,
             lock=True,
         )
         if turn is None:
-            raise state_conflict("Agent Turn Task 缺少有效 Turn")
+            raise state_conflict("Agent Turn Run 缺少有效 Turn")
+        return turn
+
+    async def _project_turn_task_started(self, *, uow, run, task) -> None:
+        """把后台 Task 领取投影为用户可见阶段，并同步 Tool 运行状态。"""
+        turn = await self._turn_for_projection(uow=uow, run=run)
+        if turn is None:
+            return
         invocation = await uow.turns.get_tool_invocation_by_task(
             ops_task_id=task.ops_task_id,
             lock=True,
@@ -2377,28 +2387,14 @@ class AIOpsRuntimeService:
                 },
             )
             if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
-                link = await uow.turns.get_run_link_by_ops_run_id(
-                    ops_run_id=run.ops_run_id
-                )
-                turn = (
-                    await uow.turns.get_turn(
-                        domain_id=int(run.domain_id),
-                        turn_id=link.turn_id,
-                        lock=True,
+                turn = await self._turn_for_projection(uow=uow, run=run)
+                if turn is not None:
+                    await self._append_turn_event(
+                        uow,
+                        turn,
+                        event_type=command.event_type,
+                        payload=dict(command.payload),
                     )
-                    if link is not None
-                    else None
-                )
-                if turn is None:
-                    raise state_conflict(
-                        "Agent Turn增量事件缺少有效Turn关联"
-                    )
-                await self._append_turn_event(
-                    uow,
-                    turn,
-                    event_type=command.event_type,
-                    payload=dict(command.payload),
-                )
             await uow.commit()
             return self._mutation_receipt(
                 run, task, int(event.sequence_no), None
@@ -2414,18 +2410,9 @@ class AIOpsRuntimeService:
         now: datetime,
     ) -> None:
         """在 Task 完成事务内同步维护 Turn 的权威业务投影。"""
-        link = await uow.turns.get_run_link_by_ops_run_id(
-            ops_run_id=run.ops_run_id
-        )
-        if link is None:
-            raise state_conflict("Agent Turn Run 缺少 Primary Turn 关联")
-        turn = await uow.turns.get_turn(
-            domain_id=int(run.domain_id),
-            turn_id=link.turn_id,
-            lock=True,
-        )
+        turn = await self._turn_for_projection(uow=uow, run=run)
         if turn is None:
-            raise resource_not_found("Conversation Turn")
+            return
         payload = dict(artifact.payload_json or {})
         if artifact.schema_version == "DBA_TOOL_RESULT.v1":
             await self._project_tool_result(
@@ -2776,18 +2763,9 @@ class AIOpsRuntimeService:
         """把 Run 的失败、取消或过期终态同步到 Agent Turn。"""
         if status not in {"FAILED", "CANCELLED"}:
             raise ValueError("Agent Turn 终态投影仅支持失败或取消")
-        link = await uow.turns.get_run_link_by_ops_run_id(
-            ops_run_id=run.ops_run_id
-        )
-        if link is None:
-            raise state_conflict("Agent Turn Run 缺少 Primary Turn 关联")
-        turn = await uow.turns.get_turn(
-            domain_id=int(run.domain_id),
-            turn_id=link.turn_id,
-            lock=True,
-        )
+        turn = await self._turn_for_projection(uow=uow, run=run)
         if turn is None:
-            raise resource_not_found("Conversation Turn")
+            return
         if turn.status in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"}:
             return
         turn.status = status
@@ -9109,20 +9087,9 @@ class AIOpsRuntimeService:
         """把 Run 的交互暂停或恢复同步到 Agent Turn。"""
         if getattr(run, "workflow_kind", None) not in _AGENT_TURN_WORKFLOWS:
             return
-        link = await uow.turns.get_run_link_by_ops_run_id(
-            ops_run_id=run.ops_run_id
-        )
-        turn = (
-            await uow.turns.get_turn(
-                domain_id=int(run.domain_id),
-                turn_id=link.turn_id,
-                lock=True,
-            )
-            if link is not None
-            else None
-        )
+        turn = await self._turn_for_projection(uow=uow, run=run)
         if turn is None:
-            raise state_conflict("Agent Turn Run 缺少有效 Turn 关联")
+            return
         turn.status = status
         await self._append_turn_event(
             uow,

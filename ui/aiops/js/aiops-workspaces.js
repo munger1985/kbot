@@ -2533,10 +2533,12 @@
         // 临时断流统一由权威 Turn 状态与续传游标恢复。
       }
       if (completed) break;
+      let statusVerified = false;
       try {
         const turn = await KBotAIOpsAuth.request(
           `${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}`,
         );
+        statusVerified = true;
         if (terminalTurnStatuses.has(turn.status)) {
           completed = true;
           break;
@@ -2545,15 +2547,17 @@
         // 状态回读也可能遇到同一次短暂网络抖动，下一轮继续恢复。
       }
       appendProgress(progress, "stream.recovery", {
-        public_summary: streamFailed
-          ? "事件流暂时中断，正在恢复诊断进度…"
-          : "诊断仍在后台运行，正在继续获取进度…",
+        public_summary: !statusVerified
+          ? "暂时无法确认后台状态，正在尝试重新连接…"
+          : streamFailed
+            ? "事件流连接中断；已核对本轮尚未结束，正在尝试恢复进度…"
+            : "本轮尚未结束，正在继续获取进度…",
       }, "stream.recovery");
       await new Promise((resolve) => window.setTimeout(resolve, Math.min(5000, 1000 * (attempt + 1))));
     }
     window.clearInterval(elapsedTimer);
     updateProgressElapsed(progress);
-    if (!completed) throw new Error("诊断仍在后台运行，请稍后刷新会话查看结果");
+    if (!completed) throw new Error("进度连接尚未恢复，请刷新会话核对本轮状态");
     if (pending) {
       pending.finalizing = true;
       await waitForTyping(pending);

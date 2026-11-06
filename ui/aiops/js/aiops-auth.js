@@ -174,9 +174,14 @@
           if (line.startsWith("event:")) event = line.slice(6).trim();
           if (line.startsWith("data:")) data += line.slice(5).trim();
         }
+        if (!data && !id && event === "message") continue;
         let payload = data;
         try { payload = data ? JSON.parse(data) : null; } catch (_) { /* 保留文本事件。 */ }
         await onEvent({ event, data: payload, id });
+        if (event === "done") {
+          await reader.cancel();
+          return;
+        }
       }
       if (done) break;
     }

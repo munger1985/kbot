@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import Select, func, literal_column, or_, select, update
+from sqlalchemy import Select, case, func, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
@@ -755,7 +755,7 @@ class OpsRunRepository(AIOpsRepository):
     async def lock_due_run(
         self, *, now: datetime
     ) -> OpsRunEntity | None:
-        """锁定一个已到 Deadline 的非终态 Run。"""
+        """优先收尾已到期限的交互运行，避免积压巡检拖住用户终态。"""
         self._check_active()
         candidates = (
             await self._session.execute(
@@ -777,6 +777,7 @@ class OpsRunRepository(AIOpsRepository):
                     ),
                 )
                 .order_by(
+                    case((OpsRunEntity.interaction_mode == "INTERACTIVE", 0), else_=1),
                     OpsRunEntity.deadline_at,
                     OpsRunEntity.ops_run_id,
                 )

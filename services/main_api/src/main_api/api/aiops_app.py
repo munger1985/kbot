@@ -1,6 +1,5 @@
 """AIOps App 的成员、私有 Agent、连续对话和报告模板 BFF。"""
 
-import asyncio
 import json
 from datetime import datetime
 from typing import Annotated, Any, Literal, cast
@@ -10,6 +9,7 @@ from uuid import UUID
 from platform_core.contracts.aiops.case_resource import CaseResourceStatus
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from main_api.api.aiops_events import stream_aiops_event_pages
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from main_api.application import (
@@ -1702,33 +1702,20 @@ async def stream_conversation_turn_events(
     client = _client(request)
     context = request.state.auth_context
 
-    async def generate():
-        nonlocal cursor
-        while not await request.is_disconnected():
-            page = await client.list_conversation_turn_events(
-                conversation_id,
-                turn_id,
-                after_sequence=cursor,
-                limit=200,
-                auth_context=context,
-            )
-            for event in page["events"]:
-                cursor = int(event["sequence_no"])
-                yield (
-                    f"id: {cursor}\n"
-                    f"event: {event['event_type']}\n"
-                    f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                )
-            if page.get("terminal"):
-                yield (
-                    "event: done\n"
-                    f"data: {json.dumps({'sequence_no': cursor})}\n\n"
-                )
-                return
-            await asyncio.sleep(1)
+    async def fetch_page(after_sequence: int, limit: int):
+        return await client.list_conversation_turn_events(
+            conversation_id,
+            turn_id,
+            after_sequence=after_sequence,
+            limit=limit,
+            auth_context=context,
+        )
 
     return StreamingResponse(
-        generate(),
+        stream_aiops_event_pages(
+            request=request, fetch_page=fetch_page, cursor=cursor,
+            settings=request.app.state.main_api_settings.api,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

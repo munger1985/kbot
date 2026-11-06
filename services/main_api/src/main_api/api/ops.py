@@ -13,7 +13,6 @@ from platform_core.contracts.aiops.sql_plan_material import (
     SqlPlanMaterialPage, SqlPlanMaterialView,
 )
 
-import asyncio
 import json
 from datetime import datetime
 from typing import Annotated, Any, Literal, TypeVar, cast
@@ -32,6 +31,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, model_validator
 from starlette.responses import StreamingResponse
+from main_api.api.aiops_events import stream_aiops_event_pages
 
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1
@@ -1304,32 +1304,19 @@ async def stream_ops_run_events(
     context = request.state.auth_context
     client = _client(request)
 
-    async def generate():
-        nonlocal cursor
-        while not await request.is_disconnected():
-            page = await client.list_run_events(
-                run_id,
-                after_sequence=cursor,
-                limit=200,
-                auth_context=context,
-            )
-            for event in page["events"]:
-                cursor = int(event["sequence_no"])
-                yield (
-                    f"id: {cursor}\n"
-                    f"event: {event['event_type']}\n"
-                    f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                )
-            if page.get("terminal"):
-                yield (
-                    "event: done\n"
-                    f"data: {json.dumps({'sequence_no': cursor})}\n\n"
-                )
-                return
-            await asyncio.sleep(1)
+    async def fetch_page(after_sequence: int, limit: int):
+        return await client.list_run_events(
+            run_id,
+            after_sequence=after_sequence,
+            limit=limit,
+            auth_context=context,
+        )
 
     return StreamingResponse(
-        generate(),
+        stream_aiops_event_pages(
+            request=request, fetch_page=fetch_page, cursor=cursor,
+            settings=request.app.state.main_api_settings.api,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
