@@ -5,11 +5,17 @@
     const form = document.getElementById("user-form"), status = document.getElementById("user-status");
     const api = "/api/v1/apps/aiops/members";
     let selected = null, busy = false;
+    function showBindingStatus(binding) {
+      const state = ({VERIFIED: ["已验证", "status-success"], UNVERIFIED: ["待本人验证", "status-warning"],
+        DISABLED: ["已解绑", "status-muted"]})[binding?.status] || [binding ? "状态待确认" : "未绑定", "status-muted"];
+      const element = document.getElementById("user-binding-status");
+      element.textContent = state[0]; element.className = "status-pill " + state[1];
+    }
     function reset() {
       selected = null; form.reset(); form.elements.user_id.disabled = false;
       for (const name of ["password", "role_code"]) { form.elements[name].disabled = false; form.elements[name].required = true; }
       document.getElementById("user-form-title").textContent = "新建用户";
-      document.getElementById("user-binding-status").textContent = "未绑定";
+      showBindingStatus(null);
     }
     async function edit(userId) {
       try {
@@ -20,7 +26,7 @@
         for (const name of ["password", "role_code"]) { form.elements[name].disabled = true; form.elements[name].required = false; }
         form.elements.password.value = "";
         document.getElementById("user-form-title").textContent = "编辑用户";
-        document.getElementById("user-binding-status").textContent = selected.feishu_binding?.status || "未绑定";
+        showBindingStatus(selected.feishu_binding);
       } catch (error) { status.textContent = error.message; }
     }
     async function load() {
@@ -47,7 +53,7 @@
       }
       try {
         await KBotAIOpsAuth.request(api + (selected ? "/" + encodeURIComponent(userId) : ""), {method: selected ? "PATCH" : "POST", body: JSON.stringify(body)});
-        status.textContent = "用户已保存；候选飞书身份需本人在通知渠道页面发送验证码并确认。";
+        status.textContent = "用户已保存；候选飞书身份需本人在“我的通知设置”中发送验证码并确认。";
         reset(); await load();
       } catch (error) { status.textContent = error.message; }
       finally { busy = false; }

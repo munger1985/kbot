@@ -111,6 +111,21 @@ App Secret 通过现有托管凭据设施加密。API 不回显已有 Secret、T
 
 连接、绑定、查看及重发权限独立。管理页面按服务端 capabilities 显示；后端每次重新鉴权。绑定管理员通过只读 targets 获取父连接，不因此获得连接写权限。KBot 页面复用既有 AIOps 登录入口；Ammolite 管理入口使用当前 Tenant 会话，本人验证核对当前用户与 Tenant 成员有效性，不以任意 Domain 作为身份绑定前提。
 
+### 4.1 获取并填写个人 open_id
+
+首次手工联调优先使用 [飞书 API 调试台](https://open.feishu.cn/api-explorer)，无需自行调用通讯录接口：
+
+1. 登录后选择**通知渠道配置使用的同一个企业自建应用**，找到“发送消息”接口。
+2. 将接收者 ID 类型（receive_id_type）设为 open_id，点击“快速复制 open_id”。
+3. 搜索或选择要绑定的飞书成员，点击“复制成员 ID”。这里只复制身份，不需要点击“发送请求”或试发消息。
+4. 将以 ou_ 开头的值填入本系统创建／编辑成员的飞书身份字段。保存只登记候选身份，不发送消息；新增或更换后由本人进入“我的通知设置”显式发码并确认。字段可留空；编辑时清空并保存表示解绑。
+
+同一用户在不同应用中的 open_id 不同，不能从其他应用复制，也不能用 user_id、union_id 或群 chat_id 代替。KBot 与 Ammolite 使用不同应用时必须分别获取。操作依据：[如何获取指定用户的 Open ID](https://open.feishu.cn/document/uAjLw4CM/ugTN1YjL4UTN24CO1UjN/trouble-shooting/how-to-obtain-openid)。
+
+如后续确需通过手机／邮箱批量查询，使用官方“通过手机号或邮箱获取用户 ID”接口并指定 user_id_type=open_id；其返回字段 user_id 才表示对应 open_id。这需要额外申请 contact:user.id:readonly，本阶段不自动增加通讯录权限，也不将它作为手工绑定前提。
+
+成员身份区域使用公共表单、状态标签及按钮：状态显示“未绑定／待本人验证／已验证／已解绑”，不直接显示内部枚举。Ammolite 将字段、帮助和操作分区，输入宽度受控并适配明暗主题与窄屏；KBot 复用现有 ops-form／ops-field，不另建未定义的表单布局。
+
 ## 5. 故障处理
 
 ### 操作条件与配置位置
