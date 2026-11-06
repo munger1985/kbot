@@ -9,7 +9,9 @@
 - 入口：`python -m main_api.entrypoints.external_notification_worker`。
 - 配置：部署文件顶层 `[external_delivery]`，经 typed settings 读取。
 - API：`/api/v1/notification-delivery`；OpenAPI 为公开精确合同。
-- 管理：KBot AIOps 的“通知渠道与投递”；Ammolite 的 `/tenant/governance/notification-delivery`。
+- 管理：KBot 分为 `ui/aiops/notification-channels.html`（通知渠道）和 `notification-delivery.html`（通知投递）；Ammolite 分为 `/tenant/governance/notification-channels` 和 `/tenant/governance/notification-delivery`。
+- 个人验证：KBot 账户菜单的“我的通知设置”指向 `notification-settings.html`；Ammolite 租户账户菜单指向 `/tenant/notification-settings`。成员绑定仍在创建／编辑成员处维护。
+- 2026-11-06 交互修订不改 Schema、责任组或群路由。渠道单卡无分页；投递记录默认每页 20 条，按后端 `has_more` 翻页。群登记入口暂不展示，新消息规则与试发只选择个人绑定，已有数据不清理或重写。
 - 卡片详情：门户公开地址下 `/notifications/open/{entry_id}`。入口记录独立于个人收件箱。
 - KBot 本地启停脚本和容器拓扑已登记 Worker；Ammolite 进程目标为 `notification-delivery`。
 - 默认关闭时 Worker 空闲等待信号，不访问数据库和飞书；修改配置后需按部署流程重启对应进程。

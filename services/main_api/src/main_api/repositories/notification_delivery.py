@@ -60,11 +60,21 @@ class ExternalDeliveryRepository:
         row = (await self._session.execute(query)).mappings().one_or_none()
         return dict(row) if row else None
 
-    async def list(self, kind, *, scope, limit=100, offset=0, status=None):
+    async def list(self, kind, *, scope, limit=100, offset=0, status=None,
+                   connection_id=None, event_type=None, recipient_actor_id=None,
+                   created_from=None, created_to=None):
         table = self.tables[kind]
         query = select(table).where(*self.scoped(table, scope))
         if status is not None:
             query = query.where(table.c.status == status)
+        for field, value in (("connection_id", connection_id), ("event_type", event_type),
+                             ("recipient_actor_id", recipient_actor_id)):
+            if value is not None:
+                query = query.where(table.c[field] == value)
+        if created_from is not None:
+            query = query.where(table.c.created_at >= created_from)
+        if created_to is not None:
+            query = query.where(table.c.created_at < created_to)
         rows = (await self._session.execute(query
             .order_by(table.c.created_at.desc(), table.c.id).offset(offset).limit(limit))).mappings().all()
         return [dict(row) for row in rows]

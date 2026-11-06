@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from platform_core.notifications.delivery import (
     BindingConfirmation, BindingCreate, ConnectionCreate, ConnectionUpdate, ExternalPolicyCreate, RetryRequest, DeliveryStatus,
@@ -156,11 +156,19 @@ async def create_policy(body: ExternalPolicyCreate, request: Request):
 
 
 @router.get("/jobs")
-async def jobs(request: Request, limit: int = Query(100, ge=1, le=100),
-               offset: int = Query(0, ge=0, le=1000000), status: DeliveryStatus | None = None):
+async def jobs(request: Request, limit: int = Query(20, ge=1, le=100),
+               offset: int = Query(0, ge=0, le=1000000), status: DeliveryStatus | None = None,
+               connection_id: UUID | None = None,
+               event_type: str | None = Query(None, min_length=1, max_length=160),
+               recipient_actor_id: str | None = Query(None, min_length=1, max_length=256),
+               created_from: AwareDatetime | None = None, created_to: AwareDatetime | None = None):
     scope, _ = await external_context(request, permission="read")
-    return {"items": await request.app.state.external_notification_service.list(
-        "job", scope=scope, limit=limit, offset=offset, status=status)}
+    if created_from is not None and created_to is not None and created_from >= created_to:
+        raise HTTPException(422, {"code": "NOTIFICATION_TIME_RANGE_INVALID", "message": "结束时间须晚于开始时间"})
+    return await request.app.state.external_notification_service.list_jobs(
+        scope=scope, limit=limit, offset=offset, status=status, connection_id=connection_id,
+        event_type=event_type, recipient_actor_id=recipient_actor_id,
+        created_from=created_from, created_to=created_to)
 
 
 @router.get("/jobs/{job_id}/attempts")

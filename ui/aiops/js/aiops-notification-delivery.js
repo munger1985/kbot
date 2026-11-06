@@ -1,153 +1,277 @@
 (function () {
   "use strict";
   KBotAIOpsShell.ready.then(async access => {
-    if (!access || document.body.dataset.page !== "notification-delivery") return;
-    const status = document.getElementById("delivery-status");
-    let capabilities = [], connections = [], bindings = [], busy = false;
-    let jobStatus = "", jobOffset = 0, jobCount = 0;
-    let loadVersion = 0;
-    const can = key => capabilities.includes(key);
+    const page = document.body.dataset.page;
+    if (!access || !["notification-channels", "notification-delivery", "notification-settings"].includes(page)) return;
+    const byId = id => document.getElementById(id);
+    const status = byId("delivery-status");
     const request = (path, body, method = "POST") => KBotAIOpsAuth.request("/api/v1/notification-delivery" + path,
-      body === undefined ? {} : {method, body: JSON.stringify(body)});
-    const option = (value, label) => { const item = document.createElement("option"); item.value = value; item.textContent = label; return item; };
-    function table(target, rows, columns, actions = () => []) {
-      const container = document.getElementById(target), element = document.createElement("table");
-      const header = document.createElement("tr");
-      for (const [, label] of columns) { const cell = document.createElement("th"); cell.textContent = label; header.append(cell); }
-      const head = document.createElement("thead"); head.append(header); element.append(head);
-      const body = document.createElement("tbody");
-      rows.forEach(row => {
-        const line = document.createElement("tr");
-        for (const [key] of columns) { const cell = document.createElement("td"); cell.textContent = String(row[key] ?? "—"); line.append(cell); }
-        const controls = document.createElement("td");
-        actions(row).forEach(([label, handler]) => {
-          const button = document.createElement("button"); button.type = "button"; button.className = "row-action"; button.textContent = label;
-          button.onclick = handler; controls.append(button);
-        }); line.append(controls); body.append(line);
-      });
-      element.append(body); container.replaceChildren(element);
-      if (!rows.length) container.append(document.createTextNode("暂无记录"));
+      body === undefined ? {} : { method, body: JSON.stringify(body) });
+    const labels = { PENDING:"等待投递", SENDING:"正在发送", ACCEPTED:"平台已接受", RETRY_WAIT:"等待重试",
+      UNKNOWN:"结果待核实", BLOCKED:"已阻断", DEAD:"投递失败", CANCELLED:"已取消", EXPIRED:"已过期" };
+    const label = value => labels[value] || value || "—";
+    const date = value => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString("zh-CN", { hour12:false }) : "—";
+    const node = (tag, text, className) => { const element = document.createElement(tag); if (text != null) element.textContent = text; if (className) element.className = className; return element; };
+    const option = (value, text) => { const element = node("option", text); element.value = value; return element; };
+    let caps = [], events = {}, connection = null, bindings = [], busy = false, loading = false, loadVersion = 0;
+    let offset = 0, pageSize = 20, hasMore = false, applied = new URLSearchParams(), selected = null, detailVersion = 0;
+    const can = key => caps.includes(key);
+    const eventLabel = key => events[key]?.[0] || ({"connection.test":"测试消息","identity.verification":"身份验证"}[key] || key || "—");
+    const personal = () => bindings.filter(item => item.connection_id === connection?.id && item.target_type === "open_id" && item.status !== "DISABLED");
+    const verified = () => personal().filter(item => item.status === "VERIFIED");
+    function button(text, handler, primary = false) {
+      const element = node("button", text, primary ? "primary-button" : "row-action");
+      element.type = "button"; element.onclick = handler; return element;
     }
-    async function action(work, message = "操作已保存") {
+    function facts(container, pairs) {
+      const dl = node("dl", null, "delivery-facts");
+      pairs.forEach(([title, text]) => { const line = node("div"); line.append(node("dt", title), node("dd", text ?? "—")); dl.append(line); });
+      container.append(dl);
+    }
+    function controls() {
+      document.querySelectorAll(".delivery-dialog button").forEach(item => { item.disabled = busy; });
+      byId("delivery-refresh").disabled = busy || loading;
+      if (page === "notification-channels") {
+        byId("delivery-edit").disabled = busy || loading;
+        byId("delivery-check").disabled = busy || loading;
+        byId("delivery-test-open").disabled = busy || loading || !connection?.enabled;
+        byId("delivery-rule-open").disabled = busy || loading || !connection;
+        document.querySelector('[form="delivery-test"]').disabled = busy || !verified().length;
+      }
+      if (page === "notification-delivery") {
+        byId("delivery-prev").disabled = busy || loading || offset === 0;
+        byId("delivery-next").disabled = busy || loading || !hasMore;
+        byId("delivery-page-size").disabled = busy || loading;
+        byId("delivery-page-label").textContent = "第 " + (Math.floor(offset / pageSize) + 1) + " 页";
+      }
+    }
+    function close(id) {
       if (busy) return;
-      busy = true; status.textContent = "处理中…";
-      try { await work(); status.textContent = message; await refresh(); }
+      byId(id).close();
+      if (id === "delivery-editor") byId("delivery-connection").elements.app_secret.value = "";
+      if (id === "delivery-detail") { selected = null; ++detailVersion; }
+    }
+    document.querySelectorAll("[data-close]").forEach(item => { item.onclick = () => close(item.dataset.close); });
+    document.querySelectorAll(".delivery-dialog").forEach(dialog => {
+      dialog.addEventListener("cancel", event => { event.preventDefault(); close(dialog.id); });
+      dialog.addEventListener("click", event => {
+        if (event.target !== dialog) return;
+        const box = dialog.getBoundingClientRect();
+        if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) close(dialog.id);
+      });
+    });
+    async function action(task, message = "操作已保存") {
+      if (busy) return;
+      busy = true; controls(); status.textContent = "处理中…";
+      try { await task(); status.textContent = message; await refresh(); }
       catch (error) { status.textContent = error.message || "操作未完成"; }
-      finally { busy = false; }
+      finally { busy = false; controls(); }
+    }
+    function renderConnection() {
+      const summary = byId("delivery-connection-summary"); summary.replaceChildren();
+      const state = !connection ? "未配置" : !connection.enabled ? "已停用" : connection.health === "TOKEN_VALID" ? "连接正常" : connection.health === "UNCHECKED" ? "待检查" : "需要检查";
+      byId("delivery-connection-state").textContent = state;
+      byId("delivery-connection-state").className = "status-pill " + (connection?.enabled && connection?.health === "TOKEN_VALID" ? "status-success" : "status-muted");
+      if (connection) facts(summary, [["连接名称",connection.name],["App ID",connection.app_id],["最近检查",date(connection.checked_at)], ...(connection.last_error_code ? [["检查错误码",connection.last_error_code]] : [])]);
+      else summary.append(node("p","尚未配置飞书，配置后可检查连接并发送测试消息。","delivery-empty"));
+      byId("delivery-edit").textContent = connection ? "编辑配置" : "配置飞书";
+      byId("delivery-check").hidden = !connection; byId("delivery-test-open").hidden = !connection;
+    }
+    function renderPolicies(items) {
+      const container = byId("delivery-policies"); container.replaceChildren();
+      if (!items.length) container.append(node("p","暂无消息规则。配置渠道后，选择消息类型和接收用户。","delivery-empty"));
+      items.forEach(item => {
+        const article = node("article",null,"delivery-rule"), description = node("div");
+        description.append(node("strong",item.event_types.map(eventLabel).join("、")),node("small","仅向业务已授权的配置目标发送；既有其他绑定本轮不调整"));
+        article.append(description,node("span",item.enabled ? "启用" : "暂停","status-pill"),button(item.enabled ? "暂停" : "启用", async () => {
+          if (busy) return;
+          if (item.enabled && !await KBotAIOpsShell.confirmAction({title:"暂停消息规则",message:"停止生成新的外部消息；站内通知、业务任务和既有投递任务不受影响。",confirmLabel:"暂停规则",tone:"warning"})) return;
+          await action(() => request("/policies/" + item.id,{expected_row_version:item.row_version,enabled:!item.enabled},"PUT"));
+        }));
+        container.append(article);
+      });
+    }
+    async function loadChannels(current) {
+      if (!can("channel")) { status.textContent = "当前账号没有通知渠道管理权限；个人身份请到“我的通知设置”验证。"; return; }
+      const [targets, policies] = await Promise.all([request("/targets"),request("/policies")]);
+      if (current !== loadVersion) return;
+      connection = targets.connections.find(item => item.provider === "FEISHU") || null; bindings = targets.bindings;
+      byId("delivery-channels-content").hidden = false;
+      renderConnection(); renderPolicies(policies.items);
+    }
+    async function openDetail(item) {
+      const current = ++detailVersion;
+      selected = item;
+      const summary = byId("delivery-detail-summary"), attempts = byId("delivery-attempts");
+      summary.replaceChildren(node("span",label(item.status),"status-pill"),node("h3",eventLabel(item.event_type)));
+      facts(summary,[["接收对象",item.target_type === "chat_id" ? "受控群（既有记录）" : item.recipient_actor_id],["投递 ID",item.id],["来源事件",item.source_event_id],["飞书回执",item.message_id],["安全错误码",item.last_error_code],["有效期至",date(item.expires_at)]]);
+      if (item.entry_id) { const link = node("a","打开原任务","secondary-button"); link.href = "./notification-open.html?entry=" + encodeURIComponent(item.entry_id); summary.append(link); }
+      byId("delivery-retry").hidden = !can("retry") || !["UNKNOWN","BLOCKED","DEAD"].includes(item.status);
+      attempts.replaceChildren(node("p","正在读取尝试历史…")); byId("delivery-detail").showModal();
+      try {
+        const result = await request("/jobs/" + item.id + "/attempts");
+        if (current !== detailVersion) return;
+        attempts.replaceChildren();
+        if (!result.items.length) attempts.append(node("p","尚无发送尝试。"));
+        result.items.forEach(row => {
+          const article = node("article");
+          article.append(node("strong","第 " + row.attempt_number + " 次 · " + label(row.status)),node("span",date(row.started_at) + " · " + (row.elapsed_ms == null ? "耗时未记录" : row.elapsed_ms + " ms")));
+          if (row.error_code) article.append(node("small","安全错误码：" + row.error_code));
+          if (row.message_id) article.append(node("small","回执：" + row.message_id));
+          attempts.append(article);
+        });
+      } catch (error) { if (current === detailVersion) attempts.replaceChildren(node("p","尝试历史读取失败，请关闭后重试。")); }
+    }
+    function renderJobs(items) {
+      const container = byId("delivery-jobs"), table = node("table"), head = node("thead"), header = node("tr"), body = node("tbody");
+      ["消息","接收对象","投递状态","创建时间","操作"].forEach(text => header.append(node("th",text))); head.append(header);
+      items.forEach(item => {
+        const row = node("tr");
+        [eventLabel(item.event_type),item.target_type === "chat_id" ? "受控群（既有记录）" : item.recipient_actor_id || "—",label(item.status) + " · 尝试 " + item.attempt_count + " 次",date(item.created_at)].forEach(text => row.append(node("td",text)));
+        const cell = node("td"); cell.append(button("查看详情",() => openDetail(item))); row.append(cell); body.append(row);
+      });
+      if (!items.length) { const row = node("tr"), cell = node("td","没有符合筛选条件的投递记录。","empty-cell"); cell.colSpan = 5; row.append(cell); body.append(row); }
+      table.append(head,body); container.replaceChildren(table);
+    }
+    async function loadJobs(current) {
+      if (!can("read")) { status.textContent = "当前账号没有通知投递查看权限。"; return; }
+      const query = new URLSearchParams(applied); query.set("limit",String(pageSize)); query.set("offset",String(offset));
+      const result = await request("/jobs?" + query);
+      if (current !== loadVersion) return;
+      hasMore = result.has_more; renderJobs(result.items);
+      try {
+        const health = await request("/health");
+        if (current !== loadVersion) return;
+        const metrics = byId("delivery-metrics"); metrics.replaceChildren();
+        const count = states => health.items.filter(item => states.includes(item.status)).reduce((sum,item) => sum + Number(item.count),0);
+        [["等待投递",count(["PENDING","RETRY_WAIT"]),"全量队列"],["需要关注",count(["UNKNOWN","BLOCKED","DEAD"]),"待核实、阻断或失败"],["平台接受率",health.metrics.acceptance_rate == null ? "—" : (health.metrics.acceptance_rate * 100).toFixed(1) + "%","近 24 小时已结束尝试"]].forEach(([title,value,help]) => {
+          const card = node("article"); card.append(node("span",title),node("strong",String(value)),node("small",help)); metrics.append(card);
+        });
+      } catch (error) { byId("delivery-metrics").replaceChildren(node("p","投递运行概览暂不可用。")); }
+    }
+    async function loadMine(current) {
+      const result = await request("/me/bindings");
+      if (current !== loadVersion) return;
+      const container = byId("delivery-mine"); container.replaceChildren();
+      const mine = result.items.filter(item => item.status !== "DISABLED");
+      if (!mine.length) container.append(node("p","尚未绑定飞书。站内通知正常，如需飞书通知请联系管理员维护身份。","delivery-empty"));
+      mine.forEach(item => {
+        const article = node("article"); article.append(node("p",item.external_id + " · " + (item.status === "VERIFIED" ? "已验证" : "待本人验证")));
+        if (item.status === "UNVERIFIED") {
+          const form = node("form",null,"delivery-form"), field = node("label","飞书验证码","control-field"), code = node("input");
+          code.inputMode = "numeric"; code.pattern = "[0-9]{6}"; code.maxLength = 6; code.required = true; code.autocomplete = "one-time-code";
+          field.append(code);
+          const actions = node("div",null,"toolbar-actions"), send = button("发送验证码",() => action(() => request("/me/bindings/" + item.id + "/challenge",{}),"验证码已入队，请在飞书中查看")), confirm = node("button","确认是本人","primary-button");
+          actions.append(send,confirm); form.append(field,actions);
+          form.onsubmit = event => { event.preventDefault(); void action(() => request("/bindings/" + item.id + "/confirm",{code:code.value,expected_row_version:item.row_version}),"飞书身份已验证"); };
+          article.append(form);
+        }
+        container.append(article);
+      });
     }
     async function refresh() {
-      const version = ++loadVersion;
+      const current = ++loadVersion; loading = true; controls();
       try {
-        const list = async kind => (await request("/" + kind)).items;
-        const targets = can("channel") || can("binding") ? await request("/targets") : {connections: [], bindings: []};
-        const results = await Promise.all([targets.connections, targets.bindings,
-          can("channel") ? list("policies") : [], can("read") ? list("jobs?offset=" + jobOffset + (jobStatus ? "&status=" + jobStatus : "")) : [], can("read") ? list("audit") : [], list("me/bindings").catch(() => [])]);
-        const [newConnections, newBindings, policies, jobs, audit, mine] = results;
-        if (version !== loadVersion) return;
-        jobCount = jobs.length;
-        connections = newConnections; bindings = newBindings;
-        table("delivery-connections", connections, [["name","连接"],["app_id","App ID"],["enabled","启用"],["health","健康"],["last_error_code","安全错误码"]], row => [
-          ["编辑／换密钥", () => { const form = document.getElementById("delivery-connection"); for (const key of ["id","name","app_id","provider"]) form.elements[key].value = row[key]; form.elements.app_secret.value = ""; form.elements.enabled.checked = row.enabled; }],
-          ["检查", () => action(() => request("/connections/" + row.id + "/check", {}), "令牌检查已完成，不代表消息已投递")],
-          ["真实试发", () => {
-            const bindingId = document.getElementById("delivery-test-binding").value;
-            if (!bindingId) { status.textContent = "请先选择已验证试发目标"; return; }
-            if (confirm("将向选定身份发送真实飞书测试消息，确认发送？")) void action(() => request("/connections/" + row.id + "/test", {binding_id: bindingId}), "试发已入队，请核对投递记录及飞书客户端");
-          }],
-        ]);
-        document.querySelectorAll('select[name="connection_id"]').forEach(select => {
-          const value = select.value; select.replaceChildren(option("", "选择连接"), ...connections.map(row => option(row.id, row.name))); select.value = value;
-        });
-        const testSelect = document.getElementById("delivery-test-binding"), previous = testSelect.value;
-        testSelect.replaceChildren(option("", "选择已验证身份"), ...bindings.filter(row => row.status === "VERIFIED").map(row => option(row.id, (row.actor_id || "受控群") + " / " + row.external_id))); testSelect.value = previous;
-        const bindingSelect = document.querySelector('select[name="binding_ids"]');
-        const selected = new Set(Array.from(bindingSelect.selectedOptions, item => item.value));
-        bindingSelect.replaceChildren(...bindings.filter(row => row.status !== "DISABLED").map(row => { const item = option(row.id, (row.actor_id || "群") + " / " + row.external_id); item.selected = selected.has(row.id); return item; }));
-        table("delivery-bindings", bindings, [["actor_id","本地用户"],["external_id","飞书身份"],["status","验证状态"]], row => !can("binding") || row.status === "DISABLED" ? [] : [
-          ...(row.target_type === "open_id" ? [["发送验证码", () => action(() => request("/bindings/" + row.id + "/challenge", {}), "验证消息已入队，请本人登录确认")]] : []),
-          ["停用／解绑", () => { if (confirm("停用此身份绑定？待发送任务将被阻断。")) void action(() => request("/bindings/" + row.id + "/disable", {expected_row_version: row.row_version})); }],
-        ]);
-        const mineContainer = document.getElementById("delivery-mine"); mineContainer.replaceChildren();
-        mine.forEach(row => {
-          const form = document.createElement("form"), label = document.createElement("label"), code = document.createElement("input"), button = document.createElement("button");
-          label.textContent = row.external_id + " · " + row.status; form.append(label);
-          if (row.status === "UNVERIFIED") {
-            code.inputMode = "numeric"; code.pattern = "[0-9]{6}"; code.maxLength = 6; code.required = true; code.autocomplete = "one-time-code";
-            const send = document.createElement("button"); send.type = "button"; send.textContent = "发送验证码";
-            send.onclick = () => action(() => request("/me/bindings/" + row.id + "/challenge", {}), "验证消息已入队");
-            button.textContent = "确认是本人"; form.append(send, code, button);
-            form.onsubmit = event => { event.preventDefault(); void action(() => request("/bindings/" + row.id + "/confirm", {expected_row_version: row.row_version, code: code.value})); };
-          } mineContainer.append(form);
-        });
-        table("delivery-policies", policies, [["event_types","受控事件"],["enabled","启用"]], row => [
-          [row.enabled ? "暂停" : "启用", () => action(() => request("/policies/" + row.id, {expected_row_version: row.row_version, enabled: !row.enabled}, "PUT"))],
-        ]);
-        table("delivery-jobs", jobs, [["event_type","事件"],["recipient_actor_id","本地目标"],["status","投递状态"],["attempt_count","尝试"],["message_id","接受回执"],["last_error_code","原因"]], row => [
-          ["尝试历史", async () => { try { document.getElementById("delivery-attempts").textContent = JSON.stringify((await request("/jobs/" + row.id + "/attempts")).items, null, 2); } catch (error) { status.textContent = error.message; } }],
-          ...(can("retry") && ["UNKNOWN","BLOCKED","DEAD"].includes(row.status) ? [["受控重试", () => {
-            if (!confirm("仅重试该冻结目标；可能已被飞书接受，不会重新执行业务。继续？")) return;
-            const acknowledge = confirm("若超出去重窗口，新代次可能产生重复消息。是否明确接受此风险？选择取消仍可尝试窗口内原 uuid 重试。");
-            void action(() => request("/jobs/" + row.id + "/retry", {expected_row_version: row.row_version, acknowledge_duplicate_risk: acknowledge}));
-          }]] : []),
-        ]);
-        table("delivery-audit", audit, [["action","操作"],["created_by","真实操作人"],["outcome","结果"],["created_at","时间"]]);
-        if (can("read")) {
-          let health = document.getElementById("delivery-health");
-          if (!health) {
-            const label = document.createElement("h2"); label.textContent = "队列健康与近24小时指标";
-            health = document.createElement("pre"); health.id = "delivery-health";
-            document.getElementById("delivery-audit").after(label, health);
-          }
-          health.textContent = JSON.stringify(await request("/health"), null, 2);
-        }
-      } catch (error) { status.textContent = error.message; }
+        if (page === "notification-channels") await loadChannels(current);
+        else if (page === "notification-delivery") await loadJobs(current);
+        else await loadMine(current);
+      } catch (error) {
+        if (current !== loadVersion) return;
+        status.textContent = error.message || "读取失败，请刷新重试。";
+        if (page === "notification-channels") byId("delivery-channels-content").hidden = true;
+        if (page === "notification-delivery") { hasMore = false; byId("delivery-jobs").replaceChildren(node("p","投递记录读取失败，请刷新重试。","delivery-empty")); }
+      } finally { if (current === loadVersion) { loading = false; controls(); } }
     }
-    document.querySelector('#delivery-connection select[name="provider"]').onchange = event => {
-      const unavailable = event.target.value !== "FEISHU";
-      document.querySelector('#delivery-connection button.primary').disabled = unavailable;
-      document.getElementById("delivery-provider-note").textContent = unavailable ? "企业微信暂未接入，不能保存、启用或试发。" : "飞书企业自建应用；实例统一配置，跨业务空间复用。";
-    };
-    document.getElementById("delivery-connection").onsubmit = event => {
-      event.preventDefault(); const form = event.currentTarget, values = Object.fromEntries(new FormData(form));
-      if (values.provider !== "FEISHU") { status.textContent = "企业微信暂未接入，不能保存或启用"; return; }
-      void action(async () => {
-        const old = connections.find(row => row.id === values.id);
-        await request(old ? "/connections/" + old.id : "/connections", old ? {name: values.name, enabled: form.elements.enabled.checked,
-          expected_row_version: old.row_version, ...(values.app_secret ? {app_secret: values.app_secret} : {})} :
-          {name: values.name, provider: values.provider, app_id: values.app_id, app_secret: values.app_secret, enabled: form.elements.enabled.checked}, old ? "PUT" : "POST");
-        form.reset(); form.elements.id.value = "";
-      });
-    };
-    document.getElementById("delivery-binding").onsubmit = event => {
-      event.preventDefault(); const form = event.currentTarget, values = Object.fromEntries(new FormData(form));
-      void action(() => request("/bindings", {...values, actor_id: values.target_type === "open_id" ? values.actor_id : null}));
-    };
-    document.getElementById("delivery-policy").onsubmit = event => {
-      event.preventDefault(); const form = event.currentTarget, data = new FormData(form);
-      void action(() => request("/policies", {connection_id: data.get("connection_id"), event_types: data.getAll("event_types"),
-        binding_ids: data.getAll("binding_ids"), actor_ids: String(data.get("actor_ids") || "").split(",").map(value => value.trim()).filter(Boolean),
-        enabled: form.elements.enabled.checked}));
-    };
-    document.getElementById("delivery-refresh").onclick = refresh;
-    try {
-      capabilities = (await request("/capabilities")).capabilities;
-      const events = (await request("/catalog")).events;
-      document.querySelectorAll("[data-capability]").forEach(element => { element.hidden = !can(element.dataset.capability); });
-      if (can("read")) {
-        const toolbar = document.createElement("div"), filter = document.createElement("select");
-        const label = document.createElement("label"); label.textContent = "投递状态筛选";
-        filter.append(option("", "全部状态"), ...["PENDING","SENDING","ACCEPTED","RETRY_WAIT","UNKNOWN","BLOCKED","DEAD","CANCELLED","EXPIRED"].map(value => option(value, value)));
-        filter.onchange = () => { jobStatus = filter.value; jobOffset = 0; void refresh(); };
-        label.append(filter); toolbar.append(label);
-        [["上一页", -100], ["下一页", 100]].forEach(([title, delta]) => {
-          const button = document.createElement("button"); button.textContent = title; button.type = "button";
-          button.onclick = () => { if (delta > 0 && jobCount < 100) return; jobOffset = Math.max(0, jobOffset + delta); void refresh(); };
-          toolbar.append(button);
-        });
-        document.getElementById("delivery-jobs").before(toolbar);
+    function applyFilters() {
+      const form = byId("delivery-filters"), data = new FormData(form);
+      applied = new URLSearchParams();
+      ["status","event_type","recipient_actor_id"].forEach(key => { const value = String(data.get(key) || "").trim(); if (value) applied.set(key,value); });
+      const range = data.get("range");
+      if (range !== "all") {
+        const days = range === "24h" ? 1 : range === "7d" ? 7 : 30;
+        applied.set("created_from",new Date(Date.now() - days * 86400000).toISOString()); applied.set("created_to",new Date().toISOString());
       }
-      document.querySelector('select[name="event_types"]').replaceChildren(...Object.entries(events).map(([key, value]) => option(key, value[0])));
-      await refresh();
-    } catch (error) { status.textContent = error.message; }
+      offset = 0; void refresh();
+    }
+    if (page === "notification-channels") {
+      byId("delivery-edit").onclick = () => {
+        const form = byId("delivery-connection"); form.reset();
+        form.elements.name.value = connection?.name || "飞书"; form.elements.app_id.value = connection?.app_id || "";
+        form.elements.app_id.disabled = Boolean(connection); form.elements.enabled.checked = Boolean(connection?.enabled); form.elements.app_secret.required = !connection;
+        byId("delivery-editor-title").textContent = connection ? "编辑飞书配置" : "配置飞书";
+        byId("delivery-secret-label").textContent = connection ? "替换 Secret（留空不变）" : "App Secret"; byId("delivery-editor").showModal();
+      };
+      byId("delivery-connection").onsubmit = event => {
+        event.preventDefault(); const form = event.currentTarget;
+        void action(async () => {
+          await request(connection ? "/connections/" + connection.id : "/connections", connection ? {name:form.elements.name.value.trim(),enabled:form.elements.enabled.checked,expected_row_version:connection.row_version,...(form.elements.app_secret.value ? {app_secret:form.elements.app_secret.value} : {})}
+            : {name:form.elements.name.value.trim(),provider:"FEISHU",app_id:form.elements.app_id.value.trim(),app_secret:form.elements.app_secret.value,enabled:form.elements.enabled.checked},connection ? "PUT" : "POST");
+          form.elements.app_secret.value = ""; byId("delivery-editor").close();
+        },"飞书配置已保存，未发送测试消息");
+      };
+      byId("delivery-check").onclick = () => action(async () => {
+        const result = await request("/connections/" + connection.id + "/check",{});
+        if (result.health !== "TOKEN_VALID") { await refresh(); throw new Error("连接检查未通过，请核对应用凭据与权限。"); }
+      },"连接检查通过；不代表消息已送达");
+      byId("delivery-test-open").onclick = () => {
+        byId("delivery-test-binding").replaceChildren(option("","选择已验证的用户"),...verified().map(item => option(item.id,item.external_id)));
+        byId("delivery-test-note").textContent = verified().length ? "发送后请核对投递记录和飞书客户端。" : "暂无已验证的个人目标，请先绑定并由本人完成验证。";
+        byId("delivery-tester").showModal();
+      };
+      byId("delivery-test").onsubmit = async event => {
+        event.preventDefault(); const bindingId = byId("delivery-test-binding").value;
+        if (!verified().some(item => item.id === bindingId) || !await KBotAIOpsShell.confirmAction({title:"发送飞书测试消息",message:"将向选定用户发送一条真实消息，不会执行业务任务。",confirmLabel:"确认发送",tone:"warning"})) return;
+        void action(async () => { await request("/connections/" + connection.id + "/test",{binding_id:bindingId}); byId("delivery-tester").close(); },"测试消息已入队，请到通知投递页查看结果");
+      };
+      byId("delivery-rule-open").onclick = () => {
+        byId("delivery-policy").reset();
+        const eventOptions = byId("delivery-event-options"), bindingOptions = byId("delivery-binding-options");
+        eventOptions.querySelectorAll("label").forEach(item => item.remove()); bindingOptions.querySelectorAll("label,.delivery-empty").forEach(item => item.remove());
+        const add = (parent,name,value,text) => { const field = node("label",null,"delivery-choice"), input = node("input"); input.type = "checkbox"; input.name = name; input.value = value; field.append(input,node("span",text)); parent.append(field); };
+        Object.entries(events).forEach(([key,value]) => add(eventOptions,"event_types",key,value[0]));
+        personal().forEach(item => add(bindingOptions,"binding_ids",item.id,item.external_id + " · " + (item.status === "VERIFIED" ? "已验证" : "待本人验证")));
+        if (!personal().length) bindingOptions.append(node("p","暂无个人绑定，请先在用户管理中维护。","delivery-empty"));
+        byId("delivery-rule-editor").showModal();
+      };
+      byId("delivery-policy").onsubmit = event => {
+        event.preventDefault(); const form = event.currentTarget, data = new FormData(form);
+        if (!data.getAll("event_types").length || !data.getAll("binding_ids").length) { status.textContent = "请选择消息类型和接收用户。"; return; }
+        void action(async () => { await request("/policies",{connection_id:connection.id,event_types:data.getAll("event_types"),binding_ids:data.getAll("binding_ids"),actor_ids:[],enabled:form.elements.enabled.checked}); byId("delivery-rule-editor").close(); },"规则已保存，不会补发历史消息");
+      };
+    }
+    if (page === "notification-delivery") {
+      Object.entries(labels).forEach(([key,value]) => byId("delivery-filters").elements.status.append(option(key,value)));
+      byId("delivery-filters").onsubmit = event => { event.preventDefault(); applyFilters(); };
+      byId("delivery-filters").onreset = () => { pageSize = 20; byId("delivery-page-size").value = "20"; queueMicrotask(applyFilters); };
+      byId("delivery-page-size").onchange = event => { pageSize = Number(event.target.value); offset = 0; void refresh(); };
+      byId("delivery-prev").onclick = () => { if (!loading && !busy) { offset = Math.max(0,offset-pageSize); void refresh(); } };
+      byId("delivery-next").onclick = () => { if (!loading && !busy && hasMore) { offset += pageSize; void refresh(); } };
+      byId("delivery-retry").onclick = async () => {
+        const item = selected;
+        if (!item || busy) return;
+        const result = await KBotAIOpsShell.confirmActionWithOption({title:"重试外部通知",message:"仅重试此投递目标，不会重新执行业务任务。结果待核实时可能已送达，超出去重窗口的新代次可能产生重复消息。",option:{label:"我明确接受新发送代次可能产生重复消息"},confirmLabel:"重试通知",tone:"warning"});
+        if (!result.confirmed) return;
+        void action(async () => { await request("/jobs/" + item.id + "/retry",{expected_row_version:item.row_version,acknowledge_duplicate_risk:result.optionSelected}); byId("delivery-detail").close(); selected = null; ++detailVersion; },"重试已入队，不会重新执行业务任务");
+      };
+      byId("delivery-audit-panel").ontoggle = async event => {
+        if (!event.currentTarget.open || !can("read")) return;
+        const container = byId("delivery-audit"); container.replaceChildren(node("p","正在读取…"));
+        try {
+          const result = await request("/audit?limit=20"); container.replaceChildren();
+          if (!result.items.length) container.append(node("p","暂无操作记录。"));
+          result.items.forEach(item => { const article = node("article",null,"delivery-rule"); article.append(node("strong",item.action),node("span",item.created_by + " · " + date(item.created_at)),node("small",item.outcome)); container.append(article); });
+        } catch (error) { container.replaceChildren(node("p","操作记录读取失败，请关闭后重新展开重试。")); }
+      };
+    }
+    byId("delivery-refresh").onclick = () => { if (page === "notification-delivery" && can("read")) applyFilters(); else void refresh(); };
+    try {
+      caps = (await request("/capabilities")).capabilities;
+      document.querySelectorAll("[data-capability]").forEach(item => { item.hidden = !can(item.dataset.capability); });
+      if ((page === "notification-channels" && can("channel")) || (page === "notification-delivery" && can("read"))) events = (await request("/catalog")).events;
+      if (page === "notification-delivery" && can("read")) {
+        const select = byId("delivery-filters").elements.event_type;
+        Object.entries(events).forEach(([key,value]) => select.append(option(key,value[0]))); select.append(option("connection.test","测试消息")); applyFilters();
+      } else await refresh();
+    } catch (error) { status.textContent = error.message || "读取权限失败，请刷新重试。"; }
   });
 })();

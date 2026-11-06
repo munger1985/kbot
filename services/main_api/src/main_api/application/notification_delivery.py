@@ -35,7 +35,7 @@ def public_record(kind, record):
                     "verified_at", "row_version"),
         "policy": ("id", "connection_id", "event_types", "binding_ids", "actor_ids", "enabled", "row_version"),
         "job": ("id", "source_event_id", "event_type", "original_severity", "connection_id", "recipient_actor_id", "purpose",
-                "binding_id", "target_type",
+                "binding_id", "target_type", "entry_id",
                 "status", "attempt_count", "created_at", "available_at", "expires_at",
                 "message_id", "last_error_code", "row_version", "generation", "parent_job_id"),
         "attempt": ("id", "job_id", "attempt_number", "started_at", "finished_at", "elapsed_ms", "status",
@@ -58,6 +58,14 @@ class ExternalNotificationService:
         async with self._uow_factory() as uow:
             return [public_record(kind, row) for row in await uow.external_delivery.list(
                 kind, scope=scope, limit=limit, offset=offset, status=status)]
+
+    async def list_jobs(self, *, scope, limit=20, offset=0, **filters):
+        """多取一条判定下一页，不向页面提供猜测的总数。"""
+        async with self._uow_factory() as uow:
+            rows = await uow.external_delivery.list(
+                "job", scope=scope, limit=limit + 1, offset=offset, **filters)
+        return {"items": [public_record("job", row) for row in rows[:limit]],
+                "has_more": len(rows) > limit, "limit": limit, "offset": offset}
 
     async def create_connection(self, *, scope, actor_id, body):
         self.enabled()
