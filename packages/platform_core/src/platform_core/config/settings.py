@@ -316,6 +316,7 @@ def load_settings(
         "aiops",
         "integrations",
         "notifications",
+        "external_delivery",
         "ui",
     }
     if unknown_keys:
@@ -373,6 +374,7 @@ def load_settings(
     aiops = deployment.get("aiops") or {}
     integrations = deployment.get("integrations") or {}
     notifications = deployment.get("notifications") or {}
+    external_delivery = deployment.get("external_delivery") or {}
     ui = deployment.get("ui") or {}
     for name, value in (
         ("database", database),
@@ -381,6 +383,7 @@ def load_settings(
         ("aiops", aiops),
         ("integrations", integrations),
         ("notifications", notifications),
+        ("external_delivery", external_delivery),
         ("ui", ui),
     ):
         if not isinstance(value, dict):
@@ -503,6 +506,8 @@ def load_settings(
             merged = _deep_merge(
                 merged, {"notifications": notifications}
             )
+        if service == "main_api" and external_delivery:
+            merged = _deep_merge(merged, {"external_delivery": external_delivery})
         if service == "agent_runtime" and integrations.get("mcp_data"):
             merged = _deep_merge(
                 merged, {"ask_data_api": integrations["mcp_data"]}

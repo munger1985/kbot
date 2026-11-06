@@ -20,6 +20,10 @@ server {
         proxy_read_timeout 600s;
     }
 
+    location ~ ^/notifications/open/([0-9a-fA-F-]{36})$ {
+        return 302 /ui/aiops/notification-open.html?entry=$1;
+    }
+
     location = /healthz {
         proxy_pass http://${MAIN_API_UPSTREAM}/healthz;
         proxy_set_header Host $host;

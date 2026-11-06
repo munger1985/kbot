@@ -60,6 +60,10 @@ PLATFORM_FOUNDATION_PERMISSIONS = {
     "platform:domain_manage",
     "platform:app_manage",
     "platform:notification_manage",
+    "platform:notification_channel_manage",
+    "platform:notification_binding_manage",
+    "platform:notification_delivery_read",
+    "platform:notification_delivery_retry",
     "platform:app_grant_manage",
 } | {
     item.code

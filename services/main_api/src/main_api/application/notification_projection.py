@@ -23,6 +23,9 @@ _TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"}
 
 
 class NotificationProjectionService:
+    def __init__(self, *, external_config=None):
+        self._external_config = external_config
+
     async def project(self, *, uow, outbox) -> None:
         if uow.notifications is None:
             raise RuntimeError("Notification Repository 未初始化")
@@ -61,6 +64,17 @@ class NotificationProjectionService:
                 domain_id=envelope.domain_id,
             ))
         title = definition.title
+        if self._external_config is not None and self._external_config.enabled and envelope.event_type.startswith("aiops."):
+            from main_api.application.aiops_notification_routes import aiops_notification_route
+            from platform_core.notifications.delivery import DeliveryScope, EXTERNAL_EVENTS
+            from platform_core.notifications.external_projection import enqueue_external_event
+            if envelope.event_type in EXTERNAL_EVENTS:
+                route = aiops_notification_route(envelope, outbox.payload_json, domain_id=envelope.domain_id)
+                if route:
+                    await enqueue_external_event(config=self._external_config, repo=uow.external_delivery,
+                        scope=DeliveryScope(domain_id=str(envelope.domain_id)), source_event_id=outbox.outbox_id,
+                        event_type=envelope.event_type, route=route, legitimate_actors=recipients,
+                        occurred_at=envelope.occurred_at, severity=envelope.safe_data.get("severity"))
         if envelope.resource_name:
             title = f"{title}：{envelope.resource_name}"[:300]
 
@@ -257,12 +271,13 @@ class NotificationDispatcher:
     def __init__(
         self, *, uow_factory, batch_size: int = 50,
         lease_seconds: int = 60, max_attempts: int = 5,
+        external_config=None,
     ) -> None:
         self._uow_factory = uow_factory
         self._batch_size = batch_size
         self._lease_seconds = lease_seconds
         self._max_attempts = max_attempts
-        self._projection = NotificationProjectionService()
+        self._projection = NotificationProjectionService(external_config=external_config)
 
     async def dispatch_once(self) -> int:
         async with self._uow_factory() as uow:

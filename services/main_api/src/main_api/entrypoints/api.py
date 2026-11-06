@@ -89,6 +89,9 @@ async def lifespan(app: FastAPI):
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     uow_factory = create_main_api_uow(db_runtime.session_factory)
+    from main_api.application.notification_delivery_bootstrap import create_external_notifications
+    app.state.external_notification_service = create_external_notifications(
+        settings=settings, runtime=db_runtime, uow_factory=uow_factory)
     app.state.case_resource_lifecycle = CaseResourceLifecycle(uow_factory=uow_factory, client=None)
     app.state.output_authority_service = OutputAuthorityService(uow_factory=uow_factory)
     app.state.domain_validation_service = DomainValidationService(
@@ -185,6 +188,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.external_notification_service.sender.close()
+        await app.state.external_notification_service.authority.client.close()
         await client_session.close()
         await db_runtime.close()
         logger.info("Main API 已停止")

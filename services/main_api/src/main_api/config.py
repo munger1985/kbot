@@ -3,6 +3,7 @@
 from functools import lru_cache
 
 from pydantic import BaseModel, Field
+from platform_core.notifications.external_config import ExternalDeliveryConfig
 
 from platform_core.config import (
     ServiceConfig,
@@ -146,6 +147,7 @@ class MainApiSettings(Settings):
         default_factory=DevelopmentLogsConfig
     )
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
+    external_delivery: ExternalDeliveryConfig = Field(default_factory=ExternalDeliveryConfig)
 
 
 @lru_cache(maxsize=1)

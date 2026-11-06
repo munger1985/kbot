@@ -8,6 +8,7 @@ import os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+from uuid import UUID
 
 try:
     import tomllib as tomli
@@ -88,6 +89,17 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
         return True
 
     def do_GET(self):
+        path = urlsplit(self.path).path
+        if path.startswith("/notifications/open/"):
+            try:
+                entry_id = str(UUID(path.removeprefix("/notifications/open/")))
+            except ValueError:
+                self.send_error(404)
+                return
+            self.send_response(302)
+            self.send_header("Location", "/ui/aiops/notification-open.html?entry=" + entry_id)
+            self.end_headers()
+            return
         if self._empty_favicon():
             return
         if self._redirect_log_root():

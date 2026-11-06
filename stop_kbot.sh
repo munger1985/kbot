@@ -29,6 +29,7 @@ SERVICES=(
     "aiops_agent.entrypoints.db_executor"
     "main_api.entrypoints.api"
     "main_api.entrypoints.notification_worker"
+    "main_api.entrypoints.external_notification_worker"
 )
 
 # 安全查找在指定目录运行的 Python 服务进程

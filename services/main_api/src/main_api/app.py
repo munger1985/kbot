@@ -240,7 +240,7 @@ def create_main_api_app(
         "/api/v1/domains",
         "/api/v1/model-catalog",
     }
-    domainless_prefixes = {"/api/v1/platform/"}
+    domainless_prefixes = {"/api/v1/platform/", "/api/v1/notification-delivery/entries/"}
     public_paths = {
         "/health",
         "/healthz",
@@ -305,6 +305,8 @@ def create_main_api_app(
     app.include_router(media_studio_app_router)
     app.include_router(model_catalog_router)
     app.include_router(notification_router)
+    from main_api.api.notification_delivery import router as notification_delivery_router
+    app.include_router(notification_delivery_router)
     app.include_router(domain_router)
     app.include_router(data_query_router)
     app.include_router(dify_router)

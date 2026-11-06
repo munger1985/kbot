@@ -14,6 +14,7 @@
     "inspection-plan-detail": "aiops:plan_manage",
     "report-templates": "aiops:plan_manage",
     runs: "aiops:use",
+    "notification-delivery": "aiops:use",
     "api-clients": "aiops:api_key_manage",
   };
   const pinnedPages = [["chat", "Agent 工作台", "agents"]];
@@ -26,7 +27,7 @@
       ["cases", "诊断案例库"], ["operations-knowledge", "运维资料库"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
-      ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
+      ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"], ["notification-delivery", "通知渠道与投递"],
     ]],
   ];
   const navigationSections = [

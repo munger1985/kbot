@@ -1,0 +1,176 @@
+# AIOps 飞书通知：部署准备与验证
+
+初版：2026-11-05；Schema 升级核验更新：2026-11-06。两仓库同步实现；Schema 已升级不表示服务代码已部署或已通过真实飞书验收。
+
+## 1. 架构与代码入口
+
+采用平台通知模块与独立外部 Worker，复用 Main API 代码／镜像。不新增飞书 HTTP 微服务，不在 API lifespan 启动外发循环，不引入 Redis 或消息中间件。
+
+- 入口：`python -m main_api.entrypoints.external_notification_worker`。
+- 配置：部署文件顶层 `[external_delivery]`，经 typed settings 读取。
+- API：`/api/v1/notification-delivery`；OpenAPI 为公开精确合同。
+- 管理：KBot AIOps 的“通知渠道与投递”；Ammolite 的 `/tenant/governance/notification-delivery`。
+- 卡片详情：门户公开地址下 `/notifications/open/{entry_id}`。入口记录独立于个人收件箱。
+- KBot 本地启停脚本和容器拓扑已登记 Worker；Ammolite 进程目标为 `notification-delivery`。
+- 默认关闭时 Worker 空闲等待信号，不访问数据库和飞书；修改配置后需按部署流程重启对应进程。
+
+Outbox 消费事务同时保存站内投影及外部任务。外部任务不是 Inbox 的附属队列；清除个人通知不会删除外部入口。业务状态由源服务负责，飞书 ACCEPTED 仅表示接口确定接受，不表示已读或业务完成。
+
+## 2. 数据库工件与无损边界
+
+KBot：
+
+- canonical：`database/oracle/main_api/003_notification_delivery.sql`，Main API manifest v8。
+- 已完成第一阶段的现有 v7 环境使用 `database/oracle/operations/upgrade_notification_delivery_8.sql`，新增八张通知投递表、索引、限流种子和四类权限。
+- 增量脚本不 DELETE、TRUNCATE、DROP 或重建已有业务表；不要用全量 `001_access_control.sql` 升级现有环境。
+- 新环境用规范初始化，不能再重复执行增量脚本。Oracle DDL 隐式提交，应先核对环境、基线及部署维护窗口；kbotdev 的执行记录见 6.2。
+- 定向部署入口：`scripts/db/upgrade_notification_delivery.py`，默认仅验收，显式 `--apply` 才执行增量 SQL。执行前拒绝任何已存在的目标对象；逐步记录完成语句。失败后先核对日志与元数据，不能盲目重跑。
+
+Ammolite：
+
+- 扩展 canonical `platform_notification_delivery_job`，沿用原物理表，不创建平行队列。
+- `notification_id` 可空，关联站内记录被删除时 SET NULL；事实来源、冻结目标、独立入口、租约及尝试不依赖站内通知。
+- 连接／绑定／策略等表使用 `platform_notification_external_` 前缀，与既有站内策略表区分。
+- `core_schema.py`、Entity 和初始化已同步；限流种子由部署初始化写入。
+- 不新增本地兼容迁移、历史回填或双读写；不得直接运行全库初始化替代升级。
+- 经本次授权新增定向部署入口 `scripts/deployment/upgrade_notification_delivery.py`。从 canonical 导出计划（`--render-plan`），可以将脚本与计划送到旧部署，在推送代码前升级（`--repo-root`、`--plan-file`、`--apply`、`--report`）。
+- PostgreSQL 升级在单事务内对原队列取得 ACCESS EXCLUSIVE 锁，再次确认零行及已审阅列／约束基线。若有记录或已有部分新表，立即停止；不清理、不回填。仅空表移除旧 user_id 列及其约束，新增规范列与七表，通知外键改为 SET NULL，权限只增不删。锁超时 5 秒、单语句超时 60 秒；任何执行／验收错误整体回滚。
+- 不带 `--apply` 时，只读验收八张目标表的列类型、可空性、主外键、索引、种子及权限，不做全库漂移修复。
+
+所有自身 Schema 校验只在离线验收及部署环节进行，不加入服务启动、readiness、UoW 或业务请求。
+
+## 3. 安全配置
+
+示例（默认保留关闭）：
+
+~~~toml
+[external_delivery]
+enabled = false
+public_origin = "https://your-portal.example.com"
+poll_seconds = 1.0
+request_timeout_seconds = 10
+lease_seconds = 60
+max_attempts = 5
+coalesce_seconds = 0
+# 可选静默示例：UTC 14:00 至次日 00:00，即北京时间 22:00 至次日 08:00。
+# quiet_start_utc_hour = 14
+# quiet_end_utc_hour = 0
+~~~
+
+门户地址必须是无路径、无 query 的 HTTPS Origin。生产固定使用两个官方地址：
+
+- 令牌：`https://accounts.feishu.cn/oauth/v3/token`。
+- 消息：`https://open.feishu.cn`。
+
+不得在 UI 填自定义服务 URL 或 Webhook。新版 OAuth 使用 client_credentials、client_secret_post、最小 scope `im:message:send_as_bot`。不增加旧接口自动回退。
+
+App Secret 通过现有托管凭据设施加密。API 不回显已有 Secret、Token、密文或内部凭据引用：
+
+- KBot：`KBOT_MANAGED_CREDENTIAL_KEY` 和既有 key-version 配置，API、Worker 使用一致的受管密钥。
+- Ammolite：`AMMOLITE_MANAGED_CREDENTIAL_SECRET_KEY`（或部署侧明确配置的对应变量），API、Worker 使用相同密钥。
+- 即使是开发环境的真实飞书测试，也必须设置独立密钥，不能依赖开发默认密钥。
+- 密钥由受控环境／Secret 注入，不写入仓库、命令历史、截图或运维日志。
+
+本轮没有启用 HTTP 模拟服务。自动化使用 httpx MockTransport 和假凭据；fixture 门禁拒绝真实 Secret，production 拒绝 fixture 配置。
+
+## 4. 真实飞书首次启用顺序
+
+1. 创建隔离测试企业与两个自建应用，分别用于 KBot、Ammolite。开启机器人、申请最小发送权限、发布版本并设置测试用户可用范围。
+2. 准备 A 申请人、B 审批人、C 无业务权限三个账号；通过官方调试台取得每个应用对应的 open_id。不同应用下不可复制 open_id。
+3. 需要群测试时，把对应机器人加入专用测试群并确认可发言。群只允许低敏告警，不发送审批、执行和报告信息。
+4. 确认门户 HTTPS 地址在手机／电脑可达，检查出站 DNS、TLS 和飞书两个官方 Origin。不公开内部服务端口或增加回调入口。
+5. 经授权完成 Schema 与代码发布后，先保持外部 Worker 停止。设置真实托管凭据密钥与 public_origin，启用 external_delivery；API 管理操作要求此总开关开启。
+6. 在管理页新建默认暂停的连接，保存不发送；“检查”仅验证令牌，不表示送达。登记候选个人身份，由管理员显式发送验证消息、本人登录确认；此步骤需要启动独立 Worker 消费验证任务。
+7. 验证码限时限次，只有对应本地用户可确认。错误输入不改变绑定语义版本；重新发码、停用／修改身份使旧验证任务失效。身份修改通过停用旧绑定并登记新候选完成。
+8. 明确选择已验证目标进行真实试发，核对投递 message_id 及飞书客户端。之后仅启用少量测试策略；不补发历史事件。
+9. 按设计文档 A／B／C 完整链路验收。手机未登录点击卡片应登录后进入原空间、确切 Proposal／HITL／Execution／Report，而非首页兜底。
+
+连接、绑定、查看及重发权限独立。管理页面按服务端 capabilities 显示；后端每次重新鉴权。绑定管理员通过只读 targets 获取父连接，不因此获得连接写权限。KBot 页面复用既有 AIOps 登录入口；Ammolite 管理入口使用当前 Tenant 会话，本人验证还核对当前 AIOps 访问资格。
+
+## 5. 故障处理
+
+- PENDING／RETRY_WAIT：短事务领取后才发送；全局→连接→目标固定锁序限流。
+- ACCEPTED：只有 HTTP200、业务 code=0 和合法 message_id 同时成立才记录。
+- UNKNOWN：超时、响应丢失、已标记网络起点后的 Worker 崩溃等；不能当作“未发送”。
+- 同 uuid、冻结内容的自动重试只在首次可能发送起 3300 秒安全窗口内进行。超过窗口保留 UNKNOWN，不盲发。
+- 人工重试仅允许 UNKNOWN／BLOCKED／DEAD，重新检查版本、当前连接／绑定／权限和源资源。窗口外必须明确确认重复风险，创建新代次，旧任务与尝试保留。
+- BLOCKED：修复凭据、权限、绑定或配置后受控重试；策略暂停、域不可用、凭据无法解密均不会触发网络发送。
+- 缺少身份映射会保留明确 BLOCKED 记录；不偷偷改写冻结目标、猜测身份或回放历史事件。配置新身份后，后续新事件按新映射生成任务。
+- CANCELLED／EXPIRED：解绑、任务关闭或超过期限，不重发过时可操作提醒。
+- 外部调用不持有数据库事务。旧 Worker 的租约、版本或时限不匹配时，不能写回 ACCEPTED。
+- 管理页与 health API 展示各状态／安全错误码的数量、最早任务时间、近24小时接受率、耗时及令牌／限流错误。指标不以用户或资源 ID 作为维度；不能递归向故障渠道发送自身故障告警。
+- 投递记录支持按状态筛选及分页，每页最多100条；历史保存在数据库，未新增自动删除投递历史的清理任务。
+- 静默／合并默认关闭，只作用于 INFO／WARNING 的新告警与恢复；升级、审批、人工处理、执行／报告结果、HIGH／CRITICAL 和等级缺失消息不受影响。静默时段以 UTC 小时指定，支持跨日；不会顺延消息期限。合并窗口为固定 0～300 秒，按空间、连接／凭据、绑定／版本、目标、事件、确切资源及等级隔离，不做跨资源摘要。
+- 被合并的旧任务保留 CANCELLED／NOTIFICATION_COALESCED 及关联新任务的审计，入口与事实均保留；已尝试发送或不确定任务不得合并。静默等待不耗尽网络重试预算，超出原 TTL 明确 EXPIRED／NOTIFICATION_QUIET_EXCEEDS_TTL，不删除任务。
+
+回滚启用状态时停用连接／策略、关闭总开关并停止或重启对应 Worker；保留新增 Schema、密文及投递证据。不要删除业务数据以“恢复”通知。
+
+## 6. 本地验证与未完成的真实验收
+
+本轮验证范围：
+
+- 飞书新版 OAuth、singleflight、长 Token、HTTP／业务失败、缺回执、限流、超时与安全错误分类。
+- 独立任务投影、缺映射阻断、受众交集、冻结消息、租约 CAS、SQLite 文件上的真实并发事务。
+- 应用层无事务网络、策略暂停、撤权／解绑、验证码本人确认与限次、UNKNOWN 证据及窗口内外受控重发。
+- 源服务的确切父子关系、Tenant／Domain、Report／Job／版本及当前处理人核验。
+- 两前端的真实组件／页面 + 假 HTTP 浏览器测试，包括手机未登录恢复、撤权、错空间和保存不试发。
+- 双仓库架构、Schema、授权、进程拓扑、共同合同与 OpenAPI 离线校验。
+
+自动化 HTTP 和 SQLite 测试不是 Oracle／PostgreSQL 真库并发验收，也不验证飞书实际可用范围、卡片渲染或手机真实网络。真实凭据、两个官方应用接受回执及客户端展示仍由测试企业联调完成。2026-11-05 未做线上数据库升级；2026-11-06 的定向升级见 6.2，仍未部署应用代码、重启服务或启用真实飞书推送。
+
+### 6.1 本轮实际验证记录（2026-11-05）
+
+- KBot：通知、工作流、输出、订阅及发布工具定向回归 340 passed。
+- Ammolite：通知、工作流、输出、订阅定向回归 229 passed。
+- Portal／KBot 页面通知浏览器回归 40 passed；使用真实页面与假 HTTP，不是飞书客户端。
+- Portal `npm run build` 通过；保留既有大 chunk 警告。
+- 两项目架构、canonical Schema、进程拓扑、共同合同及 OpenAPI 检查通过；KBot 另含统一授权检查。OpenAPI 分别为 16 快照／857 路径、18 快照／998 路径。
+- 新增静默边界、紧急消息绕过、TTL 不延长、重放不取消新任务、并发合并及保留全部入口／记录的回归。
+- 只读 `tests/acceptance/check_postgresql_entity_schema.py` 真库检查**未通过**：当前配置的 PostgreSQL 尚未部署新投递结构，另有输出任务等既存差异。本轮仅读取元数据，没有修复、初始化或改动该数据库。canonical 离线通过不等于现有环境已升级，发布前需另行审阅准确目标及无损差异。
+
+回归命令（对应仓库根目录，使用各自 Python 环境；本轮临时测试依赖位于 `/tmp/kbot-feishu-test-deps`）：
+
+~~~bash
+# 两项目共同覆盖
+PYTHONPATH=/tmp/kbot-feishu-test-deps python -m pytest -q \
+  tests/unit/main_api/test_feishu_notification_delivery.py \
+  tests/unit/main_api/test_notification_delivery_transactions.py \
+  tests/unit/main_api/test_notification_delivery_application.py \
+  tests/unit/main_api/test_notification_delivery_auth.py \
+  tests/unit/aiops_agent/test_notification_delivery_resource.py \
+  tests/unit/main_api/test_aiops_workflow_reconciliation.py \
+  tests/unit/main_api/test_aiops_output_reconciliation.py \
+  tests/unit/aiops_agent/test_aiops_workflow_projection.py \
+  tests/unit/aiops_agent/test_aiops_notification_subscription.py \
+  tests/unit/aiops_agent/test_aiops_output_notifications.py
+# 上述共同命令的同一次运行中，KBot 另包含：
+# tests/unit/main_api/test_notification_center_s6.py
+# tests/unit/main_api/test_notification_foundation_security.py
+# tests/unit/main_api/test_aiops_notification_routes.py
+# installation/tests/test_release_tooling.py
+# Ammolite 另包含：tests/unit/main_api/test_notification_reconciliation.py
+# 浏览器：在 Ammolite apps/portal-web 中
+npx playwright test tests/notification-delivery.spec.mjs \
+  tests/notification-session-recovery.spec.mjs tests/aiops-notification-links.spec.mjs \
+  --workers=1 --reporter=line
+~~~
+
+### 6.2 kbotdev 定向 Schema 升级与发布前验证（2026-11-06）
+
+本次按“Schema 升级及核验完成后，再推送代码”的顺序执行。目标为 kbotdev 的现有 KBot Oracle 和 Ammolite PostgreSQL；没有运行全库初始化，没有删除、清空、重建已有业务表，没有导出业务记录或改写 Prompt。只保存了元数据、行数与执行日志。
+
+- Oracle：基线无 KBOT_NOTIFY_* 对象。执行 Main API v8 增量，新增八表、七个普通索引、external 频控种子、四权限与平台管理员四项授权。全部 25 条语句执行完成后，再用独立只读命令核验列类型／可空性、主外键、索引、种子及权限通过。
+- Oracle 验收按实际数据字典等价表示识别 SMALLINT，以及带时区列普通索引的 SYS_EXTRACT_UTC 表达式；没有为匹配验收而改动表或索引。
+- PostgreSQL：锁内确认原 platform_notification_delivery_job 为 0 行；原位扩展，不建第二条队列，新增七表。63 条定向语句、三权限与既有内置管理员九项授权在单事务中完成；提交后独立只读验收通过。
+- 行数核对：Oracle 183 张、PostgreSQL 220 张既有表均未减少。预期权限增量分别为 4／4、3／9；运行期间 Oracle 任务／运行／事件／Outbox 和 PostgreSQL 登录刷新令牌有自然增加，不能归因于 Schema 升级。既有通知及业务会话、报告等记录未清理；新渠道、绑定、策略及投递表均为空，只有频控种子各 1 行。
+- 服务器操作证据目录：/tmp/notification-schema-20261106-yNtRHP；包含 oracle/postgres-before.json、oracle/postgres-after.json、row-count-verification.json、postgres-upgrade-report.json、postgres-verify-report.json 和 Oracle 逐步日志。该目录是临时运维证据，不是业务备份。
+
+本轮发布前验证在隔离工作树执行，仅包含通知变更，不混入并行知识模块重构：
+
+- KBot 后端定向回归：341 passed；Ammolite：232 passed，包含新增无损升级计划测试。
+- Portal／KBot 浏览器回归：40 passed。适配既有确认弹窗的测试桩；没有更改审批业务行为。
+- Portal 生产构建通过，仅既有大 chunk 警告。
+- 两项目架构边界、canonical Schema、进程拓扑、跨项目合同及 OpenAPI 验收通过。OpenAPI 分别为 16 快照／869 路径、18 快照／1010 路径。
+- PostgreSQL 本次只验收通知目标结构，不代表全库所有历史漂移均已消除；Oracle／PostgreSQL 真库投递并发、真实飞书接收及手机访问仍需后续联调。
+
+本次没有更新服务器 Git 工作树、重启服务、修改 external_delivery 开关、配置真实飞书凭据或向外部用户发消息。Schema 保留，后续按第 4 节部署代码与启用测试。

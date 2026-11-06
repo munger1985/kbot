@@ -32,6 +32,11 @@ class ReleaseToolingTest(unittest.TestCase):
             len(self.topology["processes"]),
             len({item["process_key"] for item in self.topology["processes"]}),
         )
+        worker = next(item for item in self.topology["processes"]
+            if item["process_key"] == "main_api_external_notification_worker")
+        self.assertEqual("main_api", worker["service_config"])
+        self.assertEqual("worker", worker["kind"])
+        self.assertNotIn("port", worker)
         self.assertTrue(
             all(
                 process["service_config"] in image_ids

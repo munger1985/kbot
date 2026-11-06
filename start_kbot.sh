@@ -162,6 +162,7 @@ SERVICES=(
     "AIOps Agent:DB Executor:aiops_agent:aiops_agent.entrypoints.db_executor"
     "Main API:API:main_api:main_api.entrypoints.api"
     "Main API:Notification Worker:main_api:main_api.entrypoints.notification_worker"
+    "Main API:External Notification Worker:main_api:main_api.entrypoints.external_notification_worker"
 )
 
 # 返回模块对应的监听端口；纯后台 Worker 返回空值。
@@ -194,7 +195,8 @@ is_process_only_service() {
         || [ "$1" = "agent_runtime.entrypoints.worker" ] \
         || [ "$1" = "knowledge_retrieval_app.entrypoints.worker" ] \
         || [ "$1" = "media_studio_app.entrypoints.worker" ] \
-        || [ "$1" = "main_api.entrypoints.notification_worker" ]
+        || [ "$1" = "main_api.entrypoints.notification_worker" ] \
+        || [ "$1" = "main_api.entrypoints.external_notification_worker" ]
 }
 
 STARTED_PIDS=()

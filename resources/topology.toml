@@ -203,6 +203,14 @@ service_name = "kbot-main-api-notification-worker"
 kind = "worker"
 
 # 端点只引用进程；默认 URL 根据进程端口生成，audience 使用 service_name。
+[[processes]]
+process_key = "main_api_external_notification_worker"
+module = "main_api.entrypoints.external_notification_worker"
+service_config = "main_api"
+config_section = "external_delivery"
+service_name = "kbot-main-api-external-notification-worker"
+kind = "worker"
+
 [endpoints]
 main_api = "main_api"
 knowledge_core = "knowledge_core_api"

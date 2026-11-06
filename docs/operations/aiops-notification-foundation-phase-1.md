@@ -69,6 +69,8 @@ Ammolite Cube：
 
 后续阶段才考虑飞书优先、企业微信扩展，以及外部渠道的凭据、投递、重试、回执和卡片入口。本阶段没有外部 IM 的实现或送达承诺。
 
+第二阶段代码及本地验证已实施，详见 [AIOps 飞书通知接入详细设计](../proposals/aiops-feishu-notification-detailed-design.md) 与 [部署验证](aiops-feishu-notification-delivery.md)。该变更不改变本页第一阶段历史验证结论，也不代表飞书功能或测试环境已部署。
+
 ### 提交推送前复验（2026-11-05）
 
 - 本次重新运行的定向集合：KBot 183 项、Ammolite 105 项通过，两者另各有 12 个通过的子测试；浏览器隔离回归 31 项通过。该集合不等同于此前广泛 AIOps 回归，也不覆盖全部既有测试。

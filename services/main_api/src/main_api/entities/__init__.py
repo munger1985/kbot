@@ -1,5 +1,7 @@
 """Main API 拥有的持久化实体。"""
 
+from .notification_delivery import external_tables
+
 from .domain import PlatformDomainEntity
 from .app_api_key import (
     AppApiClientAgentEntity,

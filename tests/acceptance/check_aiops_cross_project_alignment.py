@@ -13,6 +13,20 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("docs/proposals/aiops-feishu-notification-detailed-design.md"),
+    Path("docs/operations/aiops-feishu-notification-delivery.md"),
+    Path("packages/platform_core/src/platform_core/notifications/delivery.py"),
+    Path("packages/platform_core/src/platform_core/notifications/external_config.py"),
+    Path("packages/platform_core/src/platform_core/notifications/external_projection.py"),
+    Path("packages/platform_core/src/platform_core/notifications/feishu.py"),
+    Path("packages/platform_core/src/platform_core/persistence/notification_delivery.py"),
+    Path("services/main_api/src/main_api/application/notification_delivery.py"),
+    Path("services/main_api/src/main_api/repositories/notification_delivery.py"),
+    Path("services/main_api/src/main_api/api/notification_delivery.py"),
+    Path("tests/unit/main_api/test_feishu_notification_delivery.py"),
+    Path("tests/unit/main_api/test_notification_delivery_transactions.py"),
+    Path("tests/unit/main_api/test_notification_delivery_application.py"),
+    Path("tests/unit/aiops_agent/test_notification_delivery_resource.py"),
     Path("packages/platform_core/src/platform_core/contracts/aiops/notification_projection.py"),
     Path("packages/platform_core/src/platform_core/notifications/aiops.py"),
     Path("services/aiops_agent/src/aiops_agent/api/notification_projection.py"),

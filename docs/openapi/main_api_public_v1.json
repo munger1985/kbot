@@ -1330,7 +1330,7 @@
         "additionalProperties": false,
         "properties": {
           "domain_id": {
-            "exclusiveMinimum": 0,
+            "exclusiveMinimum": 0.0,
             "title": "Domain Id",
             "type": "integer"
           },
@@ -1576,6 +1576,71 @@
           "content_hash"
         ],
         "title": "ArtifactRef",
+        "type": "object"
+      },
+      "BindingConfirmation": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "expected_row_version"
+        ],
+        "title": "BindingConfirmation",
+        "type": "object"
+      },
+      "BindingCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "external_id": {
+            "maxLength": 256,
+            "minLength": 4,
+            "title": "External Id",
+            "type": "string"
+          },
+          "target_type": {
+            "default": "open_id",
+            "enum": [
+              "open_id",
+              "chat_id"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "external_id"
+        ],
+        "title": "BindingCreate",
         "type": "object"
       },
       "BusinessSystemDraftCreate": {
@@ -3049,6 +3114,90 @@
           "status"
         ],
         "title": "CollectionStatusRequest",
+        "type": "object"
+      },
+      "ConnectionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "pattern": "^cli_[a-zA-Z0-9]{4,100}$",
+            "title": "App Id",
+            "type": "string"
+          },
+          "app_secret": {
+            "format": "password",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "App Secret",
+            "type": "string",
+            "writeOnly": true
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "const": "FEISHU",
+            "default": "FEISHU",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "app_id",
+          "app_secret"
+        ],
+        "title": "ConnectionCreate",
+        "type": "object"
+      },
+      "ConnectionUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "app_secret": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Secret"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "name",
+          "enabled"
+        ],
+        "title": "ConnectionUpdate",
         "type": "object"
       },
       "ConversationMessageView": {
@@ -5846,6 +5995,21 @@
         "title": "DatasetDefinition",
         "type": "object"
       },
+      "DeliveryStatus": {
+        "enum": [
+          "PENDING",
+          "SENDING",
+          "ACCEPTED",
+          "RETRY_WAIT",
+          "UNKNOWN",
+          "BLOCKED",
+          "DEAD",
+          "CANCELLED",
+          "EXPIRED"
+        ],
+        "title": "DeliveryStatus",
+        "type": "string"
+      },
       "DiagnosisClosurePayload": {
         "additionalProperties": false,
         "properties": {
@@ -7283,6 +7447,53 @@
           }
         },
         "title": "ExecutionBudgetV1",
+        "type": "object"
+      },
+      "ExternalPolicyCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Actor Ids",
+            "type": "array"
+          },
+          "binding_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Binding Ids",
+            "type": "array"
+          },
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "event_types": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Event Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "connection_id",
+          "event_types"
+        ],
+        "title": "ExternalPolicyCreate",
         "type": "object"
       },
       "FindingCard": {
@@ -12273,6 +12484,111 @@
         "title": "MonitoringInstanceSummary",
         "type": "object"
       },
+      "MonitoringNativeBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregation": {
+            "const": "SAMPLE_MEAN",
+            "default": "SAMPLE_MEAN",
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "note": {
+            "default": "按各维度的 OEM 留存采样计算算术平均；覆盖率未知，不代表完整时间加权平均。",
+            "title": "Note",
+            "type": "string"
+          },
+          "period": {
+            "enum": [
+              "1w",
+              "1m"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "response_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Sha256"
+          },
+          "series": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringNativeBaselineSeries"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "period",
+          "start",
+          "end"
+        ],
+        "title": "MonitoringNativeBaseline",
+        "type": "object"
+      },
+      "MonitoringNativeBaselineSeries": {
+        "additionalProperties": false,
+        "properties": {
+          "average": {
+            "title": "Average",
+            "type": "string"
+          },
+          "dimensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "object"
+          },
+          "sample_count": {
+            "exclusiveMinimum": 0.0,
+            "title": "Sample Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dimensions",
+          "average",
+          "sample_count"
+        ],
+        "title": "MonitoringNativeBaselineSeries",
+        "type": "object"
+      },
       "MonitoringNativeCatalog": {
         "additionalProperties": false,
         "properties": {
@@ -12411,6 +12727,74 @@
           "query_supported"
         ],
         "title": "MonitoringNativeMetric",
+        "type": "object"
+      },
+      "MonitoringNativePanel": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_supported": {
+            "default": false,
+            "title": "Baseline Supported",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringNativeMetric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "default": "HISTORY",
+            "enum": [
+              "HISTORY",
+              "LATEST"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "panel_id": {
+            "title": "Panel Id",
+            "type": "string"
+          },
+          "ranking": {
+            "default": "DESC",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "title": "Ranking",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "panel_id",
+          "title",
+          "description"
+        ],
+        "title": "MonitoringNativePanel",
         "type": "object"
       },
       "MonitoringNativePoint": {
@@ -15803,6 +16187,26 @@
         "title": "PolicyPage",
         "type": "object"
       },
+      "PolicyStateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "enabled"
+        ],
+        "title": "PolicyStateRequest",
+        "type": "object"
+      },
       "PolicySummary": {
         "additionalProperties": false,
         "properties": {
@@ -19030,6 +19434,26 @@
         "title": "RetireSemanticModelVersionRequest",
         "type": "object"
       },
+      "RetryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledge_duplicate_risk": {
+            "default": false,
+            "title": "Acknowledge Duplicate Risk",
+            "type": "boolean"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "RetryRequest",
+        "type": "object"
+      },
       "ReturnSemanticModelForRevisionRequest": {
         "properties": {
           "expected_row_version": {
@@ -19592,7 +20016,7 @@
             "type": "string"
           },
           "domain_id": {
-            "exclusiveMinimum": 0,
+            "exclusiveMinimum": 0.0,
             "title": "Domain Id",
             "type": "integer"
           },
@@ -22395,6 +22819,21 @@
         "title": "TargetSummary",
         "type": "object"
       },
+      "TestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "format": "uuid",
+            "title": "Binding Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id"
+        ],
+        "title": "TestRequest",
+        "type": "object"
+      },
       "TimeRangeV1": {
         "additionalProperties": false,
         "description": "绝对时间范围或相对窗口，两种表达必须二选一。",
@@ -23979,6 +24418,21 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VersionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "VersionRequest",
         "type": "object"
       },
       "WebhookKeyRotation": {
@@ -25603,29 +26057,29 @@
           },
           "interval_minutes": {
             "default": 1,
-            "maximum": 60,
-            "minimum": 1,
+            "maximum": 60.0,
+            "minimum": 1.0,
             "title": "Interval Minutes",
             "type": "integer"
           },
           "retention_days": {
             "default": 30,
-            "maximum": 365,
-            "minimum": 1,
+            "maximum": 365.0,
+            "minimum": 1.0,
             "title": "Retention Days",
             "type": "integer"
           },
           "round_timeout_seconds": {
             "default": 30,
-            "maximum": 120,
-            "minimum": 5,
+            "maximum": 120.0,
+            "minimum": 5.0,
             "title": "Round Timeout Seconds",
             "type": "integer"
           },
           "top_statement_limit": {
             "default": 100,
-            "maximum": 100,
-            "minimum": 10,
+            "maximum": 100.0,
+            "minimum": 10.0,
             "title": "Top Statement Limit",
             "type": "integer"
           }
@@ -25649,179 +26103,6 @@
         ],
         "title": "WorkloadReportType",
         "type": "string"
-      },
-      "MonitoringNativeBaseline": {
-        "additionalProperties": false,
-        "properties": {
-          "aggregation": {
-            "const": "SAMPLE_MEAN",
-            "default": "SAMPLE_MEAN",
-            "title": "Aggregation",
-            "type": "string"
-          },
-          "end": {
-            "format": "date-time",
-            "title": "End",
-            "type": "string"
-          },
-          "note": {
-            "default": "按各维度的 OEM 留存采样计算算术平均；覆盖率未知，不代表完整时间加权平均。",
-            "title": "Note",
-            "type": "string"
-          },
-          "period": {
-            "enum": [
-              "1w",
-              "1m"
-            ],
-            "title": "Period",
-            "type": "string"
-          },
-          "response_sha256": {
-            "anyOf": [
-              {
-                "pattern": "^[a-f0-9]{64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Response Sha256"
-          },
-          "series": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/MonitoringNativeBaselineSeries"
-            },
-            "title": "Series",
-            "type": "array"
-          },
-          "start": {
-            "format": "date-time",
-            "title": "Start",
-            "type": "string"
-          },
-          "truncated": {
-            "default": false,
-            "title": "Truncated",
-            "type": "boolean"
-          },
-          "unavailable_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unavailable Reason"
-          }
-        },
-        "required": [
-          "period",
-          "start",
-          "end"
-        ],
-        "title": "MonitoringNativeBaseline",
-        "type": "object"
-      },
-      "MonitoringNativeBaselineSeries": {
-        "additionalProperties": false,
-        "properties": {
-          "average": {
-            "title": "Average",
-            "type": "string"
-          },
-          "dimensions": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Dimensions",
-            "type": "object"
-          },
-          "sample_count": {
-            "exclusiveMinimum": 0.0,
-            "title": "Sample Count",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "dimensions",
-          "average",
-          "sample_count"
-        ],
-        "title": "MonitoringNativeBaselineSeries",
-        "type": "object"
-      },
-      "MonitoringNativePanel": {
-        "additionalProperties": false,
-        "properties": {
-          "baseline_supported": {
-            "default": false,
-            "title": "Baseline Supported",
-            "type": "boolean"
-          },
-          "description": {
-            "title": "Description",
-            "type": "string"
-          },
-          "metric": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MonitoringNativeMetric"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "mode": {
-            "default": "HISTORY",
-            "enum": [
-              "HISTORY",
-              "LATEST"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "panel_id": {
-            "title": "Panel Id",
-            "type": "string"
-          },
-          "ranking": {
-            "default": "DESC",
-            "enum": [
-              "ASC",
-              "DESC"
-            ],
-            "title": "Ranking",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "unavailable_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unavailable Reason"
-          }
-        },
-        "required": [
-          "panel_id",
-          "title",
-          "description"
-        ],
-        "title": "MonitoringNativePanel",
-        "type": "object"
       }
     }
   },
@@ -48007,6 +48288,1221 @@
         "summary": "List Model Catalog",
         "tags": [
           "Model Catalog"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/audit": {
+      "get": {
+        "operationId": "audit_api_v1_notification_delivery_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audit",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/bindings": {
+      "get": {
+        "operationId": "bindings_api_v1_notification_delivery_bindings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bindings",
+        "tags": [
+          "Notification Delivery"
+        ]
+      },
+      "post": {
+        "operationId": "create_binding_api_v1_notification_delivery_bindings_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Binding",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/bindings/{object_id}/challenge": {
+      "post": {
+        "operationId": "challenge_api_v1_notification_delivery_bindings__object_id__challenge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Challenge",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/bindings/{object_id}/confirm": {
+      "post": {
+        "operationId": "confirm_api_v1_notification_delivery_bindings__object_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm",
+        "tags": [
+          "Notification Delivery"
+        ],
+        "x-sensitive-input": true
+      }
+    },
+    "/api/v1/notification-delivery/bindings/{object_id}/disable": {
+      "post": {
+        "operationId": "disable_binding_api_v1_notification_delivery_bindings__object_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Binding",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/capabilities": {
+      "get": {
+        "operationId": "capabilities_api_v1_notification_delivery_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Capabilities",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/catalog": {
+      "get": {
+        "operationId": "catalog_api_v1_notification_delivery_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Catalog",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/connections": {
+      "get": {
+        "operationId": "connections_api_v1_notification_delivery_connections_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connections",
+        "tags": [
+          "Notification Delivery"
+        ]
+      },
+      "post": {
+        "operationId": "create_connection_api_v1_notification_delivery_connections_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Connection",
+        "tags": [
+          "Notification Delivery"
+        ],
+        "x-sensitive-input": true
+      }
+    },
+    "/api/v1/notification-delivery/connections/{object_id}": {
+      "put": {
+        "operationId": "update_connection_api_v1_notification_delivery_connections__object_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Connection",
+        "tags": [
+          "Notification Delivery"
+        ],
+        "x-sensitive-input": true
+      }
+    },
+    "/api/v1/notification-delivery/connections/{object_id}/check": {
+      "post": {
+        "operationId": "check_connection_api_v1_notification_delivery_connections__object_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Connection",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/connections/{object_id}/test": {
+      "post": {
+        "operationId": "queue_test_api_v1_notification_delivery_connections__object_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Queue Test",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/entries/{entry_id}": {
+      "get": {
+        "operationId": "resolve_entry_api_v1_notification_delivery_entries__entry_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Entry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Entry",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/health": {
+      "get": {
+        "operationId": "health_api_v1_notification_delivery_health_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/jobs": {
+      "get": {
+        "operationId": "jobs_api_v1_notification_delivery_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DeliveryStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Jobs",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/jobs/{job_id}/attempts": {
+      "get": {
+        "operationId": "attempts_api_v1_notification_delivery_jobs__job_id__attempts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attempts",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/jobs/{job_id}/retry": {
+      "post": {
+        "operationId": "retry_api_v1_notification_delivery_jobs__job_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/me/bindings": {
+      "get": {
+        "operationId": "my_bindings_api_v1_notification_delivery_me_bindings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "My Bindings",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/open/{entry_id}": {
+      "get": {
+        "operationId": "open_entry_api_v1_notification_delivery_open__entry_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Entry Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Entry",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/policies": {
+      "get": {
+        "operationId": "policies_api_v1_notification_delivery_policies_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Policies",
+        "tags": [
+          "Notification Delivery"
+        ]
+      },
+      "post": {
+        "operationId": "create_policy_api_v1_notification_delivery_policies_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalPolicyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Policy",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/policies/{object_id}": {
+      "put": {
+        "operationId": "set_policy_api_v1_notification_delivery_policies__object_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Policy",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/targets": {
+      "get": {
+        "operationId": "targets_api_v1_notification_delivery_targets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Targets",
+        "tags": [
+          "Notification Delivery"
         ]
       }
     },

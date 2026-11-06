@@ -65,3 +65,17 @@ mutation_enabled = false
 # [integrations.mcp_data]
 # api_endpoint = "http://aireport.internal:10090/aireport/chat/with_selectai_api"
 # profiles_endpoint = "http://aireport.internal:10090/aireport/admin/list_profiles"
+[external_delivery]
+# 默认关闭；先准备 HTTPS 门户、加密主密钥、连接和已验证身份，再启用独立 Worker。
+enabled = false
+public_origin = ""
+poll_seconds = 1.0
+request_timeout_seconds = 10
+lease_seconds = 60
+max_attempts = 5
+# 可选降噪，仅 INFO／WARNING 的新告警、恢复；不影响站内、升级或需处理消息。
+# UTC 小时时段，支持跨日；以下例子为北京时间 22:00 至次日 08:00。
+# quiet_start_utc_hour = 14
+# quiet_end_utc_hour = 0
+# 同一资源／等级／目标在固定窗口保留最后一条；旧任务保留合并原因及审计。
+coalesce_seconds = 0

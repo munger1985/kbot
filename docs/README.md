@@ -50,6 +50,9 @@ Git 历史保存，不再作为有效文档。
 
 ## 详细设计与实施方案
 
+- [AIOps 飞书通知接入详细设计（代码已实现，待真实验收）](proposals/aiops-feishu-notification-detailed-design.md)：平台通知模块、独立 Worker、身份绑定、可靠投递及原任务入口。
+- [飞书通知部署与验证](operations/aiops-feishu-notification-delivery.md)：默认关闭、无损数据库工件、权限、真实测试企业启用步骤与验收边界。
+
 - [KBot 1.0 OCIR 生产部署与初始化方案](proposals/ocir-1.0-production-deployment-plan.md)：正式镜像的 OCI 基础设施、Digest 锁定门禁、空库初始化、验收与回滚方案。
 - [AIOps 跨项目统一实施方案](proposals/aiops-cross-project-unified-implementation-plan.md)：按七个批次完成双向能力吸收、实时监控、双前端和真实环境联合验收。
 - [AIOps SQL 诊断与窗口分析详细设计（核心实现、待真实验收）](proposals/aiops-sql-diagnosis-detailed-design.md)：三库统一身份与窗口、多源假设驱动调查、诊断解决方案及真实运维闭环验收。

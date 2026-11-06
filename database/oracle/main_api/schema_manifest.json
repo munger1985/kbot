@@ -1,11 +1,12 @@
 {
   "component": "main_api",
-  "schema_version": 7,
-  "contract_version": "main-api-oracle-v7",
+  "schema_version": 8,
+  "contract_version": "main-api-oracle-v8",
   "oracle_baseline": "26ai",
   "scripts": [
-    {"name": "001_access_control.sql", "statements": 33, "sha256": "f30d85aff79dd61d1ad8cf960c180bc281059337cdbec54121cc46ed641cbb08"},
-    {"name": "002_app_api_clients.sql", "statements": 13, "sha256": "a45420fb23c26fc4b1e21e30ed70a8a1df6a8bfb74de2b3bc2ac2b77394edf9a"}
+    {"name": "001_access_control.sql", "statements": 33, "sha256": "5d0437dff4b9a05fefcc223431dcee1b4bfb9b781918b9265c977d6f99b52b1b"},
+    {"name": "002_app_api_clients.sql", "statements": 13, "sha256": "a45420fb23c26fc4b1e21e30ed70a8a1df6a8bfb74de2b3bc2ac2b77394edf9a"},
+    {"name": "003_notification_delivery.sql", "statements": 16, "sha256": "f4aa00dcfeac6b358846d2a61431b582bcfaa386108743ee876053d2ab9b4699"}
   ],
   "tables": [
     "KBOT_PLATFORM_APP", "KBOT_PLATFORM_USER", "KBOT_PLATFORM_USER_CREDENTIAL",
@@ -14,7 +15,10 @@
     "KBOT_PLATFORM_USER_ROLE", "KBOT_APP_DOMAIN", "KBOT_APP_MEMBER",
     "KBOT_APP_MEMBER_ROLE", "KBOT_APP_MEMBER_ROLE_SCOPE",
     "KBOT_APP_API_CLIENT", "KBOT_APP_API_CREDENTIAL",
-    "KBOT_APP_API_CLIENT_SCOPE", "KBOT_APP_API_CLIENT_AGENT"
+    "KBOT_APP_API_CLIENT_SCOPE", "KBOT_APP_API_CLIENT_AGENT",
+    "KBOT_NOTIFY_CONNECTION", "KBOT_NOTIFY_BINDING", "KBOT_NOTIFY_POLICY",
+    "KBOT_NOTIFY_ENTRY", "KBOT_NOTIFY_JOB", "KBOT_NOTIFY_ATTEMPT",
+    "KBOT_NOTIFY_AUDIT", "KBOT_NOTIFY_THROTTLE"
   ],
   "views": [],
   "invariants": {

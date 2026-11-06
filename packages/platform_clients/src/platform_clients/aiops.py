@@ -721,6 +721,10 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json("POST", f"{INTERNAL_API_V1}/aiops/notifications:projection",
             payload=payload, auth_context=auth_context)
 
+    async def resolve_notification_resource(self, *, payload: dict, auth_context: AuthContext):
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/notifications:resource",
+            payload=payload, auth_context=auth_context)
+
     async def get_output_job(self, job_id: UUID, *, auth_context: AuthContext):
         return await self._json("GET", f"{INTERNAL_API_V1}/aiops/output-jobs/{job_id}",
             auth_context=auth_context)

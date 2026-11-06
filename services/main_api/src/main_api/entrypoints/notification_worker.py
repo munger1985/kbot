@@ -45,6 +45,7 @@ async def main() -> None:
         batch_size=config.dispatcher_batch_size,
         lease_seconds=config.dispatcher_lease_seconds,
         max_attempts=config.dispatcher_max_attempts,
+        external_config=settings.external_delivery,
     )
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

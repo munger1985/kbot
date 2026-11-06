@@ -412,6 +412,7 @@ def test_real_aiops_boundary_limits_projection_to_main_service(mode):
         # 不启动真实数据库生命周期；生产中间件使用真实签验器。
         app.state.auth_context_codec = create_auth_context_codec()
         app.state.service_identity_codec = create_service_identity_codec()
+        app.state.business_license_service = SimpleNamespace(is_allowed=AsyncMock(return_value=True))
         value = snapshot()
         app.state.output_projection_service = SimpleNamespace(read=AsyncMock(return_value=value))
         caller = ("kbot-" if ORACLE else "ammolite-") + ("aiops-worker" if mode == "caller" else "main-api")

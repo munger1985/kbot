@@ -10522,6 +10522,111 @@
         "title": "MonitoringInstanceSummary",
         "type": "object"
       },
+      "MonitoringNativeBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregation": {
+            "const": "SAMPLE_MEAN",
+            "default": "SAMPLE_MEAN",
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "note": {
+            "default": "按各维度的 OEM 留存采样计算算术平均；覆盖率未知，不代表完整时间加权平均。",
+            "title": "Note",
+            "type": "string"
+          },
+          "period": {
+            "enum": [
+              "1w",
+              "1m"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "response_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Sha256"
+          },
+          "series": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringNativeBaselineSeries"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "period",
+          "start",
+          "end"
+        ],
+        "title": "MonitoringNativeBaseline",
+        "type": "object"
+      },
+      "MonitoringNativeBaselineSeries": {
+        "additionalProperties": false,
+        "properties": {
+          "average": {
+            "title": "Average",
+            "type": "string"
+          },
+          "dimensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "object"
+          },
+          "sample_count": {
+            "exclusiveMinimum": 0.0,
+            "title": "Sample Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dimensions",
+          "average",
+          "sample_count"
+        ],
+        "title": "MonitoringNativeBaselineSeries",
+        "type": "object"
+      },
       "MonitoringNativeCatalog": {
         "additionalProperties": false,
         "properties": {
@@ -10660,6 +10765,74 @@
           "query_supported"
         ],
         "title": "MonitoringNativeMetric",
+        "type": "object"
+      },
+      "MonitoringNativePanel": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_supported": {
+            "default": false,
+            "title": "Baseline Supported",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringNativeMetric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "default": "HISTORY",
+            "enum": [
+              "HISTORY",
+              "LATEST"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "panel_id": {
+            "title": "Panel Id",
+            "type": "string"
+          },
+          "ranking": {
+            "default": "DESC",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "title": "Ranking",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "panel_id",
+          "title",
+          "description"
+        ],
+        "title": "MonitoringNativePanel",
         "type": "object"
       },
       "MonitoringNativePoint": {
@@ -12145,6 +12318,118 @@
           }
         },
         "title": "MySQLRecoveryMarker",
+        "type": "object"
+      },
+      "NotificationResourceRequest": {
+        "additionalProperties": false,
+        "description": "只接受已有任务的白名单定位，不接受 URL、正文或执行命令。",
+        "properties": {
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "event_type": {
+            "maxLength": 160,
+            "minLength": 3,
+            "title": "Event Type",
+            "type": "string"
+          },
+          "route_key": {
+            "enum": [
+              "aiops.run.detail",
+              "aiops.situation.detail",
+              "aiops.report.detail"
+            ],
+            "title": "Route Key",
+            "type": "string"
+          },
+          "route_params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 12,
+            "title": "Route Params",
+            "type": "object"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "required": [
+          "event_type",
+          "domain_id",
+          "route_key",
+          "route_params"
+        ],
+        "title": "NotificationResourceRequest",
+        "type": "object"
+      },
+      "NotificationResourceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "actionable": {
+            "title": "Actionable",
+            "type": "boolean"
+          },
+          "assignee_actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Actor Id"
+          },
+          "initiator_actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiator Actor Id"
+          },
+          "request": {
+            "$ref": "#/components/schemas/NotificationResourceRequest"
+          },
+          "run_actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Actor Id"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request",
+          "actionable",
+          "source_version"
+        ],
+        "title": "NotificationResourceSnapshot",
         "type": "object"
       },
       "NotificationSubscriptionList": {
@@ -21905,207 +22190,34 @@
           },
           "interval_minutes": {
             "default": 1,
-            "maximum": 60,
-            "minimum": 1,
+            "maximum": 60.0,
+            "minimum": 1.0,
             "title": "Interval Minutes",
             "type": "integer"
           },
           "retention_days": {
             "default": 30,
-            "maximum": 365,
-            "minimum": 1,
+            "maximum": 365.0,
+            "minimum": 1.0,
             "title": "Retention Days",
             "type": "integer"
           },
           "round_timeout_seconds": {
             "default": 30,
-            "maximum": 120,
-            "minimum": 5,
+            "maximum": 120.0,
+            "minimum": 5.0,
             "title": "Round Timeout Seconds",
             "type": "integer"
           },
           "top_statement_limit": {
             "default": 100,
-            "maximum": 100,
-            "minimum": 10,
+            "maximum": 100.0,
+            "minimum": 10.0,
             "title": "Top Statement Limit",
             "type": "integer"
           }
         },
         "title": "WorkloadPolicy",
-        "type": "object"
-      },
-      "MonitoringNativeBaseline": {
-        "additionalProperties": false,
-        "properties": {
-          "aggregation": {
-            "const": "SAMPLE_MEAN",
-            "default": "SAMPLE_MEAN",
-            "title": "Aggregation",
-            "type": "string"
-          },
-          "end": {
-            "format": "date-time",
-            "title": "End",
-            "type": "string"
-          },
-          "note": {
-            "default": "按各维度的 OEM 留存采样计算算术平均；覆盖率未知，不代表完整时间加权平均。",
-            "title": "Note",
-            "type": "string"
-          },
-          "period": {
-            "enum": [
-              "1w",
-              "1m"
-            ],
-            "title": "Period",
-            "type": "string"
-          },
-          "response_sha256": {
-            "anyOf": [
-              {
-                "pattern": "^[a-f0-9]{64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Response Sha256"
-          },
-          "series": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/MonitoringNativeBaselineSeries"
-            },
-            "title": "Series",
-            "type": "array"
-          },
-          "start": {
-            "format": "date-time",
-            "title": "Start",
-            "type": "string"
-          },
-          "truncated": {
-            "default": false,
-            "title": "Truncated",
-            "type": "boolean"
-          },
-          "unavailable_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unavailable Reason"
-          }
-        },
-        "required": [
-          "period",
-          "start",
-          "end"
-        ],
-        "title": "MonitoringNativeBaseline",
-        "type": "object"
-      },
-      "MonitoringNativeBaselineSeries": {
-        "additionalProperties": false,
-        "properties": {
-          "average": {
-            "title": "Average",
-            "type": "string"
-          },
-          "dimensions": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Dimensions",
-            "type": "object"
-          },
-          "sample_count": {
-            "exclusiveMinimum": 0.0,
-            "title": "Sample Count",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "dimensions",
-          "average",
-          "sample_count"
-        ],
-        "title": "MonitoringNativeBaselineSeries",
-        "type": "object"
-      },
-      "MonitoringNativePanel": {
-        "additionalProperties": false,
-        "properties": {
-          "baseline_supported": {
-            "default": false,
-            "title": "Baseline Supported",
-            "type": "boolean"
-          },
-          "description": {
-            "title": "Description",
-            "type": "string"
-          },
-          "metric": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MonitoringNativeMetric"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "mode": {
-            "default": "HISTORY",
-            "enum": [
-              "HISTORY",
-              "LATEST"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "panel_id": {
-            "title": "Panel Id",
-            "type": "string"
-          },
-          "ranking": {
-            "default": "DESC",
-            "enum": [
-              "ASC",
-              "DESC"
-            ],
-            "title": "Ranking",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "unavailable_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unavailable Reason"
-          }
-        },
-        "required": [
-          "panel_id",
-          "title",
-          "description"
-        ],
-        "title": "MonitoringNativePanel",
         "type": "object"
       }
     }
@@ -29848,6 +29960,47 @@
           }
         },
         "summary": "Workflow Projection",
+        "tags": [
+          "AIOps Notifications"
+        ]
+      }
+    },
+    "/internal/v1/aiops/notifications:resource": {
+      "post": {
+        "operationId": "notification_resource_internal_v1_aiops_notifications_resource_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationResourceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationResourceSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notification Resource",
         "tags": [
           "AIOps Notifications"
         ]

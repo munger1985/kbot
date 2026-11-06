@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from main_api.repositories.notification_delivery import ExternalDeliveryRepository
+from platform_core.managed_credentials.repository import ManagedCredentialRepository
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from platform_core.app_resources.repository import CaseResourceRepository
@@ -18,6 +20,8 @@ from main_api.repositories import (
 class MainApiUnitOfWork:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._session_factory = session_factory
+        self.external_delivery = None
+        self.managed_credentials = None
         self.case_resources = None
         self.session: AsyncSession | None = None
         self.domains: PlatformDomainRepository | None = None
@@ -27,6 +31,8 @@ class MainApiUnitOfWork:
 
     async def __aenter__(self) -> "MainApiUnitOfWork":
         self.session = self._session_factory()
+        self.external_delivery = ExternalDeliveryRepository(self.session)
+        self.managed_credentials = ManagedCredentialRepository(self.session)
         self.case_resources = CaseResourceRepository(self.session)
         self.domains = PlatformDomainRepository(self.session)
         self.notifications = NotificationRepository(self.session)
@@ -53,6 +59,8 @@ class MainApiUnitOfWork:
                 await session.close()
         finally:
             self.session = None
+            self.external_delivery = None
+            self.managed_credentials = None
             self.case_resources = None
             self.domains = None
             self.notifications = None
