@@ -16,6 +16,11 @@ from aiops_agent.application.conversation_inputs import ConversationInputResolve
 from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL, freeze_top_sql_window
 from aiops_agent.application.diagnosis import freeze_automatic_entry_intent
 from aiops_agent.application.errors import resource_not_found, state_conflict
+from aiops_agent.application.conversation_starters.admission import (
+    StarterAdmissionError,
+    require_entitlements,
+    require_starter_candidates,
+)
 from aiops_agent.application.investigation.context import (
     PlanningAlreadyApplied,
     TurnPlanningContext,
@@ -222,6 +227,7 @@ class TurnPlanningService:
         except (
             InvestigationPlanValidationError,
             TurnPlanningStageError,
+            StarterAdmissionError,
         ):
             raise
         except Exception as exc:
@@ -520,6 +526,10 @@ class TurnPlanningService:
     ]:
         """把已验证功能入口编译成固定调查计划，不调用模型分类。"""
         starter = dict(context.conversation_starter)
+        require_entitlements(
+            starter.get("required_entitlements", ()),
+            getattr(getattr(context, "capabilities", None), "entitlements", ()),
+        )
         planning = dict(starter.get("planning") or {})
         kind = str(planning.get("kind") or "")
         parameters = dict(starter.get("parameters") or {})
@@ -600,6 +610,12 @@ class TurnPlanningService:
                 )
                 if reference_tool:
                     requested_tool_ids = (*requested_tool_ids, reference_tool)
+        require_starter_candidates(
+            tools=available_tools,
+            playbooks=available_playbooks,
+            tool_ids=tuple(requested_tool_ids),
+            playbook_ids=tuple(requested_playbook_ids),
+        )
         planning_tools, planning_playbooks = select_planning_candidates(
             tools=available_tools,
             playbooks=available_playbooks,
@@ -3903,6 +3919,17 @@ class TurnPlanningService:
 
     @staticmethod
     def _terminal_failure_summary(error_code: str) -> str:
+        if error_code == "AIOPS_STARTER_ENTITLEMENT_REQUIRED":
+            return (
+                "当前目标尚未声明该报告所需的商业许可，本轮没有执行诊断工具。"
+                "请管理员核实实际授权并维护目标许可声明后重新发起；"
+                "系统不会自动启用商业许可。"
+            )
+        if error_code == "AIOPS_STARTER_TOOLS_UNAVAILABLE":
+            return (
+                "当前目标缺少执行所选功能的可用诊断工具，本轮没有执行诊断工具。"
+                "请管理员核对数据库版本、只读连接、商业许可声明和诊断工具目录。"
+            )
         if error_code == "AIOPS_PROMPT_NOT_FOUND":
             return (
                 "诊断所需的 Prompt 尚未发布，本轮没有执行诊断工具。"

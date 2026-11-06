@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from aiops_agent.application.errors import validation_failed
+from aiops_agent.application.conversation_starters.admission import (
+    entitlement_error,
+    require_entitlements,
+)
+from aiops_agent.tools.capabilities import target_entitlements
 from aiops_agent.application.implementation.inputs import (
     implementation_input_schema,
     normalize_implementation_parameters,
@@ -50,7 +55,9 @@ class ConversationStarterCatalog:
             )
             if not compatible_targets:
                 continue
-            availability = [self._availability(target) for target in compatible_targets]
+            availability = [
+                self._availability(target, item) for target in compatible_targets
+            ]
             status = next(
                 (
                     candidate
@@ -113,7 +120,10 @@ class ConversationStarterCatalog:
         if target is not None:
             if str(target.db_type) not in item.get("supported_db_types", ()):
                 raise validation_failed("所选功能不支持当前业务资源数据库类型")
-            status, reason = self._availability(target)
+            require_entitlements(
+                item.get("required_entitlements", ()), target_entitlements(target),
+            )
+            status, reason = self._availability(target, item)
             if status == "UNAVAILABLE":
                 raise validation_failed(reason)
             if str(dict(item.get("planning") or {}).get("kind")) == "TOP_SQL_LIST":
@@ -201,6 +211,7 @@ class ConversationStarterCatalog:
             "category": item["category"],
             "title": item["title"],
             "execution_mode": item["execution_mode"],
+            "required_entitlements": list(item.get("required_entitlements", ())),
             "required_capabilities": sorted(required),
             "parameters": parameters,
             "planning": dict(item["planning"]),
@@ -227,11 +238,16 @@ class ConversationStarterCatalog:
         return implementation_input_schema(profile)
 
     @staticmethod
-    def _availability(target: Any) -> tuple[str, str | None]:
+    def _availability(target: Any, item: dict[str, Any]) -> tuple[str, str | None]:
         if str(target.status) != "ENABLED":
             return "UNAVAILABLE", "Target 当前未启用"
         if not bool(getattr(target, "readonly_connection_enabled", False)):
             return "UNAVAILABLE", "该功能需要先配置数据库只读连接"
+        error = entitlement_error(
+            item.get("required_entitlements", ()), target_entitlements(target),
+        )
+        if error is not None:
+            return "UNAVAILABLE", error.message
         connectivity = str(target.connectivity_status)
         if connectivity == "UNKNOWN":
             return "LIMITED", "连接状态尚未确认，执行时会实时核验"

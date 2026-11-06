@@ -10,6 +10,11 @@ from unittest.mock import AsyncMock
 from loguru import logger
 
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
+from aiops_agent.application.conversation_starters.admission import (
+    StarterAdmissionError,
+    entitlement_error,
+    require_starter_candidates,
+)
 from aiops_agent.application.investigation.service import TurnPlanningService
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink, AIOpsOutboxDispatcher
@@ -250,6 +255,47 @@ class TurnRetryTest(unittest.IsolatedAsyncioTestCase):
         completed = await self.planner.begin(self.payload)
         self.assertIsNone(completed["dispatch"])
         self.assertEqual(1, self.planner._plan.await_count)
+
+    async def test_report_entitlement_error_fails_turn_and_run_without_retry(self):
+        async def fail_admission(_):
+            try:
+                raise RuntimeError("不得输出的用户输入或凭据")
+            except RuntimeError as cause:
+                raise entitlement_error(("ORACLE_DIAGNOSTICS_PACK",), ()) from cause
+
+        self.execute.side_effect = fail_admission
+        messages = []
+        sink_id = logger.add(messages.append, format="{message}", level="WARNING")
+        try:
+            await self.dispatcher.run_once()
+        finally:
+            logger.remove(sink_id)
+        self.assertEqual(1, self.execute.await_count)
+        self.assertEqual("FAILED", self.outbox.message.status)
+        self.assertEqual("AIOPS_STARTER_ENTITLEMENT_REQUIRED", self.outbox.releases[0]["error_code"])
+        self.assertEqual("AIOPS_STARTER_ENTITLEMENT_REQUIRED", self.turn.error_code)
+        self.assertEqual("FAILED", self.uow.runs.rows[0].status)
+        self.assertIn("商业许可", self.turn.error_message)
+        self.assertNotIn("请重试", self.turn.error_message)
+        logged = "\n".join(messages)
+        self.assertIn("stage=CHECK_STARTER_ADMISSION", logged)
+        self.assertIn("missing-entitlements:ORACLE_DIAGNOSTICS_PACK", logged)
+        self.assertNotIn("不得输出", logged)
+
+    async def test_report_missing_tool_is_terminal_and_safely_logged(self):
+        with self.assertRaises(StarterAdmissionError) as raised:
+            require_starter_candidates(
+                tool_ids=("db.oracle.awr.report",),
+                tools=(), playbook_ids=(), playbooks=(),
+            )
+        self.execute.side_effect = raised.exception
+        await self.dispatcher.run_once()
+        self.assertEqual(1, self.execute.await_count)
+        self.assertEqual("FAILED", self.outbox.message.status)
+        self.assertEqual("AIOPS_STARTER_TOOLS_UNAVAILABLE", self.turn.error_code)
+        self.assertIn("数据库版本", self.turn.error_message)
+        self.assertEqual("FAILED", self.uow.runs.rows[0].status)
+        self.assertIn("missing-tools:db.oracle.awr.report", self.execute.side_effect.safe_detail)
 
     async def test_prompt_configuration_error_fails_turn_and_run_immediately(self):
         for cause, code, detail in (

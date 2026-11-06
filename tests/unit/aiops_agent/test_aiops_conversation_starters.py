@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiops_agent.application.conversation_starters import ConversationStarterCatalog
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.conversation_starters.service import (
     ConversationStarterService,
 )
@@ -25,6 +26,7 @@ def _target(**overrides):
         "status": "ENABLED",
         "readonly_connection_enabled": True,
         "connectivity_status": "CONNECTED",
+        "capabilities_json": {"entitlements": ["ORACLE_DIAGNOSTICS_PACK"]},
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -483,6 +485,38 @@ class ConversationStarterCatalogTest(unittest.TestCase):
 
 
 class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
+    async def test_report_ui_selection_rejects_unlicensed_oracle_target(self) -> None:
+        catalog = ConversationStarterCatalog()
+        for starter_id, parameters in (
+            ("oracle.report.awr", {
+                "begin_time": "2026-11-05T01:00:00.000Z",
+                "end_time": "2026-11-05T02:00:00.000Z",
+            }),
+            ("oracle.report.awr-diff", {
+                "first_begin_time": "2026-11-05T01:00:00.000Z",
+                "first_end_time": "2026-11-05T02:00:00.000Z",
+                "second_begin_time": "2026-11-05T03:00:00.000Z",
+                "second_end_time": "2026-11-05T04:00:00.000Z",
+            }),
+            ("oracle.report.ash", {
+                "begin_time": "2026-11-05T01:00:00.000Z",
+                "end_time": "2026-11-05T02:00:00.000Z",
+            }),
+        ):
+            with self.subTest(starter_id=starter_id):
+                with self.assertRaises(AIOpsApplicationError) as raised:
+                    catalog.freeze(
+                        selection=ConversationStarterSelection(
+                            starter_id=starter_id,
+                            catalog_version=catalog.version,
+                            parameters=parameters,
+                        ),
+                        target=_target(capabilities_json={}),
+                        capabilities={"ACTIVE_DIAGNOSIS"},
+                    )
+                self.assertEqual("AIOPS_STARTER_ENTITLEMENT_REQUIRED", raised.exception.code)
+                self.assertFalse(raised.exception.retryable)
+
     def _diagnostic_output(
         self,
         *,

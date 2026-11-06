@@ -9,6 +9,7 @@ from typing import Protocol
 from loguru import logger
 
 from aiops_agent.adapters.model_serving import AIOpsModelError
+from aiops_agent.application.conversation_starters.admission import StarterAdmissionError
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     is_schema_or_integrity_error,
@@ -293,7 +294,7 @@ class AIOpsDomainOutboxSink:
         payload: dict,
         exc: Exception,
     ) -> None:
-        """在 Outbox 重试耗尽后收敛关联业务状态。"""
+        """在不可重试或 Outbox 重试耗尽后收敛关联业务状态。"""
         if event_type == "OPS_BUSINESS_EFFECT_REQUESTED":
             if self._business_effect_service is not None:
                 await self._business_effect_service.fail(payload, exc)
@@ -323,11 +324,11 @@ class AIOpsDomainOutboxSink:
         error_code = getattr(exc, "code", "AIOPS_INVESTIGATION_PLAN_FAILED")
         # 阶段错误已经提取安全位置；不展开可能携带输入或 Prompt 的原始异常链。
         failure_logger = (
-            logger if isinstance(exc, TurnPlanningStageError)
+            logger if isinstance(exc, (TurnPlanningStageError, StarterAdmissionError))
             else logger.opt(exception=exc)
         )
         failure_logger.error(
-            "AIOps Turn 规划重试耗尽：turn_id={} code={} type={} "
+            "AIOps Turn 规划失败并收敛终态：turn_id={} code={} type={} "
             "stage={} detail={} location={}",
             payload.get("turn_id"),
             error_code,
@@ -340,7 +341,7 @@ class AIOpsDomainOutboxSink:
             return
         terminal_service = (
             self._turn_planning_service
-            if isinstance(exc, TurnPlanningStageError)
+            if isinstance(exc, (TurnPlanningStageError, StarterAdmissionError))
             and self._turn_planning_service is not None
             else self._turn_planner_service
         )
