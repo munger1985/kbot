@@ -277,7 +277,8 @@ def test_failed_later_diagnosis_keeps_checkpoint_without_retry_or_false_completi
         assert assessed.investigation.next_action == "ANSWER"
         answer_context = replace(context, input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1", "payload": assessed.model_dump(mode="json")},))
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(answer_context)
-        assert result.status == "PARTIAL" and "上一阶段已核验判断" in result.blocks[0].payload["markdown"]
+        assert result.status == "PARTIAL" and "上一阶段已核验判断" in result.blocks[0].payload["answer_notice"]
+        assert result.blocks[0].payload["markdown"] == previous.sql_checkpoint.answer_markdown
         assert "暂不变更" in result.blocks[0].payload["markdown"]
         assert model.generate_structured.await_count == 2
     asyncio.run(exercise())

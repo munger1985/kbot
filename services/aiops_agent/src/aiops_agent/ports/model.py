@@ -23,7 +23,7 @@ class StructuredModelResult:
 
 @dataclass(frozen=True)
 class ModelTextDelta:
-    """模型原文增量；重试时明确撤回上次尚未核验的草稿。"""
+    """模型原文增量；reset 仅能初始化尚未开始的回复，不能清空已交付正文。"""
 
     delta: str = ""
     reset: bool = False

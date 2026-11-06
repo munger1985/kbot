@@ -82,5 +82,45 @@
     window.setTimeout(() => { button.textContent = original || "复制"; }, 1600);
   }
 
-  globalThis.KBotMarkdown = Object.freeze({ copyCode, render });
+  // 只接收已经净化或由页面转义生成的 HTML，稳定更新节点而非清空整个正文。
+  function patch(root, safeHtml) {
+    const template = document.createElement("template");
+    template.innerHTML = safeHtml;
+    const key = node => node?.nodeType === 1
+      ? node.getAttribute("data-model-answer") || node.getAttribute("data-turn-id") : null;
+    function reconcile(current, incoming) {
+      let index = 0;
+      for (const next of [...incoming.childNodes]) {
+        let previous = current.childNodes[index];
+        const nextKey = key(next);
+        if (nextKey && key(previous) !== nextKey) {
+          const existing = [...current.childNodes].find(node => key(node) === nextKey);
+          if (existing) {
+            current.insertBefore(existing, previous || null);
+            previous = existing;
+          }
+        }
+        if (!previous) current.appendChild(next.cloneNode(true));
+        else if (previous.isEqualNode(next)) { /* 保留已完成段落与选择范围。 */ }
+        else if (key(previous) && key(previous) !== nextKey) {
+          current.insertBefore(next.cloneNode(true), previous);
+        } else if (previous.nodeType !== next.nodeType || previous.nodeName !== next.nodeName) {
+          current.replaceChild(next.cloneNode(true), previous);
+        } else if (previous.nodeType === Node.TEXT_NODE) {
+          const before = previous.textContent || "", after = next.textContent || "";
+          if (after.startsWith(before)) previous.appendData(after.slice(before.length));
+          else previous.replaceData(0, before.length, after);
+        } else if (previous.nodeType === Node.ELEMENT_NODE) {
+          for (const attr of [...previous.attributes]) if (!next.hasAttribute(attr.name)) previous.removeAttribute(attr.name);
+          for (const attr of [...next.attributes]) if (previous.getAttribute(attr.name) !== attr.value) previous.setAttribute(attr.name, attr.value);
+          reconcile(previous, next);
+        }
+        index += 1;
+      }
+      while (current.childNodes.length > index) current.removeChild(current.lastChild);
+    }
+    reconcile(root, template.content);
+  }
+
+  globalThis.KBotMarkdown = Object.freeze({ copyCode, render, patch });
 })();

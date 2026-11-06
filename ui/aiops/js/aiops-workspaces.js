@@ -1097,7 +1097,11 @@
     if (block.block_type === "MARKDOWN") {
       const text = document.body.dataset.page === "chat" ? chatAnswerMarkdown(payload,dictionary) : displayText(payload.markdown || payload.text || "", dictionary);
       const createdAt = values(turn?.messages).filter(item => item.message_type === "ASSISTANT_MESSAGE").at(-1)?.created_at;
-      return document.body.dataset.page === "chat" ? messageHtml("AGENT", text, createdAt ? shell.fmt(createdAt) : "") : markdown.render(text);
+      const notice = payload.answer_notice ? `<p class="aiops-diagnosis-notice" role="status">${esc(payload.answer_notice)}</p>` : "";
+      const html = messageHtml("AGENT", text, createdAt ? shell.fmt(createdAt) : "", notice);
+      return document.body.dataset.page === "chat"
+        ? payload.raw_model_output ? html.replace("<article ", `<article data-model-answer="${esc(turn.turn_id)}" `) : html
+        : markdown.render(text) + notice;
     }
     if (block.block_type === "ANALYSIS_MARKDOWN") {
       const content = markdown.render(document.body.dataset.page === "chat" ? chatAnswerMarkdown(payload,dictionary) : displayText(payload.markdown || payload.text || "", dictionary));
@@ -1798,8 +1802,18 @@
     const headerActions = document.getElementById("conversation-actions");
     headerActions.innerHTML = "";
     const panel = document.getElementById("message-list");
-    panel.innerHTML = conversation.source_run_id ? '<div class="ops-context-banner">已关联来源诊断；后续回答只会引用当前 Turn 明确关联的证据。</div>' : "";
-    turns.forEach((turn) => panel.insertAdjacentHTML("beforeend", turnHtml(turn)));
+    const followBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight <= 120;
+    const banner = conversation.source_run_id ? '<div class="ops-context-banner">已关联来源诊断；后续回答只会引用当前 Turn 明确关联的证据。</div>' : "";
+    const nextTranscript = document.createElement("template");
+    nextTranscript.innerHTML = banner + turns.map(turnHtml).join("");
+    for (const message of panel.querySelectorAll("[data-model-answer]")) {
+      const turnId = message.dataset.modelAnswer;
+      const turn = turns.find(item => String(item.turn_id) === turnId);
+      if (!turn || values(turn.answer_blocks).some(block => ["MARKDOWN", "ANALYSIS_MARKDOWN", "SOLUTION_MARKDOWN"].includes(block.block_type))) continue;
+      const target = nextTranscript.content.querySelector(`[data-turn-id="${CSS.escape(turnId)}"]`);
+      if (target) target.insertAdjacentHTML("beforeend", message.outerHTML);
+    }
+    markdown.patch(panel, nextTranscript.innerHTML);
     if (document.body.dataset.page === "chat") turns.forEach(turn => {
       const progress = panel.querySelector(`[data-turn-progress="${CSS.escape(String(turn.turn_id))}"]`);
       if (!progress) return;
@@ -1852,7 +1866,7 @@
         // 已处理或并发恢复的审批不再展示，Turn事件流会给出最终状态。
       }
     }));
-    panel.scrollTop = panel.scrollHeight;
+    if (followBottom) panel.scrollTop = panel.scrollHeight;
     document.querySelectorAll("[data-copy-code]").forEach((button) => { button.onclick = () => markdown.copyCode(button); });
     bindReportArtifactActions(panel);
     bindImplementationRunbookActions(panel);
@@ -2415,10 +2429,12 @@
     await loadConversationStarters();
   }
   function appendAnswerDelta(pending, delta, reset = false) {
-    pending.displayedMarkdown = (reset ? "" : pending.displayedMarkdown) + delta;
-    pending.content.innerHTML = markdown.render(pending.displayedMarkdown);
+    // 初始化帧不清除已经显示的正文；同一回复只允许追加。
     const panel = document.getElementById("message-list");
-    panel.scrollTop = panel.scrollHeight;
+    const followBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight <= 120;
+    pending.displayedMarkdown += delta;
+    markdown.patch(pending.content, markdown.render(pending.displayedMarkdown));
+    if (followBottom) panel.scrollTop = panel.scrollHeight;
   }
 
   async function followTurn(conversationId, turnId, progress) {
@@ -2426,9 +2442,15 @@
     const elapsedTimer = window.setInterval(() => updateProgressElapsed(progress), 1000);
     let pending = null;
     let lastEventId = "";
+    const seenEventIds = new Set();
     let completed = false;
     const path = `${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/events`;
     const onEvent = ({ event, data, id }) => {
+      const sequence = id || data?.sequence_no;
+      if (event !== "done" && sequence) {
+        if (seenEventIds.has(String(sequence))) return;
+        seenEventIds.add(String(sequence));
+      }
       if (id) lastEventId = id;
       const payload = data?.payload || {};
       if ([
@@ -2459,8 +2481,9 @@
         if (!pending) {
           progress.insertAdjacentHTML("afterend", messageHtml("AGENT", ""));
           const message = progress.nextElementSibling;
+          message.dataset.modelAnswer = String(turnId);
           if(document.body.dataset.page === "chat") {
-            message.querySelector("header").insertAdjacentHTML("beforeend","<small>生成中 · 证据核验中</small>");
+            message.querySelector("header").insertAdjacentHTML("beforeend","<small>生成中</small>");
             message.querySelector(".ops-message-content").classList.add("is-streaming");
           }
           pending = {
@@ -2474,8 +2497,7 @@
       }
       if (event === "answer.completed" && pending) pending.finalizing = true;
       if (event === "turn.status" && terminalTurnStatuses.has(payload.status) && pending) {
-        pending.message.remove();
-        pending = null;
+        pending.finalizing = true;
       }
       if (event === "done") {
         completed = true;
@@ -2501,10 +2523,7 @@
         );
         statusVerified = true;
         if (terminalTurnStatuses.has(turn.status)) {
-          if (pending) {
-            pending.message.remove();
-            pending = null;
-          }
+          if (pending) pending.finalizing = true;
           completed = true;
           break;
         }
@@ -2523,8 +2542,12 @@
     window.clearInterval(elapsedTimer);
     updateProgressElapsed(progress);
     if (!completed) throw new Error("进度连接尚未恢复，请刷新会话核对本轮状态");
-    // 临时正文只在执行中展示；终态统一重新加载已核验的正式结果。
-    if (pending) pending.message.remove();
+    // 正式结果尚未回读时保留正文；最终交接复用同一节点，不留闪空窗口。
+    if (pending) {
+      pending.content.classList.remove("is-streaming");
+      const status = pending.message.querySelector("header small");
+      if (status) status.textContent = "正文已保留，正在同步最终结果与核验状态。";
+    }
   }
 
   function resumeActiveTurns(conversationId, turns) {

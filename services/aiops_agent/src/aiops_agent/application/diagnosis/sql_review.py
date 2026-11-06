@@ -94,13 +94,13 @@ def diagnostic_response_model(bundle, aliases=None, *, context=None, evidence=()
     if aliases is None:
         return base
     def validate_delivery(self):
-        # 在同一次模型合同校验内检查正式引用与目标一致性，错误进入原有有限修正，
-        # 不能等回执显示成功后才丢弃整份已生成的诊断。
+        # 在同一次模型合同校验内检查正式引用与目标一致性；
+        # 已交付的正文保留为未核验原文，不能因为结构失败重新生成或清空。
         from aiops_agent.application.diagnosis.investigation_record import freeze_investigation, sql_investigation_draft
         draft = expand_diagnostic_response(self, bundle, aliases)
         record_draft = sql_investigation_draft(draft, "当前选定 SQL", bundle.get("subjects", ()))
         if context is not None:
-            # 最终记录约束同样进入既有的有限修正，不能在模型回执成功后才丢弃。
+            # 最终记录约束也参与模型核验，只有尚未交付正文时允许有限校正。
             freeze_investigation(draft=record_draft, evidence=evidence, context=context, gaps=gaps)
         return self
     return create_model(base.__name__, __base__=base,

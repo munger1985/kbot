@@ -1159,14 +1159,21 @@ def normalize_report_source(
             source["gaps"] = (*source["gaps"], *payload.get("evidence_gaps", ()))
             return source
         body, solutions = [], []
+        unverified_narrative = False
         for block in payload.get("blocks", ()):
             kind = str(dict(block).get("block_type"))
-            markdown = str(dict(block).get("payload", {}).get("markdown") or "").strip()
+            block_payload = dict(block).get("payload", {})
+            if block_payload.get("validation_status") == "UNVERIFIED":
+                unverified_narrative = True
+                continue
+            markdown = str(block_payload.get("markdown") or "").strip()
             if kind in {"MARKDOWN", "ANALYSIS_MARKDOWN"} and markdown:
                 body.append(markdown)
             elif kind == "SOLUTION_MARKDOWN" and markdown:
                 solutions.append(markdown)
         gaps = list(payload.get("evidence_gaps", ()))
+        if unverified_narrative:
+            gaps.append({"code": "REPORT_NARRATIVE_UNVERIFIED", "detail": "会话保留的模型原文尚未通过证据核验，不作为正式报告结论"})
         if not body:
             gaps.append({"code": "REPORT_BODY_MISSING", "detail": "源结果未包含可报告的分析正文"})
         available = {str(item.get("evidence_ref")) for item in payload.get("evidence", ())}

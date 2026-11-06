@@ -236,7 +236,9 @@ def test_comparison_reaches_model_and_frozen_report_instead_of_stopping_for_arbi
     result = asyncio.run(DbaAnswerComposeHandler(model_client=model,
         prompts=SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="诊断", ref=lambda: {})))).execute(context))
     assert result.investigation_record is not None
-    assert "统计主体" in result.blocks[0].payload["markdown"]
+    assert result.blocks[0].payload["subject_resolution"]["status"] == "COMPARISON"
+    assert result.blocks[0].payload["raw_model_output"]
+    assert result.blocks[0].payload["markdown"] == model.generate_structured.return_value.output.answer_markdown
     assert any(block.payload.get("result_kind") == "SQL_SUBJECT_COMPARISON" for block in result.blocks)
     assert not any(block.payload.get("result_kind") == "TOP_SQL_LIST" for block in result.blocks)
     assert len(result.investigation_record.claims[0].evidence_fields) == 2

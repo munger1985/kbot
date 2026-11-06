@@ -136,7 +136,7 @@ def test_identity_sample_view_preserves_comparison_without_implying_continuity()
 
 
 @pytest.mark.parametrize("valid", [True, False])
-def test_actual_stream_adapter_freezes_or_retracts_large_metric_diagnosis(valid):
+def test_actual_stream_adapter_preserves_text_and_separates_metric_validation(valid):
     import hashlib
     from types import SimpleNamespace
     from tests.unit.aiops_agent.test_aiops_series_calculation import draft
@@ -177,7 +177,10 @@ def test_actual_stream_adapter_freezes_or_retracts_large_metric_diagnosis(valid)
             assert any(block.payload.get("markdown") == payload["answer_markdown"] for block in result.blocks)
             assert not deltas[-1].reset
         else:
-            assert result.status == "PARTIAL" and not result.answer_streamed and deltas[-1].reset
+            assert result.status == "PARTIAL" and result.answer_streamed and not deltas[-1].reset
+            block = next(block for block in result.blocks if block.payload.get("raw_model_output"))
+            assert block.payload["markdown"] == payload["answer_markdown"]
+            assert block.payload["validation_status"] == "UNVERIFIED"
             assert result.evidence_gaps[-1].code == "DIAGNOSIS_VALIDATION_FAILED"
     asyncio.run(exercise())
 

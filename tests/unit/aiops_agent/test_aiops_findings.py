@@ -26,7 +26,7 @@ from aiops_agent.contracts.turn_answer import (
     DiagnosisAnswerDraft,
     TurnEvidenceFact,
 )
-from aiops_agent.ports.model import StructuredModelResult
+from aiops_agent.ports.model import ModelTextDelta, StructuredModelResult
 from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler
 from platform_core.contracts.aiops import (
@@ -119,7 +119,7 @@ class _AnswerModel:
     async def generate_structured(self, **kwargs) -> StructuredModelResult:
         self.calls.append(kwargs)
         output_model = kwargs.get("output_model") or DbaAnswerDraft
-        if output_model is DiagnosisAnswerDraft:
+        if issubclass(output_model, DiagnosisAnswerDraft):
             facts = kwargs["input_payload"]["sufficiency"]["evidence"]
             fact = next((item for item in facts if item["rows"] and item["columns"]), None)
             refs = (self.evidence_refs or (fact["evidence_ref"],)) if fact else ()
@@ -143,6 +143,11 @@ class _AnswerModel:
                 },),
                 goal_satisfied=bool(refs),
             )
+            if output_model is not DiagnosisAnswerDraft:
+                native = "## 分析结论\n持有会话 12 阻塞等待会话 88。\n\n## 处理建议\n先核对事务。"
+                output = output_model.model_validate({**output.model_dump(), "answer_markdown": native})
+                if kwargs.get("on_text_delta"):
+                    await kwargs["on_text_delta"](ModelTextDelta(delta=native))
         else:
             output = DbaAnswerDraft(
                 markdown="这是解释类回答，不是巡检报告。",
@@ -1301,7 +1306,7 @@ class DiagnosisComposeTest(unittest.TestCase):
             )
         )
 
-    def test_diagnosis_stream_validates_before_first_answer_delta(self) -> None:
+    def test_diagnosis_stream_delivers_native_text_and_freezes_verified_fields(self) -> None:
         fact = _lock_fact()
         model = _AnswerModel(evidence_refs=(fact.evidence_ref,))
         handler = DbaAnswerComposeHandler(model_client=model, prompts=_TestPrompts())
@@ -1319,11 +1324,14 @@ class DiagnosisComposeTest(unittest.TestCase):
         items = asyncio.run(collect())
         result = items[-1]
         self.assertIsNotNone(result.investigation_record)
-        self.assertEqual((fact.evidence_ref,), result.blocks[1].evidence_refs)
+        narrative = next(block for block in result.blocks if block.payload.get("raw_model_output"))
+        self.assertEqual((fact.evidence_ref,), narrative.evidence_refs)
+        self.assertEqual("VERIFIED", narrative.payload["validation_status"])
         text = "".join(item.payload["delta"] for item in items[:-1] if item.event_type == "answer.delta")
         self.assertIn("## 分析结论", text)
         self.assertIn("## 处理建议", text)
         self.assertIn("持有会话 12", text)
+        self.assertEqual(text, narrative.payload["markdown"])
 
     def test_readonly_tablespace_answer_skips_fact_confirmation(self) -> None:
         fact = _tablespace_fact()

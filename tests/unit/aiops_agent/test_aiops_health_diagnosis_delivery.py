@@ -254,7 +254,7 @@ def test_raw_html_does_not_reenter_assessment_or_fallback_tables(tool):
     assert fact.rows == (("<script>report</script>",),)
 
 
-def test_answer_model_timeout_resets_draft_and_finishes_partial_before_worker_deadline():
+def test_answer_model_timeout_keeps_partial_text_before_worker_deadline():
     async def exercise():
         _, fact = raw_fact()
         assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,))
@@ -271,14 +271,15 @@ def test_answer_model_timeout_resets_draft_and_finishes_partial_before_worker_de
             raise AIOpsModelError("MODEL_DEADLINE_EXCEEDED")
         model = SimpleNamespace(generate_structured=AsyncMock(side_effect=timeout))
         result = await DbaAnswerComposeHandler(model_client=model, prompts=_TestPrompts()).execute(context, on_text_delta=on_delta)
-        assert deltas[-1].reset and result.status == "PARTIAL" and not result.answer_streamed
+        assert not any(delta.reset for delta in deltas)
+        assert result.status == "PARTIAL" and result.answer_streamed
         assert result.investigation_record.stop_reason != "GOAL_ANSWERED"
-        assert not any(block.payload.get("raw_model_output") for block in result.blocks)
-        body = "\n".join(block.payload.get("markdown", "") for block in result.blocks)
-        assert fact.captured_at in body and fact.tool_id in body and "不等同于健康结论" in body
+        block = next(block for block in result.blocks if block.payload.get("raw_model_output"))
+        assert block.payload["markdown"] == "未核验草稿"
+        assert block.payload["generation_status"] == "INTERRUPTED"
+        assert block.payload["validation_status"] == "UNVERIFIED"
+        assert not block.evidence_refs
         assert any(block.payload.get("rows") == [["abc123", 120.5]] for block in result.blocks)
-        assert "执行预算" in body and "这不是证据校验失败" in body
-        assert "诊断生成未通过证据校验或模型服务不可用" not in body
         assert any(gap.source_id == "diagnosis.answer" and gap.code == "MODEL_DEADLINE_EXCEEDED" for gap in result.evidence_gaps)
         model.generate_structured.assert_awaited_once()
     asyncio.run(exercise())

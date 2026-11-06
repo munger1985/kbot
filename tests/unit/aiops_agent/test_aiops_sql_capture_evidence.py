@@ -466,10 +466,11 @@ def test_answer_compose_uses_captured_estimate_for_conditional_diagnosis_without
         assert match["runtime_statistics"] == "NONE" and not match["production_execution_verified"]
         assert result.investigation_record is not None
         assert result.investigation_record.sql_plan_assessments[0].origin == "CONTROLLED_ESTIMATE"
-        analysis = next(block for block in result.blocks if str(block.block_type) == "ANALYSIS_MARKDOWN")
+        analysis = next(block for block in result.blocks if str(block.block_type) == "MARKDOWN")
         assert result.status == "PARTIAL" and analysis.payload["sql_diagnosis"] is not None
-        solution = next(block for block in result.blocks if str(block.block_type) == "SOLUTION_MARKDOWN")
-        assert "利用已有估算" in solution.payload["markdown"] and "组合索引" in solution.payload["markdown"]
+        assert analysis.payload["raw_model_output"]
+        assert analysis.payload["markdown"] == response["answer_markdown"]
+        assert "利用已有估算" in analysis.payload["markdown"] and "组合索引" in analysis.payload["markdown"]
         assert all(block.payload.get("result_kind") != "TOP_SQL_LIST" for block in result.blocks)
         assert SECRET not in str(model.generate_structured.await_args.kwargs) + result.model_dump_json()
         store.vault.open_for_capture.assert_not_awaited()

@@ -23,10 +23,11 @@ OutputModel = TypeVar("OutputModel", bound=BaseModel)
 
 
 class AIOpsModelError(RuntimeError):
-    def __init__(self, code: str, detail: str | None = None):
+    def __init__(self, code: str, detail: str | None = None, *, answer_complete: bool = False):
         super().__init__(detail or code)
         self.code = code
         self.detail = detail
+        self.answer_complete = answer_complete
         self.retryable = code != "MODEL_DEADLINE_EXCEEDED"
 
 
@@ -131,6 +132,16 @@ class AIOpsStructuredModelClient:
                      for key, value in input_payload.items()})
         prompt_tokens = 0
         completion_tokens = 0
+        published_chars = 0
+        original_callback = on_text_delta
+
+        async def publish_text(delta):
+            nonlocal published_chars
+            published_chars += len(delta.delta)
+            await original_callback(delta)
+
+        if original_callback is not None:
+            on_text_delta = publish_text
         for attempt in range(2):
             if on_text_delta is not None:
                 await on_text_delta(ModelTextDelta(reset=True))
@@ -236,6 +247,10 @@ class AIOpsStructuredModelClient:
                     attempt + 1,
                     error_detail,
                 )
+                # 用户已经看见的正文是本轮唯一回复；结构核验不能重新生成并清空它。
+                if published_chars:
+                    raise AIOpsModelError("MODEL_OUTPUT_INVALID", error_detail,
+                        answer_complete=choice.get("finish_reason") == "stop") from exc
                 if attempt == 0:
                     messages = [
                         *messages,

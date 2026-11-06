@@ -141,6 +141,17 @@ class TurnEvidenceGap(BaseModel):
     object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
 
 
+class AnswerNarrative(BaseModel):
+    """原生回答与正式调查记录分离，核验失败不能抹掉用户已收到的正文。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    markdown: str = Field(min_length=1)
+    generation_status: Literal["COMPLETED", "INTERRUPTED"]
+    validation_status: Literal["VERIFIED", "UNVERIFIED"]
+    streamed_run_id: str | None = None
+    notice: str | None = None
+
+
 class DbaSufficiencyAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -153,6 +164,7 @@ class DbaSufficiencyAssessment(BaseModel):
     investigation: InvestigationAssessment | None = None
     sql_checkpoint: SqlDiagnosticCheckpoint | None = None
     sql_diagnosis_error: str | None = None
+    answer_narrative: AnswerNarrative | None = None
 
     @model_validator(mode="after")
     def validate_status(self) -> "DbaSufficiencyAssessment":
