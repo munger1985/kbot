@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+if [ "$#" -ne 0 ]; then
+    echo "本入口不接受参数；请修改 deployment.ini 后直接执行。" >&2
+    exit 2
+fi
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -f "$SCRIPT_DIR/installation/deployment.py" ]; then
+    exec python3 "$SCRIPT_DIR/installation/deployment.py" "$SCRIPT_DIR"
+fi
+exec python3 "$SCRIPT_DIR/deployment.py" "$SCRIPT_DIR"

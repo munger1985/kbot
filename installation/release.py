@@ -39,6 +39,7 @@ DEFAULT_DEPLOYMENT_CONFIG = INSTALLATION_ROOT / "dev" / "deployment.ini"
 VERSION_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$")
 IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 OFFLINE_BUNDLE_SCHEMA = "kbot-offline-bundle.v2"
+DEPLOYMENT_BUNDLE_SCHEMA = "kbot-deployment-bundle.v1"
 DOCLING_MODEL_MANIFEST_SCHEMA = "kbot-docling-model-manifest.v1"
 DOCLING_INSTALL_RECEIPT = ".kbot-docling-models.json"
 
@@ -304,7 +305,111 @@ def release_values(path: Path) -> dict[str, Any]:
 
 
 def image_reference(values: dict[str, Any], name: str) -> str:
+    if "image_ids" in values:
+        image_id = values["image_ids"].get(name)
+        if not image_id or not IMAGE_ID_PATTERN.fullmatch(image_id):
+            raise ReleaseError(f"离线部署镜像缺少合法 Image ID：{name}")
+        return image_id
+    if "image_digests" in values:
+        digest = values["image_digests"].get(name)
+        if not digest or not IMAGE_ID_PATTERN.fullmatch(digest):
+            raise ReleaseError(f"部署镜像缺少合法 Digest：{name}")
+        return f"{values['registry']}/{name}@{digest}"
     return f"{values['registry']}/{name}:{values['version']}"
+
+
+def _copy_observability_tools(destination: Path) -> None:
+    """只复制规范观测资源，不携带目标机配置、Secret 或生成目录。"""
+    (destination / "scripts").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / "scripts/aiops-stack", destination / "scripts/aiops-stack")
+    source = ROOT / "scripts/deployment/aiops_observability"
+    for directory in ("configuration", "oracle", "oracle_alert_collector", "oracle_exporter_wrapper", "webhook_signer"):
+        for path in (source / directory).rglob("*"):
+            if not path.is_file() or path.is_symlink() or "__pycache__" in path.parts:
+                continue
+            if path.name != "Dockerfile" and path.suffix not in {".py", ".sh", ".txt", ".yaml", ".yml", ".alloy", ".sql", ".md"}:
+                continue
+            target = destination / "scripts/deployment/aiops_observability" / path.relative_to(source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+    for name in ("compose.yaml", "compose.access.yaml", "images.env"):
+        target = destination / "scripts/deployment/aiops_observability" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source / name, target)
+
+
+def assert_release_sources(lock: dict[str, Any]) -> None:
+    """允许发布后提交镜像锁，但工具、模型规格和运行代码必须与镜像源码一致。"""
+    result = subprocess.run(
+        [
+            "git", "diff", "--quiet", str(lock["source_commit"]), "--",
+            "installation/release.py", "installation/deployment.py", "installation/kbot-deploy",
+            "installation/deployment.ini.example", "installation/common", "installation/catalog.toml",
+            f"installation/releases/{lock['version']}-docling-models.json",
+            "resources", "packages", "services", "scripts/db", "configuration",
+            "scripts/aiops-stack", "scripts/deployment/aiops_observability",
+        ],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if result.returncode:
+        raise ReleaseError("部署工具、模型规格或运行代码与镜像源码不一致；请先发布匹配的新镜像锁")
+
+
+def export_deployment_bundle(
+    release_config: Path, output: Path, docling_models_dir: Path
+) -> Path:
+    """制作在线部署包；镜像由目标机按 Digest 拉取，模型随包交付。"""
+    catalog, _ = validate_catalog()
+    values = release_values(release_config)
+    if str(values["revision"]).endswith("-dirty"):
+        raise ReleaseError("工作区存在未提交修改，禁止制作正式部署包")
+    lock = load_image_lock(str(values["version"]), catalog)
+    if lock["registry"] != values["registry"] or lock["platform"] != values["platform"]:
+        raise ReleaseError("发布配置与正式镜像锁不一致")
+    assert_release_sources(lock)
+    output = output.expanduser().resolve()
+    if output.exists():
+        raise ReleaseError(f"部署包输出路径已存在，拒绝覆盖：{output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
+    try:
+        files = {
+            "installation/release.py": "installation/release.py",
+            "installation/deployment.py": "installation/deployment.py",
+            "installation/catalog.toml": "installation/catalog.toml",
+            "resources/topology.toml": "resources/topology.toml",
+            "installation/kbot-deploy": "kbot-deploy",
+            "installation/deployment.ini.example": "deployment.ini.example",
+            "installation/DEPLOYMENT.md": "README.md",
+        }
+        for source, target in files.items():
+            destination = temporary / target
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / source, destination)
+        (temporary / "kbot-deploy").chmod(0o755)
+        _copy_observability_tools(temporary)
+        models = package_docling_models(
+            docling_models_dir, temporary / "models", load_docling_model_spec(str(values["version"]))
+        )
+        manifest = {
+            "schema": DEPLOYMENT_BUNDLE_SCHEMA,
+            "version": lock["version"],
+            "registry": lock["registry"],
+            "platform": lock["platform"],
+            "image_source_commit": lock["source_commit"],
+            "tool_revision": values["revision"],
+            "images": lock["images"],
+            "docling_models": models,
+        }
+        (temporary / "bundle-manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        write_bundle_checksums(temporary)
+        temporary.rename(output)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return output
 
 
 def catalog_image_names(catalog: dict[str, Any]) -> list[str]:
@@ -545,6 +650,7 @@ def export_offline_bundle(
     if str(values["revision"]).endswith("-dirty"):
         raise ReleaseError("工作区存在未提交修改，禁止制作正式离线包")
     lock = load_image_lock(str(values["version"]), catalog)
+    assert_release_sources(lock)
     model_spec = load_docling_model_spec(str(values["version"]))
     if lock.get("registry") != values["registry"]:
         raise ReleaseError("release.ini Registry 与正式镜像锁不一致")
@@ -602,11 +708,17 @@ def export_offline_bundle(
             docling_model_spec_path(str(values["version"])): temporary
             / "installation/releases"
             / f"{values['version']}-docling-models.json",
+            ROOT / "installation/deployment.py": temporary / "installation/deployment.py",
+            ROOT / "installation/kbot-deploy": temporary / "kbot-deploy",
+            ROOT / "installation/deployment.ini.example": temporary / "deployment.ini.example",
+            ROOT / "installation/DEPLOYMENT.md": temporary / "DEPLOYMENT.md",
         }
         for source, destination in tracked_files.items():
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
         (temporary / "kbot-offline").chmod(0o755)
+        (temporary / "kbot-deploy").chmod(0o755)
+        _copy_observability_tools(temporary)
 
         image_archive = temporary / "images/kbot-images.tar"
         image_archive.parent.mkdir()
@@ -675,7 +787,7 @@ def load_offline_bundle_manifest(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise ReleaseError(f"离线包清单不存在：{path}")
     manifest = json.loads(path.read_text(encoding="utf-8"))
-    if manifest.get("schema") != OFFLINE_BUNDLE_SCHEMA:
+    if manifest.get("schema") not in {OFFLINE_BUNDLE_SCHEMA, DEPLOYMENT_BUNDLE_SCHEMA}:
         raise ReleaseError("离线包清单 Schema 不受支持")
     return manifest
 
@@ -1210,6 +1322,34 @@ def yaml_string(value: Any) -> str:
     return json.dumps(str(value), ensure_ascii=False)
 
 
+def process_healthcheck(process: dict[str, Any]) -> list[str]:
+    """沿用各服务已有探针；不在运行时增加 Schema 校验。"""
+    if process["kind"] != "http":
+        return []
+    service = process["service_config"]
+    if service in {"data_query", "aiops_agent"}:
+        path = "/ready"
+    elif service == "model_serving" or process["process_key"] == "knowledge_core_parser":
+        path = "/health"
+    else:
+        path = "/readyz"
+    probe = (
+        "import json,urllib.request; "
+        f"r=json.load(urllib.request.urlopen('http://127.0.0.1:{process['port']}{path}',timeout=4)); "
+        "assert r.get('status') in ('ok','ready','healthy','live'); "
+        "assert r.get('ok') is not False; "
+        "assert all(v == 'ok' for v in r.get('checks',{}).values())"
+    )
+    return [
+        "    healthcheck:",
+        "      test: " + json.dumps(["CMD", "python", "-c", probe]),
+        "      interval: 5s",
+        "      timeout: 6s",
+        "      retries: 60",
+        "      start_period: 30s",
+    ]
+
+
 def render_compose(
     catalog: dict[str, Any], topology: dict[str, Any], values: dict[str, Any]
 ) -> str:
@@ -1251,6 +1391,8 @@ def render_compose(
                 "      - kbot-internal",
             ]
         )
+        if values.get("healthchecks"):
+            lines.extend(process_healthcheck(process))
     lines.extend(
         [
             "  ui:",
@@ -1310,6 +1452,15 @@ def render_compose(
             '    file: "./secrets/master_key"',
         ]
     )
+    if values.get("healthchecks"):
+        index = lines.index("  installer:")
+        lines[index:index] = [
+            "    healthcheck:",
+            '      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]',
+            "      interval: 5s",
+            "      timeout: 6s",
+            "      retries: 60",
+        ]
     return "\n".join(lines) + "\n"
 
 
@@ -1414,11 +1565,16 @@ def render_observability(
     }
 
 
-def render_deployment(config_path: Path) -> Path:
+def render_deployment(
+    config_path: Path,
+    *,
+    output: Path | None = None,
+    values: dict[str, Any] | None = None,
+) -> Path:
     catalog, topology = validate_catalog()
-    values = deployment_values(config_path, catalog)
+    values = values if values is not None else deployment_values(config_path, catalog)
     validate_observability(values)
-    output = deployment_directory()
+    output = output if output is not None else deployment_directory()
     if output.exists():
         shutil.rmtree(output)
     (output / "config").mkdir(parents=True)
@@ -1558,6 +1714,12 @@ def parser() -> argparse.ArgumentParser:
         help="由正式模型规格列出的 Docling 运行模型源目录",
     )
     offline_export.add_argument("--output", type=Path, required=True)
+    online_export = commands.add_parser(
+        "export-deployment", help="制作无需源码、自动拉取正式镜像的一键部署包"
+    )
+    online_export.add_argument("--config", type=Path, default=DEFAULT_RELEASE_CONFIG)
+    online_export.add_argument("--docling-models-dir", type=Path, required=True)
+    online_export.add_argument("--output", type=Path, required=True)
     offline_verify = commands.add_parser(
         "verify-offline-images",
         help="按离线包清单校验 docker load 后的本地镜像",
@@ -1619,6 +1781,10 @@ def main() -> None:
                     arguments.docling_models_dir,
                 )
             )
+        elif arguments.command == "export-deployment":
+            print(export_deployment_bundle(
+                arguments.config, arguments.output, arguments.docling_models_dir
+            ))
         elif arguments.command == "verify-offline-images":
             verify_offline_images(arguments.manifest)
         elif arguments.command == "install-offline-models":

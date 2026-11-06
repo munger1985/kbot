@@ -55,3 +55,9 @@ configuration/*.json
 # kbot.toml 属于当前部署，只提交 kbot.toml.example。
 CLAUDE.md
 AGENTS.md
+
+# 容器一键安装的私有配置与生成状态
+installation/deployment.ini
+installation/state/
+installation/generated/
+.kbot/

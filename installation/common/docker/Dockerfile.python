@@ -56,6 +56,7 @@ COPY resources/ /opt/kbot/resources/
 COPY database/ /opt/kbot/database/
 COPY scripts/db/ /opt/kbot/scripts/db/
 COPY configuration/ /opt/kbot/configuration/
+COPY installation/catalog.toml /opt/kbot/installation/catalog.toml
 COPY installation/common/docker/python-entrypoint.sh /usr/local/bin/kbot-entrypoint
 RUN chmod 0555 /usr/local/bin/kbot-entrypoint && \
     mkdir -p /var/lib/kbot /var/log/kbot /etc/kbot && \

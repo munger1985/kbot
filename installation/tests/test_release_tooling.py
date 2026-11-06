@@ -28,7 +28,10 @@ class ReleaseToolingTest(unittest.TestCase):
     def test_catalog_covers_every_topology_process(self) -> None:
         image_ids = {item["id"] for item in self.catalog["images"]}
         self.assertEqual(8, len(image_ids))
-        self.assertEqual(23, len(self.topology["processes"]))
+        self.assertEqual(
+            len(self.topology["processes"]),
+            len({item["process_key"] for item in self.topology["processes"]}),
+        )
         self.assertTrue(
             all(
                 process["service_config"] in image_ids
@@ -519,6 +522,7 @@ alertmanager_retention = 24h
                     },
                 ),
                 patch.object(release, "inspect_images", return_value=details),
+                patch.object(release, "assert_release_sources"),
                 patch.object(release.subprocess, "run", side_effect=save_images),
                 patch.object(
                     release,

@@ -1,0 +1,60 @@
+# 唯一需要人工维护的配置；文件权限必须为 0600，不要提交 Git。
+# 镜像版本和 Digest 来自部署包，不需要填写内部端口、依赖或 Secret 文件路径。
+[deployment]
+project_name = kbot
+public_base_url = http://127.0.0.1:8080
+ui_port = 8080
+embedding_dimension = 2048
+
+[database]
+host = oracle.example.internal
+port = 1521
+service_name = KBOTPDB
+username = KBOT_APP
+password = CHANGE_ME
+
+# 必须在首次建库前一次选定；已有 Schema 不支持直接追加 App。
+[apps]
+knowledge_retrieval = true
+media_studio = false
+aiops = true
+
+# 相对路径以本配置文件所在目录为基准；升级时继续使用原数据目录。
+[paths]
+data_dir = state/data
+log_dir = state/log
+
+[installation]
+# 确认 PDB、专用 Schema、授权和恢复点后，首次空库安装改为 true。
+# 重复部署有安装记录时不会重放 DDL，即使仍为 true。
+initialize_empty_schema = false
+# 仅首次接管已有同版本、同 App 范围的部署时启用；不会建表或重置账号。
+# 必须事先恢复原主密钥到 <data_dir>/.kbot/master_key。
+adopt_existing_schema = false
+timeout_seconds = 300
+
+[aiops]
+agent_execution_enabled = false
+mutation_enabled = false
+
+# 默认只部署业务 App。观测栈仍为独立 Compose Project；OEM 在 App 内配置。
+[observability]
+enabled = false
+role = all-in-one
+local_access = false
+minimum_free_gb = 10
+
+[observability.metrics]
+# enabled = true
+prometheus_retention = 30d
+alertmanager_retention = 120h
+
+[observability.logs]
+# enabled = true
+loki_retention = 720h
+loki_url = http://loki:3100/loki/api/v1/push
+loki_tenant = kbot
+
+[observability.host]
+# enabled = true
+# target_key = host-prod-01

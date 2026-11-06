@@ -1,5 +1,10 @@
 # KBot 1.0 脱机部署工具包
 
+新版本离线包新增与在线包相同的零参数 `./kbot-deploy`，普通安装只需编辑根目录
+`deployment.ini` 后再次执行；镜像导入、模型、Secret、首次初始化和就绪验收自动编排。
+详见包内 `DEPLOYMENT.md` 或仓库[统一安装说明](../DEPLOYMENT.md)。
+既有 1.0 归档不含新入口，下文保留该归档的分步操作与运维工具说明。
+
 离线包由联网发布机生成，目标机不需要 Git、Python 第三方包或 OCIR 凭据，只需要
 Linux x86_64、Python 3.11+、Docker Engine 和 Docker Compose v2。
 
