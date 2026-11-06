@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>用户管理</title><link rel="stylesheet" href="./css/aiops.css"><link rel="stylesheet" href="./css/ammolite-shared.css"><link rel="stylesheet" href="./css/alignment.css"></head>
+<body data-page="users"><main class="ops-main"><header class="ops-head"><div><h1>用户管理</h1><p>管理 AIOps 自建账号；个人飞书身份全局共用，不按业务空间重复绑定。</p></div><button id="user-new" type="button">新建用户</button></header><p id="user-status" role="status"></p>
+<section class="ops-panel"><h2 id="user-form-title">新建用户</h2><form id="user-form" class="ops-form-grid">
+<label>用户 ID<input name="user_id" required maxlength="256"></label><label>显示名称<input name="display_name" maxlength="256"></label>
+<label>初始密码<input name="password" type="password" minlength="12" required autocomplete="new-password"><small>至少12位，包含大小写字母、数字及特殊字符；首次登录需修改。</small></label>
+<label>初始角色<select name="role_code" required></select></label>
+<label>飞书 open_id（可选）<input name="feishu_open_id" pattern="ou_.+" maxlength="256" placeholder="ou_…"><small>留空不接收个人飞书通知，站内通知正常；填写后需本人验证。编辑时清空表示解绑。</small></label>
+<p id="user-binding-status"></p><button class="primary">保存用户</button></form></section><section class="ops-panel"><h2>已有用户</h2><div id="user-list"></div></section></main>
+<script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-users.js"></script></body></html>

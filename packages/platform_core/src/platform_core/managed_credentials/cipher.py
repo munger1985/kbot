@@ -45,13 +45,13 @@ class ManagedCredentialCipher:
     @staticmethod
     def aad(
         *,
-        domain_id: int,
+        domain_id: int | None,
         namespace: str,
         credential_kind: str,
         credential_id: UUID,
     ) -> bytes:
         return (
-            f"kbot-managed-credential:v1:{int(domain_id)}:"
+            f"kbot-managed-credential:v1:{'global' if domain_id is None else int(domain_id)}:"
             f"{namespace}:{credential_kind}:{credential_id}"
         ).encode("utf-8")
 
@@ -59,7 +59,7 @@ class ManagedCredentialCipher:
         self,
         value: Mapping[str, Any],
         *,
-        domain_id: int,
+        domain_id: int | None,
         namespace: str,
         credential_kind: str,
         credential_id: UUID,
@@ -84,7 +84,7 @@ class ManagedCredentialCipher:
         self,
         payload: ManagedCredentialPayload,
         *,
-        domain_id: int,
+        domain_id: int | None,
         namespace: str,
         credential_kind: str,
         credential_id: UUID,

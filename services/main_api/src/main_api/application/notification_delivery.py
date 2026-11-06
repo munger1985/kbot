@@ -29,7 +29,7 @@ def now_utc():
 
 def public_record(kind, record):
     fields = {
-        "connection": ("id", "domain_id", "tenant_id", "name", "provider", "app_id", "enabled",
+        "connection": ("id", "tenant_id", "name", "provider", "app_id", "enabled",
                        "health", "last_error_code", "checked_at", "row_version"),
         "binding": ("id", "connection_id", "actor_id", "target_type", "external_id", "status",
                     "verified_at", "row_version"),
@@ -65,6 +65,9 @@ class ExternalNotificationService:
         reference = await self.vault.write(scope=scope, object_id=uuid4(), values={"app_secret": body.app_secret.get_secret_value()})
         try:
             async with self._uow_factory() as uow:
+                await uow.external_delivery.lock_configuration()
+                if await uow.external_delivery.connection_for_provider(scope=scope, provider=body.provider):
+                    raise ExternalDeliveryError("NOTIFICATION_CONNECTION_ALREADY_CONFIGURED")
                 record = await uow.external_delivery.add("connection", scope=scope, actor_id=actor_id, now=now,
                     values={"id": object_id, "name": body.name, "provider": body.provider, "app_id": body.app_id,
                         "credential_ref": reference, "credential_version": 1, "enabled": body.enabled, "health": "UNCHECKED"})
@@ -161,6 +164,13 @@ class ExternalNotificationService:
             await repo.audit(scope=scope, action="binding.disable", object_id=object_id, actor_id=actor_id,
                 outcome="DISABLED", now=now_utc())
             await uow.commit()
+
+    async def challenge_mine(self, *, scope, actor_id, object_id):
+        async with self._uow_factory() as uow:
+            row = await uow.external_delivery.get("binding", scope=scope, object_id=object_id)
+        if row is None or row["actor_id"] != actor_id:
+            raise ExternalDeliveryError("NOTIFICATION_BINDING_NOT_FOUND", 404)
+        return await self.challenge(scope=scope, actor_id=actor_id, object_id=object_id)
 
     async def challenge(self, *, scope, actor_id, object_id):
         self.enabled()
@@ -275,6 +285,7 @@ class ExternalNotificationService:
             raise ExternalDeliveryError("NOTIFICATION_ENTRY_NOT_FOUND", 404)
         if entry["expires_at"] <= now_utc():
             raise ExternalDeliveryError("NOTIFICATION_ENTRY_EXPIRED", 410)
+        scope = DeliveryScope(tenant_id=entry.get("tenant_id"), domain_id=str(entry["domain_id"]))
         decision = await self.authority.check(scope=scope, actor_id=actor_id, entry=entry, actionable=False)
         if decision is not None:
             raise ExternalDeliveryError(decision, 403)
@@ -330,6 +341,8 @@ class ExternalNotificationService:
             row = await repo.get("job", scope=scope, object_id=job_id, lock=True)
             if row is None:
                 raise ExternalDeliveryError("NOTIFICATION_DELIVERY_NOT_FOUND", 404)
+            scope = DeliveryScope(tenant_id=row.get("tenant_id"),
+                domain_id=str(row["domain_id"]) if row["domain_id"] is not None else None)
             if row["row_version"] != body.expected_row_version or row["status"] not in {Status.UNKNOWN, Status.BLOCKED, Status.DEAD}:
                 raise ExternalDeliveryError("NOTIFICATION_VERSION_CONFLICT")
             if row["purpose"] == "VERIFY" or row["expires_at"] <= now:
@@ -379,7 +392,8 @@ class ExternalNotificationService:
             await uow.commit()
         if job is None:
             return False
-        scope = DeliveryScope(domain_id=str(job["domain_id"]), tenant_id=job.get("tenant_id"))
+        scope = DeliveryScope(domain_id=str(job["domain_id"]) if job["domain_id"] is not None else None,
+                              tenant_id=job.get("tenant_id"))
         try:
             result, available = await self._deliver(scope=scope, job=job)
         except Exception:
@@ -413,7 +427,7 @@ class ExternalNotificationService:
             binding = await repo.get("binding", scope=scope, object_id=job["binding_id"])
             entry = await repo.get("entry", scope=scope, object_id=job["entry_id"]) if job["entry_id"] else None
             policies = await repo.active_policies(scope=scope) if job["purpose"] == "BUSINESS" else []
-        if not await self.authority.delivery_available(scope=scope):
+        if job["purpose"] == "BUSINESS" and not await self.authority.delivery_available(scope=scope):
             return SendResult(Status.BLOCKED, "NOTIFICATION_DOMAIN_UNAVAILABLE"), now
         if not connection or not connection["enabled"] or connection["credential_version"] != job["connection_version"]:
             return SendResult(Status.BLOCKED, "NOTIFICATION_CONNECTION_CHANGED"), now
@@ -444,7 +458,8 @@ class ExternalNotificationService:
                 if ready > now:
                     return SendResult(Status.RETRY_WAIT, "NOTIFICATION_QUIET_HOURS"), ready
         elif job["purpose"] == "VERIFY":
-            if binding["challenge_expires_at"] <= now:
+            if (not await self.authority.actor_active(scope=scope, actor_id=binding["actor_id"])
+                or binding["challenge_expires_at"] is None or binding["challenge_expires_at"] <= now):
                 return SendResult(Status.EXPIRED, "NOTIFICATION_VERIFICATION_EXPIRED"), now
         elif job["purpose"] == "TEST":
             if binding["status"] != "VERIFIED" or (binding["actor_id"] is not None and

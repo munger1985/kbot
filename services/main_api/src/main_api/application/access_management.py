@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from main_api.application.notification_user_binding import personal_binding, set_personal_binding
+from platform_core.notifications.delivery import DeliveryScope
+
 import asyncio
 import json
 
@@ -88,6 +91,7 @@ class AccessManagementService:
             credential = await uow.access.get_user_credential(user_id)
             memberships = await uow.access.list_user_memberships(user_id=user_id)
             item = self._user_item(user)
+            item["feishu_binding"] = await personal_binding(uow.external_delivery, scope=DeliveryScope(), user_id=user_id)
             item["credential_configured"] = credential is not None
             item["must_change_password"] = bool(credential and credential.must_change_password == "Y")
             item["app_memberships"] = []
@@ -103,7 +107,7 @@ class AccessManagementService:
         self, *, user_id: str, display_name: str | None, password: str,
         status: str, must_change_password: bool, max_security_level: int,
         platform_role_codes: tuple[str, ...], actor_id: str,
-        actor_security_level: int, actor_permissions: frozenset[str],
+        actor_security_level: int, actor_permissions: frozenset[str], feishu_open_id: str | None = None,
     ) -> dict[str, object]:
         _assert_status(status)
         _assert_security_level(max_security_level)
@@ -138,8 +142,11 @@ class AccessManagementService:
                 await uow.access.upsert_platform_user_role(
                     user_id=user_id, role_code=role_code, status="ACTIVE", actor_id=actor_id
                 )
+            binding = await set_personal_binding(uow.external_delivery, scope=DeliveryScope(),
+                user_id=user_id, actor_id=actor_id, open_id=feishu_open_id, creating=True) if feishu_open_id else None
             await uow.commit()
             result = self._user_item(user)
+            result["feishu_binding"] = binding
             result["platform_roles"] = roles
             return result
 
@@ -202,7 +209,7 @@ class AccessManagementService:
         self, *, app_id: str, user_id: str, display_name: str | None,
         password: str, must_change_password: bool, max_security_level: int,
         role_bindings: tuple[dict[str, object], ...], actor_id: str,
-        actor_security_level: int, actor_permissions: frozenset[str],
+        actor_security_level: int, actor_permissions: frozenset[str], feishu_open_id: str | None = None,
     ) -> dict[str, object]:
         _assert_security_level(max_security_level)
         if max_security_level > actor_security_level:
@@ -234,8 +241,10 @@ class AccessManagementService:
                 role_bindings=role_bindings, actor_id=actor_id,
                 assignable_permissions=actor_permissions,
             )
+            binding = await set_personal_binding(uow.external_delivery, scope=DeliveryScope(),
+                user_id=user_id, actor_id=actor_id, open_id=feishu_open_id, creating=True) if feishu_open_id else None
             await uow.commit()
-            return {**self._user_item(user), "membership": self._member_item(member), "role_bindings": bindings}
+            return {**self._user_item(user), "feishu_binding": binding, "membership": self._member_item(member), "role_bindings": bindings}
 
     async def set_platform_app_grant(
         self, *, user_id: str, app_id: str,
@@ -386,6 +395,8 @@ class AccessManagementService:
         status: str | None, max_security_level: int | None = None,
         expected_origin: str = "PLATFORM", expected_app_id: str | None = None,
         actor_security_level: int = 3, actor_id: str,
+        feishu_open_id: str | None = None, feishu_binding_provided: bool = False,
+        expected_binding_id=None, expected_binding_version: int | None = None,
     ) -> dict[str, object]:
         if is_reserved_global_admin(user_id):
             raise AccessManagementError("GLOBAL_ADMIN_PROTECTED", "ADMIN 是平台保留账号，不能修改", status_code=409)
@@ -419,6 +430,10 @@ class AccessManagementService:
                 status=status or user.status,
                 max_security_level=max_security_level if max_security_level is not None else int(user.max_security_level),
             )
+            if feishu_binding_provided:
+                await set_personal_binding(uow.external_delivery, scope=DeliveryScope(),
+                    user_id=user_id, actor_id=actor_id, open_id=feishu_open_id,
+                    expected_binding_id=expected_binding_id, expected_version=expected_binding_version)
             if expected_app_id and status is not None:
                 member = await uow.access.get_app_member(app_id=expected_app_id, user_id=user_id)
                 if member is not None:

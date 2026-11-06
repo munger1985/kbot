@@ -320,11 +320,12 @@ class NotificationRepository:
             row_version=WorkItemEntity.row_version + 1))
         return bool(result.rowcount)
 
-    async def summary(self, *, domain_id: int, actor_id: str) -> dict[str, int]:
+    async def summary(self, *, domain_id: int, actor_id: str, allowed_event_types=None) -> dict[str, int]:
         unread = await self._session.scalar(
             select(func.count()).select_from(NotificationInboxEntity).where(
                 NotificationInboxEntity.domain_id == domain_id,
                 NotificationInboxEntity.recipient_actor_id == actor_id,
+                (NotificationInboxEntity.event_type.in_(allowed_event_types) if allowed_event_types is not None else True),
                 NotificationInboxEntity.read_at.is_(None),
                 NotificationInboxEntity.expires_at > _now(),
             )
@@ -360,11 +361,12 @@ class NotificationRepository:
 
     async def list_inbox(
         self, *, domain_id: int, actor_id: str, limit: int,
-        before_sequence: int | None = None,
+        before_sequence: int | None = None, allowed_event_types=None,
     ) -> list[NotificationInboxEntity]:
         statement = select(NotificationInboxEntity).where(
             NotificationInboxEntity.domain_id == domain_id,
             NotificationInboxEntity.recipient_actor_id == actor_id,
+                (NotificationInboxEntity.event_type.in_(allowed_event_types) if allowed_event_types is not None else True),
             NotificationInboxEntity.expires_at > _now(),
         )
         if before_sequence is not None:
@@ -398,7 +400,7 @@ class NotificationRepository:
 
     async def stream_inbox(
         self, *, domain_id: int, actor_id: str,
-        after_sequence: int, limit: int,
+        after_sequence: int, limit: int, allowed_event_types=None,
     ) -> list[NotificationInboxEntity]:
         return list((
             await self._session.execute(
@@ -406,6 +408,7 @@ class NotificationRepository:
                 .where(
                     NotificationInboxEntity.domain_id == domain_id,
                     NotificationInboxEntity.recipient_actor_id == actor_id,
+                (NotificationInboxEntity.event_type.in_(allowed_event_types) if allowed_event_types is not None else True),
                     NotificationInboxEntity.event_sequence > after_sequence,
                     NotificationInboxEntity.expires_at > _now(),
                 )
@@ -434,21 +437,29 @@ class NotificationRepository:
             )
         ).scalars().all())
 
+    async def inbox_domain_for_actor(self, *, inbox_id, actor_id):
+        value = await self._session.scalar(select(NotificationInboxEntity.domain_id).where(
+            NotificationInboxEntity.inbox_id == inbox_id,
+            NotificationInboxEntity.recipient_actor_id == actor_id,
+            NotificationInboxEntity.expires_at > _now()))
+        return int(value) if value is not None else None
+
     async def get_inbox(
         self, *, inbox_id: UUID, domain_id: int, actor_id: str,
-        lock: bool = False,
+        lock: bool = False, allowed_event_types=None,
     ) -> NotificationInboxEntity | None:
         statement = select(NotificationInboxEntity).where(
             NotificationInboxEntity.inbox_id == inbox_id,
             NotificationInboxEntity.domain_id == domain_id,
             NotificationInboxEntity.recipient_actor_id == actor_id,
+                (NotificationInboxEntity.event_type.in_(allowed_event_types) if allowed_event_types is not None else True),
         )
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def mark_many_read(
-        self, *, inbox_ids: list[UUID], domain_id: int, actor_id: str,
+        self, *, inbox_ids: list[UUID], domain_id: int, actor_id: str, allowed_event_types=None,
     ) -> int:
         result = await self._session.execute(
             update(NotificationInboxEntity)
@@ -456,6 +467,7 @@ class NotificationRepository:
                 NotificationInboxEntity.inbox_id.in_(inbox_ids),
                 NotificationInboxEntity.domain_id == domain_id,
                 NotificationInboxEntity.recipient_actor_id == actor_id,
+                (NotificationInboxEntity.event_type.in_(allowed_event_types) if allowed_event_types is not None else True),
                 NotificationInboxEntity.read_at.is_(None),
             )
             .values(

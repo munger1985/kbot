@@ -3,12 +3,11 @@
   KBotAIOpsShell.ready.then(async access => {
     if (!access || document.body.dataset.page !== "notification-delivery") return;
     const status = document.getElementById("delivery-status");
-    const domainId = String(access.domain_id);
     let capabilities = [], connections = [], bindings = [], busy = false;
     let jobStatus = "", jobOffset = 0, jobCount = 0;
     let loadVersion = 0;
     const can = key => capabilities.includes(key);
-    const request = (path, body, method = "POST") => KBotAIOpsAuth.request("/api/v1/notification-delivery" + path + (path.includes("?") ? "&" : "?") + "domain_id=" + encodeURIComponent(domainId),
+    const request = (path, body, method = "POST") => KBotAIOpsAuth.request("/api/v1/notification-delivery" + path,
       body === undefined ? {} : {method, body: JSON.stringify(body)});
     const option = (value, label) => { const item = document.createElement("option"); item.value = value; item.textContent = label; return item; };
     function table(target, rows, columns, actions = () => []) {
@@ -48,7 +47,7 @@
         jobCount = jobs.length;
         connections = newConnections; bindings = newBindings;
         table("delivery-connections", connections, [["name","连接"],["app_id","App ID"],["enabled","启用"],["health","健康"],["last_error_code","安全错误码"]], row => [
-          ["编辑／换密钥", () => { const form = document.getElementById("delivery-connection"); for (const key of ["id","name","app_id"]) form.elements[key].value = row[key]; form.elements.app_secret.value = ""; form.elements.enabled.checked = row.enabled; }],
+          ["编辑／换密钥", () => { const form = document.getElementById("delivery-connection"); for (const key of ["id","name","app_id","provider"]) form.elements[key].value = row[key]; form.elements.app_secret.value = ""; form.elements.enabled.checked = row.enabled; }],
           ["检查", () => action(() => request("/connections/" + row.id + "/check", {}), "令牌检查已完成，不代表消息已投递")],
           ["真实试发", () => {
             const bindingId = document.getElementById("delivery-test-binding").value;
@@ -74,7 +73,9 @@
           label.textContent = row.external_id + " · " + row.status; form.append(label);
           if (row.status === "UNVERIFIED") {
             code.inputMode = "numeric"; code.pattern = "[0-9]{6}"; code.maxLength = 6; code.required = true; code.autocomplete = "one-time-code";
-            button.textContent = "确认是本人"; form.append(code, button);
+            const send = document.createElement("button"); send.type = "button"; send.textContent = "发送验证码";
+            send.onclick = () => action(() => request("/me/bindings/" + row.id + "/challenge", {}), "验证消息已入队");
+            button.textContent = "确认是本人"; form.append(send, code, button);
             form.onsubmit = event => { event.preventDefault(); void action(() => request("/bindings/" + row.id + "/confirm", {expected_row_version: row.row_version, code: code.value})); };
           } mineContainer.append(form);
         });
@@ -101,13 +102,19 @@
         }
       } catch (error) { status.textContent = error.message; }
     }
+    document.querySelector('#delivery-connection select[name="provider"]').onchange = event => {
+      const unavailable = event.target.value !== "FEISHU";
+      document.querySelector('#delivery-connection button.primary').disabled = unavailable;
+      document.getElementById("delivery-provider-note").textContent = unavailable ? "企业微信暂未接入，不能保存、启用或试发。" : "飞书企业自建应用；实例统一配置，跨业务空间复用。";
+    };
     document.getElementById("delivery-connection").onsubmit = event => {
       event.preventDefault(); const form = event.currentTarget, values = Object.fromEntries(new FormData(form));
+      if (values.provider !== "FEISHU") { status.textContent = "企业微信暂未接入，不能保存或启用"; return; }
       void action(async () => {
         const old = connections.find(row => row.id === values.id);
         await request(old ? "/connections/" + old.id : "/connections", old ? {name: values.name, enabled: form.elements.enabled.checked,
           expected_row_version: old.row_version, ...(values.app_secret ? {app_secret: values.app_secret} : {})} :
-          {name: values.name, app_id: values.app_id, app_secret: values.app_secret, enabled: form.elements.enabled.checked}, old ? "PUT" : "POST");
+          {name: values.name, provider: values.provider, app_id: values.app_id, app_secret: values.app_secret, enabled: form.elements.enabled.checked}, old ? "PUT" : "POST");
         form.reset(); form.elements.id.value = "";
       });
     };

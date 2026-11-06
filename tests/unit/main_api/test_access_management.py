@@ -412,6 +412,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(uow.committed)
         self.assertEqual("APP", uow.access.users["APP_USER"].account_origin)
+        self.assertIsNone(result["feishu_binding"])
         self.assertEqual(
             "knowledge_retrieval", uow.access.users["APP_USER"].owner_app_id
         )

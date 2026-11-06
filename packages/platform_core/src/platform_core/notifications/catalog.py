@@ -26,6 +26,7 @@ class NotificationEventDefinition:
     work_item_resolution: str = "COMPLETED"
     retention_days: int = 90
     allowed_channels: tuple[str, ...] = ("IN_APP",)
+    read_permissions: tuple[str, ...] = ()
 
 
 def _event(
@@ -36,6 +37,9 @@ def _event(
     title: str,
     **projection,
 ) -> NotificationEventDefinition:
+    if producer == "aiops":
+        projection.setdefault("read_permissions", ("aiops:use", "aiops:proposal:approve")
+            if event_type == "aiops.proposal.review_required" else ("aiops:use",))
     return NotificationEventDefinition(
         event_type=event_type,
         producer_service=producer,

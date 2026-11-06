@@ -19,7 +19,7 @@ class ManagedCredentialRepository:
     async def get(
         self,
         *,
-        domain_id: int,
+        domain_id: int | None,
         credential_id: UUID,
         lock: bool = False,
     ) -> ManagedCredentialEntity | None:
@@ -34,7 +34,7 @@ class ManagedCredentialRepository:
     async def find(
         self,
         *,
-        domain_id: int,
+        domain_id: int | None,
         namespace: str,
         credential_kind: str,
         external_key: str,

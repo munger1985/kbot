@@ -22,8 +22,8 @@ async def capabilities(request: Request):
 @router.get("/catalog")
 async def catalog(request: Request):
     await external_capabilities(request)
-    from platform_core.notifications.delivery import EXTERNAL_EVENTS
-    return {"events": EXTERNAL_EVENTS}
+    from platform_core.notifications.delivery import EXTERNAL_EVENTS, CHANNEL_TYPES
+    return {"events": EXTERNAL_EVENTS, "providers": CHANNEL_TYPES}
 
 
 class VersionRequest(BaseModel):
@@ -41,8 +41,8 @@ class PolicyStateRequest(VersionRequest):
 
 
 @router.put("/policies/{object_id}")
-async def set_policy(object_id: UUID, body: PolicyStateRequest, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "set_policy_enabled", permission="channel", domain_id=domain_id,
+async def set_policy(object_id: UUID, body: PolicyStateRequest, request: Request):
+    return await _invoke(request, "set_policy_enabled", permission="channel",
         object_id=object_id, expected_version=body.expected_row_version, enabled=body.enabled)
 
 
@@ -56,18 +56,18 @@ async def resolve_entry(entry_id: UUID, request: Request):
 
 
 @router.get("/me/bindings")
-async def my_bindings(request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "my_bindings", permission="self", domain_id=domain_id)
+async def my_bindings(request: Request):
+    return await _invoke(request, "my_bindings", permission="self")
 
 
 @router.post("/connections/{object_id}/test")
-async def queue_test(object_id: UUID, body: TestRequest, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "queue_test", permission="channel", domain_id=domain_id,
+async def queue_test(object_id: UUID, body: TestRequest, request: Request):
+    return await _invoke(request, "queue_test", permission="channel",
         object_id=object_id, binding_id=body.binding_id)
 
 
-async def _invoke(request, method, *, permission, domain_id, **kwargs):
-    scope, actor_id = await external_context(request, permission=permission, domain_id=domain_id)
+async def _invoke(request, method, *, permission, **kwargs):
+    scope, actor_id = await external_context(request, permission=permission)
     try:
         return await getattr(request.app.state.external_notification_service, method)(
             scope=scope, actor_id=actor_id, **kwargs)
@@ -75,111 +75,116 @@ async def _invoke(request, method, *, permission, domain_id, **kwargs):
         raise HTTPException(exc.status_code, {"code": exc.code, "message": "操作未完成，请核对状态与权限"}) from exc
 
 
-async def _list(request, kind, permission, domain_id, limit):
-    scope, _ = await external_context(request, permission=permission, domain_id=domain_id)
+async def _list(request, kind, permission, limit):
+    scope, _ = await external_context(request, permission=permission)
     return {"items": await request.app.state.external_notification_service.list(kind, scope=scope, limit=limit)}
 
 
 @router.get("/connections")
-async def connections(request: Request, domain_id: str = Query(min_length=1), limit: int = Query(100, ge=1, le=100)):
-    return await _list(request, "connection", "channel", domain_id, limit)
+async def connections(request: Request, limit: int = Query(100, ge=1, le=100)):
+    return await _list(request, "connection", "channel", limit)
 
 
 @router.get("/targets")
-async def targets(request: Request, domain_id: str = Query(min_length=1)):
+async def targets(request: Request):
     # 渠道管理员选试发/策略目标，绑定管理员选父连接；不扩大写权限。
     try:
-        scope, _ = await external_context(request, permission="channel", domain_id=domain_id)
+        scope, _ = await external_context(request, permission="channel")
     except HTTPException as exc:
         if exc.status_code != 403:
             raise
-        scope, _ = await external_context(request, permission="binding", domain_id=domain_id)
+        scope, _ = await external_context(request, permission="binding")
     service = request.app.state.external_notification_service
     return {"connections": await service.list("connection", scope=scope),
             "bindings": await service.list("binding", scope=scope)}
 
 
 @router.post("/connections", status_code=201, openapi_extra={"x-sensitive-input": True})
-async def create_connection(body: ConnectionCreate, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "create_connection", permission="channel", domain_id=domain_id, body=body)
+async def create_connection(body: ConnectionCreate, request: Request):
+    return await _invoke(request, "create_connection", permission="channel", body=body)
 
 
 @router.put("/connections/{object_id}", openapi_extra={"x-sensitive-input": True})
-async def update_connection(object_id: UUID, body: ConnectionUpdate, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "update_connection", permission="channel", domain_id=domain_id, object_id=object_id, body=body)
+async def update_connection(object_id: UUID, body: ConnectionUpdate, request: Request):
+    return await _invoke(request, "update_connection", permission="channel", object_id=object_id, body=body)
 
 
 @router.post("/connections/{object_id}/check")
-async def check_connection(object_id: UUID, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "check_connection", permission="channel", domain_id=domain_id, object_id=object_id)
+async def check_connection(object_id: UUID, request: Request):
+    return await _invoke(request, "check_connection", permission="channel", object_id=object_id)
 
 
 @router.get("/bindings")
-async def bindings(request: Request, domain_id: str = Query(min_length=1), limit: int = Query(100, ge=1, le=100)):
-    return await _list(request, "binding", "binding", domain_id, limit)
+async def bindings(request: Request, limit: int = Query(100, ge=1, le=100)):
+    return await _list(request, "binding", "binding", limit)
 
 
 @router.post("/bindings", status_code=201)
-async def create_binding(body: BindingCreate, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "create_binding", permission="binding", domain_id=domain_id, body=body)
+async def create_binding(body: BindingCreate, request: Request):
+    return await _invoke(request, "create_binding", permission="binding", body=body)
 
 
 @router.post("/bindings/{object_id}/disable")
-async def disable_binding(object_id: UUID, body: VersionRequest, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "disable_binding", permission="binding", domain_id=domain_id,
+async def disable_binding(object_id: UUID, body: VersionRequest, request: Request):
+    return await _invoke(request, "disable_binding", permission="binding",
         object_id=object_id, expected_version=body.expected_row_version)
 
 
 @router.post("/bindings/{object_id}/challenge")
-async def challenge(object_id: UUID, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "challenge", permission="binding", domain_id=domain_id, object_id=object_id)
+async def challenge(object_id: UUID, request: Request):
+    return await _invoke(request, "challenge", permission="binding", object_id=object_id)
+
+
+@router.post("/me/bindings/{object_id}/challenge")
+async def challenge_mine(object_id: UUID, request: Request):
+    return await _invoke(request, "challenge_mine", permission="self", object_id=object_id)
 
 
 @router.post("/bindings/{object_id}/confirm", openapi_extra={"x-sensitive-input": True})
-async def confirm(object_id: UUID, body: BindingConfirmation, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "confirm", permission="self", domain_id=domain_id, object_id=object_id, body=body)
+async def confirm(object_id: UUID, body: BindingConfirmation, request: Request):
+    return await _invoke(request, "confirm", permission="self", object_id=object_id, body=body)
 
 
 @router.get("/policies")
-async def policies(request: Request, domain_id: str = Query(min_length=1), limit: int = Query(100, ge=1, le=100)):
-    return await _list(request, "policy", "channel", domain_id, limit)
+async def policies(request: Request, limit: int = Query(100, ge=1, le=100)):
+    return await _list(request, "policy", "channel", limit)
 
 
 @router.post("/policies", status_code=201)
-async def create_policy(body: ExternalPolicyCreate, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "create_policy", permission="channel", domain_id=domain_id, body=body)
+async def create_policy(body: ExternalPolicyCreate, request: Request):
+    return await _invoke(request, "create_policy", permission="channel", body=body)
 
 
 @router.get("/jobs")
-async def jobs(request: Request, domain_id: str = Query(min_length=1), limit: int = Query(100, ge=1, le=100),
+async def jobs(request: Request, limit: int = Query(100, ge=1, le=100),
                offset: int = Query(0, ge=0, le=1000000), status: DeliveryStatus | None = None):
-    scope, _ = await external_context(request, permission="read", domain_id=domain_id)
+    scope, _ = await external_context(request, permission="read")
     return {"items": await request.app.state.external_notification_service.list(
         "job", scope=scope, limit=limit, offset=offset, status=status)}
 
 
 @router.get("/jobs/{job_id}/attempts")
-async def attempts(job_id: UUID, request: Request, domain_id: str = Query(min_length=1)):
-    scope, _ = await external_context(request, permission="read", domain_id=domain_id)
+async def attempts(job_id: UUID, request: Request):
+    scope, _ = await external_context(request, permission="read")
     return {"items": await request.app.state.external_notification_service.attempt_history(scope=scope, job_id=job_id)}
 
 
 @router.post("/jobs/{job_id}/retry")
-async def retry(job_id: UUID, body: RetryRequest, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "retry", permission="retry", domain_id=domain_id, job_id=job_id, body=body)
+async def retry(job_id: UUID, body: RetryRequest, request: Request):
+    return await _invoke(request, "retry", permission="retry", job_id=job_id, body=body)
 
 
 @router.get("/audit")
-async def audit(request: Request, domain_id: str = Query(min_length=1), limit: int = Query(100, ge=1, le=100)):
-    return await _list(request, "audit", "read", domain_id, limit)
+async def audit(request: Request, limit: int = Query(100, ge=1, le=100)):
+    return await _list(request, "audit", "read", limit)
 
 
 @router.get("/health")
-async def health(request: Request, domain_id: str = Query(min_length=1)):
-    scope, _ = await external_context(request, permission="read", domain_id=domain_id)
+async def health(request: Request):
+    scope, _ = await external_context(request, permission="read")
     return await request.app.state.external_notification_service.health(scope=scope)
 
 
 @router.get("/open/{entry_id}")
-async def open_entry(entry_id: UUID, request: Request, domain_id: str = Query(min_length=1)):
-    return await _invoke(request, "open_entry", permission="self", domain_id=domain_id, entry_id=entry_id)
+async def open_entry(entry_id: UUID, request: Request):
+    return await _invoke(request, "open_entry", permission="self", entry_id=entry_id)

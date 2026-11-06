@@ -263,8 +263,8 @@ async def test_quiet_never_extends_expiry_or_discards_the_task(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("missing,verified,expected", [(False, True, Status.PENDING), (False, False, Status.BLOCKED), (True, False, Status.BLOCKED)])
-async def test_external_projection_needs_no_inbox_and_reports_missing_identity(missing, verified, expected):
+@pytest.mark.parametrize("missing,verified,expected", [(False, True, Status.PENDING), (False, False, Status.BLOCKED), (True, False, None)])
+async def test_external_projection_skips_unbound_users_without_inbox_dependency(missing, verified, expected):
     repo = ProjectionRepository(missing=missing, verified=verified)
     event_id, run_id, proposal_id = uuid4(), uuid4(), uuid4()
     scope = DeliveryScope(domain_id="12")
@@ -275,6 +275,9 @@ async def test_external_projection_needs_no_inbox_and_reports_missing_identity(m
     await enqueue_external_event(**kwargs)
     await enqueue_external_event(**kwargs)
     jobs = [row for (kind, _), row in repo.records.items() if kind == "job"]
+    if missing:
+        assert not repo.records
+        return
     assert len(jobs) == 1 and jobs[0]["status"] == expected
     assert "notification_id" not in jobs[0]
     assert not any(key == "summary" for key in jobs[0]["content"])

@@ -1,4 +1,4 @@
-"""部署时定向执行通知 v8 增量；Oracle DDL 隐式提交，失败后禁止盲目重跑。"""
+"""部署时定向执行通知 v9 新表增量；Oracle DDL 隐式提交，失败后禁止盲目重跑。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SQL = ROOT / "database/oracle/operations/upgrade_notification_delivery_8.sql"
+DEFAULT_SQL = ROOT / "database/oracle/operations/upgrade_notification_delivery_9.sql"
 
 
 def contract(sql: str) -> dict:

@@ -1,4 +1,4 @@
-"""按 Domain 与稳定 Actor 标识隔离的站内通知 API。"""
+"""按稳定 Actor 聚合的站内通知；业务资源仍保留真实 Domain。"""
 
 from __future__ import annotations
 
@@ -40,6 +40,14 @@ class OperationWatchUpdate(BaseModel):
 
 def _service(request: Request) -> NotificationCenterService:
     return request.app.state.notification_center_service
+
+
+def _actor(request: Request) -> str:
+    context = request.state.auth_context
+    actor_id = str(context.asserted_user_id or "").strip()
+    if not actor_id or context.principal_kind != PrincipalKind.PORTAL:
+        raise HTTPException(403, {"code": "NOTIFICATION_CONTEXT_REQUIRED"})
+    return actor_id
 
 
 def _scope(request: Request) -> tuple[int, str]:
@@ -99,8 +107,8 @@ def _decode_cursor(value: str | None) -> int | None:
 
 @router.get("/notifications/summary")
 async def notification_summary(request: Request):
-    domain_id, actor_id = _scope(request)
-    return await _service(request).summary(domain_id=domain_id, actor_id=actor_id)
+    actor_id = _actor(request)
+    return await _service(request).personal("summary", actor_id=actor_id)
 
 
 @router.get("/notifications/events")
@@ -108,7 +116,7 @@ async def notification_events(
     request: Request,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ):
-    domain_id, actor_id = _scope(request)
+    actor_id = _actor(request)
     try:
         after_sequence = int(last_event_id or 0)
         if after_sequence < 0:
@@ -123,8 +131,8 @@ async def notification_events(
         cursor = after_sequence
         elapsed = 0.0
         while not await request.is_disconnected():
-            rows = await _service(request).stream_events(
-                domain_id=domain_id, actor_id=actor_id,
+            rows = await _service(request).personal("stream_events",
+                actor_id=actor_id,
                 after_sequence=cursor,
             )
             for row in rows:
@@ -150,9 +158,9 @@ async def list_notifications(
     cursor: str | None = Query(default=None, max_length=512),
     limit: int = Query(default=30, ge=1, le=100),
 ):
-    domain_id, actor_id = _scope(request)
-    rows = await _service(request).list_notifications(
-        domain_id=domain_id, actor_id=actor_id,
+    actor_id = _actor(request)
+    rows = await _service(request).personal("list_notifications",
+        actor_id=actor_id,
         limit=limit + 1, before_sequence=_decode_cursor(cursor),
     )
     items = rows[:limit]
@@ -167,9 +175,9 @@ async def list_notifications(
 
 @router.post("/notifications/read")
 async def read_notifications(body: NotificationReadMany, request: Request):
-    domain_id, actor_id = _scope(request)
-    return await _service(request).mark_many_read(
-        inbox_ids=body.notification_ids, domain_id=domain_id, actor_id=actor_id,
+    actor_id = _actor(request)
+    return await _service(request).personal("mark_many_read",
+        inbox_ids=body.notification_ids, actor_id=actor_id,
     )
 
 
@@ -230,10 +238,10 @@ async def retry_notification(outbox_id: UUID, request: Request):
 
 @router.get("/notifications/{notification_id}")
 async def get_notification(notification_id: UUID, request: Request):
-    domain_id, actor_id = _scope(request)
+    actor_id = _actor(request)
     try:
-        return await _service(request).get_notification(
-            inbox_id=notification_id, domain_id=domain_id, actor_id=actor_id,
+        return await _service(request).personal("get_notification",
+            inbox_id=notification_id, actor_id=actor_id,
         )
     except NotificationCenterError as exc:
         _raise(exc)
@@ -243,10 +251,10 @@ async def get_notification(notification_id: UUID, request: Request):
 async def update_notification(
     notification_id: UUID, body: NotificationReadUpdate, request: Request,
 ):
-    domain_id, actor_id = _scope(request)
+    actor_id = _actor(request)
     try:
-        return await _service(request).set_read(
-            inbox_id=notification_id, domain_id=domain_id, actor_id=actor_id,
+        return await _service(request).personal("set_read",
+            inbox_id=notification_id, actor_id=actor_id,
             read=body.read, expected_row_version=body.expected_row_version,
         )
     except NotificationCenterError as exc:
@@ -259,9 +267,9 @@ async def list_work_items(
     status: str = Query(default="OPEN", pattern="^(OPEN|COMPLETED|CANCELLED)$"),
     limit: int = Query(default=50, ge=1, le=100),
 ):
-    domain_id, actor_id = _scope(request)
-    return {"items": await _service(request).list_work_items(
-        domain_id=domain_id, actor_id=actor_id, status=status, limit=limit,
+    actor_id = _actor(request)
+    return {"items": await _service(request).personal("list_work_items",
+        actor_id=actor_id, status=status, limit=limit,
     )}
 
 
@@ -269,9 +277,9 @@ async def list_work_items(
 async def list_background_operations(
     request: Request, limit: int = Query(default=50, ge=1, le=100),
 ):
-    domain_id, actor_id = _scope(request)
-    return {"items": await _service(request).list_operations(
-        domain_id=domain_id, actor_id=actor_id, limit=limit,
+    actor_id = _actor(request)
+    return {"items": await _service(request).personal("list_operations",
+        actor_id=actor_id, limit=limit,
     )}
 
 

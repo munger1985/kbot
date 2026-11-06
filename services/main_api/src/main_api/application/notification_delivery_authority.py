@@ -26,6 +26,12 @@ class NotificationDeliveryAuthority:
         self._uow_factory, self.client, self.caller = uow_factory, client, caller_service
 
     async def actor_active(self, *, scope, actor_id):
+        if scope.domain_id is None:
+            if scope.tenant_id is not None:
+                return False
+            async with self._uow_factory() as uow:
+                user = await uow.access.get_user(actor_id)
+                return user is not None and user.status == "ACTIVE"
         return "aiops:use" in await self.permissions(scope=scope, actor_id=actor_id)
 
     async def check(self, *, scope, actor_id, entry, actionable):

@@ -1395,6 +1395,19 @@
             ],
             "title": "Display Name"
           },
+          "feishu_open_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "pattern": "^ou_.{1,253}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feishu Open Id"
+          },
           "max_security_level": {
             "default": 1,
             "maximum": 3.0,
@@ -16519,6 +16532,19 @@
             ],
             "title": "Display Name"
           },
+          "feishu_open_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "pattern": "^ou_.{1,253}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feishu Open Id"
+          },
           "max_security_level": {
             "default": 1,
             "maximum": 3.0,
@@ -24947,6 +24973,43 @@
               }
             ],
             "title": "Display Name"
+          },
+          "expected_binding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Binding Id"
+          },
+          "expected_binding_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Binding Version"
+          },
+          "feishu_open_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "pattern": "^ou_.{1,253}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feishu Open Id"
           },
           "max_security_level": {
             "anyOf": [
@@ -46583,6 +46646,46 @@
         ]
       }
     },
+    "/api/v1/apps/{app_id}/members/assignable-roles": {
+      "get": {
+        "operationId": "member_assignable_roles_api_v1_apps__app_id__members_assignable_roles_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Member Assignable Roles",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
     "/api/v1/apps/{app_id}/members/{user_id}": {
       "delete": {
         "operationId": "delete_app_member_api_v1_apps__app_id__members__user_id__delete",
@@ -46627,6 +46730,53 @@
           }
         },
         "summary": "Delete App Member",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "get": {
+        "operationId": "get_app_member_api_v1_apps__app_id__members__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get App Member",
         "tags": [
           "Access Management"
         ]
@@ -48156,16 +48306,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -48209,16 +48349,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -48257,18 +48387,6 @@
       },
       "post": {
         "operationId": "create_binding_api_v1_notification_delivery_bindings_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -48318,16 +48436,6 @@
               "title": "Object Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -48367,16 +48475,6 @@
             "schema": {
               "format": "uuid",
               "title": "Object Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
               "type": "string"
             }
           }
@@ -48429,16 +48527,6 @@
             "schema": {
               "format": "uuid",
               "title": "Object Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
               "type": "string"
             }
           }
@@ -48523,16 +48611,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -48571,18 +48649,6 @@
       },
       "post": {
         "operationId": "create_connection_api_v1_notification_delivery_connections_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -48631,16 +48697,6 @@
             "schema": {
               "format": "uuid",
               "title": "Object Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
               "type": "string"
             }
           }
@@ -48695,16 +48751,6 @@
               "title": "Object Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -48744,16 +48790,6 @@
             "schema": {
               "format": "uuid",
               "title": "Object Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
               "type": "string"
             }
           }
@@ -48838,18 +48874,6 @@
     "/api/v1/notification-delivery/health": {
       "get": {
         "operationId": "health_api_v1_notification_delivery_health_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -48858,16 +48882,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "Health",
@@ -48880,16 +48894,6 @@
       "get": {
         "operationId": "jobs_api_v1_notification_delivery_jobs_get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          },
           {
             "in": "query",
             "name": "limit",
@@ -48970,16 +48974,6 @@
               "title": "Job Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -49019,16 +49013,6 @@
             "schema": {
               "format": "uuid",
               "title": "Job Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
               "type": "string"
             }
           }
@@ -49072,14 +49056,33 @@
     "/api/v1/notification-delivery/me/bindings": {
       "get": {
         "operationId": "my_bindings_api_v1_notification_delivery_me_bindings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Bindings",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/me/bindings/{object_id}/challenge": {
+      "post": {
+        "operationId": "challenge_mine_api_v1_notification_delivery_me_bindings__object_id__challenge_post",
         "parameters": [
           {
-            "in": "query",
-            "name": "domain_id",
+            "in": "path",
+            "name": "object_id",
             "required": true,
             "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
+              "format": "uuid",
+              "title": "Object Id",
               "type": "string"
             }
           }
@@ -49104,7 +49107,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "My Bindings",
+        "summary": "Challenge Mine",
         "tags": [
           "Notification Delivery"
         ]
@@ -49121,16 +49124,6 @@
             "schema": {
               "format": "uuid",
               "title": "Entry Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
               "type": "string"
             }
           }
@@ -49165,16 +49158,6 @@
       "get": {
         "operationId": "policies_api_v1_notification_delivery_policies_get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          },
           {
             "in": "query",
             "name": "limit",
@@ -49215,18 +49198,6 @@
       },
       "post": {
         "operationId": "create_policy_api_v1_notification_delivery_policies_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -49276,16 +49247,6 @@
               "title": "Object Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
           }
         ],
         "requestBody": {
@@ -49327,18 +49288,6 @@
     "/api/v1/notification-delivery/targets": {
       "get": {
         "operationId": "targets_api_v1_notification_delivery_targets_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "title": "Domain Id",
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -49347,16 +49296,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "Targets",

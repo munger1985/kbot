@@ -1,4 +1,4 @@
-"""复用平台凭据加密；AAD 绑定 Domain、用途与随机凭据身份。"""
+"""复用平台凭据加密；AAD 绑定全局范围、用途与随机凭据身份。"""
 
 from uuid import UUID
 from platform_core.managed_credentials.cipher import ManagedCredentialCipher, ManagedCredentialPayload
@@ -10,12 +10,14 @@ class NotificationCredentialVault:
         self._uow_factory = uow_factory
 
     async def write(self, *, scope, object_id, values):
+        if scope.tenant_id is not None:
+            raise ValueError("NOTIFICATION_CREDENTIAL_SCOPE_INVALID")
         cipher = ManagedCredentialCipher.from_environment()
-        payload = cipher.encrypt(values, domain_id=int(scope.domain_id), namespace="notifications",
+        payload = cipher.encrypt(values, domain_id=None, namespace="notifications",
             credential_kind="feishu", credential_id=object_id)
         async with self._uow_factory() as uow:
             await uow.managed_credentials.add(ManagedCredentialEntity(
-                credential_id=object_id, domain_id=int(scope.domain_id), namespace="notifications",
+                credential_id=object_id, domain_id=None, namespace="notifications",
                 credential_kind="feishu", external_key=str(object_id), ciphertext=payload.ciphertext,
                 nonce=payload.nonce, key_version=payload.key_version, status="ACTIVE",
                 created_by="system:notification", updated_by="system:notification"))
@@ -23,16 +25,18 @@ class NotificationCredentialVault:
         return "managed-credential://notifications/feishu/" + str(object_id)
 
     async def read(self, *, scope, reference):
+        if scope.tenant_id is not None:
+            raise ValueError("NOTIFICATION_CREDENTIAL_SCOPE_INVALID")
         prefix = "managed-credential://notifications/feishu/"
         if not reference.startswith(prefix):
             raise ValueError("NOTIFICATION_CREDENTIAL_REFERENCE_INVALID")
         credential_id = UUID(reference.removeprefix(prefix))
         async with self._uow_factory() as uow:
-            row = await uow.managed_credentials.get(domain_id=int(scope.domain_id), credential_id=credential_id)
+            row = await uow.managed_credentials.get(domain_id=None, credential_id=credential_id)
             if not row or row.namespace != "notifications" or row.credential_kind != "feishu" or row.status != "ACTIVE":
                 raise ValueError("NOTIFICATION_CREDENTIAL_UNAVAILABLE")
             payload = ManagedCredentialPayload(row.ciphertext, row.nonce, row.key_version)
-        return ManagedCredentialCipher.from_environment().decrypt(payload, domain_id=int(scope.domain_id),
+        return ManagedCredentialCipher.from_environment().decrypt(payload, domain_id=None,
             namespace="notifications", credential_kind="feishu", credential_id=credential_id)
 
     async def delete(self, *, scope, reference):
@@ -40,7 +44,7 @@ class NotificationCredentialVault:
         prefix = "managed-credential://notifications/feishu/"
         credential_id = UUID(reference.removeprefix(prefix))
         async with self._uow_factory() as uow:
-            row = await uow.managed_credentials.get(domain_id=int(scope.domain_id), credential_id=credential_id, lock=True)
+            row = await uow.managed_credentials.get(domain_id=None, credential_id=credential_id, lock=True)
             if row and row.namespace == "notifications" and row.credential_kind == "feishu":
                 row.status = "DISABLED"
                 await uow.commit()

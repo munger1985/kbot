@@ -11,7 +11,7 @@ spec.loader.exec_module(upgrade)
 
 
 def test_upgrade_contract_matches_canonical_without_destructive_sql():
-    sql = (ROOT / "database/oracle/operations/upgrade_notification_delivery_8.sql").read_text()
+    sql = (ROOT / "database/oracle/operations/upgrade_notification_delivery_9.sql").read_text()
     canonical = (ROOT / "database/oracle/main_api/003_notification_delivery.sql").read_text()
     expected = upgrade.contract(sql)
     assert expected == upgrade.contract(canonical)

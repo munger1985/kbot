@@ -15,20 +15,21 @@ def request(kind="PORTAL",domain="12",allowed=True):
 @pytest.mark.parametrize("kind",["SERVICE","APP_API_CLIENT","API_CLIENT"])
 async def test_machine_cannot_manage_or_resolve_personal_entry(kind):
     req=request(kind=kind)
-    with pytest.raises(HTTPException): await external_context(req,permission="channel",domain_id="12")
+    with pytest.raises(HTTPException): await external_context(req,permission="channel")
     with pytest.raises(HTTPException): await external_entry_actor(req)
     req.app.state.access_control_service.require_platform.assert_not_awaited()
 
 @pytest.mark.asyncio
-async def test_cross_domain_cannot_use_platform_capability():
-    req=request()
-    with pytest.raises(HTTPException): await external_context(req,permission="binding",domain_id="13")
-    req.app.state.access_control_service.require_platform.assert_not_awaited()
+async def test_platform_configuration_needs_no_domain():
+    req=request(domain=None)
+    scope, actor = await external_context(req,permission="binding")
+    assert scope.domain_id is None and scope.tenant_id is None and actor == "B"
+    req.app.state.access_control_service.require_platform.assert_awaited_once()
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind,code",[("channel","channel_manage"),("binding","binding_manage"),
     ("read","delivery_read"),("retry","delivery_retry")])
 async def test_governance_capabilities_are_independent(kind,code):
     req=request(allowed=False)
-    with pytest.raises(HTTPException): await external_context(req,permission=kind,domain_id="12")
+    with pytest.raises(HTTPException): await external_context(req,permission=kind)
     assert req.app.state.access_control_service.require_platform.await_args.kwargs["permission_code"]=="platform:notification_"+code

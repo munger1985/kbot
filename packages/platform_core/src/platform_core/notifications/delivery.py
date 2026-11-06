@@ -32,7 +32,8 @@ class StrictModel(BaseModel):
 
 
 class DeliveryScope(StrictModel):
-    domain_id: str = Field(min_length=1, max_length=64)
+    # 管理范围只有 Tenant／实例；业务消息额外携带真实资源 Domain。
+    domain_id: str | None = Field(default=None, min_length=1, max_length=64)
     tenant_id: UUID | None = None
 
 
@@ -99,6 +100,11 @@ class RetryRequest(StrictModel):
     expected_row_version: int = Field(ge=1)
     acknowledge_duplicate_risk: bool = False
 
+
+CHANNEL_TYPES = (
+    {"code": "FEISHU", "label": "飞书", "available": True},
+    {"code": "WECOM", "label": "企业微信", "available": False},
+)
 
 # 外发文字全部来自版本化目录，不插入业务 summary、名称或任意 safe_payload。
 EXTERNAL_EVENTS = {

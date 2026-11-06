@@ -42,6 +42,8 @@ def noise_schedule(config, *, now, event_type, severity):
 
 async def new_delivery_job(repo, *, scope, connection, binding, source_event_id, event_type, content,
                    entry_id, expires_at, purpose, actor_id, now, severity=None, available_at=None, coalesce_key=None):
+    if purpose == "BUSINESS" and scope.domain_id is None:
+        raise ValueError("NOTIFICATION_RESOURCE_DOMAIN_REQUIRED")
     job_id = stable_id(source_event_id, connection["id"], binding["target_type"], binding["external_id"], purpose, 1, 0)
     values = {"id": job_id, "source_event_id": source_event_id, "event_type": event_type,
         "original_severity": severity, "coalesce_key": coalesce_key,
@@ -78,8 +80,8 @@ async def enqueue_external_event(*, config, repo, scope, source_event_id, event_
         for actor_id in policy.get("actor_ids") or []:
             if actor_id in legitimate_actors:
                 candidate = next((item for item in existing_bindings if item["actor_id"] == actor_id and item["status"] != "DISABLED"), None)
-                targets.append(candidate or {"id": None, "connection_id": connection["id"], "actor_id": actor_id,
-                    "external_id": "unmapped:" + str(stable_id(actor_id)), "target_type": "open_id", "row_version": 0, "status": "MISSING"})
+                if candidate is not None:
+                    targets.append(candidate)
         for binding in targets:
             if not binding or binding["connection_id"] != connection["id"] or binding["status"] == "DISABLED":
                 continue
@@ -112,7 +114,7 @@ async def enqueue_external_event(*, config, repo, scope, source_event_id, event_
                 await repo.change("job", scope=scope, object_id=job["id"], expected_version=1,
                     values={"status": Status.BLOCKED, "last_error_code":
                         "NOTIFICATION_CONNECTION_DISABLED" if not connection["enabled"] else
-                        "NOTIFICATION_BINDING_MISSING" if binding["status"] == "MISSING" else "NOTIFICATION_BINDING_UNVERIFIED"},
+                        "NOTIFICATION_BINDING_UNVERIFIED"},
                     actor_id="system:external-delivery", now=now)
             elif merge_key:
                 # 仅合并从未进入网络的同目标、同事件、同资源、同等级任务；旧记录和入口保留。

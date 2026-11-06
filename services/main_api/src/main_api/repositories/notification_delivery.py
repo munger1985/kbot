@@ -17,18 +17,40 @@ class ExternalDeliveryRepository:
         self._session = session
         self.tables = external_tables
 
-    def scope_values(self, scope):
-        values = {"domain_id": int(scope.domain_id) if "tenant_id" not in self.tables["connection"].c else UUID(scope.domain_id)}
+    def scope_values(self, scope, table=None):
+        values = {}
         if "tenant_id" in self.tables["connection"].c:
             if scope.tenant_id is None:
                 raise ValueError("NOTIFICATION_TENANT_REQUIRED")
             values["tenant_id"] = scope.tenant_id
         elif scope.tenant_id is not None:
             raise ValueError("NOTIFICATION_TENANT_UNEXPECTED")
+        if table is not None and "domain_id" in table.c:
+            values["domain_id"] = (None if scope.domain_id is None else
+                UUID(scope.domain_id) if "tenant_id" in self.tables["connection"].c else int(scope.domain_id))
         return values
 
     def scoped(self, table, scope):
-        return [table.c[key] == value for key, value in self.scope_values(scope).items()]
+        return [table.c[key] == value for key, value in self.scope_values(scope, table).items()
+                if key != "domain_id" or scope.domain_id is not None]
+
+    async def lock_configuration(self):
+        """用部署初始化的全局频控行串行化渠道创建，不依赖业务唯一索引。"""
+        table = self.tables["throttle"]
+        row = (await self._session.execute(select(table.c.id).where(
+            table.c.id == "external").with_for_update())).scalar_one_or_none()
+        if row is None:
+            raise ValueError("NOTIFICATION_THROTTLE_NOT_INITIALIZED")
+
+    async def connection_for_provider(self, *, scope, provider="FEISHU", lock=False):
+        table = self.tables["connection"]
+        query = select(table).where(*self.scoped(table, scope), table.c.provider == provider)
+        if lock:
+            query = query.with_for_update()
+        rows = (await self._session.execute(query)).mappings().all()
+        if len(rows) > 1:
+            raise ValueError("NOTIFICATION_CONNECTION_SCOPE_CONFLICT")
+        return dict(rows[0]) if rows else None
 
     async def get(self, kind, *, scope, object_id, lock=False):
         table = self.tables[kind]
@@ -49,7 +71,7 @@ class ExternalDeliveryRepository:
 
     async def add(self, kind, *, scope, values, actor_id, now):
         table = self.tables[kind]
-        record = {**values, **self.scope_values(scope), "created_by": actor_id, "updated_by": actor_id,
+        record = {**values, **self.scope_values(scope, table), "created_by": actor_id, "updated_by": actor_id,
                   "created_at": now, "updated_at": now, "row_version": 1}
         await self._session.execute(insert(table).values(**record))
         return record
@@ -157,7 +179,8 @@ class ExternalDeliveryRepository:
         rows = (await self._session.execute(select(table).where(or_(due, lost))
             .order_by(table.c.available_at, table.c.id).limit(20))).mappings().all()
         for row in rows:
-            scope = DeliveryScope(domain_id=str(row["domain_id"]), tenant_id=row.get("tenant_id"))
+            scope = DeliveryScope(domain_id=str(row["domain_id"]) if row["domain_id"] is not None else None,
+                                  tenant_id=row.get("tenant_id"))
             version = int(row["row_version"])
             if row["status"] == Status.SENDING:
                 # 租约失效不说明网络调用未发生；已记录网络起点的任务先进入 UNKNOWN。

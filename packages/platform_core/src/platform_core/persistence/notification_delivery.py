@@ -9,9 +9,9 @@ def define_external_tables(*, metadata, prefix, id_type, domain_type, json_type,
     def col(name, type_, *args, **kw):
         return Column(name, type_, *args, **kw)
 
-    def scope():
-        return ([col("tenant_id", tenant_type, nullable=False)] if tenant_type is not None else []) + [
-            col("domain_id", domain_type, nullable=False)]
+    def scope(resource=False, nullable=False):
+        columns = [col("tenant_id", tenant_type, nullable=False)] if tenant_type is not None else []
+        return columns + ([col("domain_id", domain_type, nullable=nullable)] if resource else [])
 
     def audit():
         return [col("created_at", timestamp_type, nullable=False),
@@ -23,9 +23,9 @@ def define_external_tables(*, metadata, prefix, id_type, domain_type, json_type,
     def identity():
         return col("id", id_type, primary_key=True)
 
-    def table(kind, *columns):
+    def table(kind, *columns, resource=False, nullable_domain=False):
         name = (prefix + kind).upper() if prefix.isupper() else prefix + kind
-        return Table(name, metadata, identity(), *scope(), *columns, *audit())
+        return Table(name, metadata, identity(), *scope(resource, nullable_domain), *columns, *audit())
 
     connection = table("connection",
         col("name", String(128), nullable=False), col("provider", String(24), nullable=False),
@@ -51,7 +51,8 @@ def define_external_tables(*, metadata, prefix, id_type, domain_type, json_type,
     entry = table("entry",
         col("recipient_actor_id", String(256)), col("audience", String(16), nullable=False),
         col("event_type", String(160), nullable=False), col("route_key", String(160), nullable=False),
-        col("route_params", json_type, nullable=False), col("expires_at", timestamp_type, nullable=False))
+        col("route_params", json_type, nullable=False), col("expires_at", timestamp_type, nullable=False),
+        resource=True)
     job_columns = [
         col("source_event_id", id_type, nullable=False), col("event_type", String(160), nullable=False),
         col("original_severity", String(16)), col("coalesce_key", String(64)),
@@ -74,18 +75,18 @@ def define_external_tables(*, metadata, prefix, id_type, domain_type, json_type,
     ]
     if existing_job is not None:
         job = existing_job
-        job.append_column(col("domain_id", domain_type, nullable=False))
+        job.append_column(col("domain_id", domain_type))
         for column in job_columns:
             job.append_column(column)
     else:
-        job = table("job", *job_columns)
+        job = table("job", *job_columns, resource=True, nullable_domain=True)
     attempt = table("attempt",
         col("job_id", id_type, ForeignKey(job.c.id), nullable=False),
         col("attempt_number", BigInteger, nullable=False), col("lease_token", id_type, nullable=False),
         col("started_at", timestamp_type, nullable=False), col("finished_at", timestamp_type),
         col("status", String(24), nullable=False), col("error_code", String(128)),
         col("request_id", String(256)), col("message_id", String(256)),
-        col("elapsed_ms", BigInteger))
+        col("elapsed_ms", BigInteger), resource=True, nullable_domain=True)
     audit_event = table("audit",
         col("action", String(80), nullable=False), col("object_id", id_type, nullable=False),
         col("outcome", String(128), nullable=False))
@@ -93,7 +94,7 @@ def define_external_tables(*, metadata, prefix, id_type, domain_type, json_type,
     throttle = Table((prefix + "throttle").upper() if prefix.isupper() else prefix + "throttle", metadata,
         col("id", String(32), primary_key=True), col("next_send_at", timestamp_type, nullable=False))
     for obj, suffix, fields in (
-        (connection, "conn_scope", ["domain_id", "enabled"]),
+        (connection, "conn_scope", (["tenant_id"] if tenant_type is not None else []) + ["provider", "enabled"]),
         (binding, "bind_scope", ["connection_id", "actor_id"]),
         (job, "job_claim", ["status", "available_at"]),
         (job, "job_scope", ["domain_id", "created_at"]),

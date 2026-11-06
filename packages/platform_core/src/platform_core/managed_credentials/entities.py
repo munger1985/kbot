@@ -39,7 +39,7 @@ class ManagedCredentialEntity(BaseEntity):
     credential_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    domain_id: Mapped[int | None] = mapped_column(Numeric(38, 0), nullable=True)
     namespace: Mapped[str] = mapped_column(String(64), nullable=False)
     credential_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     external_key: Mapped[str] = mapped_column(String(256), nullable=False)

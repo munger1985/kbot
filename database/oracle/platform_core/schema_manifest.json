@@ -1,6 +1,6 @@
 {
   "component": "platform_core",
-  "schema_version": 6,
+  "schema_version": 7,
   "contract_version": "platform-core-oracle-v1",
   "oracle_baseline": "26ai",
   "scripts": [
@@ -22,7 +22,7 @@
     {
       "name": "004_managed_credentials.sql",
       "statements": 2,
-      "sha256": "c40cec70ead84842570dfdb98df0a0e900708aeb3d08a6a6bc0d789f5f67172b"
+      "sha256": "07991120b39a6aff9c1442b5bee683564944d85c3cf916297b7ab45b355607dd"
     }
   ],
   "tables": [

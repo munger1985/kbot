@@ -7,7 +7,8 @@ import json
 from typing import Any
 from uuid import UUID
 
-from platform_core.notifications import event_definition
+from platform_core.notifications import EVENT_TYPES, event_definition
+from main_api.application.access_control import AccessControlService
 from platform_core.identity import uuid7
 from main_api.entities.access_control import AccessAuditEventEntity
 from main_api.application.aiops_notification_routes import AIOPS_OUTPUT_EVENTS, AIOPS_RESOURCE_EVENTS, aiops_notification_route
@@ -38,6 +39,42 @@ class NotificationCenterService:
     def __init__(self, *, uow_factory):
         self._uow_factory = uow_factory
 
+    async def personal(self, method, *, actor_id, **params):
+        """个人收件箱跨当前获授权空间聚合，不以登录时选中的空间分仓。"""
+        async with self._uow_factory() as uow:
+            domains = tuple([domain for domain in await uow.access.list_active_domain_ids(actor_id)
+                if await uow.domains.exists_active(domain_id=domain)])
+        access = AccessControlService(uow_factory=self._uow_factory)
+        event_types = {}
+        for domain in domains:
+            permissions = set()
+            for app_id in {permission.split(":")[0] for definition in EVENT_TYPES.values()
+                           for permission in definition.read_permissions}:
+                permissions.update((await access.snapshot(app_id=app_id, domain_id=domain, user_id=actor_id)).permissions)
+            event_types[domain] = tuple(code for code, definition in EVENT_TYPES.items()
+                                       if set(definition.read_permissions) <= permissions)
+        if method in {"get_notification", "set_read"}:
+            async with self._uow_factory() as uow:
+                domain = await self._repo(uow).inbox_domain_for_actor(
+                    inbox_id=params["inbox_id"], actor_id=actor_id)
+            if domain not in domains:
+                raise NotificationCenterError("NOTIFICATION_NOT_FOUND", "通知不存在", 404)
+            return await getattr(self, method)(domain_id=domain, actor_id=actor_id,
+                allowed_event_types=event_types[domain], **params)
+        results = [await getattr(self, method)(domain_id=domain, actor_id=actor_id,
+            **({"allowed_event_types": event_types[domain]} if method in {
+                "summary", "list_notifications", "stream_events", "mark_many_read"} else {}), **params) for domain in domains]
+        if method == "summary":
+            return {key: sum(row[key] for row in results)
+                    for key in ("unread", "open_work_items", "active_operations")}
+        if method == "mark_many_read":
+            return {"updated": sum(row["updated"] for row in results)}
+        rows = [row for result in results for row in result]
+        if method in {"list_notifications", "stream_events"}:
+            return sorted(rows, key=lambda row: int(row["event_sequence"]),
+                reverse=method == "list_notifications")[:params.get("limit", 100)]
+        return sorted(rows, key=lambda row: row.get("updated_at", ""), reverse=True)[:params.get("limit", 100)]
+
     @staticmethod
     async def _serialize_inbox(repository, rows, *, domain_id, actor_id):
         """在授权页内批量补白名单定位，不泄露整个事件信封。"""
@@ -47,18 +84,18 @@ class NotificationCenterService:
         return [serialize_entity(row) | aiops_notification_route(
             row, payloads.get(row.inbox_id), domain_id=domain_id) for row in rows]
 
-    async def summary(self, *, domain_id: int, actor_id: str) -> dict[str, int]:
+    async def summary(self, *, domain_id: int, actor_id: str, allowed_event_types=None) -> dict[str, int]:
         async with self._uow_factory() as uow:
-            return await self._repo(uow).summary(
+            return await self._repo(uow).summary(allowed_event_types=allowed_event_types,
                 domain_id=domain_id, actor_id=actor_id,
             )
 
     async def list_notifications(
         self, *, domain_id: int, actor_id: str,
-        limit: int, before_sequence: int | None,
+        limit: int, before_sequence: int | None, allowed_event_types=None,
     ) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
-            rows = await self._repo(uow).list_inbox(
+            rows = await self._repo(uow).list_inbox(allowed_event_types=allowed_event_types,
                 domain_id=domain_id, actor_id=actor_id,
                 limit=limit, before_sequence=before_sequence,
             )
@@ -79,20 +116,20 @@ class NotificationCenterService:
 
     async def stream_events(
         self, *, domain_id: int, actor_id: str,
-        after_sequence: int, limit: int = 100,
+        after_sequence: int, limit: int = 100, allowed_event_types=None,
     ) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
-            rows = await self._repo(uow).stream_inbox(
+            rows = await self._repo(uow).stream_inbox(allowed_event_types=allowed_event_types,
                 domain_id=domain_id, actor_id=actor_id,
                 after_sequence=after_sequence, limit=limit,
             )
             return await self._serialize_inbox(self._repo(uow), rows, domain_id=domain_id, actor_id=actor_id)
 
     async def get_notification(
-        self, *, inbox_id: UUID, domain_id: int, actor_id: str,
+        self, *, inbox_id: UUID, domain_id: int, actor_id: str, allowed_event_types=None,
     ) -> dict[str, Any]:
         async with self._uow_factory() as uow:
-            row = await self._repo(uow).get_inbox(
+            row = await self._repo(uow).get_inbox(allowed_event_types=allowed_event_types,
                 inbox_id=inbox_id, domain_id=domain_id, actor_id=actor_id,
             )
             if row is None:
@@ -103,10 +140,10 @@ class NotificationCenterService:
 
     async def set_read(
         self, *, inbox_id: UUID, domain_id: int, actor_id: str,
-        read: bool, expected_row_version: int,
+        read: bool, expected_row_version: int, allowed_event_types=None,
     ) -> dict[str, Any]:
         async with self._uow_factory() as uow:
-            row = await self._repo(uow).get_inbox(
+            row = await self._repo(uow).get_inbox(allowed_event_types=allowed_event_types,
                 inbox_id=inbox_id, domain_id=domain_id,
                 actor_id=actor_id, lock=True,
             )
@@ -124,10 +161,10 @@ class NotificationCenterService:
             return (await self._serialize_inbox(self._repo(uow), [row], domain_id=domain_id, actor_id=actor_id))[0]
 
     async def mark_many_read(
-        self, *, inbox_ids: list[UUID], domain_id: int, actor_id: str,
+        self, *, inbox_ids: list[UUID], domain_id: int, actor_id: str, allowed_event_types=None,
     ) -> dict[str, int]:
         async with self._uow_factory() as uow:
-            updated = await self._repo(uow).mark_many_read(
+            updated = await self._repo(uow).mark_many_read(allowed_event_types=allowed_event_types,
                 inbox_ids=inbox_ids, domain_id=domain_id, actor_id=actor_id,
             )
             await uow.commit()
