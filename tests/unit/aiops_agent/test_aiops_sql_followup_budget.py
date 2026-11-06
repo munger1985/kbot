@@ -164,7 +164,9 @@ def test_assessment_respects_configured_answer_reserve_even_on_model_failure(rem
     async def exercise():
         context = replace(_context(artifacts=(_tool_artifact(semantics="CUMULATIVE_SINCE_LOAD"),)), deadline_at=(datetime.now(UTC) + timedelta(seconds=remaining)).isoformat())
         model = SimpleNamespace(generate_structured=AsyncMock(side_effect=AIOpsModelError("MODEL_DEADLINE_EXCEEDED")))
-        handler = DbaEvidenceAssessmentHandler(model_client=model, prompts=_TestPrompts(), diagnosis_config=AIOpsDiagnosisConfig(answer_reserve_seconds=reserve))
+        handler = DbaEvidenceAssessmentHandler(model_client=model, prompts=_TestPrompts(), diagnosis_config=AIOpsDiagnosisConfig(
+            answer_reserve_seconds=reserve, evidence_assessment_budget_seconds=60,
+        ))
         result = await handler.execute(context)
         assert result.evidence
         assert bool(model.generate_structured.await_count) == called

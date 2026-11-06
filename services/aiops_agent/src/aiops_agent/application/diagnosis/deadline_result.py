@@ -11,6 +11,7 @@ from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_b
 from aiops_agent.application.diagnosis.sql_review import reusable_checkpoint, evidence_hash
 from aiops_agent.application.diagnosis.investigation_record import sql_investigation_draft, render_investigation, validate_diagnosis
 from aiops_agent.application.diagnosis.sql_plan_presentation import matching_plan_refs, plan_availability_block, plan_table_block
+from aiops_agent.application.diagnosis.observed_result import observed_facts_markdown, observed_tables
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
@@ -87,7 +88,8 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
         text += "\n\n" + summary.analysis
         refs = summary.evidence_refs
     else:
-        text += f"\n\n已保留 {len(evidence)} 项受控数据库观测；具体采集时点、原始行与统计口径见诊断证据。"
+        text += "\n\n" + observed_facts_markdown(evidence, tuple(gaps.values()))
+        refs = tuple(fact.evidence_ref for fact in evidence)
     solution = summary.solution if summary is not None else None
     checkpoint_used = False
     for checkpoint in reversed(checkpoints):
@@ -110,6 +112,8 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
             block_type="ANALYSIS_MARKDOWN", schema_version="aiops.analysis.v1",
             payload={"markdown": text, "budget_exhausted": True, "diagnosis_status": "PARTIAL" if checkpoint_used else "INCOMPLETE"}, evidence_refs=refs,
         ))
+    if summary is None:
+        blocks.extend(observed_tables(evidence))
     if solution is not None:
         blocks.append(TurnAnswerBlock(block_type="SOLUTION_MARKDOWN", schema_version="AIOPS_SOLUTION_BLOCK.v1",
             payload={"markdown": solution}, evidence_refs=refs))

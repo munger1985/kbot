@@ -602,7 +602,7 @@ class InvestigationAssessment(AIOpsContract):
     )
     progress_made: bool
     reason: str = Field(min_length=1, max_length=2000)
-    clarification_question: str | None = Field(min_length=1, max_length=2000)
+    clarification_question: str | None = Field(default=None, min_length=1, max_length=2000)
 
     @model_validator(mode="after")
     def validate_clarification(self) -> "InvestigationAssessment":

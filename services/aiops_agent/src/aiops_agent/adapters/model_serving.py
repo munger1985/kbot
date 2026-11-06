@@ -93,6 +93,17 @@ class AIOpsStructuredModelClient:
         ):
             raise AIOpsModelError("PROMPT_HASH_MISMATCH")
         output_schema = output_model.model_json_schema()
+        if on_text_delta is not None:
+            if not text_field or text_field not in output_model.model_fields:
+                raise ValueError("流式正文必须对应输出合同中的字符串字段")
+            # 继承合同把新增正文字段排在最后；模型所见 Schema 与正文优先指令必须一致。
+            properties = output_schema["properties"]
+            output_schema["properties"] = {
+                text_field: properties[text_field],
+                **{key: value for key, value in properties.items() if key != text_field},
+            }
+            if text_field in output_schema.get("required", ()):
+                output_schema["required"] = [text_field, *(key for key in output_schema["required"] if key != text_field)]
         structured_prompt = (
             f"{prompt_content.rstrip()}\n\n"
             "必须只返回一个 JSON 对象，不得添加 Markdown 代码块或解释文字。"
@@ -100,8 +111,6 @@ class AIOpsStructuredModelClient:
             f"{json.dumps(output_schema, ensure_ascii=False, separators=(',', ':'))}"
         )
         if on_text_delta is not None:
-            if not text_field or text_field not in output_model.model_fields:
-                raise ValueError("流式正文必须对应输出合同中的字符串字段")
             structured_prompt += f"\n先输出 {text_field} 字段中的完整 Markdown 正文，再输出其余诊断字段；正文与结构化判断必须一致。"
         messages = [
             {"role": "system", "content": structured_prompt},

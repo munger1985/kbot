@@ -199,6 +199,8 @@ class AIOpsDiagnosisConfig(BaseModel):
     inspection_sql_review_concurrency: int = Field(default=2, ge=1, le=8)
     interactive_turn_budget_seconds: int = Field(default=90, ge=30, le=600)
     answer_reserve_seconds: int = Field(default=20, ge=5, le=60)
+    evidence_assessment_budget_seconds: int = Field(default=15, ge=1, le=60)
+    answer_finalize_reserve_seconds: int = Field(default=3, ge=2, le=10)
     sql_selection_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     max_rounds: int = Field(default=3, ge=1, le=3)
     max_tool_calls: int = Field(default=12, ge=0, le=64)
@@ -210,6 +212,8 @@ class AIOpsDiagnosisConfig(BaseModel):
     def validate_answer_reserve(self) -> "AIOpsDiagnosisConfig":
         if self.answer_reserve_seconds >= self.interactive_turn_budget_seconds:
             raise ValueError("回答预留时间必须小于交互总预算")
+        if self.answer_finalize_reserve_seconds >= self.answer_reserve_seconds:
+            raise ValueError("回答落盘预留时间必须小于回答预留时间")
         return self
 
 

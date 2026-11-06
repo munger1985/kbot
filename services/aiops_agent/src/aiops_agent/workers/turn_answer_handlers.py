@@ -5,6 +5,11 @@ from __future__ import annotations
 from aiops_agent.domain.evidence.physical_identity import physical_identity_model_context
 from aiops_agent.domain.operations.model_budget import work_deadline
 from aiops_agent.config import AIOpsDiagnosisConfig
+from aiops_agent.application.diagnosis.model_evidence import (
+    HTML_REPORT_TOOLS as _HTML_REPORT_TOOLS,
+    evidence_model_payload,
+    compact_native_values,
+)
 from aiops_agent.application.top_sql_collection import collection_failure_reason, collection_runtime_note
 
 import hashlib
@@ -1141,10 +1146,14 @@ class DbaEvidenceAssessmentHandler:
             database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
             evidence=scoped.evidence,
         )
-        model_sufficiency = deterministic.model_dump(mode="json")
+        model_sufficiency = deterministic.model_dump(mode="json", exclude={"evidence"})
+        model_sufficiency["evidence"] = [evidence_model_payload(fact) for fact in deterministic.evidence]
         if sql_bundle is not None:
             model_sufficiency.pop("evidence", None)
             model_sufficiency["evidence_location"] = "sql_evidence_bundle.observations"
+        model_deadline = datetime.now(UTC) + timedelta(seconds=self._diagnosis_config.evidence_assessment_budget_seconds)
+        if assessment_deadline is not None:
+            model_deadline = min(assessment_deadline, model_deadline)
         try:
             result = await self._model.generate_structured(
                 purpose="aiops.investigation-assessment",
@@ -1161,7 +1170,7 @@ class DbaEvidenceAssessmentHandler:
                     **physical_identity_model_context(scoped.evidence),
                     "sql_evidence_bundle": sql_bundle,
                 },
-                deadline=assessment_deadline,
+                deadline=model_deadline,
                 idempotency_key=(
                     f"turn:{context.run_id}:assessment:{context.attempt}"
                 ),
@@ -1545,12 +1554,6 @@ class DbaEvidenceAssessmentHandler:
             source_identity_witnesses=source_identity_witnesses(artifact_id=artifact_id, result=result),
         )
 
-_HTML_REPORT_TOOLS = {
-    "db.oracle.awr.report",
-    "db.oracle.awr.diff_report",
-    "db.oracle.ash.report",
-    "db.oracle.sql_monitor.report",
-}
 _INHERITED_EVIDENCE_TOOLS = {
     "source.run.final-artifact",
     "source.situation.signal-events",
@@ -1652,6 +1655,7 @@ class DbaAnswerComposeHandler:
             )
             receipt = None
             native_markdown = None
+            diagnosis_failed = False
             try:
                 if self._model is None or self._prompts is None:
                     raise ValueError("诊断模型或 Prompt 未配置")
@@ -1671,7 +1675,7 @@ class DbaAnswerComposeHandler:
                         compilation=compilation,
                         proposal_summary=proposal_summary,
                     ),
-                    deadline=self._deadline(context.deadline_at),
+                    deadline=self._answer_deadline(context.deadline_at),
                     idempotency_key=(
                         f"turn:{context.run_id}:diagnosis-answer:{context.attempt}"
                     ),
@@ -1683,11 +1687,13 @@ class DbaAnswerComposeHandler:
                 )
                 receipt = result.receipt.model_dump(mode="json")
             except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
+                diagnosis_failed = True
                 native_markdown = None
                 if on_text_delta is not None:
                     from aiops_agent.ports.model import ModelTextDelta
                     await on_text_delta(ModelTextDelta(reset=True))
-                logger.warning("诊断回答未通过校验，保留已采集证据：task_id={} error_type={}", context.task_id, type(exc).__name__)
+                logger.warning("诊断回答未完成，保留已采集证据：task_id={} error_type={} error_code={}",
+                               context.task_id, type(exc).__name__, getattr(exc, "code", "DIAGNOSIS_VALIDATION_FAILED"))
                 draft = DiagnosisAnswerDraft(
                     claims=({
                         "claim_id": "c1", "kind": "INTERPRETATION", "subject": "当前调查",
@@ -1703,6 +1709,10 @@ class DbaAnswerComposeHandler:
                     draft=draft, evidence=assessment.evidence, context=context, gaps=assessment.gaps,
                 )
             analysis_markdown, solution_markdown, evidence_refs = render_investigation(record)
+            if diagnosis_failed:
+                from aiops_agent.application.diagnosis.observed_result import observed_facts_markdown
+                analysis_markdown += "\n\n" + observed_facts_markdown(assessment.evidence, assessment.gaps)
+                evidence_refs = tuple(fact.evidence_ref for fact in assessment.evidence if fact.trust_level == "SOURCE_VERIFIED")
             blocks = self._assemble_blocks(
                 context=context,
                 assessment=assessment,
@@ -2383,12 +2393,11 @@ class DbaAnswerComposeHandler:
 
     @classmethod
     def _compose_evidence_payload(cls, fact: TurnEvidenceFact) -> dict[str, Any]:
-        payload = fact.model_dump(mode="json", exclude={"visualizations", "series_computations"})
-        payload["series_computations"] = [item.model_dump(mode="json", exclude={"samples"}) for item in fact.series_computations]
+        payload = evidence_model_payload(fact)
         from aiops_agent.application.diagnosis.native_measurements import native_table_projection
         native_values = native_table_projection(fact.provenance, columns=fact.columns, rows=fact.rows)
         if native_values is not None:
-            payload["native_measurements"] = native_values
+            payload["native_measurements"] = compact_native_values(native_values)
         if fact.tool_id in _INHERITED_EVIDENCE_TOOLS:
             payload = cls._canonicalize_inherited_evidence_refs(
                 payload,
@@ -3262,6 +3271,11 @@ class DbaAnswerComposeHandler:
     @staticmethod
     def _deadline(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value) if value else None
+
+    def _answer_deadline(self, value: str | None) -> datetime | None:
+        """模型必须先于 Worker 截止，给撤回未核验正文、事实收敛和持久化留出时间。"""
+        deadline = self._deadline(value)
+        return deadline - timedelta(seconds=self._diagnosis_config.answer_finalize_reserve_seconds) if deadline else None
 
     @staticmethod
     def _validate_streamed_answer(
