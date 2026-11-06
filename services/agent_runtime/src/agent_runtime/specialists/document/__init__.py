@@ -1,17 +1,5 @@
-"""Document Specialist 契约与实现。"""
+"""Document Specialist 只导出本 App 证据 Skill。"""
 
-from .contracts import (
-    Citation,
-    CitationPack,
-    DocumentRetrievalResult,
-    RetrievalCoverage,
-)
-from .skill import KnowledgeRetrievalSkill
+from .app_knowledge_skill import AppKnowledgeRetrievalSkill
 
-__all__ = [
-    "Citation",
-    "CitationPack",
-    "DocumentRetrievalResult",
-    "KnowledgeRetrievalSkill",
-    "RetrievalCoverage",
-]
+__all__ = ["AppKnowledgeRetrievalSkill"]

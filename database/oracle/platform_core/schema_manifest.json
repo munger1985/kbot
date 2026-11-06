@@ -23,16 +23,10 @@
       "name": "004_managed_credentials.sql",
       "statements": 2,
       "sha256": "c40cec70ead84842570dfdb98df0a0e900708aeb3d08a6a6bc0d789f5f67172b"
-    },
-    {
-      "name": "005_case_resources.sql",
-      "statements": 2,
-      "sha256": "1af9e811fa990bc57fef003c6bb66c6abbf133452d7472add782b5200d0ac6dd"
     }
   ],
   "tables": [
     "KBOT_PLATFORM_DOMAIN",
-    "KBOT_PLATFORM_CASE_RESOURCE",
     "KBOT_PLATFORM_PROMPT",
     "KBOT_PLATFORM_PROMPT_VERSION",
     "KBOT_NOTIFICATION_OUTBOX",

@@ -122,7 +122,7 @@
   function renderFiles(detail) {
     const sources = detail.sources?.length ? detail.sources.map((source, index) => `<article class="knowledge-source-card"><span>${Number(source.locator?.ordinal ?? index) + 1}</span><div><strong>${escape(source.external_id || detail.asset.display_name)}</strong><small>${source.locator?.role === "SUPPLEMENT" ? "补充材料" : "正文内容"}${source.locator?.required_flag ? " · 必要成员" : ""}</small><code>${escape(source.content_hash)}</code></div></article>`).join("") : '<p class="ops-empty">尚未登记原始文件。</p>';
     const indexes = detail.indexes?.length ? detail.indexes.map((item) => `<tr><td><code>${escape(item.index_ref_id)}</code></td><td>${badge(item.status, item.status)}</td><td>${escape(item.error_summary || "—")}</td></tr>`).join("") : '<tr><td colspan="3" class="ops-empty">尚未登记索引结果。</td></tr>';
-    return `<section class="drawer-form-section"><header><span>01</span><div><strong>原始文件</strong><small>展示当前版本包含的文件及其 Bundle 角色。</small></div></header><div class="knowledge-source-list">${sources}</div><div class="knowledge-source-actions"><button type="button" data-download-source>下载正文文件</button></div><dl class="knowledge-technical-list"><dt>Bundle 摘要</dt><dd><code>${escape(detail.version.source_hash)}</code></dd></dl></section><section class="drawer-form-section"><header><span>02</span><div><strong>索引状态</strong><small>用于判断当前版本是否已经形成可检索知识。</small></div></header><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>索引</th><th>状态</th><th>异常</th></tr></thead><tbody>${indexes}</tbody></table></div></section>${detail.version.profile ? `<section class="drawer-form-section"><header><span>03</span><div><strong>提炼结果</strong><small>结构化结果仅辅助导航，运维结论仍应以原文为准。</small></div></header><pre class="knowledge-profile">${escape(JSON.stringify(detail.version.profile, null, 2))}</pre></section>` : ""}`;
+    return `<section class="drawer-form-section"><header><span>01</span><div><strong>原始文件</strong><small>展示当前版本包含的文件及其 Bundle 角色。</small></div></header><div class="knowledge-source-list">${sources}</div><div class="knowledge-source-actions">${(detail.indexes || []).map((item, index) => `<button type="button" data-download-source="${escape(item.document_version_id)}">下载文件 ${index + 1}</button>`).join("")}</div><dl class="knowledge-technical-list"><dt>Bundle 摘要</dt><dd><code>${escape(detail.version.source_hash)}</code></dd></dl></section><section class="drawer-form-section"><header><span>02</span><div><strong>索引状态</strong><small>用于判断当前版本是否已经形成可检索知识。</small></div></header><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>索引</th><th>状态</th><th>异常</th></tr></thead><tbody>${indexes}</tbody></table></div></section>${detail.version.profile ? `<section class="drawer-form-section"><header><span>03</span><div><strong>提炼结果</strong><small>结构化结果仅辅助导航，运维结论仍应以原文为准。</small></div></header><pre class="knowledge-profile">${escape(JSON.stringify(detail.version.profile, null, 2))}</pre></section>` : ""}`;
   }
 
   function renderHistory(detail) {
@@ -137,7 +137,7 @@
   }
 
   function renderDetailActions(detail) {
-    const actions = ['<button type="button" data-download-source>下载正文文件</button>'];
+    const actions = [];
     if (detail.asset.asset_kind === "MANUAL") actions.push('<button type="button" data-upload-version>上传新版本</button>');
     if (["TAGGING", "PROCESSING"].includes(detail.version.status)) actions.push('<button type="button" data-review="reconcile">立即处理</button>');
     if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING", "TAGGING_FAILED", "PROCESSING", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-delete-asset>删除资料</button>');
@@ -256,9 +256,9 @@
     }
   }
 
-  async function downloadSource() {
+  async function downloadSource(documentVersionId) {
     if (!state.detail) return;
-    await KBotAIOpsAuth.download(`${api}/versions/${encodeURIComponent(state.detail.version.asset_version_id)}/source`, state.detail.asset.display_name, "*/*");
+    await KBotAIOpsAuth.download(`${api}/versions/${encodeURIComponent(state.detail.version.asset_version_id)}/source${documentVersionId ? `?document_version_id=${encodeURIComponent(documentVersionId)}` : ""}`, state.detail.asset.display_name, "*/*");
   }
 
   async function confirmAssetDeletion(displayName) {
@@ -320,7 +320,7 @@
     document.getElementById("upload-files").onclick = (event) => { const button = event.target.closest("[data-remove-file]"); if (!button) return; const row = button.closest("[data-entry-id]"); state.entries = state.entries.filter((item) => item.id !== row.dataset.entryId); renderUploadLedger(); };
     document.getElementById("manual-form").onsubmit = (event) => submitUpload(event).catch((error) => { document.getElementById("manual-result").textContent = error.message; shell.toast(error.message); });
     document.getElementById("detail-tabs").onclick = (event) => { const button = event.target.closest("[data-tab]"); if (!button) return; state.detailTab = button.dataset.tab; renderDetailBody(); };
-    document.getElementById("detail-body").onclick = (event) => { if (event.target.closest("[data-download-source]")) runDetailAction("download").catch((error) => shell.toast(error.message)); };
+    document.getElementById("detail-body").onclick = (event) => { if (event.target.closest("[data-download-source]")) downloadSource(event.target.closest("[data-download-source]").dataset.downloadSource).catch((error) => shell.toast(error.message)); };
     document.getElementById("detail-actions").onclick = (event) => { const review = event.target.closest("[data-review]"); const upload = event.target.closest("[data-upload-version]"); const download = event.target.closest("[data-download-source]"); const remove = event.target.closest("[data-delete-asset]"); const action = review?.dataset.review || (upload ? "upload-version" : download ? "download" : remove ? "delete" : ""); if (action) runDetailAction(action).catch((error) => shell.toast(error.message)); };
     try { await Promise.all([loadTags(), loadKnowledgeBases()]); await loadAssets(); } catch (error) { shell.toast(error.message); }
   });

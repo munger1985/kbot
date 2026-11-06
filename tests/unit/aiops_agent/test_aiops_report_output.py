@@ -120,7 +120,7 @@ def test_internal_report_submission_is_database_only_persistent_202_and_idempote
             assert (await client.post(path, json=payload, headers={"Idempotency-Key": "report-click"})).status_code == 409
         f.uow.inspections.publish_report.assert_not_awaited()
         f.knowledge._structured_model.generate_structured.assert_not_awaited()
-        f.knowledge._kc.ingest_user_file.assert_not_awaited()
+        f.knowledge._documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -173,7 +173,7 @@ def test_later_turn_does_not_expand_input_but_real_counterevidence_blocks(refute
             content = f.state.artifacts[f.state.current.content_artifact_id].payload_json
             assert content["scope"]["conversation"]["included_turn_ids"] == selected
         f.knowledge._structured_model.generate_structured.assert_not_awaited()
-        f.knowledge._kc.ingest_user_file.assert_not_awaited()
+        f.knowledge._documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -243,7 +243,7 @@ def test_report_retry_revalidates_originals_without_new_model_or_evidence(change
         else:
             await OutputJobSourceValidator().retry(f.uow, f.job)
         f.knowledge._structured_model.generate_structured.assert_not_awaited()
-        f.knowledge._kc.ingest_user_file.assert_not_awaited()
+        f.knowledge._documents.stage.assert_not_awaited()
         f.uow.inspections.publish_report.assert_not_awaited()
     asyncio.run(run())
 

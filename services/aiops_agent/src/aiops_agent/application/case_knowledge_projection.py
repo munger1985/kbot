@@ -1,4 +1,4 @@
-"""将脱敏案例编译为稳定、可引用的 KC 正文；不调用模型或读取现场。"""
+"""将脱敏案例编译为稳定、可引用的本 App 正文；不调用模型或读取现场。"""
 
 from dataclasses import dataclass
 import hashlib
@@ -48,7 +48,7 @@ class CaseKnowledgeProjection:
     title: str
 
     def manifest(self):
-        """位置采用正文 Unicode 字符偏移；外部索引仍绑定精确 KC Revision。"""
+        """位置采用正文 Unicode 字符偏移；外部索引仍绑定精确文档版本。"""
         return {
             "schema_version": "OPS_CASE_KNOWLEDGE_PROJECTION.v1",
             "title": self.title,
@@ -251,22 +251,20 @@ def case_projection_is_current(*, title, profile):
 
 def case_context_for_citation(*, profile, citation, document_version_id,
     max_units=64, max_characters=64000):
-    """从命中标题形成语义闭包；只引用已核对 KC 原文件哈希的确切版本。"""
+    """从实际命中正文形成语义闭包；只引用已核对原文件哈希的确切版本。"""
     profile = DiagnosisCaseProfile.model_validate(profile)
     manifest = profile.knowledge_projection
     if manifest is None or not case_projection_is_current(title=manifest.title, profile=profile):
         raise ValueError("案例正文清单未就绪")
     projection = compile_case_knowledge(title=manifest.title, profile=profile)
     unit_map = {unit.unit_id: unit for unit in manifest.units}
-    headings = []
-    for item in citation.get("items") or ():
-        evidence = item.get("evidence") or {}
-        headings.extend(evidence.get("heading_path") or ())
-    # 这是编译器的结构标识，不按故障关键词猜测命中章节。
-    matched = {identity for heading in headings
-        for identity in re.findall(r"\[([a-z0-9-]+)\]", str(heading)) if identity in unit_map}
+    # 使用召回交付的原文字节定位，不消费已退出的 CitationGroup 标题合同。
+    quote = str(citation.get("quote") or "")
+    body = projection.body.decode("utf-8")
+    matched = {unit.unit_id for unit in manifest.units if quote.strip()
+        and (quote in body[unit.start:unit.end] or body[unit.start:unit.end].strip() in quote)}
     if not matched:
-        raise ValueError("案例命中缺少可追溯的语义单元标题")
+        raise ValueError("案例命中缺少可追溯的语义单元定位")
     wanted = matched | {"case-problem", "case-conclusion", "case-verification", "case-boundaries", "case-unresolved"}
     pending = list(wanted)
     while pending:
@@ -283,7 +281,8 @@ def case_context_for_citation(*, profile, citation, document_version_id,
         "schema_version": "OPS_CASE_CONTEXT.v1",
         "role": "HISTORICAL_KNOWLEDGE_NOT_CURRENT_EVIDENCE",
         "body_sha256": manifest.body_sha256,
-        "bundle_revision_id": str(citation["bundle_revision_id"]),
+        "retrieval_ref": citation.get("locator", {}).get("retrieval_ref"),
+        "parse_run_id": citation.get("parse_run_id"),
         "document_version_id": str(document_version_id),
         "offset_unit": "UNICODE_CHARACTER",
         "units": [{

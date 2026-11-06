@@ -8,6 +8,10 @@ class EmbeddingConfig(BaseModel):
     """Embedding model configuration"""
     model_name: str = Field(..., description="Name of the model")
     provider: str = Field(..., description="Service provider")
+    model_revision: str | None = None
+    processor_revision: str | None = None
+    input_template: str | None = None
+    representation_dimension: int | None = Field(default=None, gt=0, le=65536)
     max_tokens: int = Field(..., description="Maximum number of tokens")
     batch_size: int = Field(..., description="Batch processing size")
 

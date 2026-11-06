@@ -37,6 +37,7 @@ class LlmConfig(ModelProcessConfig):
 
 
 class VlmConfig(ModelProcessConfig):
+    max_tokens: int = Field(default=512, ge=1, le=65536)
     service_name: str = "kbot-model-vlm"
     service_port: int = 18094
     timeout: int = Field(default=600, ge=1, le=3600)

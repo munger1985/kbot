@@ -1,0 +1,1970 @@
+{
+  "knowledge.backend_binding.v1": {
+    "schema_version": "knowledge.backend_binding.v1",
+    "binding_ref": "app-a",
+    "namespace": "app-a"
+  },
+  "knowledge.authorized_scope.v1": {
+    "schema_version": "knowledge.authorized_scope.v1",
+    "owner_binding_ref": "app-a",
+    "scope_ref": "scope-ref",
+    "scope_hash": "scope-hash",
+    "authorization_revision": "auth-v1"
+  },
+  "knowledge.retrieval_snapshot.v1": {
+    "schema_version": "knowledge.retrieval_snapshot.v1",
+    "owner_binding_ref": "app-a",
+    "scope_hash": "scope-hash",
+    "snapshot_ref": "snapshot-1",
+    "index_generation": "index-1",
+    "withdrawal_revision": "withdrawal-1"
+  },
+  "knowledge.evidence_key.v1": {
+    "schema_version": "knowledge.evidence_key.v1",
+    "owner_binding_ref": "app-a",
+    "document_version_ref": "doc-v1",
+    "parse_run_ref": "parse-1",
+    "object_key": "p",
+    "projection_ref": "projection-1",
+    "source_span": null
+  },
+  "knowledge.query_input.v1": {
+    "schema_version": "knowledge.query_input.v1",
+    "mode": "RELEVANCE",
+    "requested_count": 1,
+    "output_types": [
+      "TEXT"
+    ],
+    "text": "合成样例",
+    "image_handles": [],
+    "combination": null,
+    "predicates": [],
+    "order_by": []
+  },
+  "knowledge.query_plan.v1": {
+    "schema_version": "knowledge.query_plan.v1",
+    "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+    "scope_hash": "scope-hash",
+    "profile_version": "retrieval-fixture/v1",
+    "mode": "RELEVANCE",
+    "channel_keys": [
+      "lexical"
+    ],
+    "targets": [],
+    "profile_hash": "b82ba2631a58b56e41748aff538ed2714763571df6fa0e0f6a34b028a522aa6a",
+    "query_representation_hashes": []
+  },
+  "knowledge.retrieval_profile.v1": {
+    "schema_version": "knowledge.retrieval_profile.v1",
+    "profile_version": "retrieval-fixture/v1",
+    "channels": [
+      {
+        "channel_key": "lexical",
+        "signal_family": "lexical",
+        "kind": "LEXICAL",
+        "direction": "TEXT_TO_TEXT",
+        "weight": 1,
+        "limit": 100,
+        "timeout_seconds": 1,
+        "required": true,
+        "representation_spec": null
+      }
+    ],
+    "rrf_constant": 60,
+    "candidate_budget": 100,
+    "max_primary_count": 10,
+    "payload_budget": {
+      "tokens": 100,
+      "images": 10,
+      "byte_count": 10000
+    },
+    "max_cover_states": 100,
+    "relation_page_size": 100,
+    "max_relation_pages": 3,
+    "max_representation_elements": 1000,
+    "timeout_seconds": 2,
+    "max_shards": 64
+  },
+  "knowledge.evidence_set.v1": {
+    "schema_version": "knowledge.evidence_set.v1",
+    "request_id": "02247a3dc3115755f8edce7dcb833984f7361c3ce9557ffa94e05b49eadb19af",
+    "owner_binding_ref": "app-a",
+    "scope_ref": "scope-ref",
+    "scope_hash": "scope-hash",
+    "snapshot": {
+      "owner_binding_ref": "app-a",
+      "scope_hash": "scope-hash",
+      "snapshot_ref": "snapshot-1",
+      "index_generation": "index-1",
+      "withdrawal_revision": "withdrawal-1"
+    },
+    "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+    "mode": "RELEVANCE",
+    "status": "COMPLETE",
+    "reason": null,
+    "primary_hits": [
+      {
+        "evidence_key": {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "p",
+          "projection_ref": "projection-1",
+          "source_span": null
+        },
+        "rank": 1,
+        "group_key": "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf",
+        "fusion_score": 0.01639344262295082
+      }
+    ],
+    "evidence": [
+      {
+        "key": {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "p",
+          "projection_ref": "projection-1",
+          "source_span": null
+        },
+        "source_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": null,
+            "source_span": null
+          }
+        ],
+        "kind": "PARAGRAPH",
+        "locators": [
+          {
+            "page_no": null,
+            "bbox": null,
+            "logical_ref": "p"
+          }
+        ],
+        "provenance": {
+          "kind": "NATIVE",
+          "generator": "fixture",
+          "revision": "fixture/v1",
+          "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "allowed_view_ref": "view-1",
+        "content_handle": "content-p",
+        "content_hash": "148de9c5a7a44d19e56cd9ae1a554bf67847afb0c58f6e12fa29ac7ddfca9940",
+        "mime_type": "text/plain",
+        "byte_count": 1,
+        "estimated_cost": {
+          "tokens": 1,
+          "images": 0,
+          "byte_count": 1
+        },
+        "expires_at": 2000000000,
+        "preview_handle": null,
+        "payload_status": "DEFERRED",
+        "source_spans": []
+      }
+    ],
+    "groups": [
+      {
+        "anchor_key": {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "p",
+          "projection_ref": "projection-1",
+          "source_span": null
+        },
+        "linked_keys": [],
+        "relations": [],
+        "manifest_status": "COMPLETE",
+        "payload_status": "DEFERRED",
+        "continuation": null,
+        "incomplete_reason": null
+      }
+    ],
+    "context_selection": {
+      "selected_group_keys": [
+        "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf"
+      ],
+      "selected_evidence_keys": [
+        {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "p",
+          "projection_ref": "projection-1",
+          "source_span": null
+        }
+      ],
+      "cost": {
+        "tokens": 1,
+        "images": 0,
+        "byte_count": 1
+      },
+      "omitted": [],
+      "coverage": [],
+      "coverage_search_truncated": false
+    },
+    "matches": [],
+    "channel_status": [
+      {
+        "channel_key": "lexical",
+        "required": true,
+        "status": "COMPLETE",
+        "reason": null,
+        "approximate": false,
+        "exhausted": true
+      }
+    ],
+    "trace": [
+      {
+        "stage": "fusion",
+        "input_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "output_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "excluded": []
+      },
+      {
+        "stage": "candidate_budget",
+        "input_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "output_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "excluded": []
+      },
+      {
+        "stage": "load_primary",
+        "input_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "output_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "excluded": []
+      },
+      {
+        "stage": "validate_candidates",
+        "input_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "output_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "excluded": []
+      },
+      {
+        "stage": "output_type",
+        "input_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "output_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "excluded": []
+      },
+      {
+        "stage": "final_revalidation",
+        "input_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "output_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "excluded": []
+      },
+      {
+        "stage": "presentation",
+        "input_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "output_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "excluded": []
+      },
+      {
+        "stage": "context_selection",
+        "input_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "output_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "excluded": []
+      }
+    ],
+    "plan": {
+      "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+      "scope_hash": "scope-hash",
+      "profile_version": "retrieval-fixture/v1",
+      "mode": "RELEVANCE",
+      "channel_keys": [
+        "lexical"
+      ],
+      "targets": [],
+      "profile_hash": "b82ba2631a58b56e41748aff538ed2714763571df6fa0e0f6a34b028a522aa6a",
+      "query_representation_hashes": []
+    },
+    "continuation": null,
+    "scope_exhausted": true
+  },
+  "knowledge.source_descriptor.v1": {
+    "schema_version": "knowledge.source_descriptor.v1",
+    "owner_binding_ref": "app-a",
+    "document_version_ref": "doc-v1",
+    "sha256": "b259d25aa1644fcfc33f1fc8bf4a3faf029cd9e39d3221f5ba846fe1d1c49661",
+    "mime_type": "text/plain",
+    "byte_count": 26,
+    "source_handle": "source-1"
+  },
+  "knowledge.parse_profile.v1": {
+    "schema_version": "knowledge.parse_profile.v1",
+    "profile_version": "parse-fixture/v1",
+    "algorithm_version": "ir/v1",
+    "languages": [
+      "zh",
+      "en"
+    ],
+    "max_input_bytes": 100000,
+    "max_pages": 100,
+    "max_objects": 1000,
+    "max_text_bytes": 100000,
+    "max_event_bytes": 100000,
+    "batch_size": 10,
+    "timeout_seconds": 2,
+    "max_repair_attempts": 2,
+    "repair_strategies": [
+      "OCR",
+      "MODEL_TRANSCRIPTION"
+    ],
+    "max_bad_char_ratio": 0.1,
+    "min_region_coverage": 0.8,
+    "allow_partial": true,
+    "layout": {
+      "full_width_ratio": 0.62,
+      "column_gap": 0.18
+    }
+  },
+  "knowledge.parsed_document.v1": {
+    "schema_version": "knowledge.parsed_document.v1",
+    "run": {
+      "owner_binding_ref": "app-a",
+      "job_ref": "job-1",
+      "parse_run_ref": "parse-1",
+      "attempt": 1,
+      "fence": 1,
+      "source_sha256": "b259d25aa1644fcfc33f1fc8bf4a3faf029cd9e39d3221f5ba846fe1d1c49661",
+      "profile_hash": "5952e0f04ed982b483f24de9bdc5814bf41e9e4125751da7bb0385cb1ab35fcd"
+    },
+    "pages": [],
+    "nodes": [
+      {
+        "key": {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "d19eebcd318fac9518ce00a8419f14eda26fb974cec974f7aaac755fc97b14da",
+          "projection_ref": null,
+          "source_span": null
+        },
+        "kind": "PARAGRAPH",
+        "text": "第一段。",
+        "locators": [
+          {
+            "page_no": null,
+            "bbox": null,
+            "logical_ref": "text:0:4"
+          }
+        ],
+        "provenance": {
+          "kind": "NATIVE",
+          "generator": "native-utf8",
+          "revision": "native-utf8/v1",
+          "input_hash": "b259d25aa1644fcfc33f1fc8bf4a3faf029cd9e39d3221f5ba846fe1d1c49661"
+        },
+        "native_ref": "text:0:4",
+        "reading_order": 0,
+        "heading_level": null,
+        "parent_key": null,
+        "numbering_scope": null,
+        "display_label": null,
+        "native_anchor": null
+      },
+      {
+        "key": {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "1c604f55b6f3cdb1ad0be6526eaf4c6f20556f52214154974cfdf124ce1f64bd",
+          "projection_ref": null,
+          "source_span": null
+        },
+        "kind": "PARAGRAPH",
+        "text": "第二段。",
+        "locators": [
+          {
+            "page_no": null,
+            "bbox": null,
+            "logical_ref": "text:6:10"
+          }
+        ],
+        "provenance": {
+          "kind": "NATIVE",
+          "generator": "native-utf8",
+          "revision": "native-utf8/v1",
+          "input_hash": "b259d25aa1644fcfc33f1fc8bf4a3faf029cd9e39d3221f5ba846fe1d1c49661"
+        },
+        "native_ref": "text:6:10",
+        "reading_order": 1,
+        "heading_level": null,
+        "parent_key": null,
+        "numbering_scope": null,
+        "display_label": null,
+        "native_anchor": null
+      }
+    ],
+    "assets": [],
+    "references": [],
+    "relations": [],
+    "quality_status": "COMPLETE",
+    "manifest_hash": "40da726a9c88db43103431e20f29984b61e7dd22af1933a48c0125af6ced9274",
+    "resolutions": [],
+    "alternatives": [],
+    "warnings": [],
+    "failed_regions": []
+  },
+  "knowledge.projection_profile.v1": {
+    "schema_version": "knowledge.projection_profile.v1",
+    "profile_version": "projection-fixture/v1",
+    "max_tokens": 100,
+    "max_input_chars": 100000,
+    "max_units": 1000,
+    "batch_size": 2,
+    "max_representation_elements": 1000,
+    "timeout_seconds": 2,
+    "representations": []
+  },
+  "knowledge.projection_batch.v1": {
+    "schema_version": "knowledge.projection_batch.v1",
+    "projection_ref": "4fcf9d5982fcf9cee4cfaa95ba2e1378e29a672a10cd300524694334e24026de",
+    "sequence": 1,
+    "units": [
+      {
+        "unit": {
+          "key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "42dc5804ba2b6e830e3ff27bf90f4d3ab8018fe95c15935e982ed717a5fe7ec5",
+            "projection_ref": "4fcf9d5982fcf9cee4cfaa95ba2e1378e29a672a10cd300524694334e24026de",
+            "source_span": null
+          },
+          "source_key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "e5eb7cdfc494d91fb302f40888b6de2428da17e564a85af3488966c25b7c3286",
+            "projection_ref": null,
+            "source_span": null
+          },
+          "unit_key": "42dc5804ba2b6e830e3ff27bf90f4d3ab8018fe95c15935e982ed717a5fe7ec5",
+          "kind": "PARAGRAPH",
+          "text": "如图 1-1 所示。",
+          "context": "",
+          "sources": [
+            {
+              "unit_start": 0,
+              "unit_end": 10,
+              "source_key": {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "e5eb7cdfc494d91fb302f40888b6de2428da17e564a85af3488966c25b7c3286",
+                "projection_ref": null,
+                "source_span": null
+              },
+              "source_start": 0,
+              "source_end": 10
+            }
+          ],
+          "locators": [
+            {
+              "page_no": null,
+              "bbox": null,
+              "logical_ref": "native:p"
+            }
+          ],
+          "provenance": {
+            "kind": "NATIVE",
+            "generator": "fixture",
+            "revision": "fixture/v1",
+            "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "allowed_view_ref": "allowed-v1",
+          "allowed_view_hash": "view-hash",
+          "content_handle": null
+        },
+        "representations": []
+      }
+    ],
+    "payload_hash": "2d75c8d5c53c18de34737a78e773ab7518800a04f05b3a297daede34831663e4"
+  },
+  "knowledge.representation_spec.v1": {
+    "schema_version": "knowledge.representation_spec.v1",
+    "model_ref": "fixture-model",
+    "revision": "fixture/v1",
+    "processor_revision": "processor/v1",
+    "input_template": "raw",
+    "dimension": 2,
+    "kind": "DENSE",
+    "input_kind": "TEXT",
+    "similarity": "DOT",
+    "normalization": "NONE",
+    "directions": [
+      "TEXT_TO_TEXT"
+    ]
+  },
+  "knowledge.delegation_claims.v1": {
+    "schema_version": "knowledge.delegation_claims.v1",
+    "owner_binding_ref": "app-a",
+    "audience": "app-a-service",
+    "subject_ref": "user-1",
+    "tenant_ref": null,
+    "domain_ref": "domain-1",
+    "agent_version_ref": null,
+    "run_ref": "run-1",
+    "spec_hash": "spec-hash",
+    "scope_hash": "scope-hash",
+    "operations": [
+      "retrieve"
+    ],
+    "expires_at": 2000000000
+  },
+  "knowledge.retrieval_request.v1": {
+    "schema_version": "knowledge.retrieval_request.v1",
+    "request_id": "request-1",
+    "scope_ref": "scope-ref",
+    "scope_hash": "scope-hash",
+    "query": {
+      "mode": "RELEVANCE",
+      "requested_count": 1,
+      "output_types": [
+        "TEXT"
+      ],
+      "text": "合成样例",
+      "image_handles": [],
+      "combination": null,
+      "predicates": [],
+      "order_by": []
+    },
+    "profile_ref": "profile-1",
+    "payload_budget": {
+      "tokens": 10,
+      "images": 1,
+      "byte_count": 100
+    },
+    "run_ref": "run-1",
+    "spec_hash": "spec-hash"
+  },
+  "knowledge.citation_label_map.v1": {
+    "schema_version": "knowledge.citation_label_map.v1",
+    "run_ref": "run-1",
+    "entries": [
+      {
+        "run_ref": "run-1",
+        "label": "1",
+        "evidence_key": {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "p",
+          "projection_ref": "projection-1",
+          "source_span": null
+        },
+        "role": "PRIMARY",
+        "locators": [
+          {
+            "page_no": null,
+            "bbox": null,
+            "logical_ref": "p"
+          }
+        ]
+      }
+    ]
+  },
+  "knowledge.retrieval_evidence.v1": {
+    "schema_version": "knowledge.retrieval_evidence.v1",
+    "run_ref": "run-1",
+    "turn_ref": "turn-1",
+    "evidence_set": {
+      "request_id": "02247a3dc3115755f8edce7dcb833984f7361c3ce9557ffa94e05b49eadb19af",
+      "owner_binding_ref": "app-a",
+      "scope_ref": "scope-ref",
+      "scope_hash": "scope-hash",
+      "snapshot": {
+        "owner_binding_ref": "app-a",
+        "scope_hash": "scope-hash",
+        "snapshot_ref": "snapshot-1",
+        "index_generation": "index-1",
+        "withdrawal_revision": "withdrawal-1"
+      },
+      "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+      "mode": "RELEVANCE",
+      "status": "COMPLETE",
+      "reason": null,
+      "primary_hits": [
+        {
+          "evidence_key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "rank": 1,
+          "group_key": "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf",
+          "fusion_score": 0.01639344262295082
+        }
+      ],
+      "evidence": [
+        {
+          "key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "source_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": null,
+              "source_span": null
+            }
+          ],
+          "kind": "PARAGRAPH",
+          "locators": [
+            {
+              "page_no": null,
+              "bbox": null,
+              "logical_ref": "p"
+            }
+          ],
+          "provenance": {
+            "kind": "NATIVE",
+            "generator": "fixture",
+            "revision": "fixture/v1",
+            "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "allowed_view_ref": "view-1",
+          "content_handle": "content-p",
+          "content_hash": "148de9c5a7a44d19e56cd9ae1a554bf67847afb0c58f6e12fa29ac7ddfca9940",
+          "mime_type": "text/plain",
+          "byte_count": 1,
+          "estimated_cost": {
+            "tokens": 1,
+            "images": 0,
+            "byte_count": 1
+          },
+          "expires_at": 2000000000,
+          "preview_handle": null,
+          "payload_status": "DEFERRED",
+          "source_spans": []
+        }
+      ],
+      "groups": [
+        {
+          "anchor_key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "linked_keys": [],
+          "relations": [],
+          "manifest_status": "COMPLETE",
+          "payload_status": "DEFERRED",
+          "continuation": null,
+          "incomplete_reason": null
+        }
+      ],
+      "context_selection": {
+        "selected_group_keys": [
+          "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf"
+        ],
+        "selected_evidence_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "cost": {
+          "tokens": 1,
+          "images": 0,
+          "byte_count": 1
+        },
+        "omitted": [],
+        "coverage": [],
+        "coverage_search_truncated": false
+      },
+      "matches": [],
+      "channel_status": [
+        {
+          "channel_key": "lexical",
+          "required": true,
+          "status": "COMPLETE",
+          "reason": null,
+          "approximate": false,
+          "exhausted": true
+        }
+      ],
+      "trace": [
+        {
+          "stage": "fusion",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "candidate_budget",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "load_primary",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "validate_candidates",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "output_type",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "final_revalidation",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "presentation",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "context_selection",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        }
+      ],
+      "plan": {
+        "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+        "scope_hash": "scope-hash",
+        "profile_version": "retrieval-fixture/v1",
+        "mode": "RELEVANCE",
+        "channel_keys": [
+          "lexical"
+        ],
+        "targets": [],
+        "profile_hash": "b82ba2631a58b56e41748aff538ed2714763571df6fa0e0f6a34b028a522aa6a",
+        "query_representation_hashes": []
+      },
+      "continuation": null,
+      "scope_exhausted": true,
+      "schema_version": "knowledge.evidence_set.v1"
+    },
+    "labels": {
+      "run_ref": "run-1",
+      "entries": [
+        {
+          "run_ref": "run-1",
+          "label": "1",
+          "evidence_key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "role": "PRIMARY",
+          "locators": [
+            {
+              "page_no": null,
+              "bbox": null,
+              "logical_ref": "p"
+            }
+          ]
+        }
+      ],
+      "schema_version": "knowledge.citation_label_map.v1"
+    }
+  },
+  "knowledge.model_evidence_delivery.v1": {
+    "schema_version": "knowledge.model_evidence_delivery.v1",
+    "run_ref": "run-1",
+    "model_snapshot_ref": "model-fixture/v1",
+    "status": "PREPARED",
+    "prepared": [
+      {
+        "evidence_key": {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "p",
+          "projection_ref": "projection-1",
+          "source_span": null
+        },
+        "label": "1",
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_kind": "TEXT",
+        "cost": {
+          "tokens": 1,
+          "images": 0,
+          "byte_count": 1
+        }
+      }
+    ],
+    "sent_at": null
+  },
+  "knowledge.grounded_answer.v1": {
+    "schema_version": "knowledge.grounded_answer.v1",
+    "run_ref": "run-1",
+    "body": "示例",
+    "used_labels": [
+      "1"
+    ],
+    "references": [
+      {
+        "run_ref": "run-1",
+        "label": "1",
+        "evidence_key": {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "p",
+          "projection_ref": "projection-1",
+          "source_span": null
+        },
+        "role": "PRIMARY",
+        "locators": [
+          {
+            "page_no": null,
+            "bbox": null,
+            "logical_ref": "p"
+          }
+        ]
+      }
+    ],
+    "coverage_status": "COMPLETE"
+  },
+  "knowledge.error.v1": {
+    "schema_version": "knowledge.error.v1",
+    "code": "CHANNEL_FAILED",
+    "stage": "channel",
+    "retryable": true
+  },
+  "knowledge.cursor.v1": {
+    "schema_version": "knowledge.cursor.v1",
+    "owner_binding_ref": "app-a",
+    "subject_ref": "user-1",
+    "scope_hash": "scope-hash",
+    "snapshot_ref": "snapshot-1",
+    "query_hash": "query-hash",
+    "profile_hash": "profile-hash",
+    "role": "PRIMARY",
+    "mode": "EXHAUSTIVE",
+    "order_json": "[]",
+    "position_json": "{\"offset\":1}",
+    "expires_at": 2000000000
+  },
+  "knowledge.app_retrieval.v1": {
+    "schema_version": "knowledge.app_retrieval.v1",
+    "retrieval_ref": "receipt-1",
+    "evidence": {
+      "run_ref": "run-1",
+      "turn_ref": "turn-1",
+      "evidence_set": {
+        "request_id": "02247a3dc3115755f8edce7dcb833984f7361c3ce9557ffa94e05b49eadb19af",
+        "owner_binding_ref": "app-a",
+        "scope_ref": "scope-ref",
+        "scope_hash": "scope-hash",
+        "snapshot": {
+          "owner_binding_ref": "app-a",
+          "scope_hash": "scope-hash",
+          "snapshot_ref": "snapshot-1",
+          "index_generation": "index-1",
+          "withdrawal_revision": "withdrawal-1"
+        },
+        "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+        "mode": "RELEVANCE",
+        "status": "COMPLETE",
+        "reason": null,
+        "primary_hits": [
+          {
+            "evidence_key": {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            },
+            "rank": 1,
+            "group_key": "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf",
+            "fusion_score": 0.01639344262295082
+          }
+        ],
+        "evidence": [
+          {
+            "key": {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            },
+            "source_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": null,
+                "source_span": null
+              }
+            ],
+            "kind": "PARAGRAPH",
+            "locators": [
+              {
+                "page_no": null,
+                "bbox": null,
+                "logical_ref": "p"
+              }
+            ],
+            "provenance": {
+              "kind": "NATIVE",
+              "generator": "fixture",
+              "revision": "fixture/v1",
+              "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "allowed_view_ref": "view-1",
+            "content_handle": "content-p",
+            "content_hash": "148de9c5a7a44d19e56cd9ae1a554bf67847afb0c58f6e12fa29ac7ddfca9940",
+            "mime_type": "text/plain",
+            "byte_count": 1,
+            "estimated_cost": {
+              "tokens": 1,
+              "images": 0,
+              "byte_count": 1
+            },
+            "expires_at": 2000000000,
+            "preview_handle": null,
+            "payload_status": "DEFERRED",
+            "source_spans": []
+          }
+        ],
+        "groups": [
+          {
+            "anchor_key": {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            },
+            "linked_keys": [],
+            "relations": [],
+            "manifest_status": "COMPLETE",
+            "payload_status": "DEFERRED",
+            "continuation": null,
+            "incomplete_reason": null
+          }
+        ],
+        "context_selection": {
+          "selected_group_keys": [
+            "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf"
+          ],
+          "selected_evidence_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "cost": {
+            "tokens": 1,
+            "images": 0,
+            "byte_count": 1
+          },
+          "omitted": [],
+          "coverage": [],
+          "coverage_search_truncated": false
+        },
+        "matches": [],
+        "channel_status": [
+          {
+            "channel_key": "lexical",
+            "required": true,
+            "status": "COMPLETE",
+            "reason": null,
+            "approximate": false,
+            "exhausted": true
+          }
+        ],
+        "trace": [
+          {
+            "stage": "fusion",
+            "input_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "output_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "excluded": []
+          },
+          {
+            "stage": "candidate_budget",
+            "input_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "output_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "excluded": []
+          },
+          {
+            "stage": "load_primary",
+            "input_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "output_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "excluded": []
+          },
+          {
+            "stage": "validate_candidates",
+            "input_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "output_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "excluded": []
+          },
+          {
+            "stage": "output_type",
+            "input_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "output_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "excluded": []
+          },
+          {
+            "stage": "final_revalidation",
+            "input_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "output_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "excluded": []
+          },
+          {
+            "stage": "presentation",
+            "input_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "output_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "excluded": []
+          },
+          {
+            "stage": "context_selection",
+            "input_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "output_keys": [
+              {
+                "owner_binding_ref": "app-a",
+                "document_version_ref": "doc-v1",
+                "parse_run_ref": "parse-1",
+                "object_key": "p",
+                "projection_ref": "projection-1",
+                "source_span": null
+              }
+            ],
+            "excluded": []
+          }
+        ],
+        "plan": {
+          "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+          "scope_hash": "scope-hash",
+          "profile_version": "retrieval-fixture/v1",
+          "mode": "RELEVANCE",
+          "channel_keys": [
+            "lexical"
+          ],
+          "targets": [],
+          "profile_hash": "b82ba2631a58b56e41748aff538ed2714763571df6fa0e0f6a34b028a522aa6a",
+          "query_representation_hashes": []
+        },
+        "continuation": null,
+        "scope_exhausted": true,
+        "schema_version": "knowledge.evidence_set.v1"
+      },
+      "labels": {
+        "run_ref": "run-1",
+        "entries": [
+          {
+            "run_ref": "run-1",
+            "label": "1",
+            "evidence_key": {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            },
+            "role": "PRIMARY",
+            "locators": [
+              {
+                "page_no": null,
+                "bbox": null,
+                "logical_ref": "p"
+              }
+            ]
+          }
+        ],
+        "schema_version": "knowledge.citation_label_map.v1"
+      },
+      "schema_version": "knowledge.retrieval_evidence.v1"
+    }
+  },
+  "knowledge.composition.v1": {
+    "schema_version": "knowledge.composition.v1",
+    "retrieval_ref": "receipt-1",
+    "evidence": {
+      "request_id": "02247a3dc3115755f8edce7dcb833984f7361c3ce9557ffa94e05b49eadb19af",
+      "owner_binding_ref": "app-a",
+      "scope_ref": "scope-ref",
+      "scope_hash": "scope-hash",
+      "snapshot": {
+        "owner_binding_ref": "app-a",
+        "scope_hash": "scope-hash",
+        "snapshot_ref": "snapshot-1",
+        "index_generation": "index-1",
+        "withdrawal_revision": "withdrawal-1"
+      },
+      "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+      "mode": "RELEVANCE",
+      "status": "COMPLETE",
+      "reason": null,
+      "primary_hits": [
+        {
+          "evidence_key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "rank": 1,
+          "group_key": "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf",
+          "fusion_score": 0.01639344262295082
+        }
+      ],
+      "evidence": [
+        {
+          "key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "source_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": null,
+              "source_span": null
+            }
+          ],
+          "kind": "PARAGRAPH",
+          "locators": [
+            {
+              "page_no": null,
+              "bbox": null,
+              "logical_ref": "p"
+            }
+          ],
+          "provenance": {
+            "kind": "NATIVE",
+            "generator": "fixture",
+            "revision": "fixture/v1",
+            "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "allowed_view_ref": "view-1",
+          "content_handle": "content-p",
+          "content_hash": "148de9c5a7a44d19e56cd9ae1a554bf67847afb0c58f6e12fa29ac7ddfca9940",
+          "mime_type": "text/plain",
+          "byte_count": 1,
+          "estimated_cost": {
+            "tokens": 1,
+            "images": 0,
+            "byte_count": 1
+          },
+          "expires_at": 2000000000,
+          "preview_handle": null,
+          "payload_status": "DEFERRED",
+          "source_spans": []
+        }
+      ],
+      "groups": [
+        {
+          "anchor_key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "linked_keys": [],
+          "relations": [],
+          "manifest_status": "COMPLETE",
+          "payload_status": "DEFERRED",
+          "continuation": null,
+          "incomplete_reason": null
+        }
+      ],
+      "context_selection": {
+        "selected_group_keys": [
+          "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf"
+        ],
+        "selected_evidence_keys": [
+          {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          }
+        ],
+        "cost": {
+          "tokens": 1,
+          "images": 0,
+          "byte_count": 1
+        },
+        "omitted": [],
+        "coverage": [],
+        "coverage_search_truncated": false
+      },
+      "matches": [],
+      "channel_status": [
+        {
+          "channel_key": "lexical",
+          "required": true,
+          "status": "COMPLETE",
+          "reason": null,
+          "approximate": false,
+          "exhausted": true
+        }
+      ],
+      "trace": [
+        {
+          "stage": "fusion",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "candidate_budget",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "load_primary",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "validate_candidates",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "output_type",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "final_revalidation",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "presentation",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        },
+        {
+          "stage": "context_selection",
+          "input_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "output_keys": [
+            {
+              "owner_binding_ref": "app-a",
+              "document_version_ref": "doc-v1",
+              "parse_run_ref": "parse-1",
+              "object_key": "p",
+              "projection_ref": "projection-1",
+              "source_span": null
+            }
+          ],
+          "excluded": []
+        }
+      ],
+      "plan": {
+        "query_hash": "4b7e1b6c0ea2d81eb47667229fd1acb20b7ad7a7552415e157dfae8bad8b0908",
+        "scope_hash": "scope-hash",
+        "profile_version": "retrieval-fixture/v1",
+        "mode": "RELEVANCE",
+        "channel_keys": [
+          "lexical"
+        ],
+        "targets": [],
+        "profile_hash": "b82ba2631a58b56e41748aff538ed2714763571df6fa0e0f6a34b028a522aa6a",
+        "query_representation_hashes": []
+      },
+      "continuation": null,
+      "scope_exhausted": true,
+      "schema_version": "knowledge.evidence_set.v1"
+    },
+    "delivery": {
+      "run_ref": "run-1",
+      "model_snapshot_ref": "model-fixture/v1",
+      "status": "PREPARED",
+      "prepared": [
+        {
+          "evidence_key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "label": "1",
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "input_kind": "TEXT",
+          "cost": {
+            "tokens": 1,
+            "images": 0,
+            "byte_count": 1
+          }
+        }
+      ],
+      "sent_at": null,
+      "schema_version": "knowledge.model_evidence_delivery.v1"
+    },
+    "answer": null,
+    "labels": {
+      "run_ref": "run-1",
+      "entries": [
+        {
+          "run_ref": "run-1",
+          "label": "1",
+          "evidence_key": {
+            "owner_binding_ref": "app-a",
+            "document_version_ref": "doc-v1",
+            "parse_run_ref": "parse-1",
+            "object_key": "p",
+            "projection_ref": "projection-1",
+            "source_span": null
+          },
+          "role": "PRIMARY",
+          "locators": [
+            {
+              "page_no": null,
+              "bbox": null,
+              "logical_ref": "p"
+            }
+          ]
+        }
+      ],
+      "schema_version": "knowledge.citation_label_map.v1"
+    },
+    "excluded": [],
+    "context_selection": {
+      "selected_group_keys": [
+        "ec4680d439388e69b68977109cc330ac6547ebe03c3e9e5a9dcc135ee9a360bf"
+      ],
+      "selected_evidence_keys": [
+        {
+          "owner_binding_ref": "app-a",
+          "document_version_ref": "doc-v1",
+          "parse_run_ref": "parse-1",
+          "object_key": "p",
+          "projection_ref": "projection-1",
+          "source_span": null
+        }
+      ],
+      "cost": {
+        "tokens": 1,
+        "images": 0,
+        "byte_count": 1
+      },
+      "omitted": [],
+      "coverage": [],
+      "coverage_search_truncated": false
+    }
+  }
+}

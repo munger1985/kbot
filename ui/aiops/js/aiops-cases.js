@@ -22,12 +22,9 @@
     const node = document.getElementById("case-resource-status");
     try {
       const resource = await KBotAIOpsAuth.request(`${api}/case-collection/resource`);
-      const state = ({ UNINITIALIZED: "等待系统初始化", QUEUED: "等待后台处理", RUNNING: "正在初始化",
-        READY: "已就绪", FAILED: "初始化异常", PAUSED: "空间已停用" })[resource.resource_status] || "状态未知";
-      const configuration = resource.configuration_status === "CONFIGURED" ? "已配置（不代表运行验证通过）"
-        : resource.configuration_status === "MODELS_REQUIRED" ? "待显式配置 parser_llm、retrieval_llm、embedding"
-        : resource.configuration_status === "TEXT_POLICY_REQUIRED" ? "需要调整为 AUTO 或 TEXT 解析策略" : "待资源核验";
-      node.textContent = `案例库资源：${state}；模型配置：${configuration}。${resource.error_code ? "错误码：" + resource.error_code + "。" : ""}系统自动维护资源，案例审核发布后才参与检索。`;
+      const configuration = resource.configuration_status === "CONFIGURED" ? "已配置（尚未验证运行效果）"
+        : "待显式配置：" + (resource.missing_model_roles || []).join("、");
+      node.textContent = "案例资料由 AIOps 本域独占存储；" + configuration + "。审核发布后参与检索。";
     } catch (_) { node.textContent = "案例库资源状态暂不可用；案例列表仍可独立查看。"; }
   }
   async function load() {

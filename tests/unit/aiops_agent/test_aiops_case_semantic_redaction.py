@@ -81,15 +81,15 @@ def test_case_revision_cannot_send_body_to_index_when_semantic_scan_unavailable(
         class Uow:
             async def __aenter__(self): return SimpleNamespace(operations_knowledge=repo)
             async def __aexit__(self, *args): pass
-        kc = SimpleNamespace(ingest_user_file=AsyncMock())
-        service = OperationsKnowledgeService(uow_factory=Uow, knowledge_core=kc, model_catalogs={})
+        documents = SimpleNamespace(stage=AsyncMock(), retrieval=SimpleNamespace(authorization=SimpleNamespace(service=None)))
+        service = OperationsKnowledgeService(uow_factory=Uow, documents=documents, model_catalogs={})
         service._actor = lambda context: uuid7()
-        service._collection = AsyncMock(return_value={"models": {}})
+        service._case_configuration = AsyncMock(return_value={"models": {}})
         kwargs = {"domain_id": uuid7(), "asset_id": asset_id, "context": SimpleNamespace(),
             "command": DiagnosisCaseDraft(expected_asset_row_version=1, base_version_id=version_id, display_name="订单调查", profile=source)}
         if "tenant_id" in inspect.signature(service.create_case_version).parameters:
             kwargs["tenant_id"] = uuid7()
         with pytest.raises(Exception, match="语义脱敏服务未配置"):
             await service.create_case_version(**kwargs)
-        kc.ingest_user_file.assert_not_awaited()
+        documents.stage.assert_not_awaited()
     asyncio.run(run())

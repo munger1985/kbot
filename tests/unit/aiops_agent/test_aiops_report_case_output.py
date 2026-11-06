@@ -61,7 +61,7 @@ async def fixture():
         return max(rows, key=lambda row: row[1].version_no) if rows else None
     def find_revision(**kw):
         return next(((f.state.assets[v.asset_id], v) for v in f.state.versions.values()
-            if any(index.bundle_revision_id == kw["revision_id"]
+            if any(index.document_version_id == kw["revision_id"]
                 for index in f.state.relations[v.asset_version_id]["indexes"])), None)
     repo.find_by_source_hash.side_effect = find_hash
     repo.find_case_by_report_id.side_effect = find_report
@@ -83,16 +83,6 @@ async def fixture():
     f.finalizer = OutputJobFinalizer()
     f.authority = SimpleNamespace(request=SimpleNamespace(source_agent_ids=(f.run.agent_id,)))
     f.ref, f.phase = {}, "PROCESSING"
-    f.kc_revision = str(f.service._kc.ingest_user_file.return_value.payload["items"][0]["bundle_revision_id"])
-    async def kc_revision(**kw):
-        pair = find_revision(revision_id=kw["bundle_revision_id"])
-        return {"bundle_revision_id": str(kw["bundle_revision_id"]), "status": f.phase,
-            "approval_status": "APPROVED", "withdrawn_at": None,
-            "members": [{"document_role": "CONTENT", "document_version_id": str(uuid7()),
-                "member_status": f.phase, "content_hash_sha256": pair[1].profile_json["knowledge_projection"]["body_sha256"]}]}
-    f.service._kc.get_revision_status = AsyncMock(side_effect=kc_revision)
-    f.service._kc.get_bundle_status = AsyncMock(side_effect=lambda **_: {
-        "current_revision_id": f.kc_revision, "availability": f.phase})
     async def checkpoint(*, stage, processing_ref):
         f.ref = deepcopy(processing_ref)
     async def receipt(*, processing_ref):
@@ -145,7 +135,7 @@ def test_report_case_http_is_quick_persisted_idempotent_202_without_model_or_kc(
             f.artifact.content_hash = "f" * 64
             assert (await client.post(path, headers={"Idempotency-Key": "report-case-click"})).status_code == 422
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -199,7 +189,7 @@ def test_case_success_waits_for_exact_index_and_notifies_without_publication():
         assert version.status == "DRAFT" and f.state.assets[version.asset_id].current_version_id is None
         assert version.source_hash == f.report.content_hash
         assert f.service._structured_model.generate_structured.await_count == 1
-        assert f.service._kc.ingest_user_file.await_count == 1
+        assert f.documents.stage.await_count == 1
         assert f.uow.platform_notifications.emit_output_job_event.await_args.kwargs["event_type"] == "aiops.case.draft_ready"
     asyncio.run(run())
 
@@ -222,7 +212,7 @@ def test_worker_and_retry_reject_real_source_change_without_new_model_or_upload(
         with pytest.raises(AIOpsApplicationError): await advance(f)
         with pytest.raises(AIOpsApplicationError): await OutputJobSourceValidator().retry(f.uow, job)
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -240,17 +230,17 @@ def test_failure_restores_accepted_revision_before_revoked_source_cleanup(retrya
                 kc_scope=f.options.kc_scope, model_catalog=f.options.model_catalog,
                 model_scope=f.options.model_scope, technical_name_field=f.options.technical_name_field,
                 record_receipt=crash)
-        assert not f.state.versions
+        assert len(f.state.versions) == 1
         f.ref = {"intake": saved}
         f.uow.agents.version_has_target.return_value = False
         await f.finalizer.failed(uow=f.uow, job=job_for(f, retryable=retryable), execution=f.execution, now=f.now)
         version = next(iter(f.state.versions.values()))
         index = f.state.relations[version.asset_version_id]["indexes"][0]
-        assert str(index.bundle_revision_id) == saved["bundle_revision_id"]
+        assert str(index.document_version_id) == saved["document_version_id"]
         assert version.status == ("PROCESSING" if retryable else "REVIEW_REQUIRED")
         assert any(call.args[0].event_type == "OPS_CASE_WITHDRAWAL_REQUESTED"
             for call in f.uow.outbox.add.await_args_list) is not retryable
-        f.service._kc.review_user_intake.assert_not_awaited()
+        f.documents.publish.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -272,7 +262,7 @@ def test_presentation_revision_reuses_original_index_without_rewriting_old_sourc
             authority=f.authority, material=replay.finalization, now=f.now)
         assert result.asset_version_id == version_id
         assert f.state.versions[version_id].profile_json == original
-        assert len(f.state.versions) == 1 and f.service._kc.ingest_user_file.await_count == 1
+        assert len(f.state.versions) == 1 and f.documents.stage.await_count == 1
     asyncio.run(run())
 
 
@@ -288,7 +278,7 @@ def test_frozen_envelope_rejects_mismatched_report_or_artifact_without_live_fall
     asyncio.run(run())
 
 
-def test_duplicate_accepted_revision_is_tracked_withdrawn_and_never_shadows_valid_case():
+def test_corrupt_receipt_cannot_create_or_withdraw_an_unrelated_document():
     async def run():
         f = await fixture()
         await advance(f)
@@ -296,19 +286,13 @@ def test_duplicate_accepted_revision_is_tracked_withdrawn_and_never_shadows_vali
         await advance(f)
         original = next(iter(f.state.versions.values()))
         receipt = deepcopy(f.ref["intake"])
-        receipt["bundle_revision_id"] = str(uuid7())
+        receipt["document_version_id"] = str(uuid7())
         f.ref = {"intake": receipt}
-        job = job_for(f)
-        await f.finalizer.failed(uow=f.uow, job=job, execution=f.execution, now=f.now)
-        assert len(f.state.versions) == 2
-        duplicate = next(v for v in f.state.versions.values() if v != original)
-        assert duplicate.status == "RETIRED" and original.status == "DRAFT"
-        assert f.uow.operations_knowledge.find_by_source_hash.side_effect(source_hash=f.report.content_hash)[1] is original
-        await f.finalizer.failed(uow=f.uow, job=job, execution=f.execution, now=f.now)
-        assert len(f.state.versions) == 2 and duplicate.status == "RETIRED"
-        assert f.service._kc.ingest_user_file.await_count == 1
-        events = [call.args[0] for call in f.uow.outbox.add.await_args_list]
-        assert any(row.event_type == "OPS_CASE_WITHDRAWAL_REQUESTED" for row in events)
+        with pytest.raises(AIOpsApplicationError):
+            await f.finalizer.failed(uow=f.uow, job=job_for(f), execution=f.execution, now=f.now)
+        assert len(f.state.versions) == 1 and original.status == "DRAFT"
+        f.uow.outbox.add.assert_not_awaited()
+        f.documents.stage.assert_awaited_once()
     asyncio.run(run())
 
 
@@ -323,7 +307,7 @@ def test_report_case_finalizer_rejects_changed_or_unrelated_result(mutation):
         asset = f.state.assets[version.asset_id]
         if mutation == "source": f.uow.targets.get_scoped.return_value.row_version += 1
         if mutation == "result": material["case_result"]["asset_version_id"] = str(uuid7())
-        if mutation == "index": f.state.relations[version.asset_version_id]["indexes"][0].bundle_revision_id = uuid7()
+        if mutation == "index": f.state.relations[version.asset_version_id]["indexes"][0].document_version_id = uuid7()
         if mutation == "asset": asset.row_version += 1
         if mutation == "version": version.row_version += 1
         if mutation == "withdrawal": f.uow.outbox.get_by_idempotency.return_value = SimpleNamespace(status="PENDING")
@@ -376,7 +360,7 @@ def test_actual_worker_waits_for_kc_and_atomically_finishes_with_notification():
         assert await worker.run_once()
         assert store.job.status == "SUCCEEDED" and store.job.result_json["asset_version_id"]
         assert store.notifications == [("aiops.case.draft_ready", store.job.job_id)]
-        assert f.service._kc.ingest_user_file.await_count == 1 and len(f.state.versions) == 1
+        assert f.documents.stage.await_count == 1 and len(f.state.versions) == 1
     asyncio.run(run())
 
 
@@ -417,7 +401,7 @@ def test_report_reuses_actual_conversation_case_without_rewriting_its_request_id
         result = await OutputJobFinalizer().succeeded(uow=f.uow, job=job_for(f), execution=f.execution,
             authority=f.authority, material=output.finalization, now=f.now)
         assert result.asset_version_id == result_id and version.profile_json == original_profile
-        assert len(f.state.versions) == 1 and f.service._kc.ingest_user_file.await_count == 1
+        assert len(f.state.versions) == 1 and f.documents.stage.await_count == 1
     asyncio.run(run())
 
 

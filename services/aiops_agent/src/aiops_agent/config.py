@@ -95,6 +95,9 @@ class AIOpsExecutorConfig(ServiceConfig):
 
 
 class AIOpsDependencyEndpoints(BaseModel):
+    agent_runtime: ServiceDependencyConfig = Field(default_factory=lambda: ServiceDependencyConfig(
+        base_url="http://127.0.0.1:18100", audience="kbot-agent-runtime-api", timeout_seconds=120,
+    ))
     main_api: ServiceDependencyConfig = Field(default_factory=lambda: ServiceDependencyConfig(
         base_url="http://127.0.0.1:18099", audience="kbot-main-api", timeout_seconds=10,
     ))
@@ -227,7 +230,11 @@ class AIOpsManagementConfig(BaseModel):
     agent_execution_enabled: bool = False
 
 
+from aiops_agent.composition.knowledge_profiles import KnowledgeFoundationConfig
+
+
 class AIOpsSettings(Settings):
+    knowledge: KnowledgeFoundationConfig = Field(default_factory=KnowledgeFoundationConfig)
     api: AIOpsApiConfig = Field(default_factory=AIOpsApiConfig)
     runtime: AIOpsRuntimeConfig = Field(default_factory=AIOpsRuntimeConfig)
     worker: AIOpsWorkerConfig = Field(default_factory=AIOpsWorkerConfig)

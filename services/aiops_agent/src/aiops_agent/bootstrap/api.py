@@ -103,7 +103,7 @@ from aiops_agent.diagnostics import (
 from platform_core.database.oracle import create_database_runtime
 from platform_core.managed_credentials import ManagedCredentialCipher
 from platform_core.prompts import PromptResolver
-from platform_clients.knowledge_core import KnowledgeCoreClient
+from aiops_agent.composition.knowledge_business import install_business_knowledge
 from platform_core.dictionary import ModelCategory
 from platform_core.security import (
     create_auth_context_codec,
@@ -294,13 +294,9 @@ def create_aiops_api(
             timeout_seconds=resolved.clients.model_serving.timeout_seconds,
             session=client_session,
         )
-        knowledge_core_client = KnowledgeCoreClient(
-            base_url=resolved.clients.knowledge_core.base_url,
-            caller_service=config.service_name,
-            audience=resolved.clients.knowledge_core.audience,
-            timeout_seconds=resolved.clients.knowledge_core.timeout_seconds,
-            session=client_session,
-        )
+        operations_documents = install_business_knowledge(app,
+            settings=resolved, uow_factory=runtime.uow_factory, caller_service=config.service_name,
+            register_routes=False)
         from aiops_agent.application.output_projection import OutputProjectionService
         app.state.output_projection_service = OutputProjectionService(
             uow_factory=runtime.uow_factory, tenant_scoped=False)
@@ -312,7 +308,7 @@ def create_aiops_api(
         app.state.operations_knowledge_service = OperationsKnowledgeService(
             plan_capture_reader=plan_capture_reader,
             uow_factory=runtime.uow_factory,
-            knowledge_core=knowledge_core_client,
+            documents=operations_documents,
             model_catalogs=model_catalogs,
             structured_model=diagnosis_model_client,
             prompt_registry=diagnosis_prompts,
@@ -345,7 +341,6 @@ def create_aiops_api(
             diagnosis_model_client=diagnosis_model_client,
             diagnosis_prompt_registry=diagnosis_prompts,
             diagnostic_registry=diagnostic_registry,
-            knowledge_core_client=knowledge_core_client,
             operations_knowledge_service=app.state.operations_knowledge_service,
             diagnosis_caller_service=config.service_name,
             action_registry=action_registry,
@@ -421,7 +416,7 @@ def create_aiops_api(
                         "aiops.notification.reconcile",
                     }
                 ),
-                "kbot-agent-runtime-api": frozenset({"aiops.delegate"}),
+                "kbot-agent-runtime-api": frozenset({"aiops.delegate", "knowledge.scope.create", "knowledge.retrieve", "knowledge.content.read"}),
                 "kbot-aiops-worker": frozenset(
                     {
                         "aiops.task",
@@ -430,6 +425,8 @@ def create_aiops_api(
                         "aiops.execution.request",
                     }
                 ),
+                "kbot-agent-runtime-worker": frozenset({"knowledge.scope.create", "knowledge.retrieve", "knowledge.content.read"}),
+                "kbot-knowledge-core-api": frozenset({"knowledge.source.read"}),
                 "kbot-aiops-scheduler": frozenset({"aiops.schedule"}),
                 "kbot-aiops-db-executor": frozenset(
                     {
@@ -457,6 +454,16 @@ def create_aiops_api(
     app.include_router(conversation_starter_router)
     app.include_router(conversation_router)
     app.include_router(report_template_router)
+    from aiops_agent.api.knowledge_retrieval import create_knowledge_retrieval_router, install_knowledge_errors
+    from aiops_agent.api.knowledge_retrieval_auth import knowledge_access_dependency
+    from aiops_agent.api.knowledge_source import create_knowledge_source_router
+    from aiops_agent.api.knowledge_source_auth import source_scope
+    from platform_core.security.knowledge_delegation import create_knowledge_delegation_codec
+    app.include_router(create_knowledge_retrieval_router(access_dependency=knowledge_access_dependency(
+        audience=config.service_name, delegation_codec=create_knowledge_delegation_codec(),
+        allowed_callers=frozenset({"kbot-agent-runtime-api", "kbot-agent-runtime-worker"}))))
+    app.include_router(create_knowledge_source_router(scope_dependency=source_scope))
+    install_knowledge_errors(app)
     app.include_router(operations_knowledge_router)
     app.include_router(output_jobs_router)
     app.include_router(notification_projection_router)

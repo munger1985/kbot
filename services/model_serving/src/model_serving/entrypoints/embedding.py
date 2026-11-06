@@ -27,7 +27,7 @@ from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from model_serving.embedding.embed_service import EmbeddingService
 from model_serving.embedding.schema import (
-    EmbeddingRequest, OpenAIEmbeddingRequest, SimilarityRequest,
+    EmbeddingRequest, OpenAIEmbeddingRequest, SimilarityRequest, DenseRepresentationRequest,
 )
 from model_serving.embedding.model import EmbeddingResponse
 from platform_core.platform.port_check import check_port_available
@@ -182,6 +182,17 @@ async def health_check() -> dict[str, Any]:
         "loaded_models_count": loaded_models_count,
         "timestamp": datetime.now().isoformat()
     }
+
+
+@app.post(f"{INTERNAL_API_V1}/represent", tags=["AI Service"])
+async def represent_text(req: DenseRepresentationRequest):
+    """返回原生单向量与冻结空间回执；不静默返回空向量。"""
+    try:
+        return await embedding_service.represent(req.served_model_name, text=req.text, input_role=req.input_role)
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": "MODEL_SPACE_UNAVAILABLE"}) from exc
+    except Exception as exc:
+        raise HTTPException(503, detail={"code": "MODEL_REPRESENTATION_FAILED"}) from exc
 
 
 @app.post(f"{INTERNAL_API_V1}/embeddings", response_model=EmbeddingResponse, tags=["AI Service"], summary="文本向量化")

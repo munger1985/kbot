@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 from pathlib import Path
 
 
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_ROOTS = (
     ROOT / "packages" / "platform_core" / "src" / "platform_core",
     ROOT / "packages" / "platform_clients" / "src" / "platform_clients",
+    ROOT / "packages" / "knowledge_algorithms" / "src" / "knowledge_algorithms",
     ROOT / "services" / "knowledge_core" / "src" / "knowledge_core",
     ROOT / "services" / "model_serving" / "src" / "model_serving",
     ROOT / "services" / "main_api" / "src" / "main_api",
@@ -111,6 +113,7 @@ def check_file(path: Path) -> list[str]:
         return [f"{path}:{exc.lineno}: syntax error: {exc.msg}"]
     violations: list[str] = []
     relative_path = path.relative_to(ROOT)
+    is_knowledge_algorithms = "knowledge_algorithms" in relative_path.parts
     is_main_api = "main_api" in relative_path.parts
     is_aiops = "aiops_agent" in relative_path.parts
     is_aiops_domain = (
@@ -134,6 +137,12 @@ def check_file(path: Path) -> list[str]:
                     )
         for imported in module_names(node):
             imported_root = imported.split(".")[0]
+            if (is_knowledge_algorithms and imported_root != "knowledge_algorithms"
+                    and imported_root not in sys.stdlib_module_names):
+                violations.append(
+                    f"{path}:{node.lineno}: 知识算法核只能依赖标准库及自身合同，禁止导入 {imported}"
+                )
+                continue
             if (
                 owner_service
                 and imported_root in SERVICE_PACKAGES

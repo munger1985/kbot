@@ -12,6 +12,14 @@ class VisualModelConfig(BaseModel):
     dimension: int = 128
     timeout: int = 300
     max_retries: int = 3
+    model_revision: str | None = None
+    processor_revision: str | None = None
+    input_template: str | None = None
+    retrieval_directions: tuple[str, ...] = ()
+    max_image_bytes: int = 8388608
+    max_image_pixels: int = 25000000
+    max_query_chars: int = 16000
+    max_representation_elements: int = 2097152
 
 
 class BaseVisualEmbedding:

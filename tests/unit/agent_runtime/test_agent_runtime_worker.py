@@ -38,6 +38,9 @@ class _RuntimeService:
         self.completed = None
         self.failed = None
 
+    async def cleanup_knowledge_once(self):
+        return False
+
     async def claim_task(self, command):
         lease, self.lease = self.lease, None
         return lease

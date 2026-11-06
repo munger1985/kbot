@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import aiohttp
-from platform_clients.case_resource import CaseResourceClient
-from main_api.application.case_resource_lifecycle import CaseResourceLifecycle, run_case_resource_worker
 import signal
 from time import monotonic
 
@@ -62,12 +60,6 @@ async def main() -> None:
         caller_service=settings.api.service_name)
     workflow_resolver = AIOpsWorkflowReconciliation(client=projection_client,
         caller_service=settings.api.service_name)
-    case_session = aiohttp.ClientSession()
-    case_lifecycle = CaseResourceLifecycle(uow_factory=uow_factory,
-        client=CaseResourceClient(base_url=settings.knowledge_core.base_url,
-            audience=settings.knowledge_core.audience, caller_service=settings.api.service_name,
-            session=case_session))
-    case_worker = asyncio.create_task(run_case_resource_worker(case_lifecycle, stop=stop))
     next_reconciliation = 0.0
     try:
         while not stop.is_set():
@@ -89,8 +81,6 @@ async def main() -> None:
                 pass
     finally:
         stop.set()
-        await case_worker
-        await case_session.close()
         await projection_client.close()
         await runtime.close()
         logger.info("通知投影 Worker 已停止")

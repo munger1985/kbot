@@ -1,4 +1,4 @@
-"""管理预览与 Agent 正式检索明确分开，预览不伪造 Agent，也不读取任意外部版本。"""
+"""管理预览使用本 App 精确文档，不授予 Agent 搜索权限。"""
 
 import asyncio
 from copy import deepcopy
@@ -11,123 +11,75 @@ from httpx import ASGITransport, AsyncClient
 import pytest
 
 from aiops_agent.api import operations_knowledge as internal
-from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.knowledge_preview import preview_knowledge_version
 from aiops_agent.application.case_knowledge_projection import case_knowledge_markdown
 from aiops_agent.contracts.knowledge import KnowledgeSearchPreviewRequest
 from aiops_agent.entities import ReportSourceEntity
+from knowledge_algorithms.contracts.errors import AlgorithmError
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.identity import uuid7
 from tests.unit.aiops_agent.test_aiops_case_knowledge_projection import profile
-
-
-def test_management_preview_uses_actual_registry_version_projection():
-    import inspect
-    from tests.unit.aiops_agent.test_aiops_report_case_extraction import case_fixture, extract
-    async def run():
-        f = await case_fixture()
-        await extract(f)
-        version = next(iter(f.state.versions.values()))
-        version.status = "DRAFT"
-        f.state.relations[version.asset_version_id].update(scopes=[], reviews=[])
-        index = f.state.relations[version.asset_version_id]["indexes"][0]
-        index.index_status = "READY"
-        detail = await f.service.get_version(domain_id=f.domain, asset_version_id=version.asset_version_id)
-        document_id = uuid7()
-        f.service._kc.get_revision_status = AsyncMock(return_value={
-            "bundle_revision_id": str(index.bundle_revision_id), "status": "READY",
-            "approval_status": "APPROVED", "withdrawn_at": None, "members": [{
-                "document_role": "CONTENT", "member_status": "READY", "document_version_id": str(document_id),
-                "content_hash_sha256": version.profile_json["knowledge_projection"]["body_sha256"],
-            }],
-        })
-        f.service._kc.get_document_preview = AsyncMock(return_value={
-            "document_version_id": str(document_id), "fragments": [{"content": "实际登记版本的解析正文"}],
-        })
-        kwargs = dict(domain_id=f.domain, asset_version_id=version.asset_version_id, context=f.context)
-        if "tenant_id" in inspect.signature(f.service.preview_version).parameters:
-            kwargs["tenant_id"] = version.tenant_id
-        result = await f.service.preview_version(**kwargs)
-        assert result["documents"][0]["fragments"][0]["content"] == "实际登记版本的解析正文"
-        assert result["bundle_revision_id"] == detail["indexes"][0]["bundle_revision_id"]
-        assert version.status == "DRAFT"
-    asyncio.run(run())
-
-
-def test_kc_status_keeps_exact_withdrawal_instead_of_reporting_ready_only():
-    from datetime import UTC, datetime
-    from knowledge_core.application.status import KnowledgeCoreStatusService
-    withdrawn_at = datetime.now(UTC)
-    entity = SimpleNamespace(bundle_revision_id=uuid7(), revision_no=1, source_revision="source-1",
-        status="READY", approval_status="APPROVED", reviewed_by=None, reviewed_at=None,
-        review_comment=None, accepted_at=None, completed_at=None, withdrawn_at=withdrawn_at)
-    assert KnowledgeCoreStatusService._revision(entity).withdrawn_at == withdrawn_at
 
 
 def fixture():
     value = profile()
     case_knowledge_markdown(title="已脱敏案例", profile=value)
     version_id, document_id = uuid7(), uuid7()
-    index = {"collection_id": str(uuid7()), "bundle_id": str(uuid7()),
-        "bundle_revision_id": str(uuid7()), "status": "READY"}
+    index = {"document_version_id": str(document_id), "parse_run_id": str(uuid7()),
+        "index_generation_id": str(uuid7()), "status": "READY"}
     detail = {"asset": {"asset_id": str(uuid7()), "asset_kind": "DIAGNOSIS_CASE", "row_version": 1},
         "version": {"asset_version_id": str(version_id), "status": "DRAFT", "row_version": 1,
             "profile": value.model_dump(mode="json")}, "indexes": [index]}
-    revision = {"bundle_revision_id": index["bundle_revision_id"], "status": "READY",
-        "approval_status": "APPROVED", "withdrawn_at": None, "members": [{
-            "document_version_id": str(document_id), "document_role": "CONTENT",
-            "member_status": "READY", "content_hash_sha256": value.knowledge_projection.body_sha256,
-        }]}
-    kc = SimpleNamespace(get_revision_status=AsyncMock(return_value=revision),
-        get_document_preview=AsyncMock(return_value={"document_version_id": str(document_id),
-            "fragments": [{"content": "真实解析正文", "locator": {"heading_path": ["问题"]}}]}),
-        discover=AsyncMock(), retrieve_evidence=AsyncMock())
-    service = SimpleNamespace(get_version=AsyncMock(side_effect=lambda **_: deepcopy(detail)), _kc=kc)
+    record = {"parse_run_id": index["parse_run_id"], "generation_id": index["index_generation_id"],
+        "source_hash":value.knowledge_projection.body_sha256, "status":"PARSED"}
+    documents = SimpleNamespace(access=lambda context: context, inspect=AsyncMock(return_value=record),
+        excerpts=AsyncMock(return_value={"excerpts":[{"content":"合成解析正文", "locator":{"key":"synthetic"}}],
+            "warnings":[]}), retrieval=SimpleNamespace(retrieve=AsyncMock()))
+    service = SimpleNamespace(get_version=AsyncMock(side_effect=lambda **_: deepcopy(detail)), _documents=documents)
     kwargs = dict(domain_id=uuid7(), asset_version_id=version_id, context=SimpleNamespace(), kc_scope={})
     return SimpleNamespace(**locals())
 
 
 @pytest.mark.parametrize("status", ["DRAFT", "REVIEW_REQUIRED", "PUBLISHED"])
-def test_manager_can_preview_exact_indexed_version_without_agent_search(status):
+def test_manager_previews_exact_indexed_version_without_agent_or_search(status):
     async def run():
         f = fixture()
         f.detail["version"]["status"] = status
         result = await preview_knowledge_version(f.service, **f.kwargs)
         assert result["usage"] == "MANAGEMENT_PREVIEW_NOT_AGENT_EVIDENCE"
-        assert result["status"] == status and result["documents"][0]["fragments"]
-        assert result["bundle_revision_id"] == f.index["bundle_revision_id"]
-        f.kc.discover.assert_not_awaited()
-        f.kc.retrieve_evidence.assert_not_awaited()
+        assert result["status"] == status
+        assert result["documents"][0]["document_version_id"] == str(f.document_id)
+        assert result["documents"][0]["fragments"][0]["content_text"] == "合成解析正文"
+        f.documents.retrieval.retrieve.assert_not_awaited()
         assert f.service.get_version.await_count == 2
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("failure", ["processing", "withdrawn", "wrong_revision", "wrong_hash",
-    "wrong_role", "wrong_document", "edited_during_preview"])
-def test_manager_preview_never_substitutes_wrong_or_changed_source(failure):
+@pytest.mark.parametrize("failure", ["processing", "withdrawn", "wrong_parse", "wrong_hash",
+    "wrong_generation", "empty_indexes", "edited_during_preview"])
+def test_manager_preview_rejects_unready_withdrawn_or_changed_exact_source(failure):
     async def run():
         f = fixture()
         if failure == "processing":
             f.detail["version"]["status"] = "PROCESSING"
         elif failure == "withdrawn":
-            f.revision["withdrawn_at"] = "2026-11-03T00:00:00+00:00"
-        elif failure == "wrong_revision":
-            f.revision["bundle_revision_id"] = str(uuid7())
+            f.record["status"] = "WITHDRAWN"
+        elif failure == "wrong_parse":
+            f.record["parse_run_id"] = str(uuid7())
         elif failure == "wrong_hash":
-            f.revision["members"][0]["content_hash_sha256"] = "f" * 64
-        elif failure == "wrong_role":
-            f.revision["members"][0]["document_role"] = "MANIFEST"
-        elif failure == "wrong_document":
-            f.kc.get_document_preview.return_value["document_version_id"] = str(uuid7())
+            f.record["source_hash"] = "f"*64
+        elif failure == "wrong_generation":
+            f.record["generation_id"] = str(uuid7())
+        elif failure == "empty_indexes":
+            f.detail["indexes"] = []
         else:
-            async def changed(**_):
+            async def changed(*_):
                 f.detail["version"]["row_version"] += 1
-                return {"document_version_id": str(f.document_id), "fragments": []}
-            f.kc.get_document_preview.side_effect = changed
-        with pytest.raises(AIOpsApplicationError) as error:
+                return {"excerpts":[], "warnings":[]}
+            f.documents.excerpts.side_effect = changed
+        with pytest.raises(AlgorithmError):
             await preview_knowledge_version(f.service, **f.kwargs)
-        assert error.value.code == "AIOPS_KNOWLEDGE_PREVIEW_UNAVAILABLE"
-        f.kc.discover.assert_not_awaited()
+        f.documents.retrieval.retrieve.assert_not_awaited()
     asyncio.run(run())
 
 

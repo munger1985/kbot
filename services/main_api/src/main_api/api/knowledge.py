@@ -1,388 +1,141 @@
-"""Knowledge Core 能力的公开 BFF 契约。"""
+"""知识检索 App 自有资料库的公开 BFF；不向浏览器暴露内部策略与存储句柄。"""
 
-from __future__ import annotations
-
-from typing import Any, cast
 from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-
-from platform_clients import KnowledgeCoreClient
-from platform_core.contracts import PUBLIC_API_V1
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
+from fastapi.routing import APIRoute
+from platform_core.contracts.knowledge_app import (
+    KnowledgeLibraryCreate, KnowledgeLibraryUpdate, KnowledgeReviewRequest,
+    KnowledgeSearchRequest, KnowledgeContinuationRequest, KnowledgeRelationsRequest,
+    KnowledgeLibraryView, KnowledgeDocumentPage, KnowledgeUploadReceipt, KnowledgeActionReceipt,
+    KnowledgeSearchResult)
 from platform_core.security import get_auth_context
 from main_api.application import authorize_app_request
 
 
-KNOWLEDGE_ROUTE_PERMISSIONS = {
-    "list_collections": "knowledge_retrieval:use",
-    "create_collection": "knowledge_retrieval:knowledge_manage",
-    "get_collection": "knowledge_retrieval:use",
-    "change_collection_status": "knowledge_retrieval:knowledge_manage",
-    "update_collection_models": "knowledge_retrieval:knowledge_manage",
-    "delete_collection": "knowledge_retrieval:knowledge_manage",
-    "bind_collection": "knowledge_retrieval:knowledge_manage",
-    "unbind_collection": "knowledge_retrieval:knowledge_manage",
-    "list_agent_bindings": "knowledge_retrieval:agent_manage",
-    "get_bundle_status": "knowledge_retrieval:use",
-    "get_revision_status": "knowledge_retrieval:use",
-    "get_revision_members": "knowledge_retrieval:use",
-    "reprocess_revision": "knowledge_retrieval:knowledge_manage",
-    "list_pending_approvals": "knowledge_retrieval:review",
-    "review_user_intake": "knowledge_retrieval:review",
-    "ingest_user_files": "knowledge_retrieval:upload",
-}
+class KnowledgeBodyLimitRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+        async def limited(request):
+            if request.method in {"POST", "PUT", "PATCH"}:
+                maximum = 67108864 if request.url.path.endswith("/documents") else 12582912
+                raw = bytearray()
+                async for block in request.stream():
+                    if len(raw) + len(block) > maximum:
+                        raise HTTPException(413, {"code": "KNOWLEDGE_INPUT_TOO_LARGE"})
+                    raw.extend(block)
+                request._body = bytes(raw)
+            return await handler(request)
+        return limited
 
 
-async def _require_knowledge_access(request: Request) -> None:
-    try:
-        permission = KNOWLEDGE_ROUTE_PERMISSIONS[
-            request.scope["endpoint"].__name__
-        ]
-    except (KeyError, AttributeError) as exc:
-        raise RuntimeError("Knowledge 公开端点未登记核心权限") from exc
-    await authorize_app_request(
-        request, app_id="knowledge_retrieval", permission=permission
-    )
+PERMISSIONS = {"create_library": "knowledge_core_manage", "update_library": "knowledge_core_manage",
+    "upload_document": "upload", "review_version": "review", "publish_version": "knowledge_core_manage",
+    "withdraw_version": "knowledge_core_manage", "cancel_version": "upload"}
 
 
-router = APIRouter(
-    prefix=f"{PUBLIC_API_V1}/apps/knowledge-retrieval/knowledge",
-    tags=["Knowledge"],
-    dependencies=[Depends(_require_knowledge_access)],
-)
+async def require_access(request: Request):
+    name = request.scope["endpoint"].__name__
+    permission = PERMISSIONS.get(name, "use")
+    await authorize_app_request(request, app_id="knowledge_retrieval",
+                                permission="knowledge_retrieval:" + permission)
 
 
-class CollectionCreateRequest(BaseModel):
-    display_name: str = Field(min_length=1, max_length=256)
-    models: dict[str, UUID]
-    description: str | None = Field(default=None, max_length=1000)
-    default_security_level: int = Field(default=1, ge=0, le=999)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+router = APIRouter(prefix="/api/v1/apps/knowledge-retrieval/knowledge", tags=["Knowledge Libraries"],
+    route_class=KnowledgeBodyLimitRoute, dependencies=[Depends(require_access)])
 
 
-class CollectionStatusRequest(BaseModel):
-    status: str = Field(pattern=r"^(ACTIVE|DISABLED)$")
+def client(request):
+    return request.app.state.knowledge_library_client
 
 
-class CollectionModelsRequest(BaseModel):
-    models: dict[str, UUID]
-    expected_row_version: int = Field(ge=1)
+@router.get("/libraries", response_model=list[KnowledgeLibraryView])
+async def list_libraries(request: Request):
+    return await client(request).libraries(auth_context=get_auth_context(request))
 
 
-class CollectionBindingRequest(BaseModel):
-    note: str | None = Field(default=None, max_length=1000)
+@router.post("/libraries", status_code=201, response_model=KnowledgeLibraryView)
+async def create_library(payload: KnowledgeLibraryCreate, request: Request):
+    return await client(request).create_library(payload.model_dump(mode="json"),
+                                                auth_context=get_auth_context(request))
 
 
-class IntakeReviewRequest(BaseModel):
-    decision: str = Field(pattern=r"^(APPROVE|REJECT)$")
-    comment: str | None = Field(default=None, max_length=1000)
+@router.get("/libraries/{library_id}", response_model=KnowledgeLibraryView)
+async def get_library(library_id: UUID, request: Request):
+    return await client(request).library(library_id, auth_context=get_auth_context(request))
 
 
-class RevisionReprocessRequest(BaseModel):
-    collection_id: UUID
-    document_version_id: UUID | None = None
+@router.patch("/libraries/{library_id}", response_model=KnowledgeLibraryView)
+async def update_library(library_id: UUID, payload: KnowledgeLibraryUpdate, request: Request):
+    return await client(request).update_library(library_id, payload.model_dump(mode="json", exclude_unset=True),
+                                               auth_context=get_auth_context(request))
 
 
-def _domain_id(request: Request) -> int:
-    context = get_auth_context(request)
-    if context.domain_id is None:
-        raise RuntimeError("已认证请求缺少 Domain")
-    return int(context.domain_id)
+@router.get("/libraries/{library_id}/documents", response_model=KnowledgeDocumentPage)
+async def list_documents(library_id: UUID, request: Request, page: int = Query(1, ge=1),
+                         page_size: int = Query(20, ge=1, le=100)):
+    return await client(request).files(library_id, page=page, page_size=page_size,
+                                      auth_context=get_auth_context(request))
 
 
-def _client(request: Request) -> KnowledgeCoreClient:
-    client = getattr(request.app.state, "knowledge_core_client", None)
-    if client is None:
-        raise RuntimeError("Knowledge Core Client 尚未初始化")
-    return cast(KnowledgeCoreClient, client)
+@router.post("/libraries/{library_id}/documents", status_code=202, response_model=KnowledgeUploadReceipt)
+async def upload_document(library_id: UUID, request: Request, name: str = Query(min_length=1, max_length=512)):
+    key = request.headers.get("Idempotency-Key", "").strip()
+    if not key:
+        raise HTTPException(428, {"code": "IDEMPOTENCY_KEY_REQUIRED"})
+    return await client(request).upload(library_id, name=name,
+        mime_type=request.headers.get("Content-Type", "application/octet-stream").split(";")[0],
+        body=request.stream(), idempotency_key=key, auth_context=get_auth_context(request))
 
 
-@router.get("/collections")
-async def list_collections(request: Request):
-    context = get_auth_context(request)
-    return await _client(request).list_collections(
-        domain_id=_domain_id(request),
-        auth_context=context,
-    )
+@router.post("/libraries/{library_id}/versions/{version_id}:review", response_model=KnowledgeActionReceipt)
+async def review_version(library_id: UUID, version_id: UUID, payload: KnowledgeReviewRequest, request: Request):
+    return await client(request).version_action(library_id, version_id, "review",
+        payload=payload.model_dump(mode="json"), auth_context=get_auth_context(request))
 
 
-@router.post("/collections", status_code=status.HTTP_201_CREATED)
-async def create_collection(
-    payload: CollectionCreateRequest,
-    request: Request,
-):
-    context = get_auth_context(request)
-    return await _client(request).create_collection(
-        domain_id=_domain_id(request),
-        payload=payload.model_dump(mode="json"),
-        auth_context=context,
-    )
+@router.post("/libraries/{library_id}/versions/{version_id}:publish", response_model=KnowledgeActionReceipt)
+async def publish_version(library_id: UUID, version_id: UUID, request: Request):
+    return await client(request).version_action(library_id, version_id, "publish", auth_context=get_auth_context(request))
 
 
-@router.get("/collections/{collection_id}")
-async def get_collection(collection_id: UUID, request: Request):
-    context = get_auth_context(request)
-    return await _client(request).get_collection(
-        domain_id=_domain_id(request),
-        collection_id=collection_id,
-        auth_context=context,
-    )
+@router.post("/libraries/{library_id}/versions/{version_id}:withdraw", response_model=KnowledgeActionReceipt)
+async def withdraw_version(library_id: UUID, version_id: UUID, request: Request):
+    return await client(request).version_action(library_id, version_id, "withdraw", auth_context=get_auth_context(request))
 
 
-@router.patch("/collections/{collection_id}")
-async def change_collection_status(
-    collection_id: UUID,
-    payload: CollectionStatusRequest,
-    request: Request,
-):
-    context = get_auth_context(request)
-    return await _client(request).change_collection_status(
-        domain_id=_domain_id(request),
-        collection_id=collection_id,
-        status=payload.status,
-        auth_context=context,
-    )
+@router.post("/libraries/{library_id}/versions/{version_id}:cancel", response_model=KnowledgeActionReceipt)
+async def cancel_version(library_id: UUID, version_id: UUID, request: Request):
+    return await client(request).version_action(library_id, version_id, "cancel", auth_context=get_auth_context(request))
 
 
-@router.put("/collections/{collection_id}/models")
-async def update_collection_models(
-    collection_id: UUID,
-    payload: CollectionModelsRequest,
-    request: Request,
-):
-    context = get_auth_context(request)
-    return await _client(request).update_collection_models(
-        domain_id=_domain_id(request),
-        collection_id=collection_id,
-        payload=payload.model_dump(mode="json"),
-        auth_context=context,
-    )
+@router.post("/libraries/{library_id}/search", response_model=KnowledgeSearchResult)
+async def search(library_id: UUID, payload: KnowledgeSearchRequest, request: Request):
+    return await client(request).search(library_id, payload.model_dump(mode="json"), auth_context=get_auth_context(request))
 
 
-@router.delete(
-    "/collections/{collection_id}",
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def delete_collection(collection_id: UUID, request: Request):
-    context = get_auth_context(request)
-    return await _client(request).delete_collection(
-        domain_id=_domain_id(request),
-        collection_id=collection_id,
-        auth_context=context,
-    )
+@router.post("/retrievals/{retrieval_ref}:continue", response_model=KnowledgeSearchResult)
+async def continue_results(retrieval_ref: UUID, payload: KnowledgeContinuationRequest, request: Request):
+    return await client(request).continue_results(retrieval_ref, payload.model_dump(mode="json"),
+                                                 auth_context=get_auth_context(request))
 
 
-@router.put(
-    "/agents/{agent_id}/collections/{collection_id}/binding",
-)
-async def bind_collection(
-    agent_id: UUID,
-    collection_id: UUID,
-    request: Request,
-    payload: CollectionBindingRequest | None = None,
-):
-    context = get_auth_context(request)
-    return await _client(request).bind_collection(
-        domain_id=_domain_id(request),
-        agent_id=agent_id,
-        collection_id=collection_id,
-        note=payload.note if payload is not None else None,
-        auth_context=context,
-    )
+@router.post("/retrievals/{retrieval_ref}/relations:continue", response_model=KnowledgeSearchResult)
+async def continue_relations(retrieval_ref: UUID, payload: KnowledgeRelationsRequest, request: Request):
+    return await client(request).continue_results(retrieval_ref, payload.model_dump(mode="json"),
+                                                 relations=True, auth_context=get_auth_context(request))
 
 
-@router.delete(
-    "/agents/{agent_id}/collections/{collection_id}/binding",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def unbind_collection(
-    agent_id: UUID,
-    collection_id: UUID,
-    request: Request,
-) -> Response:
-    context = get_auth_context(request)
-    await _client(request).unbind_collection(
-        domain_id=_domain_id(request),
-        agent_id=agent_id,
-        collection_id=collection_id,
-        auth_context=context,
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+@router.get("/retrievals/{retrieval_ref}/content/{key}")
+async def evidence_content(retrieval_ref: UUID, key: str, request: Request):
+    download = await client(request).open_content(retrieval_ref, key, auth_context=get_auth_context(request))
+    return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
+                             background=BackgroundTask(download.close))
 
 
-@router.get("/agents/{agent_id}/collection-bindings")
-async def list_agent_bindings(agent_id: UUID, request: Request):
-    context = get_auth_context(request)
-    return await _client(request).list_agent_bindings(
-        domain_id=_domain_id(request),
-        agent_id=agent_id,
-        auth_context=context,
-    )
-
-
-@router.get("/bundles/{bundle_id}")
-async def get_bundle_status(bundle_id: UUID, request: Request):
-    context = get_auth_context(request)
-    return await _client(request).get_bundle_status(
-        domain_id=_domain_id(request),
-        bundle_id=bundle_id,
-        auth_context=context,
-    )
-
-
-@router.get("/bundles/{bundle_id}/revisions/{bundle_revision_id}")
-async def get_revision_status(
-    bundle_id: UUID,
-    bundle_revision_id: UUID,
-    request: Request,
-):
-    context = get_auth_context(request)
-    return await _client(request).get_revision_status(
-        domain_id=_domain_id(request),
-        bundle_id=bundle_id,
-        bundle_revision_id=bundle_revision_id,
-        include_members=False,
-        auth_context=context,
-    )
-
-
-@router.get(
-    "/bundles/{bundle_id}/revisions/{bundle_revision_id}/members",
-)
-async def get_revision_members(
-    bundle_id: UUID,
-    bundle_revision_id: UUID,
-    request: Request,
-):
-    context = get_auth_context(request)
-    return await _client(request).get_revision_status(
-        domain_id=_domain_id(request),
-        bundle_id=bundle_id,
-        bundle_revision_id=bundle_revision_id,
-        include_members=True,
-        auth_context=context,
-    )
-
-
-@router.post(
-    "/bundles/{bundle_id}/revisions/{bundle_revision_id}/reprocess",
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def reprocess_revision(
-    bundle_id: UUID,
-    bundle_revision_id: UUID,
-    payload: RevisionReprocessRequest,
-    request: Request,
-):
-    context = get_auth_context(request)
-    return await _client(request).reprocess_revision(
-        domain_id=_domain_id(request),
-        collection_id=payload.collection_id,
-        bundle_id=bundle_id,
-        bundle_revision_id=bundle_revision_id,
-        document_version_id=payload.document_version_id,
-        auth_context=context,
-    )
-
-
-@router.get("/collections/{collection_id}/approvals")
-async def list_pending_approvals(
-    collection_id: UUID,
-    request: Request,
-):
-    context = get_auth_context(request)
-    return await _client(request).list_pending_approvals(
-        domain_id=_domain_id(request),
-        collection_id=collection_id,
-        auth_context=context,
-    )
-
-
-@router.post(
-    "/collections/{collection_id}/bundle-revisions/"
-    "{bundle_revision_id}/approval",
-)
-async def review_user_intake(
-    collection_id: UUID,
-    bundle_revision_id: UUID,
-    payload: IntakeReviewRequest,
-    request: Request,
-):
-    context = get_auth_context(request)
-    return await _client(request).review_user_intake(
-        domain_id=_domain_id(request),
-        collection_id=collection_id,
-        bundle_revision_id=bundle_revision_id,
-        decision=payload.decision,
-        comment=payload.comment,
-        auth_context=context,
-    )
-
-
-async def _ingest(
-    *,
-    request: Request,
-    collection_id: UUID,
-    intake_kind: str,
-) -> JSONResponse:
-    content_type = request.headers.get("Content-Type", "")
-    if not content_type.lower().startswith("multipart/form-data"):
-        raise HTTPException(
-            status_code=415,
-            detail={
-                "code": "UNSUPPORTED_MEDIA_TYPE",
-                "message": "入库接口只接受 multipart/form-data",
-            },
-        )
-    idempotency_key = request.headers.get("Idempotency-Key", "").strip()
-    if not idempotency_key:
-        raise HTTPException(
-            status_code=428,
-            detail={
-                "code": "IDEMPOTENCY_KEY_REQUIRED",
-                "message": "缺少 Idempotency-Key Header",
-            },
-        )
-    context = get_auth_context(request)
-    upstream = await _client(request).ingest_multipart(
-        domain_id=_domain_id(request),
-        collection_id=collection_id,
-        intake_kind=intake_kind,
-        content_type=content_type,
-        body=request.stream(),
-        idempotency_key=idempotency_key,
-        auth_context=context,
-    )
-    payload = upstream.payload
-    if isinstance(payload, dict) and "bundle_id" in payload:
-        payload = {
-            **payload,
-            "status_url": (
-                f"{PUBLIC_API_V1}/apps/knowledge-retrieval/knowledge/bundles/"
-                f"{payload['bundle_id']}"
-            ),
-        }
-    return JSONResponse(
-        status_code=upstream.status_code,
-        content=payload,
-    )
-
-
-@router.post(
-    "/collections/{collection_id}/ingestions/user-files",
-    status_code=status.HTTP_202_ACCEPTED,
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {"multipart/form-data": {"schema": {"type": "object"}}},
-        }
-    },
-)
-async def ingest_user_files(collection_id: UUID, request: Request):
-    return await _ingest(
-        request=request,
-        collection_id=collection_id,
-        intake_kind="user-files",
-    )
+@router.get("/libraries/{library_id}/versions/{version_id}/source")
+async def source_file(library_id: UUID, version_id: UUID, request: Request):
+    download = await client(request).open_source(library_id, version_id, auth_context=get_auth_context(request))
+    return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
+                             background=BackgroundTask(download.close))

@@ -64,6 +64,18 @@
             "title": "Display Name",
             "type": "string"
           },
+          "effective_max_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Max Tokens"
+          },
           "model_id": {
             "format": "uuid",
             "title": "Model Id",
@@ -447,6 +459,132 @@
           "expected_row_version"
         ],
         "title": "ModelUpdateRequest",
+        "type": "object"
+      },
+      "NativeVisualRequest": {
+        "additionalProperties": false,
+        "description": "方向必须来自已批准模型能力，不接受任意向量覆盖。",
+        "properties": {
+          "direction": {
+            "enum": [
+              "TEXT_TO_IMAGE",
+              "IMAGE_TO_IMAGE",
+              "IMAGE_TO_TEXT",
+              "TEXT_TO_TEXT"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "image_base64": {
+            "anyOf": [
+              {
+                "maxLength": 11184820,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Base64"
+          },
+          "input_kind": {
+            "enum": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "title": "Input Kind",
+            "type": "string"
+          },
+          "served_model_name": {
+            "title": "Served Model Name",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 16000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "served_model_name",
+          "input_kind",
+          "direction"
+        ],
+        "title": "NativeVisualRequest",
+        "type": "object"
+      },
+      "NativeVisualResponse": {
+        "properties": {
+          "dimension": {
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "directions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Directions",
+            "type": "array"
+          },
+          "input_template": {
+            "title": "Input Template",
+            "type": "string"
+          },
+          "mask": {
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Mask",
+            "type": "array"
+          },
+          "model_revision": {
+            "title": "Model Revision",
+            "type": "string"
+          },
+          "normalization": {
+            "const": "L2",
+            "title": "Normalization",
+            "type": "string"
+          },
+          "processor_revision": {
+            "title": "Processor Revision",
+            "type": "string"
+          },
+          "similarity": {
+            "const": "DOT",
+            "title": "Similarity",
+            "type": "string"
+          },
+          "vectors": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Vectors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "vectors",
+          "mask",
+          "dimension",
+          "model_revision",
+          "processor_revision",
+          "input_template",
+          "normalization",
+          "similarity",
+          "directions"
+        ],
+        "title": "NativeVisualResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -973,6 +1111,48 @@
         "summary": "Change Model Status",
         "tags": [
           "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/represent": {
+      "post": {
+        "description": "原生多向量文本/图像表示，不混用文本 embedding 空间。",
+        "operationId": "native_representation_internal_v1_represent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeVisualRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeVisualResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Native Representation",
+        "tags": [
+          "AI Service"
         ]
       }
     }

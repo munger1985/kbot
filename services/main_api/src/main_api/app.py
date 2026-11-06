@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from platform_clients.knowledge_computation import KnowledgeComputationClientError
 from fastapi_offline import FastAPIOffline
 from loguru import logger
 from sqlalchemy import text
@@ -27,7 +28,6 @@ from main_api.api import (
     data_query_router,
     development_agent_runs_router,
     development_logs_router,
-    dify_router,
     domain_router,
     integration_router,
     knowledge_router,
@@ -49,7 +49,6 @@ from platform_clients import (
     AIOpsClientError,
     MediaStudioClientError,
     AgentRuntimeClientError,
-    KnowledgeCoreClientError,
     KnowledgeRetrievalAppClientError,
     DataQueryClientError,
 )
@@ -309,7 +308,6 @@ def create_main_api_app(
     app.include_router(notification_delivery_router)
     app.include_router(domain_router)
     app.include_router(data_query_router)
-    app.include_router(dify_router)
     app.include_router(memory_router)
     app.include_router(ops_router)
     app.include_router(integration_router)
@@ -359,39 +357,11 @@ def create_main_api_app(
             detail=str(exc),
         )
 
-    @app.exception_handler(KnowledgeCoreClientError)
-    async def knowledge_core_error_handler(
-        request: Request,
-        exc: KnowledgeCoreClientError,
-    ):
-        _log_downstream_failure(
-            request=request,
-            service_name="knowledge-core",
-            exc=exc,
-        )
-        if exc.status_code in {401, 403}:
-            return _problem_response(
-                request=request,
-                status_code=502,
-                code="UPSTREAM_AUTH_FAILED",
-                title="下游服务认证失败",
-                detail="Knowledge Core 内部认证失败",
-            )
-        if exc.status_code >= 500:
-            return _problem_response(
-                request=request,
-                status_code=503,
-                code="KNOWLEDGE_CORE_UNAVAILABLE",
-                title="Knowledge Core 暂时不可用",
-                detail="Knowledge Core 暂时无法完成请求",
-            )
-        return _problem_response(
-            request=request,
-            status_code=exc.status_code,
-            code=exc.code,
-            title="Knowledge Core 请求失败",
-            detail=str(exc),
-        )
+    @app.exception_handler(KnowledgeComputationClientError)
+    async def knowledge_business_error(request: Request, exc: KnowledgeComputationClientError):
+        status = exc.status_code if 400 <= exc.status_code <= 599 else 502
+        return _problem_response(request=request, status_code=status, code=exc.code,
+            title="知识请求未完成", detail="请检查权限、处理状态或服务配置")
 
     @app.exception_handler(KnowledgeRetrievalAppClientError)
     async def knowledge_retrieval_app_error_handler(

@@ -160,6 +160,12 @@ class EmbeddingService:
         else:
             raise ValueError(f"Unsupported similarity calculation method: {method}")
 
+    async def represent(self, served_model_name, *, text, input_role):
+        """使用同一模型实例生成向量与实际配置回执。"""
+        from .representation import dense_representation
+        model = await self.get_embedding_model(served_model_name)
+        return await dense_representation(model, text=text, input_role=input_role)
+
     async def warmup(self):
         """Preload all models into memory for warmup.
 

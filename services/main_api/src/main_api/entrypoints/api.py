@@ -25,13 +25,12 @@ from main_api.application import (
 )
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
-from main_api.application.case_resource_lifecycle import CaseResourceLifecycle
+from platform_clients.knowledge_library import KnowledgeLibraryClient
 from platform_clients import (
     AIOpsClientAuth,
     AIOpsManagementClient,
     AgentRuntimeClient,
     AIModelConfigClient,
-    KnowledgeCoreClient,
     KnowledgeRetrievalAppClient,
     MediaStudioClient,
     DataQueryClient,
@@ -92,7 +91,6 @@ async def lifespan(app: FastAPI):
     from main_api.application.notification_delivery_bootstrap import create_external_notifications
     app.state.external_notification_service = create_external_notifications(
         settings=settings, runtime=db_runtime, uow_factory=uow_factory)
-    app.state.case_resource_lifecycle = CaseResourceLifecycle(uow_factory=uow_factory, client=None)
     app.state.output_authority_service = OutputAuthorityService(uow_factory=uow_factory)
     app.state.domain_validation_service = DomainValidationService(
         uow_factory=uow_factory,
@@ -130,13 +128,9 @@ async def lifespan(app: FastAPI):
             total=settings.knowledge_core.timeout_seconds,
         )
     )
-    app.state.knowledge_core_client = KnowledgeCoreClient(
-        base_url=settings.knowledge_core.base_url,
-        caller_service=config.service_name,
-        audience=settings.knowledge_core.audience,
-        timeout_seconds=settings.knowledge_core.timeout_seconds,
-        session=client_session,
-    )
+    app.state.knowledge_library_client = KnowledgeLibraryClient(
+        base_url=settings.knowledge_retrieval_app.base_url, caller_service=config.service_name,
+        audience=settings.knowledge_retrieval_app.audience, timeout_seconds=600, session=client_session)
     app.state.knowledge_retrieval_app_client = KnowledgeRetrievalAppClient(
         base_url=settings.knowledge_retrieval_app.base_url,
         caller_service=config.service_name,

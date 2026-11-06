@@ -62,7 +62,7 @@ const hash = createHash("sha256").update(sharedSource).digest("hex");
 const header = `/* 自动同步自 Ammolite shared/ui/styles.css；请修改源文件后重新生成。\n * 源文件 SHA-256: ${hash}\n * 仅保留知识检索及其公共控件；字体使用同一系统回退栈，不从 CDN 加载。\n */\n`;
 // 旧静态页的裸 button 规则不能泄漏到 Portal 控件；随后按源样式恢复字体与各类按钮。
 const outputs = [["css/ammolite-shared.css", header + "button { all: revert; }\n" + shared.toString().trim() + "\n"]];
-assert.ok(shared.toString().includes('.upload-mode-option {'), '动态 class 引用的上传组织方式控件必须保留完整样式');
+assert.ok(classes.has('knowledge-owned-workspace'), '生产工作区必须纳入共享控件样式来源');
 
 for (const [page, entry] of Object.entries(manifest.pages)) {
   if (!entry.sources.length) continue;

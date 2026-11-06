@@ -1,18 +1,28 @@
 {
   "component": "knowledge_retrieval_app",
-  "schema_version": 1,
-  "contract_version": "knowledge-retrieval-oracle-v1",
+  "schema_version": 2,
+  "contract_version": "knowledge-retrieval-oracle-v2-app-owned-knowledge",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_agents.sql",
       "statements": 4,
-      "sha256": "98a98774e53bf1e6d297e706c273b75e5b1f77ae66f7d3a8d09d91a6ed896106"
+      "sha256": "2603052ca9ecf3a92999b23110cc10354a6931ce410f81ef6c75f335528dec2b"
     },
     {
       "name": "002_x_search.sql",
       "statements": 5,
       "sha256": "de266b8ef69179c5040043cd16f2e70e5211db1d8ca72438b67f6e983bab5f28"
+    },
+    {
+      "name": "003_knowledge_ingestion.sql",
+      "statements": 86,
+      "sha256": "688ce62a9a30107dc0ec7c810d3bf80134859753da869c556b858dbbe0180fb2"
+    },
+    {
+      "name": "004_knowledge_library.sql",
+      "statements": 2,
+      "sha256": "d79a37412220600518f5d814c94004f6145e1d59e81446b06d4dff81b0f41775"
     }
   ],
   "tables": [
@@ -20,7 +30,26 @@
     "KBOT_KR_AGENT_VERSION",
     "KBOT_KR_RESEARCH_RUN",
     "KBOT_KR_RESEARCH_EVENT",
-    "KBOT_KR_X_SOURCE"
+    "KBOT_KR_X_SOURCE",
+    "KBOT_KR_KNOWLEDGE_LIBRARY",
+    "KBOT_KR_KNOWLEDGE_DOCUMENT",
+    "KBOT_KR_KNOWLEDGE_DOCUMENT_VERSION",
+    "KBOT_KR_KNOWLEDGE_EVIDENCE_PIN",
+    "KBOT_KR_KNOWLEDGE_INDEX_GENERATION",
+    "KBOT_KR_KNOWLEDGE_INGESTION_JOB",
+    "KBOT_KR_KNOWLEDGE_NODE",
+    "KBOT_KR_KNOWLEDGE_OUTBOX",
+    "KBOT_KR_KNOWLEDGE_PARSE_BATCH",
+    "KBOT_KR_KNOWLEDGE_PARSE_RUN",
+    "KBOT_KR_KNOWLEDGE_REFERENCE_OCCURRENCE",
+    "KBOT_KR_KNOWLEDGE_RELATION",
+    "KBOT_KR_KNOWLEDGE_REPRESENTATION",
+    "KBOT_KR_KNOWLEDGE_RETRIEVAL_RECEIPT",
+    "KBOT_KR_KNOWLEDGE_SCOPE_MEMBER",
+    "KBOT_KR_KNOWLEDGE_SCOPE_SNAPSHOT",
+    "KBOT_KR_KNOWLEDGE_SEARCH_UNIT",
+    "KBOT_KR_KNOWLEDGE_UNIT_SOURCE",
+    "KBOT_KR_KNOWLEDGE_VISUAL_ASSET"
   ],
   "views": [],
   "invariants": {

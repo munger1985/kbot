@@ -467,7 +467,7 @@ async def execute_prepared_conversation_case(service, *, domain_id, prepared,
         source_preflight_hook=source_preflight_hook)
 
 
-async def register_conversation_case_intake(*, uow, domain_id, prepared, recovery, entity_scope, actor):
+async def register_conversation_case_intake(*, uow, domain_id, prepared, recovery, entity_scope, actor, documents, access, staged):
     """同事务登记已发生的外部受理；失败清理也可调用，不执行模型或 KC 审批。"""
     from aiops_agent.application.operations_knowledge import _normalize
     from aiops_agent.application.case_intake_recovery import CaseIntakeRecovery
@@ -477,8 +477,8 @@ async def register_conversation_case_intake(*, uow, domain_id, prepared, recover
         OperationsKnowledgeScopeEntity, OperationsKnowledgeIndexEntity, OperationsKnowledgeReviewEntity)
     from platform_core.identity import uuid7
     recovery = CaseIntakeRecovery.model_validate(recovery)
-    recovery.body(prepared=prepared, collection_id=recovery.collection_id)
-    if recovery.bundle_revision_id is None or prepared.closure.closed_by != str(actor):
+    recovery.body(prepared=prepared)
+    if prepared.closure.closed_by != str(actor):
         raise rejected_closure()
     closure, closure_id = prepared.closure, prepared.closure_artifact_id
     conversation_id, request_hash = closure.conversation_id, prepared.request_hash
@@ -488,7 +488,7 @@ async def register_conversation_case_intake(*, uow, domain_id, prepared, recover
     preview = {"included_turn_ids": [str(value) for value in closure.source_turn_ids]}
     internal = {"run_id": prepared.anchor_run_id, "root_ops_task_id": prepared.root_ops_task_id,
         "target_id": closure.target_id, "environment": dict(profile.environment)}
-    collection_id, revision_id, replay = recovery.collection_id, recovery.bundle_revision_id, None
+    revision_id, replay = recovery.document_version_id, None
     # 短事务锁定会话，外部审批不跨事务。每个已受理 Revision 都必须有持久化登记。
     # 此处只登记已发生的受理事实，不因来源随后撤权而丢弃定位；
     # 实际会话归属在受理冻结时校验，执行／发布资格由来源围栏另行核验。
@@ -498,16 +498,15 @@ async def register_conversation_case_intake(*, uow, domain_id, prepared, recover
     if exact is not None:
         relations = await uow.operations_knowledge.get_version_relations(
             asset_version_id=exact[1].asset_version_id)
-        if (exact[1].profile_json.get("source", {}).get("request_hash") != request_hash
-            or not any(str(row.bundle_revision_id) == str(revision_id) for row in relations["indexes"])):
+        if exact[1].profile_json.get("source", {}).get("request_hash") != request_hash:
             raise rejected_closure()
         return exact[0], exact[1], None, True
     latest = await uow.operations_knowledge.find_case_by_external_id(domain_id=domain_id, external_id=str(conversation_id))
     if latest and latest[1].profile_json.get("source", {}).get("request_hash") == request_hash:
         relations = await uow.operations_knowledge.get_version_relations(asset_version_id=latest[1].asset_version_id)
-        if any(str(index.bundle_revision_id) == str(revision_id) for index in relations.get("indexes", ())):
+        if any(str(index.document_version_id) == str(revision_id) for index in relations.get("indexes", ())):
             return latest[0], latest[1], None, True
-        replay = latest
+        return latest[0], latest[1], None, True
     asset = latest[0] if latest else OperationsKnowledgeAssetEntity(**entity_scope,
         domain_id=domain_id, asset_id=uuid7(), asset_kind="DIAGNOSIS_CASE", display_name=title,
         status="PROCESSING", security_level=security_level, created_by=actor, updated_by=actor)
@@ -538,9 +537,10 @@ async def register_conversation_case_intake(*, uow, domain_id, prepared, recover
             ("DATABASE_VERSION", internal["environment"].get("database_version")),
             ("PLATFORM", internal["environment"].get("platform")), ("PROBLEM_CLASS", "INCIDENT"),
             ("TOPOLOGY", internal["environment"].get("topology"))) if value]
+    identity = await documents.register(uow, access, staged=staged,
+        asset_id=asset.asset_id, asset_version_id=version_id)
     index = OperationsKnowledgeIndexEntity(**scope, asset_version_id=version_id,
-        collection_id=collection_id, bundle_id=recovery.bundle_id,
-        bundle_revision_id=revision_id, index_status="PENDING_APPROVAL")
+        **identity, index_status="PROCESSING")
     asset.security_level = max(int(asset.security_level), security_level)
     asset.updated_by = actor
     if latest:

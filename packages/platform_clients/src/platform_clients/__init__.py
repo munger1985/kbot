@@ -11,12 +11,6 @@ from .aiops import (
 from .model import AIModelClient, AIModelConfigClient, AIModelConfigClientError
 from .ocr import OCRClient, OCRClientError
 from .generative import GenerativeResponsesClient, GenerativeResponsesClientError
-from .knowledge_core import (
-    KnowledgeCoreClient,
-    KnowledgeCoreClientError,
-    KnowledgeCoreResponse,
-    KnowledgeCoreStreamResponse,
-)
 from .mcp_data import MCPDataClient, MCPDataClientError
 from .data_query import DataQueryClient, DataQueryClientError
 from .knowledge_retrieval_app import (
@@ -40,10 +34,6 @@ __all__ = [
     "OCRClientError",
     "GenerativeResponsesClient",
     "GenerativeResponsesClientError",
-    "KnowledgeCoreClient",
-    "KnowledgeCoreClientError",
-    "KnowledgeCoreResponse",
-    "KnowledgeCoreStreamResponse",
     "MCPDataClient",
     "MCPDataClientError",
     "DataQueryClient",

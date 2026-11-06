@@ -753,7 +753,7 @@ class AIOpsAgentService:
                 for agent, role in await uow.agents.model_references(
                     model_id=model_id
                 )
-            ]
+            ] + await uow.agents.knowledge_model_references(model_id=model_id)
 
     async def _validate_production_llm_providers(self, values) -> None:
         """生产环境启用 Agent 时，运行时 LLM 必须是本地 DeepSeek。"""

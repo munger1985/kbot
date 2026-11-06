@@ -13,6 +13,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("services/aiops_agent/src/aiops_agent/application/operations_documents.py"),
+    Path("tests/support/aiops_documents.py"),
+    Path("tests/unit/knowledge_foundation/test_aiops_child.py"),
     Path("docs/proposals/aiops-feishu-notification-detailed-design.md"),
     Path("docs/operations/aiops-feishu-notification-delivery.md"),
     Path("packages/platform_core/src/platform_core/notifications/delivery.py"),
@@ -59,12 +62,6 @@ SHARED_CONTRACTS = (
     Path("services/main_api/src/main_api/application/aiops_output_reconciliation.py"),
     Path("tests/unit/main_api/test_aiops_output_reconciliation.py"),
     Path("docs/operations/aiops-case-resource-maintenance.md"),
-    Path("tests/unit/aiops_agent/test_aiops_case_resource_lifecycle.py"),
-    Path("packages/platform_core/src/platform_core/contracts/aiops/case_resource.py"),
-    Path("packages/platform_clients/src/platform_clients/case_resource.py"),
-    Path("services/main_api/src/main_api/application/case_resource_lifecycle.py"),
-    Path("services/knowledge_core/src/knowledge_core/application/case_resource.py"),
-    Path("services/knowledge_core/src/knowledge_core/api/case_resource.py"),
     Path("services/aiops_agent/src/aiops_agent/application/case_intake.py"),
     Path("services/aiops_agent/src/aiops_agent/application/report_case_output.py"),
     Path("tests/unit/aiops_agent/test_aiops_report_case_output.py"),
@@ -74,7 +71,6 @@ SHARED_CONTRACTS = (
     Path("tests/support/aiops_report_output.py"),
     Path("tests/unit/aiops_agent/test_aiops_report_output.py"),
     Path("packages/platform_core/src/platform_core/contracts/aiops/case_collection.py"),
-    Path("services/aiops_agent/src/aiops_agent/application/case_collection.py"),
     Path("tests/unit/aiops_agent/test_aiops_case_collection_models.py"),
     Path("tests/unit/aiops_agent/test_aiops_case_output_submission.py"),
     Path("tests/unit/aiops_agent/test_aiops_output_notifications.py"),
@@ -198,7 +194,6 @@ SHARED_CONTRACTS = (
     Path("scripts/deployment/aiops_observability/configuration/identity/postgresql-metrics.collector.yml"),
     Path("scripts/deployment/aiops_observability/configuration/identity/mysql-metrics.collector.yml"),
     Path("scripts/deployment/aiops_observability/configuration/identity/oracle-metrics.collector.yml"),
-    Path("packages/platform_core/src/platform_core/contracts/knowledge_withdrawal.py"),
     Path("services/aiops_agent/src/aiops_agent/application/knowledge_withdrawal.py"),
     Path("tests/unit/aiops_agent/test_aiops_case_withdrawal.py"),
     Path("tests/unit/aiops_agent/test_aiops_oem_events.py"),

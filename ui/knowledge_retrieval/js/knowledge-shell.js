@@ -68,18 +68,25 @@
     if (!Number.isSafeInteger(target) || target <= 0) throw new Error("请选择有效的工作域");
     if (switchingDomain || String(current?.domain_id) === String(target)) return;
     switchingDomain = true;
+    KBotKnowledgeApi.cancelPending();
+    dispatchEvent(new Event("kbot:knowledge-context-changing"));
     const trigger = document.getElementById("knowledge-domain-toggle");
     if (trigger) trigger.disabled = true;
     document.querySelectorAll("[data-switch-domain]").forEach(button => { button.disabled = true; });
     try {
       const next = await KBotKnowledgeApi.json("/api/v1/auth/switch-domain", "POST", { domain_id: target });
       if (!next?.access_token || String(next.domain_id) !== String(target)) throw new Error("工作域切换响应无效，请重试");
+      KBotKnowledgeApi.cancelPending();
       KBotKnowledgeAuth.save({ ...current, ...next });
       // 重建页面和权限快照，不能让旧工作域的知识库、会话或配置留在新上下文中。
       location.reload();
     } catch (error) {
       switchingDomain = false;
       if (trigger) trigger.disabled = false;
+      document.querySelectorAll("[data-switch-domain]").forEach(button => {
+        button.disabled = String(button.dataset.switchDomain) === String(current?.domain_id);
+      });
+      dispatchEvent(new Event("kbot:knowledge-context-restored"));
       throw error;
     }
   }

@@ -1,6 +1,39 @@
 {
   "components": {
     "schemas": {
+      "DenseRepresentationRequest": {
+        "additionalProperties": false,
+        "description": "有界表示请求；模型空间由服务配置而非调用方覆盖。",
+        "properties": {
+          "input_role": {
+            "enum": [
+              "QUERY",
+              "DOCUMENT"
+            ],
+            "title": "Input Role",
+            "type": "string"
+          },
+          "served_model_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Served Model Name",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 16000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "served_model_name",
+          "text",
+          "input_role"
+        ],
+        "title": "DenseRepresentationRequest",
+        "type": "object"
+      },
       "EmbeddingDataItem": {
         "description": "One vector returned by the embedding service.",
         "properties": {
@@ -175,6 +208,18 @@
           "display_name": {
             "title": "Display Name",
             "type": "string"
+          },
+          "effective_max_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Max Tokens"
           },
           "model_id": {
             "format": "uuid",
@@ -1187,6 +1232,46 @@
         "summary": "Change Model Status",
         "tags": [
           "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/represent": {
+      "post": {
+        "description": "返回原生单向量与冻结空间回执；不静默返回空向量。",
+        "operationId": "represent_text_internal_v1_represent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenseRepresentationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Represent Text",
+        "tags": [
+          "AI Service"
         ]
       }
     },

@@ -146,10 +146,9 @@ SERVICES=(
     "Model Serving:OCR:model_serving:model_serving.entrypoints.ocr"
     "Model Serving:Image:model_serving:model_serving.entrypoints.image"
     "Knowledge Core:API:knowledge_core:knowledge_core.entrypoints.api"
-    "Knowledge Core:Index Worker:knowledge_core:knowledge_core.entrypoints.projection"
-    "Knowledge Core:Parser:knowledge_core:knowledge_core.entrypoints.parser"
     "Knowledge Retrieval App:API:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.api"
     "Knowledge Retrieval App:X Search Worker:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.worker"
+    "Knowledge Retrieval App:Knowledge Worker:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.knowledge_worker"
     "Media Studio:API:media_studio_app:media_studio_app.entrypoints.api"
     "Media Studio:Worker:media_studio_app:media_studio_app.entrypoints.worker"
     "Agent Runtime:API:agent_runtime:agent_runtime.entrypoints.api"
@@ -174,7 +173,6 @@ service_port() {
         model_serving.entrypoints.visual) echo "18093" ;;
         model_serving.entrypoints.ocr) echo "18096" ;;
         model_serving.entrypoints.image) echo "18098" ;;
-        knowledge_core.entrypoints.parser) echo "18095" ;;
         knowledge_core.entrypoints.api) echo "18090" ;;
         knowledge_retrieval_app.entrypoints.api) echo "18150" ;;
         media_studio_app.entrypoints.api) echo "18170" ;;
@@ -191,12 +189,10 @@ service_port() {
 }
 
 is_process_only_service() {
-    [ "$1" = "knowledge_core.entrypoints.projection" ] \
-        || [ "$1" = "agent_runtime.entrypoints.worker" ] \
-        || [ "$1" = "knowledge_retrieval_app.entrypoints.worker" ] \
-        || [ "$1" = "media_studio_app.entrypoints.worker" ] \
-        || [ "$1" = "main_api.entrypoints.notification_worker" ] \
-        || [ "$1" = "main_api.entrypoints.external_notification_worker" ]
+    case "$1" in
+        knowledge_retrieval_app.entrypoints.knowledge_worker|agent_runtime.entrypoints.worker|knowledge_retrieval_app.entrypoints.worker|media_studio_app.entrypoints.worker|main_api.entrypoints.notification_worker|main_api.entrypoints.external_notification_worker) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 STARTED_PIDS=()

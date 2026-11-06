@@ -25,7 +25,17 @@ class VisualModelPool(BaseModelPool[BaseVisualEmbedding]):
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )
-        await model.embed(blank_b64)
+        if hasattr(model, "represent"):
+            directions = model.config.retrieval_directions
+            if not directions:
+                raise ValueError("视觉模型没有登记检索方向")
+            direction = next((value for value in directions if value.startswith("IMAGE_TO_")), None)
+            if direction:
+                await model.represent(input_kind="IMAGE", image_base64=blank_b64, direction=direction)
+            else:
+                await model.represent(input_kind="TEXT", text="probe", direction=directions[0])
+        else:
+            await model.embed(blank_b64)
         logger.debug(f"视觉模型 {served_model_name} 健康检查通过")
 
     async def _start_model(self, served_model_name: str, model_data: dict[str, Any]) -> BaseVisualEmbedding:
@@ -54,6 +64,11 @@ class VisualModelPool(BaseModelPool[BaseVisualEmbedding]):
             "model_path": path,
             "device": params.get("device", "cuda"),
             "dimension": params.get("dimension", 128),
+            "model_revision": params.get("model_revision"),
+            "processor_revision": params.get("processor_revision"),
+            "input_template": params.get("input_template"),
+            "retrieval_directions": tuple(params.get("retrieval_directions", ())),
+            "max_representation_elements": params.get("max_representation_elements", 2097152),
             "timeout": params.get("timeout", global_cfg.timeout),
             "max_retries": params.get("max_retries", global_cfg.max_retries),
         }

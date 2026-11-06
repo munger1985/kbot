@@ -13,7 +13,8 @@ class _HybridExtractSkill:
     schema_version: str
     allowed_fields: frozenset[str]
 
-    def __init__(self, *, model_client, prompt_resolver):
+    def __init__(self, *, model_client, prompt_resolver, knowledge_integration=None):
+        self._knowledge_integration = knowledge_integration
         self._model_client = model_client
         self._prompt_resolver = prompt_resolver
 
@@ -35,6 +36,11 @@ class _HybridExtractSkill:
             }
             for item in context.input_artifacts
         ]
+        for index, item in enumerate(context.input_artifacts):
+            if item.artifact_type == "RETRIEVAL_EVIDENCE":
+                if self._knowledge_integration is None:
+                    raise ValueError("Hybrid 必须装配 App 正文读取端口")
+                inputs[index]["payload"] = await self._knowledge_integration.text_inputs(context, item)
         language = response_language(
             context.config_snapshot, context.original_input
         )
@@ -95,8 +101,6 @@ class DocumentScopeExtractSkill(_HybridExtractSkill):
     allowed_fields = frozenset(
         {
             "query", "entity_ids", "time_range", "keywords",
-            "bundle_targets", "assets", "total_count", "display_limit",
-            "truncated",
         }
     )
 

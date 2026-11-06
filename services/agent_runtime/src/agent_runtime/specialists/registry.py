@@ -8,7 +8,9 @@ from agent_runtime.domain.skills import (
     SkillRegistry,
 )
 
-from .document import KnowledgeRetrievalSkill
+from agent_runtime.composition.knowledge import RETRIEVAL_MANIFEST as KNOWLEDGE_RETRIEVAL_MANIFEST
+from agent_runtime.specialists.document.app_knowledge_skill import AppKnowledgeRetrievalSkill
+from agent_runtime.specialists.response_composer.app_knowledge_skill import AppKnowledgeComposerSkill
 from .conversation import ContextRewriteSkill
 from .conversation_response import ConversationResponseSkill
 from .data_query import (
@@ -41,32 +43,6 @@ CONTEXT_REWRITE_MANIFEST = SkillManifest(
     max_retries=1,
     data_classification=DataClassification.INTERNAL,
     external_dependencies=("llm_service", "prompt_registry"),
-)
-
-
-KNOWLEDGE_RETRIEVAL_MANIFEST = SkillManifest(
-    skill_id="knowledge-retrieval",
-    version="1.0.0",
-    owner="knowledge-core",
-    specialist="document",
-    description="在授权 Collection 内执行 KC 两阶段检索并生成可引用证据包",
-    input_schema="DocumentQueryTask.v1",
-    output_artifacts=(
-        ArtifactDeclaration(
-            artifact_type="CITATION_PACK",
-            schema_version="DocumentRetrievalResult.v1",
-        ),
-    ),
-    permissions=(
-        "knowledge.discovery.read",
-        "knowledge.evidence.read",
-    ),
-    execution_mode=ExecutionMode.READ_ONLY,
-    idempotent=True,
-    timeout_seconds=120,
-    max_retries=2,
-    data_classification=DataClassification.INTERNAL,
-    external_dependencies=("knowledge_core_api", "vlm_service"),
 )
 
 
@@ -163,8 +139,8 @@ DATA_CONSTRAINT_EXTRACT_MANIFEST = SkillManifest(
     version="1.0.0",
     owner="agent-runtime",
     specialist="hybrid",
-    description="从文档证据提取受限业务问数约束",
-    input_schema="CitationPack.v1",
+    description="读取 App 授权正文后提取受限业务问数约束",
+    input_schema="knowledge.app_retrieval.v1",
     output_artifacts=(ArtifactDeclaration(
         artifact_type="DATA_QUERY_CONSTRAINTS",
         schema_version="DataQueryConstraints.v1",
@@ -202,7 +178,7 @@ DOCUMENT_SCOPE_EXTRACT_MANIFEST = SkillManifest(
 def register_builtin_skills(
     registry: SkillRegistry,
     *,
-    knowledge_core_client,
+    knowledge_integration,
     model_client,
     prompt_resolver,
     service_name: str,
@@ -225,18 +201,16 @@ def register_builtin_skills(
     )
     registry.register(
         KNOWLEDGE_RETRIEVAL_MANIFEST,
-        KnowledgeRetrievalSkill(
-            knowledge_core_client=knowledge_core_client,
-            model_client=model_client,
-            prompt_resolver=prompt_resolver,
-            service_name=service_name,
-        ),
+        AppKnowledgeRetrievalSkill(clients=knowledge_integration.clients,
+            context_factory=knowledge_integration.auth_context, query_factory=knowledge_integration.query),
     )
     registry.register(
         RESPONSE_COMPOSER_MANIFEST,
         ResponseComposerSkill(
             model_client=model_client,
             prompt_resolver=prompt_resolver,
+            app_knowledge=AppKnowledgeComposerSkill(composer_factory=knowledge_integration.composer,
+                content_port_factory=knowledge_integration.content_port),
         ),
     )
     registry.register(
@@ -260,6 +234,7 @@ def register_builtin_skills(
     registry.register(
         DATA_CONSTRAINT_EXTRACT_MANIFEST,
         DataConstraintExtractSkill(
+            knowledge_integration=knowledge_integration,
             model_client=model_client,
             prompt_resolver=prompt_resolver,
         ),

@@ -122,7 +122,8 @@
           "agent_kind": {
             "enum": [
               "KNOWLEDGE_RETRIEVAL",
-              "AIOPS"
+              "AIOPS",
+              "AIOPS_KNOWLEDGE"
             ],
             "title": "Agent Kind",
             "type": "string"
@@ -174,10 +175,10 @@
             ],
             "title": "Instruction"
           },
-          "knowledge_scope": {
+          "knowledge_binding": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/KnowledgeScopeSnapshotV1"
+                "$ref": "#/components/schemas/KnowledgeLibraryBinding"
               },
               {
                 "type": "null"
@@ -653,7 +654,7 @@
         "additionalProperties": false,
         "properties": {
           "content_base64": {
-            "maxLength": 25165824,
+            "maxLength": 12582912,
             "minLength": 1,
             "title": "Content Base64",
             "type": "string"
@@ -974,6 +975,51 @@
         "title": "ConversationView",
         "type": "object"
       },
+      "CreateAIOpsKnowledgeRunRequest": {
+        "additionalProperties": false,
+        "description": "仅 AIOps 可信内部调用方可创建；不创建业务 Agent 或独立会话。",
+        "properties": {
+          "child_run_id": {
+            "format": "uuid",
+            "title": "Child Run Id",
+            "type": "string"
+          },
+          "execution_spec": {
+            "$ref": "#/components/schemas/AgentExecutionSpec"
+          },
+          "input": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "parent_ops_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Ops Run Id"
+          },
+          "parent_turn_id": {
+            "format": "uuid",
+            "title": "Parent Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "child_run_id",
+          "parent_turn_id",
+          "execution_spec",
+          "input"
+        ],
+        "title": "CreateAIOpsKnowledgeRunRequest",
+        "type": "object"
+      },
       "CreateAgentRunRequest": {
         "additionalProperties": false,
         "description": "公开请求经 Main API 认证后转发的 Run 创建参数。",
@@ -1065,7 +1111,7 @@
             "items": {
               "$ref": "#/components/schemas/ConversationQueryImage"
             },
-            "maxItems": 8,
+            "maxItems": 4,
             "title": "Images",
             "type": "array"
           },
@@ -1227,130 +1273,43 @@
         "title": "InstallPlanRequest",
         "type": "object"
       },
-      "KnowledgeBusinessResourceRef": {
+      "KnowledgeLibraryBinding": {
         "additionalProperties": false,
-        "description": "业务 App 拥有的知识资源定位，不替代 KC Revision 身份。",
+        "description": "仅绑定所属 App 资料库；Run 建立后由 App 重新鉴权并冻结精确版本。",
         "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "kind": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Kind",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "id"
-        ],
-        "title": "KnowledgeBusinessResourceRef",
-        "type": "object"
-      },
-      "KnowledgeScopeSnapshotV1": {
-        "additionalProperties": false,
-        "description": "由业务 App 服务端签发并冻结到单次 Run 的不可变知识范围。",
-        "properties": {
-          "bundle_revision_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Bundle Revision Ids",
-            "type": "array"
-          },
-          "business_context": {
-            "additionalProperties": true,
-            "title": "Business Context",
-            "type": "object"
-          },
-          "business_resource_refs": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/KnowledgeBusinessResourceRef"
-            },
-            "title": "Business Resource Refs",
-            "type": "array"
-          },
-          "collection_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "maxItems": 128,
-            "minItems": 1,
-            "title": "Collection Ids",
-            "type": "array"
-          },
-          "consumer_agent_id": {
-            "format": "uuid",
-            "title": "Consumer Agent Id",
-            "type": "string"
-          },
-          "consumer_agent_version_id": {
-            "format": "uuid",
-            "title": "Consumer Agent Version Id",
-            "type": "string"
-          },
-          "domain_id": {
-            "minimum": 1.0,
-            "title": "Domain Id",
-            "type": "integer"
-          },
-          "issued_at": {
-            "format": "date-time",
-            "title": "Issued At",
-            "type": "string"
-          },
-          "owner_app_id": {
-            "enum": [
-              "knowledge_retrieval",
-              "aiops"
+          "library_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Owner App Id",
-            "type": "string"
+            "title": "Library Id"
           },
-          "policy_version": {
+          "profile_ref": {
+            "default": "default",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Policy Version",
+            "title": "Profile Ref",
             "type": "string"
           },
-          "schema_version": {
-            "const": "1.0",
-            "default": "1.0",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "scope_hash": {
-            "pattern": "^sha256:[0-9a-f]{64}$",
-            "title": "Scope Hash",
-            "type": "string"
-          },
-          "security_level": {
-            "maximum": 999.0,
-            "minimum": 0.0,
-            "title": "Security Level",
-            "type": "integer"
+          "query_ticket": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Ticket"
           }
         },
-        "required": [
-          "owner_app_id",
-          "domain_id",
-          "consumer_agent_id",
-          "consumer_agent_version_id",
-          "collection_ids",
-          "bundle_revision_ids",
-          "security_level",
-          "policy_version",
-          "issued_at",
-          "scope_hash"
-        ],
-        "title": "KnowledgeScopeSnapshotV1",
+        "title": "KnowledgeLibraryBinding",
         "type": "object"
       },
       "MemoryItemView": {
@@ -2454,6 +2413,59 @@
         ]
       }
     },
+    "/internal/v1/runs/aiops-knowledge": {
+      "post": {
+        "description": "只有 AIOps 可创建绑定父轮次的内部知识执行，不创建独立会话。",
+        "operationId": "create_aiops_knowledge_run_internal_v1_runs_aiops_knowledge_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAIOpsKnowledgeRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Aiops Knowledge Run",
+        "tags": [
+          "Agent Runtime"
+        ]
+      }
+    },
     "/internal/v1/runs/development/recent": {
       "get": {
         "description": "提供给 Main API 开发调试台的最近 Run 摘要。",
@@ -2710,6 +2722,56 @@
           }
         },
         "summary": "List Events",
+        "tags": [
+          "Agent Runtime"
+        ]
+      }
+    },
+    "/internal/v1/runs/{run_id}/knowledge/content/{key}": {
+      "get": {
+        "operationId": "knowledge_content_internal_v1_runs__run_id__knowledge_content__key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Knowledge Content",
         "tags": [
           "Agent Runtime"
         ]

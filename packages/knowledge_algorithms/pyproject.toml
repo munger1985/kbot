@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kbot-knowledge-algorithms"
+version = "4.0.0"
+description = "App 独占知识数据的中立解析与召回算法"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["knowledge_algorithms*"]

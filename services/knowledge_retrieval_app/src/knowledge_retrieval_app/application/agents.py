@@ -12,6 +12,8 @@ from knowledge_retrieval_app.entities import KnowledgeRetrievalAgentEntity, Know
 from knowledge_retrieval_app.application.catalog import is_grok_model, load_catalog_model
 from platform_core.dictionary import ModelCategory, coerce_model_category
 from platform_core.identity import uuid7
+from knowledge_algorithms.contracts.errors import AlgorithmError
+from knowledge_retrieval_app.domain.knowledge_retrieval import RetrievalAccess
 
 
 class _Model(BaseModel):
@@ -22,7 +24,7 @@ class CreateAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    knowledge_core_id: UUID | None = None
+    library_id: UUID | None = None
     data_model_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     models: dict[str, UUID] = Field(default_factory=dict)
     instruction: str | None = Field(default=None, max_length=32000)
@@ -37,7 +39,7 @@ class UpdateAgentCommand(_Model):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    knowledge_core_id: UUID | None = None
+    library_id: UUID | None = None
     data_model_ids: tuple[UUID, ...] = Field(default=None, max_length=100)
     models: dict[str, UUID] | None = None
     instruction: str | None = Field(default=None, max_length=32000)
@@ -67,11 +69,22 @@ class KnowledgeRetrievalAgentService:
         self._uow_factory = uow_factory
         self._catalog = catalog_client
 
+    async def _library(self, *, domain_id, actor_id, library_id, tenant_id=None):
+        if library_id is None:
+            return None
+        try:
+            async with self._uow_factory() as uow:
+                return await uow.library(RetrievalAccess(domain_id, tenant_id, str(actor_id))).detail(library_id)
+        except AlgorithmError as exc:
+            raise AgentApplicationError("AGENT_LIBRARY_DENIED", "资料库不存在、已停用或无读取权限", status_code=404) from exc
+
     async def create(self, command: CreateAgentCommand) -> dict[str, Any]:
+        await self._library(domain_id=command.domain_id, actor_id=command.actor_id,
+            library_id=command.library_id, tenant_id=getattr(command, "tenant_id", None))
         await self._validate_x_search_model(command.models)
         self._validate(
             command.status,
-            command.knowledge_core_id,
+            command.library_id,
             command.data_model_ids,
             command.models,
         )
@@ -92,7 +105,7 @@ class KnowledgeRetrievalAgentService:
                 await uow.agents.add_agent(agent)
                 await uow.agents.add_version(self._version(
                     version_id=version_id, agent_id=agent_id, version_no=1,
-                    knowledge_core_id=command.knowledge_core_id,
+                    library_id=command.library_id,
                     data_model_ids=command.data_model_ids, models=command.models,
                     instruction=command.instruction, config=command.config,
                     actor_id=command.actor_id,
@@ -122,7 +135,7 @@ class KnowledgeRetrievalAgentService:
             return self._view(agent, await self._current_version(uow.agents, agent))
 
     async def execution_spec(
-        self, *, domain_id: int, agent_id: UUID
+        self, *, domain_id: int, agent_id: UUID, actor_id: str
     ) -> dict[str, Any]:
         """签发供 Agent Runtime 冻结保存的知识检索应用执行规格。"""
         row = await self.get(domain_id=domain_id, agent_id=agent_id)
@@ -130,18 +143,20 @@ class KnowledgeRetrievalAgentService:
             raise AgentApplicationError(
                 "AGENT_NOT_ACTIVE", "Agent 未启用，不能创建会话", status_code=422
             )
-        knowledge_core_id = row.get("knowledge_core_id")
-        if not knowledge_core_id:
+        library_id = row.get("library_id")
+        if not library_id:
             raise AgentApplicationError(
-                "AGENT_KNOWLEDGE_CORE_REQUIRED",
-                "Agent 缺少可用 Knowledge Core",
+                "AGENT_LIBRARY_REQUIRED",
+                "Agent 缺少可用资料库",
                 status_code=422,
             )
+        library = await self._library(domain_id=domain_id, actor_id=actor_id, library_id=library_id,
+            tenant_id=None)
         data_model_ids = list(row.get("data_model_ids") or [])
         resource_context = {
             **dict(row.get("config") or {}),
             "resource_mode": "managed_resources",
-            "collection_ids": [knowledge_core_id],
+            "library_id": library_id,
             "semantic_model_ids": data_model_ids,
         }
         if data_model_ids:
@@ -162,6 +177,7 @@ class KnowledgeRetrievalAgentService:
             "models": row["models"],
             "instruction": row["instruction"],
             "resource_context": resource_context,
+            "knowledge_binding": {"library_id": library_id, "profile_ref": library["configuration"]["profile_ref"]},
             "runtime_policy": {
                 "routing": "document_data_and_conversation",
                 "allow_general_conversation": True,
@@ -182,7 +198,7 @@ class KnowledgeRetrievalAgentService:
                     "binding_role": role,
                 }
                 for agent, role in await uow.agents.model_references(model_id=model_id)
-            ]
+            ] + await uow.agents.knowledge_model_references(model_id=model_id)
 
     async def update(self, command: UpdateAgentCommand) -> dict[str, Any]:
         async with self._uow_factory() as uow:
@@ -202,17 +218,20 @@ class KnowledgeRetrievalAgentService:
                 exclude_unset=True,
             )
             version_fields = {
-                "knowledge_core_id", "data_model_ids", "models", "instruction", "config"
+                "library_id", "data_model_ids", "models", "instruction", "config"
             }
             version_changed = bool(version_fields.intersection(changes))
-            knowledge_core_id = changes.get("knowledge_core_id", current.knowledge_core_id)
+            library_id = changes.get("library_id", current.library_id)
+            if library_id and (changes.get("status", agent.status) == "ACTIVE" or "library_id" in changes):
+                await uow.library(RetrievalAccess(command.domain_id, getattr(command, "tenant_id", None),
+                    str(command.actor_id))).detail(library_id)
             data_model_ids = changes.get(
                 "data_model_ids", current.data_model_ids_json
             )
             target_status = changes.get("status", agent.status)
             self._validate(
                 target_status,
-                knowledge_core_id,
+                library_id,
                 data_model_ids,
                 changes.get("models", current.models_json),
             )
@@ -224,7 +243,7 @@ class KnowledgeRetrievalAgentService:
                 await uow.agents.add_version(self._version(
                     version_id=version_id, agent_id=agent.agent_id,
                     version_no=await uow.agents.next_version_no(agent_id=agent.agent_id),
-                    knowledge_core_id=knowledge_core_id,
+                    library_id=library_id,
                     data_model_ids=data_model_ids,
                     models=changes.get("models", current.models_json),
                     instruction=changes.get("instruction", current.instruction),
@@ -247,15 +266,15 @@ class KnowledgeRetrievalAgentService:
 
     @classmethod
     def _validate(
-        cls, status: str, knowledge_core_id: UUID | None, data_model_ids, models
+        cls, status: str, library_id: UUID | None, data_model_ids, models
     ) -> None:
         if len({str(value) for value in data_model_ids}) != len(data_model_ids):
             raise AgentApplicationError(
                 "AGENT_DATA_MODEL_DUPLICATED", "问数模型不能重复绑定", status_code=422
             )
-        if status == "ACTIVE" and knowledge_core_id is None:
+        if status == "ACTIVE" and library_id is None:
             raise AgentApplicationError(
-                "AGENT_KNOWLEDGE_CORE_REQUIRED", "启用 Agent 前必须绑定一个可用 Knowledge Core", status_code=422
+                "AGENT_LIBRARY_REQUIRED", "启用 Agent 前必须绑定一个可用资料库", status_code=422
             )
         if status != "ACTIVE":
             return
@@ -297,12 +316,12 @@ class KnowledgeRetrievalAgentService:
                 "X_SEARCH_GROK_REQUIRED", "X Search 只能绑定 Grok 模型", status_code=422,
             )
     @staticmethod
-    def _version(*, version_id, agent_id, version_no, knowledge_core_id, data_model_ids, models, instruction, config, actor_id):
+    def _version(*, version_id, agent_id, version_no, library_id, data_model_ids, models, instruction, config, actor_id):
         return KnowledgeRetrievalAgentVersionEntity(
             agent_version_id=version_id,
             agent_id=agent_id,
             version_no=version_no,
-            knowledge_core_id=knowledge_core_id,
+            library_id=library_id,
             data_model_ids_json=[str(value) for value in data_model_ids],
             models_json={str(role).strip(): str(UUID(str(model_id))) for role, model_id in models.items()},
             instruction=instruction,
@@ -336,7 +355,7 @@ class KnowledgeRetrievalAgentService:
             "status": agent.status, "row_version": int(agent.row_version),
             "agent_version_id": str(version.agent_version_id),
             "version_no": int(version.version_no),
-            "knowledge_core_id": str(version.knowledge_core_id) if version.knowledge_core_id else None,
+            "library_id": str(version.library_id) if version.library_id else None,
             "data_model_ids": data_model_ids, "models": models,
             "instruction": version.instruction, "config": dict(version.config_json or {}),
             "enabled_capabilities": capabilities,

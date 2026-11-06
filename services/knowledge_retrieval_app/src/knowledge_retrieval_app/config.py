@@ -1,6 +1,7 @@
 """知识检索应用配置。"""
 
 from functools import lru_cache
+from knowledge_retrieval_app.composition.knowledge_profiles import KnowledgeFoundationConfig
 
 from pydantic import Field
 
@@ -20,6 +21,14 @@ class KnowledgeRetrievalAppWorkerConfig(ServiceConfig):
 
 
 class KnowledgeRetrievalAppSettings(Settings):
+    knowledge: KnowledgeFoundationConfig = Field(default_factory=KnowledgeFoundationConfig)
+    computation: ServiceDependencyConfig = Field(default_factory=lambda: ServiceDependencyConfig(
+        base_url="http://127.0.0.1:18090", audience="kbot-knowledge-core-api", timeout_seconds=600))
+    embedding: ServiceDependencyConfig = Field(default_factory=lambda: ServiceDependencyConfig(
+        base_url="http://127.0.0.1:18091", audience="kbot-model-embedding", timeout_seconds=300))
+    visual: ServiceDependencyConfig = Field(default_factory=lambda: ServiceDependencyConfig(
+        base_url="http://127.0.0.1:18093", audience="kbot-model-visual", timeout_seconds=300))
+
     api: KnowledgeRetrievalAppApiConfig = Field(default_factory=KnowledgeRetrievalAppApiConfig)
     worker: KnowledgeRetrievalAppWorkerConfig = Field(default_factory=KnowledgeRetrievalAppWorkerConfig)
     llm: ServiceDependencyConfig = Field(

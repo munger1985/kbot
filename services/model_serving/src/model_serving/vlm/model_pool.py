@@ -147,7 +147,7 @@ class VLMModelPool(BaseModelPool[BaseVLM[Any]]):
         common_kwargs = {
             "model_name": provider_model_name,
             "provider": provider,
-            "max_tokens": params.get("max_tokens", 512),
+            "max_tokens": params.get("max_tokens", global_cfg.max_tokens),
             "temperature": params.get("temperature", 0.1),
         }
 

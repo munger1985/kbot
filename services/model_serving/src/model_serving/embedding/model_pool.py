@@ -74,6 +74,10 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
         common_kwargs = {
             "model_name": provider_model_name,
             "provider": provider,
+            "model_revision": params.get("model_revision"),
+            "processor_revision": params.get("processor_revision"),
+            "input_template": params.get("input_template"),
+            "representation_dimension": params.get("embedding_dimension"),
             "max_tokens": params.get("max_tokens", global_cfg.max_tokens),
             "batch_size": params.get("batch_size", 2),
         }

@@ -156,6 +156,49 @@ def _raise_runtime_error(exc: Exception) -> None:
     )
 
 
+from platform_core.contracts.agent import CreateAIOpsKnowledgeRunRequest
+from platform_core.security import create_service_identity_codec
+from platform_core.security.service_identity import SERVICE_IDENTITY_HEADER, ServiceIdentityTokenError
+
+
+@router.post("/aiops-knowledge", status_code=202, response_model=AgentRunReceipt)
+async def create_aiops_knowledge_run(
+    payload: CreateAIOpsKnowledgeRunRequest, request: Request,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+):
+    """只有 AIOps 可创建绑定父轮次的内部知识执行，不创建独立会话。"""
+    context = request.state.auth_context
+    try:
+        identity = create_service_identity_codec().verify(
+            request.headers.get(SERVICE_IDENTITY_HEADER, ""),
+            audience=request.app.state.runtime_audience,
+        )
+    except ServiceIdentityTokenError as exc:
+        raise HTTPException(403, detail={"code": exc.code, "message": str(exc)}) from exc
+    if (identity.subject not in {"kbot-aiops-api", "kbot-aiops-worker"}
+        or identity.subject != context.calling_service
+        or set(identity.scopes) != {"agent.knowledge.child"}):
+        raise HTTPException(403, detail={"code": "AIOPS_CHILD_CALLER_REQUIRED"})
+    domain_id, actor_id, request_id, trace_id = _identity(request)
+    spec = payload.execution_spec
+    if (context.app_id != "aiops" or str(spec.domain_id) != str(context.domain_id)):
+        raise HTTPException(403, detail={"code": "AIOPS_CHILD_CONTEXT_REQUIRED"})
+    try:
+        return await _service(request).create_run(CreateRunCommand(
+
+            domain_id=domain_id, actor_id=actor_id,
+            agent_id=spec.consumer_agent_id, execution_spec=spec,
+            knowledge_child_run_id=payload.child_run_id,
+            request_id=request_id, trace_id=trace_id, idempotency_key=idempotency_key,
+            original_input=payload.input,
+            policy_snapshot={"auth_context": context.model_dump(mode="json"),
+                "aiops_parent": {"turn_id": str(payload.parent_turn_id),
+                    "ops_run_id": str(payload.parent_ops_run_id) if payload.parent_ops_run_id else None}},
+            budget=request.app.state.agent_runtime_budget))
+    except (AgentRuntimeConflict, AgentRuntimeNotFound) as exc:
+        _raise_runtime_error(exc)
+
+
 @router.post("", status_code=202, response_model=AgentRunReceipt)
 async def create_run(
     payload: CreateAgentRunRequest,
@@ -164,15 +207,6 @@ async def create_run(
 ) -> AgentRunReceipt:
     domain_id, actor_id, request_id, trace_id = _identity(request)
     auth_context = request.state.auth_context
-    scope = payload.execution_spec.knowledge_scope
-    if scope is None:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "KNOWLEDGE_SCOPE_REQUIRED",
-                "message": "知识问答 Run 必须携带服务端签发的知识范围",
-            },
-        )
     try:
         return await _service(request).create_run(
             CreateRunCommand(
@@ -184,8 +218,6 @@ async def create_run(
                 trace_id=trace_id,
                 idempotency_key=idempotency_key,
                 original_input=payload.input,
-                collection_ids=scope.collection_ids,
-                security_level=scope.security_level,
                 client_metadata=payload.client_metadata,
                 policy_snapshot={
                     "auth_context": auth_context.model_dump(mode="json")
@@ -199,6 +231,22 @@ async def create_run(
         AgentRuntimeNotFound,
     ) as exc:
         _raise_runtime_error(exc)
+
+
+@router.get("/{run_id}/knowledge/content/{key}")
+async def knowledge_content(run_id: UUID, key: str, request: Request):
+    from fastapi.responses import StreamingResponse
+    from starlette.background import BackgroundTask
+    domain_id, actor_id, _, _ = _identity(request)
+    context = request.state.auth_context
+    try:
+        download = await _service(request).open_knowledge_content(run_id=run_id, key=key,
+            domain_id=domain_id,
+            actor_id=actor_id, auth_context=context)
+    except (AgentRuntimeNotFound, AgentRuntimeConflict) as exc:
+        _raise_runtime_error(exc)
+    return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
+                             background=BackgroundTask(download.close))
 
 
 @router.post(
@@ -262,11 +310,12 @@ async def get_debug_run(run_id: UUID, request: Request):
 
 @router.get("/{run_id}", response_model=AgentRunSummary)
 async def get_run(run_id: UUID, request: Request) -> AgentRunSummary:
-    domain_id, _, _, _ = _identity(request)
+    domain_id, actor_id, _, _ = _identity(request)
     try:
         return await _service(request).get_run(
             run_id=run_id,
             domain_id=domain_id,
+            actor_id=actor_id,
         )
     except AgentRuntimeNotFound as exc:
         _raise_runtime_error(exc)
@@ -276,11 +325,12 @@ async def get_run(run_id: UUID, request: Request) -> AgentRunSummary:
 async def get_run_result(
     run_id: UUID, request: Request
 ) -> AgentArtifact:
-    domain_id, _, _, _ = _identity(request)
+    domain_id, actor_id, _, _ = _identity(request)
     try:
         return await _service(request).get_result(
             run_id=run_id,
             domain_id=domain_id,
+            actor_id=actor_id,
         )
     except (AgentRuntimeNotFound, AgentResultNotReady) as exc:
         _raise_runtime_error(exc)
@@ -293,11 +343,12 @@ async def list_events(
     after: int = Query(default=0, ge=0),
     limit: int = Query(default=200, ge=1, le=500),
 ) -> list[AgentRunEvent]:
-    domain_id, _, _, _ = _identity(request)
+    domain_id, actor_id, _, _ = _identity(request)
     try:
         return await _service(request).list_events(
             run_id=run_id,
             domain_id=domain_id,
+            actor_id=actor_id,
             after_sequence=after,
             limit=limit,
         )

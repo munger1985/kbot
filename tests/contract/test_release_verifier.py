@@ -86,7 +86,7 @@ class ReleaseVerifierTest(unittest.TestCase):
         self.assertIn("oracle_aiops_runtime", names)
         self.assertIn("oracle_data_query_runtime", names)
         self.assertIn("oracle_agent_memory", names)
-        self.assertIn("oracle_knowledge_core_s3", names)
+        self.assertIn("oracle_app_owned_knowledge_ingestion", names)
         self.assertIn("oracle_model_serving_s4", names)
         self.assertIn("oracle_notifications_s6", names)
 

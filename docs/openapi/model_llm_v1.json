@@ -228,6 +228,18 @@
             "title": "Display Name",
             "type": "string"
           },
+          "effective_max_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Max Tokens"
+          },
           "model_id": {
             "format": "uuid",
             "title": "Model Id",

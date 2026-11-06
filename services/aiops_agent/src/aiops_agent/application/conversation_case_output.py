@@ -102,7 +102,10 @@ class CaseOutputProcessor:
             await checkpoint(stage="INGESTING", processing_ref=ref)
 
         async def save_receipt(recovery):
-            ref["intake"] = recovery.model_dump(mode="json")
+            if recovery is None:
+                ref.pop("intake", None)
+            else:
+                ref["intake"] = recovery.model_dump(mode="json")
             await record_receipt(processing_ref=ref)
 
         if "case_result" not in ref:
@@ -146,18 +149,13 @@ class CaseOutputProcessor:
         if manifest is None or not case_projection_is_current(title=manifest.title, profile=profile):
             raise rejected_closure()
         index = indexes[0]
-        revision = await self._knowledge._kc.get_revision_status(
-            **options.kc_scope, bundle_id=UUID(index["bundle_id"]),
-            bundle_revision_id=UUID(index["bundle_revision_id"]), include_members=True,
-            auth_context=options.context)
-        members = [row for row in revision.get("members") or ()
-            if row.get("document_role") == "CONTENT" and row.get("document_version_id")
-            and row.get("member_status") in {"READY", "COMPLETED"}
-            and row.get("content_hash_sha256") == manifest.body_sha256]
-        if (len(indexes) != 1 or len(members) != 1
-            or str(revision.get("bundle_revision_id") or "") != index["bundle_revision_id"]
-            or revision.get("status") != "READY" or revision.get("approval_status") != "APPROVED"
-            or revision.get("withdrawn_at") is not None):
+        access = self._knowledge._documents.access(options.context, actor_id=execution.scope.actor_id)
+        record = await self._knowledge._documents.inspect(access, UUID(index["document_version_id"]))
+        if (len(indexes) != 1 or record["processing_status"] != "PARSED"
+            or record["source_hash"] != manifest.body_sha256
+            or record["parse_run_id"] != index["parse_run_id"]
+            or record["generation_id"] != index["index_generation_id"]
+            or record["status"] == "WITHDRAWN"):
             raise AIOpsApplicationError(code="AIOPS_CASE_OUTPUT_INDEX_FAILED",
                 message="案例正文尚未形成可引用的确切索引", status_code=409)
         if not await self._knowledge._case_index_source_fence(
@@ -168,5 +166,5 @@ class CaseOutputProcessor:
                 "version_row_version": int(detail["version"]["row_version"]),
                 "asset_row_version": int(detail["asset"]["row_version"]),
                 "index_stamp": {**{key: index[key] for key in
-                    ("collection_id", "bundle_id", "bundle_revision_id")},
+                    ("document_id", "document_version_id", "ingestion_job_id", "parse_run_id", "index_generation_id")},
                     "body_sha256": manifest.body_sha256}})

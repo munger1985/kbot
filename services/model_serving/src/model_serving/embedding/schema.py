@@ -2,6 +2,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+
+class DenseRepresentationRequest(BaseModel):
+    """有界表示请求；模型空间由服务配置而非调用方覆盖。"""
+    served_model_name: str = Field(min_length=1, max_length=128)
+    text: str = Field(min_length=1, max_length=16000)
+    input_role: Literal["QUERY", "DOCUMENT"]
+    model_config = {"extra": "forbid"}
+
+
 # Define embedding request model
 class EmbeddingRequest(BaseModel):
     """Embedding request parameter model."""

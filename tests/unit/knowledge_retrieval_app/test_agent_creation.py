@@ -53,6 +53,12 @@ class _UnitOfWork:
     def __init__(self, repository: _Repository) -> None:
         self.agents = repository
 
+    def library(self, access):
+        async def detail(library_id):
+            return {"library_id": str(library_id), "configuration": {"profile_ref": "test-profile"}}
+        from types import SimpleNamespace
+        return SimpleNamespace(detail=detail)
+
     async def __aenter__(self):
         return self
 
@@ -98,10 +104,10 @@ class AgentCreationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(["agent", "version", "commit"], repository.events)
         self.assertEqual("DRAFT", result["status"])
-        self.assertIsNone(result["knowledge_core_id"])
+        self.assertIsNone(result["library_id"])
         self.assertEqual(["conversation", "document"], result["enabled_capabilities"])
 
-    async def test_active_agent_requires_a_knowledge_core(self) -> None:
+    async def test_active_agent_requires_a_library(self) -> None:
         service = KnowledgeRetrievalAgentService(
             uow_factory=lambda: _UnitOfWork(_Repository())
         )
@@ -114,7 +120,7 @@ class AgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 actor_id="user-41",
             ))
 
-        self.assertEqual("AGENT_KNOWLEDGE_CORE_REQUIRED", raised.exception.code)
+        self.assertEqual("AGENT_LIBRARY_REQUIRED", raised.exception.code)
 
     async def test_x_search_model_must_be_active_grok_llm(self) -> None:
         model_id = uuid7()
@@ -164,7 +170,7 @@ class AgentCreationTest(unittest.IsolatedAsyncioTestCase):
         created = await service.create(CreateAgentCommand(
             domain_id=41,
             display_name="外部知识助手",
-            knowledge_core_id=uuid7(),
+            library_id=uuid7(),
             models=models,
             status="ACTIVE",
             actor_id="user-41",
@@ -172,7 +178,7 @@ class AgentCreationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("x_search", created["enabled_capabilities"])
         profile = await service.execution_spec(
-            domain_id=41, agent_id=repository.agent.agent_id
+            domain_id=41, agent_id=repository.agent.agent_id, actor_id="user-41"
         )
         self.assertEqual("knowledge_retrieval", profile["owner_app_id"])
         self.assertNotIn("x_search", profile["enabled_capabilities"])

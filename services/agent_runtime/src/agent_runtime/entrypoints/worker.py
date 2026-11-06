@@ -22,13 +22,13 @@ from agent_runtime.domain.skills import SkillRegistry
 from agent_runtime.persistence import create_agent_runtime_uow
 from agent_runtime.runtime import AgentRuntimeWorker
 from agent_runtime.specialists import register_builtin_skills
+from agent_runtime.composition.knowledge_runtime import RuntimeKnowledgeIntegration
 from platform_clients import (
     AIModelClient,
     AIModelConfigClient,
     AIOpsClientAuth,
     AIOpsDelegationClient,
     DataQueryClient,
-    KnowledgeCoreClient,
     MCPDataClient,
 )
 from platform_core.database.oracle import create_database_runtime
@@ -57,19 +57,12 @@ async def main() -> None:
     client_session = aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(
             total=max(
-                settings.knowledge_core.timeout_seconds,
+                settings.knowledge_retrieval.timeout_seconds,
                 settings.aiops.timeout_seconds,
             )
         )
     )
     try:
-        knowledge_core_client = KnowledgeCoreClient(
-            base_url=settings.knowledge_core.base_url,
-            caller_service=config.service_name,
-            audience=settings.knowledge_core.audience,
-            timeout_seconds=settings.knowledge_core.timeout_seconds,
-            session=client_session,
-        )
         model_client = AIModelClient(
             caller_service=config.service_name,
             llm_config=settings.llm,
@@ -137,9 +130,12 @@ async def main() -> None:
             timeout_seconds=settings.aiops.timeout_seconds,
             session=client_session,
         )
+        knowledge_integration = RuntimeKnowledgeIntegration(settings=settings, caller_service=config.service_name,
+            uow_factory=create_agent_runtime_uow(db_runtime.session_factory),
+            prompt_resolver=prompt_resolver, session=client_session)
         skill_registry = register_builtin_skills(
             SkillRegistry(),
-            knowledge_core_client=knowledge_core_client,
+            knowledge_integration=knowledge_integration,
             model_client=model_client,
             prompt_resolver=prompt_resolver,
             service_name=config.service_name,
@@ -167,6 +163,7 @@ async def main() -> None:
             plan_limits=limits,
             skill_registry=skill_registry,
             model_resolver=model_resolver,
+            knowledge_integration=knowledge_integration,
             notification_publisher=AgentRunOutboxPublisher(),
         )
         worker = AgentRuntimeWorker(

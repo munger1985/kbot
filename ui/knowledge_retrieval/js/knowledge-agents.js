@@ -14,7 +14,7 @@
   });
   const state = {
     rows: [],
-    options: { knowledge_cores: [], data_models: [], models: [] },
+    options: { libraries: [], data_models: [], models: [] },
     editing: null,
   };
 
@@ -67,7 +67,7 @@
     if (!rows.length) {
       node.innerHTML = emptyRow(
         state.rows.length ? "没有匹配的 Agent" : "尚未创建 Agent",
-        state.rows.length ? "请调整搜索条件或状态筛选。" : "创建草稿并配置 Knowledge Core、运行模型和可选的问数模型。",
+        state.rows.length ? "请调整搜索条件或状态筛选。" : "创建草稿并配置 资料库、运行模型和可选的问数模型。",
       );
       return;
     }
@@ -96,13 +96,13 @@
   }
 
   function fillResourceOptions(current) {
-    const currentCore = current?.knowledge_core_id || "";
+    const currentCore = current?.library_id || "";
     element("agent-knowledge-core").innerHTML = ['<option value="">暂不绑定</option>'].concat(
-      state.options.knowledge_cores.map((row) => {
-        const selected = String(row.collection_id) === String(currentCore) ? " selected" : "";
+      state.options.libraries.map((row) => {
+        const selected = String(row.library_id) === String(currentCore) ? " selected" : "";
         const unavailable = !row.selectable && !selected ? " disabled" : "";
         const suffix = row.selectable ? "" : ` · ${row.status || "不可用"}`;
-        return `<option value="${escapeHtml(row.collection_id)}"${selected}${unavailable}>${escapeHtml((row.display_name || row.collection_id) + suffix)}</option>`;
+        return `<option value="${escapeHtml(row.library_id)}"${selected}${unavailable}>${escapeHtml((row.display_name || row.library_id) + suffix)}</option>`;
       }),
     ).join("");
 
@@ -187,7 +187,7 @@
 
   function versionValues() {
     return {
-      knowledge_core_id: element("agent-knowledge-core").value || null,
+      library_id: element("agent-knowledge-core").value || null,
       data_model_ids: selectedDataModels(),
       models: selectedModels(),
       instruction: String(element("agent-instruction").value || "").trim() || null,
@@ -311,7 +311,7 @@
       ]);
       state.rows = Array.isArray(rows) ? rows : KBotKnowledgeApi.items(rows);
       state.options = {
-        knowledge_cores: Array.isArray(options?.knowledge_cores) ? options.knowledge_cores : [],
+        libraries: Array.isArray(options?.libraries) ? options.libraries : [],
         data_models: Array.isArray(options?.data_models) ? options.data_models : [],
         models: Array.isArray(options?.models) ? options.models : [],
       };

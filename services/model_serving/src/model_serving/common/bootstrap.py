@@ -7,7 +7,6 @@ from platform_clients import (
     AIOpsClientAuth,
     AIOpsManagementClient,
     DataQueryClient,
-    KnowledgeCoreClient,
     KnowledgeRetrievalAppClient,
     MediaStudioClient,
 )
@@ -70,18 +69,6 @@ def create_model_registry(
         finally:
             await client.close()
 
-    async def knowledge_references(model_id, auth_context):
-        client = KnowledgeCoreClient(
-            base_url=settings.knowledge_core.base_url,
-            caller_service=service_name,
-            audience=settings.knowledge_core.audience,
-            timeout_seconds=settings.knowledge_core.timeout_seconds,
-        )
-        return await client.list_model_references(
-            model_id=model_id,
-            auth_context=auth_context,
-        )
-
     async def data_query_references(model_id, auth_context):
         client = DataQueryClient(
             base_url=settings.data_query.base_url,
@@ -109,7 +96,6 @@ def create_model_registry(
             "knowledge-retrieval-app": knowledge_agent_references,
             "media-studio-app": media_model_references,
             "aiops-agent": aiops_agent_references,
-            "knowledge-core": knowledge_references,
             "data-query": data_query_references,
         },
         is_model_loaded=(

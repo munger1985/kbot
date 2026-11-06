@@ -9,7 +9,6 @@ from .conversations import memory_router
 from .data_query import router as data_query_router
 from .development_logs import router as development_logs_router
 from .development_agent_runs import router as development_agent_runs_router
-from .dify import router as dify_router
 from .domains import router as domain_router
 from .integrations import router as integration_router
 from .knowledge import router as knowledge_router
@@ -27,7 +26,6 @@ __all__ = [
     "data_query_router",
     "development_logs_router",
     "development_agent_runs_router",
-    "dify_router",
     "domain_router",
     "memory_router",
     "integration_router",

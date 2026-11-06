@@ -160,7 +160,6 @@ def create_runtime_handler_registry(
     diagnosis_model_client=None,
     diagnosis_prompt_registry=None,
     diagnostic_registry=None,
-    knowledge_core_client=None,
     operations_knowledge_service=None,
     diagnosis_caller_service: str | None = None,
     action_registry=None,

@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_PACKAGES = (
     "packages/platform_core/src/platform_core",
     "packages/platform_clients/src/platform_clients",
+    "packages/knowledge_algorithms/src/knowledge_algorithms",
     "services/model_serving/src/model_serving",
     "services/knowledge_core/src/knowledge_core",
     "services/knowledge_retrieval_app/src/knowledge_retrieval_app",
@@ -62,6 +63,7 @@ def _tracked_inputs() -> list[Path]:
         "resources/topology.toml",
         "packages/platform_core/pyproject.toml",
         "packages/platform_clients/pyproject.toml",
+        "packages/knowledge_algorithms/pyproject.toml",
         "services/main_api/pyproject.toml",
         "services/agent_runtime/pyproject.toml",
         "services/knowledge_core/pyproject.toml",
@@ -108,6 +110,11 @@ def _checks(
             "compile_active_packages",
             [python, "-m", "compileall", "-q", *ACTIVE_PACKAGES],
             120,
+        ),
+        (
+            "app_owned_knowledge_offline",
+            [python, "tests/acceptance/check_knowledge_foundation.py"],
+            300,
         ),
         (
             "architecture_boundaries",
@@ -211,8 +218,8 @@ def _checks(
                     120,
                 ),
                 (
-                    "oracle_knowledge_core_s3",
-                    [python, "tests/smoke/smoke_knowledge_core_s3.py"],
+                    "oracle_app_owned_knowledge_ingestion",
+                    [python, "tests/integration/test_app_owned_knowledge_ingestion_oracle.py"],
                     120,
                 ),
                 (

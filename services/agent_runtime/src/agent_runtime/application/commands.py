@@ -23,9 +23,8 @@ class CreateRunCommand(_FrozenCommand):
     trace_id: str = Field(min_length=1, max_length=128)
     idempotency_key: str = Field(min_length=1, max_length=128)
     original_input: str = Field(min_length=1, max_length=32000)
-    collection_ids: tuple[UUID, ...] = ()
-    security_level: int = Field(default=3, ge=0, le=3)
     client_metadata: dict[str, Any] = Field(default_factory=dict)
+    knowledge_child_run_id: UUID | None = None
     parent_run_id: UUID | None = None
     policy_snapshot: dict[str, Any] = Field(default_factory=dict)
     budget: dict[str, Any] = Field(default_factory=dict)
@@ -36,17 +35,17 @@ class CreateRunCommand(_FrozenCommand):
 
     @model_validator(mode="after")
     def validate_conversation_scope(self) -> "CreateRunCommand":
+        if self.execution_spec.agent_kind == "AIOPS_KNOWLEDGE":
+            parent = self.policy_snapshot.get("aiops_parent") or {}
+            if (self.knowledge_child_run_id is None or not parent.get("turn_id")
+                or self.execution_spec.owner_app_id != "aiops"):
+                raise ValueError("AIOps 知识子执行必须携带可信父轮次和固定 Run 身份")
+        elif self.knowledge_child_run_id is not None:
+            raise ValueError("普通聊天不能指定内部 Run 身份")
         if self.execution_spec.consumer_agent_id != self.agent_id:
             raise ValueError("Execution Spec 与 Agent ID 不一致")
         if self.execution_spec.domain_id != self.domain_id:
             raise ValueError("Execution Spec 与 Domain 不一致")
-        scope = self.execution_spec.knowledge_scope
-        if scope is None:
-            raise ValueError("Execution Spec 缺少 knowledge_scope")
-        if self.collection_ids != scope.collection_ids:
-            raise ValueError("Run Collection 必须完全来自 knowledge_scope")
-        if self.security_level != scope.security_level:
-            raise ValueError("Run 安全级必须完全来自 knowledge_scope")
         if (self.conversation_id is None) != (self.turn_id is None):
             raise ValueError(
                 "conversation_id 与 turn_id 必须同时提供或同时为空"

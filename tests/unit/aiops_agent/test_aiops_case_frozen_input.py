@@ -54,9 +54,9 @@ def test_freezing_is_database_only_and_persisted_input_has_no_runtime_identity()
         assert all(ref.artifact_id in f.state.artifacts for ref in frozen.artifacts)
         assert prepared.closure.source_turn_ids == (f.turn_id, f.later.turn_id)
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
-        f.service._kc.review_user_intake.assert_not_awaited()
-        f.service._collection.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
+        f.documents.publish.assert_not_awaited()
+        f.service._case_configuration.assert_not_awaited()
         restored = FrozenOutputInput.model_validate(frozen.model_dump(mode="json"))
         assert case_from_frozen_input(restored, closure_artifact_id=prepared.closure_artifact_id) == prepared
     asyncio.run(run())
@@ -87,8 +87,8 @@ def test_frozen_execution_ignores_unrelated_new_running_turn_but_new_submission_
         assert result["version"]["profile"]["root_cause"]["summary"] == "提交时的人工归纳"
         assert result["version"]["status"] == "PROCESSING"
         assert result["asset"]["current_version_id"] is None
-        f.service._kc.ingest_user_file.assert_awaited_once()
-        assert "提交时的案例标题" in f.service._kc.ingest_user_file.await_args.kwargs["body"].decode()
+        f.documents.stage.assert_awaited_once()
+        assert "提交时的案例标题" in f.documents.stage.await_args.kwargs["body"].decode()
         candidate = await conversation_case_context(uow=f.uow, domain_id=f.domain,
             conversation_id=f.conversation_id, actor_id=f.actor, included_turn_ids=(f.turn_id,))
         assert not candidate["eligible"]
@@ -114,7 +114,7 @@ def test_frozen_inputs_do_not_bypass_real_source_correction_or_revocation(change
         with pytest.raises(AIOpsApplicationError):
             await execute(f, case_from_frozen_input(frozen, closure_artifact_id=prepared.closure_artifact_id))
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 

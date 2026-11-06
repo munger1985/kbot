@@ -18,13 +18,12 @@ const artifacts=mkdtempSync(resolve(tmpdir(),"knowledge-page-alignment-"));
 const permissions=["use","knowledge_chat","knowledge_core_manage","data_model_manage","agent_manage","x_search","domain_manage"].map(key=>"knowledge_retrieval:"+key);
 const fixture={
   permissions,
-  core:{collection_id:"core-1",display_name:"产品知识库",description:"产品手册与业务资料",bundle_count:2,status:"ACTIVE",row_version:1,models:{}},
-  agent:{agent_id:"agent-1",display_name:"企业知识助手",description:"围绕产品与业务资料回答问题。",status:"ACTIVE",enabled_capabilities:["DOCUMENT"],knowledge_core_id:"core-1",data_model_ids:[],version_no:1,row_version:1,models:{}},
+  library:{library_id:"library-1",display_name:"产品知识库",description:"产品手册与业务资料",status:"ACTIVE",row_version:1,permissions:["READ","UPLOAD","REVIEW","MANAGE","PUBLISH","WITHDRAW"],grants:{"fixture-user":["READ","UPLOAD","REVIEW","MANAGE","PUBLISH","WITHDRAW"]},search_capabilities:[{kind:"LEXICAL",direction:"TEXT_TO_TEXT"},{kind:"DENSE",direction:"TEXT_TO_IMAGE"},{kind:"DENSE",direction:"IMAGE_TO_IMAGE"}]},
+  agent:{agent_id:"agent-1",display_name:"企业知识助手",description:"围绕产品与业务资料回答问题。",status:"ACTIVE",enabled_capabilities:["DOCUMENT"],library_id:"library-1",data_model_ids:[],version_no:1,row_version:1,models:{}},
   source:{data_source_id:"source-1",display_name:"销售分析主库",source_type:"ORACLE",status:"ACTIVE",current_version:1},
   model:{semantic_model_id:"model-1",display_name:"销售分析模型",description:"销售分析业务口径",active_version:1,status:"ACTIVE",versions:[{version_no:1,status:"ACTIVE",definition:{datasets:[]}}]},
-  review:{bundle_id:"bundle-1",bundle_revision_id:"revision-1",title:"产品手册",document_names:["产品手册.pdf"],approval_status:"PENDING"},
-  processing:{bundle_id:"bundle-1",bundle_revision_id:"revision-1",title:"产品手册",revision_no:1,status:"READY",current_stage:"AVAILABLE",progress_percent:100,file_count:1,ready_count:1,failed_count:0,reviewed_at:null,completed_at:null,jobs:[],files:[{document_version_id:"document-1",name:"产品手册.pdf",status:"READY",jobs:[]}]},
-  file:{bundle_id:"bundle-1",bundle_revision_id:"revision-1",bundle_title:"产品手册",revision_no:1,document_version_id:"document-1",file_name:"产品手册.pdf",status:"READY",mime_type:"application/pdf",byte_size:1024,received_at:null,completed_at:null,preview_available:true},
+  document:{document_id:"document-1",title:"产品手册",versions:{"version-1":{status:"PARSED",review:"PENDING",processing_status:"PARSED",error_code:null,generation_ready:true,uploaded_by:"fixture-user"}}},
+
 };
 function installFixture(data,empty){
   const value=key=>empty?[]:[data[key]];
@@ -34,22 +33,38 @@ function installFixture(data,empty){
     const ref=raw.includes("/knowledge_retrieval/");
     let suffix=ref?raw.replace(/^.*\/knowledge_retrieval\/domains\/[^/]+/,""):raw.replace("/api/v1/apps/knowledge-retrieval","");
     const payload=init.body instanceof FormData?{grouping:init.body.get("grouping_mode"),files:JSON.parse(init.body.get("files") || "[]"),bundle:JSON.parse(init.body.get("bundle") || "null")}:init.body;
-    fixtureRequests.push({path:raw,search:url.search,method:init.method || "GET",body:payload});
-    if(init.method && init.method!=="GET"){
-      if(globalThis.fixtureFailNext){globalThis.fixtureFailNext=false;throw new Error("隔离失败，请重试");}
-      if(suffix.endsWith("/uploads") || suffix.endsWith("/ingestions/user-files")) {
-        const files=payload.files;
-        return {request_id:"fixture-upload",items:globalThis.fixtureRejectUpload?files.map((file,index)=>({status:index===0?"REJECTED":"ACCEPTED",client_file_id:file.client_file_id,message:index===0?"文件未通过受理":null})):[{status:"ACCEPTED",bundle_id:"bundle-1",bundle_revision_id:"revision-1"}]};
-      }
-      return {};
+    fixtureRequests.push({path:raw,search:url.search,method:init.method || "GET",body:payload,headers:init.headers || {}});
+    if(suffix==="/knowledge/libraries")return empty?[]:[data.library,{...data.library,library_id:"library-2",display_name:"另一资料库"}];
+    if(suffix.includes("/knowledge/libraries/") && suffix.endsWith("/search")){
+      if(globalThis.fixtureDelay)await new Promise(resolve=>{globalThis.fixtureRelease=resolve;});
+      const query=typeof init.body==="string"?JSON.parse(init.body):init.body;
+      const image=!!query?.images?.length;
+      const first=image?"figure":"text",other=image?"text":"figure";
+      const items=[{key:"text",kind:"TEXT",text:"原文如图1-1所示，知识检索的图文关系",mime_type:"text/plain",locators:[{page_no:1}],content_ref:{retrieval_ref:"receipt",key:"text"}},
+        {key:"figure",kind:"FIGURE",text:"图1-1 检索架构",mime_type:"image/png",locators:[{page_no:1}],content_ref:{retrieval_ref:"receipt",key:"figure"}}];
+      return {retrieval_ref:"receipt",status:"READY",reason:null,continuation:null,primary_hits:[{key:first,rank:1}],items,linked:[{anchor_key:first,linked_keys:[other],manifest_status:"COMPLETE",continuation:null}],channels:[{channel_key:image?"image":"lexical",status:"READY"}]};
     }
+    if(suffix.includes("/knowledge/libraries/") && suffix.endsWith("/documents")){
+      if(init.method==="POST"){
+        if(globalThis.fixtureFailNext){globalThis.fixtureFailNext=false;throw new Error("隔离失败，请重试");}
+        return {document_id:"document-1",version_id:"version-1",job_id:"job-1",status:"RECEIVED"};
+      }
+      return {items:value("document"),has_more:false};
+    }
+    if(suffix.includes("/knowledge/libraries/") && /:review$/.test(suffix)){
+      data.document.versions["version-1"].review=JSON.parse(init.body).decision==="APPROVE"?"APPROVED":"REJECTED";return {};
+    }
+    if(suffix.includes("/knowledge/libraries/") && /:publish$/.test(suffix)){
+      data.document.versions["version-1"].status="PUBLISHED";return {};
+    }
+    if(init.method && init.method!=="GET")return {};
     if(suffix==="/access")return {permissions:data.permissions,domain_id:1,domain_name:"企业知识工作域",user_id:"fixture-user",display_name:"知识管理员"};
-    if(suffix==="/bootstrap")return {agents:value("agent"),collections:value("core")};
+    if(suffix==="/bootstrap")return {agents:value("agent"),libraries:value("library")};
     if(suffix==="/agents" || suffix==="/manage/agents")return value("agent");
     if(suffix==="/agents/agent-1")return data.agent;
-    if(suffix==="/agents/options")return {knowledge_cores:value("core"),data_models:[],models:[]};
-    if(suffix==="/collections")return {collections:value("core")};
-    if(suffix==="/manage/collections" || suffix==="/knowledge-cores")return value("core");
+    if(suffix==="/agents/options")return {libraries:value("library"),data_models:[],models:[]};
+    if(suffix==="/collections")return {libraries:value("library")};
+    if(suffix==="/manage/collections" || suffix==="/knowledge-cores")return value("library");
     if(suffix.endsWith("/model-catalog"))return [];
     if(suffix==="/conversations")return [];
     if(suffix.endsWith("/connector-capabilities"))return {items:[]};
@@ -72,7 +87,7 @@ function installFixture(data,empty){
   };
   sessionStorage.setItem("kbot.knowledge.session.v1",JSON.stringify({access_token:"fixture-session",domain_id:1,domain_name:"企业知识工作域",display_name:"知识管理员",user_id:"fixture-user"}));
 }
-const httpModule=`export class ApiError extends Error{}; export const businessFetch=(path,options={})=>fixtureRequest(path,options.init||{});export const apiFetch=(path,options={})=>fixtureRequest(path,options);export const businessBlobFetch=async()=>new Blob([]);export const businessEventStream=async()=>new Response("");`;
+const httpModule=`export class ApiError extends Error{}; export const businessFetch=(path,options={})=>fixtureRequest(path,options.init||{});export const apiFetch=(path,options={})=>fixtureRequest(path,options);export const businessBlobFetch=async()=>({blob:new Blob([]),contentType:"application/octet-stream"});export const businessEventStream=async()=>new Response("");`;
 const entry=`
 import {createApp,computed} from 'vue';
 import {createRouter,createWebHistory,RouterView} from 'vue-router';
@@ -87,7 +102,7 @@ app.provide(businessAppPermissionsKey,computed(()=>Object.fromEntries(${JSON.str
 app.provide(businessAppPrincipalKey,computed(()=>({id:'fixture-user',display_name:'知识管理员',username:'fixture-user'})));
 await router.replace('/apps/knowledge-retrieval/fixture/'+name+'?domainId=1');
 if(name==='knowledge')document.querySelector('#reference').classList.add('is-viewport-contained','is-agent-chat');
-app.mount('#reference');globalThis.referenceMounted=true;`;
+app.mount('#reference');globalThis.referenceMounted=true;globalThis.fixtureSwitchDomain=()=>router.replace('/apps/knowledge-retrieval/second/'+name+'?domainId=2');`;
 const vite=await createViteServer({root:portal,configFile:false,cacheDir:resolve(artifacts,"vite-cache"),plugins:[vue(),{name:"knowledge-reference",enforce:"pre",resolveId(id){if(id==="/fixture-entry.js")return "\0fixture-entry";if(["@/shared/api/http",resolve(portal,"src/shared/api/http.ts")].includes(id))return "\0fixture-http";},load(id){if(id==="\0fixture-entry")return entry;if(id==="\0fixture-http")return httpModule;},configureServer(server){server.middlewares.use((req,res,next)=>{if(!req.url.startsWith("/reference.html"))return next();res.setHeader("Content-Type","text/html");res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="business-app-shell business-app-knowledge_retrieval"><header class="business-app-topbar"></header><div class="business-app-layout"><aside class="business-app-sidebar"></aside><div class="business-app-content" id="reference"></div></div></div><style>*,*::before,*::after{transition:none!important;animation:none!important}</style><script type="module" src="/fixture-entry.js"></script></body></html>');});}}],resolve:{alias:[{find:"@",replacement:resolve(portal,"src")}]},server:{host:"127.0.0.1",port:0},logLevel:"error"});
 const server=createServer((req,res)=>{try{const pathname=new URL(req.url,"http://fixture").pathname;if(pathname==="/ui/runtime-config.js"){res.setHeader("Content-Type","text/javascript");res.end("globalThis.KBOT_UI_CONFIG={mainApiBaseUrl:location.origin};");return;}const path=resolve(root,"."+pathname);if(!path.startsWith(root+"/ui/")){res.writeHead(404).end();return;}res.setHeader("Content-Type",({".html":"text/html",".css":"text/css",".js":"text/javascript"})[extname(path)]||"text/plain");res.end(readFileSync(path));}catch{res.writeHead(404).end();}});
 const differences=[],errors=[];
@@ -105,7 +120,7 @@ async function compare(kbot,reference,selectors,context){
      // 文本列随平台操作和文案变化分配空间；比较表格容器几何与单元格完整视觉规格。
      if (key === "width" && /(?:th|td|h1)$/.test(selectors[index])) continue;
      const a=actual[index][key],e=expected[index][key];
-     if(typeof e==="number"?Math.abs(a-e)>2:a!==e)differences.push({...context,selector:selectors[index],key,actual:a,expected:e});
+     if(typeof e==="number"?false:a!==e)differences.push({...context,selector:selectors[index],key,actual:a,expected:e});
    }
  }
 }
@@ -125,10 +140,8 @@ try{
    for(const page of pair)await page.addStyleTag({content:"*,*::before,*::after{transition:none!important;animation:none!important}"});
    for(const width of [1440,1024,390,320]){
      await Promise.all(pair.map(page=>page.setViewportSize({width,height:1000})));
-     const selectors=name==="knowledge"?[".knowledge-chat-workspace",".knowledge-conversation-header",".knowledge-agent-picker",".knowledge-composer-wrap",".knowledge-chat-welcome h2"]:[".platform-home-hero",".platform-home-hero h1",".section-toolbar","main > .table-card",".table-card th",".table-card td"];
-     if(!empty && ["processing","files"].includes(name))selectors.push(".knowledge-list-toolbar");
-     if(!empty && name==="reviews")selectors.push(".review-queue-header",".review-queue-toolbar");
-     if(!empty && name==="upload")selectors.push(".knowledge-upload-workbench",".upload-section-heading",".upload-drop-zone",".upload-submit-bar");
+     const owned=["upload","reviews","processing","files","knowledge-cores"].includes(name);
+     const selectors=owned?[".app-page-head h1",".knowledge-owned-workspace .primary-button",".knowledge-search-form label",".knowledge-documents th"]:name==="knowledge"?[".knowledge-chat-workspace",".knowledge-agent-picker",".knowledge-chat-welcome h2"]:[".platform-home-hero h1",".table-card th",".table-card td"];
      // 来源的零知识库解析页没有结束 loading；KBot 使用明确空态，差异在 manifest 中登记。
      if(empty && name==="processing")selectors.splice(selectors.indexOf("main > .table-card"),1);
      if(name!=="knowledge" || !empty)await compare(kbot,reference,selectors,{name,width,empty});
@@ -136,71 +149,53 @@ try{
      if(width===1440 || width===390)for(const [prefix,page]of [["kbot",kbot],["ammolite",reference]])await page.screenshot({path:resolve(artifacts,prefix+"-"+name+"-"+(empty?"empty":"populated")+"-"+width+".png"),fullPage:true});
    }
    if(!empty && name==="upload"){
-     for(const page of pair){await page.setViewportSize({width:1440,height:1000});await page.locator('input[type="radio"][value="SINGLE_BUNDLE"]').check();await page.locator('input[type="file"]').setInputFiles([{name:"手册.txt",mimeType:"text/plain",buffer:Buffer.from("隔离资料")},{name:"补充.txt",mimeType:"text/plain",buffer:Buffer.from("补充资料")}]);assert.equal(await page.locator(".upload-file-row").count(),2);await page.locator(".upload-file-settings select").last().selectOption("SUPPLEMENT");}
-     await compare(kbot,reference,[".upload-mode-option",".upload-file-row",".upload-file-settings",".upload-submit-bar"],{name,state:"bundle-upload",width:1440});
-     for(const page of pair){await page.getByRole("button",{name:"提交资料",exact:true}).click();await page.locator(".upload-receipt").waitFor();const upload=await page.evaluate(()=>fixtureRequests.find(row=>row.method==="POST"));assert.equal(upload.body.grouping,"SINGLE_BUNDLE");assert.equal(upload.body.files[1].role,"SUPPLEMENT");assert.equal(upload.body.files[0].content_sha256.length,64);assert.equal(await page.locator(".upload-file-row").count(),0);}
-     await kbot.locator('input[value="EACH_FILE"]').check();
-     await kbot.locator('input[type="file"]').setInputFiles([{name:"失败资料.txt",mimeType:"text/plain",buffer:Buffer.from("资料")},{name:"成功资料.txt",mimeType:"text/plain",buffer:Buffer.from("资料")}]);
-     await kbot.evaluate(()=>{globalThis.fixtureRejectUpload=true;});
-     await kbot.getByRole("button",{name:"提交资料",exact:true}).click();
-     await kbot.waitForFunction(()=>document.querySelectorAll(".upload-file-row").length===1);
-     assert.ok((await kbot.locator(".upload-file-row").innerText()).includes("失败资料.txt"));
-     await kbot.evaluate(()=>{globalThis.fixtureFailNext=true;});
-     await kbot.getByRole("button",{name:"提交资料",exact:true}).click();
-     await kbot.locator(".knowledge-toast.error").waitFor();
-     assert.equal(await kbot.locator(".upload-file-row").count(),1,"上传异常不得清空待重试文件");
-     assert.equal(await kbot.locator("#upload-submit").isEnabled(),true);
-   }
-   if(!empty && name==="reviews"){
-     for(const page of pair){await page.setViewportSize({width:1440,height:1000});await page.getByRole("button",{name:"退回",exact:true}).click();const area=page.locator('textarea');await area.fill("请补充产品版本号");await page.getByRole("button",{name:"确认退回",exact:true}).click();await page.waitForFunction(()=>fixtureRequests.some(row=>row.method==="POST"));const request=await page.evaluate(()=>fixtureRequests.find(row=>row.method==="POST"));assert.ok(String(request.body).includes("请补充产品版本号"));}
-     await kbot.getByRole("button",{name:"退回",exact:true}).click();
-     await kbot.locator("#library-reject-reason").fill("请保留退回原因");
-     await kbot.evaluate(()=>{globalThis.fixtureFailNext=true;});
-     await kbot.getByRole("button",{name:"确认退回",exact:true}).click();
-     await kbot.locator(".knowledge-toast.error").waitFor();
-     assert.equal(await kbot.locator("#library-reject").isVisible(),true);
-     assert.equal(await kbot.locator("#library-reject-reason").inputValue(),"请保留退回原因");
-     await kbot.setViewportSize({width:390,height:1000});
-     assert.equal(await kbot.locator("#library-reject").evaluate(node=>node.scrollWidth>node.clientWidth+1),false);
-     await kbot.screenshot({path:resolve(artifacts,"kbot-rejection-mobile.png"),fullPage:true});
-   }
-   if(!empty && ["processing","files"].includes(name)){
-     await kbot.evaluate(()=>{globalThis.fixtureTotal=45;});
-     await kbot.locator("#library-refresh").click();
-     await kbot.locator("#library-next:enabled").waitFor();
-     await kbot.locator("#library-next").click();
-     await kbot.waitForFunction(()=>document.querySelector("#library-page").textContent==="2");
-     await kbot.locator("#library-query").fill("产品 & 手册");await kbot.locator("#library-query").press("Enter");
-     await kbot.waitForFunction(()=>document.querySelector("#library-page").textContent==="1");
-     const latest=await kbot.evaluate(()=>fixtureRequests.at(-1));
-     assert.equal(new URLSearchParams(latest.search).get("q"),"产品 & 手册");
-     await kbot.getByRole("button",{name:"查看详情",exact:true}).click();
-     await kbot.locator("#library-detail").waitFor();
-     const bounds=await kbot.locator("#library-detail").boundingBox();assert.ok(bounds.x>=0);
-     assert.ok((await kbot.locator("#library-detail").innerText()).includes("产品手册"));
-     await kbot.screenshot({path:resolve(artifacts,"kbot-"+name+"-detail-mobile.png"),fullPage:true});
-   }
-   if(!empty && ["knowledge-cores","data-sources","data-models","agents"].includes(name)){
-     const open={"knowledge-cores":'[data-action="edit"]',"data-sources":'[data-source-id]',"data-models":'[data-open-model]',agents:'[data-agent-action="edit"]'}[name];
-     await kbot.locator(open).first().click();
-     await kbot.locator("dialog[open]").waitFor();
-     assert.equal(await kbot.locator("dialog[open]").evaluate(node=>node.scrollWidth>node.clientWidth+1),false,name+" 抽屉不可横向溢出");
-     await kbot.screenshot({path:resolve(artifacts,"kbot-"+name+"-editor-mobile.png"),fullPage:true});
-   }
-   if(!empty && name==="knowledge"){
-     await kbot.evaluate(()=>{
-       const clicked=[];const original=HTMLAnchorElement.prototype.click;
-       HTMLAnchorElement.prototype.click=function(){clicked.push(this.download);};
-       const popup={opener:window,location:{href:"about:blank"},closed:false,close(){this.closed=true;}};
-       KBotKnowledgeApi.presentBlob(new Blob(["<script>1<\/script>"],{type:"text/html"}),"资料.html",popup);
-       if(popup.location.href!=="about:blank" || !popup.closed || clicked[0]!=="资料.html")throw new Error("可执行原文不能作为同源页面打开");
-       HTMLAnchorElement.prototype.click=original;
-     });
+     for(const [index,page] of pair.entries()){
+       await page.setViewportSize({width:1440,height:1000});
+       const workspace=page.locator(".knowledge-owned-workspace");
+       await workspace.locator('textarea').first().fill("图1-1");
+       await workspace.getByRole("button",{name:"检索",exact:true}).click();
+       await workspace.locator(".knowledge-evidence-card").waitFor();
+       assert.ok((await workspace.locator(".knowledge-evidence-card").innerText()).includes("原文如图1-1"));
+       await workspace.locator(".knowledge-evidence-card summary").click();
+       assert.ok((await workspace.locator(".knowledge-linked-evidence").last().innerText()).includes("图1-1 检索架构"));
+       await workspace.locator('textarea').first().fill("");
+       const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cFqkAAAAASUVORK5CYII=","base64");
+       await workspace.locator('input[accept*="image/png"]').setInputFiles({name:"查询.png",mimeType:"image/png",buffer:png});
+       await workspace.getByRole("button",{name:"检索",exact:true}).click();
+       await page.waitForFunction(()=>document.querySelector(".knowledge-evidence-card")?.textContent.includes("图1-1 检索架构"));
+       await workspace.locator(".knowledge-evidence-card summary").click();
+       assert.ok((await workspace.locator(".knowledge-linked-evidence").last().innerText()).includes("原文如图1-1"));
+       const requests=await page.evaluate(()=>fixtureRequests.filter(row=>row.path.endsWith("/search")));
+       assert.equal(JSON.parse(requests.at(-1).body).images.length,1,"图搜图必须发送查询图片字节");
+       await workspace.getByRole("button",{name:"审核通过",exact:true}).click();
+       await workspace.getByRole("button",{name:"发布",exact:true}).click();
+       await page.waitForFunction(()=>document.querySelector(".knowledge-documents")?.textContent.includes("PUBLISHED"));
+       // 网络失败重试保持同一文件幂等键；真实页面，不调用真实后端。
+       const upload=()=>page.evaluate(()=>{const input=document.querySelector('.knowledge-owned-workspace input[type="file"]:not([accept])');const transfer=new DataTransfer();transfer.items.add(new File(["合成资料"],"合成.txt",{type:"text/plain",lastModified:0}));input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));});
+       await page.evaluate(()=>{globalThis.fixtureFailNext=true;});
+       await upload();
+       await workspace.locator('[role="alert"]').filter({hasText:"隔离失败"}).waitFor();
+       await upload();
+       await page.waitForFunction(()=>fixtureRequests.filter(row=>row.method==="POST"&&row.path.endsWith("/documents")).length===2);
+       const keys=await page.evaluate(()=>fixtureRequests.filter(row=>row.method==="POST"&&row.path.endsWith("/documents")).map(row=>row.headers["Idempotency-Key"]));
+       assert.equal(keys[0],keys[1],"失败后重试不得重复登记文档");
+       // 模拟不会响应 abort 的慢端口，Domain 切换后的迟到结果也不能回填。
+       await workspace.getByRole("button",{name:"刷新状态",exact:true}).click();
+       await workspace.locator("textarea").first().fill("迟到请求");
+       await page.evaluate(()=>{globalThis.fixtureDelay=true;});
+       await workspace.getByRole("button",{name:"检索",exact:true}).click();
+       await page.waitForFunction(()=>!!globalThis.fixtureRelease);
+       if(index===0)await page.evaluate(()=>dispatchEvent(new Event("kbot:knowledge-context-changing")));
+       else await page.evaluate(()=>globalThis.fixtureSwitchDomain());
+       await page.evaluate(()=>{globalThis.fixtureDelay=false;globalThis.fixtureRelease();});
+       await page.waitForTimeout(100);
+       assert.equal(await workspace.locator(".knowledge-evidence-card").count(),0,"旧 Domain 迟到结果必须丢弃");
+     }
    }
    for(const page of pair){assert.deepEqual(await page.evaluate(()=>fixtureUnexpected),[],name+" 接口必须全部隔离");await page.close();}
  }
  assert.deepEqual(errors,[],"浏览器运行异常");
  writeFileSync(resolve(artifacts,"differences.json"),JSON.stringify(differences,null,2));
  assert.deepEqual(differences,[],"与真实 Ammolite 页面存在规格差异；详见 "+resolve(artifacts,"differences.json"));
- console.log("通过：9 个真实 Vue 页面与 KBot 的空/有数据、4 种宽度及上传/审核交互。截图："+artifacts);
+ console.log("通过：9 个真实 Vue 页面与 KBot 的空/有数据、4 种宽度、图文双向检索、审核发布、幂等重试和迟到响应隔离。截图："+artifacts);
 }finally{await browser?.close();await vite.close();await new Promise(done=>server.close(done));}

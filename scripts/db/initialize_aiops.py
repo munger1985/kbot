@@ -1,4 +1,4 @@
-"""幂等初始化 AIOps 管理员、固定 Domain、默认知识库和诊断案例集合。"""
+"""幂等初始化 AIOps 管理员、固定 Domain、默认 App 私有知识库。"""
 
 from __future__ import annotations
 
@@ -28,9 +28,7 @@ BOOTSTRAP_SQL = (
     / "initial_admin.sql"
 )
 DOMAIN_NAME = "aiops_portal"
-COLLECTION_NAME = "operations-manuals"
 DEFAULT_KNOWLEDGE_BASE_ID = "019ffff0-0000-7000-8000-000000001001"
-CASE_COLLECTION_NAME = "diagnosis-cases"
 ADMIN_USER = "aiopsadmin"
 INITIAL_PASSWORD = "AIOpsAdmin@2026!"
 
@@ -43,9 +41,6 @@ class AIOpsInitializationResult:
     schema_name: str
     domain_id: int
     knowledge_base_id: str
-    collection_id: str
-    case_collection_id: str | None
-    case_resource_status: str
     permission_count: int
 
 
@@ -97,14 +92,8 @@ async def _validate(connection) -> AIOpsInitializationResult:
         "SYS_CONTEXT('USERENV','CURRENT_SCHEMA') FROM DUAL"
     ))).one()
     resource = (await connection.execute(text("""
-        SELECT domain.DOMAIN_ID,
-               LOWER(SUBSTR(RAWTOHEX(collection.COLLECTION_ID),1,8)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),9,4)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),13,4)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),17,4)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),21,12))
+        SELECT domain.DOMAIN_ID
           FROM KBOT_PLATFORM_DOMAIN domain
-          JOIN KBOT_KC_COLLECTION collection ON collection.DOMAIN_ID=domain.DOMAIN_ID
           JOIN KBOT_PLATFORM_USER app_user ON app_user.USER_ID='aiopsadmin'
              AND app_user.STATUS='ACTIVE' AND app_user.OWNER_APP_ID='aiops'
           JOIN KBOT_PLATFORM_USER_CREDENTIAL credential
@@ -120,30 +109,14 @@ async def _validate(connection) -> AIOpsInitializationResult:
              AND member_role.SCOPE_MODE='ALL_APP_DOMAINS'
           JOIN KBOT_OPS_KNOWLEDGE_BASE knowledge_base
             ON knowledge_base.DOMAIN_ID=domain.DOMAIN_ID
-           AND knowledge_base.COLLECTION_ID=collection.COLLECTION_ID
            AND knowledge_base.KNOWLEDGE_BASE_ID=HEXTORAW(REPLACE(
                '019ffff0-0000-7000-8000-000000001001','-',''
            ))
            AND knowledge_base.STATUS='ACTIVE'
          WHERE domain.NAME='aiops_portal' AND domain.STATUS='ACTIVE'
-           AND collection.DISPLAY_NAME='operations-manuals'
-           AND collection.STATUS='ACTIVE' AND collection.MODELS_JSON IS NOT NULL
     """))).one_or_none()
     if resource is None:
         raise RuntimeError("aiopsadmin、aiops_portal 或默认运维知识库初始化不完整")
-    case_resource = (await connection.execute(text("""
-        SELECT CASE WHEN collection.COLLECTION_ID IS NULL THEN NULL ELSE
-               LOWER(SUBSTR(RAWTOHEX(collection.COLLECTION_ID),1,8)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),9,4)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),13,4)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),17,4)||'-'||
-                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),21,12)) END, collection.STATUS
-          FROM KBOT_PLATFORM_CASE_RESOURCE collection
-         WHERE collection.DOMAIN_ID=:domain_id
-    """), {"domain_id": int(resource[0])})).one_or_none()
-    if case_resource is None:
-        raise RuntimeError("案例资源初始化事件未登记")
-    case_collection_id, resource_status = case_resource
     missing = (await connection.execute(text("""
         SELECT PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID='aiops'
         MINUS
@@ -159,9 +132,6 @@ async def _validate(connection) -> AIOpsInitializationResult:
         pdb_name=str(target[0]), schema_name=str(target[1]),
         domain_id=int(resource[0]),
         knowledge_base_id=DEFAULT_KNOWLEDGE_BASE_ID,
-        collection_id=str(resource[1]),
-        case_collection_id=str(case_collection_id) if case_collection_id else None,
-        case_resource_status=str(resource_status),
         permission_count=permission_count,
     )
 
@@ -207,9 +177,6 @@ def main() -> int:
         f"AIOps {action}：PDB={result.pdb_name}，Schema={result.schema_name}，"
         f"Domain={DOMAIN_NAME}({result.domain_id})，"
         f"KnowledgeBase=默认运维知识库({result.knowledge_base_id})，"
-        f"Collection={COLLECTION_NAME}({result.collection_id})，"
-        f"CaseCollection={CASE_COLLECTION_NAME}({result.case_collection_id or '等待后台创建'})，"
-        f"CaseResourceStatus={result.case_resource_status}，"
         f"权限={result.permission_count}，用户={ADMIN_USER}"
     )
     if not args.check_only:

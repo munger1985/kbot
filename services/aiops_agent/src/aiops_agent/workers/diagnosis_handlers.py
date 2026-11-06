@@ -178,6 +178,8 @@ class KnowledgeCitationHandler:
         )
         domain_id = int(context.plan_snapshot["target"]["domain_id"])
         target = context.plan_snapshot["target"]
+        auth_context = auth_context.model_copy(update={"app_id": "aiops",
+            "domain_id": str(domain_id)})
         try:
             result = await self._knowledge.search(
                 domain_id=domain_id,

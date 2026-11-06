@@ -73,3 +73,14 @@ class KnowledgeRetrievalAgentRepository:
             for role, value in dict(version.models_json or {}).items()
             if str(value) == expected
         ]
+    async def knowledge_model_references(self, *, model_id: UUID):
+        """资料库模型配置也阻止误归档，不能只检查 Agent 回答模型。"""
+        from ..entities.knowledge_library import KnowledgeLibraryEntity
+        statement = select(KnowledgeLibraryEntity)
+        rows = (await self._session.scalars(statement)).all()
+        return [{"service": "knowledge-retrieval-app", "resource_type": "knowledge_library",
+            "resource_id": str(row.library_id), "usage": role, "binding_role": role,
+            "display_name": row.display_name, "status": row.status,
+            "domain_id": str(row.domain_id)}
+            for row in rows for role, value in row.configuration_json.get("models", {}).items()
+            if str(value) == str(model_id)]

@@ -76,6 +76,8 @@ class AgentRuntimeWorker:
         logger.info("Agent Runtime Worker 已停止：{}", self._worker_id)
 
     async def run_once(self) -> bool:
+        if await self._runtime_service.cleanup_knowledge_once():
+            return True
         lease = await self._runtime_service.claim_task(
             ClaimTaskCommand(
                 worker_id=self._worker_id,

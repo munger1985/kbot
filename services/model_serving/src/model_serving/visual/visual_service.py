@@ -49,3 +49,12 @@ class VisualService:
 
         model = await self._pool.load_model(served_model_name)
         return await model.embed(image_base64)
+
+    async def represent(self, served_model_name, *, input_kind, direction, text=None, image_base64=None):
+        """传递模型原生 token 矩阵及有效 mask。"""
+        if not self._initialized:
+            await self.initialize()
+        model = await self._pool.load_model(served_model_name)
+        if not hasattr(model, "represent"):
+            raise ValueError("当前视觉模型未登记原生多向量能力")
+        return await model.represent(input_kind=input_kind, direction=direction, text=text, image_base64=image_base64)

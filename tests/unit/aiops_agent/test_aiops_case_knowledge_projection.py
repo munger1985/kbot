@@ -224,22 +224,23 @@ def test_more_than_one_hundred_unrelated_successors_do_not_invalidate_frozen_cla
 def test_action_hit_expands_exact_body_context_without_pretending_to_be_new_kc_evidence():
     value = profile(case_kind="NEGATIVE_EXPERIENCE", verification={"result": "ADVERSE", "method": "USER_REPORTED"})
     body = case_knowledge_markdown(title="失败复盘", profile=value).decode()
-    revision_id, document_id = uuid7(), uuid7()
+    retrieval_id, document_id = uuid7(), uuid7()
+    action = next(unit for unit in value.knowledge_projection.units if unit.unit_id == "case-action-1")
+    quote = body[action.start:action.end]
     context = case_context_for_citation(profile=value, document_version_id=document_id, citation={
-        "bundle_revision_id": str(revision_id),
-        "items": [{"evidence": {"heading_path": ["失败复盘", "[case-action-1] 登记措施与效果 1"]}}],
+        "locator": {"retrieval_ref": str(retrieval_id)}, "quote": quote,
     })
     units = {unit["unit_id"]: unit for unit in context["units"]}
     assert {"case-action-1", "case-problem", "case-conclusion", "case-verification", "case-boundaries", "case-unresolved"} <= set(units)
     assert context["document_version_id"] == str(document_id)
-    assert context["bundle_revision_id"] == str(revision_id)
+    assert context["retrieval_ref"] == str(retrieval_id)
     assert context["action_use"] == "WARNING_ONLY"
     assert all(unit["quote"] == body[unit["start"]:unit["end"]] for unit in context["units"])
     assert all("evidence_id" not in unit for unit in context["units"])
     assert all(hashlib.sha256(unit["quote"].encode()).hexdigest() == unit["content_hash"] for unit in context["units"])
     with pytest.raises(ValueError, match="预算"):
         case_context_for_citation(profile=value, document_version_id=document_id, max_characters=10, citation={
-            "bundle_revision_id": str(revision_id), "items": [{"evidence": {"heading_path": ["[case-action-1]"]}}],
+            "quote": quote,
         })
     with pytest.raises(ValueError, match="语义单元"):
-        case_context_for_citation(profile=value, document_version_id=document_id, citation={"bundle_revision_id": str(revision_id)})
+        case_context_for_citation(profile=value, document_version_id=document_id, citation={"quote": ""})

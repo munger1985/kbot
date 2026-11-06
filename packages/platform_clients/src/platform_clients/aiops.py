@@ -646,11 +646,12 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
     async def download_operations_knowledge_source(
-        self, asset_version_id: UUID, *, auth_context: AuthContext
+        self, asset_version_id: UUID, *, auth_context: AuthContext, document_version_id: UUID | None = None
     ) -> AIOpsBinaryResponse:
         return await self._bytes(
             "GET",
-            f"{INTERNAL_API_V1}/aiops/operations-knowledge/versions/{asset_version_id}/source",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/versions/{asset_version_id}/source" +
+                (f"?document_version_id={document_version_id}" if document_version_id else ""),
             auth_context=auth_context,
             accept="*/*",
         )

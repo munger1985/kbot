@@ -112,7 +112,7 @@ def test_invalid_selection_or_stale_fingerprint_never_reaches_model(mode):
         if mode == "stale": candidate["source_fingerprint"] = "f" * 64
         with pytest.raises(AIOpsApplicationError): await close(f, candidate)
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -127,7 +127,7 @@ def test_other_target_is_not_silently_merged_and_explicit_selection_can_switch()
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("phase", ["model", "intake", "approval"])
+@pytest.mark.parametrize("phase", ["model", "intake", "registration"])
 def test_midflight_revocation_prevents_upload_or_persists_exact_withdrawal(phase):
     async def run():
         f = await setup()
@@ -137,23 +137,22 @@ def test_midflight_revocation_prevents_upload_or_persists_exact_withdrawal(phase
                 return SimpleNamespace(output={"spans": []})
             f.service._structured_model.generate_structured.side_effect = revoked_model
         else:
-            method = f.service._kc.ingest_user_file if phase == "intake" else f.service._kc.review_user_intake
-            value = method.return_value
-            async def revoked(**_):
+            method = f.documents.stage if phase == "intake" else f.documents.register
+            original = method.side_effect
+            async def revoked(*args, **kwargs):
                 f.uow.agents.version_has_target.return_value = False
-                return value
+                return await original(*args, **kwargs)
             method.side_effect = revoked
         with pytest.raises(AIOpsApplicationError): await close(f)
         if phase == "model":
-            f.service._kc.ingest_user_file.assert_not_awaited()
+            f.documents.stage.assert_not_awaited()
         else:
             version = next(iter(f.state.versions.values()))
             assert version.status == "REVIEW_REQUIRED"
             index = f.state.relations[version.asset_version_id]["indexes"][0]
-            accepted = f.service._kc.ingest_user_file.return_value.payload["items"][0]
-            assert str(index.bundle_revision_id) == accepted["bundle_revision_id"]
+            assert index.document_version_id in f.documents.records
             assert f.uow.outbox.add.await_count >= 1
-        if phase != "approval": f.service._kc.review_user_intake.assert_not_awaited()
+        if phase != "registration": f.documents.publish.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -181,7 +180,7 @@ def test_plan_or_observation_cannot_become_execution_evidence():
         f = await setup()
         with pytest.raises(AIOpsApplicationError):
             await close(f, actions=["声称已实施"], action_evidence_ids=[f.artifact.artifact_id])
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -249,19 +248,19 @@ def test_unrelated_running_turn_does_not_invalidate_already_frozen_case():
     asyncio.run(run())
 
 
-def test_idempotency_revalidates_sources_and_approval_failure_is_recoverable():
+def test_idempotency_revalidates_sources_without_repeating_intake():
     async def run():
         f = await setup()
         candidate = await preview(f)
-        f.service._kc.review_user_intake.side_effect = RuntimeError("索引暂不可用")
-        with pytest.raises(RuntimeError): await close(f, candidate)
-        version = next(iter(f.state.versions.values()))
-        assert f.state.relations[version.asset_version_id]["indexes"][0].index_status == "PENDING_APPROVAL"
+        await close(f, candidate)
         result = await close(f, candidate)
         assert result["replayed"]
-        assert f.service._kc.ingest_user_file.await_count == 1
+        f.documents.stage.assert_awaited_once()
+        f.documents.register.assert_awaited_once()
+        f.documents.publish.assert_not_awaited()
         f.uow.agents.version_has_target.return_value = False
-        with pytest.raises(AIOpsApplicationError): await close(f, candidate)
+        with pytest.raises(AIOpsApplicationError):
+            await close(f, candidate)
     asyncio.run(run())
 
 
@@ -290,28 +289,25 @@ def test_multi_turn_closure_report_retains_exact_source_runs_and_omits_revoked_a
     asyncio.run(run())
 
 
-def test_concurrent_accepted_different_revision_is_registered_and_withdrawn_not_lost():
+def test_concurrent_staged_bodies_converge_on_one_atomic_app_intake():
     async def run():
         f = await setup()
         candidate = await preview(f)
-        first_response = f.service._kc.ingest_user_file.return_value
-        other_response = SimpleNamespace(payload={"items": [{"status": "ACCEPTED",
-            "bundle_id": str(uuid7()), "bundle_revision_id": str(uuid7())}]})
-        async def overlap(**_):
-            f.service._kc.ingest_user_file.side_effect = None
-            f.service._kc.ingest_user_file.return_value = other_response
-            await close(f, candidate)
-            return first_response
-        f.service._kc.ingest_user_file.side_effect = overlap
+        original = f.documents.stage.side_effect
+        entered = False
+        async def overlap(**kwargs):
+            nonlocal entered
+            staged = await original(**kwargs)
+            if not entered:
+                entered = True
+                await close(f, candidate)
+            return staged
+        f.documents.stage.side_effect = overlap
         result = await close(f, candidate)
         assert result["replayed"]
-        revisions = {str(index.bundle_revision_id) for relations in f.state.relations.values()
-            for index in relations["indexes"]}
-        assert revisions == {first_response.payload["items"][0]["bundle_revision_id"],
-            other_response.payload["items"][0]["bundle_revision_id"]}
-        assert len(f.state.versions) == 2
-        assert f.uow.outbox.add.await_count >= 1
-        # 多余版本不会遮蔽用户已获得的有效候选，重复提交仍返回该版本。
+        assert len(f.state.versions) == 1
+        f.documents.register.assert_awaited_once()
+        f.uow.outbox.add.assert_not_awaited()
         assert (await close(f, candidate))["version"]["asset_version_id"] == result["version"]["asset_version_id"]
     asyncio.run(run())
 
@@ -343,7 +339,7 @@ def test_report_case_keeps_valid_claim_without_reviving_refuted_claim(stale_fact
             content.content_hash = canonical_hash(content.payload_json)
             f.report.content_hash = content.content_hash
             with pytest.raises(AIOpsApplicationError): await extract(f)
-            f.service._kc.ingest_user_file.assert_not_awaited()
+            f.documents.stage.assert_not_awaited()
         else:
             result = await extract(f)
             assert {ref["claim_id"] for ref in result["version"]["profile"]["source"]["claim_refs"]
@@ -385,8 +381,6 @@ def test_report_uses_latest_closure_across_selected_turns_and_never_revives_olde
         f = await setup()
         await close(f, await preview(f, (f.later.turn_id,)))
         old = next(row for row in f.state.artifacts.values() if row.schema_version == "DIAGNOSIS_CLOSURE.v1")
-        f.service._kc.ingest_user_file.return_value = SimpleNamespace(payload={"items": [{"status": "ACCEPTED",
-            "bundle_id": str(uuid7()), "bundle_revision_id": str(uuid7())}]})
         await close(f, await preview(f, (f.turn_id,)), root_cause_summary="后来确认的第一轮收口，不能被较旧人工归纳覆盖")
         newest = next(row for row in f.state.artifacts.values()
             if row.schema_version == "DIAGNOSIS_CLOSURE.v1" and row.artifact_id != old.artifact_id)

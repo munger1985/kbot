@@ -1,1 +1,1 @@
-"""Workers owned by Knowledge Core and invoked by separate processes."""
+"""无状态解析计算服务；只保留本 App 调用的有界计算协议。"""

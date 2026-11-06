@@ -18,14 +18,18 @@ from tests.support.aiops_knowledge_scope import knowledge_agent_repository, acti
 
 
 def setup_search(*, size=5, max_results=1, budget=None):
+    from datetime import datetime, timezone
+    from hashlib import sha256
+    from knowledge_algorithms.contracts.identity import EvidenceKey
     rows = [(
         SimpleNamespace(asset_id=uuid7(), asset_kind="MANUAL", display_name=f"知识-{index}"),
         SimpleNamespace(asset_version_id=uuid7(), version_no=1, profile_json={"scope": {}}),
-        SimpleNamespace(index_ref_id=uuid7(), collection_id=uuid7(), bundle_revision_id=uuid7()),
+        SimpleNamespace(**{name: uuid7() for name in ("index_ref_id", "document_id",
+            "document_version_id", "ingestion_job_id", "parse_run_id", "index_generation_id")}),
     ) for index in range(size)]
-    state = SimpleNamespace(rows=rows, rechecks=0, transaction_open=False)
-
-    async def list_candidates(*, limit, after_index_id=None, asset_version_ids=(), bundle_revision_ids=(), **scope):
+    state = SimpleNamespace(rows=rows, rechecks=0, transaction_open=False, tickets=[], quote="较早相关知识的正文",
+                            copies=1, source_hash=None)
+    async def list_candidates(*, limit, after_index_id=None, asset_version_ids=(), document_version_ids=(), **scope):
         assert state.transaction_open
         values = state.rows
         if after_index_id is not None:
@@ -33,42 +37,51 @@ def setup_search(*, size=5, max_results=1, budget=None):
         if asset_version_ids:
             state.rechecks += 1
             values = [row for row in values if row[1].asset_version_id in asset_version_ids]
-        if bundle_revision_ids:
-            values = [row for row in values if row[2].bundle_revision_id in bundle_revision_ids]
+        if document_version_ids:
+            values = [row for row in values if str(row[2].document_version_id) in {str(v) for v in document_version_ids}]
         return values if limit is None else values[:limit]
-
     repo = SimpleNamespace(list_published_candidates=AsyncMock(side_effect=list_candidates))
     active_knowledge_bases_fixture(repo)
+    async def ticket(access, **kwargs):
+        assert state.transaction_open
+        state.tickets.append(kwargs)
+        return "ticket:" + str(len(state.tickets))
+    query_tickets = SimpleNamespace(create_query_ticket=AsyncMock(side_effect=ticket))
     @asynccontextmanager
     async def uow_factory():
         state.transaction_open = True
         try:
-            yield SimpleNamespace(operations_knowledge=repo, agents=agents)
+            yield SimpleNamespace(operations_knowledge=repo, agents=agents,
+                knowledge_documents=query_tickets, commit=AsyncMock())
         finally:
             state.transaction_open = False
-
     wanted = rows[-1]
-    async def discover(**kwargs):
+    async def create_scope(access, **kwargs):
         assert not state.transaction_open
-        if wanted[2].bundle_revision_id not in kwargs["bundle_revision_ids"]:
-            return {"candidates": []}
-        return {"candidates": [{
-            "collection_id": str(wanted[2].collection_id), "bundle_id": str(uuid7()),
-            "bundle_revision_id": str(wanted[2].bundle_revision_id), "rrf_score": 0.03,
-        }]}
-
-    async def retrieve(**kwargs):
+        return SimpleNamespace(scope_hash="a"*64, snapshots=state.tickets[-1]["snapshots"])
+    async def retrieve(access, *, scope, **kwargs):
         assert not state.transaction_open
-        return {"citations": [{
-            "citation_id": str(uuid7()), "collection_id": str(wanted[2].collection_id),
-            "bundle_revision_id": str(wanted[2].bundle_revision_id),
-            "quote": "较早相关知识的正文",
-        }]}
-
+        values = []
+        if any(row["document_version_id"] == str(wanted[2].document_version_id) for row in scope.snapshots):
+            for index in range(state.copies):
+                key = EvidenceKey("aiops", str(wanted[2].document_version_id), str(wanted[2].parse_run_id), "node-" + str(index))
+                values.append(SimpleNamespace(key=key, mime_type="text/plain", locators=(),
+                    source_keys=(key,), source_spans=()))
+        return SimpleNamespace(retrieval_ref="receipt", evidence_set=SimpleNamespace(evidence=tuple(values)))
+    async def stream(access, **kwargs):
+        assert not state.transaction_open
+        body = state.quote.encode()
+        async def chunks():
+            yield body
+        return SimpleNamespace(content_hash=sha256(body).hexdigest(), byte_count=len(body)), chunks()
+    retrieval = SimpleNamespace(limits=SimpleNamespace(max_versions=1000, scope_ttl_seconds=900),
+        clock=lambda: datetime.now(timezone.utc), create_scope=AsyncMock(side_effect=create_scope),
+        retrieve=AsyncMock(side_effect=retrieve), stream_content=AsyncMock(side_effect=stream))
+    documents = SimpleNamespace(access=lambda context: context, retrieval=retrieval,
+        inspect=AsyncMock(side_effect=lambda *args: {"source_hash": state.source_hash}))
     service = OperationsKnowledgeService.__new__(OperationsKnowledgeService)
-    service._uow_factory = uow_factory
+    service._uow_factory, service._documents = uow_factory, documents
     service._knowledge_search_budget = budget or KnowledgeSearchBudget()
-    service._kc = SimpleNamespace(discover=AsyncMock(side_effect=discover), retrieve_evidence=AsyncMock(side_effect=retrieve))
     request = KnowledgeSearchRequest(query="连接等待的排查方式", max_results=max_results,
         source_kinds=("MANUAL",), knowledge_base_ids=(uuid7(),))
     agents = knowledge_agent_repository(knowledge_base_ids=request.knowledge_base_ids)
@@ -78,7 +91,6 @@ def setup_search(*, size=5, max_results=1, budget=None):
         kwargs.update(domain_id=uuid7(), tenant_id=uuid7())
     return SimpleNamespace(**locals())
 
-
 def test_final_top_k_does_not_truncate_registry_before_body_search():
     async def run():
         f = setup_search()
@@ -87,9 +99,9 @@ def test_final_top_k_does_not_truncate_registry_before_body_search():
         assert len(result["results"]) == 1
         assert result["coverage"]["scanned_candidates"] == 5
         assert result["coverage"]["registry_scope_complete"]
-        call = f.service._kc.discover.await_args.kwargs
-        assert len(call["bundle_revision_ids"]) == 5
-        assert call["per_collection_limit"] != f.request.max_results
+        call = f.state.tickets[0]
+        assert len(call["snapshots"]) == 5
+        assert f.retrieval.retrieve.await_args.kwargs["query"].requested_count != f.request.max_results
         recheck = f.repo.list_published_candidates.await_args.kwargs
         assert recheck["limit"] is None and len(recheck["asset_version_ids"]) == 5
         assert f.state.rechecks == 1
@@ -123,7 +135,7 @@ def test_current_agent_policy_cannot_be_bypassed_by_explicit_search_fields(failu
             f.repo.active_knowledge_base_ids.return_value = []
         result = await f.service.search(**f.kwargs)
         assert result["status"] == expected and result["results"] == []
-        f.service._kc.discover.assert_not_awaited()
+        f.retrieval.retrieve.assert_not_awaited()
         f.repo.list_published_candidates.assert_not_awaited()
     asyncio.run(run())
 
@@ -138,19 +150,19 @@ def test_policy_security_cap_and_required_tags_survive_request_overrides():
         for call in f.repo.list_published_candidates.await_args_list:
             assert call.kwargs["max_security_level"] == 2
             assert str(tag).upper() in call.kwargs["scope_filters"]["TAG_ID"]
-        assert f.service._kc.discover.await_args.kwargs["max_security_level"] == 2
+        assert f.state.tickets[0]["request"].max_security_level == 2
     asyncio.run(run())
 
 
 def test_agent_policy_revoked_during_kc_call_discards_already_retrieved_body():
     async def run():
         f = setup_search()
-        original = f.service._kc.retrieve_evidence.side_effect
-        async def revoke(**kwargs):
-            response = await original(**kwargs)
+        original = f.retrieval.stream_content.side_effect
+        async def revoke(*args, **kwargs):
+            response = await original(*args, **kwargs)
             f.agents.version_knowledge_policy.return_value["enabled"] = False
             return response
-        f.service._kc.retrieve_evidence.side_effect = revoke
+        f.retrieval.stream_content.side_effect = revoke
         result = await f.service.search(**f.kwargs)
         assert result["status"] == "KNOWLEDGE_SCOPE_CHANGED"
         assert result["results"] == [] and result["warnings"]
@@ -166,7 +178,7 @@ def test_archived_only_knowledge_binding_does_not_unlock_domain_cases():
         result = await f.service.search(**f.kwargs)
         assert result["status"] == "NO_KNOWLEDGE_BASE_BOUND" and not result["results"]
         f.repo.list_published_candidates.assert_not_awaited()
-        f.service._kc.discover.assert_not_awaited()
+        f.retrieval.retrieve.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -189,9 +201,9 @@ def test_keyset_pages_and_kc_shards_keep_exact_authorized_revisions():
         assert pages[0].kwargs["after_index_id"] is None
         assert pages[1].kwargs["after_index_id"] == f.rows[1][2].index_ref_id
         assert pages[2].kwargs["after_index_id"] == f.rows[3][2].index_ref_id
-        ranges = [call.kwargs["bundle_revision_ids"] for call in f.service._kc.discover.await_args_list]
+        ranges = [[row["document_version_id"] for row in ticket["snapshots"]] for ticket in f.state.tickets]
         assert [len(values) for values in ranges] == [2, 2, 1]
-        assert {str(value) for values in ranges for value in values} == {str(row[2].bundle_revision_id) for row in f.rows}
+        assert {str(value) for values in ranges for value in values} == {str(row[2].document_version_id) for row in f.rows}
     asyncio.run(run())
 
 
@@ -209,53 +221,50 @@ def test_budget_overflow_is_explicit_not_a_false_complete_no_match():
 def test_revision_withdrawn_while_kc_runs_is_removed_before_output():
     async def run():
         f = setup_search()
-        original = f.service._kc.retrieve_evidence.side_effect
-        async def revoke(**kwargs):
-            response = await original(**kwargs)
+        original = f.retrieval.stream_content.side_effect
+        async def revoke(*args, **kwargs):
+            response = await original(*args, **kwargs)
             f.state.rows = f.rows[:-1]
             return response
-        f.service._kc.retrieve_evidence.side_effect = revoke
+        f.retrieval.stream_content.side_effect = revoke
         result = await f.service.search(**f.kwargs)
         assert not result["results"]
         assert f.state.rechecks == 1
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("tamper", ["revision", "collection"])
-def test_kc_candidate_outside_registry_whitelist_cannot_expand_scope(tamper):
+@pytest.mark.parametrize("tamper", ["revision", "parse", "owner"])
+def test_candidate_outside_registry_whitelist_cannot_expand_scope(tamper):
+    from dataclasses import replace
     async def run():
         f = setup_search()
-        response = await f.service._kc.discover.side_effect(
-            bundle_revision_ids=[f.wanted[2].bundle_revision_id])
-        response["candidates"][0]["bundle_revision_id" if tamper == "revision" else "collection_id"] = str(uuid7())
-        f.service._kc.discover.side_effect = None
-        f.service._kc.discover.return_value = response
+        original = f.retrieval.retrieve.side_effect
+        async def retrieve(*args, **kwargs):
+            response = await original(*args, **kwargs)
+            value = response.evidence_set.evidence[0]
+            field = {"revision": "document_version_ref", "parse": "parse_run_ref", "owner": "owner_binding_ref"}[tamper]
+            value.key = replace(value.key, **{field: str(uuid7())})
+            return response
+        f.retrieval.retrieve.side_effect = retrieve
         result = await f.service.search(**f.kwargs)
         assert not result["results"]
-        f.service._kc.retrieve_evidence.assert_not_awaited()
+        f.retrieval.stream_content.assert_not_awaited()
     asyncio.run(run())
 
 
 def test_two_citations_to_one_asset_are_one_result_not_two_requested_results():
     async def run():
         f = setup_search(max_results=3)
-        original = f.service._kc.retrieve_evidence.side_effect
-        async def two_quotes(**kwargs):
-            response = await original(**kwargs)
-            first = response["citations"][0]
-            response["citations"].append({**first, "citation_id": str(uuid7()), "quote": "同一确切版本的另一个片段"})
-            return response
-        f.service._kc.retrieve_evidence.side_effect = two_quotes
+        f.state.copies = 2
         result = await f.service.search(**f.kwargs)
         assert len(result["results"]) == 1
         assert len(result["results"][0]["citation_pack"]) == 2
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("invalid", [None, "body_hash", "document_role", "document_id", "revision",
-    "missing_heading", "withdrawn", "processing", "rejected"])
-def test_case_context_requires_exact_kc_content_member_and_survives_in_citation_locator(monkeypatch, invalid):
-    from aiops_agent.application.case_knowledge_projection import case_knowledge_markdown
+@pytest.mark.parametrize("invalid", [None, "body_hash", "unknown_quote"])
+def test_case_context_requires_exact_app_document_and_delivered_quote(monkeypatch, invalid):
+    from aiops_agent.application.case_knowledge_projection import case_knowledge_markdown, compile_case_knowledge
     from tests.unit.aiops_agent.test_aiops_case_knowledge_projection import profile
     monkeypatch.setattr("aiops_agent.application.knowledge_search._eligible_case", AsyncMock(return_value=True))
     async def run():
@@ -266,38 +275,10 @@ def test_case_context_requires_exact_kc_content_member_and_survives_in_citation_
         asset, version, index = f.wanted
         asset.asset_kind = "DIAGNOSIS_CASE"
         version.profile_json = value.model_dump(mode="json")
-        index.bundle_id = uuid7()
-        document_id = uuid7()
-        member = {"document_version_id": str(document_id), "document_role": "CONTENT",
-            "content_hash_sha256": value.knowledge_projection.body_sha256, "member_status": "READY"}
-        revision = {"bundle_revision_id": str(index.bundle_revision_id), "members": [member],
-            "status": "READY", "approval_status": "APPROVED", "withdrawn_at": None}
-        if invalid == "withdrawn":
-            revision["withdrawn_at"] = "2026-11-03T00:00:00+00:00"
-        if invalid == "processing":
-            revision["status"] = "PROCESSING"
-        if invalid == "rejected":
-            revision["approval_status"] = "REJECTED"
-        if invalid == "body_hash":
-            member["content_hash_sha256"] = "a" * 64
-        if invalid == "document_role":
-            member["document_role"] = "MANIFEST"
-        if invalid == "revision":
-            revision["bundle_revision_id"] = str(uuid7())
-        async def members(**kwargs):
-            assert not f.state.transaction_open
-            assert kwargs["bundle_revision_id"] == index.bundle_revision_id
-            return revision
-        f.service._kc.get_revision_status = AsyncMock(side_effect=members)
-        original = f.service._kc.retrieve_evidence.side_effect
-        async def retrieve(**kwargs):
-            response = await original(**kwargs)
-            citation = response["citations"][0]
-            citation["document_version_id"] = str(uuid7() if invalid == "document_id" else document_id)
-            citation["items"] = [{"evidence": {"heading_path": [] if invalid == "missing_heading" else ["[case-action-1] 登记措施与效果 1"],
-                "content_text": "登记措施与效果"}}]
-            return response
-        f.service._kc.retrieve_evidence.side_effect = retrieve
+        projection = compile_case_knowledge(title="复盘", profile=value)
+        unit = next(unit for unit in projection.units if unit.unit_id == "case-action-1")
+        f.state.quote = projection.body.decode()[unit.start:unit.end] if invalid != "unknown_quote" else "不属于该正文"
+        f.state.source_hash = value.knowledge_projection.body_sha256 if invalid != "body_hash" else "a"*64
         result = await f.service.search(**f.kwargs)
         if invalid:
             assert result["results"] == [] and result["warnings"]
@@ -317,7 +298,7 @@ def test_catalog_honors_final_count_without_calling_kc():
         result = await f.service.search(**f.kwargs)
         assert len(result["results"]) == 2
         assert result["warnings"]
-        f.service._kc.discover.assert_not_awaited()
+        f.retrieval.retrieve.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -333,7 +314,7 @@ def test_catalog_checks_current_authorization_after_registry_pagination():
         f.repo.list_published_candidates.side_effect = revoke
         result = await f.service.search(**f.kwargs)
         assert result["status"] == "KNOWLEDGE_SCOPE_CHANGED" and result["results"] == []
-        f.service._kc.discover.assert_not_awaited()
+        f.retrieval.retrieve.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -380,7 +361,7 @@ def test_registry_query_uses_database_keyset_limit_and_correlated_scope_not_full
             domain_id=domain, target_id=uuid7(), source_kinds=("MANUAL", "DIAGNOSIS_CASE"),
             knowledge_base_ids=(uuid7(),), max_security_level=3,
             scope_filters={"TAG_ID": (str(tag_id),), "DATABASE_TYPE": ("ORACLE",)},
-            limit=7, after_index_id=cursor, asset_version_ids=(version,), bundle_revision_ids=(revision,),
+            limit=7, after_index_id=cursor, asset_version_ids=(version,), document_version_ids=(revision,),
         )
         assert session.execute.await_count == 1
         statement = session.execute.await_args.args[0]

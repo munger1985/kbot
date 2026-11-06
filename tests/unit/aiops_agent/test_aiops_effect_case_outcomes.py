@@ -138,14 +138,14 @@ def test_all_effect_reports_have_a_truthful_candidate_not_just_success(scenario,
         assert str(f.view.comparison_artifact.artifact_id) not in str(model_input)
         if scenario.startswith("manual_"):
             assert profile["actions"][0]["source_kind"] == "USER_PROVIDED"
-            body = f.service._kc.ingest_user_file.await_args.kwargs["body"].decode()
+            body = f.service._documents.stage.await_args.kwargs["body"].decode()
             assert "人工登记" in body and "独立窗口测量" in body
             assert "基线 100 → 处置后" in body
         if f.view.result["gap_codes"]:
-            body = f.service._kc.ingest_user_file.await_args.kwargs["body"].decode()
+            body = f.service._documents.stage.await_args.kwargs["body"].decode()
             assert "验证缺口" in body
         if kind == "NEGATIVE_EXPERIENCE":
-            body = f.service._kc.ingest_user_file.await_args.kwargs["body"].decode()
+            body = f.service._documents.stage.await_args.kwargs["body"].decode()
             assert "不作为推荐措施" in body
     asyncio.run(run())
 
@@ -180,7 +180,7 @@ def test_changed_execution_during_scan_blocks_negative_case_before_intake():
         f.service._structured_model.generate_structured.side_effect = scan
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.service._documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -208,15 +208,16 @@ def test_effect_link_cannot_be_removed_to_bypass_replay_on_nonverified_case(scen
 def test_effect_source_change_after_intake_queues_withdrawal_without_business_publication(scenario):
     async def run():
         f = await outcome_fixture(scenario)
-        response = f.service._kc.ingest_user_file.return_value
+        original = f.service._documents.stage.side_effect
         async def ingest(**kw):
+            response = await original(**kw)
             f.receipt.payload_json["status"] = "FAILED"
             f.receipt.content_hash = sha256_json(f.receipt.payload_json)
             return response
-        f.service._kc.ingest_user_file.side_effect = ingest
+        f.service._documents.stage.side_effect = ingest
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
-        f.service._kc.review_user_intake.assert_not_awaited()
+        f.service._documents.publish.assert_not_awaited()
         version = next(iter(f.state.versions.values()))
         assert version.status == "REVIEW_REQUIRED"
         assert f.uow.outbox.add.await_count == 1
@@ -237,7 +238,7 @@ def test_published_nonverified_case_stops_new_search_when_effect_source_is_lost(
         asset.current_version_id = version.asset_version_id
         asset.status = version.status = "PUBLISHED"
         f.uow.operations_knowledge.list_published_candidates = AsyncMock(return_value=[(asset, version, index)])
-        f.service._kc.discover = AsyncMock()
+        f.service._documents.retrieval.retrieve = AsyncMock()
         authorized = knowledge_agent_repository()
         active_knowledge_bases_fixture(f.uow.operations_knowledge)
         f.uow.agents.get = authorized.get
@@ -252,7 +253,7 @@ def test_published_nonverified_case_stops_new_search_when_effect_source_is_lost(
         assert not result["results"]
         assert result["status"] == "NO_APPLICABLE_KNOWLEDGE"
         f.uow.operations_knowledge.list_published_candidates.assert_awaited_once()
-        f.service._kc.discover.assert_not_awaited()
+        f.service._documents.retrieval.retrieve.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -268,9 +269,6 @@ def test_real_publish_service_revalidates_nonpositive_execution_authority(scenar
         relations.update(scopes=[], reviews=[])
         index = relations["indexes"][0]
         index.index_status, version.status = "READY", "REVIEW_REQUIRED"
-        f.service._kc.get_bundle_status = AsyncMock(return_value={
-            "current_revision_id": str(index.bundle_revision_id), "availability_status": "READY",
-        })
         if invalidate:
             f.uow.changes.get_execution.return_value.status = "FAILED"
         kwargs = dict(domain_id=f.domain, asset_version_id=version.asset_version_id,
@@ -329,7 +327,7 @@ def test_report_projection_cannot_replace_original_effect_measurements(failure):
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.service._documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 

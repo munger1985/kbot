@@ -66,9 +66,10 @@ def test_real_platform_service_context_is_scoped_but_never_impersonates_actor():
         output = await worker._processor.advance(f.execution,
             authority=f.authority, checkpoint=f.checkpoint, record_receipt=f.receipt)
         assert output.stage == "INDEXING" and output.finalization is None
-        f.service._kc.ingest_user_file.assert_awaited_once()
-        context = f.service._kc.ingest_user_file.await_args.kwargs["auth_context"]
-        assert context is options.context or context.model_dump(exclude={"principal_id", "request_id"}) == options.context.model_dump(exclude={"principal_id", "request_id"})
+        f.service._documents.stage.assert_awaited_once()
+        access = f.service._documents.register.await_args.args[1]
+        assert str(access.subject_ref) == str(f.scope.actor_id)
+        assert str(access.domain_id) == str(f.domain)
     asyncio.run(run())
 
 

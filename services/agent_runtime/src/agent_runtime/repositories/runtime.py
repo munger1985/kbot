@@ -87,6 +87,24 @@ class AgentRunRepository:
         )
         return list((await self._session.execute(statement)).scalars())
 
+    async def list_conversation_runs(self, *, conversation_id):
+        from agent_runtime.entities import AgentConversationTurnEntity
+        return list((await self._session.scalars(select(AgentRunEntity).join(
+            AgentConversationTurnEntity, AgentConversationTurnEntity.root_run_id == AgentRunEntity.run_id
+        ).where(AgentConversationTurnEntity.conversation_id == conversation_id).with_for_update())).all())
+
+    async def pending_knowledge_cleanup(self, *, limit=32, after_run_id=None):
+        requested = aliased(AgentRunEventEntity)
+        completed = aliased(AgentRunEventEntity)
+        done = select(completed.run_id).where(
+            completed.run_id == AgentRunEntity.run_id,
+            completed.event_key == "knowledge-cleanup-completed").exists()
+        return list((await self._session.scalars(select(AgentRunEntity).join(
+            requested, requested.run_id == AgentRunEntity.run_id).where(
+            requested.event_key == "knowledge-cleanup-requested", ~done,
+            AgentRunEntity.run_id > after_run_id if after_run_id is not None else True,
+        ).order_by(AgentRunEntity.run_id).limit(limit))).all())
+
 
 class AgentTaskRepository:
     _CLAIM_SCAN_LIMIT = 16
@@ -329,6 +347,24 @@ class AgentArtifactRepository:
         self._session.add(entity)
         await self._session.flush()
         return entity
+
+    async def record_knowledge(self, *, context, artifact_type, schema_version, payload, turn_ref):
+        from knowledge_algorithms.contracts.identity import fingerprint
+        from knowledge_algorithms.contracts.errors import require
+        require(artifact_type in {"MODEL_EVIDENCE_DELIVERY", "GROUNDED_ANSWER"}, "知识审计类型无效")
+        run = (await self._session.execute(select(AgentRunEntity).where(
+            AgentRunEntity.run_id == context.run_id).with_for_update())).scalar_one_or_none()
+        task = (await self._session.execute(select(AgentTaskEntity).where(
+            AgentTaskEntity.task_id == context.task_id, AgentTaskEntity.run_id == context.run_id))).scalar_one_or_none()
+        require(run is not None and task is not None and run.domain_id == context.domain_id
+                and str(run.actor_id) == str(context.actor_id)
+                and run.config_snapshot_json == context.config_snapshot,
+                "交付审计不属于当前冻结 Runtime 任务")
+        entity = await self.add(AgentArtifactEntity(run_id=context.run_id, task_id=context.task_id,
+            artifact_type=artifact_type, schema_version=schema_version, producer="knowledge-composer",
+            producer_version="1.0.0", payload_json=payload, content_hash=fingerprint(payload),
+            provenance_json={"turn_ref": turn_ref, "task_key": context.task_key}, security_level=0))
+        return str(entity.artifact_id)
 
     async def get(
         self, *, artifact_id: UUID

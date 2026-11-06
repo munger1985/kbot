@@ -66,7 +66,17 @@ class MCPDataConfig(BaseModel):
         return value
 
 
+class RuntimeKnowledgeConfig(BaseModel):
+    """知识证据预算与历史保留配置；输出 token 上限仍由 Model Serving 冻结。"""
+    payload_tokens: int = Field(default=24000, ge=1024, le=1000000)
+    payload_images: int = Field(default=8, ge=0, le=128)
+    payload_bytes: int = Field(default=16777216, ge=1024, le=134217728)
+    image_token_cost: int = Field(default=4096, ge=1, le=1000000)
+    evidence_retention_seconds: int = Field(default=2591900, ge=60, le=31536000)
+
+
 class AgentRuntimeSettings(Settings):
+    knowledge: RuntimeKnowledgeConfig = Field(default_factory=RuntimeKnowledgeConfig)
     api: AgentRuntimeApiConfig = Field(default_factory=AgentRuntimeApiConfig)
     worker: AgentRuntimeWorkerConfig = Field(
         default_factory=AgentRuntimeWorkerConfig
@@ -75,10 +85,10 @@ class AgentRuntimeSettings(Settings):
         default_factory=ConversationAttachmentConfig
     )
     ask_data_api: MCPDataConfig = Field(default_factory=MCPDataConfig)
-    knowledge_core: ServiceDependencyConfig = Field(
+    knowledge_retrieval: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
-            base_url="http://127.0.0.1:18090",
-            audience="kbot-knowledge-core-api",
+            base_url="http://127.0.0.1:18150",
+            audience="kbot-knowledge-retrieval-app-api",
             timeout_seconds=120,
         )
     )

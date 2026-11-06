@@ -1,0 +1,45 @@
+"""算法边界错误，不以空数组掩盖合同或阶段失败。"""
+
+from enum import Enum
+
+
+class ErrorCode(str, Enum):
+    INVALID_CONTRACT = "INVALID_CONTRACT"
+    RESOURCE_LIMIT = "RESOURCE_LIMIT"
+    SCOPE_CLOSURE_BROKEN = "SCOPE_CLOSURE_BROKEN"
+    SNAPSHOT_STALE = "SNAPSHOT_STALE"
+    MODEL_SPACE_MISMATCH = "MODEL_SPACE_MISMATCH"
+    MODALITY_UNAVAILABLE = "MODALITY_UNAVAILABLE"
+    EVENT_CONFLICT = "EVENT_CONFLICT"
+    EVENT_SEQUENCE_INVALID = "EVENT_SEQUENCE_INVALID"
+    MANIFEST_INVALID = "MANIFEST_INVALID"
+    INCOMPARABLE_CHANNEL = "INCOMPARABLE_CHANNEL"
+    UNSUPPORTED_INPUT = "UNSUPPORTED_INPUT"
+    PARSE_QUALITY_INSUFFICIENT = "PARSE_QUALITY_INSUFFICIENT"
+    ARTIFACT_EXPIRED = "ARTIFACT_EXPIRED"
+    SCOPE_CHANGED = "SCOPE_CHANGED"
+    CHANNEL_FAILED = "CHANNEL_FAILED"
+    TIMEOUT = "TIMEOUT"
+    NO_MATCH = "NO_MATCH"
+    NO_ACCESSIBLE_PAYLOAD = "NO_ACCESSIBLE_PAYLOAD"
+    CONTEXT_BUDGET_INSUFFICIENT = "CONTEXT_BUDGET_INSUFFICIENT"
+    EVIDENCE_MAPPING_FAILED = "EVIDENCE_MAPPING_FAILED"
+    ASSEMBLY_FAILED = "ASSEMBLY_FAILED"
+    DELIVERY_FAILED = "DELIVERY_FAILED"
+    UNKNOWN_DELIVERY = "UNKNOWN_DELIVERY"
+    CURSOR_EXPIRED = "CURSOR_EXPIRED"
+    CURSOR_INVALID = "CURSOR_INVALID"
+
+
+class AlgorithmError(ValueError):
+    """携带稳定错误码和阶段；不包含原文或存储凭据。"""
+
+    def __init__(self, code: ErrorCode, message: str, *, stage: str):
+        super().__init__(message)
+        self.code = code
+        self.stage = stage
+
+
+def require(condition: bool, message: str, *, stage: str = "contract") -> None:
+    if not condition:
+        raise AlgorithmError(ErrorCode.INVALID_CONTRACT, message, stage=stage)

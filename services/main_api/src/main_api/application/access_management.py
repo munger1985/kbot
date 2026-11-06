@@ -352,8 +352,6 @@ class AccessManagementService:
                 await uow.access.add_app_domain(row)
             else:
                 row.status = "ACTIVE"
-            if app_id == "aiops":
-                await uow.case_resources.register(domain_id=domain_id, actor_id=actor_id, force=True)
             await uow.commit()
             return {"app_id": app_id, "domain_id": domain_id, "status": row.status}
 
@@ -362,8 +360,6 @@ class AccessManagementService:
         async with self._uow_factory() as uow:
             app = await self._require_app(uow=uow, app_id=app_id, require_active=False)
             await uow.access.update_application_status(app=app, status=status)
-            if app_id == "aiops":
-                await uow.case_resources.register_all()
             await uow.commit()
             return self._app_item(app)
 

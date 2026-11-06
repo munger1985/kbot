@@ -6,7 +6,6 @@ from typing import Annotated, Any, Literal, cast
 from urllib.parse import unquote
 from uuid import UUID
 
-from platform_core.contracts.aiops.case_resource import CaseResourceStatus
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from main_api.api.aiops_events import stream_aiops_event_pages
@@ -703,10 +702,10 @@ async def preview_operations_knowledge_version(asset_version_id: UUID, request: 
 
 
 @router.get("/operations-knowledge/versions/{asset_version_id}/source")
-async def download_operations_knowledge_source(asset_version_id: UUID, request: Request):
+async def download_operations_knowledge_source(asset_version_id: UUID, request: Request, document_version_id: UUID | None = None):
     await _require(request, "aiops:knowledge_manage")
     result = await _client(request).download_operations_knowledge_source(
-        asset_version_id, auth_context=request.state.auth_context
+        asset_version_id, auth_context=request.state.auth_context, document_version_id=document_version_id
     )
     return Response(
         content=result.body,
@@ -1337,11 +1336,10 @@ async def retry_output_job(job_id: UUID, body: OutputJobRetry, request: Request)
         payload=body.model_dump(mode="json"), auth_context=request.state.auth_context)
 
 
-@router.get("/operations-knowledge/case-collection/resource", response_model=CaseResourceStatus)
+@router.get("/operations-knowledge/case-collection/resource")
 async def get_case_collection_resource(request: Request):
     await _require(request, "aiops:use")
-    return await request.app.state.case_resource_lifecycle.status(
-        domain_id=request.state.auth_context.domain_id)
+    return await _client(request).get_case_collection_models(auth_context=request.state.auth_context)
 
 
 @router.get("/operations-knowledge/case-collection/models")

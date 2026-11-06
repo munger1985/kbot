@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = (
     ("packages/platform_core", "kbot-platform-core", "platform_core"),
     ("packages/platform_clients", "kbot-platform-clients", "platform_clients"),
+    ("packages/knowledge_algorithms", "kbot-knowledge-algorithms", "knowledge_algorithms"),
     ("services/model_serving", "kbot-model-serving", "model_serving"),
     ("services/knowledge_core", "kbot-knowledge-core", "knowledge_core"),
     (

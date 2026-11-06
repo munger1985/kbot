@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kbot-knowledge-text-scan"
+version = "4.0.0"
+requires-python = ">=3.12"
+dependencies = ["kbot-knowledge-algorithms==4.0.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

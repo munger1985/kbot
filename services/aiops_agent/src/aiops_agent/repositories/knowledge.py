@@ -230,6 +230,20 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         ])
         await self._session.flush()
 
+    async def find_upload_request(self, *, domain_id, knowledge_base_id, request_key):
+        self._check_active()
+        statement = (select(OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity,
+                            OperationsKnowledgeSourceEntity)
+            .join(OperationsKnowledgeVersionEntity,
+                  OperationsKnowledgeVersionEntity.asset_id == OperationsKnowledgeAssetEntity.asset_id)
+            .join(OperationsKnowledgeSourceEntity,
+                  OperationsKnowledgeSourceEntity.asset_version_id == OperationsKnowledgeVersionEntity.asset_version_id)
+            .where(OperationsKnowledgeAssetEntity.domain_id == domain_id,
+                   OperationsKnowledgeAssetEntity.knowledge_base_id == knowledge_base_id,
+                   OperationsKnowledgeSourceEntity.source_kind == "UPLOAD_REQUEST",
+                   OperationsKnowledgeSourceEntity.source_external_id == request_key))
+        return (await self._session.execute(statement)).first()
+
     async def find_by_source_hash(
         self, *, domain_id: int, asset_kind: str, source_hash: str,
         knowledge_base_id: UUID | None = None,
@@ -271,7 +285,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 OperationsKnowledgeIndexEntity.asset_version_id == OperationsKnowledgeVersionEntity.asset_version_id)
             .where(OperationsKnowledgeAssetEntity.domain_id == domain_id,
                 OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE",
-                OperationsKnowledgeIndexEntity.bundle_revision_id == revision_id)
+                OperationsKnowledgeIndexEntity.document_version_id == revision_id)
         )
         return (await self._session.execute(statement)).first()
 
@@ -580,7 +594,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         max_security_level: int, scope_filters: dict[str, Sequence[str]],
         limit: int | None, after_index_id: UUID | None = None,
         asset_version_ids: Sequence[UUID] = (),
-        bundle_revision_ids: Sequence[UUID] = (),
+        document_version_ids: Sequence[UUID] = (),
     ) -> list[tuple[OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity, OperationsKnowledgeIndexEntity]]:
         """按唯一索引标识做稳定游标分页，正文检索前不用最终 Top-K 截断候选。"""
         self._check_active()
@@ -612,8 +626,8 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             statement = statement.where(OperationsKnowledgeIndexEntity.index_ref_id > after_index_id)
         if asset_version_ids:
             statement = statement.where(OperationsKnowledgeVersionEntity.asset_version_id.in_(tuple(asset_version_ids)))
-        if bundle_revision_ids:
-            statement = statement.where(OperationsKnowledgeIndexEntity.bundle_revision_id.in_(tuple(bundle_revision_ids)))
+        if document_version_ids:
+            statement = statement.where(OperationsKnowledgeIndexEntity.document_version_id.in_(tuple(document_version_ids)))
         scope = OperationsKnowledgeScopeEntity
         version_scope = scope.asset_version_id == OperationsKnowledgeVersionEntity.asset_version_id
         # 手册的显式目标范围仍是硬边界；案例目标是来源，不等于只能原机复用。

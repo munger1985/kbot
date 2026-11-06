@@ -48,129 +48,49 @@ def _internal(*target_ids, **overrides):
     }
 
 
-class _KnowledgeService:
-    def __init__(self) -> None:
-        self.calls = []
-
-    async def search(self, **kwargs):
-        self.calls.append(kwargs)
-        return {
-            "status": "READY",
-            "results": [
-                {
-                    "asset_version_id": str(uuid7()),
-                    "title": "Oracle 运维手册",
-                    "citation_pack": [
-                        {
-                            "bundle_revision_id": str(uuid7()),
-                            "document_version_id": str(uuid7()),
-                            "quote": "连接数持续升高时检查连接池回收策略。",
-                            "locator": {"page": 12},
-                        }
-                    ],
-                }
-            ],
-        }
-
-
-class _Model:
-    def __init__(self, labels=("K1",)) -> None:
-        self.labels = labels
-        self.calls = []
-
-    async def generate_structured(self, **kwargs):
-        self.calls.append(kwargs)
-        return SimpleNamespace(
-            output={
-                "answer_markdown": "应先检查连接池是否及时回收连接。",
-                "citation_labels": list(self.labels),
-            }
-        )
-
-
-class _Prompt:
-    content = "仅按证据回答"
-
-    def ref(self):
-        return {"prompt_id": "aiops_agent.knowledge_answer_compose"}
-
-
-class _Prompts:
-    async def resolve(self, prompt_id):
-        if prompt_id != "knowledge_answer_compose":
-            raise AssertionError(prompt_id)
-        return _Prompt()
-
-
 class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
-    async def test_knowledge_uses_agent_version_policy_model_and_citations(self):
-        knowledge = _KnowledgeService()
-        model = _Model()
-        resolved = []
-
-        async def resolve_model(model_id):
-            resolved.append(model_id)
-            return {
-                "model_id": str(model_id),
-                "technical_name": "agent-composer",
-                "revision": str(model_id),
-            }
-
+    async def test_knowledge_delegates_frozen_policy_and_identity_to_runtime_child(self):
+        knowledge = SimpleNamespace(search=AsyncMock())
+        model = SimpleNamespace(generate_structured=AsyncMock())
+        prompts = SimpleNamespace(resolve=AsyncMock())
+        resolver = AsyncMock()
+        evidence = ({"label": "K1", "quote": "已交付证据"},)
+        child = SimpleNamespace(answer=AsyncMock(return_value=("有依据回答。[K1]", evidence)))
         internal = _internal(uuid7())
-        result = await KnowledgeQuestionAdapter(
-            knowledge_service=knowledge,
-            structured_model=model,
-            prompt_registry=_Prompts(),
-            model_resolver=resolve_model,
-            caller_service="aiops-worker",
-        ).execute(
-            capability=AIOpsCapability.KNOWLEDGE_QA,
-            plan=SimpleNamespace(),
-            scope=SimpleNamespace(),
-            internal_scope=internal,
-        )
-
+        runtime = internal["runtime_context"]
+        result = await KnowledgeQuestionAdapter(knowledge_service=knowledge, structured_model=model,
+            prompt_registry=prompts, model_resolver=resolver, caller_service="aiops-worker",
+            runtime_child=child).execute(capability=AIOpsCapability.KNOWLEDGE_QA,
+                plan=SimpleNamespace(), scope=SimpleNamespace(), internal_scope=internal)
         self.assertTrue(result.supported)
-        self.assertEqual("K1", result.evidence[0]["label"])
-        self.assertIn("### 引用", result.markdown)
-        self.assertEqual(2, knowledge.calls[0]["request"].max_security_level)
-        self.assertEqual(4, knowledge.calls[0]["request"].max_results)
-        self.assertEqual(
-            tuple(internal["runtime_context"]["knowledge_policy"]["knowledge_base_ids"]),
-            tuple(str(item) for item in knowledge.calls[0]["request"].knowledge_base_ids),
-        )
-        self.assertEqual(
-            internal["runtime_context"]["models"]["composer_llm"],
-            str(resolved[0]),
-        )
-        self.assertEqual(
-            "回答应简洁",
-            model.calls[0]["input_payload"]["agent_instruction"],
-        )
+        self.assertEqual("有依据回答。[K1]", result.markdown)
+        self.assertEqual(evidence, result.evidence)
+        kwargs = child.answer.await_args.kwargs
+        self.assertEqual(runtime["turn_id"], str(kwargs["turn_id"]))
+        self.assertEqual(runtime["agent_version_id"], str(kwargs["agent_version_id"]))
+        self.assertEqual(runtime["agent_id"], str(kwargs["agent_id"]))
+        self.assertEqual(2, kwargs["request"].max_security_level)
+        self.assertEqual(4, kwargs["request"].max_results)
+        self.assertEqual(tuple(runtime["knowledge_policy"]["knowledge_base_ids"]),
+            tuple(str(item) for item in kwargs["request"].knowledge_base_ids))
+        knowledge.search.assert_not_awaited()
+        model.generate_structured.assert_not_awaited()
+        prompts.resolve.assert_not_awaited()
+        resolver.assert_not_awaited()
 
-    async def test_knowledge_rejects_model_citation_outside_evidence(self):
-        async def resolve_model(model_id):
-            return {
-                "model_id": str(model_id),
-                "technical_name": "agent-composer",
-                "revision": str(model_id),
-            }
-
-        result = await KnowledgeQuestionAdapter(
-            knowledge_service=_KnowledgeService(),
-            structured_model=_Model(labels=("K99",)),
-            prompt_registry=_Prompts(),
-            model_resolver=resolve_model,
-            caller_service="aiops-worker",
-        ).execute(
-            capability=AIOpsCapability.KNOWLEDGE_QA,
-            plan=SimpleNamespace(),
-            scope=SimpleNamespace(),
-            internal_scope=_internal(uuid7()),
-        )
-
+    async def test_knowledge_child_failure_does_not_fall_back_to_local_generation(self):
+        knowledge = SimpleNamespace(search=AsyncMock())
+        model = SimpleNamespace(generate_structured=AsyncMock())
+        child = SimpleNamespace(answer=AsyncMock(side_effect=RuntimeError("离线模拟不可用")))
+        result = await KnowledgeQuestionAdapter(knowledge_service=knowledge, structured_model=model,
+            prompt_registry=SimpleNamespace(resolve=AsyncMock()), model_resolver=AsyncMock(),
+            caller_service="aiops-worker", runtime_child=child).execute(
+                capability=AIOpsCapability.KNOWLEDGE_QA, plan=SimpleNamespace(),
+                scope=SimpleNamespace(), internal_scope=_internal(uuid7()))
         self.assertFalse(result.supported)
-        self.assertEqual("KNOWLEDGE_CITATION_INVALID", result.gap_code)
+        self.assertEqual("OPERATIONS_KNOWLEDGE_UNAVAILABLE", result.gap_code)
+        knowledge.search.assert_not_awaited()
+        model.generate_structured.assert_not_awaited()
 
     async def test_knowledge_catalog_lists_topics_without_composer(self):
         asset_id, version_id = uuid7(), uuid7()
@@ -304,7 +224,7 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_report_case_search_is_repeated_with_each_allowed_target(self):
         targets = (uuid7(), uuid7())
-        knowledge = _KnowledgeService()
+        knowledge = SimpleNamespace(search=AsyncMock(return_value={"status": "READY", "results": [{"asset_version_id": str(uuid7()), "title": "合成案例", "citation_pack": [{"quote": "已交付证据", "locator": {}}]}]}))
         list_reports = AsyncMock(return_value=SimpleNamespace(items=()))
 
         result = await RuntimeQueryAdapter(
@@ -320,11 +240,11 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.supported)
         self.assertEqual(set(targets), {
-            call["target_id"] for call in knowledge.calls
+            call["target_id"] for call in (entry.kwargs for entry in knowledge.search.await_args_list)
         })
         self.assertTrue(all(
             call["request"].source_kinds == ("DIAGNOSIS_CASE",)
-            for call in knowledge.calls
+            for call in (entry.kwargs for entry in knowledge.search.await_args_list)
         ))
         self.assertEqual(
             {"DIAGNOSIS_CASE"},

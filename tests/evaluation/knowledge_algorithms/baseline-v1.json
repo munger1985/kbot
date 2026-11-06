@@ -1,0 +1,32 @@
+{
+  "schema_version": "knowledge.algorithm_baseline.v1",
+  "dataset_kind": "SYNTHETIC_CONTRACT_ONLY",
+  "production_quality_claim": false,
+  "split_policy": "与未来 App 独立黄金集及保留集分开；不用于宣称真实召回率",
+  "model_dependencies": [],
+  "parameters": {
+    "rrf_constant": 60,
+    "channel_weights": {"lexical": 1.0, "dense": 1.0},
+    "payload_budget": {"tokens": 10, "images": 2, "byte_count": 1000},
+    "max_cover_states": 100,
+    "partition_seed": 7301,
+    "figure_policy_version": "figures/v1"
+  },
+  "required_scenarios": [
+    "same_page_distinct_objects",
+    "shard_partition_invariance",
+    "global_bm25_statistics_required",
+    "single_lexical_family_vote",
+    "rank_identity_conservation",
+    "masked_native_maxsim",
+    "oversized_anchor_replacement",
+    "unknown_target_keeps_candidates",
+    "shared_attachment_cost_once",
+    "latest_n_outside_relevance_topk",
+    "figure_scope_ambiguity",
+    "native_anchor_label_conflict",
+    "bidirectional_figure_links",
+    "old_parse_not_rebound",
+    "parse_replay_and_fencing"
+  ]
+}

@@ -6,7 +6,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .knowledge import KnowledgeScopeSnapshotV1
+class KnowledgeLibraryBinding(BaseModel):
+    """仅绑定所属 App 资料库；Run 建立后由 App 重新鉴权并冻结精确版本。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    library_id: UUID | None = None
+    query_ticket: UUID | None = None
+    profile_ref: str = Field(default="default", min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def exact_binding(self):
+        if (self.library_id is None) == (self.query_ticket is None):
+            raise ValueError("必须且只能指定资料库或 AIOps 查询委托")
+        return self
 
 
 class AgentExecutionSpec(BaseModel):
@@ -19,7 +32,7 @@ class AgentExecutionSpec(BaseModel):
     domain_id: int = Field(ge=1)
     consumer_agent_id: UUID
     consumer_agent_version_id: UUID
-    agent_kind: Literal["KNOWLEDGE_RETRIEVAL", "AIOPS"]
+    agent_kind: Literal["KNOWLEDGE_RETRIEVAL", "AIOPS", "AIOPS_KNOWLEDGE"]
     display_name: str = Field(min_length=1, max_length=256)
     enabled_capabilities: tuple[
         Literal["conversation", "document", "data_query", "aiops"], ...
@@ -28,7 +41,7 @@ class AgentExecutionSpec(BaseModel):
     instruction: str | None = Field(default=None, max_length=32000)
     resource_context: dict[str, Any] = Field(default_factory=dict)
     runtime_policy: dict[str, Any] = Field(default_factory=dict)
-    knowledge_scope: KnowledgeScopeSnapshotV1 | None = None
+    knowledge_binding: KnowledgeLibraryBinding | None = None
 
     @model_validator(mode="after")
     def validate_agent_boundary(self) -> "AgentExecutionSpec":
@@ -36,27 +49,25 @@ class AgentExecutionSpec(BaseModel):
         capabilities = set(self.enabled_capabilities)
         if len(capabilities) != len(self.enabled_capabilities):
             raise ValueError("enabled_capabilities 不能包含重复能力")
+        if self.agent_kind == "AIOPS_KNOWLEDGE":
+            if (self.owner_app_id != "aiops" or capabilities != {"document"}
+                or self.knowledge_binding is None or self.knowledge_binding.query_ticket is None):
+                raise ValueError("AIOps 知识子执行只能读取本 App 的精确查询委托")
+            return self
         if self.agent_kind == "KNOWLEDGE_RETRIEVAL":
+            if self.owner_app_id != "knowledge_retrieval" or (
+                self.knowledge_binding is not None and self.knowledge_binding.library_id is None):
+                raise ValueError("知识检索 Agent 必须绑定自身 App 资料库")
             if not capabilities.issubset(
                 {"conversation", "document", "data_query"}
             ):
                 raise ValueError("知识检索 Agent 不能启用 AIOps 能力")
-            if "document" in capabilities:
-                if self.knowledge_scope is None:
-                    raise ValueError("文档能力必须冻结 knowledge_scope")
-                if (
-                    self.knowledge_scope.owner_app_id != self.owner_app_id
-                    or self.knowledge_scope.domain_id != self.domain_id
-                    or self.knowledge_scope.consumer_agent_id
-                    != self.consumer_agent_id
-                    or self.knowledge_scope.consumer_agent_version_id
-                    != self.consumer_agent_version_id
-                ):
-                    raise ValueError("Execution Spec 与 knowledge_scope 身份不一致")
+            if ("document" in capabilities) != (self.knowledge_binding is not None):
+                raise ValueError("Document 能力与资料库绑定必须同时配置")
         elif self.owner_app_id != "aiops" or capabilities != {"aiops"}:
             raise ValueError("AIOps Agent 必须由 aiops 拥有且只能启用 aiops")
-        elif self.knowledge_scope is not None:
-            raise ValueError("AIOps 诊断 Agent 不能携带知识问答范围")
+        elif self.knowledge_binding is not None:
+            raise ValueError("AIOps 诊断 Agent 不能携带知识问答绑定")
         return self
 
 
@@ -78,7 +89,7 @@ class CreateAgentRunRequest(BaseModel):
             raise ValueError("Agent Runtime 聊天运行只接受知识检索 Agent")
         if "query_images" in self.client_metadata:
             raise ValueError(
-                "查询图片只能通过 Conversation multipart 接口上传"
+                "查询图片只能通过 Conversation Turn 的 images 字段上传"
             )
         return self
 
@@ -143,3 +154,18 @@ class AgentRunEvent(BaseModel):
     event_type: str
     payload: dict[str, Any]
     created_at: datetime
+
+class CreateAIOpsKnowledgeRunRequest(BaseModel):
+    """仅 AIOps 可信内部调用方可创建；不创建业务 Agent 或独立会话。"""
+    model_config = ConfigDict(extra="forbid")
+    child_run_id: UUID
+    parent_turn_id: UUID
+    parent_ops_run_id: UUID | None = None
+    execution_spec: AgentExecutionSpec
+    input: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode="after")
+    def child_only(self):
+        if self.execution_spec.agent_kind != "AIOPS_KNOWLEDGE":
+            raise ValueError("该接口仅接受 AIOps 知识子执行")
+        return self

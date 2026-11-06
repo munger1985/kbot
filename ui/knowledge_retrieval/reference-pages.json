@@ -2,22 +2,107 @@
   "reference": "ammolite_cube/apps/portal-web/src/features/knowledge-retrieval",
   "policy": "以实际生产组件为页面结构、控件与交互基准；认证、权限和数据合同使用 KBot 的公开 BFF。",
   "pages": {
-    "knowledge": { "title": "知识检索", "route": "", "sources": ["business/KnowledgeRetrievalView.vue"] },
-    "upload": { "title": "上传资料", "route": "upload", "sources": ["business/KnowledgeUploadView.vue"] },
-    "reviews": { "title": "资料审核", "route": "reviews", "sources": ["business/KnowledgeReviewView.vue"] },
-    "processing": { "title": "解析任务", "route": "processing", "sources": ["business/KnowledgeProcessingView.vue"], "platform_difference": "来源页面在零知识库时仍停留于加载表格；KBot 显示明确的无可用知识库状态，不复制这一加载缺陷。" },
-    "files": { "title": "知识库文件", "route": "files", "sources": ["business/KnowledgeLibraryFilesView.vue"], "platform_difference": "文件列表使用真实 KC 文件目录并提供原文访问；KBot 暂无与 Ammolite 相同的解析结果和视觉资产详情工作区。" },
-    "knowledge-cores": { "title": "知识库管理", "route": "manage/collections", "sources": ["management/KnowledgeCollectionsView.vue"], "platform_difference": "KBot 知识库配置通过侧边抽屉完成；仅展示公开合同支持的解析模型设置。" },
-    "data-sources": { "title": "数据源", "route": "manage/data-sources", "sources": ["management/KnowledgeDataSourcesView.vue"], "platform_difference": "KBot 暂无更新连接接口，不展示编辑连接；对象发现、采集及建模通过配置抽屉完成。" },
-    "data-models": { "title": "语义模型", "route": "manage/semantic-models", "sources": ["management/KnowledgeSemanticModelsView.vue"], "platform_difference": "KBot 的模型编辑、验证与发布保留公开 BFF 支持的定义编辑器。" },
-    "agents": { "title": "Agent 管理", "route": "manage/agents", "sources": ["management/KnowledgeAgentsView.vue"], "platform_difference": "保留 KBot 的 X Search 模型职责与运行配置。" },
-    "dashboard": { "title": "工作台", "route": null, "sources": [], "platform_difference": "KBot 的既有工作台保留为扩展入口，默认业务入口为知识检索。" },
-    "x-search": { "title": "X 实时搜索", "route": null, "sources": [], "platform_difference": "KBot 独有的 Grok 实时搜索入口。" },
-    "domains": { "title": "Domain 管理", "route": null, "sources": [], "platform_difference": "保留 KBot Domain 生命周期管理；切换工作域不依赖此管理权限。" },
-    "login": { "title": "登录", "route": null, "sources": [], "platform_difference": "保留 KBot 登录与首次改密，不复制 Ammolite SSO。" }
+    "knowledge": {
+      "title": "知识检索",
+      "route": "",
+      "sources": [
+        "business/KnowledgeRetrievalView.vue",
+        "business/KnowledgeLibraryWorkspace.vue"
+      ]
+    },
+    "upload": {
+      "title": "上传资料",
+      "route": "upload",
+      "sources": [
+        "business/KnowledgeUploadView.vue",
+        "business/KnowledgeLibraryWorkspace.vue"
+      ]
+    },
+    "reviews": {
+      "title": "资料审核",
+      "route": "reviews",
+      "sources": [
+        "business/KnowledgeReviewView.vue",
+        "business/KnowledgeLibraryWorkspace.vue"
+      ]
+    },
+    "processing": {
+      "title": "解析任务",
+      "route": "processing",
+      "sources": [
+        "business/KnowledgeProcessingView.vue",
+        "business/KnowledgeLibraryWorkspace.vue"
+      ]
+    },
+    "files": {
+      "title": "知识库文件",
+      "route": "files",
+      "sources": [
+        "business/KnowledgeLibraryFilesView.vue",
+        "business/KnowledgeLibraryWorkspace.vue"
+      ]
+    },
+    "knowledge-cores": {
+      "title": "知识库管理",
+      "route": "manage/libraries",
+      "sources": [
+        "management/KnowledgeCollectionsView.vue",
+        "business/KnowledgeLibraryWorkspace.vue"
+      ]
+    },
+    "data-sources": {
+      "title": "数据源",
+      "route": "manage/data-sources",
+      "sources": [
+        "management/KnowledgeDataSourcesView.vue"
+      ],
+      "platform_difference": "KBot 暂无更新连接接口，不展示编辑连接；对象发现、采集及建模通过配置抽屉完成。"
+    },
+    "data-models": {
+      "title": "语义模型",
+      "route": "manage/semantic-models",
+      "sources": [
+        "management/KnowledgeSemanticModelsView.vue"
+      ],
+      "platform_difference": "KBot 的模型编辑、验证与发布保留公开 BFF 支持的定义编辑器。"
+    },
+    "agents": {
+      "title": "Agent 管理",
+      "route": "manage/agents",
+      "sources": [
+        "management/KnowledgeAgentsView.vue"
+      ],
+      "platform_difference": "保留 KBot 的 X Search 模型职责与运行配置。"
+    },
+    "dashboard": {
+      "title": "工作台",
+      "route": null,
+      "sources": [],
+      "platform_difference": "KBot 的既有工作台保留为扩展入口，默认业务入口为知识检索。"
+    },
+    "x-search": {
+      "title": "X 实时搜索",
+      "route": null,
+      "sources": [],
+      "platform_difference": "KBot 独有的 Grok 实时搜索入口。"
+    },
+    "domains": {
+      "title": "Domain 管理",
+      "route": null,
+      "sources": [],
+      "platform_difference": "保留 KBot Domain 生命周期管理；切换工作域不依赖此管理权限。"
+    },
+    "login": {
+      "title": "登录",
+      "route": null,
+      "sources": [],
+      "platform_difference": "保留 KBot 登录与首次改密，不复制 Ammolite SSO。"
+    }
   },
   "capability_differences": [
-    "上传、审核、解析和文件页面沿用 KBot knowledge_core_manage 权限，不绕过当前后端授权。",
-    "KBot 尚无资源分享合同，本次不添加不可操作的资源分享入口。"
+    "资料库与文档使用 App 自有 libraries/documents 合同；READ/UPLOAD/REVIEW/PUBLISH/WITHDRAW/MANAGE 由当前主体和 Domain 联合核验。",
+    "已支持查询图片、图文混合主结果、双向关联及精确内容读取；通道是否可用取决于已配置模型，不宣称真实质量已验证。",
+    "KBot 复用已有 Token 切域并处理失败恢复；Ammolite 使用 Portal Domain 上下文，二者均清理旧请求、图片和分页状态。",
+    "不恢复公共 KC、Bundle 上传分组、旧解析详情和资源分享入口。"
   ]
 }

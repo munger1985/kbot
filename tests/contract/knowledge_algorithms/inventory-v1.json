@@ -1,0 +1,1121 @@
+{
+  "schema_version": "knowledge.k0_inventory.v1",
+  "status": "FROZEN_G_A_ONLY",
+  "real_database_inspected": false,
+  "common_columns": {
+    "oracle": [
+      "domain_id",
+      "created_at",
+      "updated_at",
+      "row_version"
+    ],
+    "postgresql": [
+      "tenant_id",
+      "domain_id",
+      "created_at",
+      "updated_at",
+      "row_version"
+    ]
+  },
+  "identity": "Each logical table has its named App-local UUIDv7 primary key; local_key is not a global PK",
+  "constraints": {
+    "allowed": [
+      "PRIMARY_KEY",
+      "FOREIGN_KEY",
+      "NOT_NULL"
+    ],
+    "business_unique": "APPLICATION_ROOT_LOCK_AND_UOW",
+    "unique_indexes": false,
+    "runtime_schema_probes": false
+  },
+  "table_semantics": "All target columns frozen for K2; types/nullability/FK DDL are K2 artifacts, not deployed schema",
+  "cross_service_refs": "owner_run_ref is an audit reference; no Runtime FK or direct Repository access",
+  "apps": {
+    "knowledge_retrieval": {
+      "binding": {
+        "binding_ref": "knowledge_retrieval",
+        "namespace": "knowledge_retrieval"
+      },
+      "service": "knowledge_retrieval_app",
+      "oracle_prefix": "KBOT_KR_",
+      "postgresql_prefix": "knowledge_retrieval_",
+      "scope_persistence": "OWN_SCOPE_SNAPSHOT_AND_MEMBER",
+      "internal_prefix": "/internal/v1/knowledge-retrieval/knowledge",
+      "tables": {
+        "knowledge_document": {
+          "oracle": "KBOT_KR_KNOWLEDGE_DOCUMENT",
+          "postgresql": "knowledge_retrieval_knowledge_document",
+          "columns": [
+            "document_id",
+            "business_asset_ref",
+            "title",
+            "status"
+          ],
+          "nonunique_indexes": [
+            [
+              "domain_id",
+              "status"
+            ],
+            [
+              "business_asset_ref"
+            ]
+          ]
+        },
+        "knowledge_document_version": {
+          "oracle": "KBOT_KR_KNOWLEDGE_DOCUMENT_VERSION",
+          "postgresql": "knowledge_retrieval_knowledge_document_version",
+          "columns": [
+            "document_version_id",
+            "document_id",
+            "source_sha256",
+            "mime_type",
+            "byte_count",
+            "source_object_ref",
+            "business_version_ref",
+            "published_parse_run_id",
+            "active_generation_id",
+            "status"
+          ],
+          "nonunique_indexes": [
+            [
+              "document_id",
+              "business_version_ref"
+            ],
+            [
+              "domain_id",
+              "status"
+            ]
+          ]
+        },
+        "knowledge_parse_run": {
+          "oracle": "KBOT_KR_KNOWLEDGE_PARSE_RUN",
+          "postgresql": "knowledge_retrieval_knowledge_parse_run",
+          "columns": [
+            "parse_run_id",
+            "document_version_id",
+            "source_sha256",
+            "profile_hash",
+            "parser_revision",
+            "model_snapshot_json",
+            "attempt",
+            "fence",
+            "quality_report_json",
+            "manifest_hash",
+            "status"
+          ],
+          "nonunique_indexes": [
+            [
+              "document_version_id",
+              "status"
+            ],
+            [
+              "parse_run_id",
+              "fence"
+            ]
+          ]
+        },
+        "knowledge_parse_batch": {
+          "oracle": "KBOT_KR_KNOWLEDGE_PARSE_BATCH",
+          "postgresql": "knowledge_retrieval_knowledge_parse_batch",
+          "columns": [
+            "parse_batch_id",
+            "parse_run_id",
+            "batch_key",
+            "sequence",
+            "payload_hash",
+            "payload_ref",
+            "dependency_keys_json",
+            "artifact_manifest_json",
+            "acknowledged_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "parse_run_id",
+              "sequence"
+            ],
+            [
+              "parse_run_id",
+              "batch_key"
+            ]
+          ]
+        },
+        "knowledge_node": {
+          "oracle": "KBOT_KR_KNOWLEDGE_NODE",
+          "postgresql": "knowledge_retrieval_knowledge_node",
+          "columns": [
+            "node_id",
+            "parse_run_id",
+            "local_key",
+            "kind",
+            "parent_node_id",
+            "reading_order",
+            "original_text_ref",
+            "allowed_view_ref",
+            "locator_json",
+            "provenance_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "parse_run_id",
+              "local_key"
+            ],
+            [
+              "parse_run_id",
+              "reading_order"
+            ],
+            [
+              "parent_node_id"
+            ]
+          ]
+        },
+        "knowledge_visual_asset": {
+          "oracle": "KBOT_KR_KNOWLEDGE_VISUAL_ASSET",
+          "postgresql": "knowledge_retrieval_knowledge_visual_asset",
+          "columns": [
+            "visual_asset_id",
+            "parse_run_id",
+            "node_id",
+            "local_key",
+            "content_ref",
+            "content_sha256",
+            "mime_type",
+            "byte_count",
+            "dimensions_json",
+            "crop_transform_json",
+            "locator_json",
+            "provenance_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "parse_run_id",
+              "local_key"
+            ],
+            [
+              "node_id"
+            ]
+          ]
+        },
+        "knowledge_reference_occurrence": {
+          "oracle": "KBOT_KR_KNOWLEDGE_REFERENCE_OCCURRENCE",
+          "postgresql": "knowledge_retrieval_knowledge_reference_occurrence",
+          "columns": [
+            "reference_occurrence_id",
+            "parse_run_id",
+            "source_node_id",
+            "local_key",
+            "source_span_json",
+            "raw_reference",
+            "normalized_label",
+            "numbering_scope",
+            "resolution_status",
+            "candidate_keys_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "source_node_id"
+            ],
+            [
+              "parse_run_id",
+              "local_key"
+            ]
+          ]
+        },
+        "knowledge_relation": {
+          "oracle": "KBOT_KR_KNOWLEDGE_RELATION",
+          "postgresql": "knowledge_retrieval_knowledge_relation",
+          "columns": [
+            "relation_id",
+            "parse_run_id",
+            "source_node_id",
+            "target_node_id",
+            "target_asset_id",
+            "target_document_version_id",
+            "target_parse_run_id",
+            "relation_type",
+            "occurrence_id",
+            "basis_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "source_node_id",
+              "relation_type"
+            ],
+            [
+              "target_node_id",
+              "relation_type"
+            ],
+            [
+              "target_asset_id"
+            ],
+            [
+              "occurrence_id"
+            ]
+          ]
+        },
+        "knowledge_search_unit": {
+          "oracle": "KBOT_KR_KNOWLEDGE_SEARCH_UNIT",
+          "postgresql": "knowledge_retrieval_knowledge_search_unit",
+          "columns": [
+            "search_unit_id",
+            "parse_run_id",
+            "projection_ref",
+            "unit_key",
+            "source_node_id",
+            "kind",
+            "allowed_text_ref",
+            "context_ref",
+            "allowed_view_ref",
+            "allowed_view_hash",
+            "input_hash",
+            "profile_hash"
+          ],
+          "nonunique_indexes": [
+            [
+              "projection_ref",
+              "unit_key"
+            ],
+            [
+              "parse_run_id"
+            ]
+          ]
+        },
+        "knowledge_unit_source": {
+          "oracle": "KBOT_KR_KNOWLEDGE_UNIT_SOURCE",
+          "postgresql": "knowledge_retrieval_knowledge_unit_source",
+          "columns": [
+            "unit_source_id",
+            "search_unit_id",
+            "source_node_id",
+            "source_asset_id",
+            "unit_start",
+            "unit_end",
+            "source_start",
+            "source_end",
+            "locator_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "search_unit_id",
+              "unit_start"
+            ],
+            [
+              "source_node_id"
+            ],
+            [
+              "source_asset_id"
+            ]
+          ]
+        },
+        "knowledge_representation": {
+          "oracle": "KBOT_KR_KNOWLEDGE_REPRESENTATION",
+          "postgresql": "knowledge_retrieval_knowledge_representation",
+          "columns": [
+            "representation_id",
+            "search_unit_id",
+            "space_id",
+            "model_snapshot_json",
+            "input_hash",
+            "shape_json",
+            "mask_ref",
+            "vector_ref",
+            "tensor_ref"
+          ],
+          "nonunique_indexes": [
+            [
+              "space_id",
+              "search_unit_id"
+            ]
+          ]
+        },
+        "knowledge_index_generation": {
+          "oracle": "KBOT_KR_KNOWLEDGE_INDEX_GENERATION",
+          "postgresql": "knowledge_retrieval_knowledge_index_generation",
+          "columns": [
+            "index_generation_id",
+            "document_version_id",
+            "parse_run_id",
+            "projection_ref",
+            "manifest_json",
+            "channel_indexes_json",
+            "status",
+            "active_revision"
+          ],
+          "nonunique_indexes": [
+            [
+              "document_version_id",
+              "status"
+            ],
+            [
+              "parse_run_id",
+              "projection_ref"
+            ]
+          ]
+        },
+        "knowledge_ingestion_job": {
+          "oracle": "KBOT_KR_KNOWLEDGE_INGESTION_JOB",
+          "postgresql": "knowledge_retrieval_knowledge_ingestion_job",
+          "columns": [
+            "ingestion_job_id",
+            "document_version_id",
+            "parse_run_id",
+            "attempt",
+            "fence",
+            "lease_owner",
+            "lease_until",
+            "retry_at",
+            "recovery_sequence",
+            "status",
+            "error_code"
+          ],
+          "nonunique_indexes": [
+            [
+              "status",
+              "retry_at",
+              "lease_until"
+            ],
+            [
+              "document_version_id"
+            ]
+          ]
+        },
+        "knowledge_outbox": {
+          "oracle": "KBOT_KR_KNOWLEDGE_OUTBOX",
+          "postgresql": "knowledge_retrieval_knowledge_outbox",
+          "columns": [
+            "outbox_id",
+            "document_version_id",
+            "event_type",
+            "idempotency_key",
+            "payload_ref",
+            "status",
+            "retry_at",
+            "delivered_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "status",
+              "retry_at"
+            ],
+            [
+              "document_version_id",
+              "idempotency_key"
+            ]
+          ]
+        },
+        "knowledge_retrieval_receipt": {
+          "oracle": "KBOT_KR_KNOWLEDGE_RETRIEVAL_RECEIPT",
+          "postgresql": "knowledge_retrieval_knowledge_retrieval_receipt",
+          "columns": [
+            "retrieval_receipt_id",
+            "request_id",
+            "subject_ref",
+            "scope_snapshot_id",
+            "snapshot_json",
+            "query_hash",
+            "profile_hash",
+            "plan_json",
+            "evidence_manifest_ref",
+            "coverage_json",
+            "cursor_state_ref",
+            "expires_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "subject_ref",
+              "request_id"
+            ],
+            [
+              "scope_snapshot_id"
+            ],
+            [
+              "expires_at"
+            ]
+          ]
+        },
+        "knowledge_evidence_pin": {
+          "oracle": "KBOT_KR_KNOWLEDGE_EVIDENCE_PIN",
+          "postgresql": "knowledge_retrieval_knowledge_evidence_pin",
+          "columns": [
+            "evidence_pin_id",
+            "owner_run_ref",
+            "evidence_key_json",
+            "parse_run_id",
+            "projection_ref",
+            "index_generation_id",
+            "expires_at",
+            "released_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "owner_run_ref"
+            ],
+            [
+              "parse_run_id"
+            ],
+            [
+              "expires_at",
+              "released_at"
+            ]
+          ]
+        },
+        "knowledge_scope_snapshot": {
+          "oracle": "KBOT_KR_KNOWLEDGE_SCOPE_SNAPSHOT",
+          "postgresql": "knowledge_retrieval_knowledge_scope_snapshot",
+          "columns": [
+            "scope_snapshot_id",
+            "subject_ref",
+            "scope_hash",
+            "authorization_revision",
+            "policy_json",
+            "allowed_versions_hash",
+            "status",
+            "expires_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "subject_ref",
+              "scope_hash"
+            ],
+            [
+              "expires_at",
+              "status"
+            ]
+          ]
+        },
+        "knowledge_scope_member": {
+          "oracle": "KBOT_KR_KNOWLEDGE_SCOPE_MEMBER",
+          "postgresql": "knowledge_retrieval_knowledge_scope_member",
+          "columns": [
+            "scope_member_id",
+            "scope_snapshot_id",
+            "document_version_id",
+            "allowed_view_ref"
+          ],
+          "nonunique_indexes": [
+            [
+              "scope_snapshot_id",
+              "document_version_id"
+            ],
+            [
+              "document_version_id"
+            ]
+          ]
+        }
+      },
+      "object_roots": {
+        "sources": "knowledge_retrieval/sources",
+        "staging": "knowledge_retrieval/staging",
+        "parsed": "knowledge_retrieval/parsed",
+        "representations": "knowledge_retrieval/representations"
+      },
+      "temporary_root": "knowledge_retrieval/jobs/{job_ref}/{attempt}/{fence}",
+      "index_namespace": "knowledge_retrieval/{space_id}/{generation_id}",
+      "cache_namespace": "knowledge_retrieval/{subject_ref}/{scope_hash}/{snapshot_ref}/{query_hash}/{profile_hash}",
+      "scope_discriminator": "Tenant/Domain/authorization_revision remain row fields, never physical table suffixes",
+      "model_roles": [
+        "TEXT_EMBEDDING",
+        "CROSS_MODAL_IMAGE",
+        "LATE_INTERACTION_OPTIONAL",
+        "OCR_OPTIONAL",
+        "MODEL_TRANSCRIPTION_OPTIONAL"
+      ],
+      "fixture": "tests/evaluation/knowledge_retrieval_app/algorithm-golden-v1.json"
+    },
+    "aiops": {
+      "binding": {
+        "binding_ref": "aiops",
+        "namespace": "aiops"
+      },
+      "service": "aiops_agent",
+      "oracle_prefix": "KBOT_OPS_",
+      "postgresql_prefix": "aiops_",
+      "scope_persistence": "OWN_SCOPE_SNAPSHOT_AND_MEMBER",
+      "internal_prefix": "/internal/v1/aiops/knowledge",
+      "tables": {
+        "knowledge_document": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_DOCUMENT",
+          "postgresql": "aiops_knowledge_document",
+          "columns": [
+            "document_id",
+            "business_asset_ref",
+            "title",
+            "status"
+          ],
+          "nonunique_indexes": [
+            [
+              "domain_id",
+              "status"
+            ],
+            [
+              "business_asset_ref"
+            ]
+          ]
+        },
+        "knowledge_document_version": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_DOCUMENT_VERSION",
+          "postgresql": "aiops_knowledge_document_version",
+          "columns": [
+            "document_version_id",
+            "document_id",
+            "source_sha256",
+            "mime_type",
+            "byte_count",
+            "source_object_ref",
+            "business_version_ref",
+            "published_parse_run_id",
+            "active_generation_id",
+            "status"
+          ],
+          "nonunique_indexes": [
+            [
+              "document_id",
+              "business_version_ref"
+            ],
+            [
+              "domain_id",
+              "status"
+            ]
+          ]
+        },
+        "knowledge_parse_run": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_PARSE_RUN",
+          "postgresql": "aiops_knowledge_parse_run",
+          "columns": [
+            "parse_run_id",
+            "document_version_id",
+            "source_sha256",
+            "profile_hash",
+            "parser_revision",
+            "model_snapshot_json",
+            "attempt",
+            "fence",
+            "quality_report_json",
+            "manifest_hash",
+            "status"
+          ],
+          "nonunique_indexes": [
+            [
+              "document_version_id",
+              "status"
+            ],
+            [
+              "parse_run_id",
+              "fence"
+            ]
+          ]
+        },
+        "knowledge_parse_batch": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_PARSE_BATCH",
+          "postgresql": "aiops_knowledge_parse_batch",
+          "columns": [
+            "parse_batch_id",
+            "parse_run_id",
+            "batch_key",
+            "sequence",
+            "payload_hash",
+            "payload_ref",
+            "dependency_keys_json",
+            "artifact_manifest_json",
+            "acknowledged_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "parse_run_id",
+              "sequence"
+            ],
+            [
+              "parse_run_id",
+              "batch_key"
+            ]
+          ]
+        },
+        "knowledge_node": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_NODE",
+          "postgresql": "aiops_knowledge_node",
+          "columns": [
+            "node_id",
+            "parse_run_id",
+            "local_key",
+            "kind",
+            "parent_node_id",
+            "reading_order",
+            "original_text_ref",
+            "allowed_view_ref",
+            "locator_json",
+            "provenance_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "parse_run_id",
+              "local_key"
+            ],
+            [
+              "parse_run_id",
+              "reading_order"
+            ],
+            [
+              "parent_node_id"
+            ]
+          ]
+        },
+        "knowledge_visual_asset": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_VISUAL_ASSET",
+          "postgresql": "aiops_knowledge_visual_asset",
+          "columns": [
+            "visual_asset_id",
+            "parse_run_id",
+            "node_id",
+            "local_key",
+            "content_ref",
+            "content_sha256",
+            "mime_type",
+            "byte_count",
+            "dimensions_json",
+            "crop_transform_json",
+            "locator_json",
+            "provenance_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "parse_run_id",
+              "local_key"
+            ],
+            [
+              "node_id"
+            ]
+          ]
+        },
+        "knowledge_reference_occurrence": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_REFERENCE_OCCURRENCE",
+          "postgresql": "aiops_knowledge_reference_occurrence",
+          "columns": [
+            "reference_occurrence_id",
+            "parse_run_id",
+            "source_node_id",
+            "local_key",
+            "source_span_json",
+            "raw_reference",
+            "normalized_label",
+            "numbering_scope",
+            "resolution_status",
+            "candidate_keys_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "source_node_id"
+            ],
+            [
+              "parse_run_id",
+              "local_key"
+            ]
+          ]
+        },
+        "knowledge_relation": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_RELATION",
+          "postgresql": "aiops_knowledge_relation",
+          "columns": [
+            "relation_id",
+            "parse_run_id",
+            "source_node_id",
+            "target_node_id",
+            "target_asset_id",
+            "target_document_version_id",
+            "target_parse_run_id",
+            "relation_type",
+            "occurrence_id",
+            "basis_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "source_node_id",
+              "relation_type"
+            ],
+            [
+              "target_node_id",
+              "relation_type"
+            ],
+            [
+              "target_asset_id"
+            ],
+            [
+              "occurrence_id"
+            ]
+          ]
+        },
+        "knowledge_search_unit": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_SEARCH_UNIT",
+          "postgresql": "aiops_knowledge_search_unit",
+          "columns": [
+            "search_unit_id",
+            "parse_run_id",
+            "projection_ref",
+            "unit_key",
+            "source_node_id",
+            "kind",
+            "allowed_text_ref",
+            "context_ref",
+            "allowed_view_ref",
+            "allowed_view_hash",
+            "input_hash",
+            "profile_hash"
+          ],
+          "nonunique_indexes": [
+            [
+              "projection_ref",
+              "unit_key"
+            ],
+            [
+              "parse_run_id"
+            ]
+          ]
+        },
+        "knowledge_unit_source": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_UNIT_SOURCE",
+          "postgresql": "aiops_knowledge_unit_source",
+          "columns": [
+            "unit_source_id",
+            "search_unit_id",
+            "source_node_id",
+            "source_asset_id",
+            "unit_start",
+            "unit_end",
+            "source_start",
+            "source_end",
+            "locator_json"
+          ],
+          "nonunique_indexes": [
+            [
+              "search_unit_id",
+              "unit_start"
+            ],
+            [
+              "source_node_id"
+            ],
+            [
+              "source_asset_id"
+            ]
+          ]
+        },
+        "knowledge_representation": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_REPRESENTATION",
+          "postgresql": "aiops_knowledge_representation",
+          "columns": [
+            "representation_id",
+            "search_unit_id",
+            "space_id",
+            "model_snapshot_json",
+            "input_hash",
+            "shape_json",
+            "mask_ref",
+            "vector_ref",
+            "tensor_ref"
+          ],
+          "nonunique_indexes": [
+            [
+              "space_id",
+              "search_unit_id"
+            ]
+          ]
+        },
+        "knowledge_index_generation": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_INDEX_GENERATION",
+          "postgresql": "aiops_knowledge_index_generation",
+          "columns": [
+            "index_generation_id",
+            "document_version_id",
+            "parse_run_id",
+            "projection_ref",
+            "manifest_json",
+            "channel_indexes_json",
+            "status",
+            "active_revision"
+          ],
+          "nonunique_indexes": [
+            [
+              "document_version_id",
+              "status"
+            ],
+            [
+              "parse_run_id",
+              "projection_ref"
+            ]
+          ]
+        },
+        "knowledge_ingestion_job": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_INGESTION_JOB",
+          "postgresql": "aiops_knowledge_ingestion_job",
+          "columns": [
+            "ingestion_job_id",
+            "document_version_id",
+            "parse_run_id",
+            "attempt",
+            "fence",
+            "lease_owner",
+            "lease_until",
+            "retry_at",
+            "recovery_sequence",
+            "status",
+            "error_code"
+          ],
+          "nonunique_indexes": [
+            [
+              "status",
+              "retry_at",
+              "lease_until"
+            ],
+            [
+              "document_version_id"
+            ]
+          ]
+        },
+        "knowledge_outbox": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_OUTBOX",
+          "postgresql": "aiops_knowledge_outbox",
+          "columns": [
+            "outbox_id",
+            "document_version_id",
+            "event_type",
+            "idempotency_key",
+            "payload_ref",
+            "status",
+            "retry_at",
+            "delivered_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "status",
+              "retry_at"
+            ],
+            [
+              "document_version_id",
+              "idempotency_key"
+            ]
+          ]
+        },
+        "knowledge_retrieval_receipt": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_RETRIEVAL_RECEIPT",
+          "postgresql": "aiops_knowledge_retrieval_receipt",
+          "columns": [
+            "retrieval_receipt_id",
+            "request_id",
+            "subject_ref",
+            "scope_snapshot_id",
+            "snapshot_json",
+            "query_hash",
+            "profile_hash",
+            "plan_json",
+            "evidence_manifest_ref",
+            "coverage_json",
+            "cursor_state_ref",
+            "expires_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "subject_ref",
+              "request_id"
+            ],
+            [
+              "scope_snapshot_id"
+            ],
+            [
+              "expires_at"
+            ]
+          ]
+        },
+        "knowledge_evidence_pin": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_EVIDENCE_PIN",
+          "postgresql": "aiops_knowledge_evidence_pin",
+          "columns": [
+            "evidence_pin_id",
+            "owner_run_ref",
+            "evidence_key_json",
+            "parse_run_id",
+            "projection_ref",
+            "index_generation_id",
+            "expires_at",
+            "released_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "owner_run_ref"
+            ],
+            [
+              "parse_run_id"
+            ],
+            [
+              "expires_at",
+              "released_at"
+            ]
+          ]
+        },
+        "knowledge_scope_snapshot": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_SCOPE_SNAPSHOT",
+          "postgresql": "aiops_knowledge_scope_snapshot",
+          "columns": [
+            "scope_snapshot_id",
+            "subject_ref",
+            "scope_hash",
+            "authorization_revision",
+            "policy_json",
+            "allowed_versions_hash",
+            "status",
+            "expires_at"
+          ],
+          "nonunique_indexes": [
+            [
+              "subject_ref",
+              "scope_hash"
+            ],
+            [
+              "expires_at",
+              "status"
+            ]
+          ]
+        },
+        "knowledge_scope_member": {
+          "oracle": "KBOT_OPS_KNOWLEDGE_SCOPE_MEMBER",
+          "postgresql": "aiops_knowledge_scope_member",
+          "columns": [
+            "scope_member_id",
+            "scope_snapshot_id",
+            "document_version_id",
+            "allowed_view_ref"
+          ],
+          "nonunique_indexes": [
+            [
+              "scope_snapshot_id",
+              "document_version_id"
+            ],
+            [
+              "document_version_id"
+            ]
+          ]
+        }
+      },
+      "object_roots": {
+        "sources": "aiops/sources",
+        "staging": "aiops/staging",
+        "parsed": "aiops/parsed",
+        "representations": "aiops/representations"
+      },
+      "temporary_root": "aiops/jobs/{job_ref}/{attempt}/{fence}",
+      "index_namespace": "aiops/{space_id}/{generation_id}",
+      "cache_namespace": "aiops/{subject_ref}/{scope_hash}/{snapshot_ref}/{query_hash}/{profile_hash}",
+      "scope_discriminator": "Tenant/Domain/authorization_revision remain row fields, never physical table suffixes",
+      "model_roles": [
+        "TEXT_EMBEDDING",
+        "CROSS_MODAL_IMAGE",
+        "LATE_INTERACTION_OPTIONAL",
+        "OCR_OPTIONAL",
+        "MODEL_TRANSCRIPTION_OPTIONAL"
+      ],
+      "fixture": "tests/evaluation/aiops_agent/algorithm-golden-v1.json"
+    }
+  },
+  "endpoints": [
+    [
+      "POST",
+      "/scopes"
+    ],
+    [
+      "POST",
+      "/sources:read"
+    ],
+    [
+      "POST",
+      "/retrievals"
+    ],
+    [
+      "GET",
+      "/retrievals/{retrieval_ref}/pages"
+    ],
+    [
+      "POST",
+      "/evidence:read"
+    ],
+    [
+      "POST",
+      "/evidence:revalidate"
+    ],
+    [
+      "POST",
+      "/evidence-pins"
+    ],
+    [
+      "DELETE",
+      "/evidence-pins/{pin_ref}"
+    ]
+  ],
+  "existing_mappings": [
+    {
+      "app": "knowledge_retrieval",
+      "oracle_table": "KBOT_KR_AGENT_VERSION",
+      "postgresql_table": "knowledge_retrieval_agent_version",
+      "source": "services/knowledge_retrieval_app/src/knowledge_retrieval_app/entities/agent.py",
+      "preserve": [
+        "agent_version_id",
+        "models_json",
+        "config_json",
+        "data_model_ids_json"
+      ],
+      "retire_at_atomic_cutover": [
+        "knowledge_core_id"
+      ],
+      "target": "Agent version -> own scope policy; explicit source versions -> own knowledge_document_version; never treat agent_version_id as document version"
+    },
+    {
+      "app": "aiops",
+      "oracle_table": "KBOT_OPS_KNOWLEDGE_VERSION",
+      "postgresql_table": "aiops_knowledge_version",
+      "source": "services/aiops_agent/src/aiops_agent/entities/knowledge.py",
+      "preserve": [
+        "asset_version_id",
+        "asset_id"
+      ],
+      "target": "knowledge_document_version.business_version_ref -> explicit App asset_version_id, different IDs and lifecycle"
+    },
+    {
+      "app": "aiops",
+      "oracle_table": "KBOT_OPS_KNOWLEDGE_INDEX",
+      "postgresql_table": "aiops_knowledge_index",
+      "preserve": [
+        "asset_version_id"
+      ],
+      "retire_at_atomic_cutover": [
+        "collection_id",
+        "bundle_id",
+        "bundle_revision_id"
+      ],
+      "target": "document_version_id + parse_run_id + projection_ref + index_generation_id; no fallback/dual read"
+    },
+    {
+      "app": "aiops",
+      "oracle_table": "KBOT_OPS_KNOWLEDGE_BASE",
+      "postgresql_table": "aiops_knowledge_base",
+      "retire_at_atomic_cutover": [
+        "collection_id"
+      ],
+      "preserve_business_tables": [
+        "knowledge_base",
+        "knowledge_asset",
+        "knowledge_version",
+        "knowledge_scope",
+        "knowledge_tag",
+        "knowledge_source",
+        "knowledge_review"
+      ],
+      "target": "Keep governance/review/source/VERIFIED; own exact scope_snapshot/member is not legacy applicability scope"
+    }
+  ],
+  "data_authority": [
+    "PRESERVE_ALL_REAL_SOURCES",
+    "PRESERVE_ALL_HISTORICAL_RUNS_AND_CITATIONS",
+    "PRESERVE_ALL_OLD_KC_OBJECTS_AND_INDEXES",
+    "PRESERVE_ALL_APP_ASSET_MAPPINGS"
+  ],
+  "data_actions_approved": [],
+  "data_inventory_status": "SOURCE_STRUCTURE_ONLY_NO_REAL_ROW_OR_OBJECT_ENUMERATION",
+  "blocked_stage": "K7 until exact owner/version inventory, backup and data-action approval",
+  "contract_manifest": "tests/contract/knowledge_algorithms/schemas-v1.json",
+  "contract_examples": "tests/contract/knowledge_algorithms/examples-v1.json"
+}

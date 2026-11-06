@@ -20,6 +20,7 @@ from .messaging import InboxEntity, OutboxEntity
 from .output_job import OpsOutputJobEntity, OpsOutputJobAttemptEntity
 from .resource_governance import ResourcePoolEntity, ResourceLeaseEntity
 from .notification import NotificationSubscriptionEntity
+from .knowledge_configuration import OperationsKnowledgeConfigurationEntity
 from .knowledge import (
     OperationsKnowledgeAssetEntity,
     OperationsKnowledgeBaseEntity,
@@ -82,6 +83,7 @@ from .conversation import (
 )
 
 __all__ = [
+    "OperationsKnowledgeConfigurationEntity",
     "OpsOutputJobEntity",
     "OpsOutputJobAttemptEntity",
     "ResourcePoolEntity",
@@ -171,3 +173,45 @@ from .agent import (
     AIOpsAgentVersionResourceActionPolicyEntity,
     AIOpsAgentVersionKnowledgeBaseEntity,
 )
+
+from .knowledge_ingestion import (
+    KnowledgeDocumentEntity,
+    KnowledgeDocumentVersionEntity,
+    KnowledgeParseRunEntity,
+    KnowledgeParseBatchEntity,
+    KnowledgeNodeEntity,
+    KnowledgeVisualAssetEntity,
+    KnowledgeReferenceOccurrenceEntity,
+    KnowledgeRelationEntity,
+    KnowledgeSearchUnitEntity,
+    KnowledgeUnitSourceEntity,
+    KnowledgeRepresentationEntity,
+    KnowledgeIndexGenerationEntity,
+    KnowledgeIngestionJobEntity,
+    KnowledgeOutboxEntity,
+    KnowledgeRetrievalReceiptEntity,
+    KnowledgeEvidencePinEntity,
+    KnowledgeScopeSnapshotEntity,
+    KnowledgeScopeMemberEntity,
+)
+
+__all__ += [
+    "KnowledgeDocumentEntity",
+    "KnowledgeDocumentVersionEntity",
+    "KnowledgeParseRunEntity",
+    "KnowledgeParseBatchEntity",
+    "KnowledgeNodeEntity",
+    "KnowledgeVisualAssetEntity",
+    "KnowledgeReferenceOccurrenceEntity",
+    "KnowledgeRelationEntity",
+    "KnowledgeSearchUnitEntity",
+    "KnowledgeUnitSourceEntity",
+    "KnowledgeRepresentationEntity",
+    "KnowledgeIndexGenerationEntity",
+    "KnowledgeIngestionJobEntity",
+    "KnowledgeOutboxEntity",
+    "KnowledgeRetrievalReceiptEntity",
+    "KnowledgeEvidencePinEntity",
+    "KnowledgeScopeSnapshotEntity",
+    "KnowledgeScopeMemberEntity",
+]

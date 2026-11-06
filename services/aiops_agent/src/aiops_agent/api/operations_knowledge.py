@@ -153,7 +153,7 @@ async def record_case_reuse_feedback(
     asset_id: UUID, payload: KnowledgeReuseFeedback, request: Request,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
-    _, domain_id, _ = _use_scope(request, context)
+    domain_id, _ = _use_scope(request, context)
     return await request.app.state.operations_knowledge_service.record_reuse_feedback(
         domain_id=domain_id, asset_id=asset_id, command=payload, context=context,
     )
@@ -362,12 +362,13 @@ async def preview_version(
 async def stream_source(
     asset_version_id: UUID,
     request: Request,
+    document_version_id: UUID | None = None,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
     domain_id, _ = _scope(request, context)
     result = await request.app.state.operations_knowledge_service.stream_source(
         domain_id=domain_id, asset_version_id=asset_version_id,
-        context=context, range_header=request.headers.get("Range"),
+        context=context, range_header=request.headers.get("Range"), document_version_id=document_version_id,
     )
     headers = {
         key: value for key, value in result.headers.items()

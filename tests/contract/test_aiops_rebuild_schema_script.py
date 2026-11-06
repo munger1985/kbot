@@ -179,7 +179,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             "KBOT_OPS_TARGET": "KBOT_KEEP_AIOPS_TARGET",
             "KBOT_OPS_TARGET_FACT": "KBOT_KEEP_AIOPS_TARGET_FACT",
             "KBOT_OPS_DIAGNOSTIC_SOURCE": "KBOT_KEEP_AIOPS_SOURCE",
-            "KBOT_OPS_TARGET_SOURCE_BINDING": "KBOT_KEEP_AIOPS_TSRC_BIND",
+            "KBOT_OPS_RESOURCE_SOURCE_BINDING": "KBOT_KEEP_AIOPS_TSRC_BIND",
             "KBOT_OPS_BUSINESS_SYSTEM": "KBOT_KEEP_AIOPS_BUS_SYSTEM",
             "KBOT_OPS_MANAGED_RESOURCE": "KBOT_KEEP_AIOPS_RESOURCE",
             "KBOT_OPS_DATABASE_RESOURCE": "KBOT_KEEP_AIOPS_DB_RESOURCE",
@@ -287,18 +287,17 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             self.assertIn(f"'{view_name}'", self.sql)
 
     def test_schema_version_view_matches_manifest_contract(self) -> None:
-        canonical = (SCHEMA_DIR / "006_ops_fks_views.sql").read_text(
-            encoding="utf-8"
-        )
-        version_view = re.search(
+        canonical = "\n".join((SCHEMA_DIR / item["name"]).read_text(encoding="utf-8")
+            for item in self.manifest["scripts"])
+        version_views = list(re.finditer(
             r"CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS"
             r"(?P<body>.*?)FROM DUAL;",
             canonical,
             re.DOTALL,
-        )
+        ))
 
-        self.assertIsNotNone(version_view)
-        body = version_view.group("body")
+        self.assertTrue(version_views)
+        body = version_views[-1].group("body")
         self.assertIn(
             f"{self.manifest['schema_version']} AS SCHEMA_VERSION",
             body,

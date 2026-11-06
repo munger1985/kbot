@@ -69,6 +69,7 @@ class AgentModelCatalogResolver:
                 "served_model_name": served_name,
                 "category": int(category),
                 "model_params": definition.get("model_params") or {},
+                "effective_max_tokens": definition.get("effective_max_tokens"),
             }
             fingerprint = sha256(
                 json.dumps(
@@ -84,6 +85,7 @@ class AgentModelCatalogResolver:
                 "served_model_name": served_name,
                 "category": int(category),
                 "config_fingerprint": fingerprint,
+                "max_tokens": definition.get("effective_max_tokens"),
             }
         return resolved
 

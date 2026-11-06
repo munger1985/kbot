@@ -101,7 +101,7 @@ def test_real_title_edit_preserves_case_and_conversation_lineage():
         f.report = f.state.current
         replayed = await extract(f)
         assert replayed["replayed"] and replayed["version"]["asset_version_id"] == first["version"]["asset_version_id"]
-        assert f.service._kc.ingest_user_file.await_count == 1
+        assert f.service._documents.stage.await_count == 1
     asyncio.run(run())
 
 
@@ -225,8 +225,6 @@ def test_real_publish_rechecks_original_source_after_presentation_update(failure
         relations.update(scopes=[], reviews=[])
         index = relations["indexes"][0]
         index.index_status, version.status = "READY", "REVIEW_REQUIRED"
-        f.service._kc.get_bundle_status = AsyncMock(return_value={
-            "current_revision_id": str(index.bundle_revision_id), "availability_status": "READY"})
         if failure == "revoked":
             f.uow.agents.version_has_target.return_value = False
         elif failure == "source_hash":
@@ -276,7 +274,7 @@ def test_substantive_correction_is_filtered_before_any_remote_knowledge_read():
         index = f.state.relations[version.asset_version_id]["indexes"][0]
         asset.current_version_id, asset.status, version.status = version.asset_version_id, "PUBLISHED", "PUBLISHED"
         f.uow.operations_knowledge.list_published_candidates = AsyncMock(return_value=[(asset, version, index)])
-        f.service._kc.discover = AsyncMock()
+        f.service._documents.retrieval.retrieve = AsyncMock()
         authorized = knowledge_agent_repository()
         active_knowledge_bases_fixture(f.uow.operations_knowledge)
         f.uow.agents.get = authorized.get
@@ -289,7 +287,7 @@ def test_substantive_correction_is_filtered_before_any_remote_knowledge_read():
         assert not result["results"]
         assert result["status"] == "NO_APPLICABLE_KNOWLEDGE"
         f.uow.operations_knowledge.list_published_candidates.assert_awaited_once()
-        f.service._kc.discover.assert_not_awaited()
+        f.service._documents.retrieval.retrieve.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -319,7 +317,7 @@ def test_revision_during_semantic_scan_is_checked_before_index_intake(substantiv
         if substantive:
             with pytest.raises(AIOpsApplicationError):
                 await extract(f)
-            f.service._kc.ingest_user_file.assert_not_awaited()
+            f.service._documents.stage.assert_not_awaited()
         else:
             result = await extract(f)
             assert result["version"]["status"] == "PROCESSING"

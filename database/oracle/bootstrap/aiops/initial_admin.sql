@@ -1,6 +1,6 @@
 -- 由 scripts/db/initialize_aiops.py 调用的 AIOps 首次使用数据资产。
 -- 本资产只写基础数据，不创建或修改 Schema 对象。
--- 固定资源：aiops_portal Domain、默认运维知识库、案例资源持久化事件、aiopsadmin。
+-- 固定资源：aiops_portal Domain、默认运维知识库、本 App 独立知识存储、aiopsadmin。
 -- 初始密码：AIOpsAdmin@2026!；重复执行会恢复该密码。
 
 SET SERVEROUTPUT ON
@@ -11,13 +11,13 @@ DECLARE
 BEGIN
     SELECT COUNT(*) INTO l_table_count FROM USER_TABLES WHERE TABLE_NAME IN (
         'KBOT_PLATFORM_DOMAIN', 'KBOT_PLATFORM_APP', 'KBOT_PLATFORM_USER',
-        'KBOT_PLATFORM_USER_CREDENTIAL', 'KBOT_AI_MODEL', 'KBOT_KC_COLLECTION',
+        'KBOT_PLATFORM_USER_CREDENTIAL', 'KBOT_AI_MODEL',
         'KBOT_PERMISSION', 'KBOT_APP_ROLE', 'KBOT_APP_ROLE_PERMISSION',
         'KBOT_APP_DOMAIN', 'KBOT_APP_MEMBER', 'KBOT_APP_MEMBER_ROLE',
         'KBOT_APP_MEMBER_ROLE_SCOPE', 'KBOT_OPS_KNOWLEDGE_BASE'
     );
-    IF l_table_count <> 14 THEN
-        raise_application_error(-20001, 'AIOps Domain、模型、KC 或权限基础表不完整。');
+    IF l_table_count <> 13 THEN
+        raise_application_error(-20001, 'AIOps Domain、模型、文档或权限基础表不完整。');
     END IF;
 END;
 /
@@ -45,75 +45,13 @@ WHEN NOT MATCHED THEN INSERT (
 
 DECLARE
     l_domain_id NUMBER(38);
-    PROCEDURE ensure_collection(
-        p_collection_id VARCHAR2,
-        p_display_name VARCHAR2,
-        p_description VARCHAR2,
-        p_content_kind VARCHAR2
-    ) IS
-        l_collection_count PLS_INTEGER;
-    BEGIN
-        SELECT COUNT(*) INTO l_collection_count FROM KBOT_KC_COLLECTION
-         WHERE DOMAIN_ID = l_domain_id AND DISPLAY_NAME = p_display_name;
-        IF l_collection_count > 1 THEN
-            raise_application_error(-20002, 'aiops_portal 固定 Collection 重复：' || p_display_name);
-        END IF;
-        IF l_collection_count = 0 THEN
-            INSERT INTO KBOT_KC_COLLECTION (
-                COLLECTION_ID, DOMAIN_ID, DISPLAY_NAME, DESCRIPTION, MODELS_JSON,
-                PARSE_POLICY_JSON, STATUS, DEFAULT_SECURITY_LEVEL, METADATA_JSON,
-                ROW_VERSION, CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
-            ) VALUES (
-                HEXTORAW(REPLACE(p_collection_id, '-', '')),
-                l_domain_id, p_display_name, p_description,
-                '{}',
-                '{"parse_strategy":"AUTO","image_scale":2.0,"detect_table_structure":true}',
-                'ACTIVE', 1,
-                '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"' || p_content_kind || '"}',
-                1, 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
-                SYSTIMESTAMP, SYSTIMESTAMP
-            );
-        ELSE
-            UPDATE KBOT_KC_COLLECTION SET STATUS = 'ACTIVE',
-                DESCRIPTION = p_description,
-                METADATA_JSON = '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"' || p_content_kind || '"}',
-                UPDATED_BY = 'bootstrap:aiops_initial_admin', UPDATED_AT = SYSTIMESTAMP
-             WHERE DOMAIN_ID = l_domain_id AND DISPLAY_NAME = p_display_name;
-        END IF;
-    END;
-BEGIN
-    SELECT DOMAIN_ID INTO l_domain_id FROM KBOT_PLATFORM_DOMAIN
-     WHERE NAME = 'aiops_portal' AND STATUS = 'ACTIVE' FOR UPDATE;
-    ensure_collection(
-        '019ffff0-0000-7000-8000-000000000001',
-        'operations-manuals',
-        'AIOps 固定数据库运维手册 Collection',
-        'operations_manual'
-    );
-    -- 案例 Collection 统一由平台后台经 KC 内部接口创建；重复初始化不重置已知身份。
-    MERGE INTO KBOT_PLATFORM_CASE_RESOURCE target
-    USING (SELECT l_domain_id DOMAIN_ID FROM DUAL) source
-    ON (target.DOMAIN_ID=source.DOMAIN_ID)
-    WHEN NOT MATCHED THEN INSERT (
-        DOMAIN_ID, ACTOR_ID, STATUS, CONFIGURATION_STATUS, MISSING_MODEL_ROLES,
-        ATTEMPT_COUNT, NEXT_ATTEMPT_AT, CREATION_ALLOWED
-    ) VALUES (
-        source.DOMAIN_ID, 'bootstrap:aiops_initial_admin', 'QUEUED', 'UNKNOWN', '[]',
-        0, SYSTIMESTAMP, 1
-    );
-END;
-/
-
-DECLARE
-    l_domain_id NUMBER(38);
 BEGIN
     SELECT DOMAIN_ID INTO l_domain_id FROM KBOT_PLATFORM_DOMAIN
      WHERE NAME = 'aiops_portal' AND STATUS = 'ACTIVE';
     MERGE INTO KBOT_OPS_KNOWLEDGE_BASE target
     USING (
         SELECT HEXTORAW('019FFFF0000070008000000000001001') KNOWLEDGE_BASE_ID,
-               l_domain_id DOMAIN_ID,
-               HEXTORAW('019FFFF0000070008000000000000001') COLLECTION_ID
+               l_domain_id DOMAIN_ID
           FROM DUAL
     ) source
     ON (target.KNOWLEDGE_BASE_ID = source.KNOWLEDGE_BASE_ID)
@@ -121,16 +59,15 @@ BEGIN
         target.DOMAIN_ID = source.DOMAIN_ID,
         target.DISPLAY_NAME = '默认运维知识库',
         target.DESCRIPTION = 'KBot AIOps 初始化的数据库运维手册知识库',
-        target.COLLECTION_ID = source.COLLECTION_ID,
         target.STATUS = 'ACTIVE',
         target.UPDATED_BY = 'bootstrap:aiops_initial_admin',
         target.UPDATED_AT = SYSTIMESTAMP
     WHEN NOT MATCHED THEN INSERT (
-        KNOWLEDGE_BASE_ID, DOMAIN_ID, DISPLAY_NAME, DESCRIPTION, COLLECTION_ID,
+        KNOWLEDGE_BASE_ID, DOMAIN_ID, DISPLAY_NAME, DESCRIPTION, CONFIGURATION_JSON,
         STATUS, CREATED_BY, UPDATED_BY, ROW_VERSION, CREATED_AT, UPDATED_AT
     ) VALUES (
         source.KNOWLEDGE_BASE_ID, source.DOMAIN_ID, '默认运维知识库',
-        'KBot AIOps 初始化的数据库运维手册知识库', source.COLLECTION_ID,
+        'KBot AIOps 初始化的数据库运维手册知识库', '{}',
         'ACTIVE', 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
         1, SYSTIMESTAMP, SYSTIMESTAMP
     );
@@ -266,21 +203,12 @@ COMMIT;
 
 DECLARE
     l_domain_id NUMBER(38);
-    l_collection_id VARCHAR2(36 CHAR);
 BEGIN
-    SELECT domain.DOMAIN_ID,
-           LOWER(SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 1, 8) || '-' ||
-                 SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 9, 4) || '-' ||
-                 SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 13, 4) || '-' ||
-                 SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 17, 4) || '-' ||
-                 SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 21, 12))
-      INTO l_domain_id, l_collection_id
-      FROM KBOT_PLATFORM_DOMAIN domain
-      JOIN KBOT_KC_COLLECTION collection ON collection.DOMAIN_ID = domain.DOMAIN_ID
-     WHERE domain.NAME = 'aiops_portal' AND collection.DISPLAY_NAME = 'operations-manuals';
+    SELECT DOMAIN_ID INTO l_domain_id FROM KBOT_PLATFORM_DOMAIN
+     WHERE NAME = 'aiops_portal';
     dbms_output.put_line('AIOps 初始化完成。');
     dbms_output.put_line('登录用户：aiopsadmin');
     dbms_output.put_line('固定 Domain：aiops_portal（ID=' || l_domain_id || '）');
-    dbms_output.put_line('默认运维知识库 Collection：operations-manuals（ID=' || l_collection_id || '）');
+    dbms_output.put_line('默认运维知识库已登记；请显式配置模型与表示空间后上传资料。');
 END;
 /

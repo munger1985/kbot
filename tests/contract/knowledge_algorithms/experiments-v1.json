@@ -1,0 +1,97 @@
+{
+  "schema_version": "knowledge.k0_experiments.v1",
+  "gate": "G_A_SYNTHETIC_ONLY",
+  "production_quality_claim": false,
+  "splits": {
+    "development": "Synthetic unit fixtures; used to develop control flow",
+    "contract_holdout": "Separate frozen App cases; no quality tuning; executed for exact expected invariants",
+    "real_quality_holdout": "NOT_ACCESSED; K5 requires approval and pre-registration"
+  },
+  "baseline": "No rerank: same-space global merge -> one-vote-per-family weighted RRF -> authorized linked evidence -> bounded coverage selection",
+  "parameters": {
+    "rrf_constant": 60,
+    "channel_weight": 1,
+    "max_candidate_count": 100,
+    "max_primary_count": 10,
+    "max_shards": 64,
+    "max_relation_pages": 3,
+    "relation_page_size": 100,
+    "max_cover_states": 100
+  },
+  "runner_budget": {
+    "timeout_seconds": 30,
+    "max_traced_memory_bytes": 67108864,
+    "max_source_bytes": 100000,
+    "max_objects": 1000,
+    "max_representation_elements": 1000
+  },
+  "tuning_trials": 0,
+  "random_seed": 7301,
+  "admitted_dependencies": [
+    {
+      "name": "PlainTextAdapter",
+      "revision": "native-utf8/v1",
+      "license": "REPOSITORY_SOURCE",
+      "mode": "EXECUTABLE_UTF8_ONLY",
+      "resource_boundary": "bounded text materialization; not a complex converter"
+    },
+    {
+      "name": "FakeModel",
+      "revision": "fixture/v1",
+      "processor_revision": "processor/v1",
+      "license": "REPOSITORY_TEST_FIXTURE",
+      "mode": "FIXED_2D_SYNTHETIC_NO_WEIGHTS",
+      "directions": [
+        "TEXT_TO_TEXT",
+        "TEXT_TO_IMAGE",
+        "IMAGE_TO_IMAGE"
+      ],
+      "purpose": "contract only; no actual semantic quality"
+    },
+    {
+      "name": "CharacterTokenizer",
+      "revision": "fixture-character-tokenizer/v1",
+      "license": "REPOSITORY_TEST_FIXTURE",
+      "mode": "NOT_PRODUCTION_TOKENIZER"
+    }
+  ],
+  "non_admitted_dependencies": [
+    {
+      "name": "docling",
+      "revision": "2.114.0",
+      "core_revision": "2.88.0",
+      "evidence": "KBot services/knowledge_core/pyproject.toml exact pins; Ammolite services/knowledge_core/pyproject.toml lower bounds and services/model_serving/pyproject.toml docling[easyocr,rapidocr]==2.114.0; installed artifacts not inspected",
+      "code_license": "MIT",
+      "weights_license": "NOT_VERIFIED_NOT_ADMITTED",
+      "execution": "NOT_IMPORTED_OR_RUN",
+      "resources": "Service process memory/time limits required in K2/K5; no in-core import"
+    },
+    {
+      "name": "production embedding/visual/late-interaction/OCR/transcription models",
+      "revision": null,
+      "license": null,
+      "status": "NOT_SELECTED_NOT_CONFIGURED_NOT_ADMITTED",
+      "required_before_K5": [
+        "exact weight revision and checksum",
+        "processor and input template",
+        "license and data permission",
+        "native direction and scoring matrix",
+        "measured memory/time/token/image budget"
+      ]
+    },
+    {
+      "name": "MinerU/PaddleOCR alternatives",
+      "revision": null,
+      "license": null,
+      "status": "RESEARCH_CANDIDATES_NOT_ADMITTED",
+      "policy": "Do not infer code or weight license from paper"
+    }
+  ],
+  "acceptance": {
+    "contract_identity_failures": 0,
+    "cross_app_reads": 0,
+    "cross_app_results": 0,
+    "silent_zero_on_legal_bounded_candidates": 0
+  },
+  "g_c_quality": "Real retrieval and parsing quality, P95 and supported scale are not established by this fixture"
+}

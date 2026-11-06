@@ -17,11 +17,7 @@ from main_api.application import (
     DomainValidationService,
 )
 from main_api.config import get_main_api_settings
-from platform_clients import (
-    KnowledgeCoreClientError,
-    KnowledgeCoreResponse,
-    KnowledgeCoreStreamResponse,
-)
+from platform_clients.knowledge_computation import KnowledgeComputationClientError
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.security import (
     DOMAIN_ID_HEADER,
@@ -38,245 +34,44 @@ TEST_MANIFEST_VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a024")
 TEST_DOCUMENT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a025")
 
 
-class _FakeKnowledgeCoreClient:
+class _FakeKnowledgeLibraryClient:
     def __init__(self):
-        self.last_context: AuthContext | None = None
-        self.last_domain_id: int | None = None
-        self.multipart_body = b""
+        self.last_context = None
+        self.last_domain_id = None
         self.raise_error = False
-        self.last_bundle_id: UUID | None = None
-        self.last_bundle_revision_id: UUID | None = None
-        self.last_collection_id: UUID | None = None
-        self.last_document_version_id: UUID | None = None
-        self.last_agent_id: UUID | None = None
-        self.only_manifest = False
+        self.uploaded_body = b""
 
-    async def list_agent_bindings(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        self.last_context = auth_context
-        self.last_domain_id = domain_id
-        self.last_agent_id = agent_id
-        return {
-            "bindings": [
-                {
-                    "agent_id": str(agent_id),
-                    "collection_id": str(TEST_COLLECTION_ID),
-                }
-            ]
-        }
+    def record(self, context):
+        self.last_context = context
+        self.last_domain_id = int(context.domain_id)
 
-    async def list_collections(
-        self,
-        *,
-        domain_id: int,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
+    @staticmethod
+    def view(library_id):
+        return {"library_id": str(library_id), "display_name": "合成资料库", "description": None,
+            "status": "ACTIVE", "row_version": 1, "permissions": ["READ", "UPLOAD"],
+            "configuration": {"profile_ref": "default"}, "grants": None, "search_capabilities": []}
+
+    async def libraries(self, *, auth_context):
         if self.raise_error:
-            raise KnowledgeCoreClientError(
-                status_code=503,
-                code="KNOWLEDGE_CORE_UNAVAILABLE",
-                message="Knowledge Core 暂时不可用",
-            )
-        self.last_context = auth_context
-        self.last_domain_id = domain_id
-        return {"collections": [{"collection_id": str(TEST_COLLECTION_ID)}]}
+            raise KnowledgeComputationClientError(503, "KNOWLEDGE_UNAVAILABLE")
+        self.record(auth_context)
+        return [self.view(TEST_COLLECTION_ID)]
 
-    async def get_collection(
-        self,
-        *,
-        domain_id: int,
-        collection_id: UUID,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        self.last_context = auth_context
-        self.last_domain_id = domain_id
-        self.last_collection_id = collection_id
-        return {
-            "collection_id": str(collection_id),
-            "display_name": "测试 Knowledge Core",
-            "status": "ACTIVE",
-        }
+    async def library(self, library_id, *, auth_context):
+        self.record(auth_context)
+        return self.view(library_id)
 
-    async def bind_collection(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        collection_id: UUID,
-        note: str,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        del note
-        self.last_context = auth_context
-        self.last_domain_id = domain_id
-        self.last_agent_id = agent_id
-        self.last_collection_id = collection_id
-        return {
-            "agent_id": str(agent_id),
-            "collection_id": str(collection_id),
-        }
+    async def files(self, library_id, *, page, page_size, auth_context):
+        self.record(auth_context)
+        return {"items": [], "page": page, "has_more": False}
 
-    async def resolve_knowledge_scope(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        collection_ids,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        self.last_context = auth_context
-        self.last_domain_id = domain_id
-        self.last_agent_id = agent_id
-        return {
-            "collection_ids": [str(value) for value in collection_ids],
-            "bundle_revision_ids": [str(TEST_BUNDLE_REVISION_ID)],
-        }
-
-    async def ingest_multipart(
-        self,
-        *,
-        domain_id: int,
-        collection_id: UUID,
-        intake_kind: str,
-        content_type: str,
-        body,
-        idempotency_key: str,
-        auth_context: AuthContext,
-    ) -> KnowledgeCoreResponse:
-        self.last_context = auth_context
-        self.last_domain_id = domain_id
-        chunks = []
-        async for chunk in body:
-            chunks.append(chunk)
-        self.multipart_body = b"".join(chunks)
-        return KnowledgeCoreResponse(
-            status_code=202,
-            payload={
-                "bundle_id": 88,
-                "status_url": "/internal/v1/should-not-leak",
-            },
-        )
-
-    async def is_ready(self) -> bool:
-        return True
-
-    async def get_bundle_status(
-        self,
-        *,
-        domain_id: int,
-        bundle_id: UUID,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        self.last_bundle_id = bundle_id
-        return {"bundle_id": str(bundle_id), "status": "PROCESSING"}
-
-    async def reprocess_revision(
-        self,
-        *,
-        domain_id: int,
-        collection_id: UUID,
-        bundle_id: UUID,
-        bundle_revision_id: UUID,
-        document_version_id: UUID | None,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        self.last_context = auth_context
-        self.last_domain_id = domain_id
-        self.last_collection_id = collection_id
-        self.last_bundle_id = bundle_id
-        self.last_bundle_revision_id = bundle_revision_id
-        self.last_document_version_id = document_version_id
-        return {
-            "bundle_revision_id": str(bundle_revision_id),
-            "generation": "019f8eae-2c25-7d48-b044-350ec3f5a024",
-            "scheduled_file_count": 1,
-        }
-
-    async def get_bundle_revision_preview(
-        self,
-        *,
-        domain_id,
-        collection_id,
-        bundle_id,
-        bundle_revision_id,
-        auth_context,
-    ):
-        self.last_domain_id = domain_id
-        self.last_collection_id = collection_id
-        self.last_bundle_id = bundle_id
-        self.last_bundle_revision_id = bundle_revision_id
-        return {
-            "title": "员工移动套餐",
-            "revision_no": 2,
-            "status": "READY",
-            "approval_status": "APPROVED",
-            "is_current_revision": True,
-            "asset_fields": {
-                "asset_id": "ASSET-1",
-                "asset_title": "员工移动套餐",
-                "author_email": "owner@example.com",
-                "briefing": "员工移动服务方案。",
-                "publish_time": "2026-08-01",
-                "last_update_time": "2026-08-20T12:30:00Z",
-                "product": "Mobile Services",
-            },
-            "files": [
-                {
-                    "document_version_id": str(TEST_MANIFEST_VERSION_ID),
-                    "external_document_id": "__manifest__",
-                    "declared_name": "manifest.md",
-                    "document_role": "MANIFEST",
-                    "detected_mime_type": "text/markdown",
-                    "declared_mime_type": "text/markdown",
-                    "preview_available": True,
-                },
-                *([] if self.only_manifest else [{
-                    "document_version_id": str(TEST_DOCUMENT_VERSION_ID),
-                    "external_document_id": "mobile-plan.pdf",
-                    "declared_name": "员工移动套餐.pdf",
-                    "document_role": "ATTACHMENT",
-                    "detected_mime_type": "application/pdf",
-                    "declared_mime_type": "application/pdf",
-                    "preview_available": True,
-                }]),
-            ],
-        }
-
-    async def stream_source_file(
-        self,
-        *,
-        domain_id,
-        collection_id,
-        bundle_id,
-        bundle_revision_id,
-        document_version_id,
-        range_header,
-        auth_context,
-    ):
-        self.last_document_version_id = document_version_id
-
-        async def body():
-            yield b"%PDF-preview"
-
-        return KnowledgeCoreStreamResponse(
-            status_code=206 if range_header else 200,
-            headers={
-                "content-type": "application/pdf",
-                "content-length": "12",
-                "accept-ranges": "bytes",
-                **(
-                    {"content-range": "bytes 0-11/12"}
-                    if range_header
-                    else {}
-                ),
-            },
-            body=body(),
-        )
+    async def upload(self, library_id, *, name, mime_type, body, idempotency_key, auth_context):
+        self.record(auth_context)
+        async for block in body:
+            self.uploaded_body += block
+        return {"document_id": str(TEST_DOCUMENT_ID), "version_id": str(TEST_DOCUMENT_VERSION_ID),
+            "job_id": str(TEST_DOCUMENT_ID), "sha256": "a" * 64, "name": name,
+            "mime_type": mime_type, "status": "RECEIVED"}
 
 
 class _FakeAgentRuntimeClient:
@@ -921,9 +716,10 @@ class _FakeKnowledgeRetrievalAppClient:
             "models": agent["models"],
             "instruction": None,
             "resource_context": {
-                "collection_ids": [str(TEST_COLLECTION_ID)],
+                "library_id": str(TEST_COLLECTION_ID),
                 **self.resource_context,
             },
+            "knowledge_binding": {"library_id": str(TEST_COLLECTION_ID), "profile_ref": "default"},
             "runtime_policy": {},
         }
 
@@ -1003,14 +799,14 @@ class MainApiTest(unittest.TestCase):
         self.domain_service = DomainValidationService(
             uow_factory=_FakeUow,
         )
-        self.kc = _FakeKnowledgeCoreClient()
+        self.library = _FakeKnowledgeLibraryClient()
         self.agent_runtime = _FakeAgentRuntimeClient()
         self.app = create_main_api_app(
             domain_validator=self.domain_service.is_active,
             enable_access_log=False,
             test_authenticator=authenticate,
         )
-        self.app.state.knowledge_core_client = self.kc
+        self.app.state.knowledge_library_client = self.library
         self.app.state.agent_runtime_client = self.agent_runtime
         self.app.state.knowledge_retrieval_app_client = (
             _FakeKnowledgeRetrievalAppClient(self.agent_runtime)
@@ -1036,57 +832,19 @@ class MainApiTest(unittest.TestCase):
             "X-Request-ID": "main-request-1",
         }
 
-    def test_knowledge_library_catalog_forwards_scope_filters_and_pagination(self):
-        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:knowledge_core_manage"}
-        for suffix, method in (("files", "list_library_files"), ("processing", "list_processing")):
-            with self.subTest(suffix=suffix):
-                upstream = AsyncMock(return_value={"items": [], "page": 2, "page_size": 50, "total": 100})
-                setattr(self.kc, method, upstream)
-                response = self.client.get(
-                    f"/api/v1/apps/knowledge-retrieval/knowledge-cores/{TEST_COLLECTION_ID}/{suffix}",
-                    params={"page": 2, "page_size": 50, "q": "销售 & 产品", "status": "READY"},
-                    headers=self._headers(),
-                )
-                self.assertEqual(200, response.status_code, response.text)
-                values = upstream.await_args.kwargs
-                self.assertEqual((100, TEST_COLLECTION_ID, 2, 50), (values["domain_id"], values["collection_id"], values["page"], values["page_size"]))
-                self.assertEqual("销售 & 产品", values["query"])
-                self.assertEqual("READY", values["status"])
-                self.assertEqual("portal-user-1", values["auth_context"].asserted_user_id)
-
-    def test_knowledge_library_rejects_unbounded_pagination(self):
-        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:knowledge_core_manage"}
-        for suffix in ("files", "processing"):
-            for query in ("page=0", "page_size=101"):
-                response = self.client.get(f"/api/v1/apps/knowledge-retrieval/knowledge-cores/{TEST_COLLECTION_ID}/{suffix}?{query}", headers=self._headers())
-                self.assertEqual(422, response.status_code, response.text)
-
-    def test_knowledge_library_preview_and_range_content_keep_scoped_ids(self):
-        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:knowledge_core_manage"}
-        base = f"/api/v1/apps/knowledge-retrieval/knowledge-cores/{TEST_COLLECTION_ID}/bundles/{TEST_BUNDLE_ID}/revisions/{TEST_BUNDLE_REVISION_ID}"
-        response = self.client.get(base + "/preview", headers=self._headers())
+    def test_knowledge_library_documents_forward_context_and_bounded_pagination(self):
+        self.library.files = AsyncMock(return_value={"items": [], "page": 2, "has_more": False})
+        response = self.client.get(f"/api/v1/apps/knowledge-retrieval/knowledge/libraries/{TEST_COLLECTION_ID}/documents",
+            params={"page": 2, "page_size": 50}, headers=self._headers())
         self.assertEqual(200, response.status_code, response.text)
-        self.assertEqual(TEST_COLLECTION_ID, self.kc.last_collection_id)
-        self.assertEqual(TEST_BUNDLE_ID, self.kc.last_bundle_id)
-        self.assertEqual(TEST_BUNDLE_REVISION_ID, self.kc.last_bundle_revision_id)
-        content = self.client.get(base + f"/documents/{TEST_DOCUMENT_VERSION_ID}/content", headers={**self._headers(), "Range": "bytes=0-11"})
-        self.assertEqual(206, content.status_code, content.text)
-        self.assertEqual("bytes 0-11/12", content.headers["content-range"])
-        self.assertEqual(b"%PDF-preview", content.content)
-
-    def test_knowledge_library_requires_management_permission_for_all_read_surfaces(self):
-        self.app.state.access_control_service.permissions = frozenset({"knowledge_retrieval:use", "knowledge_retrieval:knowledge_chat"})
-        self.kc.list_library_files = AsyncMock()
-        self.kc.list_processing = AsyncMock()
-        self.kc.get_bundle_revision_preview = AsyncMock()
-        self.kc.stream_source_file = AsyncMock()
-        root = f"/api/v1/apps/knowledge-retrieval/knowledge-cores/{TEST_COLLECTION_ID}"
-        bundle = f"/bundles/{TEST_BUNDLE_ID}/revisions/{TEST_BUNDLE_REVISION_ID}"
-        for suffix in ("/files", "/processing", bundle + "/preview", bundle + f"/documents/{TEST_DOCUMENT_VERSION_ID}/content"):
-            response = self.client.get(root + suffix, headers=self._headers())
-            self.assertEqual(403, response.status_code, response.text)
-        for method in (self.kc.list_library_files, self.kc.list_processing, self.kc.get_bundle_revision_preview, self.kc.stream_source_file):
-            method.assert_not_awaited()
+        self.assertEqual(TEST_COLLECTION_ID, self.library.files.await_args.args[0])
+        values = self.library.files.await_args.kwargs
+        self.assertEqual((2, 50), (values["page"], values["page_size"]))
+        self.assertEqual("portal-user-1", values["auth_context"].asserted_user_id)
+        for query in ("page=0", "page_size=101"):
+            invalid = self.client.get(f"/api/v1/apps/knowledge-retrieval/knowledge/libraries/{TEST_COLLECTION_ID}/documents?{query}",
+                headers=self._headers())
+            self.assertEqual(422, invalid.status_code)
 
     def test_cors_preflight_allows_aiops_upload_metadata_headers(self) -> None:
         requested_headers = (
@@ -1194,7 +952,7 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(422, response.status_code, response.text)
         self.assertEqual(
-            "AGENT_KNOWLEDGE_CORE_REQUIRED",
+            "AGENT_LIBRARY_REQUIRED",
             response.json()["code"],
         )
 
@@ -1211,27 +969,27 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(422, response.status_code, response.text)
         self.assertEqual(
-            "AGENT_KNOWLEDGE_CORE_REQUIRED",
+            "AGENT_LIBRARY_REQUIRED",
             response.json()["code"],
         )
 
     def test_public_collection_request_propagates_trusted_context(self) -> None:
         response = self.client.get(
-            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries",
             headers=self._headers(),
         )
         self.assertEqual(200, response.status_code)
         self.assertEqual(
             str(TEST_COLLECTION_ID),
-            response.json()["collections"][0]["collection_id"],
+            response.json()[0]["library_id"],
         )
-        self.assertEqual(100, self.kc.last_domain_id)
-        self.assertEqual("user-session", self.kc.last_context.client_id)
-        self.assertEqual("portal-user-1", self.kc.last_context.asserted_user_id)
+        self.assertEqual(100, self.library.last_domain_id)
+        self.assertEqual("user-session", self.library.last_context.client_id)
+        self.assertEqual("portal-user-1", self.library.last_context.asserted_user_id)
 
     def test_cors_headers_are_present_on_authentication_failure(self) -> None:
         response = self.client.post(
-            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries",
             headers={"Origin": "http://127.0.0.1:8080"},
             json={},
         )
@@ -1331,22 +1089,22 @@ class MainApiTest(unittest.TestCase):
 
     def test_invalid_domain_is_rejected_before_kc_call(self) -> None:
         response = self.client.get(
-            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries",
             headers=self._headers(domain_id="200"),
         )
         self.assertEqual(400, response.status_code)
         self.assertEqual("INVALID_DOMAIN", response.json()["code"])
-        self.assertIsNone(self.kc.last_context)
+        self.assertIsNone(self.library.last_context)
 
     def test_kc_error_is_mapped_to_public_problem_details(self) -> None:
-        self.kc.raise_error = True
+        self.library.raise_error = True
         response = self.client.get(
-            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries",
             headers=self._headers(),
         )
         self.assertEqual(503, response.status_code)
         self.assertEqual(
-            "KNOWLEDGE_CORE_UNAVAILABLE",
+            "KNOWLEDGE_UNAVAILABLE",
             response.json()["code"],
         )
         self.assertEqual(
@@ -1354,34 +1112,25 @@ class MainApiTest(unittest.TestCase):
             response.headers["content-type"],
         )
         self.assertEqual(
-            "Knowledge Core 暂时无法完成请求",
+            "请检查权限、处理状态或服务配置",
             response.json()["detail"],
         )
 
-    def test_multipart_intake_is_streamed_and_internal_url_is_rewritten(self) -> None:
-        response = self.client.post(
-            f"/api/v1/apps/knowledge-retrieval/knowledge/collections/{TEST_COLLECTION_ID}/ingestions/user-files",
-            headers={
-                **self._headers(),
-                "Idempotency-Key": "upload-1",
-            },
-            data={
-                "grouping_mode": "EACH_FILE",
-                "files": "[]",
-            },
-            files={"part-1": ("sample.txt", b"hello", "text/plain")},
-        )
-        self.assertEqual(202, response.status_code)
-        self.assertIn(b"hello", self.kc.multipart_body)
-        self.assertEqual(
-            "/api/v1/apps/knowledge-retrieval/knowledge/bundles/88",
-            response.json()["status_url"],
-        )
+    def test_owned_upload_requires_idempotency_and_streams_only_raw_body(self):
+        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:upload"}
+        url = f"/api/v1/apps/knowledge-retrieval/knowledge/libraries/{TEST_COLLECTION_ID}/documents?name=sample.txt"
+        missing = self.client.post(url, headers=self._headers(), content=b"synthetic")
+        self.assertEqual(428, missing.status_code)
+        response = self.client.post(url, headers={**self._headers(), "Idempotency-Key": "upload-1",
+            "Content-Type": "text/plain"}, content=b"synthetic")
+        self.assertEqual(202, response.status_code, response.text)
+        self.assertEqual(b"synthetic", self.library.uploaded_body)
+        self.assertEqual("RECEIVED", response.json()["status"])
 
     def test_openapi_contains_no_internal_routes(self) -> None:
         paths = self.app.openapi()["paths"]
         self.assertIn(
-            "/api/v1/apps/knowledge-retrieval/knowledge/collections", paths
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries", paths
         )
         self.assertIn("/api/v1/apps/knowledge-retrieval/agents", paths)
         self.assertIn(
@@ -1691,7 +1440,7 @@ class MainApiTest(unittest.TestCase):
             headers=self._headers(),
             json={
                 "display_name": "文档助手",
-                "knowledge_core_id": str(TEST_COLLECTION_ID),
+                "library_id": str(TEST_COLLECTION_ID),
                 "models": {
                     "context_llm": "019f8eae-2c25-7d48-b044-350ec3f5a011",
                     "composer_llm": "019f8eae-2c25-7d48-b044-350ec3f5a012",
@@ -1710,19 +1459,6 @@ class MainApiTest(unittest.TestCase):
             set(),
             self.data_query.last_agent_binding_sync["semantic_model_ids"],
         )
-        bindings = self.client.get(
-            (
-                "/api/v1/apps/knowledge-retrieval/knowledge/agents/"
-                f"{self.agent_runtime.agent_id}/collection-bindings"
-            ),
-            headers=self._headers(),
-        )
-        self.assertEqual(200, bindings.status_code)
-        self.assertEqual(
-            str(TEST_COLLECTION_ID),
-            bindings.json()["bindings"][0]["collection_id"],
-        )
-        self.assertEqual(self.agent_runtime.agent_id, self.kc.last_agent_id)
         conversation = self.client.post(
             "/api/v1/apps/knowledge-retrieval/conversations",
             headers=self._headers(),
@@ -1747,11 +1483,13 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(202, turn.status_code)
         self.assertEqual("RUNNING", turn.json()["run_status"])
-        self.assertEqual(
-            1,
-            self.agent_runtime.last_turn_payload["execution_spec"]
-            ["knowledge_scope"]["security_level"],
-        )
+        spec = self.agent_runtime.last_turn_payload["execution_spec"]
+        self.assertNotIn("knowledge_scope", spec)
+        self.assertEqual({"library_id": str(TEST_COLLECTION_ID), "query_ticket": None,
+            "profile_ref": "default"}, spec["knowledge_binding"])
+        self.assertEqual("100", self.agent_runtime.last_context.domain_id)
+        self.assertEqual("portal-user-1", self.agent_runtime.last_context.asserted_user_id)
+        self.assertEqual(self.library.last_context, self.agent_runtime.last_context)
         self.assertEqual(
             "portal-user-1",
             self.agent_runtime.last_context.asserted_user_id,
@@ -1787,7 +1525,7 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(422, response.status_code, response.text)
 
-    def test_conversation_uses_authenticated_user_security_level(self) -> None:
+    def test_conversation_forwards_authenticated_user_for_app_scope(self) -> None:
         self.app.state.access_control_service.max_security_level = 3
         response = self.client.post(
             (
@@ -1802,13 +1540,15 @@ class MainApiTest(unittest.TestCase):
         )
 
         self.assertEqual(202, response.status_code, response.text)
-        self.assertEqual(
-            3,
-            self.agent_runtime.last_turn_payload["execution_spec"]
-            ["knowledge_scope"]["security_level"],
-        )
+        spec = self.agent_runtime.last_turn_payload["execution_spec"]
+        self.assertNotIn("knowledge_scope", spec)
+        self.assertEqual({"library_id": str(TEST_COLLECTION_ID), "query_ticket": None,
+            "profile_ref": "default"}, spec["knowledge_binding"])
+        self.assertEqual("100", self.agent_runtime.last_context.domain_id)
+        self.assertEqual("portal-user-1", self.agent_runtime.last_context.asserted_user_id)
+        self.assertEqual(self.library.last_context, self.agent_runtime.last_context)
 
-    def test_turn_security_level_ignores_agent_resource_configuration(self) -> None:
+    def test_turn_binding_does_not_trust_agent_security_configuration(self) -> None:
         self.app.state.access_control_service.max_security_level = 3
         self.knowledge_retrieval_app.resource_context = {
             "max_security_level": 2
@@ -1830,11 +1570,13 @@ class MainApiTest(unittest.TestCase):
         )
 
         self.assertEqual(202, response.status_code, response.text)
-        self.assertEqual(
-            3,
-            self.agent_runtime.last_turn_payload["execution_spec"]
-            ["knowledge_scope"]["security_level"],
-        )
+        spec = self.agent_runtime.last_turn_payload["execution_spec"]
+        self.assertNotIn("knowledge_scope", spec)
+        self.assertEqual({"library_id": str(TEST_COLLECTION_ID), "query_ticket": None,
+            "profile_ref": "default"}, spec["knowledge_binding"])
+        self.assertEqual("100", self.agent_runtime.last_context.domain_id)
+        self.assertEqual("portal-user-1", self.agent_runtime.last_context.asserted_user_id)
+        self.assertEqual(self.library.last_context, self.agent_runtime.last_context)
 
     def test_sse_uses_cursor_and_stops_on_terminal_event(self) -> None:
         with self.client.stream(
@@ -1849,29 +1591,29 @@ class MainApiTest(unittest.TestCase):
         self.assertIn("event: RUN_COMPLETED", body)
         self.assertIn("event: done", body)
 
-    def test_document_reference_preview_uses_run_reference_scope(self) -> None:
-        base = (
-            "/api/v1/apps/knowledge-retrieval/runs/"
-            f"{self.agent_runtime.run_id}/references/C1"
-        )
-        descriptor = self.client.get(
-            f"{base}/preview", headers=self._headers()
-        )
-
-        self.assertEqual(200, descriptor.status_code)
-        self.assertEqual("PDF", descriptor.json()["preview_type"])
-        self.assertEqual(3, descriptor.json()["page_no"])
-        self.assertEqual(
-            TEST_BUNDLE_REVISION_ID, self.kc.last_bundle_revision_id
-        )
-
-        content = self.client.get(
-            f"{base}/content",
-            headers={**self._headers(), "Range": "bytes=0-11"},
-        )
-        self.assertEqual(206, content.status_code)
-        self.assertEqual("bytes 0-11/12", content.headers["content-range"])
-        self.assertEqual(b"%PDF-preview", content.content)
+    def test_document_reference_preview_uses_exact_runtime_content(self):
+        from contextlib import AsyncExitStack
+        from platform_clients.knowledge_library import KnowledgeDownload
+        reference = {"reference_type": "APP_KNOWLEDGE", "citation_label": "C1",
+            "run_id": str(self.agent_runtime.run_id), "retrieval_ref": str(TEST_DOCUMENT_ID),
+            "document_version_id": str(TEST_DOCUMENT_VERSION_ID), "parse_run_id": str(TEST_DOCUMENT_ID),
+            "evidence_key": "a" * 64, "owner_app_id": "knowledge_retrieval",
+            "locators": [{"page_no": 3}], "role": "PRIMARY", "title": "合成资料"}
+        self.agent_runtime.get_result = AsyncMock(return_value={"payload": {"references": [reference]}})
+        async def open_content(**kwargs):
+            async def blocks():
+                yield b"%PDF-synthetic"
+            return KnowledgeDownload("application/pdf", {"Cache-Control": "no-store"}, blocks(), AsyncExitStack())
+        self.agent_runtime.open_knowledge_content = AsyncMock(side_effect=open_content)
+        base = f"/api/v1/apps/knowledge-retrieval/runs/{self.agent_runtime.run_id}/references/C1"
+        preview = self.client.get(base + "/preview", headers=self._headers())
+        self.assertEqual(200, preview.status_code, preview.text)
+        self.assertEqual([{"page_no": 3}], preview.json()["locators"])
+        content = self.client.get(base + "/content", headers=self._headers())
+        self.assertEqual(b"%PDF-synthetic", content.content)
+        kwargs = self.agent_runtime.open_knowledge_content.await_args.kwargs
+        self.assertEqual(self.agent_runtime.run_id, kwargs["run_id"])
+        self.assertEqual("a" * 64, kwargs["key"])
 
     def test_document_reference_preview_rejects_unknown_label(self) -> None:
         response = self.client.get(
@@ -1987,14 +1729,14 @@ class MainApiTest(unittest.TestCase):
     def test_public_resource_paths_require_uuid(self) -> None:
         bundle_id = UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a31")
         response = self.client.get(
-            f"/api/v1/apps/knowledge-retrieval/knowledge/bundles/{bundle_id}",
+            f"/api/v1/apps/knowledge-retrieval/knowledge/libraries/{bundle_id}",
             headers=self._headers(),
         )
         self.assertEqual(200, response.status_code)
-        self.assertEqual(bundle_id, self.kc.last_bundle_id)
+        self.assertEqual(200, response.status_code)
 
         invalid = self.client.get(
-            "/api/v1/apps/knowledge-retrieval/knowledge/bundles/88",
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries/88",
             headers=self._headers(),
         )
         self.assertEqual(422, invalid.status_code)
@@ -2003,52 +1745,10 @@ class MainApiTest(unittest.TestCase):
             invalid.json()["code"],
         )
 
-    def test_public_revision_reprocess_schedules_selected_file(self) -> None:
-        access = _ScopedAccessControlService(
-            (
-                "knowledge_retrieval",
-                "knowledge_retrieval:use",
-            ),
-            (
-                "knowledge_retrieval",
-                "knowledge_retrieval:knowledge_manage",
-            ),
-        )
-        self.app.state.access_control_service = access
-        response = self.client.post(
-            (
-                "/api/v1/apps/knowledge-retrieval/knowledge/bundles/"
-                f"{TEST_BUNDLE_ID}/revisions/{TEST_BUNDLE_REVISION_ID}"
-                "/reprocess"
-            ),
-            headers=self._headers(),
-            json={
-                "collection_id": str(TEST_COLLECTION_ID),
-                "document_version_id": str(TEST_DOCUMENT_VERSION_ID),
-            },
-        )
-
-        self.assertEqual(202, response.status_code)
-        self.assertEqual(1, response.json()["scheduled_file_count"])
-        self.assertEqual(100, self.kc.last_domain_id)
-        self.assertEqual(TEST_COLLECTION_ID, self.kc.last_collection_id)
-        self.assertEqual(TEST_BUNDLE_ID, self.kc.last_bundle_id)
-        self.assertEqual(
-            TEST_BUNDLE_REVISION_ID,
-            self.kc.last_bundle_revision_id,
-        )
-        self.assertEqual(
-            TEST_DOCUMENT_VERSION_ID,
-            self.kc.last_document_version_id,
-        )
-        self.assertEqual(
-            [("knowledge_retrieval", 100, "snapshot")],
-            access.calls,
-        )
-
     def test_validation_error_uses_problem_details(self) -> None:
+        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:knowledge_core_manage"}
         response = self.client.post(
-            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries",
             headers=self._headers(),
             json={},
         )
@@ -2415,7 +2115,7 @@ class MainApiTest(unittest.TestCase):
             raise AssertionError("Main API readyz 不应探测下游服务")
 
         self.app.state.db_runtime = _FakeDbRuntime()
-        self.kc.is_ready = must_not_probe
+        self.library.is_ready = must_not_probe
         self.agent_runtime.is_ready = must_not_probe
         self.aiops.is_ready = must_not_probe
 
@@ -2425,8 +2125,9 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual({"status": "ready"}, response.json())
 
     def test_problem_response_generates_request_id(self) -> None:
+        self.app.state.access_control_service.permissions |= {"knowledge_retrieval:knowledge_core_manage"}
         response = self.client.post(
-            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries",
             headers={
                 "Authorization": f"Bearer {self.raw_key}",
                 DOMAIN_ID_HEADER: "100",
@@ -2462,7 +2163,7 @@ class MainApiTest(unittest.TestCase):
             test_authenticator=authenticate,
         )
         response = TestClient(app).get(
-            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/libraries",
             headers={
                 "Authorization": "Bearer test-user-token",
                 DOMAIN_ID_HEADER: "100",

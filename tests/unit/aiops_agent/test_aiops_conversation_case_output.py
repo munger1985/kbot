@@ -1,4 +1,4 @@
-"""真实案例应用的异步处理回归；模拟 KC 状态，不冒充实库或模型验收。"""
+"""真实案例应用的异步处理回归；模拟本 App 文档状态，不冒充实库或模型验收。"""
 
 import asyncio
 from copy import deepcopy
@@ -53,17 +53,6 @@ async def fixture():
         relations.update(scopes=[], reviews=[])
     f.uow.operations_knowledge.add_asset_version.side_effect = store
     f.phase = "PROCESSING"
-    f.kc_revision = str(f.service._kc.ingest_user_file.return_value.payload["items"][0]["bundle_revision_id"])
-    async def revision(**_):
-        version = next(iter(f.state.versions.values()))
-        return {"bundle_revision_id": f.kc_revision,
-            "status": f.phase, "approval_status": "APPROVED", "withdrawn_at": None,
-            "members": [{"document_role": "CONTENT", "document_version_id": str(uuid7()),
-                "member_status": f.phase,
-                "content_hash_sha256": version.profile_json["knowledge_projection"]["body_sha256"]}]}
-    f.service._kc.get_revision_status = AsyncMock(side_effect=revision)
-    f.service._kc.get_bundle_status = AsyncMock(side_effect=lambda **_: {
-        "current_revision_id": f.kc_revision, "availability": f.phase})
     return f
 
 
@@ -88,7 +77,7 @@ def test_kc_acceptance_waits_for_exact_indexed_draft_and_never_publishes():
         f = await fixture()
         first = await advance(f)
         assert first.stage == "INDEXING" and first.finalization is None
-        assert f.ref["intake"]["bundle_revision_id"] == f.kc_revision
+        assert f.ref["intake"]["document_version_id"] == str(next(iter(f.documents.records)))
         assert f.service._structured_model.generate_structured.await_count == 1
         f.phase = "READY"
         f.later.turn.status = "RUNNING"
@@ -98,7 +87,7 @@ def test_kc_acceptance_waits_for_exact_indexed_draft_and_never_publishes():
         asset = f.state.assets[version.asset_id]
         assert version.status == "DRAFT" and asset.current_version_id is None
         assert str(version.created_by) == str(f.actor)
-        assert f.service._kc.ingest_user_file.await_count == 1
+        assert f.documents.stage.await_count == 1
         assert f.service._structured_model.generate_structured.await_count == 1
         assert second.finalization["case_result"]["asset_version_id"] == str(version.asset_version_id)
     asyncio.run(run())
@@ -117,22 +106,23 @@ def test_crash_reuses_frozen_redaction_and_accepted_revision(stage):
         if stage == "before_intake":
             with pytest.raises(RuntimeError):
                 await execute(f, checkpoint=crash)
-            f.service._kc.ingest_user_file.assert_not_awaited()
+            f.documents.stage.assert_not_awaited()
         else:
             with pytest.raises(RuntimeError):
                 await execute(f, checkpoint=freeze, record_receipt=crash)
-            assert saved["bundle_revision_id"] == f.kc_revision
+            assert saved["document_version_id"] == str(next(iter(f.documents.records)))
         f.service._structured_model.generate_structured.side_effect = AssertionError("不允许重新生成脱敏正文")
         result = await execute(f, recovery=saved)
         assert result["version"]["status"] == "PROCESSING"
-        assert f.service._kc.ingest_user_file.await_count == 1
+        assert f.documents.stage.await_count == 1
+        f.documents.register.assert_awaited_once()
         assert len(f.state.versions) == 1
         index = next(iter(f.state.relations.values()))["indexes"][0]
-        assert str(index.bundle_revision_id) == f.kc_revision
+        assert str(index.document_version_id) == str(next(iter(f.documents.records)))
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("field", ["title", "body_sha256", "request_hash", "source_fingerprint", "collection_id"])
+@pytest.mark.parametrize("field", ["title", "body_sha256", "request_hash", "source_fingerprint", "configuration_ref"])
 def test_corrupt_recovery_never_uploads_changed_content(field):
     async def run():
         f = await fixture()
@@ -142,30 +132,10 @@ def test_corrupt_recovery_never_uploads_changed_content(field):
             raise RuntimeError()
         with pytest.raises(RuntimeError):
             await execute(f, checkpoint=crash)
-        saved[field] = str(uuid7()) if field == "collection_id" else "f" * 64
+        saved[field] = str(uuid7()) if field == "configuration_ref" else "f" * 64
         with pytest.raises(AIOpsApplicationError):
             await execute(f, recovery=saved)
-        f.service._kc.ingest_user_file.assert_not_awaited()
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize("failure", ["withdrawn", "hash", "unapproved", "other_revision"])
-def test_registry_ready_cannot_hide_invalid_external_revision(failure):
-    async def run():
-        f = await fixture()
-        await advance(f)
-        f.phase = "READY"
-        original = f.service._kc.get_revision_status.side_effect
-        async def changed(**kw):
-            result = await original(**kw)
-            if failure == "withdrawn": result["withdrawn_at"] = "2026-11-03"
-            if failure == "hash": result["members"][0]["content_hash_sha256"] = "f" * 64
-            if failure == "unapproved": result["approval_status"] = "PENDING"
-            if failure == "other_revision": result["bundle_revision_id"] = str(uuid7())
-            return result
-        f.service._kc.get_revision_status.side_effect = changed
-        with pytest.raises(AIOpsApplicationError):
-            await advance(f)
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -179,7 +149,7 @@ def test_source_agent_currentness_is_not_inferred_from_authority_echo(failure):
             f.authority.request.source_agent_ids = (uuid7(),)
         with pytest.raises(AIOpsApplicationError):
             await advance(f)
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
         f.service._structured_model.generate_structured.assert_not_awaited()
     asyncio.run(run())
 
@@ -195,7 +165,7 @@ def test_submission_callback_is_database_only_and_checks_owner():
         with pytest.raises(AIOpsApplicationError):
             await args["freeze"](f.uow, SimpleNamespace(created_by="another-user"))
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 def test_lost_intake_response_replays_identical_body_and_idempotency_key():
@@ -208,14 +178,14 @@ def test_lost_intake_response_replays_identical_body_and_idempotency_key():
             raise RuntimeError("外部受理后本地回执未保存")
         with pytest.raises(RuntimeError):
             await execute(f, checkpoint=save, record_receipt=lost)
-        assert saved["bundle_revision_id"] is None
-        first = deepcopy(f.service._kc.ingest_user_file.await_args.kwargs)
+        assert saved["ingestion_registered"] is False
+        first = deepcopy(f.documents.stage.await_args.kwargs)
         await execute(f, recovery=saved)
-        second = f.service._kc.ingest_user_file.await_args.kwargs
+        second = f.documents.stage.await_args.kwargs
         assert first["body"] == second["body"]
-        assert first["idempotency_key"] == second["idempotency_key"]
+        assert first["version_id"] == second["version_id"]
         assert f.service._structured_model.generate_structured.await_count == 1
-        assert f.service._kc.ingest_user_file.await_count == 2
+        assert f.documents.stage.await_count == 1
         assert len(f.state.versions) == 1
     asyncio.run(run())
 
@@ -230,17 +200,18 @@ def test_accepted_recovery_records_invalid_source_and_queues_exact_withdrawal():
         with pytest.raises(RuntimeError):
             await execute(f, record_receipt=crash)
         f.artifact.payload_json["changed"] = True
-        f.service._kc.review_user_intake.reset_mock()
+        f.documents.publish.reset_mock()
         with pytest.raises(AIOpsApplicationError):
             await execute(f, recovery=saved)
         assert len(f.state.versions) == 1
         version = next(iter(f.state.versions.values()))
         assert version.status == "REVIEW_REQUIRED"
-        f.service._kc.ingest_user_file.assert_awaited_once()
-        f.service._kc.review_user_intake.assert_not_awaited()
+        f.documents.stage.assert_awaited_once()
+        f.documents.register.assert_awaited_once()
+        f.documents.publish.assert_not_awaited()
         events = [call.args[0] for call in f.uow.outbox.add.await_args_list]
         assert any(row.event_type == "OPS_CASE_WITHDRAWAL_REQUESTED"
-            and row.payload_json["bundle_revision_id"] == saved["bundle_revision_id"] for row in events)
+            and row.payload_json["document_version_id"] == saved["document_version_id"] for row in events)
     asyncio.run(run())
 
 
@@ -265,7 +236,7 @@ def test_authority_loss_after_acceptance_never_approves_and_outage_does_not_perm
                 record_receipt=receipt, source_preflight_hook=authorize)
         version = next(iter(f.state.versions.values()))
         assert version.status == ("PROCESSING" if retryable else "REVIEW_REQUIRED")
-        f.service._kc.review_user_intake.assert_not_awaited()
+        f.documents.publish.assert_not_awaited()
         events = [call.args[0] for call in f.uow.outbox.add.await_args_list]
         assert any(row.event_type == "OPS_CASE_WITHDRAWAL_REQUESTED" for row in events) is not retryable
     asyncio.run(run())
@@ -298,7 +269,7 @@ def test_real_case_processor_runs_under_persistent_worker_and_resumes_after_inde
         await worker.run_once()
         assert store.job.status == "RUNNING" and store.job.stage == "INDEXING"
         assert not store.notifications
-        assert store.job.processing_ref_json["intake"]["bundle_revision_id"] == f.kc_revision
+        assert store.job.processing_ref_json["intake"]["document_version_id"] == str(next(iter(f.documents.records)))
         store.now = store.job.available_at
         f.phase = "READY"
         await worker.run_once()
@@ -306,7 +277,7 @@ def test_real_case_processor_runs_under_persistent_worker_and_resumes_after_inde
         assert store.job.result_json["asset_version_id"] in {
             str(value) for value in f.state.versions}
         assert store.notifications == [("case-draft-ready", job.job_id)]
-        f.service._kc.ingest_user_file.assert_awaited_once()
+        f.documents.stage.assert_awaited_once()
         assert not await worker.run_once()
         assert len(f.state.versions) == 1
     asyncio.run(run())
@@ -325,6 +296,6 @@ def test_recovery_finds_its_exact_artifact_even_after_a_later_case_version_exist
         assert again["version"]["asset_version_id"] == first["version"]["asset_version_id"]
         assert again["replayed"] is True
         assert len(f.state.versions) == 1
-        f.service._kc.ingest_user_file.assert_awaited_once()
+        f.documents.stage.assert_awaited_once()
         f.service._structured_model.generate_structured.assert_awaited_once()
     asyncio.run(run())

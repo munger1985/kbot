@@ -1,0 +1,243 @@
+{
+  "schema_version": "knowledge.algorithm_evaluation.v1",
+  "gate": "G_A",
+  "production_quality_claim": false,
+  "results": [
+    {
+      "app": "knowledge_retrieval",
+      "case": "parse-development",
+      "split": "development",
+      "status": "COMPLETE",
+      "nodes": 1,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "text-development",
+      "split": "development",
+      "status": "COMPLETE",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 3,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "image-validation",
+      "split": "validation",
+      "status": "COMPLETE",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 3,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "text-image-contract-holdout",
+      "split": "contract_holdout",
+      "status": "COMPLETE",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 3,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "optional-failure-contract-holdout",
+      "split": "contract_holdout",
+      "status": "PARTIAL",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 3,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "revocation-contract-holdout",
+      "split": "contract_holdout",
+      "status": "PARTIAL",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 2,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "no-access-contract-holdout",
+      "split": "contract_holdout",
+      "status": "PARTIAL",
+      "reason": "NO_ACCESSIBLE_PAYLOAD",
+      "primary_count": 0,
+      "context_count": 0,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "required-failure-contract-holdout",
+      "split": "contract_holdout",
+      "status": "FAILED",
+      "reason": "CHANNEL_FAILED",
+      "primary_count": 0,
+      "context_count": 0,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "foreign-owner-contract-holdout",
+      "split": "contract_holdout",
+      "error": "SCOPE_CLOSURE_BROKEN",
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "knowledge_retrieval",
+      "case": "empty-validation",
+      "split": "validation",
+      "status": "EMPTY",
+      "reason": "NO_MATCH",
+      "primary_count": 0,
+      "context_count": 0,
+      "owner": "knowledge_retrieval"
+    },
+    {
+      "app": "aiops",
+      "case": "parse-development",
+      "split": "development",
+      "status": "COMPLETE",
+      "nodes": 1,
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "text-development",
+      "split": "development",
+      "status": "COMPLETE",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 3,
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "image-validation",
+      "split": "validation",
+      "status": "COMPLETE",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 3,
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "text-image-contract-holdout",
+      "split": "contract_holdout",
+      "status": "COMPLETE",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 3,
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "optional-failure-contract-holdout",
+      "split": "contract_holdout",
+      "status": "PARTIAL",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 3,
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "revocation-contract-holdout",
+      "split": "contract_holdout",
+      "status": "PARTIAL",
+      "reason": null,
+      "primary_count": 1,
+      "context_count": 2,
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "no-access-contract-holdout",
+      "split": "contract_holdout",
+      "status": "PARTIAL",
+      "reason": "NO_ACCESSIBLE_PAYLOAD",
+      "primary_count": 0,
+      "context_count": 0,
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "required-failure-contract-holdout",
+      "split": "contract_holdout",
+      "status": "FAILED",
+      "reason": "CHANNEL_FAILED",
+      "primary_count": 0,
+      "context_count": 0,
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "foreign-owner-contract-holdout",
+      "split": "contract_holdout",
+      "error": "SCOPE_CLOSURE_BROKEN",
+      "owner": "aiops"
+    },
+    {
+      "app": "aiops",
+      "case": "empty-validation",
+      "split": "validation",
+      "status": "EMPTY",
+      "reason": "NO_MATCH",
+      "primary_count": 0,
+      "context_count": 0,
+      "owner": "aiops"
+    }
+  ],
+  "input_manifest": {
+    "packages/knowledge_algorithms/src/knowledge_algorithms/__init__.py": "3a5ab64d7bd270195658973bfbc704d872a93c6b1ead4698b61ce7c8bc9c2ddb",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/__init__.py": "c010b3d07dc2f7d3ec04c0424a0c616ff10accd69f8c1e2ea9461ed7dfc1f498",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/content.py": "ae2fe4794948efc25c2bdc97c99534b82165b9340a790f043ecc420a87c2cbd3",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/cursor.py": "f52007b88b5547310acd5180e900b45bd50600322842539536731c309e02f612",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/errors.py": "1cf14b3219f5d3ee466dc5a1c8d3c6125e542ecffe51ec8fefcec4e66cd545ef",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/identity.py": "644484b44e6725171c7282e0895efd28e7e5a70b0ec141c8aef76a32061de3c4",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/query.py": "420cb3cef77517b3d29c5c1e4fa65eef0fb74ecc4408259b32d79c2af57a9684",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/registry.py": "df4cf18fc8e246116d1308e0bc104bfd9a16f7f9ac1d76bcd66f46b22860f022",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/retrieval.py": "3f95a30880136b942188e7fd08d19f4256d9f3110bb9daa02cbb95a792608b23",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/runtime.py": "158c42a0dca0050d8e1c8970e11ac6bebb87659eaabf1c3e15b3a2be0b08177e",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/contracts/wire.py": "31efb2b5cb36f99cdbc749a1770d5b419b3445e07f2462b36e78ba8a8a3a98c2",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/execution.py": "22045443eeda0a93bc9df1d59273527fb7e9ab2d0f89e748cfa81f6c471c981e",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/parsing/__init__.py": "add3ee286f5a88541efb9743235ab1deefd3ae3a0b58b95ece7ca9ab20b4c0f5",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/parsing/contracts.py": "764b336785fd74462506650516f00532e823060e5cb34403cd5e29bce4e774bf",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/parsing/engine.py": "a2cea5405b904b521d2e96dbb50584766d1fdc55124fef8814eb42fa86da5d54",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/parsing/events.py": "9b84dde3c4f08710c3a9c5eb9ce08ed1d153147ffe45cf26f5a6f4effb42d3d4",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/parsing/plain_text.py": "425e43a1720dc881546c7c62fcdd91ce2ea86051dd0ca5f707890000af145d70",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/parsing/structure.py": "d079a73932df685f0678894995af9b8551fef6fb31928ca84846cdfae5acf105",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/parsing/wire.py": "451941a08edce30974fb3b382240eda61999fe48c32e10bba82e7e8f88b582b3",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/ports/__init__.py": "c6bd84518d1a946b214c72869a203b802f4755530565664ad18d80928cbac750",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/ports/ordered.py": "b5705379f8b7c20371fc80335ee6f64114ff9ea049a872eeaa904ee935cb1fa7",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/ports/retrieval.py": "763fd8b7cb1d254681ff4d32cd606f20d2a2911a93f01b406b68455ed8845048",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/ports/text_scan.py": "e837b93435df53be81170c1679dc9ed6514886def514a52925340a36c2df1c1a",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/projections/__init__.py": "9c0d9452c73e86b26145fdcd7d80fffdbe00736d9a0a4933a984a3844b0feb51",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/projections/builder.py": "8407df4a592aea9da09b1aeb0fddcaf612b55a2d69b1af5ba9113b35199006ac",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/projections/contracts.py": "b60e0f93adee5655c2829018431b7ce379d1c3b135a14649efde772b2c4b5a98",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/projections/tables.py": "b316bf8d456e86905585927fa92b3a2e00675b6361863adb192fb80c53207484",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/references/__init__.py": "3739461e6b69f7549353f8b47ec1b33a15e6174e54786ca523b41c1a55985cd7",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/references/citations.py": "687978c6b09d5d0dc40784a7d38ce8d9dd1fcbb0e9433b76242848d6dd3db188",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/references/figures.py": "23c95b836c7e1daa6ba2fe11a554d089fa1074c41bb630a38d2693cb5d6e0519",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/references/relations.py": "6b5833c33c0eb944162d04aa592822851f39d8a0d70093f43db50fb9ea11e7f0",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/retrieval/__init__.py": "4aed62c2da864674049656a9125de52e1466705da973a5470f2afcd027b87cdc",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/retrieval/engine.py": "f2e6a6c7317633565084386ea73675ec781c5873d4bbefb4d4a685b3529c1cb3",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/retrieval/exact.py": "d5fa9d8865cdd6238a54c0ce4c5b7e0be0a19fbeabe6082d44351b8f39f0767c",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/retrieval/fusion.py": "4eec7ce850b6d0f94870dc2e5079aafdacfdb930582a599d03e51b1f3b2237cc",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/retrieval/maxsim.py": "7e89d350f5914685bd801bda4283f42cd9612bccdcb2cf3e9737dadf6b5c9ac1",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/retrieval/ordered.py": "b9712450177dfc000fa6c60841d8abc7f7cf936bb0fd564fcd011a85b32b0381",
+    "packages/knowledge_algorithms/src/knowledge_algorithms/retrieval/selection.py": "e19b4abcb6c94982e0860734659bb65d34f01b140a1eb466a7254de198fd4573",
+    "tests/contract/knowledge_algorithms/experiments-v1.json": "7dd9ba48d145041f499a5701283bd603be4aeb2c223d056bf10365e09882156c",
+    "tests/contract/knowledge_algorithms/inventory-v1.json": "35e1812ab98deb6cafce1b3cf73ab6f5e1bb5796ef99c784265b2525d3904874",
+    "tests/evaluation/aiops_agent/algorithm-golden-v1.json": "e4da913340c67abc89af9e891696e94a522f911918517ef8db9070ab6583dddb",
+    "tests/evaluation/knowledge_retrieval_app/algorithm-golden-v1.json": "8067bc684d262231f295775965a678be3b972458062f22c4f23644ca9b8a0c40",
+    "tests/unit/knowledge_algorithms/knowledge_algorithm_fixtures.py": "a18d8738e26da898b28116d5bad87a14ca4e9e6dbed60aa2eb8a26c07c5b60b8"
+  },
+  "peak_traced_memory_bytes": 271406
+}

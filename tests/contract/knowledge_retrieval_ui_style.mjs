@@ -15,7 +15,7 @@ const { chromium } = require("@playwright/test");
 const artifacts = await mkdtemp(resolve(tmpdir(), "knowledge-retrieval-ui-"));
 const permissions = ["use", "knowledge_chat", "x_search", "domain_manage", "knowledge_core_manage", "data_model_manage", "agent_manage"].map(key => `knowledge_retrieval:${key}`);
 const access = { permissions, domain_id: 1, domain_name: "企业知识工作域", display_name: "知识管理员", user_id: "fixture-user" };
-const agent = { agent_id: "agent-1", display_name: "企业知识助手", status: "ACTIVE", version_no: 1, knowledge_core_id: "core-1", data_model_ids: [], models: { x_search_llm: "grok-fixture" } };
+const agent = { agent_id: "agent-1", display_name: "企业知识助手", status: "ACTIVE", version_no: 1, library_id: "library-1", data_model_ids: [], models: { x_search_llm: "grok-fixture" } };
 const domain = { domain_id: 1, domain_code: "fixture", display_name: "企业知识工作域", status: "ACTIVE", row_version: 1 };
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
@@ -59,7 +59,7 @@ async function newPage(width, granted = permissions, session = true, switchMode 
     if (method !== "GET" && !(switchMode && path === "/api/v1/auth/switch-domain")) writes.push(`${method} ${path}`);
     const switched = route.request().headers().authorization === "Bearer fixture-domain-2";
     const current = switched ? { domain_id: 2, domain_name: "客户资料" } : { domain_id: 1, domain_name: access.domain_name };
-    if (path === "/knowledge-cores") page.domainReads.push(current.domain_id);
+    if (path === "/knowledge/libraries") page.domainReads.push(current.domain_id);
     let result;
     if (path === "/api/v1/auth/domains") result = { app_id: "knowledge_retrieval", domain_id: current.domain_id, domains: [{ domain_id: 1, name: access.domain_name, status: "ACTIVE" }, { domain_id: 2, name: "客户资料", status: "ACTIVE" }, { domain_id: 3, name: "已停用", status: "DISABLED" }] };
     else if (path === "/api/v1/auth/switch-domain" && switchMode) {
@@ -72,9 +72,10 @@ async function newPage(width, granted = permissions, session = true, switchMode 
     }
     else if (path === "/access") result = { ...access, ...current, permissions: switched ? granted.filter(value => value !== "knowledge_retrieval:agent_manage") : granted };
     else if (path === "/agents") result = [agent];
-    else if (path === "/agents/options") result = { knowledge_cores: [], data_models: [], models: [] };
+    else if (path === "/agents/options") result = { libraries: [], data_models: [], models: [] };
+    else if (path === "/knowledge/libraries") result = [];
     else if (path === "/domains") result = { items: [domain] };
-    else if (["/model-catalog", "/knowledge-cores", "/data-models", "/data-models/connector-capabilities", "/data-models/data-sources", "/conversations", "/x-search/runs"].includes(path)) result = { items: [] };
+    else if (["/model-catalog", "/knowledge/libraries", "/data-models", "/data-models/connector-capabilities", "/data-models/data-sources", "/conversations", "/x-search/runs"].includes(path)) result = { items: [] };
     else { unexpected.push(`${method} ${pathname}`); result = {}; }
     await route.fulfill({ contentType: "application/json", body: JSON.stringify(result) });
   });
@@ -211,6 +212,8 @@ try {
   assert.equal(await rejected.locator("#knowledge-domain-toggle .business-context-copy strong").innerText(), access.domain_name);
   assert.equal(await rejected.locator('[data-switch-domain="2"]').isEnabled(), true, "失败后应允许重试");
   assert.equal(await rejected.evaluate(() => JSON.parse(sessionStorage.getItem("kbot.knowledge.session.v1")).domain_id), 1);
+  await rejected.waitForLoadState("networkidle");
+  assert.deepEqual(rejected.domainReads, [1, 1], "失败后恢复原域资料库读取");
   assert.deepEqual(domainSwitches, [{ domain_id: 2 }, { domain_id: 2 }, { domain_id: 2 }, { domain_id: 2 }]);
   assert.deepEqual(unexpected, [], "出现未声明 API 请求");
   assert.deepEqual(writes, [], "样式验收不得写入业务数据");

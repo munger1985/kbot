@@ -9,7 +9,7 @@ INSTALLER = ROOT / "scripts/deployment/install_model_ocr_ubuntu24.sh"
 UNIT_TEMPLATE = ROOT / "scripts/deployment/systemd/kbot-model-ocr.service.template"
 KC_CONVERTER = (
     ROOT
-    / "services/knowledge_core/src/knowledge_core/parsing/converter.py"
+    / "services/knowledge_core/src/knowledge_core/adapters/document_parsing.py"
 )
 
 
@@ -41,19 +41,19 @@ class OcrUbuntuDeploymentTests(unittest.TestCase):
         self.assertIn("EasyOCR 本地模型加载验证通过", source)
         self.assertIn("Tesseract Python 绑定导入通过", source)
         self.assertIn(
-            "from knowledge_core.parsing.converter import KcDoclingConverter",
+            "from knowledge_core.adapters.document_parsing import DoclingParsingAdapter",
             source,
         )
         self.assertIn("Docling 后加载 Tesseract Python 绑定通过", source)
         self.assertNotIn("import easyocr\nimport onnxruntime\nimport tesserocr", source)
 
-    def test_kc_converter_preloads_tesseract_before_docling(self) -> None:
+    def test_compute_converter_uses_subprocess_ocr_without_c_library_preload(self) -> None:
         source = KC_CONVERTER.read_text(encoding="utf-8")
-
-        self.assertLess(
-            source.index("import tesserocr as _tesserocr_runtime"),
-            source.index("from docling.datamodel.base_models import InputFormat"),
-        )
+        ocr = (ROOT / "services/knowledge_core/src/knowledge_core/adapters/local_ocr.py").read_text(encoding="utf-8")
+        self.assertIn("from docling.datamodel.base_models import InputFormat", source)
+        self.assertNotIn("import tesserocr", source)
+        self.assertIn("asyncio.create_subprocess_exec", ocr)
+        self.assertIn("tesseract", ocr)
 
     def test_systemd_unit_uses_the_same_tessdata_environment(self) -> None:
         source = UNIT_TEMPLATE.read_text(encoding="utf-8")

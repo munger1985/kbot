@@ -11,7 +11,7 @@
     sending: false,
     runResults: new Map(),
   };
-  const citationPattern = /\[((?:C|Q)\d+)\]/g;
+  const citationPattern = /\[((?:D|Q)\d+)\]/g;
 
   function selectedAgentId() { return $("knowledge-agent").value; }
   function selectedAgent() {
@@ -81,8 +81,11 @@
     const agent = selectedAgent();
     const modelCount = Array.isArray(agent?.data_model_ids) ? agent.data_model_ids.length : 0;
     $("knowledge-context-agent").textContent = agent?.display_name || "尚未选择";
+    $("knowledge-agent").disabled = !state.agents.length || state.sending;
+    $("knowledge-refresh").disabled = state.sending;
     $("knowledge-new-conversation").disabled = !agent || state.sending;
     $("knowledge-input").disabled = !agent || state.sending;
+    $("knowledge-query-images").disabled = !agent?.library_id || state.sending;
     $("knowledge-send").disabled = !agent || state.sending || !$("knowledge-input").value.trim();
     $("knowledge-input-hint").textContent = agent
       ? (state.active ? "Enter 换行，点击发送提交本轮问题。" : "可直接输入并发送，系统会自动创建会话。")
@@ -145,7 +148,7 @@
     state.conversations = rows.filter((row) => String(row.agent_id) === String(selectedAgentId()));
     const targetId = selectId || (String(state.active?.agent_id) === String(selectedAgentId()) ? state.active?.conversation_id : "");
     const selected = state.conversations.find((row) => String(row.conversation_id) === String(targetId)) || state.conversations[0];
-    if (selected) await selectConversation(selected);
+    if (selected) await selectConversation(selected, Boolean(selectId));
     else renderEmptyChat();
   }
 
@@ -171,7 +174,8 @@
     }
   }
 
-  async function selectConversation(row) {
+  async function selectConversation(row, duringCreate = false) {
+    if (state.sending && !duringCreate) return;
     state.active = await KBotKnowledgeApi.request(`/conversations/${row.conversation_id}`);
     renderConversationList();
     $("knowledge-title").textContent = state.active.title || "未命名会话";
@@ -180,6 +184,7 @@
   }
 
   async function deleteConversation(row) {
+    if (state.sending) return;
     if (!await KBotKnowledgeShell.confirmAction({ title: "永久删除会话？", message: `确认永久删除会话“${row.title || "未命名会话"}”吗？\n\n会话内容删除后无法恢复；正在执行的会话不能删除。`, confirmLabel: "永久删除", tone: "danger" })) return;
     await KBotKnowledgeApi.request(`/conversations/${row.conversation_id}?expected_row_version=${row.row_version}`, { method: "DELETE" });
     if (String(state.active?.conversation_id) === String(row.conversation_id)) state.active = null;
@@ -201,15 +206,50 @@
   function renderReferences(runId, source) {
     if (!runId) return;
     const rows = referenceRows(source);
-    state.runResults.set(String(runId), { payload: { references: rows } });
+    const composition = source?.payload?.knowledge_composition;
+    state.runResults.set(String(runId), { payload: { references: rows, knowledge_composition: composition } });
     const host = Array.from(document.querySelectorAll("[data-references-for]"))
       .find((node) => node.dataset.referencesFor === String(runId));
-    if (!host || !rows.length) return;
+    if (!host) return;
     host.innerHTML = rows.map((row, index) => {
       const label = row.citation_label || `${row.reference_type === "QUERY" ? "Q" : "C"}${index + 1}`;
-      const title = row.title || row.semantic_model_name || (row.reference_type === "DOCUMENT" ? "引用文档" : "查询结果");
+      const title = row.title || row.semantic_model_name || (row.reference_type === "APP_KNOWLEDGE" ? "引用文档" : "查询结果");
       return `<button type="button" class="knowledge-reference" data-run-id="${escapeHtml(runId)}" data-reference-label="${escapeHtml(label)}">${escapeHtml(label)} · ${escapeHtml(title)}</button>`;
     }).join("");
+    if (composition) host.insertAdjacentHTML("beforeend", compositionMarkup(runId, composition));
+  }
+
+  function compositionMarkup(runId, value) {
+    const item = key => (value.items || []).find(row => row.key === key);
+    const evidence = key => `<section><span>${escapeHtml(item(key)?.kind || "")}</span>
+      <button type="button" class="knowledge-reference" data-evidence-run="${escapeHtml(runId)}" data-evidence-key="${escapeHtml(key)}">读取精确证据</button>
+      <div data-evidence-preview="${escapeHtml(runId + ":" + key)}"></div></section>`;
+    return `<details><summary>检索主结果 ${value.primary_hits.length} · 模型交付 ${escapeHtml(value.model_delivery)}（${value.delivered_count}项）· 覆盖 ${escapeHtml(value.coverage_status)}</summary>
+      ${value.primary_hits.map(hit => {
+        const group = (value.linked || []).find(row => row.anchor_key === hit.key);
+        return `<article><strong>#${hit.rank}</strong>${evidence(hit.key)}
+          ${group ? `<details><summary>关联图片、引用文字与文档 · ${escapeHtml(group.manifest_status)}</summary>
+          ${group.incomplete_reason ? `<p>${escapeHtml(group.incomplete_reason)}</p>` : ""}${group.linked_keys.map(evidence).join("")}</details>` : ""}</article>`;
+      }).join("")}</details>`;
+  }
+
+  async function readEvidence(button) {
+    button.disabled = true;
+    try {
+      const blob = await KBotKnowledgeApi.requestBlob(`/runs/${encodeURIComponent(button.dataset.evidenceRun)}/knowledge/content/${encodeURIComponent(button.dataset.evidenceKey)}`);
+      const host = Array.from(document.querySelectorAll("[data-evidence-preview]")).find(node =>
+        node.dataset.evidencePreview === button.dataset.evidenceRun + ":" + button.dataset.evidenceKey);
+      if (!host) return;
+      if (["image/png", "image/jpeg", "image/webp"].includes(blob.type)) {
+        const image = document.createElement("img"), url = URL.createObjectURL(blob);
+        image.src = url; image.alt = "授权原图"; image.style.maxWidth = "100%";
+        image.onload = () => URL.revokeObjectURL(url);
+        image.onerror = () => URL.revokeObjectURL(url);
+        host.replaceChildren(image);
+      } else {
+        const pre = document.createElement("pre"); pre.textContent = await blob.text(); host.replaceChildren(pre);
+      }
+    } finally { button.disabled = false; }
   }
 
   async function loadTurns() {
@@ -229,7 +269,7 @@
     }).join("");
     turns.forEach((turn) => {
       const references = turn.knowledge_item?.content?.references;
-      if (turn.run_id && Array.isArray(references)) renderReferences(turn.run_id, references);
+      if (turn.run_id && Array.isArray(references)) renderReferences(turn.run_id, { payload: turn.knowledge_item.content });
     });
     stream.scrollTop = stream.scrollHeight;
   }
@@ -265,7 +305,7 @@
     }
     if (eventType === "answer.completed" && Array.isArray(payload.references)) {
       pending.referencesReceived = true;
-      renderReferences(pending.wrapper.dataset.runId, payload.references);
+      renderReferences(pending.wrapper.dataset.runId, { payload });
     }
     $("knowledge-progress").textContent = payload.public_summary || payload.summary || data.title || data.summary || eventType || "Agent 正在执行";
   }
@@ -273,13 +313,14 @@
   function isRetryable(error) {
     return error instanceof TypeError || [502, 503, 504].includes(Number(error?.status));
   }
-  async function createTurn(input, idempotencyKey) {
+  async function createTurn(input, idempotencyKey, images) {
     const path = `/conversations/${state.active.conversation_id}/turns`;
     const options = { headers: { "Idempotency-Key": idempotencyKey } };
     const payload = {
       input,
       expected_conversation_version: state.active.row_version,
       client_metadata: { source: "knowledge-ui" },
+      images,
     };
     try {
       return await KBotKnowledgeApi.json(path, "POST", payload, options);
@@ -307,7 +348,21 @@
     event.preventDefault();
     const input = $("knowledge-input").value.trim();
     if (!input || !selectedAgent() || state.sending) return;
-    if (!state.active && !(await createConversation())) return;
+    let images;
+    try {
+      const files = Array.from($("knowledge-query-images").files || []);
+      if (files.length > 4 || files.reduce((sum, file) => sum + file.size, 0) > 8 * 1024 * 1024) throw new Error("查询图片最多 4 张，合计不超过 8 MiB");
+      images = await Promise.all(files.map(async file => {
+        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) throw new Error("查询图片只支持 PNG、JPEG 或 WebP");
+        const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); });
+        return { file_name: file.name, mime_type: file.type, content_base64: data.slice(data.indexOf(",") + 1) };
+      }));
+    } catch (error) { showError(error, "查询图片读取失败"); return; }
+    if (state.sending) return;
+    state.sending = true;
+    if (!state.active && !(await createConversation())) {
+      state.sending = false; renderAgentContext(); return;
+    }
     const pending = appendPending(input);
     $("knowledge-input").value = "";
     state.sending = true;
@@ -316,7 +371,7 @@
     $("knowledge-progress").hidden = false;
     $("knowledge-progress").textContent = "正在创建 Turn";
     try {
-      const receipt = await createTurn(input, KBotKnowledgeApi.requestId());
+      const receipt = await createTurn(input, KBotKnowledgeApi.requestId(), images);
       if (receipt.run_id) {
         pending.wrapper.dataset.runId = String(receipt.run_id);
         pending.references.dataset.referencesFor = String(receipt.run_id);
@@ -342,6 +397,7 @@
         pending.wrapper.classList.remove("pending");
         pending.wrapper.setAttribute("aria-busy", "false");
       }
+      $("knowledge-query-images").value = "";
       await refreshActive();
       updateActiveConversation();
       if (!receipt.run_id) await loadTurns();
@@ -375,14 +431,14 @@
     const references = referenceRows(result);
     const reference = references.find((row) => String(row.citation_label) === String(label));
     if (!reference) return toast("引用依据尚未加载", "error");
-    if (reference.reference_type !== "DOCUMENT") {
+    if (reference.reference_type !== "APP_KNOWLEDGE") {
       return toast(`${label} 为本轮问数查询结果，已体现在回答中。`, "info");
     }
     const preview = await KBotKnowledgeApi.request(`/runs/${runId}/references/${encodeURIComponent(label)}/preview`);
     $("knowledge-reference-title").textContent = preview.title || reference.title || "文档引用";
     const pages = preview.page_no ? ` · 第 ${preview.page_no}${preview.page_end && preview.page_end !== preview.page_no ? `–${preview.page_end}` : ""} 页` : "";
     $("knowledge-reference-meta").textContent = `${preview.citation_label} · ${preview.mime_type}${pages}`;
-    $("knowledge-reference-body").innerHTML = `<p>该引用来自当前 Agent 绑定的 Knowledge Core。打开原文时仍会执行当前用户与 Domain 权限校验。</p><button class="primary" type="button" data-open-reference-content="${escapeHtml(preview.content_url)}" data-preview-type="${escapeHtml(preview.preview_type)}" data-page-no="${escapeHtml(preview.page_no || "")}">打开引用原文</button>`;
+    $("knowledge-reference-body").innerHTML = `<p>该引用来自当前 Agent 绑定的本 App 资料库。打开原文时仍会执行当前用户与 Domain 权限校验。</p><button class="primary" type="button" data-open-reference-content="${escapeHtml(preview.content_url)}" data-preview-type="${escapeHtml(preview.preview_type)}" data-page-no="${escapeHtml(preview.page_no || "")}">打开引用原文</button>`;
     $("knowledge-reference-dialog").showModal();
   }
   async function openReferenceContent(button) {
@@ -400,6 +456,7 @@
   function bindEvents() {
     $("knowledge-agent").addEventListener("change", async () => {
       state.active = null;
+      $("knowledge-query-images").value = "";
       renderAgentContext();
       try { await loadConversations(); }
       catch (error) { showError(error, "会话列表加载失败"); renderEmptyChat(); }
@@ -438,6 +495,8 @@
     $("knowledge-chat-stream").addEventListener("click", (event) => {
       const copy = event.target.closest("[data-copy-code]");
       if (copy) return KBotMarkdown.copyCode(copy);
+      const evidence = event.target.closest("[data-evidence-key]");
+      if (evidence) return readEvidence(evidence).catch(error => showError(error, "证据读取失败"));
       const marker = event.target.closest("[data-citation-label]");
       if (marker) {
         const message = marker.closest("[data-run-id]");

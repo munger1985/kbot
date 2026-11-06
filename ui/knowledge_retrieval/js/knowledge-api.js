@@ -2,6 +2,12 @@
 (function () {
   "use strict";
   const basePath = "/api/v1/apps/knowledge-retrieval";
+  let contextAbort = new AbortController();
+  let contextEpoch = 0;
+  function cancelPending() { contextAbort.abort(); contextAbort = new AbortController(); contextEpoch += 1; }
+  function scopedSignal(signal) { return signal ? AbortSignal.any([contextAbort.signal, signal]) : contextAbort.signal; }
+  function assertEpoch(epoch) { if (epoch !== contextEpoch) throw new DOMException("工作域已切换", "AbortError"); }
+  addEventListener("pagehide", cancelPending);
 
   function requestId() {
     return globalThis.KBotKnowledgeAuth?.uuid?.()
@@ -45,6 +51,7 @@
   }
 
   async function request(path, options = {}) {
+    const epoch = contextEpoch;
     const headers = {
       Accept: "application/json",
       "X-Request-ID": requestId(),
@@ -58,9 +65,11 @@
       credentials: "same-origin",
       cache: "no-store",
       ...options,
+      signal: scopedSignal(options.signal),
       headers,
     });
     const payload = await decode(response);
+    assertEpoch(epoch);
     if (!response.ok) {
       if (response.status === 401) redirectIfUnauthorized();
       const error = new Error(errorMessage(payload, response.status));
@@ -82,6 +91,7 @@
   }
 
   async function requestBlob(path, options = {}) {
+    const epoch = contextEpoch;
     const headers = {
       Accept: "image/*",
       "X-Request-ID": requestId(),
@@ -92,6 +102,7 @@
       credentials: "same-origin",
       cache: "no-store",
       ...options,
+      signal: scopedSignal(options.signal),
       headers,
     });
     if (!response.ok) {
@@ -99,7 +110,9 @@
       if (response.status === 401) redirectIfUnauthorized();
       throw new Error(errorMessage(payload, response.status));
     }
-    return response.blob();
+    const blob = await response.blob();
+    assertEpoch(epoch);
+    return blob;
   }
 
   function presentBlob(blob, fileName, popup, pageNo) {
@@ -120,6 +133,7 @@
   }
 
   async function stream(path, handlers = {}, signal) {
+    const epoch = contextEpoch;
     const response = await fetch(resolveUrl(path), {
       credentials: "same-origin",
       cache: "no-store",
@@ -129,7 +143,7 @@
         "X-Request-ID": requestId(),
         ...authHeaders(),
       },
-      signal,
+      signal: scopedSignal(signal),
     });
     if (!response.ok || !response.body) {
       const payload = await decode(response);
@@ -144,6 +158,7 @@
     let buffer = "";
     while (true) {
       const result = await reader.read();
+      assertEpoch(epoch);
       buffer += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
       const blocks = buffer.split(/\r?\n\r?\n/);
       buffer = blocks.pop() || "";
@@ -212,7 +227,7 @@
   }
 
   globalThis.KBotKnowledgeApi = {
-    basePath, json, request, requestBlob, presentBlob, requestId, stream, withQuery,
+    basePath, json, request, requestBlob, presentBlob, requestId, stream, withQuery, cancelPending,
     ModelCategory, items, modelCategory, isActiveModel, isGrokModel,
   };
 })();

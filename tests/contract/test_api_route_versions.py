@@ -6,33 +6,22 @@ import unittest
 
 from fastapi.routing import APIRoute
 
-from knowledge_core.api.collection_router import router as collection_router
-from knowledge_core.api.discovery_router import router as discovery_router
-from knowledge_core.api.evidence_router import router as evidence_router
-from knowledge_core.api.index_task_router import router as index_task_router
-from knowledge_core.api.intake_router import router as intake_router
-from knowledge_core.api.parse_task_router import router as parse_task_router
-from knowledge_core.api.profile_task_router import router as profile_task_router
-from knowledge_core.api.purge_task_router import router as purge_task_router
-from knowledge_core.api.status_router import router as status_router
+from knowledge_core.api.parse_jobs_router import create_parse_jobs_router
+from knowledge_retrieval_app.api.knowledge_retrieval import create_knowledge_retrieval_router
+from knowledge_retrieval_app.api.knowledge_library import create_library_router
 from main_api.api import knowledge_router
 from model_serving.common.management_router import create_model_management_router
 from model_serving.common.openai_router import create_openai_models_router
 from platform_core.contracts import INTERNAL_API_V1, PUBLIC_API_V1
 
 
-INTERNAL_ROUTERS = (
-    collection_router,
-    discovery_router,
-    evidence_router,
-    index_task_router,
-    intake_router,
-    parse_task_router,
-    profile_task_router,
-    purge_task_router,
-    status_router,
-    create_model_management_router(category=1),
-)
+async def access_dependency():
+    return None
+
+
+INTERNAL_ROUTERS = (create_parse_jobs_router(service=None, access_dependency=access_dependency, source_resolver=None),
+    create_knowledge_retrieval_router(access_dependency=access_dependency), create_library_router(),
+    create_model_management_router(category=1),)
 
 
 class ApiRouteVersionsTest(unittest.TestCase):

@@ -31,6 +31,8 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
                 "deployment/check_deployment.py",
                 "deployment/ensure_workspace_packages.py",
                 "deployment/init_local_env.py",
+                "deployment/knowledge_retrieval_k2.py",
+                "deployment/upgrade_knowledge_retrieval.py",
                 "deployment/models/download_colqwen_model.py",
                 "deployment/models/download_easyocr_model.py",
                 "deployment/models/download_qwen_model.py",
@@ -222,7 +224,7 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         expected = (
             ROOT / "tests" / "acceptance" / "check_4_0_boundaries.py",
             ROOT / "tests" / "acceptance" / "check_oracle_schema.py",
-            ROOT / "tests" / "evaluation" / "evaluate_kc_parser.py",
+            ROOT / "tests" / "evaluation" / "knowledge_algorithms" / "evaluate_parser.py",
             ROOT / "tests" / "smoke" / "smoke_oracle_service_uow.py",
             ROOT / "tests" / "support" / "oracle_preflight.py",
         )

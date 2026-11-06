@@ -79,7 +79,7 @@ class OutputJobFinalizer:
         manifest = profile.get("knowledge_projection") or {}
         if (len(indexes) != 1 or indexes[0].index_status != "READY"
             or any(str(getattr(indexes[0], key)) != stamp[key]
-                for key in ("collection_id", "bundle_id", "bundle_revision_id"))
+                for key in ("document_id", "document_version_id", "ingestion_job_id", "parse_run_id", "index_generation_id"))
             or manifest.get("body_sha256") != stamp["body_sha256"]):
             raise result_changed()
         await assert_case_not_withdrawn(uow=uow, indexes=indexes)
@@ -130,11 +130,13 @@ class OutputJobFinalizer:
             except (KeyError, TypeError, ValueError, ValidationError, AIOpsApplicationError):
                 # 损坏封套不能授权创建 Registry；原恢复材料保留，失败通知仍须可见。
                 recovery = None
-            if recovery is not None and recovery.bundle_revision_id is not None:
+            if recovery is not None and recovery.ingestion_registered:
                 entity_scope = {"tenant_id": execution.scope.tenant_id} if execution.scope.tenant_id else {}
-                asset, version, _, _ = await register_intake(
-                    uow=uow, domain_id=job.domain_id, prepared=prepared, recovery=recovery,
-                    entity_scope=entity_scope, actor=execution.scope.actor_id)
+                exact = await uow.operations_knowledge.find_case_by_intake_revision(
+                    domain_id=job.domain_id, revision_id=recovery.document_version_id)
+                if exact is None:
+                    raise result_changed()
+                asset, version = exact
                 # 登记幂等重放可能返回未加锁的既有版本。与人工发布使用相同锁顺序，
                 # 必须重新锁定后判定是否允许清理，不能撤掉并发完成发布的版本。
                 version = await uow.operations_knowledge.get_version(

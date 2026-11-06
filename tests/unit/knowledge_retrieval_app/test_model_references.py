@@ -12,6 +12,9 @@ class _Repository:
     def __init__(self, rows):
         self._rows = rows
 
+    async def knowledge_model_references(self, *, model_id):
+        return []
+
     async def model_references(self, *, model_id):
         del model_id
         return self._rows

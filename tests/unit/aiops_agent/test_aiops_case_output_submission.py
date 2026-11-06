@@ -68,8 +68,8 @@ def test_http_receipt_is_persisted_before_model_or_kc_and_duplicate_is_idempoten
             f.artifact.content_hash = "f" * 64
             assert (await client.post(path, json=payload, headers=headers)).status_code == 422
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
-        f.service._kc.review_user_intake.assert_not_awaited()
+        f.service._documents.stage.assert_not_awaited()
+        f.service._documents.publish.assert_not_awaited()
     asyncio.run(run())
 
 

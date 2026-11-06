@@ -1,0 +1,2986 @@
+{
+  "schemas": {
+    "knowledge.backend_binding.v1": "AppBackendBinding",
+    "knowledge.authorized_scope.v1": "AuthorizedScope",
+    "knowledge.retrieval_snapshot.v1": "RetrievalSnapshot",
+    "knowledge.evidence_key.v1": "EvidenceKey",
+    "knowledge.query_input.v1": "QueryInput",
+    "knowledge.query_plan.v1": "QueryPlan",
+    "knowledge.retrieval_profile.v1": "RetrievalProfile",
+    "knowledge.evidence_set.v1": "EvidenceSet",
+    "knowledge.source_descriptor.v1": "SourceDescriptor",
+    "knowledge.parse_profile.v1": "ParseProfile",
+    "knowledge.parsed_document.v1": "ParsedDocument",
+    "knowledge.projection_profile.v1": "ProjectionProfile",
+    "knowledge.projection_batch.v1": "ProjectionBatch",
+    "knowledge.representation_spec.v1": "RepresentationSpec",
+    "knowledge.delegation_claims.v1": "DelegationClaims",
+    "knowledge.retrieval_request.v1": "RetrievalRequest",
+    "knowledge.citation_label_map.v1": "CitationLabelMap",
+    "knowledge.retrieval_evidence.v1": "RetrievalEvidenceArtifact",
+    "knowledge.model_evidence_delivery.v1": "ModelEvidenceDelivery",
+    "knowledge.grounded_answer.v1": "GroundedAnswerArtifact",
+    "knowledge.error.v1": "ErrorEnvelope",
+    "knowledge.cursor.v1": "CursorBinding",
+    "knowledge.app_retrieval.v1": "AppRetrievalArtifact",
+    "knowledge.composition.v1": "KnowledgeCompositionArtifact"
+  },
+  "contracts": {
+    "AppBackendBinding": [
+      {
+        "name": "binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "namespace",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "AuthorizedScope": [
+      {
+        "name": "owner_binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "authorization_revision",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "RetrievalSnapshot": [
+      {
+        "name": "owner_binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "snapshot_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "index_generation",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "withdrawal_revision",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "EvidenceKey": [
+      {
+        "name": "owner_binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "document_version_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "parse_run_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "object_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "projection_ref",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "source_span",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "contract": "SourceSpan"
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "SourceSpan": [
+      {
+        "name": "node_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "char_start",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "char_end",
+        "type": "int",
+        "required": true
+      }
+    ],
+    "QueryInput": [
+      {
+        "name": "mode",
+        "type": {
+          "enum": "QueryMode",
+          "values": [
+            "RELEVANCE",
+            "FILTERED_ORDER",
+            "EXHAUSTIVE"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "requested_count",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "output_types",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "text",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "image_handles",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "combination",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "predicates",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "Predicate"
+            },
+            "..."
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "order_by",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "OrderBy"
+            },
+            "..."
+          ]
+        },
+        "required": false
+      }
+    ],
+    "Predicate": [
+      {
+        "name": "field",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "operator",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "value",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "int",
+            "float",
+            "bool",
+            "NoneType"
+          ]
+        },
+        "required": true
+      }
+    ],
+    "OrderBy": [
+      {
+        "name": "field",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "descending",
+        "type": "bool",
+        "required": true
+      }
+    ],
+    "QueryPlan": [
+      {
+        "name": "query_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "profile_version",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": {
+          "enum": "QueryMode",
+          "values": [
+            "RELEVANCE",
+            "FILTERED_ORDER",
+            "EXHAUSTIVE"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "channel_keys",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "targets",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "CoverageTarget"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "profile_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "query_representation_hashes",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "container": "tuple",
+              "args": [
+                "str",
+                {
+                  "container": "UnionType",
+                  "args": [
+                    "int",
+                    "NoneType"
+                  ]
+                },
+                "str"
+              ]
+            },
+            "..."
+          ]
+        },
+        "required": true
+      }
+    ],
+    "CoverageTarget": [
+      {
+        "name": "target_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "kind",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "required",
+        "type": "bool",
+        "required": true
+      },
+      {
+        "name": "provenance",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "plan_version",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "RetrievalProfile": [
+      {
+        "name": "profile_version",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "channels",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "ChannelSpec"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "rrf_constant",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "candidate_budget",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_primary_count",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "payload_budget",
+        "type": {
+          "contract": "PayloadCost"
+        },
+        "required": true
+      },
+      {
+        "name": "max_cover_states",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "relation_page_size",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_relation_pages",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_representation_elements",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "timeout_seconds",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "max_shards",
+        "type": "int",
+        "required": false
+      }
+    ],
+    "ChannelSpec": [
+      {
+        "name": "channel_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "signal_family",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "kind",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "direction",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "weight",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "timeout_seconds",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "required",
+        "type": "bool",
+        "required": true
+      },
+      {
+        "name": "representation_spec",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "contract": "RepresentationSpec"
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "RepresentationSpec": [
+      {
+        "name": "model_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "revision",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "processor_revision",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "input_template",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "dimension",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "kind",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "input_kind",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "similarity",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "normalization",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "directions",
+        "type": {
+          "container": "frozenset",
+          "args": [
+            "str"
+          ]
+        },
+        "required": true
+      }
+    ],
+    "PayloadCost": [
+      {
+        "name": "tokens",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "images",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "byte_count",
+        "type": "int",
+        "required": true
+      }
+    ],
+    "EvidenceSet": [
+      {
+        "name": "request_id",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "owner_binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "snapshot",
+        "type": {
+          "contract": "RetrievalSnapshot"
+        },
+        "required": true
+      },
+      {
+        "name": "query_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": {
+          "enum": "QueryMode",
+          "values": [
+            "RELEVANCE",
+            "FILTERED_ORDER",
+            "EXHAUSTIVE"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "status",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "reason",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "primary_hits",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "PrimaryHit"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "evidence",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "EvidenceItem"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "groups",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "LinkedManifest"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "context_selection",
+        "type": {
+          "contract": "SelectionResult"
+        },
+        "required": true
+      },
+      {
+        "name": "matches",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "CandidateTargetMatch"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "channel_status",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "ChannelStatus"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "trace",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "StageRecord"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "plan",
+        "type": {
+          "contract": "QueryPlan"
+        },
+        "required": true
+      },
+      {
+        "name": "continuation",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "scope_exhausted",
+        "type": "bool",
+        "required": true
+      },
+      {
+        "name": "schema_version",
+        "type": "str",
+        "required": false
+      }
+    ],
+    "PrimaryHit": [
+      {
+        "name": "evidence_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "rank",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "group_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "fusion_score",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "float",
+            "NoneType"
+          ]
+        },
+        "required": true
+      }
+    ],
+    "EvidenceItem": [
+      {
+        "name": "key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "source_keys",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "EvidenceKey"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "kind",
+        "type": {
+          "enum": "ContentKind",
+          "values": [
+            "DOCUMENT",
+            "SECTION",
+            "PARAGRAPH",
+            "LIST_ITEM",
+            "TABLE",
+            "TABLE_ROW",
+            "FIGURE",
+            "CAPTION",
+            "FORMULA",
+            "CODE",
+            "FOOTNOTE",
+            "IMAGE",
+            "REGION",
+            "PAGE",
+            "PHOTO",
+            "HEADER",
+            "FOOTER"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "locators",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "Locator"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "provenance",
+        "type": {
+          "contract": "Provenance"
+        },
+        "required": true
+      },
+      {
+        "name": "allowed_view_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "content_handle",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "content_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "mime_type",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "byte_count",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "estimated_cost",
+        "type": {
+          "contract": "PayloadCost"
+        },
+        "required": true
+      },
+      {
+        "name": "expires_at",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "preview_handle",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "payload_status",
+        "type": "str",
+        "required": false
+      },
+      {
+        "name": "source_spans",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "SourceSpan"
+            },
+            "..."
+          ]
+        },
+        "required": false
+      }
+    ],
+    "Locator": [
+      {
+        "name": "page_no",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "int",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "bbox",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "container": "tuple",
+              "args": [
+                "float",
+                "float",
+                "float",
+                "float"
+              ]
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "logical_ref",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "Provenance": [
+      {
+        "name": "kind",
+        "type": {
+          "enum": "ProvenanceKind",
+          "values": [
+            "NATIVE",
+            "OCR",
+            "MODEL_TRANSCRIPTION",
+            "MODEL_DESCRIPTION",
+            "APP_DERIVED"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "generator",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "revision",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "input_hash",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "LinkedManifest": [
+      {
+        "name": "anchor_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "linked_keys",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "EvidenceKey"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "relations",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "ResolvedRelation"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "manifest_status",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "payload_status",
+        "type": "str",
+        "required": false
+      },
+      {
+        "name": "continuation",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "incomplete_reason",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "ResolvedRelation": [
+      {
+        "name": "relation_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "relation_type",
+        "type": {
+          "enum": "RelationType",
+          "values": [
+            "REFERS_TO",
+            "CAPTION_OF",
+            "HAS_ASSET",
+            "PART_OF",
+            "CITES_DOCUMENT"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "source_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "target_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "basis",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "occurrence_key",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "source_span",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "contract": "SourceSpan"
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "SelectionResult": [
+      {
+        "name": "selected_group_keys",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "selected_evidence_keys",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "EvidenceKey"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "cost",
+        "type": {
+          "contract": "PayloadCost"
+        },
+        "required": true
+      },
+      {
+        "name": "omitted",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "container": "tuple",
+              "args": [
+                "str",
+                "str"
+              ]
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "coverage",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "TargetCoverage"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "coverage_search_truncated",
+        "type": "bool",
+        "required": true
+      }
+    ],
+    "TargetCoverage": [
+      {
+        "name": "target_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "status",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "CandidateTargetMatch": [
+      {
+        "name": "target_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "evidence_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "status",
+        "type": {
+          "enum": "MatchStatus",
+          "values": [
+            "MATCHED",
+            "UNKNOWN",
+            "CONFLICT"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "basis",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "provenance",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "ChannelStatus": [
+      {
+        "name": "channel_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "required",
+        "type": "bool",
+        "required": true
+      },
+      {
+        "name": "status",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "reason",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "approximate",
+        "type": "bool",
+        "required": true
+      },
+      {
+        "name": "exhausted",
+        "type": "bool",
+        "required": true
+      }
+    ],
+    "StageRecord": [
+      {
+        "name": "stage",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "input_keys",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "EvidenceKey"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "output_keys",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "EvidenceKey"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "excluded",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "container": "tuple",
+              "args": [
+                {
+                  "contract": "EvidenceKey"
+                },
+                "str"
+              ]
+            },
+            "..."
+          ]
+        },
+        "required": true
+      }
+    ],
+    "SourceDescriptor": [
+      {
+        "name": "owner_binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "document_version_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "sha256",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "mime_type",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "byte_count",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "source_handle",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "ParseProfile": [
+      {
+        "name": "profile_version",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "algorithm_version",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "languages",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "max_input_bytes",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_pages",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_objects",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_text_bytes",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_event_bytes",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "batch_size",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "timeout_seconds",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "max_repair_attempts",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "repair_strategies",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "max_bad_char_ratio",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "min_region_coverage",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "allow_partial",
+        "type": "bool",
+        "required": true
+      },
+      {
+        "name": "layout",
+        "type": {
+          "contract": "LayoutProfile"
+        },
+        "required": true
+      }
+    ],
+    "LayoutProfile": [
+      {
+        "name": "full_width_ratio",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "column_gap",
+        "type": "float",
+        "required": true
+      }
+    ],
+    "ParsedDocument": [
+      {
+        "name": "run",
+        "type": {
+          "contract": "ParseRunIdentity"
+        },
+        "required": true
+      },
+      {
+        "name": "pages",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "Page"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "nodes",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "ContentNode"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "assets",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "VisualAsset"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "references",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "ReferenceOccurrence"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "relations",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "ResolvedRelation"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "quality_status",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "manifest_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "resolutions",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "FigureResolution"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "alternatives",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "RepairAlternative"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "warnings",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "failed_regions",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      }
+    ],
+    "ParseRunIdentity": [
+      {
+        "name": "owner_binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "job_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "parse_run_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "attempt",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "fence",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "source_sha256",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "profile_hash",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "Page": [
+      {
+        "name": "local_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "page_no",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "width",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "height",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "rotation",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "image_handle",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "ContentNode": [
+      {
+        "name": "key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "kind",
+        "type": {
+          "enum": "ContentKind",
+          "values": [
+            "DOCUMENT",
+            "SECTION",
+            "PARAGRAPH",
+            "LIST_ITEM",
+            "TABLE",
+            "TABLE_ROW",
+            "FIGURE",
+            "CAPTION",
+            "FORMULA",
+            "CODE",
+            "FOOTNOTE",
+            "IMAGE",
+            "REGION",
+            "PAGE",
+            "PHOTO",
+            "HEADER",
+            "FOOTER"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "locators",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "Locator"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "provenance",
+        "type": {
+          "contract": "Provenance"
+        },
+        "required": true
+      },
+      {
+        "name": "native_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "reading_order",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "heading_level",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "int",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "parent_key",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "numbering_scope",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "display_label",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "native_anchor",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "VisualAsset": [
+      {
+        "name": "key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "figure_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "content_handle",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "sha256",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "mime_type",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "byte_count",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "locator",
+        "type": {
+          "contract": "Locator"
+        },
+        "required": true
+      },
+      {
+        "name": "provenance",
+        "type": {
+          "contract": "Provenance"
+        },
+        "required": true
+      },
+      {
+        "name": "crop_transform",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "container": "tuple",
+              "args": [
+                "float",
+                "..."
+              ]
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "ReferenceOccurrence": [
+      {
+        "name": "occurrence_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "source_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "span",
+        "type": {
+          "contract": "SourceSpan"
+        },
+        "required": true
+      },
+      {
+        "name": "raw_label",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "numbering_scope",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "native_target_anchor",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "FigureResolution": [
+      {
+        "name": "occurrence",
+        "type": {
+          "contract": "ReferenceOccurrence"
+        },
+        "required": true
+      },
+      {
+        "name": "status",
+        "type": {
+          "enum": "ResolutionStatus",
+          "values": [
+            "RESOLVED",
+            "AMBIGUOUS",
+            "UNRESOLVED",
+            "MISSING_TARGET",
+            "CONFLICT"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "target_key",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "contract": "EvidenceKey"
+            },
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "basis",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "RepairAlternative": [
+      {
+        "name": "region_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "nodes",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "ContentNode"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "reason",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "adopted",
+        "type": "bool",
+        "required": true
+      }
+    ],
+    "ProjectionProfile": [
+      {
+        "name": "profile_version",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "max_tokens",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_input_chars",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_units",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "batch_size",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "max_representation_elements",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "timeout_seconds",
+        "type": "float",
+        "required": true
+      },
+      {
+        "name": "representations",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "RepresentationSpec"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      }
+    ],
+    "ProjectionBatch": [
+      {
+        "name": "projection_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "sequence",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "units",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "ProjectedUnit"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "payload_hash",
+        "type": "str",
+        "required": true
+      }
+    ],
+    "ProjectedUnit": [
+      {
+        "name": "unit",
+        "type": {
+          "contract": "SearchUnit"
+        },
+        "required": true
+      },
+      {
+        "name": "representations",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "Representation"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      }
+    ],
+    "SearchUnit": [
+      {
+        "name": "key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "source_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "unit_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "kind",
+        "type": {
+          "enum": "ContentKind",
+          "values": [
+            "DOCUMENT",
+            "SECTION",
+            "PARAGRAPH",
+            "LIST_ITEM",
+            "TABLE",
+            "TABLE_ROW",
+            "FIGURE",
+            "CAPTION",
+            "FORMULA",
+            "CODE",
+            "FOOTNOTE",
+            "IMAGE",
+            "REGION",
+            "PAGE",
+            "PHOTO",
+            "HEADER",
+            "FOOTER"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "context",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "sources",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "UnitSource"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "locators",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "Locator"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "provenance",
+        "type": {
+          "contract": "Provenance"
+        },
+        "required": true
+      },
+      {
+        "name": "allowed_view_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "allowed_view_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "content_handle",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      }
+    ],
+    "UnitSource": [
+      {
+        "name": "unit_start",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "unit_end",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "source_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "source_start",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "source_end",
+        "type": "int",
+        "required": true
+      }
+    ],
+    "Representation": [
+      {
+        "name": "space_id",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "vector",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "container": "tuple",
+              "args": [
+                "float",
+                "..."
+              ]
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "matrix",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "contract": "TokenMatrix"
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
+      }
+    ],
+    "TokenMatrix": [
+      {
+        "name": "space_id",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "vectors",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "container": "tuple",
+              "args": [
+                "float",
+                "..."
+              ]
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "mask",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "bool",
+            "..."
+          ]
+        },
+        "required": true
+      }
+    ],
+    "DelegationClaims": [
+      {
+        "name": "owner_binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "audience",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "subject_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "tenant_ref",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "domain_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "agent_version_ref",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "run_ref",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "spec_hash",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "scope_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "operations",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "expires_at",
+        "type": "int",
+        "required": true
+      }
+    ],
+    "RetrievalRequest": [
+      {
+        "name": "request_id",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "query",
+        "type": {
+          "contract": "QueryInput"
+        },
+        "required": true
+      },
+      {
+        "name": "profile_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "payload_budget",
+        "type": {
+          "contract": "PayloadCost"
+        },
+        "required": true
+      },
+      {
+        "name": "run_ref",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "spec_hash",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "schema_version",
+        "type": "str",
+        "required": false
+      }
+    ],
+    "CitationLabelMap": [
+      {
+        "name": "run_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "entries",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "CitationLabel"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "schema_version",
+        "type": "str",
+        "required": false
+      }
+    ],
+    "CitationLabel": [
+      {
+        "name": "run_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "label",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "evidence_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "role",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "locators",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "Locator"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      }
+    ],
+    "RetrievalEvidenceArtifact": [
+      {
+        "name": "run_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "turn_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "evidence_set",
+        "type": {
+          "contract": "EvidenceSet"
+        },
+        "required": true
+      },
+      {
+        "name": "labels",
+        "type": {
+          "contract": "CitationLabelMap"
+        },
+        "required": true
+      },
+      {
+        "name": "schema_version",
+        "type": "str",
+        "required": false
+      }
+    ],
+    "ModelEvidenceDelivery": [
+      {
+        "name": "run_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "model_snapshot_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "status",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "prepared",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "DeliveredEvidence"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "sent_at",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "int",
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "schema_version",
+        "type": "str",
+        "required": false
+      }
+    ],
+    "DeliveredEvidence": [
+      {
+        "name": "evidence_key",
+        "type": {
+          "contract": "EvidenceKey"
+        },
+        "required": true
+      },
+      {
+        "name": "label",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "content_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "input_kind",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "cost",
+        "type": {
+          "contract": "PayloadCost"
+        },
+        "required": true
+      }
+    ],
+    "GroundedAnswerArtifact": [
+      {
+        "name": "run_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "body",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "used_labels",
+        "type": {
+          "container": "tuple",
+          "args": [
+            "str",
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "references",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "contract": "CitationLabel"
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "coverage_status",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "schema_version",
+        "type": "str",
+        "required": false
+      }
+    ],
+    "ErrorEnvelope": [
+      {
+        "name": "code",
+        "type": {
+          "enum": "ErrorCode",
+          "values": [
+            "INVALID_CONTRACT",
+            "RESOURCE_LIMIT",
+            "SCOPE_CLOSURE_BROKEN",
+            "SNAPSHOT_STALE",
+            "MODEL_SPACE_MISMATCH",
+            "MODALITY_UNAVAILABLE",
+            "EVENT_CONFLICT",
+            "EVENT_SEQUENCE_INVALID",
+            "MANIFEST_INVALID",
+            "INCOMPARABLE_CHANNEL",
+            "UNSUPPORTED_INPUT",
+            "PARSE_QUALITY_INSUFFICIENT",
+            "ARTIFACT_EXPIRED",
+            "SCOPE_CHANGED",
+            "CHANNEL_FAILED",
+            "TIMEOUT",
+            "NO_MATCH",
+            "NO_ACCESSIBLE_PAYLOAD",
+            "CONTEXT_BUDGET_INSUFFICIENT",
+            "EVIDENCE_MAPPING_FAILED",
+            "ASSEMBLY_FAILED",
+            "DELIVERY_FAILED",
+            "UNKNOWN_DELIVERY",
+            "CURSOR_EXPIRED",
+            "CURSOR_INVALID"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "stage",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "retryable",
+        "type": "bool",
+        "required": true
+      },
+      {
+        "name": "schema_version",
+        "type": "str",
+        "required": false
+      }
+    ],
+    "CursorBinding": [
+      {
+        "name": "owner_binding_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "subject_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "scope_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "snapshot_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "query_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "profile_hash",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "role",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "order_json",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "position_json",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "expires_at",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "schema_version",
+        "type": "str",
+        "required": false
+      }
+    ],
+    "AppRetrievalArtifact": [
+      {
+        "name": "retrieval_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "evidence",
+        "type": {
+          "contract": "RetrievalEvidenceArtifact"
+        },
+        "required": true
+      }
+    ],
+    "KnowledgeCompositionArtifact": [
+      {
+        "name": "retrieval_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "evidence",
+        "type": {
+          "contract": "EvidenceSet"
+        },
+        "required": true
+      },
+      {
+        "name": "delivery",
+        "type": {
+          "contract": "ModelEvidenceDelivery"
+        },
+        "required": true
+      },
+      {
+        "name": "answer",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "contract": "GroundedAnswerArtifact"
+            },
+            "NoneType"
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "labels",
+        "type": {
+          "contract": "CitationLabelMap"
+        },
+        "required": true
+      },
+      {
+        "name": "excluded",
+        "type": {
+          "container": "tuple",
+          "args": [
+            {
+              "container": "tuple",
+              "args": [
+                {
+                  "contract": "EvidenceKey"
+                },
+                "str"
+              ]
+            },
+            "..."
+          ]
+        },
+        "required": true
+      },
+      {
+        "name": "context_selection",
+        "type": {
+          "contract": "SelectionResult"
+        },
+        "required": true
+      }
+    ],
+    "ParseArtifact": [
+      {
+        "name": "handle_ref",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "object_key",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "sha256",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "mime_type",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "byte_count",
+        "type": "int",
+        "required": true
+      },
+      {
+        "name": "expires_at",
+        "type": "int",
+        "required": true
+      }
+    ]
+  },
+  "parse_event": {
+    "schema_version": "knowledge.parse_event.v1",
+    "shape": "FLAT_RUN_IDENTITY",
+    "run_fields": [
+      "owner_binding_ref",
+      "job_ref",
+      "parse_run_ref",
+      "attempt",
+      "fence",
+      "source_sha256",
+      "profile_hash"
+    ],
+    "fields": {
+      "schema_version": "str",
+      "sequence": "int",
+      "batch_key": "str",
+      "event_type": {
+        "enum": "ParseEventType",
+        "values": [
+          "RUN_STARTED",
+          "PAGE_BATCH",
+          "NODE_BATCH",
+          "ASSET_BATCH",
+          "REFERENCE_BATCH",
+          "STRUCTURE_FINALIZED",
+          "RUN_COMPLETED",
+          "RUN_FAILED"
+        ]
+      },
+      "payload_hash": "str",
+      "dependency_keys": "list[str]",
+      "payload": "bounded-json-object",
+      "artifact_handles": "list[ParseArtifact]"
+    },
+    "payloads": {
+      "RUN_STARTED": {
+        "profile_hash": "sha256",
+        "parser_revision": "str"
+      },
+      "PAGE_BATCH": {
+        "objects": "list[Page]"
+      },
+      "NODE_BATCH": {
+        "objects": "list[ContentNode+local_key]"
+      },
+      "ASSET_BATCH": {
+        "objects": "list[VisualAsset+local_key]"
+      },
+      "REFERENCE_BATCH": {
+        "objects": "list[FigureResolution+local_key]"
+      },
+      "STRUCTURE_FINALIZED": {
+        "relations": "list[ResolvedRelation]",
+        "alternatives": "list[RepairAlternative]",
+        "warnings": "list[str]"
+      },
+      "RUN_COMPLETED": {
+        "counts": "dict[object_event_type,int]",
+        "event_count": "int",
+        "ordered_digest": "sha256",
+        "quality_report": {
+          "status": [
+            "COMPLETE",
+            "PARTIAL",
+            "FAILED"
+          ],
+          "failed_regions": "list[str]"
+        }
+      },
+      "RUN_FAILED": {
+        "error_code": "ErrorCode",
+        "stage": "str"
+      }
+    }
+  }
+}

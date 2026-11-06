@@ -8,10 +8,12 @@
   <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261105_3">
   <link rel="stylesheet" href="./css/reference-knowledge.css?v=20261105_3">
   <link rel="stylesheet" href="./css/alignment.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/knowledge-workspace.css?v=20261106">
 </head>
 <body class="business-app-knowledge_retrieval" data-page="knowledge">
 <main class="knowledge-main platform-home-page agent-chat-page knowledge-retrieval-page knowledge-chat-page">
   <header class="app-page-head"><div><p class="eyebrow">知识检索工作区</p><h1>知识检索</h1><p>围绕当前知识 Agent 开展连续问答，并保留完整会话上下文。</p></div></header>
+  <details class="knowledge-direct-search"><summary>直接检索资料 · 文搜文 / 文搜图 / 图搜图</summary><section id="knowledge-owned-workspace" class="knowledge-owned-workspace table-card" aria-label="图文知识检索"></section></details>
   <section class="agent-chat-workspace knowledge-chat-workspace" id="knowledge-workspace">
     <div class="knowledge-session-overlay" id="knowledge-session-overlay" hidden></div>
     <aside id="knowledge-retrieval-sessions" class="agent-chat-session-rail knowledge-session-sidebar open" aria-label="会话历史">
@@ -32,6 +34,7 @@
       <div class="agent-chat-transcript knowledge-message-viewport" id="knowledge-chat-stream" aria-live="polite"></div>
       <footer class="agent-chat-composer knowledge-composer-wrap">
         <div class="knowledge-stream-progress" id="knowledge-progress" role="status" hidden>等待处理</div>
+        <label class="knowledge-query-image-picker">查询图片（可选，最多 4 张、合计 8 MiB）<input id="knowledge-query-images" type="file" multiple accept="image/png,image/jpeg,image/webp"></label>
         <form class="agent-chat-composer-row agent-chat-composer-row-simple knowledge-composer" id="knowledge-form">
           <label class="agent-chat-composer-input"><span class="visually-hidden">问题</span><textarea class="chat-composer-textarea" rows="1" id="knowledge-input" required maxlength="32000" placeholder="输入问题，Enter 换行，点击发送" disabled></textarea></label>
           <button class="primary-button agent-chat-composer-action knowledge-send-button" type="submit" disabled id="knowledge-send" aria-label="发送问题" title="发送问题"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9zM7 12h14"/></svg></button>
@@ -55,11 +58,12 @@
 
 <script src="../runtime-config.js"></script>
 <script src="./js/knowledge-auth.js?v=20261105_3"></script>
-<script src="./js/knowledge-api.js?v=20261105_3"></script>
-<script src="./js/knowledge-shell.js?v=20261105_confirm1"></script>
+<script src="./js/knowledge-api.js?v=20261106"></script>
+<script src="./js/knowledge-shell.js?v=20261106"></script>
 <script src="../vendor/marked.umd.js?v=18.0.9"></script>
 <script src="../vendor/purify.min.js?v=3.4.13"></script>
 <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
-<script src="./js/knowledge-knowledge.js?v=20261105_confirm1"></script>
+<script src="./js/knowledge-library-workspace.js?v=20261106"></script>
+<script src="./js/knowledge-knowledge.js?v=20261106"></script>
 </body>
 </html>

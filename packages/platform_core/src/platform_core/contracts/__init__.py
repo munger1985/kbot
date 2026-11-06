@@ -38,14 +38,6 @@ from .generative import (
     ResearchRequest,
     ResearchResult,
 )
-from .knowledge import (
-    KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT,
-    KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT,
-    KnowledgeAnswerV1,
-    KnowledgeBusinessResourceRef,
-    KnowledgeReferenceV1,
-    KnowledgeScopeSnapshotV1,
-)
 from .model import (
     EmbeddingDataItem,
     ModelArchiveRequest,
@@ -121,11 +113,5 @@ __all__ = [
     "ServiceIdentity",
     "PUBLIC_API_V1",
     "INTERNAL_API_V1",
-    "KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT",
-    "KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT",
-    "KnowledgeAnswerV1",
-    "KnowledgeBusinessResourceRef",
-    "KnowledgeReferenceV1",
-    "KnowledgeScopeSnapshotV1",
     "data_query",
 ]

@@ -1,0 +1,16 @@
+/* 与 AIOps/Ammolite 共用设计 Token；这里只负责知识资料工作区布局。 */
+.knowledge-owned-workspace { --knowledge-space: var(--form-label-control-gap); display: grid; gap: var(--knowledge-space); padding: calc(var(--knowledge-space) * 2); overflow: auto; max-height: 100%; color: var(--ink); background: var(--surface); }
+.knowledge-owned-workspace .knowledge-search-form, .knowledge-owned-workspace .knowledge-documents, .knowledge-owned-workspace .knowledge-result-list { display: grid; gap: var(--knowledge-space); }
+.knowledge-owned-workspace label { display: grid; gap: var(--knowledge-space); }
+.knowledge-owned-workspace .section-toolbar { flex-wrap: wrap; margin: 0; }
+.knowledge-owned-workspace small, .knowledge-owned-workspace .knowledge-capability-note { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.knowledge-owned-workspace .knowledge-query-images { display: flex; flex-wrap: wrap; align-items: center; gap: var(--knowledge-space); }
+.knowledge-owned-workspace .knowledge-query-images img { width: 80px; height: 64px; object-fit: contain; }
+.knowledge-owned-workspace .knowledge-evidence-card { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--knowledge-space); }
+.knowledge-owned-workspace .knowledge-evidence-card img { max-width: 100%; max-height: 480px; object-fit: contain; }
+.knowledge-owned-workspace .knowledge-evidence-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.knowledge-owned-workspace .knowledge-linked-evidence { border-left: 2px solid var(--line); padding-left: var(--knowledge-space); margin-block: var(--knowledge-space); }
+.knowledge-owned-workspace textarea { width: 100%; }
+.knowledge-owned-workspace .table-actions { flex-wrap: wrap; }
+.knowledge-owned-workspace pre { white-space: pre-wrap; }
+.knowledge-direct-search { flex: none; max-height: 50vh; overflow: auto; }

@@ -14,10 +14,10 @@ def test_case_retry_checks_frozen_source_without_model_or_kc_calls():
     async def run():
         f = await accepted_before_registry(retryable=True)
         f.later.turn.status = "RUNNING"
-        f.service._kc.ingest_user_file.reset_mock()
+        f.service._documents.stage.reset_mock()
         f.service._structured_model.generate_structured.reset_mock()
         await OutputJobSourceValidator().retry(f.uow, f.job)
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.service._documents.stage.assert_not_awaited()
         f.service._structured_model.generate_structured.assert_not_awaited()
     asyncio.run(run())
 

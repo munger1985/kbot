@@ -72,13 +72,8 @@ async def case_fixture(*, closure=False, result="RESOLVED", action_refs=True):
     catalog = SimpleNamespace(get_model=AsyncMock(return_value={
         "model_name": "fixture-model", "served_model_name": "fixture-model"}))
     f.service._model_catalog = f.service._llm_model_catalog = catalog
-    f.service._collection = AsyncMock(return_value={
-        "collection_id": str(uuid7()), "models": {"parser_llm": str(uuid7())}})
-    f.service._kc = SimpleNamespace(
-        ingest_user_file=AsyncMock(return_value=SimpleNamespace(payload={"items": [{
-            "status": "ACCEPTED", "bundle_id": str(uuid7()), "bundle_revision_id": str(uuid7())}]})),
-        review_user_intake=AsyncMock(),
-    )
+    from tests.support.aiops_documents import install_documents
+    install_documents(f)
     f.context = SimpleNamespace(principal_id=f.actor, asserted_user_id=str(f.actor), client_id="fixture")
     return f
 
@@ -120,7 +115,7 @@ def test_eligibility_and_extract_reject_invalid_source_before_model_or_index(fai
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -133,7 +128,7 @@ def test_idempotent_case_return_does_not_bypass_current_source_validation():
         invalidate(f, "target_revoked")
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
-        assert f.service._kc.ingest_user_file.await_count == 1
+        assert f.documents.stage.await_count == 1
         assert result["replayed"] is False
     asyncio.run(run())
 
@@ -154,7 +149,7 @@ def test_manual_outcome_keeps_provenance_and_never_becomes_verified(result, acti
         assert profile["actions"][0]["evidence_refs"] == (
             [str(f.action_artifact.artifact_id)] if action_refs else [])
         assert profile["actions"][0]["registration_ref"] == "artifact:" + str(f.state.closure.artifact_id)
-        body = f.service._kc.ingest_user_file.await_args.kwargs["body"].decode()
+        body = f.documents.stage.await_args.kwargs["body"].decode()
         assert "人工" in body and "不代替" in body
         assert outcome["version"]["status"] == "PROCESSING"
         assert outcome["asset"]["current_version_id"] is None
@@ -172,7 +167,7 @@ def test_valid_diagnostic_report_retains_exact_claim_lineage_and_requires_review
         assert not profile["actions"]
         assert result["version"]["status"] == "PROCESSING"
         assert f.uow.operations_knowledge.add_asset_version.await_count == 1
-        assert f.service._kc.review_user_intake.await_count == 1
+        f.documents.register.assert_awaited_once()
     asyncio.run(run())
 
 
@@ -186,7 +181,7 @@ def test_source_revoked_during_semantic_scan_never_reaches_index(failure):
         f.service._structured_model.generate_structured.side_effect = scan
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
         f.uow.operations_knowledge.add_asset_version.assert_not_awaited()
     asyncio.run(run())
 
@@ -194,14 +189,14 @@ def test_source_revoked_during_semantic_scan_never_reaches_index(failure):
 def test_source_revoked_during_intake_is_tracked_and_withdrawn_without_approval():
     async def run():
         f = await case_fixture()
-        response = f.service._kc.ingest_user_file.return_value
+        original = f.documents.stage.side_effect
         async def ingest(**kw):
             invalidate(f, "target_revoked")
-            return response
-        f.service._kc.ingest_user_file.side_effect = ingest
+            return await original(**kw)
+        f.documents.stage.side_effect = ingest
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
-        f.service._kc.review_user_intake.assert_not_awaited()
+        f.documents.publish.assert_not_awaited()
         version = next(iter(f.state.versions.values()))
         assert version.status == "REVIEW_REQUIRED"
         assert f.uow.outbox.add.await_count == 1
@@ -224,67 +219,22 @@ def test_report_cannot_substitute_another_claim_or_unregistered_source(point):
         f.report.content_hash = f.content_artifact.content_hash
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
-        f.service._kc.ingest_user_file.assert_not_awaited()
-    asyncio.run(run())
-
-
-def test_source_revoked_during_index_approval_is_persistently_withdrawn():
-    async def run():
-        f = await case_fixture()
-        async def approve(**kw):
-            invalidate(f, "target_revoked")
-        f.service._kc.review_user_intake.side_effect = approve
-        with pytest.raises(AIOpsApplicationError):
-            await extract(f)
-        version = next(iter(f.state.versions.values()))
-        assert version.status == "REVIEW_REQUIRED"
-        assert f.uow.outbox.add.await_count == 1
-        f.uow.operations_knowledge.add_review.assert_awaited_once()
-    asyncio.run(run())
-
-
-def test_intake_approval_failure_keeps_recoverable_exact_revision():
-    async def run():
-        f = await case_fixture()
-        f.service._kc.review_user_intake.side_effect = RuntimeError("模拟索引审批连接中断")
-        with pytest.raises(RuntimeError, match="连接中断"):
-            await extract(f)
-        version = next(iter(f.state.versions.values()))
-        index = f.state.relations[version.asset_version_id]["indexes"][0]
-        assert version.status == "PROCESSING"
-        assert index.index_status == "PENDING_APPROVAL"
-        detail = {
-            "asset": {"asset_kind": "DIAGNOSIS_CASE"},
-            "version": {"status": "PROCESSING"},
-            "indexes": [{"status": "PENDING_APPROVAL", "collection_id": str(index.collection_id),
-                "bundle_id": str(index.bundle_id), "bundle_revision_id": str(index.bundle_revision_id)}],
-        }
-        f.service.get_version = AsyncMock(return_value=detail)
-        f.service._kc.review_user_intake.side_effect = None
-        f.service._kc.get_bundle_status = AsyncMock(side_effect=RuntimeError("审批已恢复，停止本测试的后续状态查询"))
-        kwargs = dict(domain_id=f.domain, asset_version_id=version.asset_version_id, context=f.context)
-        if "tenant_id" in inspect.signature(f.service.reconcile_version).parameters:
-            kwargs["tenant_id"] = uuid7()
-        with pytest.raises(RuntimeError, match="审批已恢复"):
-            await f.service.reconcile_version(**kwargs)
-        assert index.index_status == "PROCESSING"
-        assert f.service._kc.review_user_intake.await_count == 2
-        assert f.service._kc.ingest_user_file.await_count == 1
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
 def test_source_revocation_during_model_setup_is_checked_before_actual_model_call():
     async def run():
         f = await case_fixture()
-        collection = f.service._collection.return_value
+        collection = f.service._case_configuration.return_value
         async def lookup(**kw):
             invalidate(f, "target_revoked")
             return collection
-        f.service._collection.side_effect = lookup
+        f.service._case_configuration.side_effect = lookup
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
         f.service._structured_model.generate_structured.assert_not_awaited()
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -298,7 +248,7 @@ def test_valid_idempotent_replay_does_not_repeat_semantic_scan_or_index_intake()
         assert replayed["replayed"] is True
         assert replayed["version"]["asset_version_id"] == first["version"]["asset_version_id"]
         assert f.service._structured_model.generate_structured.await_count == 1
-        assert f.service._kc.ingest_user_file.await_count == 1
+        assert f.documents.stage.await_count == 1
     asyncio.run(run())
 
 
@@ -308,6 +258,8 @@ def test_parallel_intake_converges_on_already_persisted_revision():
         await extract(f)
         pair = (next(iter(f.state.assets.values())), next(iter(f.state.versions.values())))
         f.uow.operations_knowledge.find_by_source_hash.side_effect = [None, pair]
+        f.uow.operations_knowledge.get_asset.return_value = pair[0]
+        f.uow.operations_knowledge.add_version = AsyncMock()
         replayed = await extract(f)
         assert replayed["replayed"] is True
         assert f.uow.operations_knowledge.add_asset_version.await_count == 1
@@ -325,7 +277,7 @@ def test_closure_registration_must_be_in_frozen_report_for_both_preflight_and_ex
         assert eligible["eligible"] is False
         with pytest.raises(AIOpsApplicationError):
             await extract(f)
-        f.service._kc.ingest_user_file.assert_not_awaited()
+        f.documents.stage.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -397,5 +349,5 @@ def test_supported_effect_report_runs_through_real_extraction_service_without_au
         assert result["version"]["profile"]["verification"]["method"] == "MATCHED_CONTROL_RATIO.v1"
         assert result["version"]["status"] == "PROCESSING"
         assert result["asset"]["current_version_id"] is None
-        assert f.service._kc.ingest_user_file.await_count == 1
+        assert f.documents.stage.await_count == 1
     asyncio.run(run())

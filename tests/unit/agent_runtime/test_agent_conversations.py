@@ -23,30 +23,14 @@ from platform_core.contracts import (
     AuthContext,
     ConversationTurnReceipt,
     ConversationView,
-    KnowledgeScopeSnapshotV1,
     PrincipalKind,
 )
 from platform_core.identity import uuid7
 from platform_core.prompts import ResolvedPrompt
 
 
-def _knowledge_scope(agent_id, agent_version_id):
-    payload = {
-        "schema_version": "1.0",
-        "owner_app_id": "knowledge_retrieval",
-        "domain_id": 20,
-        "consumer_agent_id": str(agent_id),
-        "consumer_agent_version_id": str(agent_version_id),
-        "collection_ids": [str(uuid7())],
-        "bundle_revision_ids": [str(uuid7())],
-        "security_level": 1,
-        "business_context": {},
-        "business_resource_refs": [],
-        "policy_version": "test.v1",
-        "issued_at": datetime.now(timezone.utc).isoformat(),
-    }
-    payload["scope_hash"] = KnowledgeScopeSnapshotV1.calculate_hash(payload)
-    return payload
+def _knowledge_binding(agent_id, agent_version_id):
+    return {"library_id": str(uuid7())}
 
 
 class AgentConversationApiTest(unittest.TestCase):
@@ -117,7 +101,7 @@ class AgentConversationApiTest(unittest.TestCase):
             "display_name": "文档助手",
             "enabled_capabilities": ["document"],
             "models": {"composer_llm": str(uuid7())},
-            "knowledge_scope": _knowledge_scope(
+            "knowledge_binding": _knowledge_binding(
                 self.agent_id, self.agent_version_id
             ),
         }
@@ -308,7 +292,7 @@ class ConversationExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             display_name="知识检索 Agent",
             enabled_capabilities=("document", "data_query"),
             models={"composer_llm": uuid7()},
-            knowledge_scope=_knowledge_scope(agent_id, agent_version_id),
+            knowledge_binding=_knowledge_binding(agent_id, agent_version_id),
         )
         service = ConversationService(
             uow_factory=_Uow,
@@ -402,7 +386,7 @@ class ConversationExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             display_name="知识检索 Agent",
             enabled_capabilities=("document", "data_query"),
             models={"composer_llm": uuid7()},
-            knowledge_scope=_knowledge_scope(agent_id, current_version_id),
+            knowledge_binding=_knowledge_binding(agent_id, current_version_id),
         )
         service = ConversationService(
             uow_factory=_Uow,

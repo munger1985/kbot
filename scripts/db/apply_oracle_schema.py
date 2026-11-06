@@ -108,7 +108,6 @@ REQUIRED_SERVICES = (
 OPTIONAL_SERVICE_ORDER = (
     "main_api",
     "model_serving",
-    "knowledge_core",
     "knowledge_retrieval_app",
     "media_studio_app",
     "agent_runtime",
@@ -772,22 +771,6 @@ async def _assert_ddl_privileges(connection: AsyncConnection) -> None:
         )
 
 
-async def _assert_kc_runtime_privileges(
-    connection: AsyncConnection,
-) -> None:
-    """确认 Knowledge Core 服务账号能够发送 DBMS_ALERT。"""
-    try:
-        await connection.exec_driver_sql(
-            "BEGIN DBMS_ALERT.SIGNAL("
-            "'KBOT_KC_INSTALL_CHECK', 'READY'); END;"
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            "Knowledge Core 需要执行 SYS.DBMS_ALERT；"
-            "请由 PDB 管理员授权后重试"
-        ) from exc
-
-
 async def _assert_views_queryable(
     connection: AsyncConnection,
     expected_views: set[str],
@@ -1070,8 +1053,6 @@ async def apply_schema(
             pdb_name, schema_name = await _read_target(connection)
             await _assert_empty_schema(connection)
             await _assert_ddl_privileges(connection)
-            if "knowledge_core" in selection.enabled:
-                await _assert_kc_runtime_privileges(connection)
             print(f"目标确认：PDB={pdb_name}，Schema={schema_name}")
 
             for position, statement in enumerate(statements, start=1):

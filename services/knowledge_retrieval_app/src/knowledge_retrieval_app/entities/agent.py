@@ -40,7 +40,7 @@ class KnowledgeRetrievalAgentVersionEntity(BaseEntity):
     agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    knowledge_core_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    library_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     data_model_ids_json: Mapped[list[str]] = mapped_column(OracleNativeJSON(), nullable=False)
     models_json: Mapped[dict[str, str]] = mapped_column(OracleNativeJSON(), nullable=False)
     instruction: Mapped[str | None] = mapped_column(Text)

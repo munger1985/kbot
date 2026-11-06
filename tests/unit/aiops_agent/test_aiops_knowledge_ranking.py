@@ -1,6 +1,7 @@
 """有界知识业务重排；确定性合同不等于真实 KC／模型检索质量。"""
 
 import asyncio
+from types import SimpleNamespace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -176,28 +177,22 @@ def test_actual_search_reranks_grounded_body_matches_and_returns_scorecard():
         for row in f.rows:
             row[1].created_at = NOW
 
-        async def discover(**kwargs):
+        from knowledge_algorithms.contracts.identity import EvidenceKey
+        async def retrieve(*args, **kwargs):
             assert not f.state.transaction_open
-            return {"candidates": [{"collection_id": str(row[2].collection_id),
-                "bundle_revision_id": str(row[2].bundle_revision_id), "rrf_score": score}
-                for row, score in [(weak, 0.031), (rich, 0.03)]]}
-
-        async def retrieve(**kwargs):
-            assert not f.state.transaction_open
-            return {"citations": [{"collection_id": str(row[2].collection_id),
-                "bundle_revision_id": str(row[2].bundle_revision_id),
-                "citation_id": str(row[1].asset_version_id), "quote": "可引用的真实正文"}
-                for row in f.rows]}
-
-        f.service._kc.discover.side_effect = discover
-        f.service._kc.retrieve_evidence.side_effect = retrieve
+            values=[]
+            for row in f.rows:
+                key=EvidenceKey("aiops",str(row[2].document_version_id),str(row[2].parse_run_id),str(row[1].asset_version_id))
+                values.append(SimpleNamespace(key=key,mime_type="text/plain",locators=(),source_keys=(key,),source_spans=()))
+            return SimpleNamespace(retrieval_ref="receipt",evidence_set=SimpleNamespace(evidence=tuple(values)))
+        f.retrieval.retrieve.side_effect = retrieve
         f.kwargs["request"] = f.request.model_copy(update={"purpose": "CHANGE"})
         result = await f.service.search(**f.kwargs)
         assert result["coverage"]["ranking_policy"] == RANKING_POLICY
         assert result["results"][0]["asset_id"] == str(rich[0].asset_id)
         score = result["results"][0]["ranking"]
-        assert score["kc_relevance"] == 0.03
-        assert score["score"] > 0.031
+        assert score["kc_relevance"] > 0
+        assert score["score"] > score["kc_relevance"]
         assert f.state.rechecks == 1
     asyncio.run(run())
 

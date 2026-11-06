@@ -8,6 +8,8 @@ from fastapi import HTTPException
 from fastapi_offline import FastAPIOffline
 from sqlalchemy import text
 
+from knowledge_retrieval_app.composition.knowledge_business import install_business_knowledge
+from knowledge_retrieval_app.api.knowledge_library import create_library_router
 from knowledge_retrieval_app.api import agent_router, research_router
 from knowledge_retrieval_app.application import (
     KnowledgeRetrievalAgentService, ResearchRunService,
@@ -49,6 +51,7 @@ async def lifespan(app: FastAPIOffline):
         base_url=settings.llm.base_url, timeout=settings.llm.timeout_seconds,
         caller_service=config.service_name, audience=settings.llm.audience,
     )
+    install_business_knowledge(app, settings=settings, uow_factory=uow_factory, register_routes=False)
     app.state.agent_service = KnowledgeRetrievalAgentService(
         uow_factory=uow_factory, catalog_client=catalog_client,
     )
@@ -73,10 +76,12 @@ app.middleware("http")(
     create_scoped_internal_auth_middleware(
         audience=config.service_name,
         allowed_callers={
-            "kbot-main-api": frozenset({"knowledge_retrieval.manage"}),
-            "kbot-agent-runtime-api": frozenset(
-                {"knowledge_retrieval.manage"}
-            ),
+            "kbot-main-api": frozenset({"knowledge_retrieval.manage", "knowledge.scope.create",
+                "knowledge.retrieve", "knowledge.content.read", "knowledge.publish", "knowledge.withdraw"}),
+            "kbot-agent-runtime-worker": frozenset({"knowledge.scope.create", "knowledge.retrieve", "knowledge.content.read"}),
+            "kbot-knowledge-core-api": frozenset({"knowledge.source.read"}),
+            "kbot-agent-runtime-api": frozenset({"knowledge_retrieval.manage", "knowledge.scope.create",
+                "knowledge.retrieve", "knowledge.content.read"}),
             "kbot-model-embedding": frozenset({"knowledge_retrieval.manage"}),
             "kbot-model-llm": frozenset({"knowledge_retrieval.manage"}),
             "kbot-model-visual": frozenset({"knowledge_retrieval.manage"}),
@@ -87,6 +92,19 @@ app.middleware("http")(
 )
 app.middleware("http")(log_requests)
 app.include_router(agent_router)
+app.include_router(create_library_router())
+# 路由在启动前登记，离线 OpenAPI 与实际运行暴露同一组端点。
+from knowledge_retrieval_app.api.knowledge_retrieval import create_knowledge_retrieval_router, install_knowledge_errors
+from knowledge_retrieval_app.api.knowledge_retrieval_auth import knowledge_access_dependency
+from knowledge_retrieval_app.api.knowledge_source import create_knowledge_source_router
+from knowledge_retrieval_app.api.knowledge_source_auth import source_scope
+from platform_core.security.knowledge_delegation import create_knowledge_delegation_codec
+
+app.include_router(create_knowledge_retrieval_router(access_dependency=knowledge_access_dependency(
+    audience=config.service_name, delegation_codec=create_knowledge_delegation_codec(),
+    allowed_callers=frozenset({"kbot-main-api", "kbot-agent-runtime-api", "kbot-agent-runtime-worker"}))))
+app.include_router(create_knowledge_source_router(scope_dependency=source_scope))
+install_knowledge_errors(app)
 app.include_router(research_router)
 
 

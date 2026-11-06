@@ -211,6 +211,8 @@ class ReportQueryTest(unittest.TestCase):
         uow = SimpleNamespace(
             inspections=inspections, runs=runs,
             operations_knowledge=withdrawal.repo,
+            knowledge_documents=withdrawal.uow.knowledge_documents,
+            knowledge_retrieval=withdrawal.uow.knowledge_retrieval,
             outbox=withdrawal.outbox, commit=AsyncMock(),
         )
         service = AIOpsRuntimeService(

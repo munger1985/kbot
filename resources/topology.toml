@@ -64,23 +64,6 @@ kind = "http"
 port = 18090
 
 [[processes]]
-process_key = "knowledge_core_parser"
-module = "knowledge_core.entrypoints.parser"
-service_config = "knowledge_core"
-config_section = "parser"
-service_name = "kbot-knowledge-core-parser"
-kind = "http"
-port = 18095
-
-[[processes]]
-process_key = "knowledge_core_projection"
-module = "knowledge_core.entrypoints.projection"
-service_config = "knowledge_core"
-config_section = "projection"
-service_name = "kbot-knowledge-core-projection"
-kind = "worker"
-
-[[processes]]
 process_key = "agent_runtime_api"
 module = "agent_runtime.entrypoints.api"
 service_config = "agent_runtime"
@@ -211,6 +194,14 @@ config_section = "external_delivery"
 service_name = "kbot-main-api-external-notification-worker"
 kind = "worker"
 
+[[processes]]
+process_key = "knowledge_retrieval_app_knowledge_worker"
+module = "knowledge_retrieval_app.entrypoints.knowledge_worker"
+service_config = "knowledge_retrieval_app"
+config_section = "worker"
+service_name = "kbot-knowledge-retrieval-app-knowledge-worker"
+kind = "worker"
+
 [endpoints]
 main_api = "main_api"
 knowledge_core = "knowledge_core_api"
@@ -284,29 +275,8 @@ timeout_seconds = 120
 endpoint = "model_image"
 timeout_seconds = 600
 
-[dependencies.knowledge_core.embedding]
-endpoint = "model_embedding"
-timeout_seconds = 300
-health_check_timeout_seconds = 10
-
-[dependencies.knowledge_core.vlm]
-endpoint = "model_vlm"
-timeout_seconds = 600
-
-[dependencies.knowledge_core.ocr]
-endpoint = "model_ocr"
-timeout_seconds = 600
-
-[dependencies.knowledge_core.visual]
-endpoint = "model_visual"
-timeout_seconds = 300
-
-[dependencies.knowledge_core.knowledge_core]
-endpoint = "knowledge_core"
-timeout_seconds = 600
-
-[dependencies.agent_runtime.knowledge_core]
-endpoint = "knowledge_core"
+[dependencies.agent_runtime.knowledge_retrieval]
+endpoint = "knowledge_retrieval_app"
 timeout_seconds = 120
 
 [dependencies.agent_runtime.aiops]
@@ -353,6 +323,10 @@ timeout_seconds = 120
 endpoint = "data_query"
 timeout_seconds = 300
 
+[dependencies.aiops_agent.clients.agent_runtime]
+endpoint = "agent_runtime"
+timeout_seconds = 120
+
 [dependencies.aiops_agent.clients.main_api]
 endpoint = "main_api"
 timeout_seconds = 10
@@ -380,3 +354,21 @@ timeout_seconds = 120
 [dependencies.aiops_agent.clients.db_executor]
 endpoint = "aiops_db_executor"
 timeout_seconds = 120
+[dependencies.knowledge_core.knowledge_retrieval]
+endpoint = "knowledge_retrieval_app"
+timeout_seconds = 600
+
+[dependencies.knowledge_core.aiops]
+endpoint = "aiops"
+timeout_seconds = 600
+[dependencies.knowledge_retrieval_app.computation]
+endpoint = "knowledge_core"
+timeout_seconds = 600
+
+[dependencies.knowledge_retrieval_app.embedding]
+endpoint = "model_embedding"
+timeout_seconds = 300
+
+[dependencies.knowledge_retrieval_app.visual]
+endpoint = "model_visual"
+timeout_seconds = 300

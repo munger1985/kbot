@@ -1,1 +1,1 @@
-"""Pure Knowledge Core domain rules and value objects."""
+"""无状态解析计算服务；只保留本 App 调用的有界计算协议。"""

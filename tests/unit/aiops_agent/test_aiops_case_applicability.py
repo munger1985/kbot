@@ -173,22 +173,12 @@ def search_fixture(monkeypatch, *, kind="VERIFIED_RESOLUTION"):
     asset, version, index = f.wanted
     asset.asset_kind = "DIAGNOSIS_CASE"
     version.profile_json = f.profile.model_dump(mode="json")
-    index.bundle_id = uuid7()
-    f.document_id = uuid7()
-    f.service._kc.get_revision_status = AsyncMock(return_value={
-        "bundle_revision_id": str(index.bundle_revision_id), "status": "READY", "approval_status": "APPROVED",
-        "members": [{"document_role": "CONTENT", "member_status": "READY",
-            "document_version_id": str(f.document_id), "content_hash_sha256": f.profile.knowledge_projection.body_sha256}],
-    })
-    original_retrieve = f.service._kc.retrieve_evidence.side_effect
-    async def retrieve(**kwargs):
-        response = await original_retrieve(**kwargs)
-        citation = response["citations"][0]
-        citation["document_version_id"] = str(f.document_id)
-        citation["items"] = [{"evidence": {"heading_path": ["[case-action-1] 登记措施与效果 1"],
-            "content_text": "登记措施与效果"}}]
-        return response
-    f.service._kc.retrieve_evidence.side_effect = retrieve
+    from aiops_agent.application.case_knowledge_projection import compile_case_knowledge
+    projection = compile_case_knowledge(title="复盘", profile=f.profile)
+    unit = next(unit for unit in projection.units if unit.unit_id == "case-action-1")
+    f.state.quote = projection.body.decode()[unit.start:unit.end]
+    f.state.source_hash = f.profile.knowledge_projection.body_sha256
+    f.document_id = index.document_version_id
     f.model_id = uuid7()
     f.agents.version.return_value.models_json = {"planner_llm": str(f.model_id)}
     f.target = SimpleNamespace(db_type="POSTGRESQL", version_code="16.7", deployment_type="SINGLE_INSTANCE",

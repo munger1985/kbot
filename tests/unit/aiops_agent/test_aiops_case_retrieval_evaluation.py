@@ -21,7 +21,7 @@ def fixtures():
     dataset = json.loads(DATASET.read_text(encoding="utf-8"))
     assets = {}
     for index, (key, spec) in enumerate(dataset["asset_specs"].items(), 1):
-        assets[key] = {"asset_version_id": identity(index * 10), "bundle_revision_id": identity(index * 10 + 1),
+        assets[key] = {"asset_version_id": identity(index * 10), "parse_run_id": identity(index * 10 + 1),
             "document_version_id": identity(index * 10 + 2), "lineage_id": "source:" + key,
             "body_sha256": hashlib.sha256(key.encode()).hexdigest()}
     assets["pg_lock_copy"]["lineage_id"] = assets["pg_lock"]["lineage_id"]
@@ -32,7 +32,7 @@ def fixtures():
 
 def row_for(key, case, dataset, manifest):
     spec, asset = dataset["asset_specs"][key], manifest["assets"][key]
-    citation = {"quote": "来自固定测试原文的引用", "bundle_revision_id": asset["bundle_revision_id"],
+    citation = {"quote": "来自固定测试原文的引用", "parse_run_id": asset["parse_run_id"],
         "document_version_id": asset["document_version_id"], "locator": {}}
     row = {"asset_version_id": asset["asset_version_id"], "asset_kind": spec["kind"],
         "authority": spec["case_kind"], "citation_pack": [citation]}
@@ -56,7 +56,7 @@ def row_for(key, case, dataset, manifest):
                 "controlled_effect_linked": allowed, "effect_result": "IMPROVED" if allowed else "NOT_VERIFIED"}]}
         citation["locator"].update(case_context={"schema_version": "OPS_CASE_CONTEXT.v1",
             "role": "HISTORICAL_KNOWLEDGE_NOT_CURRENT_EVIDENCE", "body_sha256": asset["body_sha256"],
-            "bundle_revision_id": asset["bundle_revision_id"], "document_version_id": asset["document_version_id"],
+            "parse_run_id": asset["parse_run_id"], "document_version_id": asset["document_version_id"],
             "units": units}, case_applicability=decision)
         row.update(applicability_decision=decision, reuse_context={"applicability_decision": decision})
     return row
@@ -105,7 +105,7 @@ def test_scores_actual_application_response_with_model_and_kc_substitutes(monkey
         citation = row["citation_pack"][0]
         expected = manifest["assets"]["pg_lock"]
         expected.update(asset_version_id=row["asset_version_id"],
-            bundle_revision_id=citation["bundle_revision_id"],
+            parse_run_id=citation["parse_run_id"],
             document_version_id=citation["document_version_id"],
             body_sha256=citation["locator"]["case_context"]["body_sha256"])
         manifest["case_bindings"][case["id"]]["context_fingerprint"] = row["applicability_decision"]["context_fingerprint"]
@@ -141,7 +141,7 @@ def test_incomplete_or_ambiguous_manifest_is_rejected_before_requests(failure):
     elif failure == "duplicate_version":
         manifest["assets"]["draft"]["asset_version_id"] = manifest["assets"]["pg_lock"]["asset_version_id"]
     elif failure == "revision_missing":
-        manifest["assets"]["draft"].pop("bundle_revision_id")
+        manifest["assets"]["draft"].pop("parse_run_id")
     elif failure == "body_hash":
         manifest["assets"]["pg_lock"]["body_sha256"] = "invalid"
     elif failure == "lineage":
@@ -177,9 +177,9 @@ def test_unsafe_or_inexact_response_fails_even_with_perfect_recall(failure, expe
     context = citation["locator"]["case_context"]
     decision = citation["locator"]["case_applicability"]
     if failure == "old_revision":
-        citation["bundle_revision_id"] = identity(999)
+        citation["parse_run_id"] = identity(999)
     elif failure == "locator_conflict":
-        citation["locator"]["bundle_revision_id"] = identity(999)
+        citation["locator"]["parse_run_id"] = identity(999)
     elif failure == "old_document":
         citation["document_version_id"] = identity(999)
     elif failure == "body_hash":

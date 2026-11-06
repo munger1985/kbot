@@ -87,7 +87,7 @@ def test_success_refuses_stale_or_invalid_result_without_notification(mutation):
         if mutation == "asset_changed":
             asset.row_version += 1
         if mutation == "index_changed":
-            index.bundle_revision_id = uuid7()
+            index.document_version_id = uuid7()
         if mutation == "projection_changed":
             f.material["index_stamp"]["body_sha256"] = "f" * 64
         if mutation == "source_changed":
@@ -113,7 +113,7 @@ async def accepted_before_registry(*, retryable=False):
         raise RuntimeError("模拟外部已受理而 Registry 尚未登记")
     with pytest.raises(RuntimeError):
         await execute(f, record_receipt=crash)
-    assert not f.state.versions
+    assert len(f.state.versions) == 1
     f.ref = {"closure_artifact_id": str(f.prepared.closure_artifact_id), "intake": saved}
     f.job = job_for(f, retryable=retryable)
     # 执行快照早于检查点，失败必须读取任务当前恢复定位。
@@ -134,14 +134,14 @@ def test_failure_records_accepted_revision_and_distinguishes_revocation_from_tra
         assert len(f.state.versions) == 1
         version = next(iter(f.state.versions.values()))
         relations = f.state.relations[version.asset_version_id]
-        assert str(relations["indexes"][0].bundle_revision_id) == f.kc_revision
+        assert str(relations["indexes"][0].document_version_id) == str(next(iter(f.documents.records)))
         assert version.status == ("PROCESSING" if retryable else "REVIEW_REQUIRED")
         events = [call.args[0] for call in f.uow.outbox.add.await_args_list]
         assert any(row.event_type == "OPS_CASE_WITHDRAWAL_REQUESTED" for row in events) is not retryable
         assert f.uow.operations_knowledge.get_version.await_args.kwargs["for_update"] is True
         assert f.uow.operations_knowledge.get_asset.await_args.kwargs["for_update"] is True
         assert f.uow.platform_notifications.emit_output_job_event.await_args.kwargs["event_type"] == "aiops.output_job.failed"
-        f.service._kc.review_user_intake.assert_not_awaited()
+        f.documents.publish.assert_not_awaited()
         f.uow.commit.assert_not_awaited()
     asyncio.run(run())
 
@@ -170,6 +170,7 @@ def test_failure_cleanup_cannot_withdraw_a_version_published_before_lock_acquisi
 def test_failure_with_corrupt_recovery_still_notifies_but_never_creates_registry(corruption):
     async def run():
         f = await accepted_before_registry()
+        before_versions = set(f.state.versions)
         if corruption == "seal":
             f.job.input_hash = "f" * 64
         if corruption == "receipt":
@@ -177,7 +178,7 @@ def test_failure_with_corrupt_recovery_still_notifies_but_never_creates_registry
         if corruption == "artifact_id":
             f.job.processing_ref_json["closure_artifact_id"] = "invalid"
         await f.finalizer.failed(uow=f.uow, job=f.job, execution=f.execution, now=NOW)
-        assert not f.state.versions
+        assert set(f.state.versions) == before_versions
         f.uow.platform_notifications.emit_output_job_event.assert_awaited_once()
     asyncio.run(run())
 

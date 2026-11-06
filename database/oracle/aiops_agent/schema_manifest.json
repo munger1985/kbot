@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 57,
-  "contract_version": "aiops-oracle-v57-resource-monitoring",
+  "schema_version": 59,
+  "contract_version": "aiops-oracle-v58-app-owned-knowledge",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "5915f562f5f772f81139f9b63160e91770ba4c5a7a83a803962e14d38c3c38f0"
+      "sha256": "130cd878bbdf7905321b015335c4b1b6433a5b7a8fc433d94a227b1085263162"
     },
     {
       "name": "007_ops_agents.sql",
@@ -51,8 +51,8 @@
     },
     {
       "name": "010_ops_knowledge.sql",
-      "statements": 29,
-      "sha256": "723a3e7654e040c47c9c7976603ace683c85e72546eee90b4d1d0579867c2d5d"
+      "statements": 30,
+      "sha256": "6322cae1346816911c3bc13ba0bc8f27cf89dd40938e5f7bf9260394b135fbf5"
     },
     {
       "name": "011_ops_recovery.sql",
@@ -68,6 +68,11 @@
       "name": "013_ops_resource_governance.sql",
       "statements": 5,
       "sha256": "09e132ef3308ac5157150a5a6649985f254a4f55bea412b025a5e2e5087092c6"
+    },
+    {
+      "name": "014_ops_knowledge_ingestion.sql",
+      "statements": 86,
+      "sha256": "bc7345d4e4475433a152da4a7b41effc3fca667814be15b0c59f6ad71549eb70"
     }
   ],
   "tables": [
@@ -151,7 +156,26 @@
     "KBOT_OPS_WORK_ITEM",
     "KBOT_OPS_WORK_ITEM_OCCURRENCE",
     "KBOT_OPS_WORK_ITEM_LINK",
-    "KBOT_OPS_WORK_ITEM_ACTIVITY"
+    "KBOT_OPS_WORK_ITEM_ACTIVITY",
+    "KBOT_OPS_KNOWLEDGE_DOCUMENT",
+    "KBOT_OPS_KNOWLEDGE_DOCUMENT_VERSION",
+    "KBOT_OPS_KNOWLEDGE_EVIDENCE_PIN",
+    "KBOT_OPS_KNOWLEDGE_INDEX_GENERATION",
+    "KBOT_OPS_KNOWLEDGE_INGESTION_JOB",
+    "KBOT_OPS_KNOWLEDGE_NODE",
+    "KBOT_OPS_KNOWLEDGE_OUTBOX",
+    "KBOT_OPS_KNOWLEDGE_PARSE_BATCH",
+    "KBOT_OPS_KNOWLEDGE_PARSE_RUN",
+    "KBOT_OPS_KNOWLEDGE_REFERENCE_OCCURRENCE",
+    "KBOT_OPS_KNOWLEDGE_RELATION",
+    "KBOT_OPS_KNOWLEDGE_REPRESENTATION",
+    "KBOT_OPS_KNOWLEDGE_RETRIEVAL_RECEIPT",
+    "KBOT_OPS_KNOWLEDGE_SCOPE_MEMBER",
+    "KBOT_OPS_KNOWLEDGE_SCOPE_SNAPSHOT",
+    "KBOT_OPS_KNOWLEDGE_SEARCH_UNIT",
+    "KBOT_OPS_KNOWLEDGE_UNIT_SOURCE",
+    "KBOT_OPS_KNOWLEDGE_VISUAL_ASSET",
+    "KBOT_OPS_KNOWLEDGE_CONFIG"
   ],
   "views": [
     "KBOT_V_OPS_TARGET",

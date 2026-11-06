@@ -317,6 +317,7 @@ def load_settings(
         "integrations",
         "notifications",
         "external_delivery",
+        "knowledge",
         "ui",
     }
     if unknown_keys:
@@ -442,17 +443,15 @@ def load_settings(
                 },
             },
             "knowledge_core": {
-                "storage": {
-                    "local_object_storage_path": str(
-                        data_dir / "knowledge_core"
-                    )
+                "compute": {
+                    "spool_root": str(data_dir / "knowledge_computation"),
+                    "converter_artifacts_path": str(
+                        paths.get("docling_models") or data_dir / "models" / "docling_models"
+                    ),
                 },
-                "parser": {
-                    "local_artifacts_path": str(
-                        paths.get("docling_models")
-                        or data_dir / "models" / "docling_models"
-                    )
-                },
+            },
+            "knowledge_retrieval_app": {
+                "knowledge": {"storage_root": str(data_dir / "knowledge_retrieval" / "knowledge")}
             },
             "agent_runtime": {
                 "attachments": {
@@ -463,6 +462,7 @@ def load_settings(
                 "embedding": {"cache_dir": str(data_dir / "models")}
             },
             "aiops_agent": {
+                "knowledge": {"storage_root": str(data_dir / "aiops" / "knowledge")},
                 "runtime": {},
                 "executor": {
                     "mutation_enabled": bool(
@@ -512,6 +512,19 @@ def load_settings(
             merged = _deep_merge(
                 merged, {"ask_data_api": integrations["mcp_data"]}
             )
+    # 固定知识能力配置入口；不允许借配置覆盖服务身份、数据库或 App 路由。
+    knowledge_options = deployment.get("knowledge") or {}
+    if not isinstance(knowledge_options, dict) or set(knowledge_options) - {
+            "computation", "knowledge_retrieval", "aiops", "runtime"}:
+        raise ValueError("knowledge 只接受四个固定能力配置段")
+    if any(not isinstance(value, dict) for value in knowledge_options.values()):
+        raise ValueError("knowledge 能力配置必须为对象")
+    if service:
+        target = {"knowledge_core": ("computation", "compute"),
+            "knowledge_retrieval_app": ("knowledge_retrieval", "knowledge"),
+            "aiops_agent": ("aiops", "knowledge"), "agent_runtime": ("runtime", "knowledge")}.get(service)
+        if target and target[0] in knowledge_options:
+            merged = _deep_merge(merged, {target[1]: knowledge_options[target[0]]})
     merged["environment"] = resolved_environment
     merged["config_dir"] = str(resolved_file.parent)
     return model.model_validate(merged)

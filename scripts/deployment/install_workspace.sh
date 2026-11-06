@@ -126,6 +126,7 @@ ensure_ripgrep
 members=(
     "packages/platform_core"
     "packages/platform_clients"
+    "packages/knowledge_algorithms"
     "services/model_serving"
     "services/knowledge_core"
     "services/knowledge_retrieval_app"
@@ -138,6 +139,7 @@ members=(
 distributions=(
     "kbot-platform-core==4.0.0"
     "kbot-platform-clients==4.0.0"
+    "kbot-knowledge-algorithms==4.0.0"
     "kbot-model-serving==4.0.0"
     "kbot-knowledge-core==4.0.0"
     "kbot-knowledge-retrieval-app==4.0.0"

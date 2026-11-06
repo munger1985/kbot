@@ -543,6 +543,27 @@ class AIOpsAgentRepository:
         return await self._session.execute(statement)
 
 
+    async def knowledge_model_references(self, *, model_id: UUID):
+        """手册库与案例配置使用本 App 模型目录引用检查。"""
+        from ..entities.knowledge import OperationsKnowledgeBaseEntity
+        from ..entities.knowledge_configuration import OperationsKnowledgeConfigurationEntity
+        bases = (await self._session.scalars(select(OperationsKnowledgeBaseEntity))).all()
+        configurations = (await self._session.scalars(select(OperationsKnowledgeConfigurationEntity))).all()
+        refs = []
+        for row in bases:
+            for role, value in row.configuration_json.get("models", {}).items():
+                if str(value) == str(model_id):
+                    refs.append({"service": "aiops-agent", "resource_type": "operations_knowledge_base",
+                        "resource_id": str(row.knowledge_base_id), "usage": role, "binding_role": role,
+                        "display_name": row.display_name, "status": row.status, "domain_id": str(row.domain_id)})
+        for row in configurations:
+            for role, value in row.models_json.items():
+                if str(value) == str(model_id):
+                    refs.append({"service": "aiops-agent", "resource_type": "operations_case_configuration",
+                        "resource_id": str(row.domain_id), "usage": role, "binding_role": role,
+                        "display_name": "诊断案例模型配置", "status": "CONFIGURED", "domain_id": str(row.domain_id)})
+        return refs
+
 @dataclass(frozen=True)
 class AIOpsAgentExecutionBinding:
     binding_id: UUID

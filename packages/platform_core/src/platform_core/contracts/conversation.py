@@ -56,14 +56,14 @@ class CreateConversationTurnRequest(_Contract):
     execution_spec: AgentExecutionSpec
     client_metadata: dict[str, Any] = Field(default_factory=dict)
     images: tuple["ConversationQueryImage", ...] = Field(
-        default=(), max_length=8
+        default=(), max_length=4
     )
 
 
 class ConversationQueryImage(_Contract):
     file_name: str = Field(min_length=1, max_length=255)
     mime_type: str = Field(pattern=r"^image/(png|jpeg|webp)$")
-    content_base64: str = Field(min_length=1, max_length=24 * 1024 * 1024)
+    content_base64: str = Field(min_length=1, max_length=12 * 1024 * 1024)
 
 
 class ConversationTurnReceipt(_Contract):

@@ -1,1 +1,14 @@
 /* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* business/KnowledgeLibraryWorkspace.vue */
+:is([data-page="knowledge-cores"]) .knowledge-owned-workspace{--knowledge-space:var(--form-label-control-gap);display:grid;gap:var(--knowledge-space);padding:calc(var(--knowledge-space)*2);overflow:auto;max-height:100%;color:var(--ink);background:var(--surface)}
+:is([data-page="knowledge-cores"]) .knowledge-search-form,:is([data-page="knowledge-cores"]) .knowledge-documents,:is([data-page="knowledge-cores"]) .knowledge-result-list{display:grid;gap:var(--knowledge-space)}
+:is([data-page="knowledge-cores"]) .knowledge-search-form label{display:grid;gap:var(--knowledge-space)}
+:is([data-page="knowledge-cores"]) .section-toolbar{flex-wrap:wrap;margin:0}:is([data-page="knowledge-cores"]) .knowledge-capability-note,:is([data-page="knowledge-cores"]) small{color:var(--muted);overflow-wrap:anywhere}
+:is([data-page="knowledge-cores"]) small{display:block}:is([data-page="knowledge-cores"]) .knowledge-query-images{display:flex;flex-wrap:wrap;align-items:center;gap:var(--knowledge-space)}
+:is([data-page="knowledge-cores"]) .knowledge-query-images img{width:80px;height:64px;object-fit:contain}:is([data-page="knowledge-cores"]) .knowledge-evidence-card{border:1px solid var(--line);border-radius:var(--radius);padding:var(--knowledge-space)}
+:is([data-page="knowledge-cores"]) .knowledge-evidence-card header{display:flex;justify-content:space-between;gap:var(--knowledge-space)}
+:is([data-page="knowledge-cores"]) .knowledge-evidence-card img{max-width:100%;max-height:480px;object-fit:contain}
+:is([data-page="knowledge-cores"]) .knowledge-evidence-text,:is([data-page="knowledge-cores"]) .knowledge-linked-evidence p{white-space:pre-wrap;overflow-wrap:anywhere}
+:is([data-page="knowledge-cores"]) .knowledge-linked-evidence{border-left:2px solid var(--line);padding-left:var(--knowledge-space);margin-block:var(--knowledge-space)}
+:is([data-page="knowledge-cores"]) .knowledge-owned-workspace textarea{width:100%}:is([data-page="knowledge-cores"]) .table-actions{flex-wrap:wrap}:is([data-page="knowledge-cores"]) .knowledge-owned-workspace pre{white-space:pre-wrap}

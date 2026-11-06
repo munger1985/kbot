@@ -54,7 +54,7 @@
             ],
             "title": "Instruction"
           },
-          "knowledge_core_id": {
+          "library_id": {
             "anyOf": [
               {
                 "format": "uuid",
@@ -64,7 +64,7 @@
                 "type": "null"
               }
             ],
-            "title": "Knowledge Core Id"
+            "title": "Library Id"
           },
           "models": {
             "additionalProperties": {
@@ -169,7 +169,7 @@
             ],
             "title": "Instruction"
           },
-          "knowledge_core_id": {
+          "library_id": {
             "anyOf": [
               {
                 "format": "uuid",
@@ -179,7 +179,7 @@
                 "type": "null"
               }
             ],
-            "title": "Knowledge Core Id"
+            "title": "Library Id"
           },
           "models": {
             "anyOf": [
@@ -232,6 +232,1076 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "KnowledgeActionReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "KnowledgeActionReceipt",
+        "type": "object"
+      },
+      "KnowledgeChannelView": {
+        "additionalProperties": false,
+        "properties": {
+          "approximate": {
+            "title": "Approximate",
+            "type": "boolean"
+          },
+          "channel_key": {
+            "title": "Channel Key",
+            "type": "string"
+          },
+          "exhausted": {
+            "title": "Exhausted",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_key",
+          "required",
+          "status",
+          "reason",
+          "approximate",
+          "exhausted"
+        ],
+        "title": "KnowledgeChannelView",
+        "type": "object"
+      },
+      "KnowledgeContentRef": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "retrieval_ref": {
+            "title": "Retrieval Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "retrieval_ref",
+          "key"
+        ],
+        "title": "KnowledgeContentRef",
+        "type": "object"
+      },
+      "KnowledgeContinuationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cursor"
+        ],
+        "title": "KnowledgeContinuationRequest",
+        "type": "object"
+      },
+      "KnowledgeDocumentPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeDocumentView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "has_more"
+        ],
+        "title": "KnowledgeDocumentPage",
+        "type": "object"
+      },
+      "KnowledgeDocumentView": {
+        "additionalProperties": false,
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "versions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/KnowledgeVersionView"
+            },
+            "title": "Versions",
+            "type": "object"
+          }
+        },
+        "required": [
+          "document_id",
+          "title",
+          "status",
+          "row_version",
+          "versions"
+        ],
+        "title": "KnowledgeDocumentView",
+        "type": "object"
+      },
+      "KnowledgeEvidenceView": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "content_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeContentRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "locators": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeLocator"
+            },
+            "title": "Locators",
+            "type": "array"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "mime_type",
+          "byte_count",
+          "locators",
+          "text"
+        ],
+        "title": "KnowledgeEvidenceView",
+        "type": "object"
+      },
+      "KnowledgeLibraryCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "profile_ref": {
+            "default": "default",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Profile Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "KnowledgeLibraryCreate",
+        "type": "object"
+      },
+      "KnowledgeLibraryUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "grants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "enum": [
+                      "READ",
+                      "UPLOAD",
+                      "REVIEW",
+                      "MANAGE",
+                      "PUBLISH",
+                      "WITHDRAW"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grants"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ACTIVE",
+                  "DISABLED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "KnowledgeLibraryUpdate",
+        "type": "object"
+      },
+      "KnowledgeLibraryView": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Configuration",
+            "type": "object"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "grants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grants"
+          },
+          "library_id": {
+            "title": "Library Id",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "search_capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeSearchCapability"
+            },
+            "title": "Search Capabilities",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "library_id",
+          "display_name",
+          "description",
+          "status",
+          "row_version",
+          "permissions",
+          "configuration",
+          "grants",
+          "search_capabilities"
+        ],
+        "title": "KnowledgeLibraryView",
+        "type": "object"
+      },
+      "KnowledgeLinkedGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor_key": {
+            "title": "Anchor Key",
+            "type": "string"
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation"
+          },
+          "incomplete_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incomplete Reason"
+          },
+          "linked_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Linked Keys",
+            "type": "array"
+          },
+          "manifest_status": {
+            "title": "Manifest Status",
+            "type": "string"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeRelationView"
+            },
+            "title": "Relations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "anchor_key",
+          "linked_keys",
+          "manifest_status",
+          "continuation",
+          "incomplete_reason",
+          "relations"
+        ],
+        "title": "KnowledgeLinkedGroup",
+        "type": "object"
+      },
+      "KnowledgeLocator": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "logical_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logical Ref"
+          },
+          "page_no": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page No"
+          }
+        },
+        "title": "KnowledgeLocator",
+        "type": "object"
+      },
+      "KnowledgeOrder": {
+        "additionalProperties": false,
+        "properties": {
+          "descending": {
+            "default": false,
+            "title": "Descending",
+            "type": "boolean"
+          },
+          "field": {
+            "enum": [
+              "title",
+              "created_at",
+              "stable_key"
+            ],
+            "title": "Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "KnowledgeOrder",
+        "type": "object"
+      },
+      "KnowledgePredicate": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "kind",
+              "title",
+              "created_at",
+              "document_version_ref",
+              "business_asset_ref"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "EQ",
+              "NE",
+              "PREFIX",
+              "LT",
+              "LE",
+              "GT",
+              "GE"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "field",
+          "operator",
+          "value"
+        ],
+        "title": "KnowledgePredicate",
+        "type": "object"
+      },
+      "KnowledgePrimaryHit": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "rank"
+        ],
+        "title": "KnowledgePrimaryHit",
+        "type": "object"
+      },
+      "KnowledgeQueryImage": {
+        "additionalProperties": false,
+        "properties": {
+          "image_base64": {
+            "maxLength": 12000000,
+            "minLength": 1,
+            "title": "Image Base64",
+            "type": "string"
+          },
+          "mime_type": {
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp"
+            ],
+            "title": "Mime Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mime_type",
+          "image_base64"
+        ],
+        "title": "KnowledgeQueryImage",
+        "type": "object"
+      },
+      "KnowledgeRelationView": {
+        "additionalProperties": false,
+        "properties": {
+          "relation_type": {
+            "title": "Relation Type",
+            "type": "string"
+          },
+          "source_key": {
+            "title": "Source Key",
+            "type": "string"
+          },
+          "target_key": {
+            "title": "Target Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation_type",
+          "source_key",
+          "target_key"
+        ],
+        "title": "KnowledgeRelationView",
+        "type": "object"
+      },
+      "KnowledgeRelationsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor_key": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Anchor Key",
+            "type": "string"
+          },
+          "cursor": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cursor",
+          "anchor_key"
+        ],
+        "title": "KnowledgeRelationsRequest",
+        "type": "object"
+      },
+      "KnowledgeReviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "decision": {
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "KnowledgeReviewRequest",
+        "type": "object"
+      },
+      "KnowledgeSearchCapability": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "direction",
+          "required"
+        ],
+        "title": "KnowledgeSearchCapability",
+        "type": "object"
+      },
+      "KnowledgeSearchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "combination": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ANY",
+                  "ALL",
+                  "COMPOSED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Combination"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeQueryImage"
+            },
+            "maxItems": 4,
+            "title": "Images",
+            "type": "array"
+          },
+          "mode": {
+            "default": "RELEVANCE",
+            "enum": [
+              "RELEVANCE",
+              "FILTERED_ORDER",
+              "EXHAUSTIVE"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "order_by": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeOrder"
+            },
+            "maxItems": 4,
+            "title": "Order By",
+            "type": "array"
+          },
+          "output_types": {
+            "items": {
+              "enum": [
+                "TEXT",
+                "FIGURE",
+                "PHOTO",
+                "TABLE",
+                "PAGE",
+                "REGION",
+                "MIXED"
+              ],
+              "type": "string"
+            },
+            "title": "Output Types",
+            "type": "array"
+          },
+          "predicates": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePredicate"
+            },
+            "maxItems": 20,
+            "title": "Predicates",
+            "type": "array"
+          },
+          "requested_count": {
+            "default": 10,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 32000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "KnowledgeSearchRequest",
+        "type": "object"
+      },
+      "KnowledgeSearchResult": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeChannelView"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeEvidenceView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "linked": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeLinkedGroup"
+            },
+            "title": "Linked",
+            "type": "array"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "model_delivery": {
+            "title": "Model Delivery",
+            "type": "string"
+          },
+          "primary_hits": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePrimaryHit"
+            },
+            "title": "Primary Hits",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "retrieval_ref": {
+            "title": "Retrieval Ref",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "retrieval_ref",
+          "status",
+          "reason",
+          "mode",
+          "continuation",
+          "primary_hits",
+          "items",
+          "linked",
+          "channels",
+          "model_delivery"
+        ],
+        "title": "KnowledgeSearchResult",
+        "type": "object"
+      },
+      "KnowledgeUploadReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "version_id",
+          "job_id",
+          "sha256",
+          "name",
+          "mime_type",
+          "status"
+        ],
+        "title": "KnowledgeUploadReceipt",
+        "type": "object"
+      },
+      "KnowledgeVersionView": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "generation_ready": {
+            "title": "Generation Ready",
+            "type": "boolean"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "processing_status": {
+            "title": "Processing Status",
+            "type": "string"
+          },
+          "review": {
+            "title": "Review",
+            "type": "string"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "uploaded_by": {
+            "title": "Uploaded By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review",
+          "uploaded_by",
+          "name",
+          "status",
+          "job_id",
+          "processing_status",
+          "error_code",
+          "generation_ready"
+        ],
+        "title": "KnowledgeVersionView",
         "type": "object"
       },
       "ResearchCreateRequest": {
@@ -651,6 +1721,1199 @@
         "summary": "Get Execution Spec",
         "tags": [
           "Knowledge Retrieval Agents"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/citation-targets": {
+      "post": {
+        "operationId": "citation_target_internal_v1_knowledge_retrieval_knowledge_citation_targets_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Citation Target",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/evidence:read": {
+      "post": {
+        "operationId": "read_internal_v1_knowledge_retrieval_knowledge_evidence_read_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/evidence:release": {
+      "post": {
+        "operationId": "release_internal_v1_knowledge_retrieval_knowledge_evidence_release_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Release",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/evidence:release-run": {
+      "post": {
+        "operationId": "release_run_internal_v1_knowledge_retrieval_knowledge_evidence_release_run_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Release Run",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/evidence:retain": {
+      "post": {
+        "operationId": "retain_internal_v1_knowledge_retrieval_knowledge_evidence_retain_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Retain",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/history/{retrieval_ref}/content/{stable_key}": {
+      "get": {
+        "operationId": "historical_content_internal_v1_knowledge_retrieval_knowledge_history__retrieval_ref__content__stable_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_key",
+            "required": true,
+            "schema": {
+              "title": "Stable Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Historical Content",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries": {
+      "get": {
+        "operationId": "listing_internal_v1_knowledge_retrieval_knowledge_libraries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeLibraryView"
+                  },
+                  "title": "Response Listing Internal V1 Knowledge Retrieval Knowledge Libraries Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Listing",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      },
+      "post": {
+        "operationId": "create_internal_v1_knowledge_retrieval_knowledge_libraries_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeLibraryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeLibraryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}": {
+      "get": {
+        "operationId": "detail_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeLibraryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detail",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      },
+      "patch": {
+        "operationId": "update_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeLibraryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeLibraryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/documents": {
+      "get": {
+        "operationId": "files_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Files",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      },
+      "post": {
+        "operationId": "upload_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeUploadReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/search": {
+      "post": {
+        "operationId": "search_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__search_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/versions/{version_id}/source": {
+      "get": {
+        "operationId": "source_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__versions__version_id__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Source",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/versions/{version_id}:cancel": {
+      "post": {
+        "operationId": "cancel_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__versions__version_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeActionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/versions/{version_id}:publish": {
+      "post": {
+        "operationId": "publish_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__versions__version_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeActionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/versions/{version_id}:review": {
+      "post": {
+        "operationId": "review_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__versions__version_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeActionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/versions/{version_id}:withdraw": {
+      "post": {
+        "operationId": "withdraw_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__versions__version_id__withdraw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeActionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/query-images": {
+      "post": {
+        "operationId": "query_image_internal_v1_knowledge_retrieval_knowledge_query_images_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Query Image",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/results/{retrieval_ref}/content/{stable_key}": {
+      "get": {
+        "operationId": "content_internal_v1_knowledge_retrieval_knowledge_results__retrieval_ref__content__stable_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_key",
+            "required": true,
+            "schema": {
+              "title": "Stable Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Content",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/results/{retrieval_ref}/relations:continue": {
+      "post": {
+        "operationId": "relations_internal_v1_knowledge_retrieval_knowledge_results__retrieval_ref__relations_continue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeRelationsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Relations",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/results/{retrieval_ref}:continue": {
+      "post": {
+        "operationId": "continuation_internal_v1_knowledge_retrieval_knowledge_results__retrieval_ref__continue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeContinuationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Continuation",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/retrievals/{retrieval_ref}/content/{stable_key}": {
+      "get": {
+        "operationId": "content_internal_v1_knowledge_retrieval_knowledge_retrievals__retrieval_ref__content__stable_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_key",
+            "required": true,
+            "schema": {
+              "title": "Stable Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Content",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/retrievals/{retrieval_ref}/relations:continue": {
+      "post": {
+        "operationId": "relations_internal_v1_knowledge_retrieval_knowledge_retrievals__retrieval_ref__relations_continue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Relations",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/retrievals/{retrieval_ref}:continue": {
+      "post": {
+        "operationId": "continuation_internal_v1_knowledge_retrieval_knowledge_retrievals__retrieval_ref__continue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Continuation",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/retrieve": {
+      "post": {
+        "operationId": "retrieve_internal_v1_knowledge_retrieval_knowledge_retrieve_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Retrieve",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/scopes": {
+      "post": {
+        "operationId": "scope_internal_v1_knowledge_retrieval_knowledge_scopes_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Scope",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/sources:read": {
+      "post": {
+        "operationId": "read_internal_v1_knowledge_retrieval_knowledge_sources_read_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read",
+        "tags": [
+          "app-knowledge-source"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/versions/{version_id}:publish": {
+      "post": {
+        "operationId": "publish_internal_v1_knowledge_retrieval_knowledge_versions__version_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish",
+        "tags": [
+          "app-owned-knowledge"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/versions/{version_id}:withdraw": {
+      "post": {
+        "operationId": "withdraw_internal_v1_knowledge_retrieval_knowledge_versions__version_id__withdraw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw",
+        "tags": [
+          "app-owned-knowledge"
         ]
       }
     },

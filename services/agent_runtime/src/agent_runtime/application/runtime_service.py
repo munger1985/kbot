@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
+from loguru import logger
 from typing import Any
 from uuid import UUID
 
@@ -142,6 +143,7 @@ class AgentRuntimeService:
         skill_registry=None,
         root_planner=None,
         model_resolver=None,
+        knowledge_integration=None,
         notification_publisher,
     ):
         self._uow_factory = uow_factory
@@ -150,6 +152,8 @@ class AgentRuntimeService:
         self._skill_registry = skill_registry
         self._root_planner = root_planner
         self._model_resolver = model_resolver
+        self._knowledge_integration = knowledge_integration
+        self._knowledge_cleanup_cursor = None
         if notification_publisher is None:
             raise ValueError("Agent Runtime 必须配置通知 Outbox Publisher")
         self._notification_publisher = notification_publisher
@@ -158,17 +162,11 @@ class AgentRuntimeService:
         self, command: CreateRunCommand
     ) -> AgentRunReceipt:
         execution_spec = command.execution_spec
-        if execution_spec.agent_kind != "KNOWLEDGE_RETRIEVAL":
+        if execution_spec.agent_kind not in {"KNOWLEDGE_RETRIEVAL", "AIOPS_KNOWLEDGE"}:
             raise AgentRuntimeConflict(
                 "AGENT_KIND_UNSUPPORTED",
                 "Agent Runtime 聊天运行只接受知识检索 Agent；"
                 "AIOps Agent 必须使用 AIOps Run 接口",
-            )
-        knowledge_scope = execution_spec.knowledge_scope
-        if knowledge_scope is None:
-            raise AgentRuntimeConflict(
-                "KNOWLEDGE_SCOPE_REQUIRED",
-                "知识问答 Run 缺少服务端签发的知识范围",
             )
         language = detect_unicode_language(
             command.original_input,
@@ -183,10 +181,10 @@ class AgentRuntimeService:
                     mode="json"
                 ),
                 "input": command.original_input,
-                "collection_ids": command.collection_ids,
-                "security_level": command.security_level,
                 "client_metadata": command.client_metadata,
                 "parent_run_id": command.parent_run_id,
+                "knowledge_child_run_id": command.knowledge_child_run_id,
+                "aiops_parent": command.policy_snapshot.get("aiops_parent"),
                 "conversation_id": command.conversation_id,
                 "turn_id": command.turn_id,
                 "conversation_context": command.conversation_context,
@@ -229,7 +227,7 @@ class AgentRuntimeService:
                 "runtime_policy": dict(
                     execution_spec.runtime_policy
                 ),
-                "knowledge_scope_hash": knowledge_scope.scope_hash,
+                "knowledge_scope_hash": None,
             }
 
         if self._model_resolver is None:
@@ -246,9 +244,30 @@ class AgentRuntimeService:
                 "AGENT_MODEL_INVALID", str(exc)
             ) from exc
 
+        run_id = command.knowledge_child_run_id or uuid7()
+        app_knowledge = None
+        if command.execution_spec.knowledge_binding is not None:
+            if self._knowledge_integration is None:
+                raise AgentRuntimeConflict("KNOWLEDGE_UNAVAILABLE", "App 知识接入尚未初始化")
+            app_knowledge = await self._knowledge_integration.prepare(
+                command=command, run_id=run_id, models=agent_snapshot["models"])
+            agent_snapshot["knowledge_scope_hash"] = app_knowledge["scope"]["scope_hash"]
+
         initial_plan = None
         route_snapshot = None
-        if self._root_planner is not None:
+        if execution_spec.agent_kind == "AIOPS_KNOWLEDGE":
+            from agent_runtime.composition.knowledge import build_app_knowledge_plan
+            from datetime import UTC, datetime, timedelta
+            initial_plan = build_app_knowledge_plan(objective=command.original_input,
+                expires_at=command.deadline_at or (datetime.now(UTC) + timedelta(minutes=10)))
+            initial_plan = initial_plan.model_copy(update={"tasks": tuple(
+                task.model_copy(update={"expected_outputs": ("GROUNDED_ANSWER",), "required_scopes": ()})
+                if task.task_key == "compose" else task for task in initial_plan.tasks)})
+            if self._plan_validator is None:
+                raise AgentRuntimeConflict("PLAN_VALIDATOR_UNAVAILABLE", "计划校验器尚未初始化")
+            self._plan_validator.validate(initial_plan, self._plan_limits)
+            route_snapshot = {"route": "APP_KNOWLEDGE_CHILD", "parent": command.policy_snapshot["aiops_parent"]}
+        elif self._root_planner is not None:
             decision = await self._root_planner.decide_for_input(
                 agent_snapshot=agent_snapshot,
                 objective=command.original_input,
@@ -290,6 +309,7 @@ class AgentRuntimeService:
             try:
                 run = await uow.runs.add(
                     AgentRunEntity(
+                        run_id=run_id,
                         domain_id=command.domain_id,
                         agent_id=command.agent_id,
                         parent_run_id=command.parent_run_id,
@@ -304,23 +324,7 @@ class AgentRuntimeService:
                         config_snapshot_json={
                             "language": language,
                             "agent": agent_snapshot,
-                            "retrieval": {
-                                "collection_ids": [
-                                    str(item)
-                                    for item in command.collection_ids
-                                ],
-                                "security_level": command.security_level,
-                                "knowledge_scope": knowledge_scope.model_dump(
-                                    mode="json"
-                                ),
-                                "scope_revision_count": len(
-                                    knowledge_scope.bundle_revision_ids
-                                ),
-                                "scope_chunk_count": (
-                                    len(knowledge_scope.bundle_revision_ids)
-                                    + 999
-                                ) // 1000,
-                            },
+                            "app_knowledge": app_knowledge,
                             "client_metadata": command.client_metadata,
                             "route": route_snapshot,
                             "conversation": {
@@ -689,6 +693,7 @@ class AgentRuntimeService:
                 RunStatus(run.status), RunStatus.FAILED
             )
             run.status = RunStatus.FAILED.value
+            await self.request_knowledge_cleanup(uow, run)
             run.error_code = "WORKER_LEASE_EXPIRED"
             run.error_message = "Task 租约过期且已达到最大尝试次数"
             run.completed_at = now
@@ -987,62 +992,17 @@ class AgentRuntimeService:
                         ),
                     },
                 )
-            elif artifact.artifact_type == "CITATION_PACK":
-                retrieval_payload = (
-                    artifact.payload_json
-                    if isinstance(artifact.payload_json, dict)
-                    else {}
-                )
-                report = dict(
-                    retrieval_payload.get("retrieval_report") or {}
-                )
-                query_plan = dict(
-                    (
-                        retrieval_payload.get("citation_pack") or {}
-                    ).get("query_plan")
-                    or {}
-                )
-                image_processing = dict(
-                    query_plan.get("image_processing") or {}
-                )
-                await self._append_event(
-                    uow,
-                    run=run,
-                    event_type="retrieval.completed",
-                    event_key=(
-                        f"retrieval-completed:{task.task_id}:"
-                        f"{command.idempotency_key}"
-                    ),
-                    actor_type="WORKER",
-                    actor_id=command.actor_id,
-                    trace_id=command.trace_id,
-                    task=task,
-                    artifact=artifact,
-                    payload={
-                        "candidate_count": int(
-                            report.get("discovery_candidate_count", 0)
-                        ),
-                        "citation_count": int(
-                            report.get("citation_count", 0)
-                        ),
-                        "image_processing": image_processing,
-                        "diagnostics": dict(
-                            report.get("diagnostics")
-                            or query_plan.get("diagnostics")
-                            or {}
-                        ),
-                        "warnings": list(
-                            retrieval_payload.get("warnings") or []
-                        ),
-                        "public_summary": (
-                            "知识检索发现 "
-                            f"{int(report.get('discovery_candidate_count', 0))} "
-                            "个候选，并形成 "
-                            f"{int(report.get('citation_count', 0))} "
-                            "组可引用证据"
-                        ),
-                    },
-                )
+            elif artifact.artifact_type == "RETRIEVAL_EVIDENCE":
+                evidence = artifact.payload_json["evidence"]["evidence_set"]
+                await self._append_event(uow, run=run, event_type="retrieval.completed",
+                    event_key=f"retrieval-completed:{task.task_id}:{command.idempotency_key}",
+                    actor_type="WORKER", actor_id=command.actor_id, trace_id=command.trace_id,
+                    task=task, artifact=artifact, payload={
+                        "primary_count": len(evidence["primary_hits"]),
+                        "evidence_count": len(evidence["evidence"]),
+                        "status": evidence["status"], "reason": evidence["reason"],
+                        "channels": evidence["channel_status"],
+                        "public_summary": f"已返回 {len(evidence['primary_hits'])} 个主结果与关联图文"})
             elif artifact.artifact_type == "QUERY_RESULT":
                 query_payload = (
                     artifact.payload_json
@@ -1152,6 +1112,7 @@ class AgentRuntimeService:
                         "status": answer_payload.get("status"),
                         "reference_count": len(reference_summaries),
                         "references": reference_summaries,
+                        "knowledge_composition": answer_payload.get("knowledge_composition"),
                         "public_summary": "最终回答与引用已生成",
                     },
                 )
@@ -1302,6 +1263,7 @@ class AgentRuntimeService:
                     RunStatus(run.status), RunStatus.FAILED
                 )
                 run.status = RunStatus.FAILED.value
+                await self.request_knowledge_cleanup(uow, run)
                 run.error_code = command.error_code
                 run.error_message = command.error_message
                 run.completed_at = now
@@ -1325,7 +1287,50 @@ class AgentRuntimeService:
                 task, run, int(event.sequence_no)
             )
 
-    async def cancel_run(
+    async def cancel_run(self, command: CancelRunCommand):
+        receipt = await self._cancel_run_state(command)
+        await self.cleanup_knowledge_once()
+        return receipt
+
+    async def request_knowledge_cleanup(self, uow, run):
+        if not (run.config_snapshot_json or {}).get("app_knowledge"):
+            return
+        prior = await uow.events.get_by_key(run_id=run.run_id, event_key="knowledge-cleanup-requested")
+        if prior is None:
+            await self._append_event(uow, run=run, event_type="knowledge.cleanup.requested",
+                event_key="knowledge-cleanup-requested", actor_type="RUNTIME", actor_id=run.actor_id,
+                trace_id=run.trace_id, payload={"public_summary": "已请求释放本 Run 的知识保留引用"})
+
+    async def cleanup_knowledge_once(self):
+        if self._knowledge_integration is None:
+            return False
+        async with self._uow_factory() as uow:
+            rows = await uow.runs.pending_knowledge_cleanup(after_run_id=self._knowledge_cleanup_cursor)
+            if not rows and self._knowledge_cleanup_cursor is not None:
+                rows = await uow.runs.pending_knowledge_cleanup()
+            self._knowledge_cleanup_cursor = rows[-1].run_id if rows else None
+            snapshots = [(row.run_id, {**dict(row.config_snapshot_json),
+                "cleanup_policy": dict(row.policy_snapshot_json)}) for row in rows]
+        completed = False
+        for run_id, snapshot in snapshots:
+            try:
+                await self._knowledge_integration.release_snapshot(snapshot)
+            except Exception as exc:
+                logger.warning("知识保留引用释放尚未完成：run_id={} error_type={}", run_id, type(exc).__name__)
+                # 轮转游标让其他待释放 Run 继续前进，原事件保持待处理。
+                continue
+            async with self._uow_factory() as uow:
+                row = await uow.runs.get(run_id=run_id, lock=True)
+                prior = await uow.events.get_by_key(run_id=run_id, event_key="knowledge-cleanup-completed")
+                if row is not None and prior is None:
+                    await self._append_event(uow, run=row, event_type="knowledge.cleanup.completed",
+                        event_key="knowledge-cleanup-completed", actor_type="RUNTIME", actor_id=row.actor_id,
+                        trace_id=row.trace_id, payload={"public_summary": "本 Run 知识范围和保留引用已释放"})
+                    await uow.commit()
+                completed = True
+        return completed
+
+    async def _cancel_run_state(
         self, command: CancelRunCommand
     ) -> AgentRunReceipt:
         async with self._uow_factory() as uow:
@@ -1334,7 +1339,7 @@ class AgentRuntimeService:
                 domain_id=command.domain_id,
                 lock=True,
             )
-            if run is None:
+            if run is None or str(run.actor_id) != str(command.actor_id):
                 raise AgentRuntimeNotFound()
             event_key = f"cancel:{command.idempotency_key}"
             prior = await uow.events.get_by_key(
@@ -1405,18 +1410,19 @@ class AgentRuntimeService:
             await self._finish_conversation_turn(
                 uow, run=run, status="CANCELLED", now=now
             )
+            await self.request_knowledge_cleanup(uow, run)
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
 
     async def get_run(
-        self, *, run_id: UUID, domain_id: int
+        self, *, run_id: UUID, actor_id: str, domain_id: int
     ) -> AgentRunSummary:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_scoped(
                 run_id=run_id,
                 domain_id=domain_id,
             )
-            if run is None:
+            if run is None or str(run.actor_id) != str(actor_id):
                 raise AgentRuntimeNotFound()
             cursor = await uow.events.latest_sequence(run_id=run_id)
             artifact_ref = None
@@ -1439,12 +1445,7 @@ class AgentRuntimeService:
                     .get("agent", {})
                     .get("owner_app_id", "")
                 ),
-                scope_hash=(
-                    (run.config_snapshot_json or {})
-                    .get("retrieval", {})
-                    .get("knowledge_scope", {})
-                    .get("scope_hash")
-                ),
+                scope_hash=((run.config_snapshot_json or {}).get("app_knowledge") or {}).get("scope", {}).get("scope_hash"),
                 status=run.status,
                 row_version=int(run.row_version),
                 event_cursor=cursor,
@@ -1612,7 +1613,7 @@ class AgentRuntimeService:
         self,
         *,
         run_id: UUID,
-        domain_id: int,
+        actor_id: str, domain_id: int,
         after_sequence: int,
         limit: int = 200,
     ) -> list[AgentRunEvent]:
@@ -1621,7 +1622,7 @@ class AgentRuntimeService:
                 run_id=run_id,
                 domain_id=domain_id,
             )
-            if run is None:
+            if run is None or str(run.actor_id) != str(actor_id):
                 raise AgentRuntimeNotFound()
             rows = await uow.events.list_after(
                 run_id=run_id,
@@ -1644,14 +1645,14 @@ class AgentRuntimeService:
         self,
         *,
         run_id: UUID,
-        domain_id: int,
+        actor_id: str, domain_id: int,
     ) -> AgentArtifact:
         async with self._uow_factory() as uow:
             run = await uow.runs.get_scoped(
                 run_id=run_id,
                 domain_id=domain_id,
             )
-            if run is None:
+            if run is None or str(run.actor_id) != str(actor_id):
                 raise AgentRuntimeNotFound()
             if run.result_artifact_id is None:
                 raise AgentResultNotReady()
@@ -1673,6 +1674,35 @@ class AgentRuntimeService:
                 security_level=int(row.security_level),
                 created_at=row.created_at,
             )
+
+    async def open_knowledge_content(self, *, run_id: UUID, key: str, domain_id: int, actor_id: str, auth_context):
+        """历史引用不重搜、不换版；仅代理本主体 Run 中精确 pin 的原始证据字节。"""
+        async with self._uow_factory() as uow:
+            run = await uow.runs.get_scoped(run_id=run_id, domain_id=domain_id)
+            if (run is None or str(run.actor_id) != str(actor_id) or run.result_artifact_id is None
+                    or run.status == RunStatus.CANCELLED.value):
+                raise AgentRuntimeNotFound()
+            snapshot = dict(run.config_snapshot_json or {})
+            conversation_id = (snapshot.get("conversation") or {}).get("conversation_id")
+            if conversation_id:
+                conversation = await uow.conversations.get_scoped(
+                    conversation_id=UUID(str(conversation_id)), domain_id=domain_id, actor_id=actor_id,
+                )
+                if conversation is None or conversation.status == "DELETED":
+                    raise AgentRuntimeNotFound()
+            owner = (snapshot.get("agent") or {}).get("owner_app_id")
+            if owner not in {"knowledge_retrieval", "aiops"} or (owner == "aiops" and not run.policy_snapshot_json.get("aiops_parent")):
+                raise AgentRuntimeNotFound()
+            artifact = await uow.artifacts.get(artifact_id=run.result_artifact_id)
+            if artifact is None or artifact.run_id != run.run_id:
+                raise AgentRuntimeNotFound()
+            composition = (artifact.payload_json or {}).get("knowledge_composition")
+        if not composition or not self._knowledge_integration:
+            raise AgentRuntimeNotFound()
+        if not any(item["key"] == key for item in composition["items"]):
+            raise AgentRuntimeNotFound()
+        return await self._knowledge_integration.open_history(snapshot=snapshot, auth_context=auth_context,
+            retrieval_ref=composition["retrieval_ref"], key=key)
 
     @staticmethod
     def _ensure_version(actual: int, expected: int) -> None:
@@ -1863,6 +1893,7 @@ class AgentRuntimeService:
                 "text": str(payload.get("answer") or ""),
                 "status": str(payload.get("status") or "READY"),
                 "references": list(payload.get("references") or []),
+                "knowledge_composition": payload.get("knowledge_composition"),
                 "used_citation_labels": list(
                     payload.get("used_citation_labels") or []
                 ),

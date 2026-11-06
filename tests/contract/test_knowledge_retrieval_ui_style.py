@@ -38,8 +38,8 @@ class KnowledgeRetrievalUiStyleTest(unittest.TestCase):
             with self.subTest(page=page.name):
                 parser = PageParser()
                 parser.feed(page.read_text(encoding="utf-8"))
-                self.assertEqual(parser.styles[0], "./css/knowledge.css?v=20261105_3")
-                self.assertEqual(parser.styles[1], "./css/ammolite-shared.css?v=20261105_3")
+                self.assertRegex(parser.styles[0], r"^\./css/knowledge\.css\?v=\d+")
+                self.assertRegex(parser.styles[1], r"^\./css/ammolite-shared\.css\?v=\d+")
                 self.assertIn("business-app-knowledge_retrieval", parser.body["class"].split())
                 self.assertTrue(manifest["pages"][page.stem]["sources"] or manifest["pages"][page.stem].get("platform_difference"))
                 self.assertEqual(parser.body["data-page"], page.stem)
@@ -49,7 +49,7 @@ class KnowledgeRetrievalUiStyleTest(unittest.TestCase):
     def test_shell_assets_are_versioned_and_javascript_is_valid(self):
         for page in UI.glob("*.html"):
             if page.stem != "login":
-                self.assertIn('src="./js/knowledge-shell.js?v=20261105_3"', page.read_text(encoding="utf-8"))
+                self.assertRegex(page.read_text(encoding="utf-8"), r'src="\./js/knowledge-shell\.js\?v=\d+(?:_[A-Za-z0-9]+)?"')
         for script in (UI / "js").glob("*.js"):
             result = subprocess.run(["node", "--check", str(script)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -89,12 +89,11 @@ class KnowledgeRetrievalUiStyleTest(unittest.TestCase):
         self.assertNotIn('id="kc-approval-rows"', collections)
         self.assertNotIn('id="kc-processing-rows"', collections)
         for name in ("upload", "reviews", "processing", "files"):
-            self.assertIn('id="library-collection"', (UI / f"{name}.html").read_text(encoding="utf-8"))
-        library = (UI / "js/knowledge-library.js").read_text(encoding="utf-8")
-        self.assertIn('comment', library)
-        self.assertIn('SINGLE_BUNDLE', library)
-        self.assertIn('page_size:state.size', library)
-        self.assertIn('request !== state.request', library)
+            self.assertIn('id="knowledge-owned-workspace"', (UI / f"{name}.html").read_text(encoding="utf-8"))
+        library = (UI / "js/knowledge-library-workspace.js").read_text(encoding="utf-8")
+        for marker in ("Object.entries(document.versions)", "/knowledge/libraries", "epoch !== state.epoch",
+                       "state.uploads", "relations:continue", "knowledge-context-restored"):
+            self.assertIn(marker, library)
 
     def test_generated_styles_are_current(self):
         result = subprocess.run(["node", "tests/contract/sync_knowledge_reference_styles.mjs"], cwd=ROOT, capture_output=True, text=True)

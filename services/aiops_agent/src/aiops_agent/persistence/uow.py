@@ -1,5 +1,8 @@
 """AIOps 显式、单次提交的 Unit of Work。"""
 
+from aiops_agent.repositories.knowledge_ingestion import KnowledgeIngestionRepository
+from aiops_agent.repositories.knowledge_documents import OperationsDocumentRepository
+from aiops_agent.repositories.knowledge_retrieval import KnowledgeRetrievalRepository
 from collections.abc import Callable
 from enum import StrEnum
 
@@ -49,6 +52,9 @@ class AIOpsUnitOfWork:
     """一个用例一个事务；正常退出但未提交时也会回滚。"""
 
     def __init__(self, session_factory: Callable[[], AsyncSession]):
+        self.knowledge_documents = None
+        self.knowledge_ingestion = None
+        self.knowledge_retrieval = None
         self._session_factory = session_factory
         self.session: AsyncSession | None = None
         self._transaction: AsyncSessionTransaction | None = None
@@ -88,6 +94,9 @@ class AIOpsUnitOfWork:
         if self.state != UnitOfWorkState.NEW:
             raise UnitOfWorkStateError("AIOpsUnitOfWork 实例不能重复进入")
         self.session = self._session_factory()
+        self.knowledge_documents = OperationsDocumentRepository(self.session, self._require_active)
+        self.knowledge_ingestion = KnowledgeIngestionRepository(self.session, self._require_active)
+        self.knowledge_retrieval = KnowledgeRetrievalRepository(self.session, self._require_active)
         self._transaction = await self.session.begin()
         self.state = UnitOfWorkState.ACTIVE
         guard = self._require_active
@@ -152,6 +161,9 @@ class AIOpsUnitOfWork:
         finally:
             await self.session.close()
             self._transaction = None
+            self.knowledge_documents = None
+            self.knowledge_ingestion = None
+            self.knowledge_retrieval = None
             self.session = None
             self.targets = None
             self.recovery = None

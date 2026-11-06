@@ -350,8 +350,9 @@ class ConversationService:
         except Exception:
             logger.exception("清理 Conversation 查询图片失败")
 
-    @staticmethod
-    async def _purge_locked(uow, row) -> None:
+    async def _purge_locked(self, uow, row) -> None:
+        for run in await uow.runs.list_conversation_runs(conversation_id=row.conversation_id):
+            await self._runtime_service.request_knowledge_cleanup(uow, run)
         memory_ids = await uow.memory_sources.memory_ids_for_conversation(
             conversation_id=row.conversation_id
         )
@@ -416,8 +417,6 @@ class ConversationService:
         raw_input: str,
         expected_conversation_version: int,
         execution_spec: AgentExecutionSpec,
-        collection_ids: tuple[UUID, ...],
-        security_level: int,
         client_metadata: dict[str, Any],
         budget: dict[str, Any],
         query_images: tuple[Any, ...] = (),
@@ -470,6 +469,7 @@ class ConversationService:
             run = await self._runtime_service.get_run(
                 run_id=turn.root_run_id,
                 domain_id=domain_id,
+                actor_id=actor_id,
             )
             return self._turn_receipt(turn, run)
 
@@ -484,8 +484,6 @@ class ConversationService:
                     trace_id=trace_id,
                     idempotency_key=f"turn:{turn.turn_id}",
                     original_input=raw_input,
-                    collection_ids=collection_ids,
-                    security_level=security_level,
                     client_metadata={
                         **client_metadata,
                         "query_images": list(image_descriptors),
@@ -1062,7 +1060,7 @@ class ConversationService:
     @staticmethod
     def _conversation_view(row) -> ConversationView:
         execution_spec = dict(row.execution_spec_json or {})
-        knowledge_scope = execution_spec.get("knowledge_scope")
+        knowledge_scope = execution_spec.get("knowledge_binding")
         return ConversationView(
             conversation_id=row.conversation_id,
             agent_id=row.agent_id,

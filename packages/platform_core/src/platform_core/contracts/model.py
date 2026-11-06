@@ -81,6 +81,7 @@ class ModelCatalogItem(_ModelContract):
     api_endpoint: str | None = None
     status: ModelLifecycleStatus
     model_params: dict[str, Any] = Field(default_factory=dict)
+    effective_max_tokens: int | None = Field(default=None, ge=1)
     description: str | None = None
     row_version: int = Field(ge=1)
 

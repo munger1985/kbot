@@ -12,7 +12,20 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.entities import OutboxEntity
 from platform_core.identity import uuid7
-from platform_core.contracts.knowledge_withdrawal import KnowledgeWithdrawalReceipt
+from typing import Literal
+from pydantic import AwareDatetime
+from aiops_agent.domain.knowledge_retrieval import RetrievalAccess
+
+
+class KnowledgeWithdrawalReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+    withdrawal_id: UUID
+    document_id: UUID
+    document_version_id: UUID
+    ingestion_job_id: UUID
+    status: Literal["WITHDRAWN"]
+    withdrawn_at: AwareDatetime
 
 WITHDRAWAL_EVENT = "OPS_CASE_WITHDRAWAL_REQUESTED"
 
@@ -25,9 +38,9 @@ class CaseWithdrawalCommand(BaseModel):
     asset_id: UUID
     asset_version_id: UUID
     index_ref_id: UUID
-    collection_id: UUID
-    bundle_id: UUID
-    bundle_revision_id: UUID
+    document_id: UUID
+    document_version_id: UUID
+    ingestion_job_id: UUID
 
 
 def withdrawal_key(index_id) -> str:
@@ -63,9 +76,14 @@ async def queue_case_withdrawals(*, uow, asset, version) -> None:
             request_id=uuid7(), domain_id=str(asset.domain_id),
             tenant_id=getattr(asset, "tenant_id", None),
             asset_id=asset.asset_id, asset_version_id=version.asset_version_id,
-            index_ref_id=index.index_ref_id, collection_id=index.collection_id,
-            bundle_id=index.bundle_id, bundle_revision_id=index.bundle_revision_id,
+            index_ref_id=index.index_ref_id, document_id=index.document_id,
+            document_version_id=index.document_version_id, ingestion_job_id=index.ingestion_job_id,
         )
+        access = RetrievalAccess(asset.domain_id, getattr(asset, "tenant_id", None), str(asset.created_by))
+        record = await uow.knowledge_documents.inspect(access, index.document_version_id)
+        if record["status"] != "WITHDRAWN":
+            await uow.knowledge_retrieval.withdraw(access, version_id=index.document_version_id,
+                expected_revision=record["revision"], now=datetime.now(UTC))
         payload = command.model_dump(mode="json")
         await uow.outbox.add(OutboxEntity(
             outbox_id=command.request_id, aggregate_type="KNOWLEDGE_VERSION",
@@ -112,7 +130,7 @@ async def validate_command_source(*, uow, command, domain_id):
         if item.index_ref_id == command.index_ref_id), None)
     if match is None or any(
         getattr(match, field) != getattr(command, field)
-        for field in ("collection_id", "bundle_id", "bundle_revision_id")
+        for field in ("document_id", "document_version_id", "ingestion_job_id")
     ):
         raise invalid_withdrawal()
     outbox = await uow.outbox.get_by_idempotency(
@@ -136,7 +154,7 @@ def validate_receipt(command, response) -> KnowledgeWithdrawalReceipt:
         raise invalid_withdrawal() from exc
     if any(
         getattr(receipt, name) != getattr(command, name)
-        for name in ("request_id", "collection_id", "bundle_id", "bundle_revision_id")
+        for name in ("request_id", "document_id", "document_version_id", "ingestion_job_id")
     ):
         raise invalid_withdrawal()
     if receipt.withdrawn_at > datetime.now(UTC) + timedelta(minutes=5):
@@ -167,7 +185,7 @@ async def withdrawal_views(*, uow, indexes, reviews) -> list[dict]:
         except (ValueError, AIOpsApplicationError):
             state = "FAILED"
         result.append({
-            "index_ref_id": str(index.index_ref_id), "consumer": "KNOWLEDGE_CORE",
+            "index_ref_id": str(index.index_ref_id), "consumer": "AIOPS_DOCUMENT_STORE",
             "request_id": str(message.outbox_id), "status": state,
             "delivery_status": message.status, "attempt_count": int(message.attempt_count),
             "error_code": message.error_code,

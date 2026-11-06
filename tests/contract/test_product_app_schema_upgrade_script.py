@@ -26,12 +26,12 @@ class ProductAppSchemaUpgradeScriptTest(unittest.TestCase):
 
     def test_converges_knowledge_retrieval_version_columns(self) -> None:
         self.assertIn("KBOT_KR_AGENT_VERSION", self.normalized)
-        self.assertIn("KNOWLEDGE_CORE_ID", self.normalized)
+        self.assertIn("LIBRARY_ID", self.normalized)
         self.assertIn("DATA_MODEL_IDS_JSON", self.normalized)
         self.assertIn("DROP COLUMN ENABLED_CAPABILITIES_JSON", self.normalized)
         self.assertIn("JSON_ARRAY()", self.sql)
         agents = KR_AGENTS.read_text(encoding="utf-8")
-        self.assertIn("KNOWLEDGE_CORE_ID RAW(16)", agents)
+        self.assertIn("LIBRARY_ID RAW(16)", agents)
         self.assertIn("DATA_MODEL_IDS_JSON JSON NOT NULL", agents)
         self.assertNotIn("ENABLED_CAPABILITIES_JSON", agents)
 

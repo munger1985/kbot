@@ -20,6 +20,7 @@ from platform_core.contracts import (
     ModelReferenceSummary,
     is_grok_provider_model_name,
 )
+from platform_core.dictionary import ModelCategory
 from platform_core.exceptions import DataNotFoundException
 from platform_core.identity import uuid7
 
@@ -82,6 +83,12 @@ class ModelRegistryService:
             "api_endpoint": entity.api_endpoint,
             "status": _STATUS_FROM_DB[int(entity.status)],
             "model_params": public_model_params(entity.model_params),
+            "effective_max_tokens": (
+                (entity.model_params or {}).get("max_tokens", get_model_serving_settings().llm.max_tokens)
+                if int(entity.category) == ModelCategory.LLM else
+                (entity.model_params or {}).get("max_tokens", get_model_serving_settings().vlm.max_tokens)
+                if int(entity.category) == ModelCategory.VLM else None
+            ),
             "description": entity.descs,
             "row_version": int(entity.row_version),
         }

@@ -29,8 +29,15 @@ from agent_runtime.specialists.root import RootAgentPlanner
 from platform_core.identity import uuid7
 from platform_core.contracts import (
     AgentExecutionSpec,
-    KnowledgeScopeSnapshotV1,
 )
+
+
+class _KnowledgeIntegration:
+    async def prepare(self, *, command, run_id, models):
+        return {"scope": {"scope_hash": "test-app-scope", "scope_ref": str(command.execution_spec.knowledge_binding.library_id)}}
+
+    async def release_snapshot(self, snapshot):
+        return None
 
 
 class _ModelResolver:
@@ -147,6 +154,12 @@ class _Runs:
         ):
             return None
         return run
+
+    async def pending_knowledge_cleanup(self, *, limit=32, after_run_id=None):
+        requested = {event.run_id for event in self.store.events if event.event_key == "knowledge-cleanup-requested"}
+        done = {event.run_id for event in self.store.events if event.event_key == "knowledge-cleanup-completed"}
+        return sorted((row for key, row in self.store.runs.items() if key in requested - done
+            and (after_run_id is None or key > after_run_id)), key=lambda row: row.run_id)[:limit]
 
     async def get(self, *, run_id, lock=False):
         return self.store.runs.get(run_id)
@@ -366,28 +379,12 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             plan_validator=validator,
             skill_registry=registry,
             model_resolver=self.model_resolver,
+            knowledge_integration=_KnowledgeIntegration(),
             notification_publisher=_NoopNotificationPublisher(),
         )
         self.collection_id = uuid7()
         self.bundle_revision_id = uuid7()
         agent_version_id = uuid7()
-        scope_payload = {
-            "schema_version": "1.0",
-            "owner_app_id": "knowledge_retrieval",
-            "domain_id": 20,
-            "consumer_agent_id": str(self.agent_id),
-            "consumer_agent_version_id": str(agent_version_id),
-            "collection_ids": [str(self.collection_id)],
-            "bundle_revision_ids": [str(self.bundle_revision_id)],
-            "security_level": 2,
-            "business_context": {},
-            "business_resource_refs": [],
-            "policy_version": "test.v1",
-            "issued_at": datetime.now(timezone.utc).isoformat(),
-        }
-        scope_payload["scope_hash"] = (
-            KnowledgeScopeSnapshotV1.calculate_hash(scope_payload)
-        )
         self.execution_spec = AgentExecutionSpec(
             schema_version="1.0",
             owner_app_id="knowledge_retrieval",
@@ -407,7 +404,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             },
             instruction="仅基于可验证证据回答。",
             resource_context={"answer_language": "zh-CN"},
-            knowledge_scope=scope_payload,
+            knowledge_binding={"library_id": self.collection_id},
         )
         self.create_command = CreateRunCommand(
             domain_id=20,
@@ -418,8 +415,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-1",
             idempotency_key="create-1",
             original_input="总结上传文档",
-            collection_ids=(self.collection_id,),
-            security_level=2,
         )
 
     async def test_create_run_atomically_installs_document_plan(self):
@@ -433,6 +428,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             skill_registry=self.registry,
             root_planner=RootAgentPlanner(),
             model_resolver=self.model_resolver,
+            knowledge_integration=_KnowledgeIntegration(),
             notification_publisher=_NoopNotificationPublisher(),
         )
         created = await service.create_run(self.create_command)
@@ -467,6 +463,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             skill_registry=self.registry,
             root_planner=RootAgentPlanner(),
             model_resolver=self.model_resolver,
+            knowledge_integration=_KnowledgeIntegration(),
             notification_publisher=_NoopNotificationPublisher(),
         )
         with self.assertRaises(AgentRuntimeConflict) as raised:
@@ -503,8 +500,8 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             "memory-model",
         )
         self.assertEqual(
-            snapshot["retrieval"]["collection_ids"],
-            [str(self.collection_id)],
+            snapshot["app_knowledge"]["scope"]["scope_ref"],
+            str(self.collection_id),
         )
 
     async def test_runtime_preserves_app_owned_capabilities(self):
@@ -638,6 +635,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(leased_task.error_code)
         self.assertIsNone(leased_task.error_message)
         result = await self.service.get_result(
+            actor_id="user-1",
             run_id=created.run_id,
             domain_id=20,
         )
@@ -795,6 +793,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.status, "FAILED")
         self.assertEqual(run.error_code, "WORKER_LEASE_EXPIRED")
         summary = await self.service.get_run(
+            actor_id="user-1",
             run_id=run.run_id, domain_id=run.domain_id
         )
         self.assertEqual(
@@ -873,11 +872,12 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 worker_id="worker-1",
                 lease_token=retrieval_lease.lease_token,
                 artifact=ArtifactInput(
-                    artifact_type="CITATION_PACK",
-                    schema_version="DocumentRetrievalResult.v1",
+                    artifact_type="RETRIEVAL_EVIDENCE",
+                    schema_version="knowledge.app_retrieval.v1",
                     producer="knowledge-retrieval",
                     producer_version="1.0.0",
-                    payload={"citation_pack": {"citations": []}},
+                    payload={"evidence": {"evidence_set": {"primary_hits": [], "evidence": [],
+                        "status": "READY", "reason": None, "channel_status": []}}},
                 ),
                 actor_id="worker-1",
                 trace_id="trace-1",
@@ -899,7 +899,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 item.artifact_type
                 for item in compose_lease.input_artifacts
             },
-            {"CONTEXT_REWRITE", "CITATION_PACK"},
+            {"CONTEXT_REWRITE", "RETRIEVAL_EVIDENCE"},
         )
 
 

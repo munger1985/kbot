@@ -3,6 +3,8 @@
 import asyncio
 import base64
 import hashlib
+import os
+import secrets
 import shutil
 from pathlib import Path
 from typing import Any
@@ -26,10 +28,10 @@ class ConversationAttachmentStore:
             except ValueError as exc:
                 raise ValueError("查询图片不是合法 Base64") from exc
             total += len(payload)
-            if len(payload) > 16 * 1024 * 1024:
-                raise ValueError("单张查询图片超过 16 MiB")
-            if total > 32 * 1024 * 1024:
-                raise ValueError("查询图片总大小超过 32 MiB")
+            if len(payload) > 8 * 1024 * 1024:
+                raise ValueError("单张查询图片超过 8 MiB")
+            if total > 8 * 1024 * 1024:
+                raise ValueError("查询图片总大小超过 8 MiB")
             digest = hashlib.sha256(payload).hexdigest()
             suffix = {
                 "image/png": ".png",
@@ -57,11 +59,30 @@ class ConversationAttachmentStore:
     @staticmethod
     def _write_once(target: Path, payload: bytes) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists():
-            if target.read_bytes() != payload:
-                raise ValueError("不可变查询图片已存在但内容不同")
-            return
-        target.write_bytes(payload)
+        if target.parent.resolve() != target.parent.absolute():
+            raise ValueError("查询图片目录不能包含符号链接")
+        directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        temporary = ".pending-" + secrets.token_hex(16)
+        try:
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600, dir_fd=directory)
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            try:
+                os.link(temporary, target.name, src_dir_fd=directory, dst_dir_fd=directory,
+                    follow_symlinks=False)
+            except FileExistsError:
+                descriptor = os.open(target.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+                with os.fdopen(descriptor, "rb") as stream:
+                    if stream.read(len(payload) + 1) != payload:
+                        raise ValueError("不可变查询图片已存在但内容不同")
+        finally:
+            try:
+                os.unlink(temporary, dir_fd=directory)
+            finally:
+                os.close(directory)
 
     async def delete_conversation(self, conversation_id: UUID) -> None:
         target = (

@@ -86,7 +86,7 @@ def validate_manifest(dataset, manifest):
     versions = set()
     for key, asset in assets.items():
         _require(isinstance(asset, dict) and all(_identity(asset.get(field)) for field in (
-            "asset_version_id", "bundle_revision_id", "document_version_id")), "测试资产缺少确切 UUID")
+            "asset_version_id", "parse_run_id", "document_version_id")), "测试资产缺少确切 UUID")
         _require(asset["asset_version_id"] not in versions, "测试资产确切版本不能重复映射")
         versions.add(asset["asset_version_id"])
         _require(isinstance(asset.get("lineage_id"), str) and asset["lineage_id"].strip(),
@@ -116,7 +116,7 @@ def _case_citation_failures(case, key, citation, row, expected, binding, spec):
     context, decision = locator.get("case_context") or {}, locator.get("case_applicability") or {}
     if context.get("schema_version") != "OPS_CASE_CONTEXT.v1" or context.get("body_sha256") != expected["body_sha256"]:
         failures.append("CASE_BODY_HASH_OR_CLOSURE_MISSING")
-    if str(context.get("bundle_revision_id")) != expected["bundle_revision_id"] or str(
+    if str(context.get("parse_run_id")) != expected["parse_run_id"] or str(
         context.get("document_version_id")) != expected["document_version_id"]:
         failures.append("WRONG_CONTEXT_REVISION")
     if context.get("role") != "HISTORICAL_KNOWLEDGE_NOT_CURRENT_EVIDENCE":
@@ -207,7 +207,7 @@ def evaluate_case(case, response, manifest, asset_specs):
             failures.append("MISSING_BODY_CITATION")
         for citation in citations:
             locator = citation.get("locator") or {}
-            for field, failure in (("bundle_revision_id", "WRONG_EXACT_REVISION"),
+            for field, failure in (("parse_run_id", "WRONG_EXACT_REVISION"),
                 ("document_version_id", "WRONG_CONTENT_DOCUMENT")):
                 values = [str(source[field]) for source in (citation, locator) if source.get(field) is not None]
                 if not values or any(value != expected[field] for value in values):

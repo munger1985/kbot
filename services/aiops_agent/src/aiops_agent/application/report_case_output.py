@@ -202,7 +202,7 @@ async def execute_prepared_report_case(service, *, domain_id, prepared, **option
         register_intake=register_report_case_intake, reject=rejected_source, **options)
 
 
-async def register_report_case_intake(*, uow, domain_id, prepared, recovery, entity_scope, actor):
+async def register_report_case_intake(*, uow, domain_id, prepared, recovery, entity_scope, actor, documents, access, staged):
     """先登记已受理 Revision，再重验资格；撤权也不能丢失外部对象的撤回定位。"""
     from aiops_agent.application.case_intake_recovery import CaseIntakeRecovery
     from aiops_agent.application.knowledge_withdrawal import queue_case_withdrawals
@@ -211,12 +211,12 @@ async def register_report_case_intake(*, uow, domain_id, prepared, recovery, ent
         OperationsKnowledgeSourceEntity, OperationsKnowledgeScopeEntity, OperationsKnowledgeIndexEntity,
         OperationsKnowledgeReviewEntity)
     recovery = CaseIntakeRecovery.model_validate(recovery)
-    recovery.body(prepared=prepared, collection_id=recovery.collection_id)
-    if recovery.bundle_revision_id is None or prepared.actor_id != str(actor):
+    recovery.body(prepared=prepared)
+    if prepared.actor_id != str(actor):
         raise rejected_source()
     await uow.inspections.get_report_scoped(report_id=prepared.report_id, domain_id=domain_id, lock=True)
     exact = await uow.operations_knowledge.find_case_by_intake_revision(
-        domain_id=domain_id, revision_id=recovery.bundle_revision_id)
+        domain_id=domain_id, revision_id=recovery.document_version_id)
     if exact is not None:
         if (exact[1].source_hash != prepared.content_hash
             or exact[1].profile_json.get("source") != recovery.profile.source):
@@ -233,7 +233,7 @@ async def register_report_case_intake(*, uow, domain_id, prepared, recovery, ent
         asset_kind="DIAGNOSIS_CASE", source_hash=prepared.content_hash)
     if replay is not None:
         relations = await uow.operations_knowledge.get_version_relations(asset_version_id=replay[1].asset_version_id)
-        if any(row.bundle_revision_id == recovery.bundle_revision_id for row in relations["indexes"]):
+        if any(row.document_version_id == recovery.document_version_id for row in relations["indexes"]):
             return replay[0], replay[1], None, True
     previous = replay
     if previous is None:
@@ -253,6 +253,8 @@ async def register_report_case_intake(*, uow, domain_id, prepared, recovery, ent
                 domain_id=domain_id, artifact_id=UUID(str(closure_id)))
             if closure_case is not None:
                 previous = replay = closure_case
+    if replay is not None:
+        return replay[0], replay[1], None, True
     asset = previous[0] if previous else OperationsKnowledgeAssetEntity(**entity_scope,
         domain_id=domain_id, asset_id=uuid7(), asset_kind="DIAGNOSIS_CASE", display_name=recovery.title,
         status="PROCESSING", security_level=prepared.security_level, created_by=actor, updated_by=actor)
@@ -283,8 +285,10 @@ async def register_report_case_intake(*, uow, domain_id, prepared, recovery, ent
             ("TARGET_ID", prepared.target_id), ("DATABASE_TYPE", environment.get("database_type")),
             ("DATABASE_VERSION", environment.get("database_version")), ("PLATFORM", environment.get("platform")),
             ("PROBLEM_CLASS", prepared.report_type), ("TOPOLOGY", environment.get("topology"))) if value]
-    index = OperationsKnowledgeIndexEntity(**scope, asset_version_id=version_id, collection_id=recovery.collection_id,
-        bundle_id=recovery.bundle_id, bundle_revision_id=recovery.bundle_revision_id, index_status="PENDING_APPROVAL")
+    identity = await documents.register(uow, access, staged=staged,
+        asset_id=asset.asset_id, asset_version_id=version_id)
+    index = OperationsKnowledgeIndexEntity(**scope, asset_version_id=version_id,
+        **identity, index_status="PROCESSING")
     if previous:
         if not replay:
             if asset.current_version_id is not None:

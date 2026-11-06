@@ -86,8 +86,10 @@ from platform_core.contracts.aiops import AIOpsCapability
 from platform_core.managed_credentials import ManagedCredentialCipher
 from platform_core.prompts import PromptResolver
 from platform_core.dictionary import ModelCategory
-from platform_clients.knowledge_core import KnowledgeCoreClient
+from aiops_agent.composition.knowledge_business import install_business_knowledge
 from platform_clients.model import AIModelConfigClient
+from platform_clients.agent_runtime import AgentRuntimeClient
+from aiops_agent.application.knowledge_child import OperationsKnowledgeChild
 
 
 async def _resolve_model_snapshot(
@@ -240,17 +242,13 @@ def create_aiops_worker_probe(
             prompt_registry=diagnosis_prompts,
             max_extracted_chars=resolved.limits.max_input_chars,
         )
-        knowledge_core_client = KnowledgeCoreClient(
-            base_url=resolved.clients.knowledge_core.base_url,
-            caller_service=config.service_name,
-            audience=resolved.clients.knowledge_core.audience,
-            timeout_seconds=resolved.clients.knowledge_core.timeout_seconds,
-            session=client_session,
-        )
+        operations_documents = install_business_knowledge(app,
+            settings=resolved, uow_factory=runtime.uow_factory, caller_service=config.service_name,
+            register_routes=False)
         operations_knowledge_service = OperationsKnowledgeService(
             plan_capture_reader=plan_capture_reader,
             uow_factory=runtime.uow_factory,
-            knowledge_core=knowledge_core_client,
+            documents=operations_documents,
             model_catalogs=model_catalogs,
             structured_model=diagnosis_model_client,
             prompt_registry=diagnosis_prompts,
@@ -281,7 +279,6 @@ def create_aiops_worker_probe(
             diagnosis_model_client=diagnosis_model_client,
             diagnosis_prompt_registry=diagnosis_prompts,
             diagnostic_registry=diagnostic_registry,
-            knowledge_core_client=knowledge_core_client,
             operations_knowledge_service=operations_knowledge_service,
             diagnosis_caller_service=config.service_name,
             action_registry=action_registry,
@@ -403,6 +400,10 @@ def create_aiops_worker_probe(
                     ),
                     capability_adapters={
                         AIOpsCapability.KNOWLEDGE_QA: KnowledgeQuestionAdapter(
+                            runtime_child=OperationsKnowledgeChild(service=operations_knowledge_service,
+                            client=AgentRuntimeClient(base_url=resolved.clients.agent_runtime.base_url,
+                                audience=resolved.clients.agent_runtime.audience, caller_service=config.service_name,
+                                timeout_seconds=resolved.clients.agent_runtime.timeout_seconds)),
                             knowledge_service=operations_knowledge_service,
                             structured_model=diagnosis_model_client,
                             prompt_registry=diagnosis_prompts,

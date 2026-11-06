@@ -14,12 +14,11 @@ from aiops_agent.application.case_applicability import (
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.knowledge_ranking import knowledge_rank_scorecard, knowledge_rank_key, RANKING_POLICY
 from aiops_agent.contracts.knowledge import DiagnosisCaseProfile
-from platform_clients.knowledge_core import KnowledgeCoreClientError
 
 
 @dataclass(frozen=True)
 class KnowledgeSearchBudget:
-    """业务范围扫描和 KC 分片预算，不是模型生成长度或用户要求的结果数。"""
+    """业务范围扫描和本 App 检索分片预算，不是模型生成长度或用户要求的结果数。"""
 
     max_candidates: int = 512
     registry_page_size: int = 64
@@ -34,7 +33,7 @@ class KnowledgeSearchBudget:
         if not 1 <= self.registry_page_size <= 128 or not 1 <= self.discovery_scope_size <= 1000:
             raise ValueError("知识范围分页或分片预算无效")
         if not 1 <= self.discovery_per_collection <= 100 or not 1 <= self.evidence_batch_size <= 128:
-            raise ValueError("KC 召回预算超出共享合同")
+            raise ValueError("召回预算超出本 App 合同")
         if not 1 <= self.semantic_case_budget <= 20:
             raise ValueError("案例适用性单批预算须处于 1 至 20")
 
@@ -64,8 +63,9 @@ def _snapshot(asset, version, index):
         "asset_kind": str(asset.asset_kind), "title": str(manifest.get("title") or asset.display_name),
         "version": int(version.version_no), "profile": profile,
         "created_at": getattr(version, "created_at", None),
-        "collection_id": index.collection_id, "bundle_revision_id": index.bundle_revision_id,
-        "bundle_id": getattr(index, "bundle_id", None) if str(asset.asset_kind) == "DIAGNOSIS_CASE" else None,
+        "index_ref_id": str(index.index_ref_id),
+        **{key: str(getattr(index, key)) for key in
+           ("document_id", "document_version_id", "ingestion_job_id", "parse_run_id", "index_generation_id")},
     }
 
 
@@ -113,7 +113,7 @@ async def search_published_knowledge(
         source_kinds=request.source_kinds, knowledge_base_ids=knowledge_base_ids,
         max_security_level=request.max_security_level, scope_filters=filters)
     snapshots, scanned, cursor, exhausted = [], 0, None, False
-    # 短分页事务；禁止把 ORM 对象带到 KC 调用后再访问。
+    # 短分页事务；禁止把 ORM 对象带到检索调用后再访问。
     while scanned < budget.max_candidates:
         page_size = min(budget.registry_page_size, budget.max_candidates - scanned)
         async with service._uow_factory() as uow:
@@ -173,13 +173,13 @@ async def search_published_knowledge(
             rows = await uow.operations_knowledge.list_published_candidates(
                 **scope, limit=None,
                 asset_version_ids=tuple(UUID(row["asset_version_id"]) for row in snapshots),
-                bundle_revision_ids=tuple(row["bundle_revision_id"] for row in snapshots),
+                document_version_ids=tuple(row["document_version_id"] for row in snapshots),
             )
             for asset, version, index in rows:
                 if await _eligible_case(service, uow=uow, domain_id=domain_id,
                     agent_id=agent_id, asset=asset, version=version):
-                    current.add((str(version.asset_version_id), str(index.bundle_revision_id)))
-        return [row for row in snapshots if (row["asset_version_id"], str(row["bundle_revision_id"])) in current]
+                    current.add((str(version.asset_version_id), str(index.document_version_id), str(index.parse_run_id), str(index.index_generation_id)))
+        return [row for row in snapshots if (row["asset_version_id"], row["document_version_id"], row["parse_run_id"], row["index_generation_id"]) in current]
 
     if request.purpose == "CATALOG":
         catalog = await revalidate_snapshots()
@@ -201,86 +201,60 @@ async def search_published_knowledge(
             )
         if case_search_context is None:
             return response("KNOWLEDGE_SCOPE_CHANGED", [], ["当前 Agent 或目标已变化，请重新检索。"])
-    by_revision = {str(row["bundle_revision_id"]): row for row in snapshots}
-    discoveries, evidence_items, discovery_scores = {}, [], {}
-    try:
-        for offset in range(0, len(snapshots), budget.discovery_scope_size):
-            shard = snapshots[offset:offset + budget.discovery_scope_size]
-            allowed = {str(row["bundle_revision_id"]) for row in shard}
-            discovery = await service._kc.discover(
-                **kc_scope, query=request.query,
-                collection_ids=sorted({row["collection_id"] for row in shard}, key=str),
-                bundle_revision_ids=[row["bundle_revision_id"] for row in shard],
-                agent_id=agent_id, auth_context=context, max_security_level=request.max_security_level,
-                per_collection_limit=budget.discovery_per_collection,
-            )
-            diagnostics["discovery_shards"] += 1
-            warnings.extend(str(value) for value in discovery.get("warnings") or ())
-            for rank, candidate in enumerate(discovery.get("candidates") or (), start=1):
-                revision = str(candidate.get("bundle_revision_id") or "")
-                if revision not in allowed:
-                    continue
-                expected = by_revision[revision]
-                if candidate.get("collection_id") is not None and str(candidate["collection_id"]) != str(expected["collection_id"]):
-                    continue
-                discoveries[revision] = dict(candidate)
-                discovery_scores[revision] = max(discovery_scores.get(revision, 0.0),
-                    _number(candidate.get("rrf_score")) or 1.0 / (60 + rank))
-        if not discoveries:
-            return response("NO_EVIDENCE_MATCH", [], ["当前发布版本没有形成正文命中"])
-        candidates = list(discoveries.values())
-        for offset in range(0, len(candidates), budget.evidence_batch_size):
-            batch = candidates[offset:offset + budget.evidence_batch_size]
-            allowed = {str(candidate["bundle_revision_id"]) for candidate in batch}
-            evidence = await service._kc.retrieve_evidence(
-                **kc_scope, query=request.query, candidates=batch,
-                agent_id=agent_id, auth_context=context, max_security_level=request.max_security_level,
-                max_evidence=min(128, max(request.max_results * 2, len(batch))),
-            )
-            diagnostics["evidence_batches"] += 1
-            warnings.extend(str(value) for value in evidence.get("warnings") or ())
-            evidence_items.extend(item for item in evidence.get("citations") or ()
-                if isinstance(item, dict) and str(item.get("bundle_revision_id") or "") in allowed)
-        # 核对 CONTENT 文件的精确正文哈希后才扩展上下文，MANIFEST 不能充当诊断正文。
-        case_documents = {}
-        for revision_id in dict.fromkeys(str(item.get("bundle_revision_id") or "") for item in evidence_items):
-            candidate = by_revision.get(revision_id)
-            if candidate is None or candidate["asset_kind"] != "DIAGNOSIS_CASE":
+    by_revision = {str(row["document_version_id"]): row for row in snapshots}
+    evidence_items, discovery_scores, case_documents = [], {}, {}
+    from datetime import timedelta
+    from platform_core.identity import uuid7
+    from knowledge_algorithms.contracts.query import QueryInput, QueryMode
+    from knowledge_algorithms.contracts.wire import encode
+    access = service._documents.access(context)
+    retrieval = service._documents.retrieval
+    batch_size = min(retrieval.limits.max_versions, budget.discovery_scope_size)
+    for offset in range(0, len(snapshots), batch_size):
+        shard = snapshots[offset:offset + batch_size]
+        async with service._uow_factory() as uow:
+            resource_ref = await uow.knowledge_documents.create_query_ticket(access, ticket_id=uuid7(),
+                agent_id=agent_id, target_id=target_id, request=request, snapshots=shard, filters=filters,
+                expires_at=retrieval.clock() + timedelta(seconds=retrieval.limits.scope_ttl_seconds))
+            await uow.commit()
+        authorized = await retrieval.create_scope(access, resource_ref=resource_ref)
+        receipt = await retrieval.retrieve(access, scope=authorized, profile_ref="default",
+            query=QueryInput(QueryMode.RELEVANCE, min(100, max(request.max_results * 3, len(shard))), ("TEXT", "TABLE"), text=request.query))
+        diagnostics["discovery_shards"] += 1
+        diagnostics["evidence_batches"] += 1
+        allowed = {row["document_version_id"]: row for row in shard}
+        for rank, evidence in enumerate(receipt.evidence_set.evidence, start=1):
+            candidate = allowed.get(evidence.key.document_version_ref)
+            if (candidate is None or evidence.key.owner_binding_ref != "aiops"
+                or evidence.key.parse_run_ref != candidate["parse_run_id"]):
                 continue
-            if candidate["bundle_id"] is None:
+            if not evidence.mime_type.startswith("text/"):
                 continue
-            revision = await service._kc.get_revision_status(
-                **kc_scope, bundle_id=candidate["bundle_id"], bundle_revision_id=UUID(revision_id),
-                include_members=True, auth_context=context,
-            )
-            if (
-                str(revision.get("bundle_revision_id") or "") != revision_id
-                or revision.get("status") != "READY"
-                or revision.get("approval_status") != "APPROVED"
-                or revision.get("withdrawn_at") is not None
-            ):
-                continue
-            expected_hash = candidate["profile"]["knowledge_projection"]["body_sha256"]
-            case_documents[revision_id] = {
-                str(member["document_version_id"]) for member in revision.get("members") or ()
-                if member.get("document_version_id") and member.get("document_role") == "CONTENT"
-                and member.get("content_hash_sha256") == expected_hash
-                and member.get("member_status") in {"READY", "COMPLETED"}
-            }
-    except KnowledgeCoreClientError as exc:
-        raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
-            message="运维知识正文检索暂时不可用", status_code=503, retryable=True) from exc
-
+            descriptor, chunks = await retrieval.stream_content(access, retrieval_ref=receipt.retrieval_ref,
+                stable_key=evidence.key.stable_key)
+            body = b""
+            async for block in chunks:
+                body += block
+            text = body.decode("utf-8")
+            identity = candidate["document_version_id"]
+            discovery_scores[identity] = max(discovery_scores.get(identity, 0.), 1. / (60 + rank))
+            evidence_items.append({"document_version_id": identity, "parse_run_id": evidence.key.parse_run_ref, "quote": text,
+                "locator": {"evidence_key": encode(evidence.key), "locators": encode(evidence.locators),
+                    "source_keys": encode(evidence.source_keys), "source_spans": encode(evidence.source_spans),
+                    "retrieval_ref": receipt.retrieval_ref, "content_hash": descriptor.content_hash,
+                    "scope_hash": authorized.scope_hash, "owner_binding_ref": "aiops"}})
+            if candidate["asset_kind"] == "DIAGNOSIS_CASE":
+                record = await service._documents.inspect(access, UUID(identity))
+                if record["source_hash"] == candidate["profile"]["knowledge_projection"]["body_sha256"]:
+                    case_documents[identity] = {identity}
     # 正文及语义判断完成后统一重验，期间不持有数据库事务。
     grouped, scores = {}, {}
     for item in evidence_items:
-        revision = str(item.get("bundle_revision_id") or "")
+        revision = str(item.get("document_version_id") or "")
         candidate = by_revision.get(revision)
-        if candidate is None or (
-            item.get("collection_id") is not None and str(item["collection_id"]) != str(candidate["collection_id"])
-        ):
+        if candidate is None:
             continue
-        citation = knowledge_citation_pack(dict(item))
+        citation = dict(item) if str(item.get("quote") or "").strip() else None
         if citation is None:
             continue
         if candidate["asset_kind"] == "DIAGNOSIS_CASE":
@@ -360,9 +334,18 @@ async def search_published_knowledge(
     checked = await revalidate_snapshots()
     if checked is None:
         return response("KNOWLEDGE_SCOPE_CHANGED", [], ["检索期间 Agent 授权、模型或目标环境已变化，请重新检索。"])
-    current = {(row["asset_version_id"], str(row["bundle_revision_id"])) for row in checked}
-    grouped = {key: row for key, row in grouped.items()
-        if (key, str(candidates_by_version[key]["bundle_revision_id"])) in current}
+    current = {(row["asset_version_id"], str(row["document_version_id"])) for row in checked}
+    # 多文件版本逐条重验，不能用最后一个文档的授权代替其它文件。
+    for key in tuple(grouped):
+        row = grouped[key]
+        row["citation_pack"] = [citation for citation in row["citation_pack"]
+            if (key, str(citation["document_version_id"])) in current]
+        if not row["citation_pack"]:
+            del grouped[key]
+        else:
+            cited = {item["document_version_id"] for item in row["citation_pack"]}
+            row["document_bindings"] = [{name: value for name, value in item.items() if name != "created_at"}
+                for item in checked if item["asset_version_id"] == key and item["document_version_id"] in cited]
     ranking_time = datetime.now(UTC)
     for key, row in grouped.items():
         row["ranking"] = knowledge_rank_scorecard(candidate=candidates_by_version[key], result=row,
@@ -417,63 +400,3 @@ async def _current_knowledge_authorization(*, uow, domain_id, agent_id, target_i
         "source_kinds": source_kinds, "knowledge_base_ids": bases, "tag_ids": tags,
         "max_security_level": min(request.max_security_level, int(policy.get("max_security_level") or 1)),
     }), bases
-
-
-def knowledge_citation_pack(item):
-    """把 KC CitationGroup 规范化为 AIOps 可直接引用的正文与定位。"""
-    direct_text = next(
-        (
-            str(item.get(key) or "").strip()
-            for key in ("quote", "text", "content", "content_text")
-            if str(item.get(key) or "").strip()
-        ),
-        "",
-    )
-    excerpts: list[str] = [direct_text] if direct_text else []
-    evidence_refs: list[dict[str, Any]] = []
-    seen_evidence: set[str] = set()
-    raw_items = item.get("items")
-    if isinstance(raw_items, list):
-        for raw_group_item in raw_items:
-            if not isinstance(raw_group_item, dict):
-                continue
-            evidence = raw_group_item.get("evidence")
-            if not isinstance(evidence, dict):
-                continue
-            evidence_id = str(evidence.get("evidence_id") or "")
-            dedupe_key = evidence_id or str(evidence.get("content_hash") or "")
-            if dedupe_key and dedupe_key in seen_evidence:
-                continue
-            if dedupe_key:
-                seen_evidence.add(dedupe_key)
-            content_text = str(evidence.get("content_text") or "").strip()
-            if content_text:
-                excerpts.append(content_text)
-            evidence_refs.append(
-                {
-                    "evidence_id": evidence_id or None,
-                    "role": str(raw_group_item.get("final_role") or ""),
-                    "heading_path": list(evidence.get("heading_path") or ()),
-                    "locator": dict(evidence.get("locator") or {}),
-                }
-            )
-    quote = "\n\n".join(dict.fromkeys(excerpts)).strip()
-    if not quote:
-        return None
-    locator = dict(item.get("locator") or {})
-    for key in (
-        "citation_id",
-        "collection_id",
-        "bundle_id",
-        "bundle_revision_id",
-        "document_version_id",
-        "parse_view_id",
-        "primary_evidence_ids",
-        "structural_context_ids",
-        "neighbor_evidence_ids",
-    ):
-        if item.get(key) is not None:
-            locator[key] = item[key]
-    if evidence_refs:
-        locator["evidence_refs"] = evidence_refs
-    return {**item, "quote": quote, "locator": locator}

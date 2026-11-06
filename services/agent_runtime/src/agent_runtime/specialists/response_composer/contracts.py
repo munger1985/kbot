@@ -15,19 +15,19 @@ class _Contract(BaseModel):
 
 
 class ReferenceCard(_Contract):
-    reference_type: Literal["DOCUMENT"] = "DOCUMENT"
-    citation_id: UUID
+    """公开 App 知识引用，不公开存储句柄或旧 KC 身份。"""
+
+    reference_type: Literal["APP_KNOWLEDGE"] = "APP_KNOWLEDGE"
     citation_label: str
-    collection_id: UUID
-    bundle_id: UUID
-    bundle_revision_id: UUID
-    document_id: UUID
-    document_version_id: UUID
-    title: str
-    locator: dict[str, Any] = Field(default_factory=dict)
-    locator_schema_version: str
-    evidence_ids: tuple[UUID, ...]
-    quote: str
+    run_id: UUID
+    retrieval_ref: UUID
+    document_version_id: str
+    parse_run_id: str
+    evidence_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    owner_app_id: Literal["knowledge_retrieval", "aiops"]
+    locators: tuple[dict[str, Any], ...]
+    role: Literal["PRIMARY", "CONTEXT", "REFERENCED"]
+    title: str = ""
 
 
 class AIOpsReferenceCard(_Contract):
@@ -60,6 +60,7 @@ class GroundedAnswer(_Contract):
     query_results: tuple[dict[str, Any], ...] = ()
     visualizations: tuple[dict[str, Any], ...] = ()
     warnings: tuple[str, ...] = ()
+    knowledge_composition: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_reference_projection(self):
@@ -73,13 +74,6 @@ class GroundedAnswer(_Contract):
             raise ValueError("used_citation_labels 不得包含重复标签")
         if len(reference_labels) != len(self.references):
             raise ValueError("references 不得包含重复引用标签")
-        document_bundle_ids = [
-            item.bundle_id
-            for item in self.references
-            if isinstance(item, ReferenceCard)
-        ]
-        if len(document_bundle_ids) != len(set(document_bundle_ids)):
-            raise ValueError("同一个 Bundle 只能生成一个附件引用")
         if set(used) != set(mentioned):
             raise ValueError("回答正文引用与 used_citation_labels 不一致")
         if set(reference_labels) != set(used):

@@ -1,0 +1,115 @@
+{
+  "schema_version": "knowledge.app_algorithm_golden.v1",
+  "owner": "knowledge_retrieval",
+  "fixture_kind": "APP_OWNED_SYNTHETIC_CONTRACT",
+  "real_data": false,
+  "figure_label": "图 1-1",
+  "dataset_revision": "knowledge_retrieval/synthetic/v1",
+  "cases": [
+    {
+      "id": "parse-development",
+      "split": "development",
+      "kind": "PARSE",
+      "expected_status": "COMPLETE",
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "text-development",
+      "split": "development",
+      "kind": "TEXT_TO_TEXT",
+      "expected_primary": [
+        "paragraph"
+      ],
+      "expected_linked": [
+        "figure",
+        "image"
+      ],
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "image-validation",
+      "split": "validation",
+      "kind": "IMAGE_TO_IMAGE",
+      "expected_primary": [
+        "figure"
+      ],
+      "expected_linked": [
+        "paragraph",
+        "image"
+      ],
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "text-image-contract-holdout",
+      "split": "contract_holdout",
+      "kind": "TEXT_TO_IMAGE",
+      "expected_primary": [
+        "figure"
+      ],
+      "expected_linked": [
+        "paragraph",
+        "image"
+      ],
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "optional-failure-contract-holdout",
+      "split": "contract_holdout",
+      "kind": "OPTIONAL_FAILURE",
+      "expected_primary": [
+        "paragraph"
+      ],
+      "expected_status": "PARTIAL",
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "revocation-contract-holdout",
+      "split": "contract_holdout",
+      "kind": "FINAL_REVOCATION",
+      "expected_primary": [
+        "paragraph"
+      ],
+      "forbidden": [
+        "figure"
+      ],
+      "expected_status": "PARTIAL",
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "no-access-contract-holdout",
+      "split": "contract_holdout",
+      "kind": "NO_ACCESS",
+      "expected_primary": [],
+      "expected_reason": "NO_ACCESSIBLE_PAYLOAD",
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "required-failure-contract-holdout",
+      "split": "contract_holdout",
+      "kind": "REQUIRED_FAILURE",
+      "expected_primary": [],
+      "expected_status": "FAILED",
+      "expected_reason": "CHANNEL_FAILED",
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "foreign-owner-contract-holdout",
+      "split": "contract_holdout",
+      "kind": "CROSS_APP",
+      "expected_error": "SCOPE_CLOSURE_BROKEN",
+      "forbidden_backend_calls": [
+        "load"
+      ],
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    },
+    {
+      "id": "empty-validation",
+      "split": "validation",
+      "kind": "EMPTY",
+      "expected_primary": [],
+      "expected_status": "EMPTY",
+      "expected_reason": "NO_MATCH",
+      "text": "知识检索合成资料：如图 1-1 所示。"
+    }
+  ]
+}

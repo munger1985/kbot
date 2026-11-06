@@ -1,19 +1,22 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>知识检索 · 上传资料</title>
-<link rel="stylesheet" href="./css/knowledge.css?v=20261105_3"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261105_3"><link rel="stylesheet" href="./css/reference-upload.css?v=20261105_3"><link rel="stylesheet" href="./css/alignment.css?v=20261105_3"></head>
-<body class="business-app-knowledge_retrieval" data-page="upload"><main class="knowledge-main platform-home-page knowledge-retrieval-page knowledge-upload-page"><header class="platform-home-header"><div class="login-brand"><span class="brand-mark">K</span><strong>上传资料</strong></div><a class="text-button" href="./knowledge.html">返回知识检索</a></header>
-<section class="platform-home-hero"><div><p class="eyebrow">当前业务空间</p><h1>上传资料</h1><p>选择资料的组织方式并提交到知识库。系统完成完整性校验后进入审核，审核通过才会开始解析和索引。</p></div></section>
-<section class="notice upload-receipt" id="upload-receipt" role="status" hidden></section>
-<section class="knowledge-upload-workbench"><form class="knowledge-upload-form" id="library-upload-form">
-<section class="upload-form-section"><header class="upload-section-heading"><span>1</span><div><h2>选择目标与组织方式</h2><p>知识库决定资料的访问边界；组织方式决定文件如何形成知识对象。</p></div></header>
-<label class="control-field"><span class="field-label">知识库</span><select id="library-collection" required aria-label="知识库"><option value="">正在读取知识库…</option></select></label>
-<fieldset class="upload-mode-picker"><legend>资料组织方式</legend>
-<label class="upload-mode-option selected"><input type="radio" name="grouping" value="EACH_FILE" checked><span><strong>多个独立文件</strong><small>每个文件分别形成一个独立知识对象，适合彼此无关联的文档。</small></span></label>
-<label class="upload-mode-option"><input type="radio" name="grouping" value="SINGLE_BUNDLE"><span><strong>组成同一个 Bundle</strong><small>多个文件共同描述一个知识对象，可分别设置正文或补充材料。</small></span></label></fieldset>
-<label class="control-field upload-bundle-title" id="upload-bundle-field" hidden><span class="field-label">Bundle 名称（可选）</span><input id="upload-bundle-title" maxlength="512" placeholder="留空则使用上传时间"></label></section>
-<section class="upload-form-section"><header class="upload-section-heading"><span>2</span><div><h2>添加文件</h2><p>可以一次选择多个文件，系统会分别受理和返回结果。</p></div></header>
-<div class="upload-drop-zone" id="upload-drop-zone"><input class="upload-file-input" id="upload-picker" type="file" multiple><strong>拖放文件到这里</strong><p>或从本机选择一个或多个文件；再次选择会追加到当前列表。</p><button class="secondary-button" type="button" id="upload-choose">选择文件</button></div>
-<section class="upload-file-ledger" id="upload-ledger" aria-label="待上传文件" hidden><header><div><strong>待上传文件</strong><span id="upload-summary"></span></div><button class="text-button" type="button" id="upload-clear">清空列表</button></header><div id="upload-files"></div></section></section>
-<footer class="upload-submit-bar"><div><strong id="upload-submit-summary">提交为 0 个独立知识对象</strong><span>提交前会在浏览器计算 SHA-256；受理成功不代表已经可以检索。</span></div><button class="primary-button" id="upload-submit" type="submit" disabled>提交资料</button></footer>
-</form></section></main>
-<script src="../runtime-config.js"></script><script src="./js/knowledge-auth.js?v=20261105_3"></script><script src="./js/knowledge-api.js?v=20261105_3"></script><script src="./js/knowledge-shell.js?v=20261105_confirm1"></script><script src="./js/knowledge-library.js?v=20261105_confirm1"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>知识检索 · 上传资料</title>
+  <link rel="stylesheet" href="./css/knowledge.css?v=20261106">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261106">
+  <link rel="stylesheet" href="./css/alignment.css?v=20261106">
+  <link rel="stylesheet" href="./css/knowledge-workspace.css?v=20261106">
+</head>
+<body class="business-app-knowledge_retrieval" data-page="upload">
+<main class="knowledge-main platform-home-page knowledge-retrieval-page">
+  <header class="app-page-head"><div><p class="eyebrow">知识资料治理</p><h1>上传资料</h1><p>解析、索引、审核与发布独立展示；数据由当前 App 独占保存。</p></div></header>
+  <section id="knowledge-owned-workspace" class="knowledge-owned-workspace table-card" aria-label="知识资料工作区"></section>
+</main>
+<script src="../runtime-config.js"></script>
+<script src="./js/knowledge-auth.js?v=20261106"></script>
+<script src="./js/knowledge-api.js?v=20261106"></script>
+<script src="./js/knowledge-shell.js?v=20261106"></script>
+<script src="./js/knowledge-library-workspace.js?v=20261106"></script>
+</body>
+</html>

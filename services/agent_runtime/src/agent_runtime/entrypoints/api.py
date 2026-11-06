@@ -38,6 +38,7 @@ from agent_runtime.domain.skills import SkillRegistry
 from agent_runtime.persistence import create_agent_runtime_uow
 from agent_runtime.application.notifications import AgentRunOutboxPublisher
 from agent_runtime.specialists import register_builtin_manifests
+from agent_runtime.composition.knowledge_runtime import RuntimeKnowledgeIntegration
 from agent_runtime.specialists.root import RootAgentPlanner
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
@@ -73,6 +74,7 @@ async def lifespan(app: FastAPIOffline):
     )).setup()
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
+    app.state.runtime_audience = SERVICE_NAME
     app.state.agent_runtime_budget = {
         "max_tasks": settings.worker.max_tasks_per_run,
         "max_parallel_tasks": settings.worker.max_parallel_tasks,
@@ -154,6 +156,8 @@ async def lifespan(app: FastAPIOffline):
             app_route_planners={},
         ),
         model_resolver=model_resolver,
+        knowledge_integration=RuntimeKnowledgeIntegration(settings=settings, caller_service=SERVICE_NAME,
+            uow_factory=uow_factory, prompt_resolver=prompt_resolver),
         notification_publisher=AgentRunOutboxPublisher(),
     )
     app.state.agent_runtime_service = runtime_service

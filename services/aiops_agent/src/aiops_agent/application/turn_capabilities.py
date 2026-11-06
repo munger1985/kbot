@@ -28,14 +28,6 @@ class CapabilityResult:
     evidence: tuple[dict[str, Any], ...] = ()
 
 
-class KnowledgeAnswerDraft(BaseModel):
-    """知识回答只允许引用本次检索提供的稳定标签。"""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    answer_markdown: str = Field(min_length=1, max_length=16000)
-    citation_labels: tuple[str, ...] = Field(max_length=20)
-
 
 def _runtime(internal_scope: dict[str, Any]) -> dict[str, Any]:
     return dict(internal_scope.get("runtime_context") or {})
@@ -63,11 +55,12 @@ def _target_ids(internal_scope: dict[str, Any]) -> tuple[UUID, ...]:
 
 
 def _knowledge_auth(runtime: dict[str, Any]):
-    return create_service_auth_context(
-        caller_service=str(runtime["caller_service"]),
-        request_id=str(runtime["request_id"]),
-        trace_id=str(runtime["trace_id"]),
-    )
+    context = create_service_auth_context(caller_service=str(runtime["caller_service"]),
+        request_id=str(runtime["request_id"]), trace_id=str(runtime["trace_id"]))
+    return context.model_copy(update={"app_id": "aiops", "domain_id": str(runtime["domain_id"]),
+
+        "asserted_user_id": str(runtime["actor_id"]),
+        "scopes": ("knowledge.scope.create", "knowledge.retrieve", "knowledge.content.read")})
 
 
 def _step_parameters(
@@ -106,7 +99,9 @@ class KnowledgeQuestionAdapter:
         prompt_registry,
         model_resolver: Callable[[UUID], Awaitable[dict[str, str]]],
         caller_service: str,
+        runtime_child=None,
     ) -> None:
+        self._child = runtime_child
         self._knowledge = knowledge_service
         self._model = structured_model
         self._prompts = prompt_registry
@@ -152,6 +147,22 @@ class KnowledgeQuestionAdapter:
             )
         auth = _knowledge_auth({**runtime, "caller_service": self._caller})
         targets = _target_ids(internal_scope)
+        if not catalog_mode:
+            try:
+                if self._child is None:
+                    raise ValueError("知识子执行尚未装配")
+                markdown, evidence = await self._child.answer(context=auth,
+                    turn_id=UUID(str(runtime["turn_id"])), agent_id=UUID(str(runtime["agent_id"])),
+                    agent_version_id=UUID(str(runtime["agent_version_id"])),
+                    target_id=targets[0] if len(targets) == 1 else None,
+                    request=KnowledgeSearchRequest(query=str(runtime["question"])[:4000], purpose="EXPLAIN",
+                        knowledge_base_ids=policy.knowledge_base_ids,
+                        tag_ids=tuple(str(item) for item in policy.tag_ids), source_kinds=policy.source_kinds,
+                        max_results=policy.maximum_references, max_security_level=policy.max_security_level))
+                return CapabilityResult(capability, True, markdown, evidence=evidence)
+            except Exception:
+                return CapabilityResult(capability, False, "知识子执行暂时不可用，未生成无来源回答。",
+                    "OPERATIONS_KNOWLEDGE_UNAVAILABLE")
         try:
             result = await self._knowledge.search(
                 domain_id=int(runtime["domain_id"]),
@@ -211,98 +222,6 @@ class KnowledgeQuestionAdapter:
                 markdown="\n".join(lines),
                 evidence=tuple(evidence),
             )
-        raw_citations = [
-            citation
-            for item in result.get("results", ())
-            for citation in item.get("citation_pack", ())
-        ]
-        if not raw_citations:
-            return CapabilityResult(
-                capability,
-                False,
-                "没有检索到可以直接支持回答的已发布运维知识。",
-                "KNOWLEDGE_EVIDENCE_NOT_FOUND",
-            )
-        citations = tuple(
-            {
-                "label": f"K{index}",
-                "source_kind": "KNOWLEDGE",
-                "title": next(
-                    (
-                        str(item.get("title") or "运维知识")
-                        for item in result.get("results", ())
-                        if citation in item.get("citation_pack", ())
-                    ),
-                    "运维知识",
-                ),
-                "asset_version_id": next(
-                    (
-                        str(item.get("asset_version_id") or "")
-                        for item in result.get("results", ())
-                        if citation in item.get("citation_pack", ())
-                    ),
-                    "",
-                ),
-                "quote": _bounded_text(
-                    citation.get("quote")
-                    or citation.get("content")
-                    or citation.get("text")
-                ),
-                "locator": dict(citation.get("locator") or {}),
-                "bundle_revision_id": citation.get("bundle_revision_id"),
-                "document_version_id": citation.get("document_version_id"),
-            }
-            for index, citation in enumerate(raw_citations, start=1)
-        )
-        try:
-            prompt = await self._prompts.resolve("knowledge_answer_compose")
-            generated = await self._model.generate_structured(
-                purpose="aiops_knowledge_answer",
-                output_model=KnowledgeAnswerDraft,
-                model_snapshot=await self._model_resolver(UUID(str(model_id))),
-                prompt_ref={**prompt.ref(), "content": prompt.content},
-                input_payload={
-                    "question": runtime["question"],
-                    "agent_instruction": runtime.get("agent_instruction"),
-                    "knowledge_policy": policy.model_dump(mode="json"),
-                    "evidence": list(citations),
-                },
-                deadline=None,
-                idempotency_key=f"knowledge-answer:{runtime['turn_id']}",
-            )
-            draft = KnowledgeAnswerDraft.model_validate(generated.output)
-        except Exception:
-            return CapabilityResult(
-                capability,
-                False,
-                "已取得运维知识证据，但回答组织模型暂时不可用。",
-                "KNOWLEDGE_COMPOSITION_UNAVAILABLE",
-                citations,
-            )
-        available = {item["label"] for item in citations}
-        selected = tuple(dict.fromkeys(draft.citation_labels))
-        if not selected or not set(selected) <= available:
-            return CapabilityResult(
-                capability,
-                False,
-                "回答组织结果包含无效引用，已阻止输出未经证据支持的内容。",
-                "KNOWLEDGE_CITATION_INVALID",
-                citations,
-            )
-        selected_evidence = tuple(
-            item for item in citations if item["label"] in selected
-        )
-        sources = "\n".join(
-            f"- [{item['label']}] {item['title']}"
-            + (f"：{item['quote']}" if item["quote"] else "")
-            for item in selected_evidence
-        )
-        return CapabilityResult(
-            capability,
-            True,
-            f"{draft.answer_markdown}\n\n### 引用\n{sources}",
-            evidence=selected_evidence,
-        )
 
 
 class RuntimeQueryAdapter:
@@ -516,9 +435,9 @@ class RuntimeQueryAdapter:
                                         "locator": dict(
                                             citation.get("locator") or {}
                                         ),
-                                        "bundle_revision_id": citation.get(
-                                            "bundle_revision_id"
-                                        ),
+                                        "document_version_id": citation.get("document_version_id"),
+                                        "parse_run_id": citation.get("parse_run_id"),
+                                        "index_generation_id": citation.get("index_generation_id"),
                                     }
                                     for citation in citations
                                 ],

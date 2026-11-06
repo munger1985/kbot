@@ -33,6 +33,7 @@ WORKSPACE_PACKAGES = (
         ("resources/*.toml",),
     ),
     WorkspacePackage("packages/platform_clients", "kbot-platform-clients", "platform_clients"),
+    WorkspacePackage("packages/knowledge_algorithms", "kbot-knowledge-algorithms", "knowledge_algorithms"),
     WorkspacePackage("services/model_serving", "kbot-model-serving", "model_serving"),
     WorkspacePackage("services/knowledge_core", "kbot-knowledge-core", "knowledge_core"),
     WorkspacePackage(

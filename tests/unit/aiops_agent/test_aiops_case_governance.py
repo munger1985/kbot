@@ -114,14 +114,14 @@ def test_case_search_filters_invalid_source_before_kc_reads_body():
         uow.operations_knowledge.list_published_candidates.return_value = [(
             SimpleNamespace(asset_id=str(uuid7()), asset_kind="DIAGNOSIS_CASE", display_name="case"),
             SimpleNamespace(asset_version_id=version, version_no=1, profile_json=profile().model_dump()),
-            SimpleNamespace(collection_id=str(uuid7()), bundle_revision_id=str(uuid7())),
+            SimpleNamespace(index_ref_id=uuid7()),
         )]
         class Uow:
             async def __aenter__(self): return uow
             async def __aexit__(self, *args): pass
         service = OperationsKnowledgeService.__new__(OperationsKnowledgeService)
         service._uow_factory = Uow
-        service._kc = SimpleNamespace(discover=AsyncMock())
+        service._documents = SimpleNamespace(retrieval=SimpleNamespace(retrieve=AsyncMock()))
         kwargs = {"domain_id": domain, "agent_id": agent,
             "request": KnowledgeSearchRequest(query="连接失败", knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),)),
             "context": SimpleNamespace()}
@@ -131,7 +131,7 @@ def test_case_search_filters_invalid_source_before_kc_reads_body():
             kwargs["tenant_id"] = uuid7()
         result = await service.search(**kwargs)
         assert not result["results"]
-        service._kc.discover.assert_not_awaited()
+        service._documents.retrieval.retrieve.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -183,32 +183,17 @@ def test_profile_verified_flags_do_not_replace_a_controlled_effect_artifact():
     uow.runs.get_artifact.assert_awaited_once()
 
 
-def test_knowledge_rechecks_publication_after_remote_body_retrieval():
+def test_knowledge_rechecks_publication_after_body_retrieval():
+    from tests.unit.aiops_agent.test_aiops_knowledge_candidate_scope import setup_search
     async def run():
-        domain, revision, version = (str(uuid7()) for _ in range(3))
-        candidate = (
-            SimpleNamespace(asset_id=str(uuid7()), asset_kind="MANUAL", display_name="已撤回手册"),
-            SimpleNamespace(asset_version_id=version, version_no=1, profile_json={"scope": {}}),
-            SimpleNamespace(collection_id=str(uuid7()), bundle_revision_id=revision),
-        )
-        repo = SimpleNamespace(list_published_candidates=AsyncMock(side_effect=[[candidate], []]))
-        from tests.support.aiops_knowledge_scope import active_knowledge_bases_fixture
-        active_knowledge_bases_fixture(repo)
-        class Uow:
-            async def __aenter__(self): return SimpleNamespace(operations_knowledge=repo, agents=knowledge_agent_repository())
-            async def __aexit__(self, *args): pass
-        service = OperationsKnowledgeService.__new__(OperationsKnowledgeService)
-        service._uow_factory = Uow
-        service._kc = SimpleNamespace(
-            discover=AsyncMock(return_value={"candidates": [{"bundle_revision_id": revision}]}),
-            retrieve_evidence=AsyncMock(return_value={"citations": [{"bundle_revision_id": revision, "quote": "不应泄露"}]}),
-        )
-        kwargs = {"domain_id": domain, "agent_id": str(uuid7()),
-            "request": KnowledgeSearchRequest(query="方法", knowledge_base_ids=(UUID(KNOWLEDGE_BASE_ID),)), "context": SimpleNamespace()}
-        import inspect
-        if "tenant_id" in inspect.signature(service.search).parameters:
-            kwargs["tenant_id"] = uuid7()
-        result = await service.search(**kwargs)
+        f = setup_search()
+        original = f.retrieval.stream_content.side_effect
+        async def withdraw(*args, **kwargs):
+            response = await original(*args, **kwargs)
+            f.state.rows = []
+            return response
+        f.retrieval.stream_content.side_effect = withdraw
+        result = await f.service.search(**f.kwargs)
         assert result["results"] == []
-        assert repo.list_published_candidates.await_count == 2
+        assert f.state.rechecks == 1
     asyncio.run(run())

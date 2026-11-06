@@ -24,6 +24,7 @@ from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from model_serving.visual.visual_service import VisualService
 from model_serving.visual.schema import VisualEmbeddingRequest, VisualEmbeddingResponse
+from model_serving.visual.schema import NativeVisualRequest, NativeVisualResponse
 from platform_core.security import create_internal_auth_middleware
 from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
@@ -139,6 +140,18 @@ async def embed_image(req: VisualEmbeddingRequest):
     except Exception as e:
         logger.error(f"[VisualService] embed failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(f"{INTERNAL_API_V1}/represent", response_model=NativeVisualResponse, tags=["AI Service"])
+async def native_representation(req: NativeVisualRequest):
+    """原生多向量文本/图像表示，不混用文本 embedding 空间。"""
+    try:
+        return await visual_service.represent(req.served_model_name,
+            input_kind=req.input_kind, direction=req.direction, text=req.text, image_base64=req.image_base64)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "NATIVE_REPRESENTATION_UNAVAILABLE"}) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail={"code": "NATIVE_REPRESENTATION_FAILED"}) from exc
 
 
 if __name__ == "__main__":

@@ -25,11 +25,10 @@ from platform_clients import (
     KnowledgeRetrievalAppClient,
     KnowledgeRetrievalAppClientError,
     DataQueryClient,
-    KnowledgeCoreClient,
 )
 from platform_core.contracts import (
     AgentExecutionSpec,
-    KnowledgeScopeSnapshotV1,
+    ConversationQueryImage,
     PUBLIC_API_V1,
     UpdateConversationRequest,
     is_grok_provider_model_name,
@@ -41,15 +40,27 @@ from platform_core.dictionary import (
     is_enabled_model_status,
 )
 
-from main_api.api.runs import (
-    _DocumentReference,
-    _document_locator,
-    _effective_security_level,
+from main_api.api.knowledge_stream import (
     _event_stream,
     _parse_cursor,
     _preview_type,
     _reference_not_found,
 )
+
+
+class _DocumentReference(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    reference_type: Literal["APP_KNOWLEDGE"]
+    citation_label: str
+    run_id: UUID
+    retrieval_ref: UUID
+    document_version_id: str
+    parse_run_id: str
+    evidence_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    owner_app_id: Literal["knowledge_retrieval", "aiops"]
+    locators: tuple[dict[str, Any], ...]
+    role: Literal["PRIMARY", "CONTEXT", "REFERENCED"]
+    title: str = ""
 
 
 router = APIRouter(
@@ -90,7 +101,7 @@ class KnowledgeRetrievalPasswordChangePayload(_Payload):
 class KnowledgeRetrievalAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    knowledge_core_id: UUID | None = None
+    library_id: UUID | None = None
     data_model_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     models: dict[str, UUID] = Field(default_factory=dict)
     instruction: str | None = Field(default=None, max_length=32000)
@@ -102,7 +113,7 @@ class KnowledgeRetrievalAgentUpdatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    knowledge_core_id: UUID | None = None
+    library_id: UUID | None = None
     data_model_ids: tuple[UUID, ...] = Field(default=None, max_length=100)
     models: dict[str, UUID] | None = None
     instruction: str | None = Field(default=None, max_length=32000)
@@ -120,6 +131,7 @@ class KnowledgeRetrievalConversationCreatePayload(_Payload):
 
 
 class KnowledgeRetrievalConversationTurnPayload(_Payload):
+    images: tuple[ConversationQueryImage, ...] = Field(default=(), max_length=4)
     input: str = Field(min_length=1, max_length=32000)
     expected_conversation_version: int = Field(ge=1)
     client_metadata: dict[str, Any] = Field(default_factory=dict)
@@ -161,7 +173,7 @@ class KnowledgeRetrievalDomainUpdatePayload(_Payload):
     status: Literal["ACTIVE", "DISABLED"] | None = None
 
 
-class KnowledgeRetrievalKnowledgeCoreCreatePayload(_Payload):
+class KnowledgeRetrievalKnowledgeLibraryCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     default_security_level: int = Field(default=1, ge=0, le=999)
@@ -172,7 +184,7 @@ class KnowledgeRetrievalKnowledgeCoreCreatePayload(_Payload):
     visual_embedding: UUID | None = None
 
 
-class KnowledgeRetrievalKnowledgeCoreUpdatePayload(_Payload):
+class KnowledgeRetrievalKnowledgeLibraryUpdatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
@@ -190,7 +202,7 @@ class KnowledgeRetrievalIntakeReviewPayload(_Payload):
     comment: str | None = Field(default=None, max_length=1000)
 
 
-class KnowledgeRetrievalKnowledgeCoreReprocessPayload(_Payload):
+class KnowledgeRetrievalKnowledgeLibraryReprocessPayload(_Payload):
     document_version_id: UUID
 
 
@@ -279,10 +291,6 @@ def _client(request: Request) -> KnowledgeRetrievalAppClient:
     return cast(KnowledgeRetrievalAppClient, request.app.state.knowledge_retrieval_app_client)
 
 
-def _knowledge(request: Request) -> KnowledgeCoreClient:
-    return cast(KnowledgeCoreClient, request.app.state.knowledge_core_client)
-
-
 def _data_query(request: Request) -> DataQueryClient:
     return cast(DataQueryClient, request.app.state.data_query_client)
 
@@ -332,48 +340,6 @@ def _raise_domain_error(exc: DomainConflictError | DomainLifecycleError) -> None
     if isinstance(exc, DomainConflictError):
         raise HTTPException(409, {"code": "DOMAIN_NAME_CONFLICT", "message": str(exc)}) from exc
     raise HTTPException(exc.status_code, {"code": exc.code, "message": str(exc)}) from exc
-
-
-async def _knowledge_collection_models(
-    request: Request,
-    *,
-    embedding: UUID,
-    parser_ocr: UUID,
-    parser_vlm: UUID | None,
-    parser_llm: UUID | None,
-    visual_embedding: UUID | None,
-) -> dict[str, str]:
-    catalog = await load_model_catalog(request)
-    by_id = {str(item.get("model_id")): item for item in catalog}
-    requested = {"embedding": (embedding, ModelCategory.TXT_EMBEDDING)}
-    requested["parser_ocr"] = (parser_ocr, ModelCategory.OCR)
-    if parser_vlm is not None:
-        requested["parser_vlm"] = (parser_vlm, ModelCategory.VLM)
-    if parser_llm is not None:
-        requested["parser_llm"] = (parser_llm, ModelCategory.LLM)
-    if visual_embedding is not None:
-        requested["visual_embedding"] = (visual_embedding, ModelCategory.IMG_EMBEDDING)
-    models: dict[str, str] = {}
-    for role, (model_id, expected_category) in requested.items():
-        row = by_id.get(str(model_id))
-        if row is None or not is_enabled_model_status(row.get("status")):
-            raise HTTPException(
-                422,
-                {
-                    "code": "KNOWLEDGE_CORE_MODEL_UNAVAILABLE",
-                    "message": f"模型角色 {role} 绑定的模型未启用或不存在",
-                },
-            )
-        if coerce_model_category(row.get("category")) != expected_category:
-            raise HTTPException(
-                422,
-                {
-                    "code": "KNOWLEDGE_CORE_MODEL_CATEGORY_INVALID",
-                    "message": f"模型角色 {role} 的模型类别不正确",
-                },
-            )
-        models[role] = str(model_id)
-    return models
 
 
 def _collection_items(payload: Any) -> list[dict[str, Any]]:
@@ -442,16 +408,12 @@ async def _agent_x_search_model(
 async def _domain_resource_conflicts(request: Request, *, domain_id: int) -> list[str]:
     auth_context = _auth_for_domain(request, domain_id)
     conflicts: list[str] = []
-    collections = _collection_items(
-        await _knowledge(request).list_collections(
-            domain_id=domain_id, auth_context=auth_context
-        )
-    )
+    collections = await request.app.state.knowledge_library_client.libraries(auth_context=auth_context)
     live_collections = [
         item for item in collections if str(item.get("status") or "") not in {"DELETING"}
     ]
     if live_collections:
-        conflicts.append(f"{len(live_collections)} 个 Knowledge Core")
+        conflicts.append(f"{len(live_collections)} 个 资料库")
     agents = await _client(request).list_agents(
         domain_id=domain_id, auth_context=auth_context
     )
@@ -482,15 +444,14 @@ async def _domain_resource_conflicts(request: Request, *, domain_id: int) -> lis
 
 
 
-async def _require_active_knowledge_core(request: Request, *, domain_id: int, knowledge_core_id: UUID | None) -> None:
-    if knowledge_core_id is None:
-        raise HTTPException(422, {"code": "AGENT_KNOWLEDGE_CORE_REQUIRED", "message": "启用 Agent 前必须绑定一个可用 Knowledge Core"})
-    core = await _knowledge(request).get_collection(
-        domain_id=domain_id, collection_id=knowledge_core_id,
-        auth_context=request.state.auth_context,
-    )
-    if core.get("status") != "ACTIVE":
-        raise HTTPException(422, {"code": "AGENT_KNOWLEDGE_CORE_INACTIVE", "message": "绑定的 Knowledge Core 未处于 ACTIVE 状态"})
+async def _require_active_library(request: Request, *, domain_id: int, library_id: UUID | None):
+    if library_id is None:
+        raise HTTPException(422, {"code": "AGENT_LIBRARY_REQUIRED", "message": "启用 Agent 前必须绑定资料库"})
+    library = await request.app.state.knowledge_library_client.library(
+        library_id, auth_context=request.state.auth_context)
+    if library.get("status") != "ACTIVE":
+        raise HTTPException(422, {"code": "AGENT_LIBRARY_INACTIVE", "message": "绑定资料库未启用"})
+    return library
 
 
 async def _require_published_data_models(
@@ -542,65 +503,19 @@ async def _sync_knowledge_data_models(
 
 
 async def _knowledge_execution_spec(
-    request: Request, *, domain_id: int, agent_id: UUID
+    request: Request, *, domain_id: int, agent_id: UUID,
 ) -> dict[str, Any]:
-    """读取 KnowledgeRetrieval Agent 冻结规格并修复其唯一 KC 检索授权。"""
+    """签发 App 自有资料库绑定，精确版本范围由 Runtime 创建 Run 时冻结。"""
     spec = await _client(request).execution_spec(
-        agent_id=agent_id,
-        domain_id=domain_id,
-        auth_context=request.state.auth_context,
-    )
-    resource_context = spec.get("resource_context")
-    collection_ids = (
-        resource_context.get("collection_ids")
-        if isinstance(resource_context, dict)
-        else None
-    )
-    if not isinstance(collection_ids, list) or len(collection_ids) != 1:
-        raise HTTPException(
-            409,
-            {
-                "code": "KNOWLEDGE_RETRIEVAL_AGENT_COLLECTION_INVALID",
-                "message": "Agent 执行规格必须且只能绑定一个 Knowledge Core",
-            },
-        )
-    collection_id = UUID(str(collection_ids[0]))
-    await _require_active_knowledge_core(
-        request, domain_id=domain_id, knowledge_core_id=collection_id
-    )
-    await _knowledge(request).bind_collection(
-        domain_id=domain_id,
-        agent_id=agent_id,
-        collection_id=collection_id,
-        note="智能工作台 Agent 会话检索授权",
-        auth_context=request.state.auth_context,
-    )
-    resolved_scope = await _knowledge(request).resolve_knowledge_scope(
-        domain_id=domain_id,
-        agent_id=agent_id,
-        collection_ids=(collection_id,),
-        auth_context=request.state.auth_context,
-    )
-    security_level = await _effective_security_level(request)
-    scope_payload = {
-        "schema_version": "1.0",
-        "owner_app_id": "knowledge_retrieval",
-        "domain_id": domain_id,
-        "consumer_agent_id": str(agent_id),
-        "consumer_agent_version_id": str(spec["consumer_agent_version_id"]),
-        "collection_ids": list(resolved_scope["collection_ids"]),
-        "bundle_revision_ids": list(resolved_scope["bundle_revision_ids"]),
-        "security_level": security_level,
-        "business_context": {},
-        "business_resource_refs": [],
-        "policy_version": "knowledge-retrieval-scope.v1",
-        "issued_at": datetime.now(UTC).isoformat(),
-    }
-    scope_payload["scope_hash"] = KnowledgeScopeSnapshotV1.calculate_hash(
-        scope_payload
-    )
-    spec = dict(spec)
-    spec["knowledge_scope"] = scope_payload
+        agent_id=agent_id, domain_id=domain_id,
+        auth_context=request.state.auth_context)
+    binding = spec.get("knowledge_binding")
+    if not isinstance(binding, dict) or not binding.get("library_id"):
+        raise HTTPException(409, {"code": "KNOWLEDGE_AGENT_LIBRARY_INVALID"})
+    library = await _require_active_library(request, domain_id=domain_id,
+        library_id=UUID(binding["library_id"]))
+    spec["knowledge_binding"] = {"library_id": library["library_id"],
+        "profile_ref": library["configuration"]["profile_ref"]}
     return AgentExecutionSpec.model_validate(spec).model_dump(mode="json")
 
 
@@ -647,7 +562,7 @@ async def _knowledge_document_reference(
             item
             for item in references or []
             if isinstance(item, dict)
-            and item.get("reference_type") == "DOCUMENT"
+            and item.get("reference_type") == "APP_KNOWLEDGE"
             and item.get("citation_label") == citation_label
         ),
         None,
@@ -895,288 +810,6 @@ async def delete_domain(
         )
     except (DomainConflictError, DomainLifecycleError) as exc:
         _raise_domain_error(exc)
-
-
-@router.get("/knowledge-cores")
-async def list_knowledge_cores(request: Request):
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).list_collections(
-        domain_id=domain_id, auth_context=request.state.auth_context
-    )
-
-
-@router.post("/knowledge-cores", status_code=status.HTTP_201_CREATED)
-async def create_knowledge_core(
-    payload: KnowledgeRetrievalKnowledgeCoreCreatePayload,
-    request: Request,
-):
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    models = await _knowledge_collection_models(
-        request,
-        embedding=payload.embedding,
-        parser_ocr=payload.parser_ocr,
-        parser_vlm=payload.parser_vlm,
-        parser_llm=payload.parser_llm,
-        visual_embedding=payload.visual_embedding,
-    )
-    return await _knowledge(request).create_collection(
-        domain_id=domain_id,
-        payload={
-            "display_name": payload.display_name,
-            "description": payload.description,
-            "default_security_level": payload.default_security_level,
-            "models": models,
-            "metadata": {"owner_app_id": "knowledge_retrieval"},
-        },
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/knowledge-cores/{collection_id}")
-async def get_knowledge_core(collection_id: UUID, request: Request):
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).get_collection(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/knowledge-cores/{collection_id}/processing")
-async def list_knowledge_core_processing(
-    collection_id: UUID, request: Request,
-    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    q: str | None = None, status: str | None = None,
-):
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).list_processing(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        page=page,
-        page_size=page_size,
-        query=q,
-        status=status,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/knowledge-cores/{collection_id}/files")
-async def list_knowledge_core_files(
-    collection_id: UUID, request: Request,
-    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    q: str | None = None, status: str | None = None,
-):
-    """复用 KC 文件目录，不用处理任务模拟知识库文件。"""
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).list_library_files(
-        domain_id=domain_id, collection_id=collection_id, page=page, page_size=page_size,
-        query=q, status=status, auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/preview")
-async def preview_knowledge_core_bundle(
-    collection_id: UUID, bundle_id: UUID, bundle_revision_id: UUID, request: Request,
-):
-    """审核预览和文件详情均由 KC 校验知识库及资料包归属。"""
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).get_bundle_revision_preview(
-        domain_id=domain_id, collection_id=collection_id, bundle_id=bundle_id,
-        bundle_revision_id=bundle_revision_id, auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/documents/{document_version_id}/content")
-async def stream_knowledge_core_file(
-    collection_id: UUID, bundle_id: UUID, bundle_revision_id: UUID,
-    document_version_id: UUID, request: Request,
-    range_header: str | None = Header(default=None, alias="Range"),
-):
-    """按当前会话权限读取源文件，不向页面暴露存储地址或内部路由。"""
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    upstream = await _knowledge(request).stream_source_file(
-        domain_id=domain_id, collection_id=collection_id, bundle_id=bundle_id,
-        bundle_revision_id=bundle_revision_id, document_version_id=document_version_id,
-        range_header=range_header, auth_context=request.state.auth_context,
-    )
-    return StreamingResponse(
-        upstream.body, status_code=upstream.status_code,
-        media_type=upstream.headers.get("content-type", "application/octet-stream"),
-        headers={name: upstream.headers[name] for name in (
-            "accept-ranges", "cache-control", "content-disposition", "content-length",
-            "content-range", "content-security-policy", "x-content-type-options",
-        ) if name in upstream.headers},
-    )
-
-
-@router.get("/knowledge-cores/{collection_id}/approvals")
-async def list_knowledge_core_approvals(collection_id: UUID, request: Request):
-    """列出当前 Knowledge Core 中等待审核的用户资料。"""
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).list_pending_approvals(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.post(
-    "/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/"
-    "{bundle_revision_id}/reprocess",
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def reprocess_knowledge_core_file(
-    collection_id: UUID,
-    bundle_id: UUID,
-    bundle_revision_id: UUID,
-    payload: KnowledgeRetrievalKnowledgeCoreReprocessPayload,
-    request: Request,
-):
-    """重新调度一个失败文件的 KC 解析与后续索引流水线。"""
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).reprocess_revision(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        bundle_id=bundle_id,
-        bundle_revision_id=bundle_revision_id,
-        document_version_id=payload.document_version_id,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.post("/knowledge-cores/{collection_id}/bundle-revisions/{bundle_revision_id}/approval")
-async def review_knowledge_core_intake(
-    collection_id: UUID,
-    bundle_revision_id: UUID,
-    payload: KnowledgeRetrievalIntakeReviewPayload,
-    request: Request,
-):
-    """审核用户资料，批准后由 KC 启动解析和索引流水线。"""
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).review_user_intake(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        bundle_revision_id=bundle_revision_id,
-        decision=payload.decision,
-        comment=payload.comment,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.post("/knowledge-cores/{collection_id}/ingestions/user-files", status_code=status.HTTP_202_ACCEPTED)
-async def upload_knowledge_core_files(collection_id: UUID, request: Request):
-    """将 KnowledgeRetrieval App 的用户文件流式转发至 KC，不在 Main API 落盘。"""
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    content_type = request.headers.get("Content-Type", "")
-    idempotency_key = request.headers.get("Idempotency-Key", "").strip()
-    if not content_type.lower().startswith("multipart/form-data") or not idempotency_key:
-        raise HTTPException(
-            status.HTTP_428_PRECONDITION_REQUIRED,
-            {
-                "code": "KNOWLEDGE_RETRIEVAL_KC_UPLOAD_HEADERS_REQUIRED",
-                "message": "缺少 multipart Content-Type 或 Idempotency-Key",
-            },
-        )
-    upstream = await _knowledge(request).ingest_multipart(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        intake_kind="user-files",
-        content_type=content_type,
-        body=request.stream(),
-        idempotency_key=idempotency_key,
-        auth_context=request.state.auth_context,
-    )
-    return JSONResponse(status_code=upstream.status_code, content=upstream.payload)
-
-
-@router.patch("/knowledge-cores/{collection_id}")
-async def update_knowledge_core(
-    collection_id: UUID,
-    payload: KnowledgeRetrievalKnowledgeCoreUpdatePayload,
-    request: Request,
-):
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    changes = payload.model_dump(exclude_unset=True)
-    knowledge = _knowledge(request)
-    auth_context = request.state.auth_context
-    current = await knowledge.get_collection(
-        domain_id=domain_id, collection_id=collection_id, auth_context=auth_context
-    )
-    if int(current.get("row_version") or 0) != payload.expected_row_version:
-        raise HTTPException(
-            409,
-            {"code": "COLLECTION_VERSION_CONFLICT", "message": "Knowledge Core 已被其他请求修改"},
-        )
-    row_version = payload.expected_row_version
-    profile_fields = {"display_name", "description", "default_security_level"}
-    if profile_fields.intersection(changes):
-        profile = {"expected_row_version": row_version}
-        for key in profile_fields:
-            if key in changes:
-                profile[key] = changes[key]
-        current = await knowledge.update_collection_profile(
-            domain_id=domain_id,
-            collection_id=collection_id,
-            payload=profile,
-            auth_context=auth_context,
-        )
-        row_version = int(current.get("row_version") or row_version)
-    model_fields = {
-        "embedding", "visual_embedding", "parser_ocr", "parser_vlm", "parser_llm",
-    }
-    if model_fields.intersection(changes):
-        current_models = dict(current.get("models") or current.get("models_json") or {})
-        embedding = payload.embedding or UUID(str(current_models["embedding"]))
-        parser_ocr = payload.parser_ocr or UUID(str(current_models["parser_ocr"]))
-        parser_vlm = (
-            payload.parser_vlm
-            if "parser_vlm" in changes
-            else (UUID(str(current_models["parser_vlm"])) if current_models.get("parser_vlm") else None)
-        )
-        parser_llm = (
-            payload.parser_llm
-            if "parser_llm" in changes
-            else (UUID(str(current_models["parser_llm"])) if current_models.get("parser_llm") else None)
-        )
-        visual_embedding = (
-            payload.visual_embedding
-            if "visual_embedding" in changes
-            else (UUID(str(current_models["visual_embedding"])) if current_models.get("visual_embedding") else None)
-        )
-        models = await _knowledge_collection_models(
-            request, embedding=embedding, parser_ocr=parser_ocr,
-            parser_vlm=parser_vlm, parser_llm=parser_llm,
-            visual_embedding=visual_embedding
-        )
-        for role, model_id in current_models.items():
-            if role in changes and changes[role] is None:
-                continue
-            models.setdefault(role, str(model_id))
-        current = await knowledge.update_collection_models(
-            domain_id=domain_id,
-            collection_id=collection_id,
-            payload={"models": models, "expected_row_version": row_version},
-            auth_context=auth_context,
-        )
-        row_version = int(current.get("row_version") or row_version)
-    if payload.status is not None:
-        current = await knowledge.change_collection_status(
-            domain_id=domain_id,
-            collection_id=collection_id,
-            status=payload.status,
-            auth_context=auth_context,
-        )
-    return current
-
-
-@router.delete("/knowledge-cores/{collection_id}", status_code=status.HTTP_202_ACCEPTED)
-async def delete_knowledge_core(collection_id: UUID, request: Request):
-    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_core_manage")
-    return await _knowledge(request).delete_collection(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        auth_context=request.state.auth_context,
-    )
 
 
 @router.get("/data-models/connector-capabilities")
@@ -1712,102 +1345,41 @@ async def stream_knowledge_retrieval_agent_run_events(
 
 
 @router.get("/runs/{run_id}/references/{citation_label}/preview")
-async def get_knowledge_retrieval_reference_preview(
-    run_id: UUID, citation_label: str, request: Request
-):
+async def preview_knowledge_reference(run_id: UUID, citation_label: str, request: Request):
     domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_chat")
-    reference = await _knowledge_document_reference(
-        request,
-        domain_id=domain_id,
-        run_id=run_id,
-        citation_label=citation_label,
-    )
-    preview = await _knowledge(request).get_bundle_revision_preview(
-        domain_id=domain_id,
-        collection_id=reference.collection_id,
-        bundle_id=reference.bundle_id,
-        bundle_revision_id=reference.bundle_revision_id,
-        auth_context=request.state.auth_context,
-    )
-    source_file = next(
-        (
-            item
-            for item in preview.get("files", [])
-            if str(item.get("document_version_id"))
-            == str(reference.document_version_id)
-            and bool(item.get("preview_available"))
-        ),
-        None,
-    )
-    if source_file is None:
-        raise _reference_not_found()
-    mime_type = str(
-        source_file.get("detected_mime_type")
-        or source_file.get("declared_mime_type")
-        or "application/octet-stream"
-    ).split(";", 1)[0].strip().lower()
-    page_no, page_end, bbox = _document_locator(reference)
-    return {
-        "reference_type": "DOCUMENT",
-        "citation_label": reference.citation_label,
-        "title": reference.title,
-        "mime_type": mime_type,
-        "preview_type": _preview_type(mime_type),
-        "page_no": page_no,
-        "page_end": page_end,
-        "bbox": bbox,
-        "content_url": (
-            f"{PUBLIC_API_V1}/apps/knowledge-retrieval/runs/{run_id}/references/"
-            f"{reference.citation_label}/content"
-        ),
-        "download_available": True,
-    }
+    reference = await _knowledge_document_reference(request, domain_id=domain_id,
+        run_id=run_id, citation_label=citation_label)
+    download = await _runtime(request).open_knowledge_content(run_id=run_id,
+        key=reference.evidence_key, auth_context=request.state.auth_context)
+    mime_type = download.mime_type
+    await download.close()
+    return {"reference_type": "APP_KNOWLEDGE", "citation_label": reference.citation_label,
+        "title": reference.title, "mime_type": mime_type, "preview_type": _preview_type(mime_type),
+        "locators": reference.locators, "download_available": True,
+        "content_url": f"{PUBLIC_API_V1}/apps/knowledge-retrieval/runs/{run_id}/references/{citation_label}/content"}
 
 
 @router.get("/runs/{run_id}/references/{citation_label}/content")
-async def stream_knowledge_retrieval_reference_content(
-    run_id: UUID,
-    citation_label: str,
-    request: Request,
-    range_header: str | None = Header(default=None, alias="Range"),
-):
+async def stream_knowledge_reference_content(run_id: UUID, citation_label: str, request: Request):
+    from starlette.background import BackgroundTask
     domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_chat")
-    reference = await _knowledge_document_reference(
-        request,
-        domain_id=domain_id,
-        run_id=run_id,
-        citation_label=citation_label,
-    )
-    upstream = await _knowledge(request).stream_source_file(
-        domain_id=domain_id,
-        collection_id=reference.collection_id,
-        bundle_id=reference.bundle_id,
-        bundle_revision_id=reference.bundle_revision_id,
-        document_version_id=reference.document_version_id,
-        range_header=range_header,
-        auth_context=request.state.auth_context,
-    )
-    forwarded_headers = {
-        name: upstream.headers[name]
-        for name in (
-            "accept-ranges",
-            "cache-control",
-            "content-disposition",
-            "content-length",
-            "content-range",
-            "content-security-policy",
-            "x-content-type-options",
-        )
-        if name in upstream.headers
-    }
-    return StreamingResponse(
-        upstream.body,
-        status_code=upstream.status_code,
-        media_type=upstream.headers.get(
-            "content-type", "application/octet-stream"
-        ),
-        headers=forwarded_headers,
-    )
+    reference = await _knowledge_document_reference(request, domain_id=domain_id,
+        run_id=run_id, citation_label=citation_label)
+    download = await _runtime(request).open_knowledge_content(run_id=run_id,
+        key=reference.evidence_key, auth_context=request.state.auth_context)
+    return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
+                             background=BackgroundTask(download.close))
+
+
+@router.get("/runs/{run_id}/knowledge/content/{key}")
+async def knowledge_run_content(run_id: UUID, key: str, request: Request):
+    from starlette.background import BackgroundTask
+    domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_chat")
+    await _knowledge_run(request, domain_id=domain_id, run_id=run_id)
+    download = await _runtime(request).open_knowledge_content(run_id=run_id,
+        key=key, auth_context=request.state.auth_context)
+    return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
+                             background=BackgroundTask(download.close))
 
 
 @router.get("/agents/options")
@@ -1815,12 +1387,7 @@ async def list_agent_management_options(request: Request):
     """返回 Agent 编辑器所需的安全资源目录，不暴露凭据和内部连接信息。"""
     domain_id, _, _ = await _require(request, "knowledge_retrieval:agent_manage")
     auth_context = request.state.auth_context
-    collections = _collection_items(
-        await _knowledge(request).list_collections(
-            domain_id=domain_id,
-            auth_context=auth_context,
-        )
-    )
+    collections = await request.app.state.knowledge_library_client.libraries(auth_context=auth_context)
     semantic_models = _collection_items(
         await _data_query(request).management_list(
             resource="semantic-models",
@@ -1830,9 +1397,9 @@ async def list_agent_management_options(request: Request):
         )
     )
     return {
-        "knowledge_cores": [
+        "libraries": [
             {
-                "collection_id": item.get("collection_id"),
+                "library_id": item.get("library_id"),
                 "display_name": item.get("display_name"),
                 "status": item.get("status"),
                 "selectable": item.get("status") == "ACTIVE",
@@ -1863,7 +1430,7 @@ async def create_agent(payload: KnowledgeRetrievalAgentCreatePayload, request: R
         request, data_model_ids=payload.data_model_ids,
     )
     if payload.status == "ACTIVE":
-        await _require_active_knowledge_core(request, domain_id=domain_id, knowledge_core_id=payload.knowledge_core_id)
+        await _require_active_library(request, domain_id=domain_id, library_id=payload.library_id)
     requested_status = payload.status
     values = payload.model_dump(mode="json")
     values["status"] = "DRAFT"
@@ -1924,7 +1491,7 @@ async def update_agent(
         await _require_grok_model_id(request, UUID(str(x_search_model_id)))
     status_value = values.get("status", current["status"])
     version_fields = {
-        "knowledge_core_id", "data_model_ids", "models", "instruction", "config"
+        "library_id", "data_model_ids", "models", "instruction", "config"
     }
     needs_sync = bool(version_fields.intersection(values)) or status_value == "ACTIVE"
     raw_data_model_ids = values.get(
@@ -1938,15 +1505,15 @@ async def update_agent(
         else tuple(UUID(str(value)) for value in raw_data_model_ids)
     )
     if status_value == "ACTIVE":
-        await _require_active_knowledge_core(
+        await _require_active_library(
             request, domain_id=domain_id,
-            knowledge_core_id=(
-                UUID(str(values["knowledge_core_id"]))
-                if "knowledge_core_id" in values and values["knowledge_core_id"]
+            library_id=(
+                UUID(str(values["library_id"]))
+                if "library_id" in values and values["library_id"]
                 else None
-                if "knowledge_core_id" in values
-                else UUID(str(current["knowledge_core_id"]))
-                if current.get("knowledge_core_id")
+                if "library_id" in values
+                else UUID(str(current["library_id"]))
+                if current.get("library_id")
                 else None
             ),
         )

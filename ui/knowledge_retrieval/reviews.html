@@ -1,10 +1,22 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>知识检索 · 资料审核</title>
-<link rel="stylesheet" href="./css/knowledge.css?v=20261105_3"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261105_3"><link rel="stylesheet" href="./css/reference-reviews.css?v=20261105_3"><link rel="stylesheet" href="./css/alignment.css?v=20261105_3"></head>
-<body class="business-app-knowledge_retrieval" data-page="reviews"><main class="knowledge-main platform-home-page knowledge-retrieval-page knowledge-reviews-page"><header class="platform-home-header"><div class="login-brand"><span class="brand-mark">K</span><strong>资料审核</strong></div><a class="text-button" href="./knowledge.html">返回知识检索</a></header>
-<section class="platform-home-hero"><div><p class="eyebrow">知识检索</p><h1>资料审核</h1><p>审核用户上传的资料包。通过后进入解析与索引流程；退回时必须说明需要修正的内容。</p></div></section>
-<section class="table-card review-queue-card"><header class="review-queue-header"><div><p class="eyebrow">审核工作队列</p><h2 id="library-collection-title">当前知识库</h2><p id="library-result-count"></p></div><button class="secondary-button" id="library-refresh" type="button">刷新队列</button></header>
-<div class="review-queue-toolbar"><label class="control-field"><span class="field-label">知识库</span><select id="library-collection" required aria-label="知识库"><option value="">正在读取知识库…</option></select></label><label class="search-field review-search-field"><span class="visually-hidden">搜索资料包或文件名</span><input id="library-query" type="search" placeholder="搜索资料包或文件名"></label></div>
-<div class="table-scroll"><table><thead><tr><th>资料包</th><th>文件</th><th>审核状态</th><th>处理状态</th><th>操作</th></tr></thead><tbody id="library-rows"><tr><td colspan="5" class="empty-cell">正在读取…</td></tr></tbody></table></div></section></main><dialog class="knowledge-dialog knowledge-drawer admin-drawer" id="library-detail"><header class="admin-drawer-header"><div><p class="eyebrow">资料详情</p><h2 id="library-detail-title"></h2></div><button class="icon-button" type="button" data-close-dialog="library-detail" aria-label="关闭资料详情">×</button></header><div class="admin-drawer-body" id="library-detail-body"></div><footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close-dialog="library-detail">关闭</button></footer></dialog>
-<dialog class="knowledge-dialog knowledge-drawer admin-drawer admin-drawer-compact" id="library-reject"><header class="admin-drawer-header"><div><p class="eyebrow">退回资料</p><h2 id="library-reject-title"></h2><p>退回后资料不会进入处理流程，请说明需要修正的内容。</p></div><button class="icon-button" type="button" data-close-dialog="library-reject" aria-label="关闭退回资料">×</button></header><form id="library-reject-form" class="quick-create-form"><label class="control-field"><span class="field-label">退回原因（最多 1000 字）</span><textarea id="library-reject-reason" rows="6" required maxlength="1000" placeholder="说明缺失、错误或需要重新提交的具体内容"></textarea></label><footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close-dialog="library-reject">取消</button><button class="danger-button" type="submit">确认退回</button></footer></form></dialog>
-<script src="../runtime-config.js"></script><script src="./js/knowledge-auth.js?v=20261105_3"></script><script src="./js/knowledge-api.js?v=20261105_3"></script><script src="./js/knowledge-shell.js?v=20261105_confirm1"></script><script src="./js/knowledge-library.js?v=20261105_confirm1"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>知识检索 · 资料审核</title>
+  <link rel="stylesheet" href="./css/knowledge.css?v=20261106">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261106">
+  <link rel="stylesheet" href="./css/alignment.css?v=20261106">
+  <link rel="stylesheet" href="./css/knowledge-workspace.css?v=20261106">
+</head>
+<body class="business-app-knowledge_retrieval" data-page="reviews">
+<main class="knowledge-main platform-home-page knowledge-retrieval-page">
+  <header class="app-page-head"><div><p class="eyebrow">知识资料治理</p><h1>资料审核</h1><p>解析、索引、审核与发布独立展示；数据由当前 App 独占保存。</p></div></header>
+  <section id="knowledge-owned-workspace" class="knowledge-owned-workspace table-card" aria-label="知识资料工作区"></section>
+</main>
+<script src="../runtime-config.js"></script>
+<script src="./js/knowledge-auth.js?v=20261106"></script>
+<script src="./js/knowledge-api.js?v=20261106"></script>
+<script src="./js/knowledge-shell.js?v=20261106"></script>
+<script src="./js/knowledge-library-workspace.js?v=20261106"></script>
+</body>
+</html>

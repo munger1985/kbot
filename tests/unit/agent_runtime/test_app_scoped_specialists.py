@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from agent_runtime.specialists.app_scoped import AppScopedSkill, owner_app_id
 from agent_runtime.specialists.data_query import SemanticDataQueryExecutor
-from agent_runtime.specialists.document import KnowledgeRetrievalSkill
+from agent_runtime.specialists.document import AppKnowledgeRetrievalSkill
 from agent_runtime.specialists.hybrid import DocumentScopeExtractSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
 
@@ -25,7 +25,7 @@ class AppScopedSkillTests(unittest.IsolatedAsyncioTestCase):
         """共享实现不得重新混入已退役 KM 合同或条件分支。"""
         for implementation in (
             SemanticDataQueryExecutor,
-            KnowledgeRetrievalSkill,
+            AppKnowledgeRetrievalSkill,
             DocumentScopeExtractSkill,
             ResponseComposerSkill,
         ):
