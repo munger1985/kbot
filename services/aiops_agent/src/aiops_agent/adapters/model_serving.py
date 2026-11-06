@@ -125,6 +125,10 @@ class AIOpsStructuredModelClient:
             },
         ]
         started = time.monotonic()
+        logger.info("AIOps 模型输入分布：purpose={} request_id={} field_chars={}",
+                    purpose, idempotency_key,
+                    {key: len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str))
+                     for key, value in input_payload.items()})
         prompt_tokens = 0
         completion_tokens = 0
         for attempt in range(2):
@@ -188,7 +192,8 @@ class AIOpsStructuredModelClient:
                             f"模型服务返回 HTTP {response.status}",
                         )
                     envelope = (
-                        await self._read_structured_stream(response, text_field=text_field, on_text_delta=on_text_delta)
+                        await self._read_structured_stream(response, text_field=text_field, on_text_delta=on_text_delta,
+                            purpose=purpose, request_id=idempotency_key, attempt=attempt + 1)
                         if on_text_delta is not None else await response.json()
                     )
             except AIOpsModelError:
@@ -278,15 +283,20 @@ class AIOpsStructuredModelClient:
         )
         return StructuredModelResult(output=output, receipt=receipt)
 
-    async def _read_structured_stream(self, response, *, text_field, on_text_delta):
+    async def _read_structured_stream(self, response, *, text_field, on_text_delta, purpose, request_id, attempt):
         """边接收边解码正文，不暴露 JSON 元数据、推理内容或未完成的转义。"""
         decoder = codecs.getincrementaldecoder("utf-8")()
         pending, content, emitted = "", "", ""
         provider_id, finish_reason, usage = None, None, {}
         done = False
+        started = time.monotonic()
+        frame_count, reasoning_chars = 0, 0
+        first_content_ms, first_answer_ms = None, None
+        stream_ended = False
 
         async def consume(frame):
             nonlocal content, emitted, provider_id, finish_reason, usage, done
+            nonlocal frame_count, reasoning_chars, first_content_ms, first_answer_ms
             data = "\n".join(line[5:].lstrip() for line in frame.splitlines() if line.startswith("data:"))
             if not data:
                 return
@@ -294,6 +304,7 @@ class AIOpsStructuredModelClient:
                 done = True
                 return
             item = json.loads(data)
+            frame_count += 1
             if item.get("error"):
                 raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE")
             provider_id = item.get("id") or provider_id
@@ -302,7 +313,13 @@ class AIOpsStructuredModelClient:
                 if choice.get("index", 0) != 0:
                     continue
                 finish_reason = choice.get("finish_reason") or finish_reason
-                content += str(dict(choice.get("delta") or {}).get("content") or "")
+                delta = dict(choice.get("delta") or {})
+                # 只累计长度，不保留或记录推理正文。
+                reasoning_chars += len(str(delta.get("reasoning_content") or ""))
+                chunk = str(delta.get("content") or "")
+                if chunk and first_content_ms is None:
+                    first_content_ms = int((time.monotonic() - started) * 1000)
+                content += chunk
             try:
                 partial = from_json(content, allow_partial="trailing-strings")
             except ValueError:
@@ -313,35 +330,50 @@ class AIOpsStructuredModelClient:
             delta = text[len(emitted):]
             # 小幅合并网络碎片以限制进度事务数量，不等待完整正文或完整诊断。
             if len(delta) >= 32 or "\n" in delta:
+                if first_answer_ms is None:
+                    first_answer_ms = int((time.monotonic() - started) * 1000)
                 for offset in range(0, len(delta), 2000):
                     await on_text_delta(ModelTextDelta(delta=delta[offset:offset + 2000]))
                 emitted = text
 
-        async for raw in response.content.iter_any():
-            pending = (pending + decoder.decode(raw)).replace("\r\n", "\n")
-            frames = pending.split("\n\n")
-            pending = frames.pop()
-            for frame in frames:
-                await consume(frame)
+        try:
+            async for raw in response.content.iter_any():
+                pending = (pending + decoder.decode(raw)).replace("\r\n", "\n")
+                frames = pending.split("\n\n")
+                pending = frames.pop()
+                for frame in frames:
+                    await consume(frame)
+                    if done:
+                        break
                 if done:
                     break
-            if done:
-                break
-        if not done:
-            pending += decoder.decode(b"", final=True)
-            if pending.strip():
-                await consume(pending)
-        if not done and finish_reason is None:
-            raise AIOpsModelError("MODEL_STREAM_INTERRUPTED")
-        try:
-            text = json.loads(content).get(text_field, "")
-        except (ValueError, AttributeError):
-            text = emitted
-        if isinstance(text, str) and text.startswith(emitted) and len(text) > len(emitted):
-            for offset in range(len(emitted), len(text), 2000):
-                await on_text_delta(ModelTextDelta(delta=text[offset:offset + 2000]))
-        return {"id": provider_id, "usage": usage,
-                "choices": [{"message": {"content": content}, "finish_reason": finish_reason}]}
+            if not done:
+                pending += decoder.decode(b"", final=True)
+                if pending.strip():
+                    await consume(pending)
+            if not done and finish_reason is None:
+                raise AIOpsModelError("MODEL_STREAM_INTERRUPTED")
+            try:
+                text = json.loads(content).get(text_field, "")
+            except (ValueError, AttributeError):
+                text = emitted
+            if isinstance(text, str) and text.startswith(emitted) and len(text) > len(emitted):
+                if first_answer_ms is None:
+                    first_answer_ms = int((time.monotonic() - started) * 1000)
+                for offset in range(len(emitted), len(text), 2000):
+                    await on_text_delta(ModelTextDelta(delta=text[offset:offset + 2000]))
+                emitted = text
+            stream_ended = True
+            return {"id": provider_id, "usage": usage,
+                    "choices": [{"message": {"content": content}, "finish_reason": finish_reason}]}
+        finally:
+            logger.info(
+                "AIOps 模型流阶段统计：purpose={} request_id={} attempt={} stream_ended={} "
+                "elapsed_ms={} frames={} content_chars={} reasoning_chars={} answer_chars={} "
+                "first_content_ms={} first_answer_ms={} finish_reason={}",
+                purpose, request_id, attempt, stream_ended, int((time.monotonic() - started) * 1000),
+                frame_count, len(content), reasoning_chars, len(emitted), first_content_ms, first_answer_ms, finish_reason,
+            )
 
     async def stream_text(
         self,

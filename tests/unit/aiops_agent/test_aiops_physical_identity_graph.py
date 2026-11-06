@@ -31,6 +31,20 @@ from platform_core.identity import uuid7
 
 
 NOW = datetime(2026, 10, 28, 7, tzinfo=timezone.utc)
+
+
+def assert_identity_model_view(projected, original):
+    assert projected["schema_version"] == "PHYSICAL_IDENTITY_MODEL_VIEW.v1"
+    assert {key: value for key, value in projected.items() if key not in {"nodes", "schema_version"}} == original.model_dump(mode="json", exclude={"nodes", "schema_version"})
+    for compact, node in zip(projected["nodes"], original.nodes, strict=True):
+        assert {key: value for key, value in compact.items() if key != "observed_time_extent"} == node.model_dump(mode="json", exclude={"observed_times"})
+        assert compact["observed_time_extent"] == {
+            "sample_count": len(node.observed_times), "continuity_verified": False,
+            "first_observed_at": min(node.observed_times).isoformat() if node.observed_times else None,
+            "last_observed_at": max(node.observed_times).isoformat() if node.observed_times else None,
+        }
+
+
 IDENTITIES = {
     "POSTGRESQL": {"system_identifier": "7694909560417873958", "database_oid": "16510",
                    "instance_started_at": "2026-10-10T05:39:06+00:00"},
@@ -231,7 +245,7 @@ def test_general_and_sql_model_inputs_use_same_deterministic_identity_graph(engi
     facts = tuple(TurnEvidenceFact.model_validate(raw) for raw in payload["evidence"])
     model = DbaAnswerComposeHandler._model_assessment_payload(DbaSufficiencyAssessment(
         status="ANSWERABLE", evidence=facts))
-    assert model["physical_identity_graph"] == record.physical_identity_graph.model_dump(mode="json")
+    assert_identity_model_view(model["physical_identity_graph"], record.physical_identity_graph)
     assert model["identity_interpretation_policy"]["database_family_is_not_runtime_instance"]
     subject = {"POSTGRESQL": {"query_id": "1285382359565720997"},
                "MYSQL": {"digest": "a" * 64}, "ORACLE": {"sql_id": "36apy6dncjggq"}}[engine]
@@ -373,7 +387,7 @@ def test_identity_graph_reaches_actual_assessor_and_replanner_before_answer(engi
     with pytest.raises(RuntimeError, match="model-input-captured"):
         asyncio.run(operation)
     supplied = model.generate_structured.await_args.kwargs["input_payload"]
-    assert supplied["physical_identity_graph"] == record.physical_identity_graph.model_dump(mode="json")
+    assert_identity_model_view(supplied["physical_identity_graph"], record.physical_identity_graph)
     assert supplied["identity_interpretation_policy"]["identity_metric_does_not_assign_other_series"]
 
 

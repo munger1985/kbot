@@ -169,15 +169,32 @@ def replay_physical_identity_graph(graph, evidence):
         raise ValueError("跨源身份图与原始身份观察不一致")
 
 
+def identity_sample_extent(stamps):
+    """仅压缩模型阅读的采样时点副本，不将首末时点解释为中间连续覆盖。"""
+    return {"sample_count": len(stamps),
+            "first_observed_at": min(stamps).isoformat() if stamps else None,
+            "last_observed_at": max(stamps).isoformat() if stamps else None,
+            "continuity_verified": False}
+
+
 def physical_identity_model_context(evidence):
     """充分性评估、重规划和回答共用同一确定性来源关系与解释边界。"""
+    graph = build_physical_identity_graph(evidence)
+    projected = graph.model_dump(mode="json", exclude={"nodes"})
+    projected["schema_version"] = "PHYSICAL_IDENTITY_MODEL_VIEW.v1"
+    projected["nodes"] = [
+        {**node.model_dump(mode="json", exclude={"observed_times"}),
+         "observed_time_extent": identity_sample_extent(node.observed_times)}
+        for node in graph.nodes
+    ]
     return {
-        "physical_identity_graph": build_physical_identity_graph(evidence).model_dump(mode="json"),
+        "physical_identity_graph": projected,
         "identity_interpretation_policy": {
             "source_report_is_not_physical_attestation": True,
             "database_family_is_not_runtime_instance": True,
             "identity_metric_does_not_assign_other_series": True,
             "identity_match_is_not_window_continuity_or_sql_causality": True,
             "client_connection_identity_does_not_prove_backend_affinity": True,
+            "sample_time_extent_does_not_prove_continuity": True,
         },
     }

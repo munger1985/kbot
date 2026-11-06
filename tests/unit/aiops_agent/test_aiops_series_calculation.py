@@ -72,7 +72,8 @@ def test_high_precision_changes_survive_worker_freeze_model_input_and_report():
     assert replay_series_computation(fact.series_computations[0])["change"] == 3
     model_input = DbaAnswerComposeHandler._compose_evidence_payload(fact)
     assert "samples" not in model_input["series_computations"][0]
-    assert model_input["series_computations"][0]["summary"]["change"] == 3
+    assert "change" not in model_input["series_computations"][0]["summary"]
+    assert dict(zip((item["name"] for item in fact.columns), model_input["rows"][0]))["change"] == 3
     assert len(fact.series_computations[0].samples) == 2
     context = SimpleNamespace(run_id=uuid7(), task_id=uuid7(), target_id=artifact["payload"]["target_id"],
         plan_snapshot={"answer_context": {"question": "分析容量变化"}})

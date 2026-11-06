@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aiops_agent.domain.evidence.physical_identity import build_physical_identity_graph
+from aiops_agent.domain.evidence.physical_identity import physical_identity_model_context
 
 from decimal import Decimal
 from datetime import datetime
@@ -243,7 +243,7 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
         ),
         "subjects": subjects,
         "plan_assessments": [plan for item in subjects for plan in item["plan_assessments"]],
-        "physical_identity_graph": build_physical_identity_graph(evidence).model_dump(mode="json"),
+        "physical_identity_graph": physical_identity_model_context(evidence)["physical_identity_graph"],
         "oracle_runtime": oracle_runtime_context(observations, subjects) if database_type == "ORACLE" else [],
         "comparison_policy": {"separate_subjects": True, "implicit_aggregation": False,
                               "cumulative_difference_is_window": False, "comparison_is_causal_effect": False},

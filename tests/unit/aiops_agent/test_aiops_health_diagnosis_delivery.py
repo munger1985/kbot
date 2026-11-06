@@ -86,7 +86,10 @@ def test_assessment_sends_summaries_not_chart_or_sample_copies_and_keeps_raw_evi
         assert "visualizations" not in projected
         assert projected["rows"] == fact.model_dump(mode="json")["rows"]
         assert projected["provenance"] == fact.model_dump(mode="json")["provenance"]
-        assert projected["series_computations"][0]["summary"] == fact.series_computations[0].summary
+        row = dict(zip((column["name"] for column in fact.columns), projected["rows"][0], strict=True))
+        compact = projected["series_computations"][0]
+        assert all(compact["summary"].get(key, row.get(key)) == value
+                   for key, value in fact.series_computations[0].summary.items())
         assert len(fact.series_computations[0].samples) == 2048
         assert len(json.dumps(projected, ensure_ascii=False, separators=(",", ":"))) < len(fact.model_dump_json()) / 2
         assert before + timedelta(seconds=14) < request["deadline"] < datetime.now(UTC) + timedelta(seconds=16)
@@ -166,10 +169,15 @@ def test_many_monitor_series_share_metadata_without_losing_rows_or_sources():
     originals = [item.model_dump(mode="json", exclude={"samples"}) for item in fact.series_computations]
     assert len(originals) == 32
     for original, compact in zip(originals, projected["series_computations"], strict=True):
-        assert {**projected["series_computation_defaults"], **compact} == original
+        row = dict(zip((column["name"] for column in fact.columns), projected["rows"][compact["row_index"]], strict=True))
+        reconstructed = {**projected["series_computation_defaults"], **compact}
+        for key in ("metric_code", "unit", "value_kind", "forecast_horizon_days"):
+            reconstructed.setdefault(key, row[key])
+        reconstructed["summary"] = {key: compact["summary"].get(key, row.get(key)) for key in original["summary"]}
+        assert reconstructed == original
         assert compact["input_ref"] == original["input_ref"]
         assert compact["row_index"] == original["row_index"]
-        assert compact["summary"] == original["summary"]
+        assert compact["summary"] == {"elapsed_days": original["summary"]["elapsed_days"]}
     assert len(json.dumps(projected["series_computations"]) + json.dumps(projected["series_computation_defaults"])) < len(json.dumps(originals)) * 0.8
     assert projected["rows"] == fact.model_dump(mode="json")["rows"]
     assert projected["provenance"] == fact.model_dump(mode="json")["provenance"]

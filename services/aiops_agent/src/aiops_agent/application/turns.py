@@ -89,6 +89,7 @@ class ConversationTurnService:
         self._uow_factory = uow_factory
         self._upload_store = upload_store
         self._turn_budget_seconds = int(getattr(diagnosis_config, "interactive_turn_budget_seconds", 90))
+        self._diagnostic_turn_budget_seconds = int(getattr(diagnosis_config, "diagnostic_turn_budget_seconds", 240))
         self._sql_selection_ttl = int(getattr(diagnosis_config, "sql_selection_ttl_seconds", 86400))
         self._conversation_starter_catalog = (
             conversation_starter_catalog or ConversationStarterCatalog()
@@ -1532,8 +1533,8 @@ class ConversationTurnService:
         focused_target_id: UUID | None = None,
     ) -> dict[str, Any]:
         effective_context = dict(execution_context or {})
-        if not effective_context.get("deadline_at") and str(effective_context.get("workflow_kind") or "CHAT_TURN") == "CHAT_TURN":
-            effective_context["deadline_at"] = (datetime.now(UTC) + timedelta(seconds=self._turn_budget_seconds)).isoformat()
+        accepted_at = datetime.now(UTC)
+        diagnostic_entry = False
         if command.sql_diagnosis is not None:
             try:
                 selected = await resolve_sql_selection(
@@ -1548,6 +1549,7 @@ class ConversationTurnService:
                 raise self._error("AIOPS_SQL_SELECTION_TARGET_MISMATCH", "所选 SQL 与当前诊断资源不一致")
             focused_target_id = UUID(selected["target_id"])
             effective_context["sql_selection"] = sql_selection_context(selected)
+            diagnostic_entry = True
         if source_run is not None:
             if focused_target_id is not None and focused_target_id != source_run.target_id:
                 raise self._error("AIOPS_SQL_SELECTION_TARGET_MISMATCH", "来源 Run 与所选 SQL 资源不一致")
@@ -1595,6 +1597,11 @@ class ConversationTurnService:
                 ),
             )
             effective_context["conversation_starter"] = frozen_starter
+            diagnostic_entry = frozen_starter["execution_mode"] == "DIAGNOSTIC"
+        if not effective_context.get("deadline_at") and str(effective_context.get("workflow_kind") or "CHAT_TURN") == "CHAT_TURN":
+            # 仅使用权限核验后冻结的目录语义；不信任浏览器元数据，也不续期已有截止时间。
+            budget = self._diagnostic_turn_budget_seconds if diagnostic_entry else self._turn_budget_seconds
+            effective_context["deadline_at"] = (accepted_at + timedelta(seconds=budget)).isoformat()
         upload_metadata = {}
         for item in content:
             if not item.upload_id:
