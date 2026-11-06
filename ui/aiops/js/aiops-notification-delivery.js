@@ -34,7 +34,7 @@
       document.querySelectorAll(".admin-drawer button").forEach(item => { item.disabled = busy; });
       byId("delivery-refresh").disabled = busy || loading;
       if (page === "notification-channels") {
-        byId("delivery-edit").disabled = busy || loading || !available();
+        byId("delivery-edit").disabled = busy || loading;
         byId("delivery-check").disabled = busy || loading || !available();
         byId("delivery-test-open").disabled = busy || loading || !available() || !connection?.enabled;
         byId("delivery-rule-open").disabled = busy || loading || !available() || !connection;
@@ -54,9 +54,9 @@
       if (id === "delivery-detail") { selected = null; ++detailVersion; }
     }
     document.querySelectorAll("[data-close]").forEach(item => { item.onclick = () => close(item.dataset.close); });
-    async function action(task, message = "操作已保存") {
+    async function action(task, message = "操作已保存", { requiresDelivery = true } = {}) {
       if (busy) return;
-      if (!available()) { status.textContent = runtime?.message || "外部通知部署状态尚未就绪，请刷新重试。"; return; }
+      if (requiresDelivery && !available()) { status.textContent = runtime?.message || "外部通知部署状态尚未就绪，请刷新重试。"; return; }
       busy = true; controls(); status.textContent = "处理中…";
       try { await task(); status.textContent = message; await refresh(); }
       catch (error) { status.textContent = error.message || "操作未完成"; }
@@ -94,7 +94,7 @@
       byId("delivery-channels-content").hidden = false;
       renderConnection(); renderPolicies(policies.items);
       document.querySelectorAll("#delivery-policies button").forEach(item => { item.disabled = !available(); });
-      if (!available()) status.textContent = (runtime?.message || "外部通知部署状态尚未就绪。") + " 部署管理员需配置 external_delivery.enabled、public_origin 与独立凭据密钥；此状态不是账号权限不足。";
+      if (!available()) status.textContent = (runtime?.message || "外部通知部署状态尚未就绪。") + " 可先填写并保存飞书配置；检查连接及发送需部署管理员配置 external_delivery.enabled 与 public_origin。保存不会启用外发，也不会发送消息。";
     }
     async function openDetail(item) {
       const current = ++detailVersion;
@@ -195,6 +195,7 @@
         const form = byId("delivery-connection"); form.reset();
         form.elements.name.value = connection?.name || "飞书"; form.elements.app_id.value = connection?.app_id || "";
         form.elements.app_id.disabled = Boolean(connection); form.elements.enabled.checked = Boolean(connection?.enabled); form.elements.app_secret.required = !connection;
+        form.elements.enabled.closest("label").querySelector("small").textContent = available() ? "保存不会自动发送测试消息。" : "仅设置渠道开关；部署外发未启用时仍不会发送。";
         byId("delivery-editor-title").textContent = connection ? "编辑飞书配置" : "配置飞书";
         byId("delivery-secret-label").textContent = connection ? "替换 Secret（留空不变）" : "App Secret"; KBotDrawer.open("delivery-editor");
       };
@@ -204,7 +205,7 @@
           await request(connection ? "/connections/" + connection.id : "/connections", connection ? {name:form.elements.name.value.trim(),enabled:form.elements.enabled.checked,expected_row_version:connection.row_version,...(form.elements.app_secret.value ? {app_secret:form.elements.app_secret.value} : {})}
             : {name:form.elements.name.value.trim(),provider:"FEISHU",app_id:form.elements.app_id.value.trim(),app_secret:form.elements.app_secret.value,enabled:form.elements.enabled.checked},connection ? "PUT" : "POST");
           form.elements.app_secret.value = ""; KBotDrawer.close("delivery-editor");
-        },"飞书配置已保存，未发送测试消息");
+        },"飞书配置已保存，未发送测试消息",{requiresDelivery:false});
       };
       byId("delivery-check").onclick = () => action(async () => {
         const result = await request("/connections/" + connection.id + "/check",{});

@@ -80,25 +80,129 @@ def test_capabilities_distinguish_runtime_gate_from_permissions(http, monkeypatc
     assert "public_origin" not in runtime
 
 
-def test_disabled_connection_write_explains_deployment_gate(http):
+def test_disabled_connection_check_explains_deployment_gate(http):
     client, service, _ = http
-    service.create_connection = AsyncMock(side_effect=ExternalDeliveryError("NOTIFICATION_EXTERNAL_DISABLED", 503))
-    response = client.post("/api/v1/notification-delivery/connections",
-        json={"name": "测试连接", "app_id": "cli_fixture", "app_secret": "fixture-only-secret"})
+    service.check_connection = AsyncMock(side_effect=ExternalDeliveryError("NOTIFICATION_EXTERNAL_DISABLED", 503))
+    response = client.post(f"/api/v1/notification-delivery/connections/{uuid4()}/check")
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "NOTIFICATION_EXTERNAL_DISABLED"
     assert "部署配置" in response.json()["detail"]["message"]
     assert "权限" not in response.json()["detail"]["message"]
 
 
-@pytest.mark.asyncio
-async def test_disabled_service_cannot_save_credentials_or_send():
-    vault, sender = SimpleNamespace(write=AsyncMock()), SimpleNamespace(send=AsyncMock())
-    service = ExternalNotificationService(uow_factory=None, config=ExternalDeliveryConfig(),
+@pytest.fixture
+def offline_configuration():
+    row = {"id": uuid4(), "name": "旧名称", "provider": "FEISHU", "app_id": "cli_fixture",
+        "credential_ref": "managed://old", "credential_version": 1, "row_version": 2,
+        "enabled": True, "health": "UNCHECKED"}
+    repo = SimpleNamespace(lock_configuration=AsyncMock(),
+        connection_for_provider=AsyncMock(return_value=None),
+        add=AsyncMock(side_effect=lambda kind, **kwargs: {**kwargs["values"], "row_version": 1}),
+        get=AsyncMock(return_value=row), change=AsyncMock(return_value=True), audit=AsyncMock(),
+        claim=AsyncMock())
+    commit = AsyncMock()
+
+    @asynccontextmanager
+    async def factory():
+        yield SimpleNamespace(external_delivery=repo, commit=commit)
+
+    vault = SimpleNamespace(write=AsyncMock(return_value="managed://new"), read=AsyncMock(), delete=AsyncMock())
+    sender = SimpleNamespace(send=AsyncMock(), check=AsyncMock())
+    service = ExternalNotificationService(uow_factory=factory, config=ExternalDeliveryConfig(),
         vault=vault, sender=sender, authority=None)
-    with pytest.raises(ExternalDeliveryError, match="NOTIFICATION_EXTERNAL_DISABLED"):
-        await service.create_connection(scope=DeliveryScope(), actor_id="admin", body=None)
-    vault.write.assert_not_awaited()
+    return service, repo, vault, sender, commit, row
+
+
+@pytest.mark.parametrize("channel_enabled", [False, True])
+def test_disabled_runtime_allows_configuration_creation_without_network(http, offline_configuration, channel_enabled):
+    client, adapter, _ = http
+    service, repo, vault, sender, commit, _ = offline_configuration
+    adapter.create_connection = service.create_connection
+    response = client.post("/api/v1/notification-delivery/connections",
+        json={"name": "测试连接", "app_id": "cli_fixture", "app_secret": "fixture-only-secret",
+            "enabled": channel_enabled})
+    assert response.status_code == 201
+    result = response.json()
+    assert result["enabled"] is channel_enabled
+    assert result["health"] == "UNCHECKED"
+    assert not {"app_secret", "credential_ref", "credential_version"} & result.keys()
+    vault.write.assert_awaited_once()
+    assert repo.audit.await_args.kwargs["action"] == "connection.create"
+    commit.assert_awaited_once()
+    assert service.config.enabled is False and not service.config.public_origin
+    sender.send.assert_not_awaited()
+    sender.check.assert_not_awaited()
+    repo.claim.assert_not_awaited()
+
+
+@pytest.mark.parametrize("rotate_secret", [False, True])
+def test_disabled_runtime_allows_configuration_update_and_rotation(http, offline_configuration, rotate_secret):
+    client, adapter, _ = http
+    service, repo, vault, sender, commit, row = offline_configuration
+    adapter.update_connection = service.update_connection
+    response = client.put(f"/api/v1/notification-delivery/connections/{row['id']}",
+        json={"name": "新名称", "enabled": False, "expected_row_version": 2,
+            **({"app_secret": "rotated-fixture-secret"} if rotate_secret else {})})
+    assert response.status_code == 200
+    result = response.json()
+    assert result["name"] == "新名称" and result["enabled"] is False and result["row_version"] == 3
+    assert not {"app_secret", "credential_ref", "credential_version"} & result.keys()
+    assert vault.write.await_count == int(rotate_secret)
+    assert repo.change.await_args.kwargs["expected_version"] == 2
+    assert repo.audit.await_args.kwargs["action"] == "connection.update"
+    commit.assert_awaited_once()
+    assert service.config.enabled is False
+    sender.send.assert_not_awaited()
+    sender.check.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_disabled_runtime_still_blocks_checks_tests_and_worker(offline_configuration):
+    service, repo, vault, sender, _, row = offline_configuration
+    scope = DeliveryScope()
+    for method, kwargs in [
+        (service.check_connection, {"object_id": row["id"]}),
+        (service.queue_test, {"object_id": row["id"], "binding_id": uuid4()}),
+        (service.challenge, {"object_id": uuid4()}),
+    ]:
+        with pytest.raises(ExternalDeliveryError, match="NOTIFICATION_EXTERNAL_DISABLED"):
+            await method(scope=scope, actor_id="admin", **kwargs)
+    assert await service.dispatch_once() is False
+    repo.get.assert_not_awaited()
+    repo.claim.assert_not_awaited()
+    vault.read.assert_not_awaited()
+    sender.send.assert_not_awaited()
+    sender.check.assert_not_awaited()
+
+
+def test_disabled_runtime_preserves_connection_singleton_and_credential_cleanup(http, offline_configuration):
+    client, adapter, _ = http
+    service, repo, vault, sender, commit, row = offline_configuration
+    repo.connection_for_provider.return_value = row
+    adapter.create_connection = service.create_connection
+    response = client.post("/api/v1/notification-delivery/connections",
+        json={"name": "重复连接", "app_id": "cli_fixture", "app_secret": "fixture-only-secret"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "NOTIFICATION_CONNECTION_ALREADY_CONFIGURED"
+    repo.add.assert_not_awaited()
+    commit.assert_not_awaited()
+    vault.delete.assert_awaited_once()
+    sender.send.assert_not_awaited()
+
+
+@pytest.mark.parametrize("rotate_secret", [False, True])
+def test_disabled_runtime_preserves_optimistic_version_control(http, offline_configuration, rotate_secret):
+    client, adapter, _ = http
+    service, repo, vault, sender, commit, row = offline_configuration
+    repo.change.return_value = False
+    adapter.update_connection = service.update_connection
+    response = client.put(f"/api/v1/notification-delivery/connections/{row['id']}",
+        json={"name": "冲突配置", "enabled": False, "expected_row_version": 2,
+            **({"app_secret": "rotated-fixture-secret"} if rotate_secret else {})})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "NOTIFICATION_VERSION_CONFLICT"
+    commit.assert_not_awaited()
+    assert vault.delete.await_count == int(rotate_secret)
     sender.send.assert_not_awaited()
 
 

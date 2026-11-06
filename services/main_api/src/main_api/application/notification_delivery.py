@@ -75,7 +75,7 @@ class ExternalNotificationService:
                 "has_more": len(rows) > limit, "limit": limit, "offset": offset}
 
     async def create_connection(self, *, scope, actor_id, body):
-        self.enabled()
+        # 配置保存不调用飞书，不依赖外发总开关；发送与入队门禁保持独立。
         object_id, now = uuid4(), now_utc()
         reference = await self.vault.write(scope=scope, object_id=uuid4(), values={"app_secret": body.app_secret.get_secret_value()})
         try:
@@ -95,7 +95,7 @@ class ExternalNotificationService:
             raise
 
     async def update_connection(self, *, scope, actor_id, object_id, body):
-        self.enabled()
+        # 外发停用时仍可维护连接、轮换密钥或暂停渠道。
         now, reference = now_utc(), None
         if body.app_secret is not None:
             reference = await self.vault.write(scope=scope, object_id=uuid4(), values={"app_secret": body.app_secret.get_secret_value()})
