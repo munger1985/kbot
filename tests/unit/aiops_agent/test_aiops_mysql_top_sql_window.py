@@ -127,7 +127,7 @@ class MySQLTopSqlDriverTest(unittest.TestCase):
         registry = DiagnosticRegistry.load()
         tool = registry.resolve(
             tool_id="db.sql.top_current", tool_version="1.0.0", db_type="MYSQL",
-            db_version="8.4", capabilities={"statement_digest"}, entitlements=set(),
+            db_version="8.4", capabilities={"statement_digest"},
         )
         cursor = _Cursor()
         connection = Mock()

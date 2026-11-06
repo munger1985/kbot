@@ -452,7 +452,6 @@ class AIOpsAgentService:
                 db_type=target.db_type,
                 db_version=target.version_code or "UNKNOWN",
                 capabilities=capabilities,
-                entitlements=set(),
                 environment=target.environment,
             ) if self._action_registry is not None else ()
             discovered_options = _controlled_action_options(

@@ -26,7 +26,6 @@
     "information_schema"
   ],
   "required_privileges": [],
-  "required_entitlements": [],
   "input_schema": "mysql.connection.utilization.input.v1",
   "defaults": {},
   "limits": {

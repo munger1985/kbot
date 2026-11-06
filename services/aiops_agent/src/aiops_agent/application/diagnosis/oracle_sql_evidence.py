@@ -16,7 +16,7 @@ REQUEST_TOOLS = {"XPLAN": XPLAN, "SQL_MONITOR": MONITOR, "ASH": ASH}
 
 
 def authorized_oracle_sql_tools(snapshot):
-    """使用与执行器一致的版本、只读能力和 Pack 门禁，不因查询可执行就推断许可。"""
+    """使用与执行器一致的数据库类型、版本和只读能力边界。"""
     from pydantic import ValidationError
     from aiops_agent.diagnostics import DiagnosticRegistry
     from aiops_agent.playbooks import PlaybookRegistry
@@ -93,7 +93,7 @@ def oracle_evidence_policy(*, task_frame, evidence, available_tool_ids, gaps=(),
         "rules": [
             "仅对当前已解析主体按需提出 oracle_evidence_requests，subject_id 必须来自主体清单；不提供SQL、绑定值或猜测执行标识。",
             "SQL Monitor 缺记录不是无问题；ASH是保留的活动样本，不是完整逐次执行记录；样本比例不等于精确耗时。",
-            "只有改变当前判断且尚未尝试、当前许可允许的关键证据才申请；不把可选证据缺失作为阻断健康或问题判断的通用条件。",
+            "只有改变当前判断且尚未尝试、当前能力允许的关键证据才申请；不把可选证据缺失作为阻断健康或问题判断的通用条件。",
             "用户明确历史区间时可在ASH请求成对提供带时区begin_time/end_time（最多24小时）；否则使用默认冻结窗口并如实说明，不冒充历史故障窗口。更广历史使用通用受控规划。",
         ],
     }

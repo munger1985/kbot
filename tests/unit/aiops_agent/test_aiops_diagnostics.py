@@ -466,7 +466,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
         )
 
         self.assertEqual(
@@ -492,7 +491,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
         )
 
         self.assertNotIn("parsing_schema_name", tool.sql.lower())
@@ -509,7 +507,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
         current = registry.resolve(
             tool_id="db.sql.top_current", tool_version="1.0.0",
             db_type="MYSQL", db_version="8.0", capabilities={"statement_digest"},
-            entitlements=set(),
         )
         self.assertIn("events_statements_summary_by_digest", current.sql.lower())
         self.assertIn("left(statements.query_sample_text, 4096) as sql_text", current.sql.lower())
@@ -523,7 +520,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
         digest = registry.resolve(
             tool_id="db.mysql.statement.digest.top", tool_version="1.0.0",
             db_type="MYSQL", db_version="8.0", capabilities={"statement_digest"},
-            entitlements=set(),
         )
         self.assertIn("left(query_sample_text, 4096)", digest.sql.lower())
         self.assertEqual(
@@ -535,14 +531,14 @@ class DiagnosticCatalogTest(unittest.TestCase):
                 pg_current = registry.resolve(
                     tool_id="db.sql.top_current", tool_version="1.0.0",
                     db_type="POSTGRESQL", db_version=version,
-                    capabilities={"pg_stat_activity"}, entitlements=set(),
+                    capabilities={"pg_stat_activity"},
                 )
                 self.assertIn("left(query, 4096) as query_text", pg_current.sql.lower())
                 self.assertIn("wait_event, query\n", pg_current.sql.lower())
                 pg_top = registry.resolve(
                     tool_id="db.postgresql.statement.top", tool_version="1.0.0",
                     db_type="POSTGRESQL", db_version=version,
-                    capabilities={"pg_stat_statements"}, entitlements=set(),
+                    capabilities={"pg_stat_statements"},
                 )
                 self.assertIn(
                     "normalized_statement",
@@ -562,7 +558,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
 
         self.assertIn("plan_cardinality", tool.sql.lower())
@@ -581,7 +576,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
         )
 
         self.assertEqual(("DBMS_XPLAN",), tool.definition.allowed_packages)
@@ -615,7 +609,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
             with self.subTest(tool_id=tool_id):
                 tool = registry.resolve(
                     tool_id=tool_id, tool_version="1.0.0", db_type="ORACLE",
-                    db_version="19c", capabilities=set(), entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
+                    db_version="19c", capabilities=set(),
                 )
                 self.assertEqual(
                     ("DBMS_WORKLOAD_REPOSITORY",),
@@ -664,7 +658,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
         snapshots = registry.resolve(
             tool_id="db.oracle.awr.snapshots", tool_version="1.0.0",
             db_type="ORACLE", db_version="19c", capabilities=set(),
-            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         self.assertEqual((), snapshots.definition.parameters)
         self.assertIn(
@@ -680,7 +673,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
         report = registry.resolve(
             tool_id="db.oracle.sql_monitor.report", tool_version="1.0.0",
             db_type="ORACLE", db_version="19c",
-            capabilities={"dynamic_performance_views"}, entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
+            capabilities={"dynamic_performance_views"},
         )
         self.assertEqual(("DBMS_SQLTUNE",), report.definition.allowed_packages)
         self.assertEqual(
@@ -698,7 +691,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
         executions = registry.resolve(
             tool_id="db.oracle.sql_monitor.executions", tool_version="1.0.0",
             db_type="ORACLE", db_version="19c",
-            capabilities={"dynamic_performance_views"}, entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
+            capabilities={"dynamic_performance_views"},
         )
         self.assertIsNone(executions.definition.discovery_tool_id)
         self.assertEqual((), executions.definition.allowed_packages)
@@ -710,7 +703,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
         awr = registry.resolve(
             tool_id="db.oracle.awr.report", tool_version="1.0.0",
             db_type="ORACLE", db_version="19c", capabilities=set(),
-            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         with self.assertRaisesRegex(ValueError, "起始快照"):
             registry.validate_parameters(awr, {
@@ -724,7 +716,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
             fact_tool = registry.resolve(
                 tool_id=tool_id, tool_version="1.0.0",
                 db_type="ORACLE", db_version="19c", capabilities=set(),
-                entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
             )
             with self.assertRaisesRegex(ValueError, "起始快照"):
                 registry.validate_parameters(fact_tool, {
@@ -739,7 +730,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
         diff = registry.resolve(
             tool_id="db.oracle.awr.diff_report", tool_version="1.0.0",
             db_type="ORACLE", db_version="19c", capabilities=set(),
-            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         self.assertEqual(
             {
@@ -765,7 +755,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
         ash = registry.resolve(
             tool_id="db.oracle.ash.report", tool_version="1.0.0",
             db_type="ORACLE", db_version="19c", capabilities=set(),
-            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         with self.assertRaisesRegex(ValueError, "UTC 偏移"):
             registry.validate_parameters(ash, {
@@ -795,7 +784,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
                 tool = registry.resolve(
                     tool_id=tool_id, tool_version="1.0.0",
                     db_type="ORACLE", db_version="19c", capabilities=set(),
-                    entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
                 )
                 sql = tool.sql.lower()
                 self.assertEqual((), tool.definition.allowed_packages)
@@ -829,7 +817,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
                 db_type="ORACLE",
                 db_version="19c",
                 capabilities=set(),
-                entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
             )
             self.assertEqual(
                 "db.oracle.awr.snapshots",
@@ -841,7 +828,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities=set(),
-            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         self.assertIsNone(snapshots.definition.discovery_tool_id)
         self.assertEqual((), snapshots.definition.parameters)
@@ -891,7 +877,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
                         "dynamic_performance_views",
                         "dba_catalog_views",
                     },
-                    entitlements=set(),
                 )
                 self.assertEqual(
                     parameters,
@@ -909,7 +894,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
                 )
                 self.assertEqual(64, len(tool.definition.template_sha256))
 
-    def test_capability_and_entitlement_selection_is_exact(self) -> None:
+    def test_capability_selection_is_exact(self) -> None:
         registry = DiagnosticRegistry.load()
         with self.assertRaises(LookupError):
             registry.resolve(
@@ -918,7 +903,6 @@ class DiagnosticCatalogTest(unittest.TestCase):
                 db_type="ORACLE",
                 db_version="19c",
                 capabilities=set(),
-                entitlements=set(),
             )
         selected = registry.resolve(
             tool_id="db.session.active",
@@ -926,25 +910,19 @@ class DiagnosticCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
         )
         self.assertEqual("oracle_19_plus_gv", selected.definition.variant)
 
-    def test_oracle_packs_are_explicitly_required(self) -> None:
+    def test_oracle_reports_are_resolved_without_commercial_license_flags(self) -> None:
         registry = DiagnosticRegistry.load()
-        for tool_id, required in (
-            ("db.oracle.awr.report", {"ORACLE_DIAGNOSTICS_PACK"}),
-            ("db.oracle.ash.report", {"ORACLE_DIAGNOSTICS_PACK"}),
-            ("db.sql.plan_monitor", {"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"}),
-        ):
-            kwargs = dict(tool_id=tool_id, tool_version="1.0.0", db_type="ORACLE",
-                          db_version="19c", capabilities={"dynamic_performance_views"})
-            with self.subTest(tool_id=tool_id), self.assertRaises(LookupError):
-                registry.resolve(**kwargs, entitlements=set())
-            if len(required) == 2:
-                with self.assertRaises(LookupError):
-                    registry.resolve(**kwargs, entitlements={"ORACLE_DIAGNOSTICS_PACK"})
-            self.assertEqual(tool_id, registry.resolve(**kwargs, entitlements=required).definition.tool_id)
+        for tool_id in ("db.oracle.awr.report", "db.oracle.ash.report", "db.sql.plan_monitor"):
+            with self.subTest(tool_id=tool_id):
+                tool = registry.resolve(
+                    tool_id=tool_id, tool_version="1.0.0", db_type="ORACLE",
+                    db_version="19c", capabilities={"dynamic_performance_views"},
+                )
+                self.assertEqual(tool_id, tool.definition.tool_id)
+                self.assertNotIn("required_entitlements", tool.definition.model_dump())
 
     def test_object_indexes_requires_exact_object_for_all_databases(self) -> None:
         registry = DiagnosticRegistry.load()
@@ -952,7 +930,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
             with self.subTest(db_type=db_type):
                 tool = registry.resolve(tool_id="db.sql.object_indexes", tool_version="1.0.0",
                                         db_type=db_type, db_version=version,
-                                        capabilities=set(), entitlements=set())
+                                        capabilities=set(), )
                 with self.assertRaises(ValueError):
                     registry.validate_parameters(tool, {"schema_name": "mes"})
                 values = registry.validate_parameters(tool, {"schema_name": "mes", "table_name": "signals"})
@@ -1002,7 +980,6 @@ class DiagnosticGrantTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="23ai",
             capabilities=set(),
-            entitlements=set(),
         )
         return DiagnosticExecutionGrant(
             issuer="kbot-aiops-worker",
@@ -1124,7 +1101,7 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         tool = DiagnosticRegistry.load().resolve(
             tool_id="db.sql.top_current", tool_version="1.0.0",
             db_type="ORACLE", db_version="19c",
-            capabilities={"dynamic_performance_views"}, entitlements=set(),
+            capabilities={"dynamic_performance_views"},
         )
         captured_at = datetime(2026, 9, 1, 1, 33, 53, tzinfo=UTC)
         sql_text = "SELECT * FROM orders WHERE status = :status"
@@ -1157,7 +1134,6 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
         )
         observed_at = datetime(2026, 9, 1, 1, 33, 53, tzinfo=UTC)
         message = "ORA-00600: internal error code, arguments: [4194]"
@@ -1204,7 +1180,6 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities=set(),
-            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         captured_at = datetime(2026, 9, 11, tzinfo=UTC)
         observation = DiagnosticExecutorService._normalize(

@@ -83,7 +83,7 @@ class WorkloadSnapshotResourceEditTest(unittest.IsolatedAsyncioTestCase):
         self.systems.find_system_for_target.assert_awaited_with(target_id=self.target_id, domain_id=self.scope.domain_id)
         self.uow.commit.assert_not_awaited()
 
-    async def test_target_patch_persists_oracle_entitlements_with_other_capabilities(self):
+    async def test_target_patch_preserves_observed_capabilities(self):
         self.target.db_type = "ORACLE"
         self.target.version_code = "19c"
         self.target.readonly_connection_enabled = False
@@ -93,7 +93,7 @@ class WorkloadSnapshotResourceEditTest(unittest.IsolatedAsyncioTestCase):
         self.target.oracle_pdb_name = None
         self.target.capabilities_json = {"capability_probe": {"ok": True}}
         self.uow.session = SimpleNamespace(flush=AsyncMock())
-        capabilities = {"capability_probe": {"ok": True}, "entitlements": ["ORACLE_DIAGNOSTICS_PACK"]}
+        capabilities = {"capability_probe": {"ok": True}, "features": ["dynamic_performance_views"]}
         with patch("aiops_agent.application.configuration.target_service._target_detail", return_value="updated"), patch("aiops_agent.application.configuration.target_service.add_configuration_event", new_callable=AsyncMock):
             await self.service.patch_target(scope=self.scope, target_id=self.target_id,
                 request=TargetPatch(capabilities=capabilities), expected_version=7)

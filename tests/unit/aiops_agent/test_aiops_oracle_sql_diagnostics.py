@@ -19,12 +19,9 @@ from tests.unit.aiops_agent.test_aiops_sql_plan_priority import frame, caps
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis
 
 
-PACKS = {"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"}
-
-
-def tool(tool_id, packs=PACKS):
+def tool(tool_id):
     return DiagnosticRegistry.load().resolve(tool_id=tool_id, tool_version="1.0.0", db_type="ORACLE",
-        db_version="19.3", capabilities={"dynamic_performance_views"}, entitlements=set(packs))
+        db_version="19.3", capabilities={"dynamic_performance_views"}, )
 
 
 def runtime(tool_id, **values):
@@ -64,7 +61,7 @@ def test_exact_catalog_uses_full_cursor_without_replay(tool_id):
     assert "explain plan" not in resolved.sql.lower()
     if tool_id != XPLAN:
         assert "report_html" not in resolved.sql.lower()
-        assert resolved.definition.required_entitlements
+        assert "required_entitlements" not in resolved.definition.model_dump()
 
 
 def test_xplan_can_only_use_local_instance_current_container_and_explicit_child():
@@ -93,14 +90,10 @@ def test_monitor_plan_uses_native_process_key_and_child_address_not_reused_child
     assert tool(ASH).definition.limit_semantics == "BOUNDED_ENUMERATION"
 
 
-def test_pack_gate_is_shared_with_catalog_and_does_not_infer_license():
-    assert authorized_oracle_sql_tools(caps().model_dump(mode="json")) == (XPLAN,)
-    for tool_id in (MONITOR, MONITOR_PLAN, ASH):
-        with pytest.raises(LookupError):
-            tool(tool_id, packs=())
-    with pytest.raises(LookupError):
-        tool(MONITOR, packs={"ORACLE_DIAGNOSTICS_PACK"})
-    assert tool(ASH, packs={"ORACLE_DIAGNOSTICS_PACK"})
+def test_oracle_sql_tools_use_readonly_capabilities_not_commercial_license_flags():
+    assert set(authorized_oracle_sql_tools(caps().model_dump(mode="json"))) == set(ORACLE_SQL_TOOLS)
+    for tool_id in ORACLE_SQL_TOOLS:
+        assert tool(tool_id)
     assert not authorized_oracle_sql_tools({"database_type": "ORACLE"})
 
 
@@ -288,7 +281,7 @@ def test_ash_typed_request_enters_formal_replan_without_another_planner_call():
         service._prepare_query_inputs = Mock(side_effect=lambda **kw: (kw["investigation"], (), (), ()))
         service._compile_and_persist_replan = AsyncMock(return_value={"status": "COLLECTING"})
         context = SimpleNamespace(workflow_kind="CHAT", tenant_id=None, agent_id=uuid7(), domain_id=uuid7(),
-            trace_id="oracle", capabilities=caps().model_copy(update={"entitlements": tuple(PACKS)}), question="诊断SQL")
+            trace_id="oracle", capabilities=caps(), question="诊断SQL")
         await service._execute_replan_once({"assessment_artifact_id": str(uuid7())}, context=context, revision_no=3)
         call = service._compile_and_persist_replan.await_args.kwargs
         assert call["planning_receipt"] is None
@@ -322,7 +315,7 @@ def test_oracle_enhancements_execute_through_signed_worker_and_executor(tool_id,
     async def exercise():
         registry, playbooks = DiagnosticRegistry.load(), PlaybookRegistry.load()
         builder = ToolExecutionSnapshotBuilder(playbook_registry=playbooks, diagnostic_registry=registry)
-        capability = caps().model_copy(update={"entitlements": tuple(PACKS)})
+        capability = caps()
         inputs = dict(PARAMS)
         if tool_id == MONITOR_PLAN:
             inputs.update(sql_exec_id=99, sql_exec_start_native="2026-10-29T10:00:00")
@@ -468,8 +461,7 @@ def test_diagnostic_handler_persists_typed_ash_request_and_stops_retrying_zero_s
     async def exercise():
         _, task, context, model, prompts, assessment = setup("ORACLE")
         task.update(frame())
-        context.plan_snapshot["capability_snapshot"] = caps().model_copy(update={
-            "entitlements": tuple(PACKS)}).model_dump(mode="json")
+        context.plan_snapshot["capability_snapshot"] = caps().model_dump(mode="json")
         # 正式评估先尝试轻量增强；ASH 按需申请时它们已成功、零行或失败。
         facts = (direct(), *(runtime(tool_id).model_copy(update={"rows": (), "row_count": 0})
                             for tool_id in (XPLAN, MONITOR)))

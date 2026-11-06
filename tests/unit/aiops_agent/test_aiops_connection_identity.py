@@ -97,7 +97,7 @@ def test_primary_pg_result_and_metadata_use_same_connection_after_readonly_rollb
     connect = AsyncMock(return_value=connection)
     monkeypatch.setattr("aiops_agent.executor.drivers.postgresql.asyncpg.connect", connect)
     tool = DiagnosticRegistry.load().resolve(tool_id="db.storage.capacity", tool_version="1.0.0",
-        db_type="POSTGRESQL", db_version="16", capabilities=set(), entitlements=set())
+        db_type="POSTGRESQL", db_version="16", capabilities=set(), )
     raw = asyncio.run(PostgreSQLDiagnosticDriver().execute(
         profile=SimpleNamespace(host="db.internal", port=5432, database="app", tls_enabled=False, tls_profile_ref=None),
         secret=SimpleNamespace(values={"username": "diag", "password": "hidden"}), tool=tool,
@@ -112,7 +112,7 @@ def test_primary_pg_result_and_metadata_use_same_connection_after_readonly_rollb
 
 def test_executor_freezes_current_identity_and_old_probe_markers_are_not_trusted():
     tool = DiagnosticRegistry.load().resolve(tool_id="db.storage.capacity", tool_version="1.0.0",
-        db_type="POSTGRESQL", db_version="16", capabilities=set(), entitlements=set())
+        db_type="POSTGRESQL", db_version="16", capabilities=set(), )
     grant = SimpleNamespace(target_id=uuid7(), tool_id=tool.definition.tool_id, tool_version="1.0.0",
         variant=tool.definition.variant, template_sha256=tool.definition.template_sha256,
         db_type="POSTGRESQL", capability_snapshot_hash="a" * 64, parameters_sha256="b" * 64)

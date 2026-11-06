@@ -64,7 +64,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"session_management"},
-            entitlements=set(),
             environment="PROD",
         )
         rendered = ActionRenderer().render(
@@ -81,7 +80,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities=set(),
-            entitlements=set(),
             environment="PROD",
         )
         manual_rendered = ActionRenderer().render(
@@ -118,7 +116,6 @@ class ActionCatalogTest(unittest.TestCase):
                     db_type="ORACLE",
                     db_version="19.0.0",
                     capabilities=set(),
-                    entitlements=set(),
                     environment="PROD",
                 )
                 rendered = ActionRenderer().render(template, {})
@@ -131,7 +128,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities=set(),
-            entitlements=set(),
             environment="PROD",
         )
         planned = {
@@ -157,7 +153,6 @@ class ActionCatalogTest(unittest.TestCase):
                 db_type="ORACLE",
                 db_version="19.0.0",
                 capabilities=set(),
-                entitlements=set(),
                 environment="PROD",
             )
 
@@ -170,7 +165,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views", "index_maintenance"},
-            entitlements=set(),
             environment="PROD",
         )
         rendered = ActionRenderer().render(
@@ -212,7 +206,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views", "index_maintenance"},
-            entitlements=set(),
             environment="PROD",
         )
         rendered = ActionRenderer().render(
@@ -266,7 +259,6 @@ class ActionCatalogTest(unittest.TestCase):
                     db_type="ORACLE",
                     db_version="19.0.0",
                     capabilities={"dba_catalog_views"},
-                    entitlements=set(),
                     environment="PROD",
                 )
                 self.assertEqual(
@@ -278,7 +270,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views", "dynamic_performance_views"},
-            entitlements=set(),
             environment="PROD",
         )
         with self.assertRaises(ValueError):
@@ -294,7 +285,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views", "dynamic_performance_views"},
-            entitlements=set(),
             environment="PROD",
         )
         self.assertEqual(
@@ -316,7 +306,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views", "dynamic_performance_views"},
-            entitlements=set(),
             environment="PROD",
         )
         self.assertEqual(
@@ -359,7 +348,6 @@ class ActionCatalogTest(unittest.TestCase):
                 db_type="ORACLE",
                 db_version="19.0.0",
                 capabilities={"dba_catalog_views"},
-                entitlements=set(),
                 environment="PROD",
             )
         resolved = self.registry.resolve(
@@ -368,7 +356,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
             template_hash=templates[
                 "oracle_registered_object_privilege"
@@ -438,7 +425,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dynamic_performance_views", "session_management"},
-            entitlements=set(),
             environment="PROD",
         )
         rendered = ActionRenderer().render(
@@ -462,7 +448,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
         parameters = {
@@ -491,7 +476,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
         expected = {
@@ -523,7 +507,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
         parameters = {
@@ -567,7 +550,6 @@ class ActionCatalogTest(unittest.TestCase):
                     db_type="ORACLE",
                     db_version="19.0.0",
                     capabilities={"dba_catalog_views"},
-                    entitlements=set(),
                     environment="PROD",
                 )
                 rendered = ActionRenderer().render(
@@ -589,7 +571,6 @@ class ActionCatalogTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
 
@@ -635,7 +616,6 @@ class ActionCatalogTest(unittest.TestCase):
                     db_type="ORACLE",
                     db_version="19.0.0",
                     capabilities={"dba_catalog_views"},
-                    entitlements=set(),
                     environment="PROD",
                 )
                 rendered = ActionRenderer().render(
@@ -666,7 +646,6 @@ class ActionCatalogTest(unittest.TestCase):
                     db_type="ORACLE",
                     db_version="19.0.0",
                     capabilities={"dba_catalog_views"},
-                    entitlements=set(),
                     environment="PROD",
                 )
                 rendered = ActionRenderer().render(
@@ -1383,7 +1362,6 @@ class OracleIndexActionCompilerTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"session_management"},
-            entitlements=set(),
             environment="PROD",
         )
         with self.assertRaisesRegex(ValueError, "Allowlist"):

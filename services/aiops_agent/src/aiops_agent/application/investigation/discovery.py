@@ -148,10 +148,7 @@ def available_tools(
         str(capabilities.database_type) == "ORACLE"
         and "DB_READONLY" in capabilities.target_capabilities
     ):
-        dynamic_policy = DynamicQueryPolicySnapshot(
-            allow_diagnostics_pack="ORACLE_DIAGNOSTICS_PACK" in capabilities.entitlements,
-            allow_tuning_pack="ORACLE_TUNING_PACK" in capabilities.entitlements,
-        )
+        dynamic_policy = DynamicQueryPolicySnapshot()
         tools[("db.oracle.readonly_query", "1.0.0")] = {
             "tool_id": "db.oracle.readonly_query",
             "version": "1.0.0",
@@ -178,8 +175,7 @@ def available_tools(
                     "CDB_",
                     "ALL_",
                 ],
-                "diagnostic_scopes": (["CURRENT", "AWR", "ASH"] if dynamic_policy.allow_diagnostics_pack else ["CURRENT"]),
-                "license_gating": True,
+                "diagnostic_scopes": ["CURRENT", "AWR", "ASH"],
                 "privilege_status": "UNKNOWN_UNTIL_OBSERVED",
             },
             "input": {
@@ -187,11 +183,9 @@ def available_tools(
                 "parameters": "与 SQL bind 名称完全一致的标量对象",
             },
             "policy": {
-                "allow_diagnostics_pack": dynamic_policy.allow_diagnostics_pack,
-                "allow_tuning_pack": dynamic_policy.allow_tuning_pack,
                 "allowed_functions": list(dynamic_policy.allowed_functions),
                 "allowed_packages": list(dynamic_policy.allowed_packages),
-                "allowed_package_functions": ["DISPLAY_CURSOR"] + (["DISPLAY_AWR"] if dynamic_policy.allow_diagnostics_pack else []),
+                "allowed_package_functions": ["DISPLAY_CURSOR", "DISPLAY_AWR"],
                 "max_rows": dynamic_policy.max_rows,
                 "max_sql_chars": dynamic_policy.max_sql_chars,
                 "max_bind_count": dynamic_policy.max_bind_count,
@@ -368,8 +362,6 @@ def manifest_applicable(manifest, capabilities: DbaCapabilitySnapshot) -> bool:
     if not set(manifest.required_source_capabilities) <= set(
         capabilities.available_source_capabilities
     ):
-        return False
-    if not set(manifest.required_entitlements) <= set(capabilities.entitlements):
         return False
     configured_privileges = set(capabilities.privileges)
     if configured_privileges and not set(manifest.required_privileges) <= (

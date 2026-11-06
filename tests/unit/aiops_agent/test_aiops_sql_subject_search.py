@@ -201,7 +201,7 @@ def test_conflicting_text_for_same_complete_identity_is_not_automatically_compar
 @pytest.mark.parametrize("version", ["12", "13", "16", "18"])
 def test_discovery_catalog_resolves_real_versioned_template_without_required_database_oid(version):
     tool = DiagnosticRegistry.load().resolve(tool_id="db.postgresql.statement.subjects", tool_version="1.0.0",
-        db_type="POSTGRESQL", db_version=version, capabilities={"pg_stat_statements"}, entitlements=set())
+        db_type="POSTGRESQL", db_version=version, capabilities={"pg_stat_statements"}, )
     parameters = validate_parameters(tool.definition, {"query_id": "-42"})
     assert parameters["database_oid"] == 0 and parameters["user_oid"] == 0
     assert "(CAST(:database_oid AS bigint) = 0 OR CAST(statements.dbid AS bigint) = CAST(:database_oid AS bigint))" in tool.sql

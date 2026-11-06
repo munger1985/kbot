@@ -397,7 +397,6 @@ class DiscoveryBindingTest(unittest.TestCase):
                 target_enabled=True,
                 target_reachable=True,
                 target_capabilities=("DB_READONLY",),
-                entitlements=("ORACLE_DIAGNOSTICS_PACK",),
             ),
         )
 
@@ -862,7 +861,6 @@ def _awr_capabilities() -> DbaCapabilitySnapshot:
         target_reachable=True,
         target_capabilities=("DB_READONLY",),
         privileges=("DBA_HIST_SNAPSHOT", "V_$DATABASE"),
-        entitlements=("ORACLE_DIAGNOSTICS_PACK",),
     )
 
 

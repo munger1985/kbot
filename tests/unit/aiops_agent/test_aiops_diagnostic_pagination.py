@@ -117,10 +117,10 @@ def test_no_paging_budget_bleeds_into_the_next_action():
 @pytest.mark.parametrize("engine,sql", [
     ("POSTGRESQL", "EXPLAIN SELECT pid FROM pg_catalog.pg_stat_activity"),
     ("POSTGRESQL", "SELECT * FROM business.orders"),
-    ("ORACLE", "SELECT sql_id FROM dba_hist_sqlstat"),
+    ("ORACLE", "SELECT sql_id FROM business.orders"),
     ("MYSQL", "SELECT * FROM business.orders"),
 ])
-def test_paging_cannot_expand_object_license_or_plan_permissions(engine, sql):
+def test_paging_cannot_expand_object_or_plan_permissions(engine, sql):
     with pytest.raises(InvestigationPlanValidationError):
         prepare_dynamic_queries(paged_plan(engine, input={"sql": sql, "parameters": {}}), database_type=engine)
 

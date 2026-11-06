@@ -292,7 +292,6 @@ class PlannerGateTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="23ai",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
         )
         definition = tool.definition
         return {
@@ -583,6 +582,21 @@ class DirectAnswerShortCircuitTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DiagnosisAssetsTest(unittest.TestCase):
+    def test_aiops_prompt_baselines_do_not_manage_commercial_licenses(self) -> None:
+        entries = [
+            item for item in load_prompt_catalog().entries
+            if item.owner_service == "aiops_agent"
+        ]
+        self.assertTrue(entries)
+        for item in entries:
+            with self.subTest(prompt_key=item.prompt_key):
+                self.assertEqual("1.0.0", item.version)
+                for removed_rule in (
+                    "entitlements", "Pack 授权", "许可策略", "许可边界",
+                    "许可或审批权限", "Target、许可或预算",
+                ):
+                    self.assertNotIn(removed_rule, item.content)
+
     def test_all_aiops_prompts_have_database_seed_baselines(self) -> None:
         catalog = load_prompt_catalog()
         entries = {

@@ -79,7 +79,7 @@ def harness(engine="POSTGRESQL", dynamic=False, *, readonly_semaphore=None):
         result = DriverQueryResult(columns=grant.projected_columns, rows=((1,),), truncated=False, db_version="16")
     else:
         tool = registry.resolve(tool_id="db.instance.identity", tool_version="1.0.0", db_type=engine,
-            db_version={"POSTGRESQL": "16", "MYSQL": "8", "ORACLE": "19"}[engine], capabilities=set(), entitlements=set())
+            db_version={"POSTGRESQL": "16", "MYSQL": "8", "ORACLE": "19"}[engine], capabilities=set(), )
         grant = DiagnosticExecutionGrant(**common, tool_id=tool.definition.tool_id,
             tool_version=tool.definition.version, variant=tool.definition.variant,
             template_sha256=tool.definition.template_sha256)

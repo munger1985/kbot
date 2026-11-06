@@ -12,7 +12,6 @@
       "required_capabilities": [
         "statement_digest"
       ],
-      "required_entitlements": [],
       "required_privileges": [],
       "parameters": [
         {
@@ -173,11 +172,11 @@
       "cost_level": "MEDIUM"
     },
     {"tool_id":"db.sql.object_candidates","version":"1.0.0","measurement_semantics":"CURRENT_ACTIVITY","db_type":"MYSQL","variant":"mysql_object_candidates","description":"按精确对象名在当前账号可见的 information_schema.TABLES 中有界发现候选；可指定数据库，保留大小写。只读目录、不重放 SQL；临时表不在此目录中，唯一候选不证明生产执行访问。默认数据库仅可取自同主体 Digest 原生 schema_name，不能用诊断连接的 DATABASE() 替代。","supported_version_min":8,"supported_version_max_exclusive":10,"parameters":[{"name":"table_name","type":"string","max_length":64},{"name":"schema_name","type":"string","max_length":64,"required":false,"default":""},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"native_object_id","logical_type":"STRING"}],"template_ref":"sql/object_candidates.sql","template_sha256":"1aefdebbfe841d913684fed9a62683ad59b43a559faef72c357fa21b1c60e34a","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
-    {"tool_id":"db.sql.object_dependencies","version":"1.0.0","db_type":"MYSQL","variant":"mysql_object_dependencies","description":"按精确 Schema/视图读取 VIEW_TABLE_USAGE 的直接依赖，仅适用于提供此目录的 MySQL 8.0.13+；目录缺失/权限不足报告缺口，不读业务行。按已核实对象逐层取证，最多四层；零行不证明无依赖，不代表实际扫描。","supported_version_min":8,"supported_version_max_exclusive":10,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],"parameters":[{"name":"schema_name","type":"string","max_length":64},{"name":"table_name","type":"string","max_length":64},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"dependency_schema_name","logical_type":"STRING"},{"name":"dependency_name","logical_type":"STRING"},{"name":"dependency_kind","logical_type":"STRING"},{"name":"reference_scope","logical_type":"STRING"}],"template_ref":"sql/object_dependencies.sql","template_sha256":"20a3b4900361a54d4de33136cadeba2b95cc2df1440b2169a705c3ded6a2a325","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
+    {"tool_id":"db.sql.object_dependencies","version":"1.0.0","db_type":"MYSQL","variant":"mysql_object_dependencies","description":"按精确 Schema/视图读取 VIEW_TABLE_USAGE 的直接依赖，仅适用于提供此目录的 MySQL 8.0.13+；目录缺失/权限不足报告缺口，不读业务行。按已核实对象逐层取证，最多四层；零行不证明无依赖，不代表实际扫描。","supported_version_min":8,"supported_version_max_exclusive":10,"required_capabilities":[],"required_privileges":[],"parameters":[{"name":"schema_name","type":"string","max_length":64},{"name":"table_name","type":"string","max_length":64},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"dependency_schema_name","logical_type":"STRING"},{"name":"dependency_name","logical_type":"STRING"},{"name":"dependency_kind","logical_type":"STRING"},{"name":"reference_scope","logical_type":"STRING"}],"template_ref":"sql/object_dependencies.sql","template_sha256":"20a3b4900361a54d4de33136cadeba2b95cc2df1440b2169a705c3ded6a2a325","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {
       "tool_id":"db.sql.object_indexes","version":"1.0.0","db_type":"MYSQL","variant":"mysql_object_indexes_8_plus",
       "description":"按指定 schema 和表查询可见索引列；不提供函数索引表达式；零行可能是对象不存在或不可见，不能证明运行时使用了索引。",
-      "supported_version_min":8,"supported_version_max_exclusive":10,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],
+      "supported_version_min":8,"supported_version_max_exclusive":10,"required_capabilities":[],"required_privileges":[],
       "parameters":[{"name":"schema_name","type":"string","max_length":64},{"name":"table_name","type":"string","max_length":64},{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100}],
       "output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_name","logical_type":"STRING"},{"name":"index_name","logical_type":"STRING"},{"name":"column_position","logical_type":"INTEGER"},{"name":"column_name","logical_type":"STRING"},{"name":"column_expression","logical_type":"STRING","sensitivity":"MASKED"},{"name":"index_type","logical_type":"STRING"},{"name":"is_visible","logical_type":"STRING"}],
       "template_ref":"sql/object_indexes.sql","template_sha256":"cfdd77db7a18d960246b0847810db8dd8ccdac30ab6cb721023e3671054e774a","timeout_seconds":20,"max_rows":500,"max_bytes":2097152,"cost_level":"LOW"
@@ -186,7 +185,7 @@
       "tool_id": "db.sql.active_current", "version": "1.0.0", "db_type": "MYSQL",
       "variant": "mysql_active_sessions", "supported_version_min": 8,
       "supported_version_max_exclusive": 10, "required_capabilities": ["information_schema"],
-      "required_entitlements": [], "required_privileges": ["PROCESS"],
+      "required_privileges": ["PROCESS"],
       "parameters": [{"name": "limit", "type": "integer", "minimum": 1, "maximum": 50, "default": 10, "required": false}],
       "output_columns": [{"name": "session_id", "logical_type": "INTEGER"}, {"name": "username", "logical_type": "STRING"}, {"name": "database_name", "logical_type": "STRING"}, {"name": "sql_text", "logical_type": "STRING", "sensitivity": "MASKED"}, {"name": "elapsed_seconds", "logical_type": "INTEGER"}, {"name": "wait_event", "logical_type": "STRING"}],
       "template_ref": "sql/sql_active_current.sql",
@@ -201,7 +200,6 @@
       "supported_version_min": 8,
       "supported_version_max_exclusive": 10,
       "required_capabilities": [],
-      "required_entitlements": [],
       "required_privileges": [],
       "parameters": [],
       "output_columns": [
@@ -248,7 +246,6 @@
       "required_capabilities": [
         "information_schema"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "PROCESS"
       ],
@@ -303,7 +300,6 @@
       "required_capabilities": [
         "sys_schema"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "PROCESS"
       ],
@@ -350,7 +346,6 @@
       "required_capabilities": [
         "information_schema"
       ],
-      "required_entitlements": [],
       "required_privileges": [],
       "parameters": [],
       "output_columns": [
@@ -386,7 +381,6 @@
       "required_capabilities": [
         "information_schema"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "PROCESS"
       ],
@@ -449,7 +443,6 @@
       "required_capabilities": [
         "replication_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "REPLICATION CLIENT"
       ],
@@ -492,7 +485,6 @@
       "required_capabilities": [
         "replication_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "REPLICATION CLIENT"
       ],
@@ -526,7 +518,6 @@
       "required_capabilities": [
         "information_schema"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "PROCESS"
       ],
@@ -585,7 +576,6 @@
       "required_capabilities": [
         "information_schema"
       ],
-      "required_entitlements": [],
       "required_privileges": [],
       "parameters": [],
       "output_columns": [
@@ -632,7 +622,6 @@
       "required_capabilities": [
         "information_schema"
       ],
-      "required_entitlements": [],
       "required_privileges": [],
       "parameters": [],
       "output_columns": [
@@ -674,7 +663,6 @@
         "required_capabilities": [
           "performance_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [],
         "output_columns": [
@@ -732,7 +720,6 @@
         "required_capabilities": [
           "performance_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -783,7 +770,6 @@
         "required_capabilities": [
           "wait_instrumentation"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -834,7 +820,6 @@
         "required_capabilities": [
           "statement_digest"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -910,7 +895,6 @@
         "required_capabilities": [
           "statement_digest"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -1003,7 +987,6 @@
         "required_capabilities": [
           "performance_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -1065,7 +1048,6 @@
         "required_capabilities": [
           "statement_history"
         ],
-        "required_entitlements": [],
         "required_privileges": [
           "PROCESS"
         ],
@@ -1130,7 +1112,6 @@
         "required_capabilities": [
           "performance_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -1189,7 +1170,6 @@
         "required_capabilities": [
           "information_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -1259,7 +1239,6 @@
         "required_capabilities": [
           "performance_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [],
         "output_columns": [
@@ -1290,7 +1269,6 @@
         "required_capabilities": [
           "event_scheduler"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -1353,7 +1331,6 @@
         "required_capabilities": [
           "statement_digest"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100},{"name":"tracked_keys","type":"string","max_length":65536,"default":"[]","required":false},{"name":"excluded_keys","type":"string","max_length":65536,"default":"[]","required":false}],
         "output_columns": [
@@ -1424,7 +1401,6 @@
         "required_capabilities": [
           "statement_history"
         ],
-        "required_entitlements": [],
         "required_privileges": [
           "PROCESS"
         ],
@@ -1498,7 +1474,6 @@
         "required_capabilities": [
           "performance_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -1557,7 +1532,6 @@
         "required_capabilities": [
           "data_lock_waits"
         ],
-        "required_entitlements": [],
         "required_privileges": [
           "PROCESS"
         ],
@@ -1622,7 +1596,6 @@
         "required_capabilities": [
           "performance_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {
@@ -1693,7 +1666,6 @@
         "required_capabilities": [
           "replication_views"
         ],
-        "required_entitlements": [],
         "required_privileges": [
           "REPLICATION CLIENT"
         ],
@@ -1749,7 +1721,6 @@
         "required_capabilities": [
           "group_replication"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [],
         "output_columns": [
@@ -1801,7 +1772,6 @@
           "statement_history",
           "data_lock_waits"
         ],
-        "required_entitlements": [],
         "required_privileges": [
           "PROCESS"
         ],
@@ -1892,7 +1862,6 @@
         "required_capabilities": [
           "performance_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [],
         "output_columns": [
@@ -1934,7 +1903,6 @@
         "required_capabilities": [
           "information_schema"
         ],
-        "required_entitlements": [],
         "required_privileges": [],
         "parameters": [
           {

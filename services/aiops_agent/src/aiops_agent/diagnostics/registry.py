@@ -144,7 +144,6 @@ class DiagnosticRegistry:
         db_type: str,
         db_version: str,
         capabilities: set[str],
-        entitlements: set[str],
     ) -> ResolvedDiagnosticTool:
         major = database_major_version(db_version)
         candidates = [
@@ -156,7 +155,6 @@ class DiagnosticRegistry:
             and item.definition.supported_version_min <= major
             < item.definition.supported_version_max_exclusive
             and set(item.definition.required_capabilities) <= capabilities
-            and set(item.definition.required_entitlements) <= entitlements
         ]
         if len(candidates) != 1:
             raise LookupError("诊断工具没有唯一且精确匹配的 Variant")

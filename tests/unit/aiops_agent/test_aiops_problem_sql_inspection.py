@@ -148,7 +148,7 @@ def test_latency_units_adapt_without_changing_source(value, expected):
 def test_source_query_filters_problems_before_any_limit(database_type, version):
     tool = DiagnosticRegistry.load().resolve(tool_id=PROBLEM_SQL_TOOL, tool_version="1.0.0",
         db_type=database_type, db_version=version,
-        capabilities={"statement_digest","dynamic_performance_views","pg_stat_statements"}, entitlements=set())
+        capabilities={"statement_digest","dynamic_performance_views","pg_stat_statements"}, )
     import sqlglot
     from sqlglot import exp
     tree = sqlglot.parse_one(tool.sql, read={"MYSQL":"mysql","ORACLE":"oracle","POSTGRESQL":"postgres"}[database_type])
@@ -267,7 +267,7 @@ def test_actual_source_predicate_keeps_all_problem_rows_and_rejects_fast_frequen
     from aiops_agent.application.inspections.sql_problems import problem_sql_inputs
     tool = DiagnosticRegistry.load().resolve(tool_id=PROBLEM_SQL_TOOL, tool_version="1.0.0",
         db_type=database_type, db_version=version,
-        capabilities={"statement_digest","dynamic_performance_views","pg_stat_statements"}, entitlements=set())
+        capabilities={"statement_digest","dynamic_performance_views","pg_stat_statements"}, )
     tree = sqlglot.parse_one(tool.sql, read={"MYSQL":"mysql","ORACLE":"oracle","POSTGRESQL":"postgres"}[database_type])
     qualified = next(cte.this for cte in tree.find_all(exp.CTE) if cte.alias_or_name == "qualified")
     columns = PROBLEM_SQL_COLUMNS[:-1]

@@ -90,7 +90,6 @@ class MutationExecutorServiceTest(unittest.TestCase):
             db_type="MYSQL",
             db_version="8.0.36",
             capabilities={"session_management"},
-            entitlements=set(),
             environment="PROD",
         )
         action = ActionRenderer().render(
@@ -260,7 +259,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views", "index_maintenance"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(
@@ -319,7 +317,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views", "index_maintenance"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(
@@ -353,7 +350,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(
@@ -401,7 +397,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
                         "dba_catalog_views",
                         "dynamic_performance_views",
                     },
-                    entitlements=set(),
                     environment="PROD",
                 )
                 self.action = ActionRenderer().render(template, parameters)
@@ -450,7 +445,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views", "index_maintenance"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(
@@ -491,7 +485,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dynamic_performance_views", "session_management"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(
@@ -529,7 +522,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(
@@ -570,7 +562,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(
@@ -614,7 +605,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
                     db_type="ORACLE",
                     db_version="19.0.0",
                     capabilities={"dba_catalog_views"},
-                    entitlements=set(),
                     environment="PROD",
                 )
                 self.action = ActionRenderer().render(
@@ -649,7 +639,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(
@@ -700,7 +689,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
                     db_type="ORACLE",
                     db_version="19.0.0",
                     capabilities={"dba_catalog_views"},
-                    entitlements=set(),
                     environment="PROD",
                 )
                 self.action = ActionRenderer().render(
@@ -742,7 +730,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
                     db_type="ORACLE",
                     db_version="19.0.0",
                     capabilities={"dba_catalog_views"},
-                    entitlements=set(),
                     environment="PROD",
                 )
                 self.action = ActionRenderer().render(
@@ -778,7 +765,6 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"dba_catalog_views"},
-            entitlements=set(),
             environment="PROD",
         )
         self.action = ActionRenderer().render(

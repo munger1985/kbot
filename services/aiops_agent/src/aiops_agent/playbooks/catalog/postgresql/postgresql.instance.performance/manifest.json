@@ -17,7 +17,6 @@
     "pg_stat_bgwriter"
   ],
   "required_privileges": ["pg_read_all_stats"],
-  "required_entitlements": [],
   "input_schema": "postgresql.instance.performance.input.v1",
   "defaults": {},
   "limits": {

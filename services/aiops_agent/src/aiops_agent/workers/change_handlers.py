@@ -196,7 +196,6 @@ class ActionPlanHandler:
             for name, enabled in target.get("capabilities", {}).items()
             if enabled is True
         }
-        entitlements = set(policy.get("entitlements", ()))
         try:
             template = self._registry.resolve(
                 action_template_id="db.session.terminate",
@@ -204,7 +203,6 @@ class ActionPlanHandler:
                 db_type=target["db_type"],
                 db_version=target.get("version_code") or "UNKNOWN",
                 capabilities=capabilities,
-                entitlements=entitlements,
                 environment=target["environment"],
             )
             rendered = self._renderer.render(template, parameters)
@@ -390,7 +388,6 @@ class ChatActionPlanHandler:
             db_type=str(target.get("db_type")),
             db_version=str(target.get("version_code") or "UNKNOWN"),
             capabilities=capabilities,
-            entitlements=set(rules.get("entitlements", ())),
             environment=str(target.get("environment")),
             include_planned=False,
         )

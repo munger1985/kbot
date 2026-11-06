@@ -1540,17 +1540,10 @@ class AIOpsRuntimeService:
             capability_names.update(
                 str(item) for item in configured_features if item
             )
-        raw_entitlements = raw_capabilities.get("entitlements", [])
-        entitlements = (
-            {str(item) for item in raw_entitlements if item}
-            if isinstance(raw_entitlements, list)
-            else set()
-        )
         capability_snapshot = {
             "db_type": target.db_type,
             "configured_version": target.version_code,
             "capabilities": sorted(capability_names),
-            "entitlements": sorted(entitlements),
             "target_row_version": int(target.row_version),
         }
         capability_hash = sha256_json(capability_snapshot)
@@ -1643,14 +1636,13 @@ class AIOpsRuntimeService:
                         db_type=target.db_type,
                         db_version=target.version_code,
                         capabilities=capability_names,
-                        entitlements=entitlements,
                     )
                 except LookupError:
                     initial_gaps.append(
                         {
                             "code": "CAPABILITY_UNAVAILABLE",
                             "tool_id": tool_id,
-                            "detail": "工具版本、能力或许可条件不满足",
+                            "detail": "工具版本或数据库能力条件不满足",
                             "retryable": False,
                         }
                     )

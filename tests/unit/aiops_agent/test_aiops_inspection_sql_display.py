@@ -23,7 +23,7 @@ NORMALIZED = "SELECT order_id FROM orders WHERE customer_id = ?"
 def pipeline(sample=SAMPLE, normalized=NORMALIZED, *, count=1):
     tool = DiagnosticRegistry.load().resolve(
         tool_id="db.mysql.statement.digest.top", tool_version="1.0.0",
-        db_type="MYSQL", db_version="8.4", capabilities={"statement_digest"}, entitlements=set(),
+        db_type="MYSQL", db_version="8.4", capabilities={"statement_digest"},
     )
     names = [column.name for column in tool.definition.output_columns]
     raw = {"schema_name": "aiops_demo", "digest": DIGEST, "query_sample_text": sample,

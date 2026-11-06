@@ -1,4 +1,4 @@
-"""功能入口的声明式许可与固定目录准入。"""
+"""功能入口的固定目录准入。"""
 
 from __future__ import annotations
 
@@ -28,30 +28,6 @@ def _safe_identifiers(values: Iterable[str]) -> tuple[str, ...]:
     }))
 
 
-def entitlement_error(
-    required: Iterable[str], declared: Iterable[str],
-) -> StarterAdmissionError | None:
-    """只接受 Target 的显式许可声明，不从权限或连接成功推定授权。"""
-    missing = _safe_identifiers(set(required) - set(declared))
-    if not missing:
-        return None
-    identifiers = ", ".join(missing)
-    return StarterAdmissionError(
-        code="AIOPS_STARTER_ENTITLEMENT_REQUIRED",
-        message=(
-            f"当前目标尚未声明该功能所需的商业许可：{identifiers}。"
-            "请管理员核实实际授权后维护目标的许可声明；系统不会自动启用商业许可。"
-        ),
-        safe_detail="missing-entitlements:" + ",".join(missing),
-    )
-
-
-def require_entitlements(required: Iterable[str], declared: Iterable[str]) -> None:
-    error = entitlement_error(required, declared)
-    if error is not None:
-        raise error
-
-
 def require_starter_candidates(
     *,
     tool_ids: tuple[str, ...],
@@ -77,7 +53,7 @@ def require_starter_candidates(
         code="AIOPS_STARTER_TOOLS_UNAVAILABLE",
         message=(
             "当前目标的可用能力目录不能执行所选功能。"
-            "请管理员核对数据库版本、只读连接、商业许可声明和诊断工具目录。"
+            "请管理员核对数据库版本、只读连接和诊断工具目录。"
         ),
         safe_detail=";".join(details),
     )

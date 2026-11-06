@@ -100,7 +100,6 @@ class DbaPlaybookManifest(AIOpsContract):
     optional_source_capabilities: tuple[str, ...] = ()
     required_target_capabilities: tuple[str, ...] = ()
     required_privileges: tuple[str, ...] = ()
-    required_entitlements: tuple[str, ...] = ()
     input_schema: str = Field(min_length=1, max_length=128)
     defaults: JsonObject = Field(default_factory=dict)
     limits: PlaybookLimits
@@ -155,7 +154,6 @@ class DbaCapabilitySnapshot(AIOpsContract):
     target_reachable: bool
     target_capabilities: tuple[str, ...] = ()
     privileges: tuple[str, ...] = ()
-    entitlements: tuple[str, ...] = ()
     source_snapshots: tuple[SourceCapabilitySnapshot, ...] = ()
 
     @property

@@ -21,7 +21,6 @@
     "DBA_TABLES",
     "DBA_TAB_STATISTICS"
   ],
-  "required_entitlements": [],
   "input_schema": "oracle.sql.healthcheck.input.v1",
   "defaults": {"limit": 50},
   "limits": {"max_rows": 500, "timeout_seconds": 240, "max_attempts": 2, "cost_units": 6},

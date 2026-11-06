@@ -27,7 +27,6 @@
   "required_privileges": [
     "PROCESS"
   ],
-  "required_entitlements": [],
   "input_schema": "mysql.session.idle.input.v1",
   "defaults": {},
   "limits": {

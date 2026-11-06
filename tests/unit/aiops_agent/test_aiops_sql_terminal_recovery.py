@@ -53,7 +53,7 @@ def test_terminal_turn_http_details_accepts_every_domain_strategy(strategy, stat
 def test_oracle_cursor_template_qualifies_shared_column_names():
     resolved = DiagnosticRegistry.load().resolve(
         tool_id="db.sql.cursor_details", tool_version="1.0.0", db_type="ORACLE", db_version="19.3",
-        capabilities={"dynamic_performance_views"}, entitlements=set(),
+        capabilities={"dynamic_performance_views"},
     )
     assert "FROM gv$sql cursor_stats" in resolved.sql
     assert "cursor_stats.con_id AS container_id" in resolved.sql

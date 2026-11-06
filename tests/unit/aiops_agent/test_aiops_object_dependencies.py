@@ -143,7 +143,7 @@ def test_remote_reference_outside_the_selected_sql_does_not_change_its_limitatio
 def test_catalog_reaching_requested_or_default_limit_cannot_claim_complete_enumeration(engine, count, parameters, truncated):
     registry = DiagnosticRegistry.load()
     tool = registry.resolve(tool_id=TOOL, tool_version="1.0.0", db_type=engine,
-        db_version={"POSTGRESQL": "16", "MYSQL": "8.4", "ORACLE": "19"}[engine], capabilities=set(), entitlements=set())
+        db_version={"POSTGRESQL": "16", "MYSQL": "8.4", "ORACLE": "19"}[engine], capabilities=set(), )
     dep = dependency(engine)
     raw = DriverQueryResult(columns=tuple(column["name"] for column in dep.columns),
         rows=dep.rows * count, truncated=False, db_version="16")
@@ -165,7 +165,7 @@ def test_catalog_reaching_requested_or_default_limit_cannot_claim_complete_enume
 def test_dependency_tool_is_versioned_exact_bounded_and_contains_only_native_catalog_reads(engine):
     registry = DiagnosticRegistry.load()
     tool = registry.resolve(tool_id=TOOL, tool_version="1.0.0", db_type=engine,
-        db_version={"POSTGRESQL": "16", "MYSQL": "8.4", "ORACLE": "19"}[engine], capabilities=set(), entitlements=set())
+        db_version={"POSTGRESQL": "16", "MYSQL": "8.4", "ORACLE": "19"}[engine], capabilities=set(), )
     params = {"schema_name": "Quoted Schema", "table_name": "View'Name"}
     assert registry.validate_parameters(tool, params) == {**params, "limit": 40}
     for invalid in ({}, {"schema_name": "mes"}, {**params, "limit": 201}, {**params, "sql": "SELECT 1"}):

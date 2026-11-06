@@ -409,7 +409,6 @@ class AIOpsChangeService(ChangeEffectVerification):
                     db_type=target.db_type,
                     db_version=target.version_code or "UNKNOWN",
                     capabilities=capabilities,
-                    entitlements=set(rules.get("entitlements", ())),
                     environment=target.environment,
                     template_hash=proposal.action_template_hash,
                 )
@@ -954,7 +953,6 @@ class AIOpsChangeService(ChangeEffectVerification):
                     db_type=target.db_type,
                     db_version=target.version_code or "UNKNOWN",
                     capabilities=capabilities,
-                    entitlements=set(rules.get("entitlements", ())),
                     environment=target.environment,
                     template_hash=proposal.action_template_hash,
                 )

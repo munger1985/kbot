@@ -12,7 +12,6 @@ from loguru import logger
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
 from aiops_agent.application.conversation_starters.admission import (
     StarterAdmissionError,
-    entitlement_error,
     require_starter_candidates,
 )
 from aiops_agent.application.investigation.service import TurnPlanningService
@@ -256,12 +255,16 @@ class TurnRetryTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(completed["dispatch"])
         self.assertEqual(1, self.planner._plan.await_count)
 
-    async def test_report_entitlement_error_fails_turn_and_run_without_retry(self):
+    async def test_report_admission_error_hides_chained_details_without_retry(self):
         async def fail_admission(_):
             try:
                 raise RuntimeError("不得输出的用户输入或凭据")
             except RuntimeError as cause:
-                raise entitlement_error(("ORACLE_DIAGNOSTICS_PACK",), ()) from cause
+                raise StarterAdmissionError(
+                    code="AIOPS_STARTER_TOOLS_UNAVAILABLE",
+                    message="所选功能缺少可用诊断工具",
+                    safe_detail="missing-tools:db.oracle.awr.report",
+                ) from cause
 
         self.execute.side_effect = fail_admission
         messages = []
@@ -272,14 +275,14 @@ class TurnRetryTest(unittest.IsolatedAsyncioTestCase):
             logger.remove(sink_id)
         self.assertEqual(1, self.execute.await_count)
         self.assertEqual("FAILED", self.outbox.message.status)
-        self.assertEqual("AIOPS_STARTER_ENTITLEMENT_REQUIRED", self.outbox.releases[0]["error_code"])
-        self.assertEqual("AIOPS_STARTER_ENTITLEMENT_REQUIRED", self.turn.error_code)
+        self.assertEqual("AIOPS_STARTER_TOOLS_UNAVAILABLE", self.outbox.releases[0]["error_code"])
+        self.assertEqual("AIOPS_STARTER_TOOLS_UNAVAILABLE", self.turn.error_code)
         self.assertEqual("FAILED", self.uow.runs.rows[0].status)
-        self.assertIn("商业许可", self.turn.error_message)
+        self.assertIn("诊断工具", self.turn.error_message)
         self.assertNotIn("请重试", self.turn.error_message)
         logged = "\n".join(messages)
         self.assertIn("stage=CHECK_STARTER_ADMISSION", logged)
-        self.assertIn("missing-entitlements:ORACLE_DIAGNOSTICS_PACK", logged)
+        self.assertIn("missing-tools:db.oracle.awr.report", logged)
         self.assertNotIn("不得输出", logged)
 
     async def test_report_missing_tool_is_terminal_and_safely_logged(self):

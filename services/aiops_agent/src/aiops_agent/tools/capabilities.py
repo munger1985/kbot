@@ -52,7 +52,6 @@ def build_capability_snapshot(
         in {"CONNECTED", "DEGRADED"},
         target_capabilities=tuple(sorted(target_capabilities)),
         privileges=tuple(sorted(privileges)),
-        entitlements=target_entitlements(target),
         source_snapshots=source_snapshots,
     )
 
@@ -68,12 +67,6 @@ def _source_freshness(source, now):
         "checked_at": checked, "expires_at": expires,
         "health_state": ("AVAILABLE" if status in {"CONNECTED", "DEGRADED"} else "UNAVAILABLE") if fresh else "UNKNOWN",
     }
-
-
-def target_entitlements(target: object) -> tuple[str, ...]:
-    """规划快照读取持久化的显式许可声明，不从数据库类型推定授权。"""
-    payload = dict(getattr(target, "capabilities_json", None) or {})
-    return tuple(sorted(_string_values(payload.get("entitlements"))))
 
 
 def target_capability_names(target: object) -> tuple[str, ...]:
@@ -103,7 +96,7 @@ def _capability_names(payload: object) -> tuple[str, ...]:
     names.update(_string_values(payload.get("features")))
     for key, value in payload.items():
         if key in {
-            "capabilities", "features", "privileges", "entitlements"
+            "capabilities", "features", "privileges"
         }:
             continue
         if value is True:

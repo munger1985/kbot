@@ -114,7 +114,6 @@ class ApprovalServiceTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19.0.0",
             capabilities={"session_management"},
-            entitlements=set(),
             environment="PROD",
         )
         parameters = {
@@ -199,7 +198,6 @@ class ApprovalServiceTest(unittest.TestCase):
             policy_hash="c" * 64,
             rules_json={
                 "allow_agent_execution": True,
-                "entitlements": [],
             },
         )
         changes = SimpleNamespace(
@@ -313,7 +311,6 @@ class ExecutionClaimTest(unittest.TestCase):
             db_type="MYSQL",
             db_version="8.0.36",
             capabilities={"session_management"},
-            entitlements=set(),
             environment="PROD",
         )
         parameters = {"session_id": 42}
@@ -412,7 +409,6 @@ class ExecutionClaimTest(unittest.TestCase):
             policy_hash="c" * 64,
             rules_json={
                 "allow_agent_execution": True,
-                "entitlements": [],
             },
         )
         changes = SimpleNamespace(

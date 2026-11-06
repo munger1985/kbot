@@ -42,7 +42,7 @@ def tool(tool_id):
                     for capability in item.definition.required_capabilities}
     return registry.resolve(
         tool_id=tool_id, tool_version=definition.version, db_type="ORACLE", db_version="23.0",
-        capabilities=capabilities, entitlements=set(),
+        capabilities=capabilities,
     )
 
 

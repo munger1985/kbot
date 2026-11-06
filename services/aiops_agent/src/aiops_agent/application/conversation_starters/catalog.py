@@ -203,7 +203,6 @@ class ConversationStarterCatalog:
             "category": item["category"],
             "title": item["title"],
             "execution_mode": item["execution_mode"],
-            "required_entitlements": list(item.get("required_entitlements", ())),
             "required_capabilities": sorted(required),
             "parameters": parameters,
             "planning": dict(item["planning"]),

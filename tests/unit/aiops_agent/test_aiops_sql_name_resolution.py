@@ -380,7 +380,7 @@ def test_frozen_answer_report_and_case_reopen_unresolved_originals_without_sourc
 @pytest.mark.parametrize("engine", ENGINES)
 def test_tools_are_versioned_catalog_only_bounded_and_reachable_by_single_sql_profile(engine):
     registry = DiagnosticRegistry.load()
-    tool = registry.resolve(tool_id=TOOL, tool_version="1.0.0", db_type=engine, db_version=VERSIONS[engine], capabilities=set(), entitlements=set())
+    tool = registry.resolve(tool_id=TOOL, tool_version="1.0.0", db_type=engine, db_version=VERSIONS[engine], capabilities=set(), )
     assert registry.validate_parameters(tool, {"table_name": "orders"}) == {"table_name": "orders", "schema_name": "", "limit": 40}
     assert tool.definition.measurement_semantics == "CURRENT_ACTIVITY"
     assert tool.definition.limit_semantics == "BOUNDED_ENUMERATION" and tool.definition.timeout_seconds == 10
@@ -424,7 +424,7 @@ def test_replanner_receives_rebuilt_sql_names_and_lookup_from_actual_assessment(
 @pytest.mark.parametrize("count,limit,truncated", [(0, 40, False), (1, 40, False), (40, 40, True), (1, 1, True)])
 def test_candidate_enumeration_never_claims_completeness_when_its_limit_is_reached(engine, count, limit, truncated):
     tool = DiagnosticRegistry.load().resolve(tool_id=TOOL, tool_version="1.0.0", db_type=engine,
-        db_version=VERSIONS[engine], capabilities=set(), entitlements=set())
+        db_version=VERSIONS[engine], capabilities=set(), )
     observed = candidate(engine)
     result = DiagnosticExecutorService._normalize(request=SimpleNamespace(executor_request_id=uuid7(), parameters={"limit": limit}),
         grant=SimpleNamespace(target_id=uuid7(), tool_id=TOOL, tool_version="1.0.0", variant=tool.definition.variant,

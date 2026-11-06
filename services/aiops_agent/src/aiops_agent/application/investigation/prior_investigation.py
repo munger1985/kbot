@@ -41,7 +41,7 @@ async def load_parent_investigation(*, uow, turn, run, target, capabilities, sou
     current_sources = capabilities.model_dump(mode="json").get("source_snapshots", [])
     old_sources = prior_caps.get("source_snapshots")
     def key(values):
-        # 健康检查时钟不改变授权；配置、许可和范围仍须完全一致。
+        # 健康检查时钟不改变授权；配置与范围仍须完全一致。
         transient = {"checked_at", "expires_at", "health_state"}
         return sorted(
             ({name: value for name, value in item.items() if name not in transient} for item in values),

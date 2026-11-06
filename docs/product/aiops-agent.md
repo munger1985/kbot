@@ -699,7 +699,7 @@ AIOps 不实现另一套优化器，不主动请求重新估算；它读取已�
 
 | 引擎 | 可以读取的已有证据 | 边界 |
 | --- | --- | --- |
-| Oracle | 完整游标身份对应的 GV$SQL_PLAN / GV$SQL_PLAN_STATISTICS_ALL、DBMS_XPLAN.DISPLAY_CURSOR；有版本、权限和许可支持时读取 ASH、SQL Monitor、AWR 及既有报告 | 缓存可能淘汰，短 SQL 未必进入 Monitor/ASH；RAC/容器、SQL执行标识、子游标和计划分别匹配；不调用 EXPLAIN PLAN 或写计划表 |
+| Oracle | 完整游标身份对应的 GV$SQL_PLAN / GV$SQL_PLAN_STATISTICS_ALL、DBMS_XPLAN.DISPLAY_CURSOR；有版本和实际权限支持时读取 ASH、SQL Monitor、AWR 及既有报告 | 缓存可能淘汰，短 SQL 未必进入 Monitor/ASH；RAC/容器、SQL执行标识、子游标和计划分别匹配；不调用 EXPLAIN PLAN 或写计划表 |
 | PostgreSQL | pg_stat_statements、pg_stat_activity、锁与系统统计、对象/索引目录；读取已接入的 auto_explain 日志或 DBA 已提供计划 | pg_stat_statements 不保存历史执行计划；不能从 Query ID 或规范化文本推导绑定值和任意历史计划，不自动开启 auto_explain |
 | MySQL | performance_schema / sys 中已有语句、等待、锁及统计，可见目录、已接入日志和 DBA 已提供计划 | Digest 不保存任意历史计划或全部参数；事件历史可能已淘汰，不能从 Digest 重建真实语句执行 |
 

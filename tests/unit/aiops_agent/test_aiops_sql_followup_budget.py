@@ -122,7 +122,7 @@ def test_selected_oracle_cached_plan_requires_complete_cursor_identity():
 
 def test_policy_failure_does_not_replan_independent_legal_actions_or_their_dependencies():
     async def exercise():
-        output = dynamic.DynamicQueryPlanningTest()._investigation(sql="SELECT snap_id FROM dba_hist_snapshot")
+        output = dynamic.DynamicQueryPlanningTest()._investigation(sql="SELECT sid FROM app_private.sessions")
         valid = output.plan.actions[0].model_copy(update={"action_id": "a2", "input": {"sql": "SELECT sid FROM v$session", "parameters": {}}})
         dependent = valid.model_copy(update={"action_id": "a3", "depends_on": ("a1",)})
         output = output.model_copy(update={"plan": output.plan.model_copy(update={"actions": (*output.plan.actions, valid, dependent)})})
@@ -135,7 +135,7 @@ def test_policy_failure_does_not_replan_independent_legal_actions_or_their_depen
         )
         assert [action.action_id for action in result.plan.actions] == ["a2"]
         assert [action["action_id"] for action in frozen] == ["a2"]
-        assert "ORACLE_DIAGNOSTICS_PACK_REQUIRED" in str(result.task_frame.constraints)
+        assert "DYNAMIC_SQL_SCHEMA_FORBIDDEN" in str(result.task_frame.constraints)
         assert "a3" in str(result.task_frame.constraints)
         reasoner.repair_policy_invalid_plan.assert_not_awaited()
     asyncio.run(exercise())

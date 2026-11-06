@@ -66,7 +66,6 @@ class ActionTemplateDefinition(_ActionContract):
     supported_version_min: int = Field(ge=0)
     supported_version_max_exclusive: int = Field(gt=0)
     required_capabilities: tuple[str, ...] = ()
-    required_entitlements: tuple[str, ...] = ()
     required_privileges: tuple[str, ...] = ()
     action_family: str = Field(pattern=r"^[A-Z][A-Z0-9_]{1,63}$")
     effect_class: Literal[

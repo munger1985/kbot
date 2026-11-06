@@ -168,7 +168,7 @@ def test_window_projection_links_real_artifact_and_does_not_register_empty_rank(
 def test_current_sql_tool_is_an_active_snapshot_with_text(db_type, version, capability, scope):
     tool = DiagnosticRegistry.load().resolve(
         tool_id="db.sql.active_current", tool_version="1.0.0", db_type=db_type,
-        db_version=version, capabilities={capability}, entitlements=set(),
+        db_version=version, capabilities={capability},
     )
     assert scope in tool.sql
     assert "sql_text" in {column.name for column in tool.definition.output_columns}

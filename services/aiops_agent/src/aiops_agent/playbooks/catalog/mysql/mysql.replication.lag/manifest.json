@@ -28,7 +28,6 @@
   "required_privileges": [
     "REPLICATION CLIENT"
   ],
-  "required_entitlements": [],
   "input_schema": "mysql.replication.lag.input.v1",
   "defaults": {},
   "limits": {

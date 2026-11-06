@@ -46,7 +46,7 @@ PHYSICAL = {"dbid": SUBJECT["dbid"], "container_id": SUBJECT["container_id"], "i
 
 def tool(tool_id):
     return DiagnosticRegistry.load().resolve(tool_id=tool_id, tool_version="1.0.0", db_type="ORACLE", db_version="19.3",
-        capabilities={"dynamic_performance_views"}, entitlements=set())
+        capabilities={"dynamic_performance_views"}, )
 
 
 def observation(tool_id=PLAN, *, runtime=True, physical=None, **updates):

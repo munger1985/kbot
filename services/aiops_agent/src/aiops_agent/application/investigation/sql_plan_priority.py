@@ -47,7 +47,7 @@ def pending_sql_plan_actions(*, task_frame, database_type, evidence, gaps=(), pr
 
 
 def authorized_plan_tools(capability_snapshot):
-    """与正式目录发现复用相同版本、能力及许可规则；实际权限由取证结果说明。"""
+    """与正式目录发现复用相同版本及技术能力规则；实际权限由取证结果说明。"""
     from pydantic import ValidationError
     from aiops_agent.diagnostics import DiagnosticRegistry
     from aiops_agent.playbooks import PlaybookRegistry

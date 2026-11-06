@@ -124,7 +124,6 @@ class ActionRegistry:
         db_type: str,
         db_version: str,
         capabilities: set[str],
-        entitlements: set[str],
         environment: str,
         template_hash: str | None = None,
     ) -> ResolvedActionTemplate:
@@ -142,7 +141,6 @@ class ActionRegistry:
             and item.definition.supported_version_min <= major
             < item.definition.supported_version_max_exclusive
             and set(item.definition.required_capabilities) <= capabilities
-            and set(item.definition.required_entitlements) <= entitlements
             and environment in item.definition.environment_allowlist
             and (template_hash is None or item.template_hash == template_hash)
         ]
@@ -156,7 +154,6 @@ class ActionRegistry:
         db_type: str,
         db_version: str,
         capabilities: set[str],
-        entitlements: set[str],
         environment: str,
         include_planned: bool = True,
     ) -> tuple[ResolvedActionTemplate, ...]:
@@ -174,7 +171,6 @@ class ActionRegistry:
             and item.definition.supported_version_min <= major
             < item.definition.supported_version_max_exclusive
             and set(item.definition.required_capabilities) <= capabilities
-            and set(item.definition.required_entitlements) <= entitlements
             and environment in item.definition.environment_allowlist
         )
 

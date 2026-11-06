@@ -12,7 +12,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$SQLSTATS",
         "V_$SQL_WORKAREA"
@@ -189,7 +188,6 @@
       "tool_id": "db.oracle.statement.xplan",
       "variant": "oracle_exact_local_cursor_xplan",
       "description": "精确本地实例和当前容器的 DBMS_XPLAN ALLSTATS LAST、谓词、别名与 Outline；不读取绑定值，不重放语句。远端 RAC 游标不以本地计划代替；与主计划为相邻时点补充，不能证明同一次执行。",
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SQL",
         "V_$DATABASE",
@@ -287,11 +285,7 @@
       "cost_level": "LOW",
       "tool_id": "db.oracle.statement.monitor",
       "variant": "oracle_exact_cursor_monitor_executions",
-      "description": "在已确认许可下按完整游标身份发现最多三次仍保留的 QC/串行 SQL Monitor 执行。不是指定窗口增量；零行常见于短 SQL 或记录已淘汰。sql_exec_start_native 是原生数据库 DATE 标识，不推断为 UTC。",
-      "required_entitlements": [
-        "ORACLE_DIAGNOSTICS_PACK",
-        "ORACLE_TUNING_PACK"
-      ],
+      "description": "按完整游标身份发现最多三次仍保留的 QC/串行 SQL Monitor 执行。不是指定窗口增量；零行常见于短 SQL 或记录已淘汰。sql_exec_start_native 是原生数据库 DATE 标识，不推断为 UTC。",
       "required_privileges": [
         "GV_$SQL_MONITOR",
         "GV_$SQL",
@@ -443,10 +437,6 @@
       "tool_id": "db.oracle.statement.monitor_plan",
       "variant": "oracle_exact_execution_monitor_rows",
       "description": "精确游标及 sql_exec_id、原生开始 DATE 下，本实例 SQL Monitor 进程行源记录。保留进程维度，不将 PX starts/行数盲加，不冒充全 RAC 或节点 CPU/耗时。",
-      "required_entitlements": [
-        "ORACLE_DIAGNOSTICS_PACK",
-        "ORACLE_TUNING_PACK"
-      ],
       "required_privileges": [
         "GV_$SQL_PLAN_MONITOR",
         "GV_$SQL_MONITOR",
@@ -634,9 +624,6 @@
       "tool_id": "db.oracle.statement.ash",
       "variant": "oracle_exact_sql_ash_samples",
       "description": "精确 SQL 游标及带时区窗口的内存 ASH 分组事实：ON CPU/等待、计划行和阻塞者。样本数不是精确执行时长或执行次数，零行不证明未执行，保留时间不保证覆盖整个请求窗口；不自动读取 AWR 历史或生成实例 HTML。",
-      "required_entitlements": [
-        "ORACLE_DIAGNOSTICS_PACK"
-      ],
       "required_privileges": [
         "GV_$ACTIVE_SESSION_HISTORY",
         "V_$DATABASE"
@@ -793,7 +780,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SQL_PLAN_STATISTICS_ALL",
         "V_$DATABASE"
@@ -956,7 +942,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SQL_BIND_CAPTURE",
         "GV_$SQL",
@@ -1063,11 +1048,11 @@
       "cost_level": "LOW",
       "limit_semantics": "BOUNDED_ENUMERATION"
     },
-    {"tool_id":"db.sql.object_dependencies","version":"1.0.0","db_type":"ORACLE","variant":"oracle_object_dependencies","description":"精确读取指定 OWNER/视图、物化视图或同义词的可见直接依赖，仅查 ALL_DEPENDENCIES/ALL_SYNONYMS。不猜默认 Schema/PUBLIC 优先级；远端引用标为 REMOTE，禁止跨 DB Link 追查。按已核实本地对象最多展开四层，不还原动态 SQL或实际扫描。","supported_version_min":12,"supported_version_max_exclusive":24,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],"parameters":[{"name":"schema_name","type":"string","max_length":128},{"name":"table_name","type":"string","max_length":128},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"dependency_schema_name","logical_type":"STRING"},{"name":"dependency_name","logical_type":"STRING"},{"name":"dependency_kind","logical_type":"STRING"},{"name":"reference_scope","logical_type":"STRING"}],"template_ref":"sql/object_dependencies.sql","template_sha256":"0e1807aaabf6f90b5752d5cb2bec70c36df8e039cc7be968e1a0aba2d9d6ef05","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
+    {"tool_id":"db.sql.object_dependencies","version":"1.0.0","db_type":"ORACLE","variant":"oracle_object_dependencies","description":"精确读取指定 OWNER/视图、物化视图或同义词的可见直接依赖，仅查 ALL_DEPENDENCIES/ALL_SYNONYMS。不猜默认 Schema/PUBLIC 优先级；远端引用标为 REMOTE，禁止跨 DB Link 追查。按已核实本地对象最多展开四层，不还原动态 SQL或实际扫描。","supported_version_min":12,"supported_version_max_exclusive":24,"required_capabilities":[],"required_privileges":[],"parameters":[{"name":"schema_name","type":"string","max_length":128},{"name":"table_name","type":"string","max_length":128},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"dependency_schema_name","logical_type":"STRING"},{"name":"dependency_name","logical_type":"STRING"},{"name":"dependency_kind","logical_type":"STRING"},{"name":"reference_scope","logical_type":"STRING"}],"template_ref":"sql/object_dependencies.sql","template_sha256":"0e1807aaabf6f90b5752d5cb2bec70c36df8e039cc7be968e1a0aba2d9d6ef05","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {
       "tool_id":"db.sql.object_indexes","version":"1.0.0","db_type":"ORACLE","variant":"oracle_object_indexes_19_plus",
       "description":"按指定 owner 和表查询当前用户可见索引列；零行可能是对象不存在或不可见，不能证明运行时使用了索引。",
-      "supported_version_min":19,"supported_version_max_exclusive":27,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],
+      "supported_version_min":19,"supported_version_max_exclusive":27,"required_capabilities":[],"required_privileges":[],
       "parameters":[{"name":"schema_name","type":"string","max_length":128},{"name":"table_name","type":"string","max_length":128},{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100}],
       "output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_name","logical_type":"STRING"},{"name":"index_name","logical_type":"STRING"},{"name":"column_position","logical_type":"INTEGER"},{"name":"column_name","logical_type":"STRING"},{"name":"index_status","logical_type":"STRING"},{"name":"partitioned","logical_type":"STRING"}],
       "template_ref":"sql/object_indexes.sql","template_sha256":"bc70382ffc0831768391756d727b7a0ff36e95b656c830e9c4810f39b49c7a70","timeout_seconds":20,"max_rows":500,"max_bytes":2097152,"cost_level":"LOW"
@@ -1076,7 +1061,7 @@
       "tool_id": "db.sql.active_current", "version": "1.0.0", "db_type": "ORACLE",
       "variant": "oracle_active_sessions", "supported_version_min": 19,
       "supported_version_max_exclusive": 27, "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [], "required_privileges": ["GV_$SESSION", "GV_$SQL"],
+      "required_privileges": ["GV_$SESSION", "GV_$SQL"],
       "parameters": [{"name": "limit", "type": "integer", "minimum": 1, "maximum": 50, "default": 10, "required": false}],
       "output_columns": [{"name": "instance_id", "logical_type": "INTEGER"}, {"name": "session_id", "logical_type": "INTEGER"}, {"name": "username", "logical_type": "STRING"}, {"name": "sql_id", "logical_type": "STRING"}, {"name": "sql_text", "logical_type": "STRING", "sensitivity": "MASKED"}, {"name": "elapsed_seconds", "logical_type": "INTEGER"}, {"name": "wait_event", "logical_type": "STRING"}],
       "template_ref": "sql/sql_active_current.sql",
@@ -1087,7 +1072,7 @@
       "tool_id": "db.oracle.workload.identity", "version": "1.0.0", "db_type": "ORACLE",
       "variant": "oracle_19_plus_workload_identity", "supported_version_min": 19,
       "supported_version_max_exclusive": 27, "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [], "required_privileges": ["V_$DATABASE", "V_$INSTANCE"],
+      "required_privileges": ["V_$DATABASE", "V_$INSTANCE"],
       "parameters": [], "output_columns": [
         {"name": "database_id", "logical_type": "STRING", "nullable": false},
         {"name": "instance_number", "logical_type": "INTEGER", "nullable": false},
@@ -1104,7 +1089,7 @@
       "tool_id": "db.oracle.workload.statements", "version": "1.0.0", "db_type": "ORACLE",
       "variant": "oracle_19_plus_workload_sqlstats", "supported_version_min": 19,
       "supported_version_max_exclusive": 27, "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [], "required_privileges": ["V_$SQLSTATS"],
+      "required_privileges": ["V_$SQLSTATS"],
       "parameters": [{"name":"limit","type":"integer","minimum":10,"maximum":500,"default":100,"required":false},{"name":"tracked_keys","type":"string","max_length":65536,"default":"[]","required":false},{"name":"excluded_keys","type":"string","max_length":65536,"default":"[]","required":false}],
       "output_columns": [
         {"name": "sql_id", "logical_type": "STRING", "nullable": false},
@@ -1129,7 +1114,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [],
       "required_privileges": ["V_$RMAN_BACKUP_JOB_DETAILS"],
       "parameters": [
         {"name": "days", "type": "integer", "minimum": 1, "maximum": 90, "default": 7, "required": false}
@@ -1158,7 +1142,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [],
       "required_privileges": ["V_$RECOVERY_FILE_DEST"],
       "parameters": [],
       "output_columns": [
@@ -1184,7 +1167,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [],
       "required_privileges": ["GV_$SESSION"],
       "parameters": [
         {"name": "min_seconds", "type": "integer", "minimum": 1, "maximum": 604800, "default": 300, "required": false},
@@ -1218,7 +1200,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [],
       "required_privileges": ["GV_$SQL_WORKAREA"],
       "parameters": [
         {"name": "min_temp_mb", "type": "integer", "minimum": 1, "maximum": 1048576, "default": 64, "required": false},
@@ -1251,7 +1232,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$INSTANCE",
         "V_$DATABASE"
@@ -1301,7 +1281,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$DATABASE",
         "V_$INSTANCE",
@@ -1393,7 +1372,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$SQLSTATS"
       ],
@@ -1472,7 +1450,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SQL",
         "V_$DATABASE"
@@ -1639,7 +1616,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SQL_PLAN"
       ],
@@ -1775,7 +1751,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$SQL",
         "V_$SQL_PLAN",
@@ -1815,7 +1790,6 @@
         "dynamic_performance_views",
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SQL_PLAN",
         "DBA_TABLES",
@@ -1903,7 +1877,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"],
       "required_privileges": [
         "GV_$SQL_PLAN_MONITOR"
       ],
@@ -2002,7 +1975,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SESSION"
       ],
@@ -2071,7 +2043,6 @@
         "dynamic_performance_views",
         "session_management"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SESSION"
       ],
@@ -2137,7 +2108,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$SESSION",
         "GV_$LOCK"
@@ -2257,7 +2227,6 @@
         "dba_catalog_views",
         "index_maintenance"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_INDEXES",
         "DBA_SEGMENTS",
@@ -2381,7 +2350,6 @@
         "dba_catalog_views",
         "index_maintenance"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_INDEXES",
         "DBA_SEGMENTS",
@@ -2505,7 +2473,6 @@
         "dba_catalog_views",
         "index_maintenance"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_IND_PARTITIONS",
         "DBA_INDEXES",
@@ -2630,7 +2597,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_DATA_FILES",
         "DBA_FREE_SPACE"
@@ -2719,7 +2685,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$SYSMETRIC",
         "V_$CON_SYSMETRIC"
@@ -2764,7 +2729,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$SGA",
         "V_$PGASTAT"
@@ -2799,7 +2763,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$SESSION",
         "V_$PARAMETER"
@@ -2847,7 +2810,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$SYSTEM_WAIT_CLASS"
       ],
@@ -2897,7 +2859,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$DATABASE",
         "V_$RECOVERY_FILE_DEST"
@@ -2967,7 +2928,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "GV_$TRANSACTION",
         "GV_$SESSION"
@@ -3035,7 +2995,6 @@
       "required_capabilities": [
         "replication_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$DATABASE"
       ],
@@ -3084,7 +3043,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$PARAMETER"
       ],
@@ -3133,7 +3091,6 @@
         "dynamic_performance_views",
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_TEMP_FILES",
         "V_$TEMP_SPACE_HEADER"
@@ -3192,7 +3149,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_DATA_FILES",
         "DBA_TABLESPACES",
@@ -3247,7 +3203,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$LOG"
       ],
@@ -3314,7 +3269,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$DIAG_ALERT_EXT"
       ],
@@ -3377,7 +3331,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$DIAG_ALERT_EXT"
       ],
@@ -3465,7 +3418,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_SCHEDULER_JOB_RUN_DETAILS"
       ],
@@ -3537,7 +3489,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_SCHEDULER_JOBS"
       ],
@@ -3610,7 +3561,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_SCHEDULER_JOBS"
       ],
@@ -3683,7 +3633,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_SCHEDULER_JOBS"
       ],
@@ -3756,7 +3705,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_SCHEDULER_JOBS"
       ],
@@ -3829,7 +3777,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_OBJECTS"
       ],
@@ -3903,7 +3850,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_TABLES",
         "DBA_TAB_STATISTICS"
@@ -3971,7 +3917,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_TABLES",
         "DBA_TAB_STATISTICS"
@@ -4039,7 +3984,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_TABLES",
         "DBA_TAB_STATISTICS"
@@ -4107,7 +4051,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_USERS"
       ],
@@ -4174,7 +4117,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_USERS"
       ],
@@ -4241,7 +4183,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_USERS"
       ],
@@ -4309,7 +4250,6 @@
         "dba_catalog_views",
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$PARAMETER"
       ],
@@ -4383,7 +4323,6 @@
         "dba_catalog_views",
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_RSRC_PLANS",
         "V_$PARAMETER"
@@ -4434,7 +4373,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_USERS",
         "DBA_SYS_PRIVS"
@@ -4505,7 +4443,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_USERS",
         "DBA_OBJECTS",
@@ -4614,7 +4551,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_DATA_FILES",
         "DBA_TABLESPACES"
@@ -4724,7 +4660,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_TEMP_FILES",
         "DBA_TABLESPACES"
@@ -4834,7 +4769,6 @@
       "required_capabilities": [
         "dba_catalog_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "DBA_OBJECTS"
       ],
@@ -4878,7 +4812,6 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$RMAN_BACKUP_JOB_DETAILS"
       ],
@@ -4955,7 +4888,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "V_$DATABASE"
@@ -5005,7 +4937,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "V_$DATABASE"
@@ -5051,7 +4982,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "V_$DATABASE"
@@ -5109,7 +5039,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "DBA_HIST_SYSSTAT",
@@ -5194,7 +5123,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "DBA_HIST_SYSTEM_EVENT",
@@ -5288,7 +5216,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "DBA_HIST_SQLSTAT",
@@ -5391,7 +5318,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "V_$DATABASE"
       ],
@@ -5433,7 +5359,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"],
       "required_privileges": ["GV_$SQL_MONITOR"],
       "parameters": [
         {"name": "limit", "type": "integer", "minimum": 1, "maximum": 200, "default": 100, "required": false}
@@ -5467,7 +5392,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"],
       "required_privileges": ["GV_$SQL_MONITOR"],
       "allowed_packages": ["DBMS_SQLTUNE"],
       "parameters": [
@@ -5495,7 +5419,6 @@
       "required_capabilities": [
         "replication_views"
       ],
-      "required_entitlements": [],
       "required_privileges": [
         "V_$DATAGUARD_STATS"
       ],
@@ -5538,7 +5461,6 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [],
       "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"],
       "parameters": [],
       "output_columns": [
@@ -5554,8 +5476,7 @@
     {
       "tool_id": "db.backup.rman_configuration",
       "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_implementation", "supported_version_min": 19, "supported_version_max_exclusive": 27,
-      "required_capabilities": ["dynamic_performance_views"], "required_entitlements": [],
-      "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
+      "required_capabilities": ["dynamic_performance_views"], "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
       "output_columns": [
         {"name":"database_name","logical_type":"STRING"},{"name":"db_unique_name","logical_type":"STRING"},{"name":"instance_name","logical_type":"STRING"},{"name":"host_name","logical_type":"STRING"},{"name":"version","logical_type":"STRING"},{"name":"platform_name","logical_type":"STRING"},{"name":"database_role","logical_type":"STRING"},{"name":"open_mode","logical_type":"STRING"},{"name":"log_mode","logical_type":"STRING"},{"name":"force_logging","logical_type":"STRING"},{"name":"flashback_on","logical_type":"STRING"},{"name":"protection_mode","logical_type":"STRING"},{"name":"switchover_status","logical_type":"STRING"},{"name":"cdb","logical_type":"STRING"},{"name":"cluster_database","logical_type":"STRING"},{"name":"compatible","logical_type":"STRING"},{"name":"service_names","logical_type":"STRING"},{"name":"db_recovery_file_dest","logical_type":"STRING"},{"name":"db_recovery_file_dest_size","logical_type":"STRING"},{"name":"datafile_bytes","logical_type":"INTEGER"},{"name":"redo_threads","logical_type":"INTEGER"},{"name":"redo_groups","logical_type":"INTEGER"},{"name":"backup_set_count","logical_type":"INTEGER"},{"name":"last_backup_time","logical_type":"STRING"},{"name":"backup_chain_status","logical_type":"STRING"},{"name":"component_summary","logical_type":"STRING"},{"name":"invalid_component_count","logical_type":"INTEGER"},{"name":"character_set","logical_type":"STRING"},{"name":"national_character_set","logical_type":"STRING"},{"name":"rman_configuration","logical_type":"STRING"}
       ], "template_ref": "sql/implementation_precheck.sql", "template_sha256": "58f53474cc018c16db54ebde44d7a6d98e01e08b950367caf66bb8abb68dc45f", "timeout_seconds": 30, "max_rows": 1, "max_bytes": 262144, "cost_level": "LOW"
@@ -5563,8 +5484,7 @@
     {
       "tool_id": "db.recovery.capabilities",
       "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_implementation", "supported_version_min": 19, "supported_version_max_exclusive": 27,
-      "required_capabilities": ["dynamic_performance_views"], "required_entitlements": [],
-      "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
+      "required_capabilities": ["dynamic_performance_views"], "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
       "output_columns": [
         {"name":"database_name","logical_type":"STRING"},{"name":"db_unique_name","logical_type":"STRING"},{"name":"instance_name","logical_type":"STRING"},{"name":"host_name","logical_type":"STRING"},{"name":"version","logical_type":"STRING"},{"name":"platform_name","logical_type":"STRING"},{"name":"database_role","logical_type":"STRING"},{"name":"open_mode","logical_type":"STRING"},{"name":"log_mode","logical_type":"STRING"},{"name":"force_logging","logical_type":"STRING"},{"name":"flashback_on","logical_type":"STRING"},{"name":"protection_mode","logical_type":"STRING"},{"name":"switchover_status","logical_type":"STRING"},{"name":"cdb","logical_type":"STRING"},{"name":"cluster_database","logical_type":"STRING"},{"name":"compatible","logical_type":"STRING"},{"name":"service_names","logical_type":"STRING"},{"name":"db_recovery_file_dest","logical_type":"STRING"},{"name":"db_recovery_file_dest_size","logical_type":"STRING"},{"name":"datafile_bytes","logical_type":"INTEGER"},{"name":"redo_threads","logical_type":"INTEGER"},{"name":"redo_groups","logical_type":"INTEGER"},{"name":"backup_set_count","logical_type":"INTEGER"},{"name":"last_backup_time","logical_type":"STRING"},{"name":"backup_chain_status","logical_type":"STRING"},{"name":"component_summary","logical_type":"STRING"},{"name":"invalid_component_count","logical_type":"INTEGER"},{"name":"character_set","logical_type":"STRING"},{"name":"national_character_set","logical_type":"STRING"},{"name":"rman_configuration","logical_type":"STRING"}
       ], "template_ref": "sql/implementation_precheck.sql", "template_sha256": "58f53474cc018c16db54ebde44d7a6d98e01e08b950367caf66bb8abb68dc45f", "timeout_seconds": 30, "max_rows": 1, "max_bytes": 262144, "cost_level": "LOW"
@@ -5572,8 +5492,7 @@
     {
       "tool_id": "db.maintenance.patch_precheck",
       "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_implementation", "supported_version_min": 19, "supported_version_max_exclusive": 27,
-      "required_capabilities": ["dynamic_performance_views"], "required_entitlements": [],
-      "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
+      "required_capabilities": ["dynamic_performance_views"], "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
       "output_columns": [
         {"name":"database_name","logical_type":"STRING"},{"name":"db_unique_name","logical_type":"STRING"},{"name":"instance_name","logical_type":"STRING"},{"name":"host_name","logical_type":"STRING"},{"name":"version","logical_type":"STRING"},{"name":"platform_name","logical_type":"STRING"},{"name":"database_role","logical_type":"STRING"},{"name":"open_mode","logical_type":"STRING"},{"name":"log_mode","logical_type":"STRING"},{"name":"force_logging","logical_type":"STRING"},{"name":"flashback_on","logical_type":"STRING"},{"name":"protection_mode","logical_type":"STRING"},{"name":"switchover_status","logical_type":"STRING"},{"name":"cdb","logical_type":"STRING"},{"name":"cluster_database","logical_type":"STRING"},{"name":"compatible","logical_type":"STRING"},{"name":"service_names","logical_type":"STRING"},{"name":"db_recovery_file_dest","logical_type":"STRING"},{"name":"db_recovery_file_dest_size","logical_type":"STRING"},{"name":"datafile_bytes","logical_type":"INTEGER"},{"name":"redo_threads","logical_type":"INTEGER"},{"name":"redo_groups","logical_type":"INTEGER"},{"name":"backup_set_count","logical_type":"INTEGER"},{"name":"last_backup_time","logical_type":"STRING"},{"name":"backup_chain_status","logical_type":"STRING"},{"name":"component_summary","logical_type":"STRING"},{"name":"invalid_component_count","logical_type":"INTEGER"},{"name":"character_set","logical_type":"STRING"},{"name":"national_character_set","logical_type":"STRING"},{"name":"rman_configuration","logical_type":"STRING"}
       ], "template_ref": "sql/implementation_precheck.sql", "template_sha256": "58f53474cc018c16db54ebde44d7a6d98e01e08b950367caf66bb8abb68dc45f", "timeout_seconds": 30, "max_rows": 1, "max_bytes": 262144, "cost_level": "LOW"
@@ -5581,8 +5500,7 @@
     {
       "tool_id": "db.maintenance.upgrade_precheck",
       "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_implementation", "supported_version_min": 19, "supported_version_max_exclusive": 27,
-      "required_capabilities": ["dynamic_performance_views"], "required_entitlements": [],
-      "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
+      "required_capabilities": ["dynamic_performance_views"], "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
       "output_columns": [
         {"name":"database_name","logical_type":"STRING"},{"name":"db_unique_name","logical_type":"STRING"},{"name":"instance_name","logical_type":"STRING"},{"name":"host_name","logical_type":"STRING"},{"name":"version","logical_type":"STRING"},{"name":"platform_name","logical_type":"STRING"},{"name":"database_role","logical_type":"STRING"},{"name":"open_mode","logical_type":"STRING"},{"name":"log_mode","logical_type":"STRING"},{"name":"force_logging","logical_type":"STRING"},{"name":"flashback_on","logical_type":"STRING"},{"name":"protection_mode","logical_type":"STRING"},{"name":"switchover_status","logical_type":"STRING"},{"name":"cdb","logical_type":"STRING"},{"name":"cluster_database","logical_type":"STRING"},{"name":"compatible","logical_type":"STRING"},{"name":"service_names","logical_type":"STRING"},{"name":"db_recovery_file_dest","logical_type":"STRING"},{"name":"db_recovery_file_dest_size","logical_type":"STRING"},{"name":"datafile_bytes","logical_type":"INTEGER"},{"name":"redo_threads","logical_type":"INTEGER"},{"name":"redo_groups","logical_type":"INTEGER"},{"name":"backup_set_count","logical_type":"INTEGER"},{"name":"last_backup_time","logical_type":"STRING"},{"name":"backup_chain_status","logical_type":"STRING"},{"name":"component_summary","logical_type":"STRING"},{"name":"invalid_component_count","logical_type":"INTEGER"},{"name":"character_set","logical_type":"STRING"},{"name":"national_character_set","logical_type":"STRING"},{"name":"rman_configuration","logical_type":"STRING"}
       ], "template_ref": "sql/implementation_precheck.sql", "template_sha256": "58f53474cc018c16db54ebde44d7a6d98e01e08b950367caf66bb8abb68dc45f", "timeout_seconds": 30, "max_rows": 1, "max_bytes": 262144, "cost_level": "LOW"
@@ -5590,8 +5508,7 @@
     {
       "tool_id": "db.migration.precheck",
       "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_implementation", "supported_version_min": 19, "supported_version_max_exclusive": 27,
-      "required_capabilities": ["dynamic_performance_views"], "required_entitlements": [],
-      "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
+      "required_capabilities": ["dynamic_performance_views"], "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
       "output_columns": [
         {"name":"database_name","logical_type":"STRING"},{"name":"db_unique_name","logical_type":"STRING"},{"name":"instance_name","logical_type":"STRING"},{"name":"host_name","logical_type":"STRING"},{"name":"version","logical_type":"STRING"},{"name":"platform_name","logical_type":"STRING"},{"name":"database_role","logical_type":"STRING"},{"name":"open_mode","logical_type":"STRING"},{"name":"log_mode","logical_type":"STRING"},{"name":"force_logging","logical_type":"STRING"},{"name":"flashback_on","logical_type":"STRING"},{"name":"protection_mode","logical_type":"STRING"},{"name":"switchover_status","logical_type":"STRING"},{"name":"cdb","logical_type":"STRING"},{"name":"cluster_database","logical_type":"STRING"},{"name":"compatible","logical_type":"STRING"},{"name":"service_names","logical_type":"STRING"},{"name":"db_recovery_file_dest","logical_type":"STRING"},{"name":"db_recovery_file_dest_size","logical_type":"STRING"},{"name":"datafile_bytes","logical_type":"INTEGER"},{"name":"redo_threads","logical_type":"INTEGER"},{"name":"redo_groups","logical_type":"INTEGER"},{"name":"backup_set_count","logical_type":"INTEGER"},{"name":"last_backup_time","logical_type":"STRING"},{"name":"backup_chain_status","logical_type":"STRING"},{"name":"component_summary","logical_type":"STRING"},{"name":"invalid_component_count","logical_type":"INTEGER"},{"name":"character_set","logical_type":"STRING"},{"name":"national_character_set","logical_type":"STRING"},{"name":"rman_configuration","logical_type":"STRING"}
       ], "template_ref": "sql/implementation_precheck.sql", "template_sha256": "58f53474cc018c16db54ebde44d7a6d98e01e08b950367caf66bb8abb68dc45f", "timeout_seconds": 30, "max_rows": 1, "max_bytes": 262144, "cost_level": "LOW"
@@ -5599,8 +5516,7 @@
     {
       "tool_id": "db.clone.precheck",
       "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_implementation", "supported_version_min": 19, "supported_version_max_exclusive": 27,
-      "required_capabilities": ["dynamic_performance_views"], "required_entitlements": [],
-      "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
+      "required_capabilities": ["dynamic_performance_views"], "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
       "output_columns": [
         {"name":"database_name","logical_type":"STRING"},{"name":"db_unique_name","logical_type":"STRING"},{"name":"instance_name","logical_type":"STRING"},{"name":"host_name","logical_type":"STRING"},{"name":"version","logical_type":"STRING"},{"name":"platform_name","logical_type":"STRING"},{"name":"database_role","logical_type":"STRING"},{"name":"open_mode","logical_type":"STRING"},{"name":"log_mode","logical_type":"STRING"},{"name":"force_logging","logical_type":"STRING"},{"name":"flashback_on","logical_type":"STRING"},{"name":"protection_mode","logical_type":"STRING"},{"name":"switchover_status","logical_type":"STRING"},{"name":"cdb","logical_type":"STRING"},{"name":"cluster_database","logical_type":"STRING"},{"name":"compatible","logical_type":"STRING"},{"name":"service_names","logical_type":"STRING"},{"name":"db_recovery_file_dest","logical_type":"STRING"},{"name":"db_recovery_file_dest_size","logical_type":"STRING"},{"name":"datafile_bytes","logical_type":"INTEGER"},{"name":"redo_threads","logical_type":"INTEGER"},{"name":"redo_groups","logical_type":"INTEGER"},{"name":"backup_set_count","logical_type":"INTEGER"},{"name":"last_backup_time","logical_type":"STRING"},{"name":"backup_chain_status","logical_type":"STRING"},{"name":"component_summary","logical_type":"STRING"},{"name":"invalid_component_count","logical_type":"INTEGER"},{"name":"character_set","logical_type":"STRING"},{"name":"national_character_set","logical_type":"STRING"},{"name":"rman_configuration","logical_type":"STRING"}
       ], "template_ref": "sql/implementation_precheck.sql", "template_sha256": "58f53474cc018c16db54ebde44d7a6d98e01e08b950367caf66bb8abb68dc45f", "timeout_seconds": 30, "max_rows": 1, "max_bytes": 262144, "cost_level": "LOW"
@@ -5608,8 +5524,7 @@
     {
       "tool_id": "db.datapump.precheck",
       "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_implementation", "supported_version_min": 19, "supported_version_max_exclusive": 27,
-      "required_capabilities": ["dynamic_performance_views"], "required_entitlements": [],
-      "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "NLS_DATABASE_PARAMETERS", "DBA_DIRECTORIES", "DBA_USERS"], "parameters": [],
+      "required_capabilities": ["dynamic_performance_views"], "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "NLS_DATABASE_PARAMETERS", "DBA_DIRECTORIES", "DBA_USERS"], "parameters": [],
       "output_columns": [
         {"name":"database_name","logical_type":"STRING"},{"name":"db_unique_name","logical_type":"STRING"},{"name":"instance_name","logical_type":"STRING"},{"name":"host_name","logical_type":"STRING"},{"name":"version","logical_type":"STRING"},{"name":"platform_name","logical_type":"STRING"},{"name":"database_role","logical_type":"STRING"},{"name":"open_mode","logical_type":"STRING"},{"name":"cdb","logical_type":"STRING"},{"name":"compatible","logical_type":"STRING"},{"name":"service_names","logical_type":"STRING"},{"name":"datafile_bytes","logical_type":"INTEGER"},{"name":"character_set","logical_type":"STRING"},{"name":"national_character_set","logical_type":"STRING"},{"name":"datapump_directory_name","logical_type":"STRING"},{"name":"datapump_directory_path","logical_type":"STRING"},{"name":"source_schemas","logical_type":"STRING"},{"name":"source_schema_count","logical_type":"INTEGER"}
       ], "template_ref": "sql/datapump_precheck.sql", "template_sha256": "9eb58a04813b0ddd16df46a741898b671a2d71eac7a8f290de459309b3d4b584", "timeout_seconds": 30, "max_rows": 1, "max_bytes": 262144, "cost_level": "LOW"
@@ -5617,8 +5532,7 @@
     {
       "tool_id": "db.ha.adg_drill_precheck",
       "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_implementation", "supported_version_min": 19, "supported_version_max_exclusive": 27,
-      "required_capabilities": ["dynamic_performance_views"], "required_entitlements": [],
-      "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
+      "required_capabilities": ["dynamic_performance_views"], "required_privileges": ["V_$DATABASE", "V_$INSTANCE", "V_$PARAMETER", "V_$DATAFILE", "V_$LOG", "V_$BACKUP_SET", "V_$RMAN_CONFIGURATION", "DBA_REGISTRY", "NLS_DATABASE_PARAMETERS"], "parameters": [],
       "output_columns": [
         {"name":"database_name","logical_type":"STRING"},{"name":"db_unique_name","logical_type":"STRING"},{"name":"instance_name","logical_type":"STRING"},{"name":"host_name","logical_type":"STRING"},{"name":"version","logical_type":"STRING"},{"name":"platform_name","logical_type":"STRING"},{"name":"database_role","logical_type":"STRING"},{"name":"open_mode","logical_type":"STRING"},{"name":"log_mode","logical_type":"STRING"},{"name":"force_logging","logical_type":"STRING"},{"name":"flashback_on","logical_type":"STRING"},{"name":"protection_mode","logical_type":"STRING"},{"name":"switchover_status","logical_type":"STRING"},{"name":"cdb","logical_type":"STRING"},{"name":"cluster_database","logical_type":"STRING"},{"name":"compatible","logical_type":"STRING"},{"name":"service_names","logical_type":"STRING"},{"name":"db_recovery_file_dest","logical_type":"STRING"},{"name":"db_recovery_file_dest_size","logical_type":"STRING"},{"name":"datafile_bytes","logical_type":"INTEGER"},{"name":"redo_threads","logical_type":"INTEGER"},{"name":"redo_groups","logical_type":"INTEGER"},{"name":"backup_set_count","logical_type":"INTEGER"},{"name":"last_backup_time","logical_type":"STRING"},{"name":"backup_chain_status","logical_type":"STRING"},{"name":"component_summary","logical_type":"STRING"},{"name":"invalid_component_count","logical_type":"INTEGER"},{"name":"character_set","logical_type":"STRING"},{"name":"national_character_set","logical_type":"STRING"},{"name":"rman_configuration","logical_type":"STRING"}
       ], "template_ref": "sql/implementation_precheck.sql", "template_sha256": "58f53474cc018c16db54ebde44d7a6d98e01e08b950367caf66bb8abb68dc45f", "timeout_seconds": 30, "max_rows": 1, "max_bytes": 262144, "cost_level": "LOW"

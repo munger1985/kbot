@@ -24,7 +24,7 @@ from tests.unit.aiops_agent.test_aiops_problem_sql_inspection import (
 
 def oracle_tool():
     return DiagnosticRegistry.load().resolve(tool_id=PROBLEM_SQL_TOOL, tool_version="1.0.0",
-        db_type="ORACLE", db_version="19c", capabilities={"dynamic_performance_views"}, entitlements=set())
+        db_type="ORACLE", db_version="19c", capabilities={"dynamic_performance_views"}, )
 
 
 def test_problem_sql_check_names_cover_all_resource_signals_not_only_sorting():
@@ -147,7 +147,7 @@ def test_no_accumulated_seconds_or_onepass_alone_implies_a_sort_problem():
 def test_postgresql_unavailable_workarea_metrics_are_numeric_nulls(version):
     from sqlglot import exp
     tool = DiagnosticRegistry.load().resolve(tool_id=PROBLEM_SQL_TOOL, tool_version="1.0.0",
-        db_type="POSTGRESQL", db_version=version, capabilities={"pg_stat_statements"}, entitlements=set())
+        db_type="POSTGRESQL", db_version=version, capabilities={"pg_stat_statements"}, )
     tree = sqlglot.parse_one(tool.sql, read="postgres")
     metrics = next(cte.this for cte in tree.find_all(exp.CTE) if cte.alias_or_name == "metrics")
     for expression in metrics.expressions:

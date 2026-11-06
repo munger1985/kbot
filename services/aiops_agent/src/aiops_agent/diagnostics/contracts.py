@@ -58,7 +58,6 @@ class DiagnosticToolDefinition(BaseModel):
     supported_version_min: int = Field(ge=0)
     supported_version_max_exclusive: int = Field(gt=0)
     required_capabilities: tuple[str, ...] = ()
-    required_entitlements: tuple[str, ...] = ()
     required_privileges: tuple[str, ...] = ()
     allowed_packages: tuple[str, ...] = ()
     parameters: tuple[DiagnosticParameter, ...] = ()

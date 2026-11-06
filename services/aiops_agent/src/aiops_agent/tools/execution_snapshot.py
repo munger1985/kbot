@@ -48,9 +48,6 @@ class ToolExecutionSnapshotBuilder:
                             capabilities=set(
                                 manifest.required_target_capabilities
                             ),
-                            entitlements=set(
-                                manifest.required_entitlements
-                            ),
                         )
                     except (LookupError, ValueError) as exc:
                         raise PlaybookCatalogError(
@@ -63,9 +60,6 @@ class ToolExecutionSnapshotBuilder:
                         tool_id=definition.tool_id,
                         required_capabilities=set(
                             definition.required_capabilities
-                        ),
-                        required_entitlements=set(
-                            definition.required_entitlements
                         ),
                         required_privileges=set(
                             definition.required_privileges
@@ -94,13 +88,9 @@ class ToolExecutionSnapshotBuilder:
                 continue
             if not set(definition.required_capabilities) <= set(capabilities.target_capabilities):
                 # 固定目录仅包含已离线验证的受控只读工具。未知访问能力可按需探测，
-                # 但商业许可仍为硬门禁，实际权限由目标库执行反馈，绝不写成已具备。
+                # 实际访问权限由目标库执行反馈，绝不写成已具备。
                 if "DB_READONLY" not in capabilities.target_capabilities:
                     continue
-            if not set(definition.required_entitlements) <= set(
-                capabilities.entitlements
-            ):
-                continue
             output_names = tuple(
                 column.name for column in definition.output_columns
             )
@@ -205,7 +195,6 @@ class ToolExecutionSnapshotBuilder:
             db_type=str(capabilities.database_type),
             db_version=capabilities.database_version or "",
             capabilities=set(capabilities.target_capabilities) | set(matches[0].get("required_capabilities", ())),
-            entitlements=set(capabilities.entitlements),
         )
         if resolved.definition.measurement_semantics is not None and str(action.measurement_semantics) != resolved.definition.measurement_semantics:
             raise ValueError(f"工具 {action.tool_id} 的观测口径必须使用目录声明：{resolved.definition.measurement_semantics}")
@@ -248,7 +237,6 @@ class ToolExecutionSnapshotBuilder:
                     db_type=str(capabilities.database_type),
                     db_version=capabilities.database_version or "",
                     capabilities=set(capabilities.target_capabilities),
-                    entitlements=set(capabilities.entitlements),
                 )
                 definition = resolved.definition
                 if definition.measurement_semantics is not None and str(item.measurement_semantics) != definition.measurement_semantics:
@@ -258,9 +246,6 @@ class ToolExecutionSnapshotBuilder:
                     tool_id=definition.tool_id,
                     required_capabilities=set(
                         definition.required_capabilities
-                    ),
-                    required_entitlements=set(
-                        definition.required_entitlements
                     ),
                     required_privileges=set(
                         definition.required_privileges
@@ -434,15 +419,11 @@ class ToolExecutionSnapshotBuilder:
         manifest,
         tool_id: str,
         required_capabilities: set[str],
-        required_entitlements: set[str],
         required_privileges: set[str],
     ) -> None:
         missing = (
             required_capabilities
             - set(manifest.required_target_capabilities)
-        ) | (
-            required_entitlements
-            - set(manifest.required_entitlements)
         ) | (
             required_privileges
             - set(manifest.required_privileges)

@@ -30,7 +30,6 @@
     "pg_read_all_stats",
     "pg_read_all_settings"
   ],
-  "required_entitlements": [],
   "input_schema": "postgresql.maintenance.autovacuum.input.v1",
   "defaults": {},
   "limits": {

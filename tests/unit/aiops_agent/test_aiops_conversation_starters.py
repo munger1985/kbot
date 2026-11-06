@@ -25,7 +25,7 @@ def _target(**overrides):
         "status": "ENABLED",
         "readonly_connection_enabled": True,
         "connectivity_status": "CONNECTED",
-        "capabilities_json": {"entitlements": ["ORACLE_DIAGNOSTICS_PACK"]},
+        "capabilities_json": {},
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -484,7 +484,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
 
 
 class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
-    async def test_report_ui_selection_freezes_license_check_for_execution(self) -> None:
+    async def test_report_ui_selection_does_not_add_commercial_license_requirements(self) -> None:
         catalog = ConversationStarterCatalog()
         for starter_id, parameters in (
             ("oracle.report.awr", {
@@ -513,7 +513,7 @@ class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
                     capabilities={"ACTIVE_DIAGNOSIS"},
                 )
                 self.assertEqual(starter_id, frozen["starter_id"])
-                self.assertEqual(["ORACLE_DIAGNOSTICS_PACK"], frozen["required_entitlements"])
+                self.assertNotIn("required_entitlements", frozen)
 
     def _diagnostic_output(
         self,

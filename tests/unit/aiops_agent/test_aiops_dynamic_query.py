@@ -218,15 +218,7 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR("
             "NULL, NULL, 'ALLSTATS LAST'))"
         )
-        with self.assertRaises(DynamicQueryRejected) as rejected:
-            self.policy.validate(
-                "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_AWR(:sql_id))",
-                {"sql_id": "6tjx7su0q5ttj"},
-            )
-        self.assertEqual("ORACLE_DIAGNOSTICS_PACK_REQUIRED", rejected.exception.code)
-        historical = OracleDynamicQueryPolicy(
-            DynamicQueryPolicySnapshot(allow_diagnostics_pack=True)
-        ).validate(
+        historical = self.policy.validate(
             "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_AWR(:sql_id))",
             {"sql_id": "6tjx7su0q5ttj"},
         )
@@ -242,22 +234,20 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             historical.referenced_objects,
         )
 
-    def test_pack_views_require_explicit_entitlements(self) -> None:
+    def test_historical_and_monitor_views_use_database_permissions_not_license_flags(self) -> None:
         queries = (
-            ("SELECT snap_id FROM sys.dba_hist_snapshot", "ORACLE_DIAGNOSTICS_PACK_REQUIRED"),
-            ("WITH dba_hist_snapshot AS (SELECT 1 AS snap_id FROM dual) SELECT snap_id FROM sys.dba_hist_snapshot", "ORACLE_DIAGNOSTICS_PACK_REQUIRED"),
-            ("WITH x AS (WITH dba_hist_snapshot AS (SELECT 1 AS snap_id FROM dual) SELECT snap_id FROM dba_hist_snapshot) SELECT snap_id FROM dba_hist_snapshot", "ORACLE_DIAGNOSTICS_PACK_REQUIRED"),
-            ("WITH h AS (SELECT session_id FROM gv$active_session_history) SELECT session_id FROM h", "ORACLE_DIAGNOSTICS_PACK_REQUIRED"),
-            ("SELECT sql_id FROM sys.v_$sql_monitor", "ORACLE_TUNING_PACK_REQUIRED"),
-            ("SELECT sql_id FROM gv$sql_plan_monitor", "ORACLE_TUNING_PACK_REQUIRED"),
+            "SELECT snap_id FROM sys.dba_hist_snapshot",
+            "WITH dba_hist_snapshot AS (SELECT 1 AS snap_id FROM dual) SELECT snap_id FROM sys.dba_hist_snapshot",
+            "WITH x AS (WITH dba_hist_snapshot AS (SELECT 1 AS snap_id FROM dual) SELECT snap_id FROM dba_hist_snapshot) SELECT snap_id FROM dba_hist_snapshot",
+            "WITH h AS (SELECT session_id FROM gv$active_session_history) SELECT session_id FROM h",
+            "SELECT sql_id FROM sys.v_$sql_monitor",
+            "SELECT sql_id FROM gv$sql_plan_monitor",
         )
-        for sql, code in queries:
-            with self.subTest(sql=sql), self.assertRaises(DynamicQueryRejected) as rejected:
-                self.policy.validate(sql)
-            self.assertEqual(code, rejected.exception.code)
-        policy = OracleDynamicQueryPolicy(DynamicQueryPolicySnapshot(
-            allow_diagnostics_pack=True, allow_tuning_pack=True))
-        self.assertTrue(policy.validate("SELECT sql_id FROM gv$sql_monitor").referenced_objects)
+        for sql in queries:
+            with self.subTest(sql=sql):
+                query = self.policy.validate(sql)
+                self.assertTrue(query.referenced_objects)
+                self.assertIn("FETCH FIRST", query.normalized_sql)
 
     def test_only_declared_database_packages_are_allowed(self) -> None:
         restricted = OracleDynamicQueryPolicy(
@@ -771,10 +761,10 @@ class DynamicQueryPlanningTest(unittest.TestCase):
             dynamic_tool["database_access"]["recommended_system_privileges"],
         )
         self.assertEqual(
-            ["CURRENT"],
+            ["CURRENT", "AWR", "ASH"],
             dynamic_tool["database_access"]["diagnostic_scopes"],
         )
-        self.assertTrue(dynamic_tool["database_access"]["license_gating"])
+        self.assertNotIn("license_gating", dynamic_tool["database_access"])
 
     def test_fixed_tool_exposes_complete_parameter_constraints(self) -> None:
         diagnostic_registry = DiagnosticRegistry.load()
@@ -1144,7 +1134,6 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
                 database_version="19c",
                 target_enabled=True,
                 target_reachable=True,
-                entitlements=("ORACLE_DIAGNOSTICS_PACK",),
                 target_capabilities=(
                     "DB_READONLY",
                     "dynamic_performance_views",

@@ -11,7 +11,6 @@
   "optional_source_capabilities": [],
   "required_target_capabilities": ["DB_READONLY", "data_lock_waits", "information_schema", "sys_schema"],
   "required_privileges": ["PROCESS"],
-  "required_entitlements": [],
   "input_schema": "mysql.session.blocking-chain.input.v1",
   "defaults": {"limit": 100},
   "limits": {"max_rows": 500, "timeout_seconds": 90, "max_attempts": 2, "cost_units": 5},

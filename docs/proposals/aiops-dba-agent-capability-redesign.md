@@ -71,7 +71,7 @@ Agent 应像 DBA 一样明确问题、主动找信息、比较解释、选择有
 
 覆盖数据库性能、SQL、锁与事务、连接、容量、复制与高可用、备份恢复、
 配置与维护、巡检、故障复盘、实施文档和知识问答。Oracle、MySQL、PostgreSQL
-交付相同业务闭环，但使用各自真实机制、版本、许可与数据来源，不伪造等价指标。
+交付相同业务闭环，但使用各自真实机制、版本、技术能力与数据来源，不伪造等价指标。
 
 不把下面事项作为默认能力：任意 SSH/Shell、任意 SQL、自动安装扩展、扩大权限、
 自动启用采集、任意访问业务表、未经审批执行变更，以及尚未接入的 APM/云平台。
@@ -113,16 +113,16 @@ Report 保存冻结出版物，Registry 管理知识资产与发布，KC 仅承�
 
 ## 4. 实际能力发现与资源授权
 
-### 4.1 声明、许可、访问与观测分开
+### 4.1 声明、访问与观测分开
 
 来源能力至少保留配置声明、探测结果、探测时间、配置版本、可访问范围及失败原因。
 每项能力分别表达 `AVAILABLE / UNAVAILABLE / UNKNOWN / NOT_APPLICABLE`；
-访问失败进一步区分权限、许可、版本不支持、未接入、无历史、暂时故障及预算限制。
+访问失败进一步区分权限、版本不支持、未接入、无历史、暂时故障及预算限制。
 能力状态不等于数据库健康状态，无复制拓扑不是“复制故障”。
 
-Oracle 配置只读连接不能推定拥有 SELECT ANY DICTIONARY、包执行权限或 Pack 许可；
+Oracle 配置只读连接不能推定拥有 SELECT ANY DICTIONARY、包执行权限；
 PG/MySQL 的角色、扩展和 Performance Schema consumer 也必须按实际观测处理。
-许可由显式治理配置决定，不能由视图可查询反推出已获商业许可。
+商业许可不由 AIOps 管理，不设置许可声明字段或执行门禁。
 配置变化、凭据轮换或实例切换使相关探测过期；过期结果保留来源但不能作为当前可用保证。
 每轮按需要做低成本核验，不做无界权限扫描，也不修改应用自身数据库 Schema。
 
@@ -133,7 +133,7 @@ PG/MySQL 的角色、扩展和 Performance Schema consumer 也必须按实际观
 权限缺口、截断、旧时点/重复请求、预算耗尽立即停止，保留已完成时点与明确缺口。
 这些事实进入同一证据/报告链，保留当前或累计口径，不自动声称指定历史窗口已覆盖，
 也不绕过统计重置、主体、单位与计数器语义校验来生成差分，不启用周期采集。
-动态采样沿用三库原有 AST、对象/函数及商业许可边界；不接纳 EXPLAIN 语句或需要审批的查询，
+动态采样沿用三库原有 AST、对象/函数及实际权限边界；不接纳 EXPLAIN 语句或需要审批的查询，
 冻结后与固定工具共用采样执行器和整轮组数上限，每个时点独立签发 Grant、兑换当前凭据并执行。
 证据摘要与原始完成数重放复核，实际目标/工具身份不匹配或重复请求的结果不得进入结论。
 持久化后续补采、证据复用及数据库同执行游标分页已由后续增量接通；
@@ -368,7 +368,7 @@ RETRY_WAIT 机器工作而仍有人工请求时暂停 Run。并行工作及机�
 | 巡检/趋势 | 拓扑适用性、同口径历史、覆盖、季节性、问题复发 | 检查状态、趋势与待处理事项，不把缺数据写成健康 |
 | 知识/实施文档 | 来源版本、环境差异、操作前提、缺失参数 | 有出处的方法与环境化步骤，不生成假执行结果 |
 
-Oracle 保留 RAC/CDB、AWR/ASH/SQL Monitor 的范围和 Pack 门禁；PG 保留
+Oracle 保留 RAC/CDB、AWR/ASH/SQL Monitor 的范围与真实数据库权限边界；PG 保留
 Timeline/LSN、语句多维身份与扩展差异；MySQL 保留 Schema/Digest、GTID/Binlog、
 consumer 与复制 channel 差异。观察类型不适用时可用其他证据回答，不虚构对照字段。
 
@@ -463,7 +463,7 @@ AIOps 不实现另一套优化器，不主动请求重新估算；它读取已�
 
 | 引擎 | 可以读取的已有证据 | 边界 |
 | --- | --- | --- |
-| Oracle | 完整游标身份对应的 GV$SQL_PLAN / GV$SQL_PLAN_STATISTICS_ALL、DBMS_XPLAN.DISPLAY_CURSOR；有版本、权限和许可支持时读取 ASH、SQL Monitor、AWR 及既有报告 | 缓存可能淘汰，短 SQL 未必进入 Monitor/ASH；RAC/容器、SQL执行标识、子游标和计划分别匹配；不调用 EXPLAIN PLAN 或写计划表 |
+| Oracle | 完整游标身份对应的 GV$SQL_PLAN / GV$SQL_PLAN_STATISTICS_ALL、DBMS_XPLAN.DISPLAY_CURSOR；有版本和实际权限支持时读取 ASH、SQL Monitor、AWR 及既有报告 | 缓存可能淘汰，短 SQL 未必进入 Monitor/ASH；RAC/容器、SQL执行标识、子游标和计划分别匹配；不调用 EXPLAIN PLAN 或写计划表 |
 | PostgreSQL | pg_stat_statements、pg_stat_activity、锁与系统统计、对象/索引目录；读取已接入的 auto_explain 日志或 DBA 已提供计划 | pg_stat_statements 不保存历史执行计划；不能从 Query ID 或规范化文本推导绑定值和任意历史计划，不自动开启 auto_explain |
 | MySQL | performance_schema / sys 中已有语句、等待、锁及统计，可见目录、已接入日志和 DBA 已提供计划 | Digest 不保存任意历史计划或全部参数；事件历史可能已淘汰，不能从 Digest 重建真实语句执行 |
 
@@ -764,7 +764,7 @@ Agent 把知识转成待核实假设或检查方案，然后获取当前证据�
 
 | 当前模块 | 目标改造 | 保留边界 |
 | --- | --- | --- |
-| tools/capabilities、diagnostic_sources、monitoring | 真实能力状态与目标限定发现 | 配置、许可、权限和观测不互相推定 |
+| tools/capabilities、diagnostic_sources、monitoring | 真实能力状态与目标限定发现 | 配置、实际权限和观测不互相推定 |
 | investigation、query_freezing、tools/compiler | 问题驱动检查、依赖、预算与范围 | 复用 Task/Worker，不增加并行诊断引擎 |
 | contracts、domain/diagnosis、diagnosis/sql_diagnosis | 通用 Claim、证据关联、修订与调查记录 | SQL 专项身份/窗口规则继续适用 |
 | turn_answer_handlers、前端 Answer Block | 从记录生成分任务回答 | 数据表与数字由服务端确定 |
@@ -940,7 +940,7 @@ Executor 明确标记 SAME_CONNECTION_CURRENT 后，调查来源才接受这些�
 对需要较长观察、且已声明 observation_schedule_policy 的低成本固定工具或三库受控动态查询，
 模型可提出 observation_schedule：次数 2–4（含当前成功基线）、间隔 30–900 秒。
 它与短时 sampling 互斥，共用每轮一组额度；不能通过换间隔重复安排同一动作。
-仍受原 AST、对象/函数、只读和 Oracle 商业许可边界限制；不发起任何 EXPLAIN。
+仍受原 AST、对象/函数、只读及实际数据库权限边界限制；不发起任何 EXPLAIN。
 单次最多 5 秒、200 行、128 KiB，不改变周期采集配置、数据库权限或业务表。
 
 基线完整成功、未截断且时间/目标合法后，在完成事务内复用现有 Run/Task 建立 EVIDENCE_FOLLOWUP。
@@ -977,7 +977,7 @@ Zabbix 保留 clock/ns，首尾整秒超集按原始纳秒精确裁剪；Loki �
 工具卡声明 pagination_policy 后，规划器可按明确的 evidence_need/decision_impact 设置
 action.pagination={page_size:1..200,max_pages:2..4}，每轮最多一组。只适用于三库受 AST
 策略约束的动态只读查询；不能与短时采样、后台未来观察或 EXPLAIN 叠加，不改变对象、
-函数、Oracle 商业许可或当前凭据边界，固定目录工具不能借此扩大结果上限。
+函数或当前凭据边界，固定目录工具不能借此扩大结果上限。
 
 规划冻结总行数（至多800行）、有效行内容字节（1MiB）、列/单元格和20秒语句上限，
 一并写入签名 Grant。SQL 最多多一行哨兵；哨兵只判断是否触及总行数上限，不进入结果。
@@ -1229,7 +1229,7 @@ SQL_OBJECT_GRAPH.v1 仍从原始 SQL、已有匹配计划及可见目录解析�
 附件与复合材料仍须完整理解。首轮入口不限定最终证据清单，不把累计画像冒充根因诊断。
 
 通用计划中某项策略拒绝不应阻塞其他独立合规动作；按依赖闭包移除不可执行动作，并保留拒绝
-原因。确需模型修正时才修正；Oracle 商业许可仍是硬门禁，能力目录显式告知许可开关。
+原因。确需模型修正时才修正；商业许可不由 AIOps 管理，能力目录只描述技术执行边界。
 所有规划、修正与充分性评估模型调用均扣除配置化回答预留时间，不仅在重规划调度前检查一次。
 不扩大原 Run 期限、不硬编码模型输出限额；工作阶段预算耗尽后以已有事实进入回答。
 

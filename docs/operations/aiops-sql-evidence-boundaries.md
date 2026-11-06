@@ -1,15 +1,15 @@
 # SQL 诊断证据与授权边界
 
-更新日期：2026-11-04。本文描述本轮代码能力，不代表已部署或已通过真实数据库验收。
+更新日期：2026-11-06。本文描述本轮代码能力，不代表已部署或已通过真实数据库验收。
 [SQL 诊断详细设计](../proposals/aiops-sql-diagnosis-detailed-design.md)仍是目标态，
 [实施记录与发布检查](aiops-sql-diagnosis-implementation.md)区分已实现与尚待交付的切片。
 
-## Oracle 授权声明
+## Oracle 执行边界
 
-在 AIOps Target 编辑页按合同实际授权声明 Diagnostics Pack 和 Tuning Pack；
-数据库参数、账号权限和连接成功都不能证明许可证有效。未确认 Diagnostics Pack
-不得使用 AWR/ASH；SQL Monitor 同时要求两项声明。许可守卫继续适用于目录及动态查询。
-普通当前游标、计划与对象观察不因未声明 Pack 而整体不可用。
+商业许可不由 AIOps 管理；Target 编辑页不维护 Diagnostics/Tuning Pack 声明，
+AWR/ASH、SQL Monitor 以及目录和动态查询均不设置商业许可门禁。
+目标库技术能力、真实账号权限、只读策略与资源预算继续约束执行。
+详见 [Oracle 原生报告的执行边界](aiops-oracle-report-admission.md)。
 AWR 窗口采用实际快照区间，不能默认固定一小时，也不能分摊成精确 15 分钟。
 
 ## Top SQL 的窗口和候选
@@ -89,7 +89,7 @@ PG 全局 stats_reset 不是单 SQL 的确定起点，plan_count=0 不代表没�
 
 MySQL 补齐独立方言的长尾只读查询：专用策略、签名 Grant、Executor 再校验及只读事务，
 仅允许授权策略内的目录/性能视图和函数；禁止业务表、DML、变量、文件、锁及多语句。
-Oracle/PG 现有安全路径和 Oracle Pack 守卫保持有效。
+Oracle/PG 现有实际权限与只读安全路径保持有效，商业许可不由 AIOps 管理。
 
 ## 时限与发布
 

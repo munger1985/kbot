@@ -134,8 +134,6 @@ class DynamicQueryPolicySnapshot(BaseModel):
     max_sql_chars: int = Field(default=20_000, ge=1, le=100_000)
     max_bind_count: int = Field(default=32, ge=0, le=128)
     allow_catalog_object_families: bool = True
-    allow_diagnostics_pack: bool = False
-    allow_tuning_pack: bool = False
 
 
 class ValidatedDynamicQuery(BaseModel):
@@ -331,15 +329,6 @@ class OracleDynamicQueryPolicy:
                     "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
                     "动态 SQL 只允许策略声明的只读包函数",
                 )
-            if (
-                str(dot.this.name).upper() == "DBMS_XPLAN"
-                and str(dot.expression.name).upper() == "DISPLAY_AWR"
-                and not self.snapshot.allow_diagnostics_pack
-            ):
-                raise DynamicQueryRejected(
-                    "ORACLE_DIAGNOSTICS_PACK_REQUIRED",
-                    "访问 AWR 需要确认 Oracle Diagnostics Pack 授权",
-                )
             package_functions.add(id(dot.expression))
         table_wrappers = {
             id(table.this)
@@ -463,31 +452,7 @@ class OracleDynamicQueryPolicy:
                     f"动态 SQL 禁止访问 Schema：{owner}",
                 )
             short_name = name.lower()
-            diagnostic_pack_object = (
-                short_name.startswith(("dba_hist_", "cdb_hist_"))
-                or short_name in {
-                    "v$active_session_history", "gv$active_session_history",
-                    "v_$active_session_history", "gv_$active_session_history",
-                }
-            )
-            tuning_pack_object = short_name in {
-                "v$sql_monitor", "gv$sql_monitor", "v_$sql_monitor", "gv_$sql_monitor",
-                "v$sql_plan_monitor", "gv$sql_plan_monitor",
-                "v_$sql_plan_monitor", "gv_$sql_plan_monitor",
-            }
-            if diagnostic_pack_object and not self.snapshot.allow_diagnostics_pack:
-                raise DynamicQueryRejected(
-                    "ORACLE_DIAGNOSTICS_PACK_REQUIRED",
-                    "访问 AWR 或 ASH 需要确认 Oracle Diagnostics Pack 授权",
-                )
-            if tuning_pack_object and not (
-                self.snapshot.allow_diagnostics_pack and self.snapshot.allow_tuning_pack
-            ):
-                raise DynamicQueryRejected(
-                    "ORACLE_TUNING_PACK_REQUIRED",
-                    "访问 SQL Monitor 需要确认 Oracle Diagnostics Pack 和 Tuning Pack 授权",
-                )
-            # 即使同名 CTE 出现在其他作用域，也不能跳过授权检查。
+            # CTE 只跳过自身目录解析，实际引用对象仍按作用域接受检查。
             if not owner and not table.catalog and name.lower() in cte_names:
                 continue
             family_allowed = (

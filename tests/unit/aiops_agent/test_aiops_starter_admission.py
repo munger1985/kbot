@@ -1,4 +1,4 @@
-"""报告功能入口、许可准入和固定规划的跨项目回归。"""
+"""报告功能入口、真实能力准入和固定规划的跨项目回归。"""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ REPORT_PARAMETERS = {
 }
 
 
-def _target(*, licensed: bool = False, **overrides):
+def _target(**overrides):
     values = {
         "target_id": uuid7(),
         "display_name": "报告目标",
@@ -70,7 +70,6 @@ def _target(*, licensed: bool = False, **overrides):
         "connectivity_status": "CONNECTED",
         "capabilities_json": {
             "capabilities": ["DB_READONLY"],
-            "entitlements": ["ORACLE_DIAGNOSTICS_PACK"] if licensed else [],
         },
     }
     values.update(overrides)
@@ -166,55 +165,40 @@ class StarterAdmissionTest(unittest.IsolatedAsyncioTestCase):
     def test_mixed_targets_do_not_hide_eligible_oracle_report(self):
         self.assertEqual(
             "AVAILABLE",
-            self._starters(_target(), _target(licensed=True))["oracle.report.awr"]["status"],
+            self._starters(_target(), _target())["oracle.report.awr"]["status"],
         )
         self.assertEqual(
             "AVAILABLE",
             self._starters(_target())["oracle.report.awr"]["status"],
         )
 
-    async def test_natural_language_and_frozen_plans_recheck_entitlements(self):
+    async def test_report_planning_requires_no_commercial_license_declaration(self):
         for starter_id in REPORT_PARAMETERS:
             with self.subTest(starter_id=starter_id):
                 context = self._context(starter_id, _target())
-                self.assertEqual(
-                    ["ORACLE_DIAGNOSTICS_PACK"],
-                    context.conversation_starter["required_entitlements"],
-                )
-                with self.assertRaises(AIOpsApplicationError) as raised:
-                    await self._plan(context)
-                self.assertEqual("AIOPS_STARTER_ENTITLEMENT_REQUIRED", raised.exception.code)
-                self.assertFalse(raised.exception.retryable)
-                self.assertIn("ORACLE_DIAGNOSTICS_PACK", raised.exception.message)
-        self.service._record_planning_route.assert_not_awaited()
+                self.assertNotIn("required_entitlements", context.conversation_starter)
+                self.assertNotIn("entitlements", context.capabilities.model_dump())
+                investigation, tools, _, _ = await self._plan(context)
+                self.assertTrue(investigation.plan.actions)
+                self.assertTrue(tools)
 
     async def test_missing_tool_is_business_error_not_internal_failure(self):
         for starter_id in REPORT_PARAMETERS:
             with self.subTest(starter_id=starter_id):
-                context = self._context(starter_id, _target(licensed=True, version_code=None))
+                context = self._context(starter_id, _target(version_code=None))
                 with self.assertRaises(AIOpsApplicationError) as raised:
                     await self._plan(context)
                 self.assertEqual("AIOPS_STARTER_TOOLS_UNAVAILABLE", raised.exception.code)
                 self.assertFalse(raised.exception.retryable)
         self.service._record_planning_route.assert_not_awaited()
 
-    async def test_entitled_reports_pass_real_catalog_parameter_validation(self):
+    async def test_reports_pass_real_catalog_parameter_validation_without_license_flags(self):
         for starter_id in REPORT_PARAMETERS:
             with self.subTest(starter_id=starter_id):
-                context = self._context(starter_id, _target(licensed=True))
+                context = self._context(starter_id, _target())
                 investigation, tools, _, _ = await self._plan(context)
                 selected_ids = {tool["tool_id"] for tool in tools}
-                required_entitlements = {
-                    entitlement
-                    for tool in self.diagnostics.tools
-                    if tool.definition.db_type == "ORACLE"
-                    and tool.definition.tool_id in selected_ids
-                    for entitlement in tool.definition.required_entitlements
-                }
-                self.assertEqual(
-                    required_entitlements,
-                    set(context.conversation_starter["required_entitlements"]),
-                )
+                self.assertNotIn("required_entitlements", context.conversation_starter)
                 investigation = self.service._bind_target_to_plan(
                     investigation=self.service._apply_default_temporal_windows(
                         reset_model_deferred_flags(investigation),
@@ -243,7 +227,7 @@ class StarterAdmissionTest(unittest.IsolatedAsyncioTestCase):
                     )
 
     async def test_execute_does_not_wrap_admission_error_or_retry_it(self):
-        context = self._context("oracle.report.awr", _target())
+        context = self._context("oracle.report.awr", _target(version_code=None))
         with self.assertRaises(AIOpsApplicationError) as raised:
             await self._plan(context)
         error = raised.exception
@@ -274,7 +258,7 @@ class StarterAdmissionTest(unittest.IsolatedAsyncioTestCase):
         }
         for starter_id, parameters in REPORT_PARAMETERS.items():
             with self.subTest(starter_id=starter_id):
-                target = _target(licensed=True)
+                target = _target()
                 context = self._context(starter_id, target)
                 context.conversation_starter = self.catalog.freeze(
                     selection=ConversationStarterSelection(

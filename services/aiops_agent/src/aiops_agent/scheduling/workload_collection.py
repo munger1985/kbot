@@ -294,9 +294,6 @@ class WorkloadCollectionScheduler:
 
     def _freeze_tools(self, *, target, kind: str, policy: dict, previous_pool: dict | None = None) -> tuple[list[dict], list[dict]]:
         capabilities = _capability_names(target.capabilities_json)
-        entitlements = _string_set(
-            dict(target.capabilities_json or {}).get("entitlements")
-        )
         db_type = str(target.db_type)
         if db_type == "ORACLE":
             requested = _ORACLE_WORKLOAD_TOOLS if kind == "WORKLOAD" else ()
@@ -314,7 +311,6 @@ class WorkloadCollectionScheduler:
                     db_type=db_type,
                     db_version=target.version_code or "",
                     capabilities=capabilities,
-                    entitlements=entitlements,
                 )
             except (LookupError, ValueError):
                 unavailable.append(
@@ -393,7 +389,6 @@ class WorkloadCollectionScheduler:
             "db_type": str(target.db_type),
             "configured_version": target.version_code,
             "capabilities": sorted(_capability_names(raw)),
-            "entitlements": sorted(_string_set(raw.get("entitlements"))),
             "target_row_version": int(target.row_version),
             "capability_probe": dict(raw.get("capability_probe") or {}),
         }

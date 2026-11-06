@@ -25,7 +25,6 @@
     "information_schema"
   ],
   "required_privileges": [],
-  "required_entitlements": [],
   "input_schema": "mysql.instance.throughput.input.v1",
   "defaults": {},
   "limits": {
