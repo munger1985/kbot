@@ -50,16 +50,40 @@ class ExternalNotificationService:
         self._uow_factory, self.config = uow_factory, config
         self.vault, self.sender, self.authority = vault, sender, authority
 
-    def enabled(self):
-        if not self.config.enabled:
-            raise ExternalDeliveryError("NOTIFICATION_EXTERNAL_DISABLED", 503)
+    async def get_settings(self, *, scope, actor_id):
+        async with self._uow_factory() as uow:
+            row = await uow.external_delivery.settings(scope=scope)
+        return {"public_origin": (row or {}).get("public_origin") or "",
+                "row_version": (row or {}).get("row_version", 0)}
 
-    def runtime_status(self):
-        """公开部署门禁状态，不暴露密钥、地址或其他部署信息。"""
-        return {"enabled": self.config.enabled,
-                "code": None if self.config.enabled else "NOTIFICATION_EXTERNAL_DISABLED",
-                "message": "" if self.config.enabled else
-                    "外部通知尚未在部署配置中启用，请联系部署管理员完成配置；站内通知不受影响。"}
+    async def update_settings(self, *, scope, actor_id, body):
+        from platform_core.notifications.delivery import notification_settings_id
+        now, object_id = now_utc(), notification_settings_id(scope)
+        async with self._uow_factory() as uow:
+            repo = uow.external_delivery
+            await repo.lock_configuration()
+            row = await repo.settings(scope=scope)
+            if (row or {}).get("row_version", 0) != body.expected_row_version:
+                raise ExternalDeliveryError("NOTIFICATION_VERSION_CONFLICT")
+            if not body.public_origin and await repo.active_policies(scope=scope):
+                raise ExternalDeliveryError("NOTIFICATION_PUBLIC_ORIGIN_IN_USE", 409)
+            values = {"public_origin": body.public_origin or None}
+            if row:
+                if not await repo.change("settings", scope=scope, object_id=object_id,
+                    expected_version=body.expected_row_version, values=values, actor_id=actor_id, now=now):
+                    raise ExternalDeliveryError("NOTIFICATION_VERSION_CONFLICT")
+            else:
+                await repo.add("settings", scope=scope, actor_id=actor_id, now=now,
+                    values={"id": object_id, **values})
+            await repo.audit(scope=scope, action="settings.update", object_id=object_id,
+                actor_id=actor_id, outcome="UPDATED", now=now)
+            await uow.commit()
+        return {"public_origin": body.public_origin, "row_version": body.expected_row_version + 1}
+
+    @staticmethod
+    async def _require_business_origin(repo, scope):
+        if not (await repo.settings(scope=scope) or {}).get("public_origin"):
+            raise ExternalDeliveryError("NOTIFICATION_PUBLIC_ORIGIN_REQUIRED", 422)
 
     async def list(self, kind, *, scope, limit=100, offset=0, status=None):
         async with self._uow_factory() as uow:
@@ -75,7 +99,7 @@ class ExternalNotificationService:
                 "has_more": len(rows) > limit, "limit": limit, "offset": offset}
 
     async def create_connection(self, *, scope, actor_id, body):
-        # 配置保存不调用飞书，不依赖外发总开关；发送与入队门禁保持独立。
+        # 配置保存不调用飞书；发送与入队分别校验当前渠道及目标。
         object_id, now = uuid4(), now_utc()
         reference = await self.vault.write(scope=scope, object_id=uuid4(), values={"app_secret": body.app_secret.get_secret_value()})
         try:
@@ -95,7 +119,7 @@ class ExternalNotificationService:
             raise
 
     async def update_connection(self, *, scope, actor_id, object_id, body):
-        # 外发停用时仍可维护连接、轮换密钥或暂停渠道。
+        # 渠道暂停时仍可维护连接和轮换密钥。
         now, reference = now_utc(), None
         if body.app_secret is not None:
             reference = await self.vault.write(scope=scope, object_id=uuid4(), values={"app_secret": body.app_secret.get_secret_value()})
@@ -122,7 +146,6 @@ class ExternalNotificationService:
             raise
 
     async def check_connection(self, *, scope, actor_id, object_id):
-        self.enabled()
         async with self._uow_factory() as uow:
             row = await uow.external_delivery.get("connection", scope=scope, object_id=object_id)
         if row is None:
@@ -147,7 +170,6 @@ class ExternalNotificationService:
                 "message": "令牌检查不代表消息已投递"}
 
     async def create_binding(self, *, scope, actor_id, body):
-        self.enabled()
         if body.actor_id and not await self.authority.actor_active(scope=scope, actor_id=body.actor_id):
             raise ExternalDeliveryError("NOTIFICATION_ACTOR_UNAVAILABLE", 422)
         now = now_utc()
@@ -188,7 +210,6 @@ class ExternalNotificationService:
         return await self.challenge(scope=scope, actor_id=actor_id, object_id=object_id)
 
     async def challenge(self, *, scope, actor_id, object_id):
-        self.enabled()
         code, salt, now = f"{secrets.randbelow(1000000):06}", secrets.token_hex(16), now_utc()
         digest = hashlib.scrypt(code.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1).hex()
         reference = await self.vault.write(scope=scope, object_id=uuid4(), values={"verification_code": code})
@@ -223,7 +244,6 @@ class ExternalNotificationService:
             raise
 
     async def confirm(self, *, scope, actor_id, object_id, body):
-        self.enabled()
         now, valid = now_utc(), False
         async with self._uow_factory() as uow:
             repo = uow.external_delivery
@@ -254,10 +274,12 @@ class ExternalNotificationService:
         return {"status": "VERIFIED"}
 
     async def create_policy(self, *, scope, actor_id, body):
-        self.enabled()
         now = now_utc()
         async with self._uow_factory() as uow:
             repo = uow.external_delivery
+            await repo.lock_configuration()
+            if body.enabled:
+                await self._require_business_origin(repo, scope)
             if not await repo.get("connection", scope=scope, object_id=body.connection_id, lock=True):
                 raise ExternalDeliveryError("NOTIFICATION_CONNECTION_NOT_FOUND", 404)
             for binding_id in body.binding_ids:
@@ -281,10 +303,12 @@ class ExternalNotificationService:
             entry_id=entry_id, expires_at=expires_at, purpose=purpose, actor_id=actor_id, now=now)
 
     async def set_policy_enabled(self, *, scope, actor_id, object_id, expected_version, enabled):
-        self.enabled()
         now = now_utc()
         async with self._uow_factory() as uow:
             repo = uow.external_delivery
+            await repo.lock_configuration()
+            if enabled:
+                await self._require_business_origin(repo, scope)
             if not await repo.change("policy", scope=scope, object_id=object_id, expected_version=expected_version,
                 values={"enabled": enabled}, actor_id=actor_id, now=now):
                 raise ExternalDeliveryError("NOTIFICATION_VERSION_CONFLICT")
@@ -321,7 +345,6 @@ class ExternalNotificationService:
                 await uow.external_delivery.my_bindings(scope=scope, actor_id=actor_id)]}
 
     async def queue_test(self, *, scope, actor_id, object_id, binding_id):
-        self.enabled()
         now = now_utc()
         async with self._uow_factory() as uow:
             repo = uow.external_delivery
@@ -349,7 +372,6 @@ class ExternalNotificationService:
                     "metrics": await uow.external_delivery.metrics(scope=scope, now=now_utc())}
 
     async def retry(self, *, scope, actor_id, job_id, body):
-        self.enabled()
         now = now_utc()
         async with self._uow_factory() as uow:
             repo = uow.external_delivery
@@ -398,8 +420,6 @@ class ExternalNotificationService:
         return {"job_id": target_id}
 
     async def dispatch_once(self):
-        if not self.config.enabled:
-            return False
         now = now_utc()
         async with self._uow_factory() as uow:
             job = await uow.external_delivery.claim(now=now, lease_seconds=self.config.lease_seconds,

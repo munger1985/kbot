@@ -64,7 +64,7 @@ class NotificationProjectionService:
                 domain_id=envelope.domain_id,
             ))
         title = definition.title
-        if self._external_config is not None and self._external_config.enabled and envelope.event_type.startswith("aiops."):
+        if self._external_config is not None and envelope.event_type.startswith("aiops."):
             from main_api.application.aiops_notification_routes import aiops_notification_route
             from platform_core.notifications.delivery import DeliveryScope, EXTERNAL_EVENTS
             from platform_core.notifications.external_projection import enqueue_external_event

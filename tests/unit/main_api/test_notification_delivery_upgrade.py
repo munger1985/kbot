@@ -14,7 +14,9 @@ def test_upgrade_contract_matches_canonical_without_destructive_sql():
     sql = (ROOT / "database/oracle/operations/upgrade_notification_delivery_9.sql").read_text()
     canonical = (ROOT / "database/oracle/main_api/003_notification_delivery.sql").read_text()
     expected = upgrade.contract(sql)
-    assert expected == upgrade.contract(canonical)
+    current = upgrade.contract(canonical)
+    assert expected == {**current, "tables": {k:v for k,v in current["tables"].items() if k != "KBOT_NOTIFY_SETTINGS"}}
+    assert current["tables"]["KBOT_NOTIFY_SETTINGS"]["columns"]["PUBLIC_ORIGIN"] == ["VARCHAR2(2048 CHAR)", "Y"]
     assert len(expected["tables"]) == 8
     assert len(expected["indexes"]) == 7
     uncommented = "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))

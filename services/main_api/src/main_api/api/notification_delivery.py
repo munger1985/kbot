@@ -7,6 +7,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from platform_core.notifications.delivery import (
     BindingConfirmation, BindingCreate, ConnectionCreate, ConnectionUpdate, ExternalPolicyCreate, RetryRequest, DeliveryStatus,
+    NotificationSettingsUpdate,
 )
 from main_api.application.notification_delivery import ExternalDeliveryError
 from main_api.api.notification_delivery_auth import external_context, external_entry_actor, external_capabilities
@@ -16,8 +17,17 @@ router = APIRouter(prefix="/api/v1/notification-delivery", tags=["Notification D
 
 @router.get("/capabilities")
 async def capabilities(request: Request):
-    result = await external_capabilities(request)
-    return {**result, "runtime": request.app.state.external_notification_service.runtime_status()}
+    return await external_capabilities(request)
+
+
+@router.get("/settings")
+async def settings(request: Request):
+    return await _invoke(request, "get_settings", permission="channel")
+
+
+@router.put("/settings")
+async def update_settings(body: NotificationSettingsUpdate, request: Request):
+    return await _invoke(request, "update_settings", permission="channel", body=body)
 
 
 @router.get("/catalog")
@@ -73,8 +83,9 @@ async def _invoke(request, method, *, permission, **kwargs):
         return await getattr(request.app.state.external_notification_service, method)(
             scope=scope, actor_id=actor_id, **kwargs)
     except ExternalDeliveryError as exc:
-        message = ("外部通知尚未在部署配置中启用，请联系部署管理员完成配置；站内通知不受影响。"
-                   if exc.code == "NOTIFICATION_EXTERNAL_DISABLED" else "操作未完成，请核对当前状态")
+        message = {"NOTIFICATION_PUBLIC_ORIGIN_REQUIRED": "启用业务消息规则前，请先配置门户访问地址。",
+                   "NOTIFICATION_PUBLIC_ORIGIN_IN_USE": "仍有启用的业务消息规则，请先暂停规则再清空门户地址。",
+                   "NOTIFICATION_VERSION_CONFLICT": "配置已被修改，请刷新后重试。"}.get(exc.code, "操作未完成，请核对当前状态")
         raise HTTPException(exc.status_code, {"code": exc.code, "message": message}) from exc
 
 

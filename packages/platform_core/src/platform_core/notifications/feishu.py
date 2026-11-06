@@ -61,7 +61,7 @@ class FeishuSender:
             response = await self.client.post(self.config.token_url, data={
                 "grant_type": "client_credentials", "client_id": connection["app_id"], "client_secret": secret,
                 "scope": "im:message:send_as_bot",
-            }, timeout=self.config.request_timeout_seconds)
+            }, timeout=self.config.request_timeout_seconds, follow_redirects=False)
             if response.status_code == 429:
                 raise TokenFailure("FEISHU_TOKEN_RATE_LIMIT", retry_after=_retry_after(response))
             if response.status_code >= 500:
@@ -110,7 +110,7 @@ class FeishuSender:
                 headers={"Authorization": f"Bearer {token}"},
                 json={"receive_id": external_id, "msg_type": "interactive",
                       "content": canonical_json(content), "uuid": provider_uuid},
-                timeout=self.config.request_timeout_seconds,
+                timeout=self.config.request_timeout_seconds, follow_redirects=False,
             )
         except (httpx.ConnectTimeout, httpx.ConnectError, httpx.PoolTimeout):
             return SendResult(Status.RETRY_WAIT, "FEISHU_CONNECT_FAILED")

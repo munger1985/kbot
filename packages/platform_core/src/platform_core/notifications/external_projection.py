@@ -58,7 +58,7 @@ async def new_delivery_job(repo, *, scope, connection, binding, source_event_id,
     return values | {"created": created}
 
 async def enqueue_external_event(*, config, repo, scope, source_event_id, event_type, route, legitimate_actors, occurred_at, severity=None):
-    if not config.enabled or event_type not in EXTERNAL_EVENTS:
+    if event_type not in EXTERNAL_EVENTS:
         return
     severity = severity if isinstance(severity, str) and severity in {"INFO", "WARNING", "HIGH", "CRITICAL"} else None
     NotificationResourceRequest(event_type=event_type, domain_id=scope.domain_id,
@@ -67,13 +67,20 @@ async def enqueue_external_event(*, config, repo, scope, source_event_id, event_
     expiry = occurred_at + timedelta(seconds=config.job_ttl_seconds)
     if expiry <= now:
         return
-    for policy in await repo.active_policies(scope=scope):
+    policies = await repo.active_policies(scope=scope)
+    if not policies:
+        return
+    settings = await repo.settings(scope=scope)
+    public_origin = (settings or {}).get("public_origin")
+    if not public_origin:
+        return
+    for policy in policies:
         if event_type not in policy["event_types"]:
             continue
         # 仅开启合并时用父连接行锁序列化同一目标投影，默认路径不增加连接行锁。
         connection = await repo.get("connection", scope=scope, object_id=policy["connection_id"],
             lock=bool(config.coalesce_seconds))
-        if not connection:
+        if not connection or not connection["enabled"]:
             continue
         targets = [await repo.get("binding", scope=scope, object_id=UUID(str(raw_id))) for raw_id in policy["binding_ids"]]
         existing_bindings = await repo.bindings_for_connection(scope=scope, connection_id=connection["id"])
@@ -95,7 +102,7 @@ async def enqueue_external_event(*, config, repo, scope, source_event_id, event_
                 "route_key": route["route_key"], "route_params": route["route_params"],
                 "expires_at": now + timedelta(days=config.entry_ttl_days)})
             content = render_card(event_type=event_type, severity=severity, group=group,
-                url=config.public_origin + "/notifications/open/" + str(entry_id))
+                url=public_origin + "/notifications/open/" + str(entry_id))
             ready, bucket = noise_schedule(config, now=now, event_type=event_type, severity=severity)
             merge_key = payload_hash([scope.model_dump(mode="json"), str(connection["id"]),
                 connection["credential_version"], str(binding["id"]), binding["row_version"],

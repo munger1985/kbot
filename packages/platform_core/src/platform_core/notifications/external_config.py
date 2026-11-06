@@ -11,8 +11,7 @@ class ExternalDeliveryConfig(BaseModel):
     # 拓扑注入的进程标识；Worker 不监听 HTTP 端口。
     service_name: str = "external-notification-worker"
     service_host: str = "127.0.0.1"
-    enabled: bool = False
-    public_origin: str = ""
+    # 仅部署管理员可改为企业 HTTPS 网关；不接受租户请求或数据库覆盖。
     token_url: str = "https://accounts.feishu.cn/oauth/v3/token"
     message_origin: str = "https://open.feishu.cn"
     # 仅供注入假凭据的自动化环境；生产调用方必须拒绝开启。
@@ -43,21 +42,23 @@ class ExternalDeliveryConfig(BaseModel):
         if ((self.quiet_start_utc_hour is None) != (self.quiet_end_utc_hour is None)
             or (self.quiet_start_utc_hour is not None and self.quiet_start_utc_hour == self.quiet_end_utc_hour)):
             raise ValueError("NOTIFICATION_QUIET_WINDOW_INVALID")
-        token, message = urlsplit(self.token_url), urlsplit(self.message_origin)
-        if not self.fixture_mode:
-            if self.token_url != "https://accounts.feishu.cn/oauth/v3/token" or self.message_origin != "https://open.feishu.cn":
-                raise ValueError("NOTIFICATION_PROVIDER_ENDPOINT_DENIED")
-        elif any(url.hostname not in self.fixture_allowed_hosts or url.scheme not in {"http", "https"}
-                 or url.username or url.password for url in (token, message)):
-            raise ValueError("NOTIFICATION_FIXTURE_ENDPOINT_DENIED")
-        if message.path or message.query or message.fragment:
-            raise ValueError("NOTIFICATION_MESSAGE_ORIGIN_INVALID")
-        if self.public_origin:
-            origin = urlsplit(self.public_origin)
-            if (origin.scheme != "https" and not (self.fixture_mode and origin.scheme == "http")) or not origin.netloc or origin.path or origin.query or origin.fragment or origin.username:
-                raise ValueError("NOTIFICATION_PUBLIC_ORIGIN_INVALID")
-        if self.enabled and not self.public_origin:
-            raise ValueError("NOTIFICATION_PUBLIC_ORIGIN_REQUIRED")
+        try:
+            urls = (urlsplit(self.token_url), urlsplit(self.message_origin))
+            for raw, url in zip((self.token_url, self.message_origin), urls):
+                if (not url.hostname or url.username is not None or url.password is not None
+                    or url.query or url.fragment or "?" in raw or "#" in raw
+                    or any(char.isspace() for char in raw) or "\\" in raw or url.netloc.endswith(":")):
+                    raise ValueError("NOTIFICATION_PROVIDER_ENDPOINT_INVALID")
+                url.port
+                if self.fixture_mode:
+                    if url.hostname not in self.fixture_allowed_hosts or url.scheme not in {"http", "https"}:
+                        raise ValueError("NOTIFICATION_FIXTURE_ENDPOINT_DENIED")
+                elif url.scheme != "https":
+                    raise ValueError("NOTIFICATION_PROVIDER_HTTPS_REQUIRED")
+            if urls[1].path:
+                raise ValueError("NOTIFICATION_MESSAGE_ORIGIN_INVALID")
+        except ValueError as exc:
+            raise ValueError("NOTIFICATION_PROVIDER_ENDPOINT_INVALID") from exc
         if self.lease_seconds <= 2 * self.request_timeout_seconds + 5:
             raise ValueError("NOTIFICATION_LEASE_TOO_SHORT")
         return self

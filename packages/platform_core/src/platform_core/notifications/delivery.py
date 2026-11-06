@@ -37,6 +37,35 @@ class DeliveryScope(StrictModel):
     tenant_id: UUID | None = None
 
 
+class NotificationSettingsUpdate(StrictModel):
+    expected_row_version: int = Field(ge=0)
+    public_origin: str = Field(default="", max_length=2048)
+
+    @field_validator("public_origin")
+    @classmethod
+    def origin(cls, value):
+        from urllib.parse import urlsplit
+        value = value.strip()
+        if not value:
+            return ""
+        try:
+            parsed = urlsplit(value)
+            if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
+                or parsed.password is not None or parsed.path not in {"", "/"}
+                or parsed.query or parsed.fragment or any(char.isspace() for char in value)
+                or "?" in value or "#" in value or "\\" in value or parsed.netloc.endswith(":")):
+                raise ValueError("NOTIFICATION_PUBLIC_ORIGIN_INVALID")
+            parsed.port
+        except ValueError as exc:
+            raise ValueError("NOTIFICATION_PUBLIC_ORIGIN_INVALID") from exc
+        return value.rstrip("/")
+
+
+def notification_settings_id(scope):
+    """不同 Tenant／实例使用稳定主键；不需要业务唯一索引。"""
+    return stable_id("notification-settings", scope.tenant_id or "installation")
+
+
 class ConnectionCreate(StrictModel):
     name: str = Field(min_length=1, max_length=128)
     provider: Literal["FEISHU"] = "FEISHU"

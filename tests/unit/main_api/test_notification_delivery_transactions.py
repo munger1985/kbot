@@ -13,7 +13,7 @@ from sqlalchemy.types import TypeDecorator
 
 from main_api.repositories.notification_delivery import ExternalDeliveryRepository
 from platform_core.persistence.notification_delivery import define_external_tables
-from platform_core.notifications.delivery import DeliveryScope, DeliveryStatus as Status, SendResult, payload_hash, stable_id
+from platform_core.notifications.delivery import notification_settings_id, DeliveryScope, DeliveryStatus as Status, SendResult, payload_hash, stable_id
 from platform_core.notifications.external_config import ExternalDeliveryConfig
 from platform_core.notifications.external_projection import enqueue_external_event
 
@@ -188,6 +188,8 @@ async def test_concurrent_event_coalescing_preserves_both_jobs_and_single_pendin
     async with factory() as session:
         repo=repository(session,tables)
         job=await repo.get("job",scope=scope,object_id=job_id)
+        await repo.add("settings",scope=scope,actor_id="admin",now=now,values={
+            "id":notification_settings_id(scope),"public_origin":"https://portal.test"})
         await repo.add("policy",scope=scope,actor_id="admin",now=now,values={
             "id":uuid4(),"connection_id":job["connection_id"],"enabled":True,
             "event_types":["aiops.situation.detected"],"binding_ids":[str(job["binding_id"])],"actor_ids":[]})
@@ -197,7 +199,7 @@ async def test_concurrent_event_coalescing_preserves_both_jobs_and_single_pendin
     async def enqueue(event_id):
         async with factory() as session:
             await enqueue_external_event(repo=repository(session,tables),scope=scope,
-                config=ExternalDeliveryConfig(enabled=True,public_origin="https://portal.test",coalesce_seconds=60),
+                config=ExternalDeliveryConfig(coalesce_seconds=60),
                 source_event_id=event_id,event_type="aiops.situation.detected",severity="WARNING",
                 route=route,legitimate_actors={"B"},occurred_at=now)
             await session.commit()

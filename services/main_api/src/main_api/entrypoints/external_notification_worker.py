@@ -21,13 +21,9 @@ async def main():
     stop = asyncio.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         asyncio.get_running_loop().add_signal_handler(sig, stop.set)
-    if not config.enabled:
-        logger.info("外部通知未启用，进程空闲等待停止信号，不访问数据库或飞书")
-        await stop.wait()
-        return
     runtime = create_database_runtime()
     service = create_external_notifications(settings=settings, runtime=runtime, uow_factory=create_main_api_uow(runtime.session_factory))
-    logger.info("独立外部通知投递进程已启动")
+    logger.info("独立外部通知投递进程已启动，渠道与公共设置按数据库当前配置生效")
     try:
         while not stop.is_set():
             try:

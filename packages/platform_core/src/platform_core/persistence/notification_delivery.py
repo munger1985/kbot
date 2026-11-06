@@ -27,6 +27,7 @@ def define_external_tables(*, metadata, prefix, id_type, domain_type, json_type,
         name = (prefix + kind).upper() if prefix.isupper() else prefix + kind
         return Table(name, metadata, identity(), *scope(resource, nullable_domain), *columns, *audit())
 
+    settings = table("settings", col("public_origin", String(2048)))
     connection = table("connection",
         col("name", String(128), nullable=False), col("provider", String(24), nullable=False),
         col("app_id", String(128), nullable=False), col("credential_ref", String(512), nullable=False),
@@ -104,5 +105,5 @@ def define_external_tables(*, metadata, prefix, id_type, domain_type, json_type,
     ):
         Index(("ix_notify_" + suffix).upper() if prefix.isupper() else "ix_notify_" + suffix,
               *(obj.c[field] for field in fields))
-    return dict(connection=connection, binding=binding, policy=policy, entry=entry,
+    return dict(settings=settings, connection=connection, binding=binding, policy=policy, entry=entry,
                 job=job, attempt=attempt, audit=audit_event, throttle=throttle)

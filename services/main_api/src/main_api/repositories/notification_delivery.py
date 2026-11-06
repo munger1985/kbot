@@ -34,6 +34,10 @@ class ExternalDeliveryRepository:
         return [table.c[key] == value for key, value in self.scope_values(scope, table).items()
                 if key != "domain_id" or scope.domain_id is not None]
 
+    async def settings(self, *, scope):
+        from platform_core.notifications.delivery import notification_settings_id
+        return await self.get("settings", scope=scope, object_id=notification_settings_id(scope))
+
     async def lock_configuration(self):
         """用部署初始化的全局频控行串行化渠道创建，不依赖业务唯一索引。"""
         table = self.tables["throttle"]

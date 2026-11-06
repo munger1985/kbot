@@ -43,7 +43,7 @@ def test_outbound_card_uses_no_business_text():
 
 
 @pytest.mark.parametrize("values", [
-    {"token_url": "https://evil.test/token"},
+    {"token_url": "http://gateway.test/token"},
     {"message_origin": "http://open.feishu.cn"},
     {"enabled": True},
     {"public_origin": "https://portal.test/redirect"},
@@ -157,6 +157,8 @@ class ProjectionRepository:
             "target_type": "open_id", "external_id": "ou_test", "row_version": 1,
             "status": "VERIFIED" if verified else "UNVERIFIED"}
         self.missing, self.records = missing, {}
+    async def settings(self, **kwargs):
+        return {"public_origin": "https://portal.test"}
     async def active_policies(self, **kwargs):
         return [{"connection_id": self.connection["id"], "event_types": ["aiops.proposal.review_required"],
                  "binding_ids": [] if self.missing else [self.binding["id"]], "actor_ids": ["approver"]}]
@@ -181,6 +183,36 @@ class ProjectionRepository:
     async def audit(self, **kwargs):
         pass
 
+
+
+@pytest.mark.asyncio
+async def test_projection_hot_reads_portal_and_keeps_existing_job_content_frozen():
+    repo = ProjectionRepository()
+    repo.origin = None
+    async def settings(**kwargs):
+        return {"public_origin":repo.origin}
+    repo.settings = settings
+    config = ExternalDeliveryConfig()
+    scope = DeliveryScope(domain_id="12")
+    route = {"route_key":"aiops.run.detail", "route_params":{
+        "domain_id":"12", "run_id":str(uuid4()), "proposal_id":str(uuid4())}}
+    async def project():
+        await enqueue_external_event(config=config, repo=repo, scope=scope, source_event_id=uuid4(),
+            event_type="aiops.proposal.review_required", route=route,
+            legitimate_actors={"approver"}, occurred_at=datetime.now(timezone.utc))
+    await project()
+    assert not repo.records
+    repo.origin = "https://first.example"
+    await project()
+    first = next(row for (kind, _), row in repo.records.items() if kind == "job")
+    frozen = json.dumps(first["content"], sort_keys=True)
+    repo.origin = "https://second.example"
+    await project()
+    contents = [json.dumps(row["content"]) for (kind, _), row in repo.records.items() if kind == "job"]
+    assert len(contents) == 2
+    assert sum("https://first.example" in item for item in contents) == 1
+    assert sum("https://second.example" in item for item in contents) == 1
+    assert json.dumps(first["content"], sort_keys=True) == frozen
 
 def test_quiet_utc_half_open_and_cross_day_boundaries():
     config = ExternalDeliveryConfig(quiet_start_utc_hour=22, quiet_end_utc_hour=8)
@@ -211,7 +243,7 @@ async def test_low_priority_coalescing_retains_evidence_and_replay_never_cancels
     repo.active_policies = _alert_policies(repo)
     now = datetime(2026, 11, 5, 12, 0, 1, tzinfo=timezone.utc)
     monkeypatch.setattr("platform_core.notifications.external_projection.now_utc", lambda: now)
-    kwargs = dict(config=ExternalDeliveryConfig(enabled=True, public_origin="https://portal.test", coalesce_seconds=60),
+    kwargs = dict(config=ExternalDeliveryConfig(coalesce_seconds=60),
         repo=repo, scope=DeliveryScope(domain_id="12"), source_event_id=uuid4(),
         event_type="aiops.situation.detected", severity="WARNING", legitimate_actors={"approver"},
         route={"route_key":"aiops.situation.detail","route_params":{"domain_id":"12","situation_id":str(uuid4())}},
@@ -251,8 +283,7 @@ async def test_quiet_never_extends_expiry_or_discards_the_task(monkeypatch):
     repo.active_policies = _alert_policies(repo)
     now = datetime(2026, 11, 5, 23, 0, 1, tzinfo=timezone.utc)
     monkeypatch.setattr("platform_core.notifications.external_projection.now_utc", lambda: now)
-    config = ExternalDeliveryConfig(enabled=True, public_origin="https://portal.test",
-        quiet_start_utc_hour=22, quiet_end_utc_hour=8)
+    config = ExternalDeliveryConfig(quiet_start_utc_hour=22, quiet_end_utc_hour=8)
     await enqueue_external_event(config=config, repo=repo, scope=DeliveryScope(domain_id="12"),
         source_event_id=uuid4(), event_type="aiops.situation.detected", severity="INFO",
         legitimate_actors={"approver"}, occurred_at=now,
@@ -268,7 +299,7 @@ async def test_external_projection_skips_unbound_users_without_inbox_dependency(
     repo = ProjectionRepository(missing=missing, verified=verified)
     event_id, run_id, proposal_id = uuid4(), uuid4(), uuid4()
     scope = DeliveryScope(domain_id="12")
-    kwargs = dict(config=ExternalDeliveryConfig(enabled=True, public_origin="https://portal.test"),
+    kwargs = dict(config=ExternalDeliveryConfig(),
         repo=repo, scope=scope, source_event_id=event_id, event_type="aiops.proposal.review_required",
         route={"route_key": "aiops.run.detail", "route_params": {"domain_id": "12", "run_id": str(run_id), "proposal_id": str(proposal_id)}},
         legitimate_actors={"approver"}, occurred_at=datetime.now(timezone.utc))

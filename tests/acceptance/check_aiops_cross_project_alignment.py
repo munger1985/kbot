@@ -29,6 +29,8 @@ SHARED_CONTRACTS = (
     Path("tests/unit/main_api/test_feishu_notification_delivery.py"),
     Path("tests/unit/main_api/test_notification_delivery_transactions.py"),
     Path("tests/unit/main_api/test_notification_delivery_application.py"),
+    Path("tests/unit/main_api/test_notification_settings.py"),
+    Path("tests/unit/main_api/test_notification_settings_upgrade.py"),
     Path("tests/unit/aiops_agent/test_notification_delivery_resource.py"),
     Path("packages/platform_core/src/platform_core/contracts/aiops/notification_projection.py"),
     Path("packages/platform_core/src/platform_core/notifications/aiops.py"),

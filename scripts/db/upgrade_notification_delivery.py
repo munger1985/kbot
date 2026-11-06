@@ -32,8 +32,8 @@ def contract(sql: str) -> dict:
         tables[name] = {"columns": columns, "foreign_keys": foreign_keys}
     indexes = {name: [table, columns.split(", ")] for name, table, columns in re.findall(
         r"CREATE INDEX (IX_NOTIFY_\w+) ON (KBOT_NOTIFY_\w+) \((.*?)\);", sql)}
-    if len(tables) != 8 or len(indexes) != 7 or any(not item["columns"] for item in tables.values()):
-        raise ValueError("增量 DDL 合同不是预期的八表七索引")
+    if len(tables) not in {8, 9} or len(indexes) != 7 or any(not item["columns"] for item in tables.values()):
+        raise ValueError("增量 DDL 合同不是预期的通知八／九表七索引")
     return {"tables": tables, "indexes": indexes}
 
 

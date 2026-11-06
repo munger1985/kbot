@@ -14894,6 +14894,27 @@
         "title": "NotificationReadUpdate",
         "type": "object"
       },
+      "NotificationSettingsUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 0.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "public_origin": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Public Origin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "NotificationSettingsUpdate",
+        "type": "object"
+      },
       "NotificationSubscriptionList": {
         "additionalProperties": false,
         "properties": {
@@ -49367,6 +49388,62 @@
           }
         },
         "summary": "Set Policy",
+        "tags": [
+          "Notification Delivery"
+        ]
+      }
+    },
+    "/api/v1/notification-delivery/settings": {
+      "get": {
+        "operationId": "settings_api_v1_notification_delivery_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Settings",
+        "tags": [
+          "Notification Delivery"
+        ]
+      },
+      "put": {
+        "operationId": "update_settings_api_v1_notification_delivery_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Settings",
         "tags": [
           "Notification Delivery"
         ]

@@ -13,11 +13,11 @@
     const date = value => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString("zh-CN", { hour12:false }) : "—";
     const node = (tag, text, className) => { const element = document.createElement(tag); if (text != null) element.textContent = text; if (className) element.className = className; return element; };
     const option = (value, text) => { const element = node("option", text); element.value = value; return element; };
-    let runtime = null;
+    let settings = {public_origin:"",row_version:0};
     let caps = [], events = {}, connection = null, bindings = [], busy = false, loading = false, loadVersion = 0;
     let offset = 0, pageSize = 20, hasMore = false, applied = new URLSearchParams(), selected = null, detailVersion = 0;
     const can = key => caps.includes(key);
-    const available = () => runtime?.enabled === true;
+    const businessReady = () => Boolean(settings.public_origin);
     const eventLabel = key => events[key]?.[0] || ({"connection.test":"测试消息","identity.verification":"身份验证"}[key] || key || "—");
     const personal = () => bindings.filter(item => item.connection_id === connection?.id && item.target_type === "open_id" && item.status !== "DISABLED");
     const verified = () => personal().filter(item => item.status === "VERIFIED");
@@ -35,10 +35,11 @@
       byId("delivery-refresh").disabled = busy || loading;
       if (page === "notification-channels") {
         byId("delivery-edit").disabled = busy || loading;
-        byId("delivery-check").disabled = busy || loading || !available();
-        byId("delivery-test-open").disabled = busy || loading || !available() || !connection?.enabled;
-        byId("delivery-rule-open").disabled = busy || loading || !available() || !connection;
-        document.querySelector('[form="delivery-test"]').disabled = busy || !available() || !verified().length;
+        byId("delivery-common-edit").disabled = busy || loading;
+        byId("delivery-check").disabled = busy || loading;
+        byId("delivery-test-open").disabled = busy || loading || !connection?.enabled;
+        byId("delivery-rule-open").disabled = busy || loading || !businessReady() || !connection;
+        document.querySelector('[form="delivery-test"]').disabled = busy || !verified().length;
       }
       if (page === "notification-delivery") {
         byId("delivery-prev").disabled = busy || loading || offset === 0;
@@ -54,9 +55,8 @@
       if (id === "delivery-detail") { selected = null; ++detailVersion; }
     }
     document.querySelectorAll("[data-close]").forEach(item => { item.onclick = () => close(item.dataset.close); });
-    async function action(task, message = "操作已保存", { requiresDelivery = true } = {}) {
+    async function action(task, message = "操作已保存") {
       if (busy) return;
-      if (requiresDelivery && !available()) { status.textContent = runtime?.message || "外部通知部署状态尚未就绪，请刷新重试。"; return; }
       busy = true; controls(); status.textContent = "处理中…";
       try { await task(); status.textContent = message; await refresh(); }
       catch (error) { status.textContent = error.message || "操作未完成"; }
@@ -79,22 +79,25 @@
         const article = node("article",null,"delivery-rule"), description = node("div");
         description.append(node("strong",item.event_types.map(eventLabel).join("、")),node("small","仅向业务已授权的配置目标发送；既有其他绑定本轮不调整"));
         article.append(description,node("span",item.enabled ? "启用" : "暂停","status-pill"),button(item.enabled ? "暂停" : "启用", async () => {
-          if (busy || !available()) return;
+          if (busy || (!item.enabled && !businessReady())) return;
           if (item.enabled && !await KBotAIOpsShell.confirmAction({title:"暂停消息规则",message:"停止生成新的外部消息；站内通知、业务任务和既有投递任务不受影响。",confirmLabel:"暂停规则",tone:"warning"})) return;
           await action(() => request("/policies/" + item.id,{expected_row_version:item.row_version,enabled:!item.enabled},"PUT"));
         }));
+        article.querySelector("button").disabled = !item.enabled && !businessReady();
         container.append(article);
       });
     }
     async function loadChannels(current) {
       if (!can("channel")) { status.textContent = "当前账号没有通知渠道管理权限；个人身份请到“我的通知设置”验证。"; return; }
-      const [targets, policies] = await Promise.all([request("/targets"),request("/policies")]);
+      const [targets, policies, common] = await Promise.all([request("/targets"),request("/policies"),request("/settings")]);
       if (current !== loadVersion) return;
       connection = targets.connections.find(item => item.provider === "FEISHU") || null; bindings = targets.bindings;
       byId("delivery-channels-content").hidden = false;
+      settings = common;
+      byId("delivery-common-origin").textContent = settings.public_origin || "尚未配置";
+      byId("delivery-common-note").hidden = businessReady();
       renderConnection(); renderPolicies(policies.items);
-      document.querySelectorAll("#delivery-policies button").forEach(item => { item.disabled = !available(); });
-      if (!available()) status.textContent = (runtime?.message || "外部通知部署状态尚未就绪。") + " 可先填写并保存飞书配置；检查连接及发送需部署管理员配置 external_delivery.enabled 与 public_origin。保存不会启用外发，也不会发送消息。";
+
     }
     async function openDetail(item) {
       const current = ++detailVersion;
@@ -195,9 +198,20 @@
         const form = byId("delivery-connection"); form.reset();
         form.elements.name.value = connection?.name || "飞书"; form.elements.app_id.value = connection?.app_id || "";
         form.elements.app_id.disabled = Boolean(connection); form.elements.enabled.checked = Boolean(connection?.enabled); form.elements.app_secret.required = !connection;
-        form.elements.enabled.closest("label").querySelector("small").textContent = available() ? "保存不会自动发送测试消息。" : "仅设置渠道开关；部署外发未启用时仍不会发送。";
+        form.elements.enabled.closest("label").querySelector("small").textContent = "启停立即生效；保存本身不会发送测试消息或补发历史通知。";
         byId("delivery-editor-title").textContent = connection ? "编辑飞书配置" : "配置飞书";
         byId("delivery-secret-label").textContent = connection ? "替换 Secret（留空不变）" : "App Secret"; KBotDrawer.open("delivery-editor");
+      };
+      byId("delivery-common-edit").onclick = () => {
+        byId("delivery-common-form").elements.public_origin.value = settings.public_origin;
+        KBotDrawer.open("delivery-common-editor");
+      };
+      byId("delivery-common-form").onsubmit = event => {
+        event.preventDefault();
+        void action(async () => {
+          await request("/settings", {public_origin:event.currentTarget.elements.public_origin.value.trim(),expected_row_version:settings.row_version}, "PUT");
+          KBotDrawer.close("delivery-common-editor");
+        }, "通知公共设置已保存，无需重启；已有任务链接不变");
       };
       byId("delivery-connection").onsubmit = event => {
         event.preventDefault(); const form = event.currentTarget;
@@ -205,7 +219,7 @@
           await request(connection ? "/connections/" + connection.id : "/connections", connection ? {name:form.elements.name.value.trim(),enabled:form.elements.enabled.checked,expected_row_version:connection.row_version,...(form.elements.app_secret.value ? {app_secret:form.elements.app_secret.value} : {})}
             : {name:form.elements.name.value.trim(),provider:"FEISHU",app_id:form.elements.app_id.value.trim(),app_secret:form.elements.app_secret.value,enabled:form.elements.enabled.checked},connection ? "PUT" : "POST");
           form.elements.app_secret.value = ""; KBotDrawer.close("delivery-editor");
-        },"飞书配置已保存，未发送测试消息",{requiresDelivery:false});
+        },"飞书配置已保存，未发送测试消息");
       };
       byId("delivery-check").onclick = () => action(async () => {
         const result = await request("/connections/" + connection.id + "/check",{});
@@ -264,7 +278,7 @@
     byId("delivery-refresh").onclick = () => { if (page === "notification-delivery" && can("read")) applyFilters(); else void refresh(); };
     try {
       const capabilities = await request("/capabilities");
-      caps = capabilities.capabilities; runtime = capabilities.runtime;
+      caps = capabilities.capabilities;
       document.querySelectorAll("[data-capability]").forEach(item => { item.hidden = !can(item.dataset.capability); });
       if ((page === "notification-channels" && can("channel")) || (page === "notification-delivery" && can("read"))) events = (await request("/catalog")).events;
       if (page === "notification-delivery" && can("read")) {

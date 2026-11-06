@@ -14,7 +14,7 @@
 - 2026-11-06 交互修订不改 Schema、责任组或群路由。渠道单卡无分页；投递记录默认每页 20 条，按后端 `has_more` 翻页。群登记入口暂不展示，新消息规则与试发只选择个人绑定，已有数据不清理或重写。
 - 卡片详情：门户公开地址下 `/notifications/open/{entry_id}`。入口记录独立于个人收件箱。
 - KBot 本地启停脚本和容器拓扑已登记 Worker；Ammolite 进程目标为 `notification-delivery`。
-- 默认关闭时 Worker 空闲等待信号，不访问数据库和飞书；修改配置后需按部署流程重启对应进程。
+- Worker 独立常驻轮询任务；没有任务时不访问飞书。渠道启停与门户地址从数据库读取，页面保存后生效；只有变更进程／网关等 TOML 技术参数才需按部署流程重启对应进程。
 
 Outbox 消费事务同时保存站内投影及外部任务。外部任务不是 Inbox 的附属队列；清除个人通知不会删除外部入口。业务状态由源服务负责，飞书 ACCEPTED 仅表示接口确定接受，不表示已读或业务完成。
 
@@ -22,7 +22,7 @@ Outbox 消费事务同时保存站内投影及外部任务。外部任务不是 
 
 KBot：
 
-- canonical：`database/oracle/main_api/003_notification_delivery.sql`，Main API manifest v9。
+- canonical：`database/oracle/main_api/003_notification_delivery.sql`，Main API manifest v10（含通知公共设置表）。
 - 已完成第一阶段的现有尚无外发表的环境使用 `database/oracle/operations/upgrade_notification_delivery_9.sql`，新增八张通知投递表、索引、限流种子和四类权限。
 - 增量脚本不 DELETE、TRUNCATE、DROP 或重建已有业务表；不要用全量 `001_access_control.sql` 升级现有环境。
 - 新环境用规范初始化，不能再重复执行增量脚本。Oracle DDL 隐式提交，应先核对环境、基线及部署维护窗口；kbotdev 的执行记录见 6.2。
@@ -36,8 +36,8 @@ Ammolite：
 - `core_schema.py`、Entity 和初始化已同步；限流种子由部署初始化写入。
 - 不新增本地兼容迁移、历史回填或双读写；不得直接运行全库初始化替代升级。
 - 经本次授权新增定向部署入口 `scripts/deployment/upgrade_notification_delivery.py`。从 canonical 导出计划（`--render-plan`），可以将脚本与计划送到旧部署，在推送代码前升级（`--repo-root`、`--plan-file`、`--apply`、`--report`）。
-- PostgreSQL 升级在单事务内对原队列取得 ACCESS EXCLUSIVE 锁，再次确认零行及已审阅列／约束基线。若有记录或已有部分新表，立即停止；不清理、不回填。仅空表移除旧 user_id 列及其约束，新增规范列与七表，通知外键改为 SET NULL，权限只增不删。锁超时 5 秒、单语句超时 60 秒；任何执行／验收错误整体回滚。
-- 不带 `--apply` 时，只读验收八张目标表的列类型、可空性、主外键、索引、种子及权限，不做全库漂移修复。
+- PostgreSQL 升级在单事务内对原队列取得 ACCESS EXCLUSIVE 锁，再次确认零行及已审阅列／约束基线。若有记录或已有部分新表，立即停止；不清理、不回填。仅空表移除旧 user_id 列及其约束，新增规范列与八表，通知外键改为 SET NULL，权限只增不删。锁超时 5 秒、单语句超时 60 秒；任何执行／验收错误整体回滚。
+- 不带 `--apply` 时，只读验收九张目标表的列类型、可空性、主外键、索引、种子及权限，不做全库漂移修复。
 
 所有自身 Schema 校验只在离线验收及部署环节进行，不加入服务启动、readiness、UoW 或业务请求。
 
@@ -50,14 +50,25 @@ Ammolite：
 - 任一旧外发表有记录即停止；KBot 存在活动旧通知密文也停止。不会删除数据、自动合并连接或改写历史业务任务。有记录时须另行审阅安全转换方案。
 - 本次代码修改没有连接线上数据库、执行上述切换、拉取服务器代码或重启服务。未经本版规范验收，不应宣称现有数据库可以直接运行新代码。
 
+### 2.2 通知公共设置表新增（本次发布必做）
+
+先执行第 2.1 节范围升级并验收八张既有外发表，再运行：
+
+- Ammolite：`python scripts/deployment/upgrade_notification_settings.py` 只读预检；显式 `--apply` 才新增 `platform_notification_external_settings`。
+- KBot：`python scripts/db/upgrade_notification_settings.py` 只读预检；显式 `--apply` 才新增 `KBOT_NOTIFY_SETTINGS`。
+- 脚本先验收既有通知结构、种子和权限，再且仅再创建一张缺失的设置表；不要求现有渠道为空，不删除、不回填、不改写任何已有记录。有旧 Domain 结构或其他漂移时拒绝执行，不能重新跑初始 v9 增量或全库初始化。
+- PostgreSQL 创建及验收在一个事务内完成，失败整体回滚；Oracle DDL 隐式提交，预检在前，失败须先只读核对。已存在的设置表必须通过当前规范验收，不盲目重建。
+- 完成九表规范验收后再部署代码、更新 Main API 与独立 Worker。后续数据库配置热生效不代表此次代码发布无需更新进程。不得直接打开新版代码访问缺失的新表。
+
 ## 3. 安全配置
 
-示例（默认保留关闭）：
+技术运行配置示例（不再包含渠道启停或门户地址）：
 
 ~~~toml
 [external_delivery]
-enabled = false
-public_origin = "https://your-portal.example.com"
+# 默认官方端点；无外网 OP 环境可由部署管理员替换为企业 HTTPS 网关。
+token_url = "https://accounts.feishu.cn/oauth/v3/token"
+message_origin = "https://open.feishu.cn"
 poll_seconds = 1.0
 request_timeout_seconds = 10
 lease_seconds = 60
@@ -68,10 +79,12 @@ coalesce_seconds = 0
 # quiet_end_utc_hour = 0
 ~~~
 
-门户地址必须是无路径、无 query 的 HTTPS Origin。生产固定使用两个官方地址：
+门户地址由通知渠道页面的“通知公共设置”保存到数据库，必须是无路径、无 query 的 HTTPS Origin。默认飞书服务端地址：
 
 - 令牌：`https://accounts.feishu.cn/oauth/v3/token`。
 - 消息：`https://open.feishu.cn`。
+
+无外网 OP 场景可在 TOML 配置 token_url（完整 OAuth 路径）和 message_origin（消息网关 Origin，需转发 /open-apis/im/v1/messages）；两者可以是不同网关。允许内部 HTTPS 域名，证书必须受部署环境信任，不关闭 TLS 校验。禁止用户信息、query、fragment 和消息 Origin 路径；请求不跟随重定向。网关需保持飞书请求、状态码、业务码、回执及限流语义，不得记录凭据或 Token。此配置是部署信任边界，不允许租户 API／UI 覆盖为任意地址。
 
 不得在 UI 填自定义服务 URL 或 Webhook。新版 OAuth 使用 client_credentials、client_secret_post、最小 scope `im:message:send_as_bot`。不增加旧接口自动回退。
 
@@ -89,8 +102,8 @@ App Secret 通过现有托管凭据设施加密。API 不回显已有 Secret、T
 1. 创建隔离测试企业与两个自建应用，分别用于 KBot、Ammolite。开启机器人、申请最小发送权限、发布版本并设置测试用户可用范围。
 2. 准备 A 申请人、B 审批人、C 无业务权限三个账号；通过官方调试台取得每个应用对应的 open_id。不同应用下不可复制 open_id。
 3. 需要群测试时，把对应机器人加入专用测试群并确认可发言。群只允许低敏告警，不发送审批、执行和报告信息。
-4. 确认门户 HTTPS 地址在手机／电脑可达，检查出站 DNS、TLS 和飞书两个官方 Origin。不公开内部服务端口或增加回调入口。
-5. 经授权完成 Schema 与代码发布后，先保持外部 Worker 停止。设置独立托管凭据密钥后，即可先在页面保存飞书连接，不要求先启用外发。检查连接、发送验证码、真实试发及实际投递前，再配置 HTTPS public_origin 并启用 external_delivery。
+4. 确认门户 HTTPS 地址在手机／电脑可达，检查出站 DNS、TLS 和配置的两个飞书 API 端点；无外网环境检查企业网关及其到飞书官方服务的转发链路。不公开内部服务端口或增加回调入口。
+5. 经授权完成第 2.1／2.2 节 Schema 预检、升级与代码发布，设置独立托管凭据密钥，启动独立 Worker。页面保存渠道及启停即可生效；没有规则／显式试发任务时不会自动向飞书发消息。检查连接、验证码与纯文本试发不依赖门户地址；启用业务规则前在“通知公共设置”填写可达 HTTPS 门户地址。
 6. 管理页选择“飞书”，为当前 Tenant（Ammolite）／全实例（KBot）配置一次连接；无需选择 Domain，App ID／Secret 只由渠道管理员填写。企业微信仅占位。保存不发送；“检查”只验证令牌。新建／编辑用户时可选填应用对应 open_id，随后本人显式发码并确认；此步骤需独立 Worker 消费验证任务。
 7. 验证码限时限次，只有对应本地用户可确认。错误输入不改变绑定语义版本；重新发码、停用／修改身份使旧验证任务失效。身份修改通过停用旧绑定并登记新候选完成。
 8. 明确选择已验证目标进行真实试发，核对投递 message_id 及飞书客户端。之后仅启用少量测试策略；不补发历史事件。
@@ -100,14 +113,15 @@ App Secret 通过现有托管凭据设施加密。API 不回显已有 Secret、T
 
 ## 5. 故障处理
 
-### 外部操作返回 503：区分渠道配置、部署开关与权限
+### 操作条件与配置位置
 
-- `GET /api/v1/notification-delivery/capabilities` 同时返回权限 `capabilities` 与部署状态 `runtime`（`enabled/code/message`）。两者独立，未启用外发不等于租户／平台管理员缺少权限。
-- 缺少顶层 `[external_delivery]` 时总开关默认关闭。渠道管理员仍可打开配置抽屉、新增／编辑连接、替换 Secret 或暂停渠道；保存沿用加密凭据、权限、单例检查、版本控制与审计，不调用飞书，不更改部署开关，不生成投递任务。
-- 页面继续展示未启用提示，禁止检查连接、真实试发及规则写操作，保留历史记录读取。配置保存不以 HTTPS public_origin 或外发启用为前提，但仍必须具备可用的独立托管凭据密钥。
-- 即使绕过页面调用检查、发码、试发等外部操作，后端仍以 503／`NOTIFICATION_EXTERNAL_DISABLED` 阻断；Worker 在总开关关闭时不领取任务或发送消息。配置保存是明确允许的独立操作，不应为避免 503 而要求先开启真实发送。
-- 按第 3、4 节完成独立凭据密钥、可达 HTTPS `public_origin` 和总开关配置，再经授权发布／重启对应组件。不得仅为了消除 503 而开启 fixture、跳过 HTTPS 或自动向真实用户发送消息。
-- 站内铃铛 `/api/v1/notifications/summary` 与外部渠道创建不是同一请求；应按 URL、状态码与时间分别核对日志。
+- capabilities 仅报告当前身份权限，不再返回 TOML 外发开关。渠道和公共设置读取／写入使用原有渠道治理授权；Ammolite 租户管理员在租户控制台维护，KBot 全局管理员维护。
+- App ID、加密 Secret、渠道 enabled 在数据库连接表；public_origin 在独立公共设置表，各厂商共用。GET／PUT /api/v1/notification-delivery/settings 返回公共地址和 row_version，首次未配置为 0；更新必须携带 expected_row_version，并写审计。
+- 检查连接仅检查令牌，无需门户地址，也不自动发测试消息。发码要求渠道启用及本人身份；试发要求渠道启用、个人目标已验证和显式确认；纯文本验证码／试发均不含任务链接，不依赖门户地址。
+- 启用业务规则缺少门户地址返回 422／NOTIFICATION_PUBLIC_ORIGIN_REQUIRED；仍有启用规则时清空地址返回 409／NOTIFICATION_PUBLIC_ORIGIN_IN_USE。未配置门户地址不生成业务任务，页面明确提示；不会补发历史消息。已有任务内容与入口保留冻结，不因改地址批量重写或重发。
+- 数据库配置不跨请求缓存，Outbox 按当前租户／实例设置生成新链接，Worker 每次按当前渠道、绑定、策略与业务权限复核。保存即生效，无需改 TOML 或重启；保存本身不做网络请求。
+- TOML 只放网关、Worker、超时、限流等部署参数。升级前移除旧的 external_delivery.enabled 和 external_delivery.public_origin，不保留回退或启动导入；既有 App ID、Secret 与任务不迁移、不删除。技术参数变更仍需正常重启相关进程。
+- 站内铃铛与外部渠道不是同一请求；失败应按 URL、状态码及服务端请求 ID 分别定位，不能以按钮可点击替代真实数据库和飞书验收。
 
 ### 抽屉共用规范
 
@@ -129,7 +143,7 @@ App Secret 通过现有托管凭据设施加密。API 不回显已有 Secret、T
 - 静默／合并默认关闭，只作用于 INFO／WARNING 的新告警与恢复；升级、审批、人工处理、执行／报告结果、HIGH／CRITICAL 和等级缺失消息不受影响。静默时段以 UTC 小时指定，支持跨日；不会顺延消息期限。合并窗口为固定 0～300 秒，按空间、连接／凭据、绑定／版本、目标、事件、确切资源及等级隔离，不做跨资源摘要。
 - 被合并的旧任务保留 CANCELLED／NOTIFICATION_COALESCED 及关联新任务的审计，入口与事实均保留；已尝试发送或不确定任务不得合并。静默等待不耗尽网络重试预算，超出原 TTL 明确 EXPIRED／NOTIFICATION_QUIET_EXCEEDS_TTL，不删除任务。
 
-回滚启用状态时停用连接／策略、关闭总开关并停止或重启对应 Worker；保留新增 Schema、密文及投递证据。不要删除业务数据以“恢复”通知。
+回滚启用状态时通过页面停用连接／策略；必要时经授权停止对应 Worker。保留新增 Schema、密文及投递证据。不要删除业务数据以“恢复”通知。
 
 ## 6. 本地验证与未完成的真实验收
 
@@ -222,3 +236,15 @@ npx playwright test tests/notification-delivery.spec.mjs \
 - 验收 HTTP 使用进程内 ASGI 与注入测试身份，未替代用户真实登录会话、在线网关或飞书接收验收。KBot Oracle 未在本次事件中执行范围切换；其发布仍须分别完成第 2.1 节预检、升级和 Oracle 规范验收，不能套用本次 PostgreSQL 结果。
 
 后续发布顺序固定为：核对目标部署与数据 → 范围升级预检／应用 → 当前 canonical 验收 → 真实数据库保存回归 → 页面手工验收。单元测试、按钮可点击、服务 readiness 或历史 v8 升级报告均不能替代当前结构与持久化链路验收。自身 Schema 验收仍只在部署／测试入口执行，不加到运行时请求或启动门禁。
+
+### 6.5 公共设置热生效与企业 API 网关修订（2026-11-06）
+
+- App ID、加密 Secret、渠道启停继续存数据库；门户 HTTPS Origin 改为独立公共设置，按 Tenant／实例保存，具备行版本与审计。移除 TOML 的 enabled／public_origin，不做启动导入或双读。检查连接、本人验证码和纯文本试发不依赖门户地址；仅业务规则启用与带详情入口的任务生成要求该地址。
+- token_url／message_origin 保留在 TOML，默认官方 API，支持部署管理员指定企业 HTTPS 网关。拒绝不安全地址及消息 Origin 路径，OAuth 与消息请求均不跟随重定向，不向租户开放地址覆盖。网关配置变更仍需正常更新相关进程。
+- 新增公共设置表必须按第 2.2 节先预检／定向升级再发布代码；既有渠道、密文、任务和业务数据不回填、不改写。独立 Worker 常驻读取数据库当前状态，后续页面配置修改无需重启；旧任务链接保持冻结。
+- 两项目后端通知定向回归：Ammolite 194 passed，KBot 248 passed。覆盖配置模板、无门户检查／试发、版本冲突、租户隔离、配置热读取、任务内容冻结、网关路由、重定向阻断及仅新增设置表的部署边界。两项目 OpenAPI 校验通过（18 快照／993 路径、16 快照／843 路径），架构边界、离线 canonical Schema 和跨项目语义对齐检查通过。
+- Portal／KBot 真实页面加假 HTTP 的通知浏览器回归 40 passed；Portal 类型检查及生产构建通过，保留既有大 chunk 警告。这些结果不是在线网关或飞书客户端验收。
+- 本地真实 PostgreSQL 使用 smoke_notification_connection_postgresql.py --run --isolated，在事务内创建隔离 Schema，实际调用新增表升级、生产 HTTP／应用／仓储与加密凭据链路。新增返回 201、密钥轮换、公共设置热读取、无门户检查和试发入队、租户隔离及审计通过；另一租户渠道哨兵保留，最终整体回滚，测试数据零残留，未调用飞书。只跳过隔离测试中真实 IAM 目录验收；部署脚本仍强制验收真实通知权限，测试身份注入不替代在线登录。
+- 本地全库 check_postgresql_entity_schema.py 检查未通过：存在既有知识等模块结构漂移及未部署外发表；本轮没有修复或改写该业务 Schema。隔离通知结构通过不能表述为全库实库通过。Oracle 新公共设置表仅完成离线和模拟升级测试，未做在线验收。
+
+本轮未连接或升级线上数据库、拉取服务器代码、重启服务或发送真实飞书消息。两仓库提交推送不代表完成部署；用户实际飞书应用、企业网关、客户端送达与手机任务入口仍需经授权联调。

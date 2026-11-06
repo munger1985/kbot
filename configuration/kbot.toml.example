@@ -66,9 +66,12 @@ mutation_enabled = false
 # api_endpoint = "http://aireport.internal:10090/aireport/chat/with_selectai_api"
 # profiles_endpoint = "http://aireport.internal:10090/aireport/admin/list_profiles"
 [external_delivery]
-# 默认关闭；先准备 HTTPS 门户、加密主密钥、连接和已验证身份，再启用独立 Worker。
-enabled = false
-public_origin = ""
+# 渠道启停和门户地址由页面保存到数据库，后续修改无需重启。
+# 默认官方地址；无外网 OP 环境可由部署管理员改为企业 HTTPS 网关。
+# token_url 含完整 OAuth 路径；message_origin 只含协议、主机和可选端口。
+# 网关转发 /open-apis/im/v1/messages；证书须受信任，禁止重定向和关闭证书校验。
+token_url = "https://accounts.feishu.cn/oauth/v3/token"
+message_origin = "https://open.feishu.cn"
 poll_seconds = 1.0
 request_timeout_seconds = 10
 lease_seconds = 60

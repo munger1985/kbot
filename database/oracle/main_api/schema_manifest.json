@@ -1,7 +1,7 @@
 {
   "component": "main_api",
-  "schema_version": 9,
-  "contract_version": "main-api-oracle-v9",
+  "schema_version": 10,
+  "contract_version": "main-api-oracle-v10",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -16,8 +16,8 @@
     },
     {
       "name": "003_notification_delivery.sql",
-      "statements": 16,
-      "sha256": "3e878ca043e9609e561ef33c47b3216cf4eeabb6aa7bd19a8e8855489bb5fe1c"
+      "statements": 17,
+      "sha256": "2149658adde8b273a6070380fbd134f55456803d86dc2eebef620da44d5e0b4e"
     }
   ],
   "tables": [
@@ -37,6 +37,7 @@
     "KBOT_APP_API_CREDENTIAL",
     "KBOT_APP_API_CLIENT_SCOPE",
     "KBOT_APP_API_CLIENT_AGENT",
+    "KBOT_NOTIFY_SETTINGS",
     "KBOT_NOTIFY_CONNECTION",
     "KBOT_NOTIFY_BINDING",
     "KBOT_NOTIFY_POLICY",

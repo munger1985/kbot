@@ -48,7 +48,7 @@ def setup_service():
         assert active[0] == 0, "网络调用不能位于数据库事务内"
         return SendResult(Status.ACCEPTED,message_id="om_test")
     service=ExternalNotificationService(uow_factory=factory,
-        config=ExternalDeliveryConfig(enabled=True, public_origin="https://portal.test"),
+        config=ExternalDeliveryConfig(),
         vault=SimpleNamespace(read=AsyncMock(return_value={"app_secret":"fixture-secret"})),
         sender=SimpleNamespace(send=AsyncMock(side_effect=send)),
         authority=SimpleNamespace(check=AsyncMock(return_value=None),actor_active=AsyncMock(return_value=True),
@@ -98,8 +98,7 @@ async def test_quiet_hours_rechecked_before_retry_without_network_or_retry_budge
     service,repo,records,scope,now=setup_service()
     now = datetime(2026, 11, 5, 7, 30, tzinfo=timezone.utc)
     monkeypatch.setattr("main_api.application.notification_delivery.now_utc", lambda: now)
-    service.config = ExternalDeliveryConfig(enabled=True, public_origin="https://portal.test",
-        quiet_start_utc_hour=22, quiet_end_utc_hour=8)
+    service.config = ExternalDeliveryConfig(quiet_start_utc_hour=22, quiet_end_utc_hour=8)
     job = records["job"]
     job.update(event_type="aiops.situation.detected", original_severity="INFO",
         expires_at=now+timedelta(hours=expires), first_sent_at=None)
