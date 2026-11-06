@@ -11,6 +11,52 @@ ROOT = Path(__file__).resolve().parents[2]
 AIOPS_ROOT = ROOT / "ui" / "aiops"
 
 
+def _unexpected_metrics_lines(source: str) -> list[int]:
+    """只放行已编码资源定位、经认证业务 API 读取的指标目录。"""
+    resource_base = (
+        r"this\.base\s*=\s*`/api/v1/apps/aiops/monitoring/sources/"
+        r"\$\{encodeURIComponent\([^)]+\)\}/resources/"
+        r"\$\{encodeURIComponent\([^)]+\)\}`\s*;"
+    )
+    assignments = re.findall(r"\bthis\.base\s*=(?!=)", source)
+    if len(assignments) == 1 and re.search(resource_base, source):
+        source = re.sub(
+            r"KBotAIOpsAuth\.request\(`\$\{this\.base\}/metrics(?=\?)",
+            lambda match: match.group(0).removesuffix("/metrics"),
+            source,
+        )
+    return [index for index, line in enumerate(source.splitlines(), 1) if "/metrics" in line]
+
+
+class MetricsEndpointBoundaryTest(unittest.TestCase):
+    resource_base = (
+        "this.base = `/api/v1/apps/aiops/monitoring/sources/"
+        "${encodeURIComponent(sourceId)}/resources/${encodeURIComponent(instanceId)}`;\n"
+    )
+    catalog_request = "KBotAIOpsAuth.request(`${this.base}/metrics?limit=1`);"
+
+    def test_authenticated_resource_catalog_is_allowed(self):
+        self.assertEqual([], _unexpected_metrics_lines(self.resource_base + self.catalog_request))
+
+    def test_direct_or_untrusted_metrics_requests_are_rejected(self):
+        for source in (
+            'fetch("/metrics");',
+            'fetch("http://localhost:9161/metrics");',
+            'KBotAIOpsAuth.request(`${exporterBase}/metrics?limit=1`);',
+            self.catalog_request,
+            self.resource_base + 'fetch(`${this.base}/metrics?limit=1`);',
+            'this.base = "https://exporter.invalid";\n' + self.catalog_request,
+            self.resource_base + 'this.base = exporterBase;\n' + self.catalog_request,
+            self.resource_base.replace("encodeURIComponent(sourceId)", "sourceId") + self.catalog_request,
+        ):
+            with self.subTest(source=source):
+                self.assertTrue(_unexpected_metrics_lines(source))
+
+    def test_catalog_exception_does_not_hide_an_additional_direct_request(self):
+        source = self.resource_base + self.catalog_request + '\nfetch("/metrics");'
+        self.assertEqual([3], _unexpected_metrics_lines(source))
+
+
 class _Parser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -348,12 +394,12 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("source_display_name", script)
         self.assertIn('id="monitoring-baseline"', page)
         self.assertIn("过去 1 天平均值", page)
-        self.assertIn("过去 1 周平均值", page)
-        self.assertIn("过去 1 月平均值", page)
+        self.assertIn('<option value="1w" selected>过去 7 天平均值</option>', page)
+        self.assertIn('<option value="1m">过去 1 个月（30 天）平均值</option>', page)
         self.assertNotIn('id="monitoring-compare-source"', page)
         self.assertNotIn("monitoring-query-drawer", page)
         self.assertIn("aiops.css?v=20261020_3", page)
-        self.assertIn("aiops-monitoring.js?v=20261105_accordion1", page)
+        self.assertRegex(page, r'aiops-monitoring\.js\?v=\d{8}_[\w-]+')
         self.assertIn('class="ops-main aiops-monitoring-page"', page)
         self.assertIn('id="monitoring-workspace" class="monitoring-dashboard-shell"', page)
         self.assertIn('id="monitoring-rail-toggle"', page)
@@ -447,7 +493,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn('collapsedSystemIds', script)
         self.assertIn('aria-expanded="${expanded}"', script)
         self.assertIn('搜索业务系统或实例', page)
-        self.assertIn('重新加载实例', script)
+        self.assertIn('重新加载指标范围', script)
+        self.assertIn('if (event.target.closest("[data-retry-instances]")) { void loadSourceContext(); return; }', script)
         self.assertNotIn('monitoring-instance-drawer', page)
         self.assertNotIn('openInstanceDrawer', script)
         self.assertIn('document.getElementById("monitoring-current-instance").textContent', script)
@@ -465,7 +512,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('/targets/${encodeURIComponent(targetId)}/monitoring/profiles', script)
         self.assertIn('/sources/${encodeURIComponent(state.sourceId)}/profiles', script)
         self.assertIn('state.profileId === "host-overview"', script)
-        self.assertIn("void selectInstance(input.dataset.instanceId)", script)
+        self.assertIn("void selectInstance(input.dataset.instanceId, input.dataset.ownerSystemId)", script)
         self.assertIn("void selectInstance(instanceId)", script)
         self.assertNotIn("setTimeout(loadView, 250)", script)
         self.assertNotIn("monitoring-select-filtered", page)
@@ -844,16 +891,18 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn(":close-diagnosis", workspace)
 
     def test_pages_do_not_embed_demo_records_or_api_keys(self):
-        source = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in AIOPS_ROOT.rglob("*") if path.is_file()
-        )
-        self.assertNotIn("140.238.44.208", source)
-        self.assertNotIn("kbot_ak_", source)
-        self.assertNotIn("/metrics", source)
-        self.assertNotIn("Idempotency-Key':crypto.randomUUID()", source)
-        self.assertNotIn("client_file_id: crypto.randomUUID()", source)
-        self.assertIn("KBotAIOpsAuth.uuid()", source)
+        uses_uuid_helper = False
+        for path in sorted(AIOPS_ROOT.rglob("*")):
+            if not path.is_file():
+                continue
+            source = path.read_text(encoding="utf-8")
+            relative = path.relative_to(AIOPS_ROOT)
+            # 报错只给路径与规则，不把可能包含密钥的整份页面写入测试日志。
+            for forbidden in ("140.238.44.208", "kbot_ak_", "Idempotency-Key':crypto.randomUUID()", "client_file_id: crypto.randomUUID()"):
+                self.assertFalse(forbidden in source, f"{relative}: 包含禁止嵌入的内容 {forbidden}")
+            self.assertEqual([], _unexpected_metrics_lines(source), f"{relative}: 禁止直连监控采集端点")
+            uses_uuid_helper |= "KBotAIOpsAuth.uuid()" in source
+        self.assertTrue(uses_uuid_helper)
 
     def test_operations_knowledge_page_uses_business_registry(self):
         page = (AIOPS_ROOT / "operations-knowledge.html").read_text(encoding="utf-8")
