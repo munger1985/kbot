@@ -23,6 +23,7 @@ from aiops_agent.bootstrap.common import (
     create_process_app,
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
+from aiops_agent.bootstrap.cursors import create_cursor_codec
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.turn_queue import TurnQueueService
@@ -138,6 +139,7 @@ def create_aiops_worker_probe(
             resolved,
             process="worker",
         )
+        cursor_codec = create_cursor_codec(resolved)
         database_runtime = create_database_runtime(resolved)
         runtime = AIOpsProcessRuntime(
             settings=resolved,
@@ -324,6 +326,7 @@ def create_aiops_worker_probe(
             diagnosis_config=resolved.diagnosis,
             diagnosis_prompt_registry=diagnosis_prompts,
             agent_catalog=agent_catalog,
+            cursor_codec=cursor_codec,
             monitoring_snapshot_builder=monitoring_snapshot_builder,
         )
         workers = [
@@ -362,7 +365,9 @@ def create_aiops_worker_probe(
                 output_job_worker=output_worker,
                 business_effect_service=BusinessEffectFollowupService(
                     uow_factory=runtime.uow_factory,
-                    change_service=AIOpsChangeService(uow_factory=runtime.uow_factory),
+                    change_service=AIOpsChangeService(
+                        uow_factory=runtime.uow_factory, cursor_codec=cursor_codec,
+                    ),
                     workload_service=workload_service,
                 ),
                 diagnostic_source_connectivity_service=DiagnosticSourceConnectivityCheckService(

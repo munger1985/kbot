@@ -1,7 +1,5 @@
 """AIOps Internal API Bootstrap。"""
 
-import hashlib
-import os
 from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
@@ -82,7 +80,7 @@ from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.diagnostic_sources import SignalEventIntakeService
 from aiops_agent.application.configuration import AIOpsConfigurationService
 from aiops_agent.application.runtime import AIOpsRuntimeService
-from aiops_agent.application.configuration.common import SignedCursorCodec
+from aiops_agent.bootstrap.cursors import create_cursor_codec
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
@@ -127,6 +125,7 @@ def create_aiops_api(
             resolved,
             process="api",
         )
+        cursor_codec = create_cursor_codec(resolved)
         database_runtime = create_database_runtime(resolved)
         runtime = AIOpsProcessRuntime(
             settings=resolved,
@@ -202,22 +201,8 @@ def create_aiops_api(
             model_client=model_client,
             environment=resolved.environment,
         )
-        cursor_secret = os.getenv(resolved.management.cursor_secret_env)
-        if not cursor_secret:
-            if resolved.is_production():
-                raise RuntimeError(
-                    "生产环境缺少 AIOps Cursor 签名密钥"
-                )
-            cursor_secret = hashlib.sha256(
-                f"{config.service_name}:development:cursor".encode("utf-8")
-            ).hexdigest()
-            logger.warning("开发环境使用临时派生的 AIOps Cursor 签名密钥")
         secret_store = ConfiguredSecretStore(
             managed_credentials=managed_credential_service,
-        )
-        cursor_codec = SignedCursorCodec(
-            secret=cursor_secret,
-            ttl_seconds=resolved.management.cursor_ttl_seconds,
         )
         app.state.work_item_service = WorkItemService(
             uow_factory=runtime.uow_factory,
