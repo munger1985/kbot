@@ -1271,7 +1271,17 @@ class DbaEvidenceAssessmentHandler:
         except (AIOpsModelError, ValueError, TypeError, LookupError) as exc:
             checkpoint = previous
             error = getattr(exc, "code", "SQL_DIAGNOSIS_VALIDATION_FAILED")
-            logger.warning("SQL 阶段诊断未完成，保留可核验检查点：task_id={} code={}", context.task_id, error)
+            if isinstance(exc, ValidationError):
+                validation_detail = exc.errors(include_input=False, include_context=False)
+            elif isinstance(exc, AIOpsModelError):
+                validation_detail = []
+            else:
+                # 未结构化异常可能携带上游原文，只记录类型，不展开敏感输入。
+                validation_detail = [{"type": type(exc).__name__}]
+            logger.warning(
+                "SQL 阶段诊断未完成，保留可核验检查点：task_id={} code={} validation={}",
+                context.task_id, error, json.dumps(validation_detail, ensure_ascii=False),
+            )
         current = checkpoint is not None and error is None
         draft = checkpoint.draft if current else None
         requests = draft.next_evidence if draft else ()

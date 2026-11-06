@@ -84,6 +84,133 @@ def test_review_and_both_answers_share_one_diagnosis_despite_unrelated_window_ga
     asyncio.run(exercise())
 
 
+
+@pytest.mark.parametrize("failure", ["goal", "parent", "parameter", "truncated"])
+def test_record_freeze_validation_runs_inside_model_output_contract(failure):
+    async def exercise():
+        fact, task, context, model, prompts, assessment = setup()
+        if failure == "truncated":
+            fact = fact.model_copy(update={"truncated": True})
+            assessment = assessment.model_copy(update={"evidence": (fact,)})
+        good = diagnostic_response(review(fact)).model_dump(mode="json")
+        bad = {**good, "summary": "PRIVATE_SQL_TEXT_MUST_NOT_BE_LOGGED"}
+        expected = {
+            "goal": "全部完成标准",
+            "parent": "上一调查记录",
+            "parameter": "参数值与原始观测不一致",
+            "truncated": "截断观测必须说明",
+        }[failure]
+        if failure == "goal":
+            bad["goal_assessments"] = [{"goal_id": "foreign-goal", "status": "SATISFIED", "claim_refs": ["c1"]}]
+        elif failure == "parent":
+            bad["continues_investigation"] = True
+        elif failure == "parameter":
+            bad["recommendations"] = [{**good["recommendations"][0], "parameters": [{
+                "name": "observed_value", "source": "OBSERVATION", "value": "unverified-value",
+                "evidence_field": good["findings"][0]["evidence_fields"][0],
+            }]}]
+        else:
+            bad["findings"] = [{**good["findings"][0], "limitations": []}]
+
+        async def generate(**kwargs):
+            output = kwargs["output_model"]
+            with pytest.raises(ValidationError, match=expected):
+                output.model_validate(bad)
+            return SimpleNamespace(output=output.model_validate(good), receipt=None)
+
+        model.generate_structured.side_effect = generate
+        result = await DbaEvidenceAssessmentHandler(model_client=model, prompts=prompts)._review_sql(
+            context, assessment, task,
+        )
+        assert result.sql_diagnosis_error is None
+        assert result.sql_checkpoint is not None
+        model.generate_structured.assert_awaited_once()
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("repaired", [True, False])
+def test_sql_record_delivery_uses_existing_bounded_repair_without_extra_generation(repaired):
+    import hashlib
+    import json
+    from unittest.mock import patch
+
+    from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
+    from tests.unit.aiops_agent.test_aiops_model_serving import _SequencedSession
+
+    async def exercise():
+        fact, task, context, _, _, assessment = setup()
+        good = diagnostic_response(review(fact)).model_dump(mode="json")
+        bad = {**good, "goal_assessments": [
+            {"goal_id": "foreign-goal", "status": "SATISFIED", "claim_refs": ["c1"]},
+        ]}
+        session = _SequencedSession(tuple(json.dumps(item) for item in (bad, good if repaired else bad)))
+        client = AIOpsStructuredModelClient(
+            base_url="http://model-serving", audience="model-serving",
+            caller_service="aiops-agent", timeout_seconds=30, session=session,
+        )
+        content = "只依据本轮授权证据诊断。"
+        prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(
+            content=content, ref=lambda: {
+                "prompt_id": "sql_diagnosis", "prompt_version": "1.0.0",
+                "prompt_sha256": hashlib.sha256(content.encode()).hexdigest(),
+            },
+        )))
+        context.plan_snapshot["answer_context"]["model"] = {
+            "model_id": str(uuid7()), "tenant_id": str(uuid7()),
+            "technical_name": "test-model", "revision": "test",
+        }
+        with patch("aiops_agent.adapters.model_serving.build_internal_auth_headers", return_value={}):
+            assessed = await DbaEvidenceAssessmentHandler(model_client=client, prompts=prompts)._review_sql(
+                context, assessment, task,
+            )
+        assert len(session.payloads) == 2
+        assert "全部完成标准" in session.payloads[1]["messages"][-1]["content"]
+        assert assessed.evidence == assessment.evidence
+        assert assessed.sql_diagnosis_error == (None if repaired else "MODEL_OUTPUT_INVALID")
+        assert (assessed.sql_checkpoint is not None) is repaired
+        answer_context = replace(context, input_artifacts=({
+            "schema_version": "DBA_SUFFICIENCY.v1", "payload": assessed.model_dump(mode="json"),
+        },))
+        result = await DbaAnswerComposeHandler(model_client=client, prompts=prompts).execute(answer_context)
+        assert result.status == ("COMPLETED" if repaired else "PARTIAL")
+        assert len(session.payloads) == 2
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("error_kind", ["contract", "unstructured"])
+def test_sql_validation_logs_reason_without_original_model_input(error_kind):
+    from loguru import logger
+
+    async def exercise():
+        fact, task, context, model, prompts, assessment = setup()
+        data = diagnostic_response(review(fact)).model_dump(mode="json")
+        data.update(summary="PRIVATE_SQL_TEXT_MUST_NOT_BE_LOGGED", goal_assessments=[
+            {"goal_id": "foreign-goal", "status": "SATISFIED", "claim_refs": ["c1"]},
+        ])
+        from aiops_agent.contracts.sql_diagnostic_response import SqlDiagnosticResponse
+        model.generate_structured.return_value.output = SqlDiagnosticResponse.model_validate(data)
+        if error_kind == "unstructured":
+            model.generate_structured.side_effect = ValueError("PRIVATE_SQL_TEXT_MUST_NOT_BE_LOGGED")
+        messages = []
+        sink = logger.add(lambda message: messages.append(str(message)), level="WARNING")
+        try:
+            result = await DbaEvidenceAssessmentHandler(model_client=model, prompts=prompts)._review_sql(
+                context, assessment, task,
+            )
+        finally:
+            logger.remove(sink)
+        assert result.sql_diagnosis_error == "SQL_DIAGNOSIS_VALIDATION_FAILED"
+        assert result.evidence == assessment.evidence
+        assert result.sql_checkpoint is None
+        assert any(
+            ("全部完成标准" if error_kind == "contract" else "ValueError") in message
+            for message in messages
+        )
+        assert all("PRIVATE_SQL_TEXT_MUST_NOT_BE_LOGGED" not in message for message in messages)
+        model.generate_structured.assert_awaited_once()
+    asyncio.run(exercise())
+
+
 def test_only_conclusion_changing_requests_replan_and_keep_all_source_options():
     async def exercise():
         _, task, context, model, prompts, assessment = setup(needs_more=True)

@@ -85,7 +85,7 @@ def plan_review_tasks(bundle):
             for item in bundle["observations"] if item["evidence_ref"] in matched and item.get("sql_plan")]
 
 
-def diagnostic_response_model(bundle, aliases=None):
+def diagnostic_response_model(bundle, aliases=None, *, context=None, evidence=(), gaps=()):
     single = len(bundle.get("subjects") or ()) <= 1 and not bundle.get("requests")
     if plan_review_tasks(bundle):
         base = SingleSqlPlanDiagnosticResponse if single else SqlPlanDiagnosticResponse
@@ -96,9 +96,12 @@ def diagnostic_response_model(bundle, aliases=None):
     def validate_delivery(self):
         # 在同一次模型合同校验内检查正式引用与目标一致性，错误进入原有有限修正，
         # 不能等回执显示成功后才丢弃整份已生成的诊断。
-        from aiops_agent.application.diagnosis.investigation_record import sql_investigation_draft
+        from aiops_agent.application.diagnosis.investigation_record import freeze_investigation, sql_investigation_draft
         draft = expand_diagnostic_response(self, bundle, aliases)
-        sql_investigation_draft(draft, "当前选定 SQL", bundle.get("subjects", ()))
+        record_draft = sql_investigation_draft(draft, "当前选定 SQL", bundle.get("subjects", ()))
+        if context is not None:
+            # 最终记录约束同样进入既有的有限修正，不能在模型回执成功后才丢弃。
+            freeze_investigation(draft=record_draft, evidence=evidence, context=context, gaps=gaps)
         return self
     return create_model(base.__name__, __base__=base,
         __validators__={"validate_delivery": model_validator(mode="after")(validate_delivery)})
@@ -194,7 +197,9 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
     prompt = await prompts.resolve("sql_diagnosis", frozen_prompts=dict(answer.get("prompts") or {}))
     aliases = {item["evidence_ref"]: f"e{index}" for index, item in enumerate(bundle["observations"], 1)}
     projected = review_context(bundle)
-    output_model = diagnostic_response_model(bundle, aliases)
+    output_model = diagnostic_response_model(
+        bundle, aliases, context=context, evidence=evidence, gaps=gaps,
+    )
     from aiops_agent.application.diagnosis.oracle_sql_evidence import (
         authorized_oracle_sql_tools, oracle_evidence_policy,
     )
@@ -228,6 +233,7 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
                 "oracle": "Oracle 不降级为三库最低共同能力。已有XPLAN时解释相关谓词和Outline，但不把Outline当作调优建议或某次生产执行。已有Monitor时分析精确单次执行的CPU/等待、I/O及本实例进程行源/工作区，结合匹配计划行解释；不能相加父子或PX计数。ASH用于按计划行、ON CPU/等待及阻塞者的采样归因，样本数/比例不是精确耗时，不能用没有样本证明健康。需要且尚未尝试的Oracle证据用oracle_evidence_requests声明kind、真实subject_id和改变判断的reason，不在next_evidence重复；只申请oracle_evidence_policy中许可允许的工具，ASH显式历史窗口必须带时区且不超过24小时，否则使用已冻结默认窗口；不能冒充未覆盖的历史故障。原生HTML报告按需下载，不作为所有SQL诊断的前置条件。",
                 "recommendations": "没有证据支持问题时不强造优化方案；OBSERVE/VERIFY无需虚构变更风险和回滚。变更建议仍须具备条件、风险、验证、回退和审批。",
                 "continuity": "之前的阶段判断不是新事实；新证据反驳时明确修正，补证失败不抹去仍成立的局部判断。",
+                "record_consistency": "goal_assessments 只能使用 goal_catalog 中的目标标识，填写时须逐项覆盖全部目标。parent_investigation 为空时，不得声明 continues_investigation 或 claim_revisions；沿用 SQL 证据不等于存在可修订的调查记录。观测参数值须与引用的原始字段一致；截断观测必须说明适用范围。",
             },
         },
         deadline=datetime.fromisoformat(context.deadline_at) - timedelta(seconds=3) if getattr(context, "deadline_at", None) else None,
