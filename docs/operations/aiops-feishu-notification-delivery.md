@@ -248,3 +248,16 @@ npx playwright test tests/notification-delivery.spec.mjs \
 - 本地全库 check_postgresql_entity_schema.py 检查未通过：存在既有知识等模块结构漂移及未部署外发表；本轮没有修复或改写该业务 Schema。隔离通知结构通过不能表述为全库实库通过。Oracle 新公共设置表仅完成离线和模拟升级测试，未做在线验收。
 
 本轮未连接或升级线上数据库、拉取服务器代码、重启服务或发送真实飞书消息。两仓库提交推送不代表完成部署；用户实际飞书应用、企业网关、客户端送达与手机任务入口仍需经授权联调。
+
+### 6.6 kbotdev PostgreSQL／Oracle 通知 Schema 定向升级（2026-11-06）
+
+本次在用户明确授权后执行，只升级通知相关结构，不修复其他模块的全库漂移，不拉取服务器代码、不停止或重启服务，不发出真实飞书消息。
+
+- Ammolite 已部署工作树为 a2df9ba8，GET /api/v1/notification-delivery/settings 的真实异常为 UndefinedTableError：platform_notification_external_settings 不存在。先核对既有八张通知表、索引、种子与权限，再执行 scripts/deployment/upgrade_notification_settings.py --apply；PostgreSQL 单事务仅新增设置表，提交后独立完整九表验收再次通过。
+- PostgreSQL 既有飞书渠道 1 条、审计 1 条、频控种子 1 条均保留；绑定、规则及外发任务仍为空，未迁移、回填或覆盖 App ID／加密 Secret。使用现有渠道的真实 Tenant，通过部署代码的应用服务、UoW 与仓储只读调用 get_settings，返回空 public_origin／row_version 0，通过。该验证不借用用户登录、不调用飞书，不替代浏览器真实登录验收。
+- KBot 工作树仍为 3870ec44，没有外发生产者代码或外部 Worker，未为升级拉代码。Oracle 原八表仍为旧 Domain 范围：七张外发表均零行、活动 notifications 凭据零条，完整旧规范、七普通索引、频控种子及四权限预检通过后，才执行已审阅的定向范围脚本。仅移除四张空配置表的 Domain 列，放宽 Job／Attempt 和托管凭据的 Domain 可空性，替换全局连接普通索引；不改写任何现有凭据或业务行。
+- Oracle 随后从当前 canonical DDL 仅创建 KBOT_NOTIFY_SETTINGS，完整九表／七普通索引／种子／四权限验收通过；独立连接复验确认旧配置 Domain 列已移除、Job／Attempt 可无 Domain、业务 Entry 仍必需 Domain。Oracle DDL 隐式提交，各 DDL 的执行前后状态均记录，没有盲目重跑。
+- 前后逐表只读核对：PostgreSQL 246 → 247 张表，Oracle 290 → 291 张普通表，各只新增一张设置表，没有表被删除，两库全部既有表的行数均未减少，既有通知表行数不变。Oracle 运行期间 KBOT_OPS_RUN／RUN_EVENT／TASK 自然增加 4／4／12 行；升级没有 DML，不能将这类并发业务增长归因于升级。Oracle 核对范围排除了回收站、嵌套存储、辅助和 IOT 溢出对象。
+- kbotdev 证据目录：/tmp/notification-settings-schema-7BafEV，含 postgresql-before.json／postgresql-after.json、oracle-before.json／oracle-after.json、row-count-verification.json 与 oracle-upgrade.jsonl；仅保存结构、计数和部署步骤，不包含业务记录、凭据明文或备份。
+
+升级结束时 Ammolite／KBot 原 Main API、站内 Worker 与外部 Worker 的 PID 均未改变；本次未修改配置或渠道开关。可刷新 Ammolite 通知渠道页面继续手工验证。KBot 应用代码发布仍需另行授权，本次 Oracle Schema 就绪不代表其飞书功能已经上线。

@@ -15,7 +15,7 @@
 
 日期：2026-11-05；配置范围与用户绑定修订：2026-11-06。适用项目：KBot4、Ammolite Cube。
 
-状态：第二阶段代码及本地自动化验证已实施，采用独立外部投递 Worker。真实飞书验收、现有环境数据库升级及服务器发布尚未执行；不能以本地测试替代真实送达证据。部署准备与边界见 [飞书通知部署与验证](../operations/aiops-feishu-notification-delivery.md)。
+状态：第二阶段代码及本地自动化验证已实施，采用独立外部投递 Worker。kbotdev 的 PostgreSQL／Oracle 通知 Schema 已定向升级并独立验收，记录见部署文档 6.6；Ammolite 工作树为 a2df9ba8，KBot 应用仍为旧部署，本次未发布代码或重启。真实飞书及企业网关送达尚待联调，不能以 Schema 或本地测试替代。部署准备与边界见 [飞书通知部署与验证](../operations/aiops-feishu-notification-delivery.md)。
 
 ## 当前范围修订（2026-11-06）
 
