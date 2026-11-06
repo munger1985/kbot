@@ -16,15 +16,11 @@
     starterBusinessSystems: [], starterCatalogLoaded: false,
   };
   const maxDiagnosticFiles = 15;
-  const typingFrameMs = 22;
   const streamRecoveryAttempts = 120;
   const activeTurnFollowers = new Set();
   const terminalTurnStatuses = new Set([
     "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
   ]);
-  const graphemeSegmenter = typeof Intl?.Segmenter === "function"
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : null;
 
   const esc = shell.escape;
   const values = (items) => Array.isArray(items) ? items : [];
@@ -44,7 +40,7 @@
   ]);
   const turnStatusLabels = { CREATED:"已创建", RUNNING:"诊断中", WAITING_USER:"等待补证", COMPLETED:"已完成", PARTIAL:"部分完成", FAILED:"失败", CANCELLED:"已取消" };
   const chatVisibleAnswerTypes = new Set(["FINDING_CARDS","ANALYSIS_MARKDOWN","CHART","SOLUTION_MARKDOWN","FACT_CONFIRMATION","MARKDOWN","REPORT_ARTIFACT_LINKS","HTML_REPORT_LINKS","IMPLEMENTATION_RUNBOOK","PROPOSAL_SUMMARY"]);
-  const chatAnswerMarkdown = (payload, dictionary) => displayText(String(payload.markdown ?? "").replace(/(?:\r?\n)+(?:#{1,6}\s*|\*\*)?(?:引用的证据|证据引用)(?:\*\*)?\s*(?:\r?\n[\s\S]*)?$/u," ").trim(), dictionary);
+  const chatAnswerMarkdown = (payload, dictionary) => payload.raw_model_output ? String(payload.markdown ?? "") : displayText(String(payload.markdown ?? "").replace(/(?:\r?\n)+(?:#{1,6}\s*|\*\*)?(?:引用的证据|证据引用)(?:\*\*)?\s*(?:\r?\n[\s\S]*)?$/u," ").trim(), dictionary);
   function topSqlColumnClass(column) {
     const name = String(column?.name || column?.key || column || "").toLowerCase();
     if (["sql_text", "query_text", "digest_text", "query_sample_text", "normalized_statement"].includes(name)) return "is-sql";
@@ -2416,50 +2412,11 @@
     setComposerAvailability(!pendingClarificationTurn() && !values(state.turns).some(turn => !terminalTurnStatuses.has(turn.status)));
     await loadConversationStarters();
   }
-
-  function typingUnits(value) {
-    const text = String(value || "");
-    if (!text) return [];
-    if (!graphemeSegmenter) return Array.from(text);
-    return Array.from(graphemeSegmenter.segment(text), (item) => item.segment);
-  }
-
-  function typingBatchSize(pending) {
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return pending.queue.length;
-    if (pending.finalizing) return Math.max(1, Math.ceil(pending.queue.length / 16));
-    if (pending.queue.length > 800) return 8;
-    if (pending.queue.length > 240) return 4;
-    if (pending.queue.length > 80) return 2;
-    return 1;
-  }
-
-  function settleTyping(pending) {
-    pending.timer = null;
-    pending.message.classList.remove("is-typing");
-    pending.message.setAttribute("aria-busy", "false");
-    if(pending.finalizing) pending.content.classList.remove("is-streaming");
-    pending.waiters.splice(0).forEach((resolve) => resolve());
-  }
-
-  function typingTick(pending) {
-    if (!pending.queue.length) return settleTyping(pending);
-    pending.displayedMarkdown += pending.queue.splice(0, typingBatchSize(pending)).join("");
+  function appendAnswerDelta(pending, delta, reset = false) {
+    pending.displayedMarkdown = (reset ? "" : pending.displayedMarkdown) + delta;
     pending.content.innerHTML = markdown.render(pending.displayedMarkdown);
     const panel = document.getElementById("message-list");
     panel.scrollTop = panel.scrollHeight;
-    pending.timer = window.setTimeout(() => typingTick(pending), typingFrameMs);
-  }
-
-  function enqueueAnswerDelta(pending, delta) {
-    pending.queue.push(...typingUnits(delta));
-    pending.message.classList.add("is-typing");
-    pending.message.setAttribute("aria-busy", "true");
-    if (pending.timer === null) typingTick(pending);
-  }
-
-  function waitForTyping(pending) {
-    if (!pending.queue.length && pending.timer === null) return Promise.resolve();
-    return new Promise((resolve) => pending.waiters.push(resolve));
   }
 
   async function followTurn(conversationId, turnId, progress) {
@@ -2496,26 +2453,28 @@
       }
       if (event === "answer.delta") {
         const delta = String(data?.payload?.delta || "");
+        if (!pending && !delta) return;
         if (!pending) {
           progress.insertAdjacentHTML("afterend", messageHtml("AGENT", ""));
           const message = progress.nextElementSibling;
           if(document.body.dataset.page === "chat") {
-            message.querySelector("header").insertAdjacentHTML("beforeend","<small>正在生成结论</small>");
+            message.querySelector("header").insertAdjacentHTML("beforeend","<small>生成中 · 证据核验中</small>");
             message.querySelector(".ops-message-content").classList.add("is-streaming");
           }
           pending = {
             message,
             content: message.querySelector(".ops-message-content"),
             displayedMarkdown: "",
-            queue: [],
-            timer: null,
-            waiters: [],
             finalizing: false,
           };
         }
-        enqueueAnswerDelta(pending, delta);
+        appendAnswerDelta(pending, delta, Boolean(payload.reset));
       }
       if (event === "answer.completed" && pending) pending.finalizing = true;
+      if (event === "turn.status" && terminalTurnStatuses.has(payload.status) && pending) {
+        pending.message.remove();
+        pending = null;
+      }
       if (event === "done") {
         completed = true;
         if (pending) pending.finalizing = true;
@@ -2540,6 +2499,10 @@
         );
         statusVerified = true;
         if (terminalTurnStatuses.has(turn.status)) {
+          if (pending) {
+            pending.message.remove();
+            pending = null;
+          }
           completed = true;
           break;
         }
@@ -2558,10 +2521,8 @@
     window.clearInterval(elapsedTimer);
     updateProgressElapsed(progress);
     if (!completed) throw new Error("进度连接尚未恢复，请刷新会话核对本轮状态");
-    if (pending) {
-      pending.finalizing = true;
-      await waitForTyping(pending);
-    }
+    // 临时正文只在执行中展示；终态统一重新加载已核验的正式结果。
+    if (pending) pending.message.remove();
   }
 
   function resumeActiveTurns(conversationId, turns) {

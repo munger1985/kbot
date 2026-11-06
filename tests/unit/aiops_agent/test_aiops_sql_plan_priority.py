@@ -194,7 +194,13 @@ def test_no_anomaly_conclusion_and_plan_survive_both_answer_modes():
                 "preconditions": (), "risks": (), "rollback_or_stop": "",
             }),),
         })
-        model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(output=diagnostic_response(draft, plan), receipt=SimpleNamespace(model_dump=lambda **_: {}))))
+        response = SimpleNamespace(output=diagnostic_response(draft, plan), receipt=SimpleNamespace(model_dump=lambda **_: {}))
+        async def generate(**kwargs):
+            from aiops_agent.ports.model import ModelTextDelta
+            if callback := kwargs.get("on_text_delta"):
+                await callback(ModelTextDelta(delta=response.output.answer_markdown))
+            return response
+        model = SimpleNamespace(generate_structured=AsyncMock(side_effect=generate))
         prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="按证据诊断", ref=lambda: {})))
         ctx = _context(task_frame_overrides=frame(subject={"subject_type": "ORACLE_SQL_ID", **SUBJECT}))
         assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(entry, plan))
@@ -204,9 +210,10 @@ def test_no_anomaly_conclusion_and_plan_survive_both_answer_modes():
         result = await handler.execute(ctx)
         assert result.status == "COMPLETED"
         assert result.blocks[0].payload["result_kind"] == "SQL_EXECUTION_PLAN"
-        analysis = next(block for block in result.blocks if block.block_type == "ANALYSIS_MARKDOWN")
-        assert analysis.payload["markdown"].startswith("结论：在已观察范围未发现明显异常")
-        assert "计划节点 1" in analysis.payload["markdown"]
+        analysis = next(block for block in result.blocks if block.block_type == "MARKDOWN")
+        assert analysis.payload["markdown"] == response.output.answer_markdown
+        assert analysis.payload["markdown"].startswith("在已观察范围未发现明显异常")
+        assert any("计划节点 1" in claim.reasoning for claim in result.investigation_record.claims)
         shown = next(block for block in result.blocks if block.payload.get("result_kind") == "SQL_EXECUTION_PLAN")
         assert shown.payload["presentation_role"] == "PRIMARY"
         assert shown.evidence_refs == (plan.evidence_ref,)
@@ -274,11 +281,10 @@ def test_model_timeout_keeps_acquired_plan_and_does_not_request_the_same_plan_ag
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(ctx)
         assert result.status == "PARTIAL"
         assert result.blocks[0].payload["result_kind"] == "SQL_EXECUTION_PLAN"
-        analysis = next(block for block in result.blocks if block.block_type == "ANALYSIS_MARKDOWN")
+        analysis = next(block for block in result.blocks if block.block_type == "MARKDOWN")
         assert "MODEL_DEADLINE_EXCEEDED" in analysis.payload["markdown"]
         assert analysis.payload["diagnosis_status"] == "INCOMPLETE"
-        solution = next(block for block in result.blocks if str(block.block_type) == "SOLUTION_MARKDOWN")
-        assert "不需要重复采集同一材料" in solution.payload["markdown"]
+        assert "不需要重复采集同一材料" in analysis.payload["markdown"]
         assert any(block.payload.get("result_kind") == "SQL_EXECUTION_PLAN" for block in result.blocks)
     asyncio.run(exercise())
 

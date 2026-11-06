@@ -110,6 +110,7 @@ def diagnostic_response_model(bundle, aliases=None, *, context=None, evidence=()
 def expand_diagnostic_response(response, bundle, aliases):
     """从短引用恢复正式字段；计划解释必须绑定真实节点并进入同一报告/案例事实链。"""
     payload = _reference_projection(response.model_dump(mode="json"), {short: full for full, short in aliases.items()})
+    payload.pop("answer_markdown")
     findings = {item["conclusion_id"]: item for item in payload.pop("findings")}
     if len(findings) != len(response.findings):
         raise ValueError("诊断结论标识不能重复")
@@ -191,7 +192,7 @@ def reusable_checkpoint(checkpoint, *, task_frame, database_type, evidence, curr
     return draft
 
 
-async def generate_sql_review(*, context, task_frame, database_type, evidence, gaps, model, prompts, previous=None):
+async def generate_sql_review(*, context, task_frame, database_type, evidence, gaps, model, prompts, previous=None, on_text_delta=None):
     answer = dict(context.plan_snapshot.get("answer_context") or {})
     bundle = build_sql_evidence_bundle(task_frame=task_frame, database_type=database_type, evidence=evidence)
     prompt = await prompts.resolve("sql_diagnosis", frozen_prompts=dict(answer.get("prompts") or {}))
@@ -209,6 +210,7 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
         prior_actions=tuple(dict(answer.get("investigation_plan") or {}).get("actions") or ()),
     ) if database_type == "ORACLE" else None
     result = await model.generate_structured(
+        **({"text_field": "answer_markdown", "on_text_delta": on_text_delta} if on_text_delta is not None else {}),
         purpose="aiops.sql-diagnosis", output_model=output_model,
         model_snapshot=dict(answer.get("model") or {}), prompt_ref={**prompt.ref(), "content": prompt.content},
         input_payload={
@@ -225,6 +227,7 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
                 or [{"goal_id": "answer", "description": "回答当前问题"}],
             "gaps": [gap.model_dump(mode="json") for gap in gaps],
             "delivery_requirements": {
+                "answer_markdown": "首先返回 answer_markdown：直接面向用户的自然 Markdown 原文，包含分析与针对性建议，结构由问题决定，不使用固定卡片模板、不复制 JSON 或原始证据表。正文只依据本轮已授权证据，与 findings、recommendations、plan_reviews 一致；缺少执行计划等限制仅在相关判断处简短说明一次，不另起追加回复。原文不得自称已核验或已执行变更，生成期间尚在核验。结构化字段随后返回供最终证据与审批边界校验，不能省略。",
                 "format": "返回精简 SqlDiagnosticResponse，不是完整报告。单主体用1至4项 findings、1至3项建议；省略空的可选字段，不复制 SQL、统计表、计划树、JSON Schema、输入材料或报告模板。每项只写一次机制与针对性措施。",
                 "verdict": "必须区分 PROBLEM_FOUND、NO_OBVIOUS_ISSUE、INSUFFICIENT_EVIDENCE，先正面回答；没有发现问题时明确检查范围及暂不变更，不能凭均值低或缺证判断健康。",
                 "execution_plan": "plan_review_tasks 非空时必须填写 plan_reviews，引用真实 evidence_ref、node_ids 和关联 conclusion_id；完整计划在 evidence_bundle 对应观察的 sql_plan.nodes，不重复传送。分别说明机制和对该 SQL 的影响：关键访问/连接/聚合节点如何影响开销，估算与实际有何差异；仅列节点或说已取得计划不算分析。FIXED TABLE FULL 是固定表访问，不等于业务大表全扫。保留技术术语原文。",
@@ -241,4 +244,6 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
     )
     draft = expand_diagnostic_response(output_model.model_validate(result.output.model_dump(mode="python")), bundle, aliases)
     return SqlDiagnosticCheckpoint(draft=draft, scope_hash=scope_hash(task_frame, database_type),
-        evidence_hash=evidence_hash(evidence), model_receipt=result.receipt.model_dump(mode="json") if result.receipt else None)
+        evidence_hash=evidence_hash(evidence), model_receipt=result.receipt.model_dump(mode="json") if result.receipt else None,
+        answer_markdown=result.output.answer_markdown,
+        streamed_run_id=str(context.run_id) if on_text_delta is not None else None)

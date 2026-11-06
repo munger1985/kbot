@@ -74,7 +74,7 @@ def test_review_and_both_answers_share_one_diagnosis_despite_unrelated_window_ga
         assert result.status == streamed[-1].status == "COMPLETED"
         assert result.blocks == streamed[-1].blocks
         assert "暂不变更" in result.blocks[0].payload["markdown"]
-        solution = next(block.payload["markdown"] for block in result.blocks if block.block_type == "SOLUTION_MARKDOWN")
+        solution = next(block.payload["markdown"] for block in result.blocks if block.block_type == "MARKDOWN")
         assert "停止或回退" not in solution and "风险：" not in solution
         model.generate_structured.assert_awaited_once()
         call = model.generate_structured.await_args.kwargs
@@ -258,7 +258,7 @@ def test_unchanged_evidence_does_not_repeat_diagnosis_and_problem_measures_survi
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(answer_context)
         assert result.status == "COMPLETED"
         assert result.investigation_record.runbook is not None
-        assert "调用合并" in next(block.payload["markdown"] for block in result.blocks if block.block_type == "SOLUTION_MARKDOWN")
+        assert "调用合并" in next(block.payload["markdown"] for block in result.blocks if block.block_type == "MARKDOWN")
         model.generate_structured.assert_awaited_once()
     asyncio.run(exercise())
 

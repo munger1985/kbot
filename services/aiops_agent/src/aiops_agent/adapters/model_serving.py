@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import json
 import time
@@ -11,9 +12,10 @@ from typing import Any, TypeVar
 import aiohttp
 from loguru import logger
 from pydantic import BaseModel, ValidationError
+from pydantic_core import from_json
 
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
-from aiops_agent.ports.model import StructuredModelResult
+from aiops_agent.ports.model import ModelTextDelta, StructuredModelResult, TextDeltaCallback
 from platform_core.security import build_internal_auth_headers
 
 
@@ -80,6 +82,8 @@ class AIOpsStructuredModelClient:
         input_payload: dict[str, Any],
         deadline: datetime | None,
         idempotency_key: str,
+        text_field: str | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> StructuredModelResult:
         technical_name = str(model_snapshot["technical_name"])
         prompt_content = str(prompt_ref["content"])
@@ -95,6 +99,10 @@ class AIOpsStructuredModelClient:
             "返回对象必须严格满足以下 JSON Schema：\n"
             f"{json.dumps(output_schema, ensure_ascii=False, separators=(',', ':'))}"
         )
+        if on_text_delta is not None:
+            if not text_field or text_field not in output_model.model_fields:
+                raise ValueError("流式正文必须对应输出合同中的字符串字段")
+            structured_prompt += f"\n先输出 {text_field} 字段中的完整 Markdown 正文，再输出其余诊断字段；正文与结构化判断必须一致。"
         messages = [
             {"role": "system", "content": structured_prompt},
             {
@@ -111,10 +119,12 @@ class AIOpsStructuredModelClient:
         prompt_tokens = 0
         completion_tokens = 0
         for attempt in range(2):
+            if on_text_delta is not None:
+                await on_text_delta(ModelTextDelta(reset=True))
             request_payload = {
                 "served_model_name": technical_name,
                 "messages": messages,
-                "stream": False,
+                "stream": on_text_delta is not None,
                 "temperature": 0,
                 # OpenAI 兼容厂商对 json_schema 的支持并不一致。统一使用
                 # JSON Mode，并在本服务内执行同一份 Schema 的严格校验。
@@ -168,7 +178,10 @@ class AIOpsStructuredModelClient:
                             "MODEL_SERVICE_UNAVAILABLE",
                             f"模型服务返回 HTTP {response.status}",
                         )
-                    envelope = await response.json()
+                    envelope = (
+                        await self._read_structured_stream(response, text_field=text_field, on_text_delta=on_text_delta)
+                        if on_text_delta is not None else await response.json()
+                    )
             except AIOpsModelError:
                 raise
             except TimeoutError as exc:
@@ -187,6 +200,8 @@ class AIOpsStructuredModelClient:
             try:
                 choice = envelope["choices"][0]
                 content = choice["message"]["content"]
+                if choice.get("finish_reason") in {"length", "content_filter"}:
+                    raise ValueError("模型输出未正常完成")
                 raw_output = json.loads(content)
                 output = output_model.model_validate(raw_output)
             except (
@@ -195,6 +210,7 @@ class AIOpsStructuredModelClient:
                 TypeError,
                 json.JSONDecodeError,
                 ValidationError,
+                ValueError,
             ) as exc:
                 error_detail = json.dumps(exc.errors(include_input=False, include_context=False), ensure_ascii=False) if isinstance(exc, ValidationError) else type(exc).__name__
                 logger.warning(
@@ -252,6 +268,71 @@ class AIOpsStructuredModelClient:
             finish_reason=choice.get("finish_reason"),
         )
         return StructuredModelResult(output=output, receipt=receipt)
+
+    async def _read_structured_stream(self, response, *, text_field, on_text_delta):
+        """边接收边解码正文，不暴露 JSON 元数据、推理内容或未完成的转义。"""
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        pending, content, emitted = "", "", ""
+        provider_id, finish_reason, usage = None, None, {}
+        done = False
+
+        async def consume(frame):
+            nonlocal content, emitted, provider_id, finish_reason, usage, done
+            data = "\n".join(line[5:].lstrip() for line in frame.splitlines() if line.startswith("data:"))
+            if not data:
+                return
+            if data == "[DONE]":
+                done = True
+                return
+            item = json.loads(data)
+            if item.get("error"):
+                raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE")
+            provider_id = item.get("id") or provider_id
+            usage = item.get("usage") or usage
+            for choice in item.get("choices") or ():
+                if choice.get("index", 0) != 0:
+                    continue
+                finish_reason = choice.get("finish_reason") or finish_reason
+                content += str(dict(choice.get("delta") or {}).get("content") or "")
+            try:
+                partial = from_json(content, allow_partial="trailing-strings")
+            except ValueError:
+                return
+            text = partial.get(text_field, "") if isinstance(partial, dict) else ""
+            if not isinstance(text, str) or not text.startswith(emitted):
+                raise AIOpsModelError("MODEL_OUTPUT_INVALID")
+            delta = text[len(emitted):]
+            # 小幅合并网络碎片以限制进度事务数量，不等待完整正文或完整诊断。
+            if len(delta) >= 32 or "\n" in delta:
+                for offset in range(0, len(delta), 2000):
+                    await on_text_delta(ModelTextDelta(delta=delta[offset:offset + 2000]))
+                emitted = text
+
+        async for raw in response.content.iter_any():
+            pending = (pending + decoder.decode(raw)).replace("\r\n", "\n")
+            frames = pending.split("\n\n")
+            pending = frames.pop()
+            for frame in frames:
+                await consume(frame)
+                if done:
+                    break
+            if done:
+                break
+        if not done:
+            pending += decoder.decode(b"", final=True)
+            if pending.strip():
+                await consume(pending)
+        if not done and finish_reason is None:
+            raise AIOpsModelError("MODEL_STREAM_INTERRUPTED")
+        try:
+            text = json.loads(content).get(text_field, "")
+        except (ValueError, AttributeError):
+            text = emitted
+        if isinstance(text, str) and text.startswith(emitted) and len(text) > len(emitted):
+            for offset in range(len(emitted), len(text), 2000):
+                await on_text_delta(ModelTextDelta(delta=text[offset:offset + 2000]))
+        return {"id": provider_id, "usage": usage,
+                "choices": [{"message": {"content": content}, "finish_reason": finish_reason}]}
 
     async def stream_text(
         self,

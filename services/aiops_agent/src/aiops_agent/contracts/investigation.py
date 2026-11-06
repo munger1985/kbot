@@ -75,7 +75,7 @@ class InvestigationClaim(BaseModel):
 
 
 class DiagnosisAnswerDraft(BaseModel):
-    """所有普通诊断先提交逐项判断，再生成用户正文。"""
+    """普通诊断的逐项证据判断，与用户正文在同一次生成中保持一致。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -132,6 +132,12 @@ class DiagnosisAnswerDraft(BaseModel):
         ):
             raise ValueError("仅有假设或未知时不能声明目标已回答")
         return self
+
+
+class DiagnosisStreamResponse(DiagnosisAnswerDraft):
+    """同一次生成保留模型原文与正式判断，不以报告模板替换原文。"""
+
+    answer_markdown: str = Field(min_length=1, max_length=24000)
 
 
 class InvestigationObservation(BaseModel):

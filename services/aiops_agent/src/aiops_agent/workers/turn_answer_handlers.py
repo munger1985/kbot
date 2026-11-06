@@ -8,6 +8,7 @@ from aiops_agent.config import AIOpsDiagnosisConfig
 from aiops_agent.application.top_sql_collection import collection_failure_reason, collection_runtime_note
 
 import hashlib
+import asyncio
 import json
 import re
 import time
@@ -53,6 +54,7 @@ from aiops_agent.application.sql_selection import selection_ref
 from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact, controlled_estimate_fact
 from aiops_agent.application.diagnosis.evidence_projection import database_evidence_fact, top_sql_window_evidence_fact
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft, SqlDiagnosticCheckpoint
+from aiops_agent.contracts.investigation import DiagnosisStreamResponse
 from aiops_agent.application.diagnosis.investigation_record import (
     freeze_investigation, render_investigation, sql_investigation_draft,
 )
@@ -291,6 +293,34 @@ def _fact_trust_level(value: object) -> str:
     )
 
 
+async def _model_answer_stream(context, execute):
+    """转发当前任务的原生正文，取消时回收生成任务，不人为制造打字延迟。"""
+    queue = asyncio.Queue()
+    sequence = 0
+
+    async def on_delta(chunk):
+        nonlocal sequence
+        sequence += 1
+        queue.put_nowait(DbaAnswerProgress(
+            event_type="answer.delta", event_key=f"model-answer:{context.attempt}:{sequence}",
+            payload={"delta": chunk.delta, "reset": chunk.reset, "validation_status": "PENDING"},
+        ))
+
+    execution = asyncio.create_task(execute(context, on_text_delta=on_delta))
+    execution.add_done_callback(lambda _task: queue.put_nowait(None))
+    try:
+        while (item := await queue.get()) is not None:
+            yield item
+        yield await execution
+    finally:
+        if not execution.done():
+            execution.cancel()
+            try:
+                await execution
+            except asyncio.CancelledError:
+                pass
+
+
 class DbaEvidenceAssessmentHandler:
     """归一真实Evidence，并让模型评估假设、证据需求和下一步。"""
 
@@ -299,8 +329,13 @@ class DbaEvidenceAssessmentHandler:
         self._prompts = prompts
         self._diagnosis_config = diagnosis_config or AIOpsDiagnosisConfig()
 
+    async def execute_stream(self, context: TaskExecutionContext):
+        """同一次 SQL 推理中转发原文，最终校验仍由 execute 负责。"""
+        async for item in _model_answer_stream(context, self.execute):
+            yield item
+
     async def execute(
-        self, context: TaskExecutionContext
+        self, context: TaskExecutionContext, *, on_text_delta=None
     ) -> DbaSufficiencyAssessment:
         facts: list[TurnEvidenceFact] = []
         gaps: list[TurnEvidenceGap] = []
@@ -1091,7 +1126,7 @@ class DbaEvidenceAssessmentHandler:
         if task_frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} and scoped.status != SufficiencyStatus.UNSAFE:
             if getattr(context, "deadline_at", None) and (datetime.fromisoformat(context.deadline_at) - datetime.now(UTC)).total_seconds() <= 3:
                 return scoped
-            return await self._review_sql(context, scoped, task_frame)
+            return await self._review_sql(context, scoped, task_frame, on_text_delta=on_text_delta)
         if (assessment_deadline is not None and assessment_deadline <= datetime.now(UTC)) or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
             return scoped
         model_snapshot = dict(answer_context.get("model") or {})
@@ -1240,7 +1275,7 @@ class DbaEvidenceAssessmentHandler:
             }
         ))
 
-    async def _review_sql(self, context, assessment, task_frame):
+    async def _review_sql(self, context, assessment, task_frame, *, on_text_delta=None):
         """一次推理同时完成诊断和补证决策，已校验结果持久化后直接交付。"""
         answer_context = dict(context.plan_snapshot.get("answer_context") or {})
         database_type = str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper()
@@ -1263,12 +1298,16 @@ class DbaEvidenceAssessmentHandler:
                 error = "SQL_DIAGNOSIS_MODEL_UNAVAILABLE"
             elif reusable_checkpoint(previous, task_frame=task_frame, database_type=database_type, evidence=assessment.evidence) is None:
                 checkpoint = await generate_sql_review(context=context, task_frame=task_frame, database_type=database_type,
-                    evidence=assessment.evidence, gaps=assessment.gaps, model=self._model, prompts=self._prompts, previous=previous)
+                    evidence=assessment.evidence, gaps=assessment.gaps, model=self._model, prompts=self._prompts, previous=previous,
+                    on_text_delta=on_text_delta)
             if checkpoint is not None and error is None:
                 bundle = build_sql_evidence_bundle(task_frame=task_frame, database_type=database_type, evidence=assessment.evidence)
                 record = freeze_investigation(draft=sql_investigation_draft(checkpoint.draft, "当前选定 SQL", bundle["subjects"]),
                     evidence=assessment.evidence, context=context, gaps=assessment.gaps)
         except (AIOpsModelError, ValueError, TypeError, LookupError) as exc:
+            if on_text_delta is not None:
+                from aiops_agent.ports.model import ModelTextDelta
+                await on_text_delta(ModelTextDelta(reset=True))
             checkpoint = previous
             error = getattr(exc, "code", "SQL_DIAGNOSIS_VALIDATION_FAILED")
             if isinstance(exc, ValidationError):
@@ -1533,13 +1572,13 @@ class DbaAnswerComposeHandler:
         self._prompts = prompts
         self._diagnosis_config = diagnosis_config or AIOpsDiagnosisConfig()
 
-    async def execute(self, context: TaskExecutionContext) -> AIOpsTurnResult:
+    async def execute(self, context: TaskExecutionContext, *, on_text_delta=None) -> AIOpsTurnResult:
         from aiops_agent.application.inspections.sql_reviews import review_inspection_sql
         inspection = dict(dict(context.plan_snapshot.get("client_metadata") or {}).get("inspection") or {})
         if context.trigger_type != "SCHEDULE" or not any(
             step.get("tool_id") == "db.sql.problem_candidates" for step in inspection.get("evidence_steps") or ()
         ):
-            return await self._execute(context)
+            return await self._execute(context, on_text_delta=on_text_delta)
         assessment = self._assessment(context.input_artifacts)
         if assessment.status in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
             return self._waiting_result(assessment, context)
@@ -1556,7 +1595,7 @@ class DbaAnswerComposeHandler:
             assessment_reasons=assessment.reasons, inspection_sql_reviews=reviews,
         )
 
-    async def _execute(self, context: TaskExecutionContext) -> AIOpsTurnResult:
+    async def _execute(self, context: TaskExecutionContext, *, on_text_delta=None) -> AIOpsTurnResult:
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
         task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
@@ -1612,6 +1651,7 @@ class DbaAnswerComposeHandler:
                 target_id=str(context.target_id or "") or None,
             )
             receipt = None
+            native_markdown = None
             try:
                 if self._model is None or self._prompts is None:
                     raise ValueError("诊断模型或 Prompt 未配置")
@@ -1620,8 +1660,9 @@ class DbaAnswerComposeHandler:
                     frozen_prompts=dict(answer_context["prompts"]),
                 )
                 result = await self._model.generate_structured(
+                    **({"text_field": "answer_markdown", "on_text_delta": on_text_delta} if on_text_delta is not None else {}),
                     purpose="aiops.dba-diagnosis-answer-compose",
-                    output_model=DiagnosisAnswerDraft,
+                    output_model=DiagnosisStreamResponse if on_text_delta is not None else DiagnosisAnswerDraft,
                     model_snapshot=dict(answer_context["model"]),
                     prompt_ref={**prompt.ref(), "content": prompt.content},
                     input_payload=self._diagnosis_model_input(
@@ -1635,12 +1676,17 @@ class DbaAnswerComposeHandler:
                         f"turn:{context.run_id}:diagnosis-answer:{context.attempt}"
                     ),
                 )
-                draft = DiagnosisAnswerDraft.model_validate(result.output)
+                native_markdown = getattr(result.output, "answer_markdown", None)
+                draft = DiagnosisAnswerDraft.model_validate(result.output.model_dump(exclude={"answer_markdown"}))
                 record = freeze_investigation(
                     draft=draft, evidence=assessment.evidence, context=context, gaps=assessment.gaps,
                 )
                 receipt = result.receipt.model_dump(mode="json")
             except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
+                native_markdown = None
+                if on_text_delta is not None:
+                    from aiops_agent.ports.model import ModelTextDelta
+                    await on_text_delta(ModelTextDelta(reset=True))
                 logger.warning("诊断回答未通过校验，保留已采集证据：task_id={} error_type={}", context.task_id, type(exc).__name__)
                 draft = DiagnosisAnswerDraft(
                     claims=({
@@ -1665,6 +1711,12 @@ class DbaAnswerComposeHandler:
                 solution_markdown=solution_markdown,
                 evidence_refs=evidence_refs,
             )
+            if native_markdown:
+                blocks = [block for block in blocks if block.block_type not in {AnswerBlockType.ANALYSIS_MARKDOWN, AnswerBlockType.SOLUTION_MARKDOWN}]
+                blocks.insert(0, TurnAnswerBlock(
+                    block_type=AnswerBlockType.MARKDOWN, schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                    payload={"markdown": native_markdown, "raw_model_output": True}, evidence_refs=evidence_refs,
+                ))
             status = (
                 "COMPLETED"
                 if record.stop_reason == "GOAL_ANSWERED" and assessment.status == SufficiencyStatus.ANSWERABLE
@@ -1682,6 +1734,7 @@ class DbaAnswerComposeHandler:
                 assessment_reasons=assessment.reasons,
                 model_receipt=receipt,
                 investigation_record=record,
+                answer_streamed=bool(native_markdown and on_text_delta is not None),
             )
 
         prompt = await self._prompts.resolve(
@@ -1812,6 +1865,7 @@ class DbaAnswerComposeHandler:
 
     async def _single_sql_evidence_result(
         self, context: TaskExecutionContext, assessment: DbaSufficiencyAssessment,
+        *, on_text_delta=None,
     ) -> AIOpsTurnResult | None:
         task_frame = dict(self._answer_context(context).get("task_frame") or {})
         if task_frame.get("diagnostic_profile") not in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"}:
@@ -1841,7 +1895,8 @@ class DbaAnswerComposeHandler:
                 fallback_reason = f"诊断阶段未完成（{assessment.sql_diagnosis_error}）；已停止重复生成，保留已核验观测。"
             elif draft is None and self._model is not None and self._prompts is not None:
                 checkpoint = await generate_sql_review(context=context, task_frame=task_frame, database_type=self._database_type(context),
-                    evidence=assessment.evidence, gaps=assessment.gaps, model=self._model, prompts=self._prompts)
+                    evidence=assessment.evidence, gaps=assessment.gaps, model=self._model, prompts=self._prompts,
+                    on_text_delta=on_text_delta)
                 draft = checkpoint.draft
             if draft is not None:
                 record = freeze_investigation(
@@ -1852,6 +1907,9 @@ class DbaAnswerComposeHandler:
             elif fallback_reason is None:
                 fallback_reason = "诊断模型未配置；保留已核验观测，不能视为已完成根因分析。"
         except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
+            if on_text_delta is not None:
+                from aiops_agent.ports.model import ModelTextDelta
+                await on_text_delta(ModelTextDelta(reset=True))
             logger.warning("SQL 诊断降级为证据摘要：task_id={} error_type={} code={}", context.task_id, type(exc).__name__, getattr(exc, "code", "EVIDENCE_VALIDATION_FAILED"))
             draft, record = None, None
             cause = f"诊断生成未完成（{exc.code}）" if isinstance(exc, AIOpsModelError) else "诊断生成未通过证据校验"
@@ -1876,21 +1934,21 @@ class DbaAnswerComposeHandler:
         plan_blocks = [block for block in data_blocks if block.payload.get("result_kind") == "SQL_EXECUTION_PLAN"
                        and any(ref in matched_plans for ref in block.evidence_refs)]
         completed = bool(record and record.stop_reason == "GOAL_ANSWERED" and assessment.status == SufficiencyStatus.ANSWERABLE)
+        native_markdown = checkpoint.answer_markdown if draft is not None and checkpoint is not None else None
+        markdown = native_markdown or f"## 分析\n\n{analysis}\n\n## 解决方案\n\n{solution}"
+        if native_markdown and fallback_reason:
+            markdown = fallback_reason + "\n\n" + native_markdown
         blocks = [
             *plan_blocks,
             TurnAnswerBlock(
-                block_type=AnswerBlockType.ANALYSIS_MARKDOWN,
-                schema_version="AIOPS_ANALYSIS_BLOCK.v1",
-                payload={"markdown": analysis, "diagnosis_status": "COMPLETED" if completed else "PARTIAL" if draft else "INCOMPLETE",
+                block_type=AnswerBlockType.MARKDOWN,
+                schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                payload={"markdown": markdown, "raw_model_output": bool(native_markdown),
+                         "sql_plan_acquisition": plan_availability_block(database_type=self._database_type(context), bundle=bundle).payload["sql_plan_acquisition"],
+                         "diagnosis_status": "COMPLETED" if completed else "PARTIAL" if draft else "INCOMPLETE",
                          "sql_diagnosis": draft.model_dump(mode="json") if draft else None,
                          "subject": bundle["subject"], "subject_resolution": bundle["subject_resolution"]}, evidence_refs=refs,
             ),
-            TurnAnswerBlock(
-                block_type=AnswerBlockType.SOLUTION_MARKDOWN,
-                schema_version="AIOPS_SOLUTION_BLOCK.v1",
-                payload={"markdown": solution}, evidence_refs=refs,
-            ),
-            plan_availability_block(database_type=self._database_type(context), bundle=bundle),
         ]
         comparison_blocks = self._sql_candidate_blocks(assessment, context, comparison=True)
         blocks.extend(comparison_blocks)
@@ -1914,6 +1972,7 @@ class DbaAnswerComposeHandler:
             evidence=assessment.evidence, evidence_gaps=assessment.gaps,
             assessment_reasons=reasons, model_receipt=receipt,
             investigation_record=record,
+            answer_streamed=bool(native_markdown and not fallback_reason and checkpoint.streamed_run_id == str(context.run_id)),
         )
 
     async def execute_stream(self, context: TaskExecutionContext):
@@ -1931,12 +1990,20 @@ class DbaAnswerComposeHandler:
             yield result
             return
         if assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION, SufficiencyStatus.CAPABILITY_UNAVAILABLE}:
-            sql_result = await self._single_sql_evidence_result(context, assessment)
+            async def compose_sql(ctx, *, on_text_delta):
+                return await self._single_sql_evidence_result(ctx, assessment, on_text_delta=on_text_delta)
+
+            sql_result = None
+            async for item in _model_answer_stream(context, compose_sql):
+                if isinstance(item, DbaAnswerProgress):
+                    yield item
+                else:
+                    sql_result = item
             if sql_result is not None:
-                sections = {str(block.block_type): str(block.payload.get("markdown") or "") for block in sql_result.blocks}
-                markdown = f"{sections.get('MARKDOWN', '')}\n\n## 分析结论\n{sections.get('ANALYSIS_MARKDOWN', '')}\n\n## 处理建议\n{sections.get('SOLUTION_MARKDOWN', '')}"
-                for index, delta in enumerate(self._answer_deltas(markdown), start=1):
-                    yield DbaAnswerProgress(event_type="answer.delta", event_key=f"answer-delta:{index}", payload={"chunk_index": index, "delta": delta})
+                if not sql_result.answer_streamed:
+                    markdown = "\n\n".join(str(block.payload.get("markdown") or "") for block in sql_result.blocks if block.block_type == AnswerBlockType.MARKDOWN)
+                    for index, delta in enumerate(self._answer_deltas(markdown), start=1):
+                        yield DbaAnswerProgress(event_type="answer.delta", event_key=f"answer-delta:{index}", payload={"chunk_index": index, "delta": delta})
                 yield sql_result.model_copy(update={"answer_streamed": True})
                 return
         waiting_status = assessment.status in {
@@ -1988,12 +2055,20 @@ class DbaAnswerComposeHandler:
             )
             return
         if self._is_diagnosis_turn(context):
-            # 先冻结和校验全部判断，再发送正文，避免错误根因已流到浏览器。
+            # 原文在生成时展示；校验失败明确撤回，不把临时正文冻结为正式判断。
             yield DbaAnswerProgress(
                 event_type="thinking.delta", event_key="answer-thinking:validate",
                 payload={"delta": "正在校验证据判断并生成分析与方案"},
             )
-            result = await self.execute(context)
+            result = None
+            async for item in _model_answer_stream(context, self.execute):
+                if isinstance(item, DbaAnswerProgress):
+                    yield item
+                else:
+                    result = item
+            if result.answer_streamed:
+                yield result
+                return
             markdown = "\n\n".join(
                 ({"ANALYSIS_MARKDOWN": "## 分析结论\n", "SOLUTION_MARKDOWN": "## 处理建议\n"}.get(str(block.block_type), "") + str(block.payload.get("markdown") or ""))
                 for block in result.blocks
@@ -2282,7 +2357,7 @@ class DbaAnswerComposeHandler:
             "goal_catalog": self._goal_catalog(task_frame),
             "workflow_kind": str(answer_context.get("workflow_kind") or ""),
             "findings": compilation.model_dump(mode="json"),
-            "response_presentation": "先回答用户问题；没有相关发现卡片时，只说明证据支持的结论及关键缺口，不解释内部卡片状态。",
+            "response_presentation": "先在 answer_markdown 中用自然 Markdown 直接回答用户问题，包含有依据的分析与针对性建议；保留模型原文，不用固定卡片模板，不重复追加通用免责声明。正文与 claims/recommendations 一致，其余结构化字段随后供正式证据核验。没有相关发现卡片时，只说明证据支持的结论及关键缺口，不解释内部卡片状态。",
             "sufficiency": sufficiency,
             "capacity_plan": decide_capacity_actions(
                 findings=compilation.findings,

@@ -1,4 +1,4 @@
-"""交互推理只生成判断；时间、编号和报告结构由已核验来源重建。"""
+"""交互推理同时交付原始正文与可核验判断；报告血缘由已核验来源重建。"""
 
 from typing import Annotated, Literal
 
@@ -36,6 +36,7 @@ class SqlDiagnosticResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    answer_markdown: str = Field(min_length=1, max_length=24000)
     verdict: Literal["PROBLEM_FOUND", "NO_OBVIOUS_ISSUE", "INSUFFICIENT_EVIDENCE"]
     summary: str = Field(min_length=1, max_length=400)
     findings: tuple[SqlDiagnosticFinding, ...] = Field(min_length=1, max_length=12)

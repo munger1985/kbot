@@ -302,6 +302,7 @@
 .agent-code-block code { font: 12px/1.6 ui-monospace, monospace; }
 
 .ops-findings, .ops-analysis, .ops-solution { margin: 0 0 14px; padding: 13px 15px; border: 1px solid var(--line); background: #f8f9fb; }
+body[data-page] :is(.ops-analysis, .ops-solution) { padding: 0; border: 0; border-radius: 0; background: transparent; }
 .ops-findings header, .ops-analysis header, .ops-solution header { margin-bottom: 10px; }
 .ops-findings header strong, .ops-analysis header strong, .ops-solution header strong { color: var(--accent); font-size: 13px; }
 .ops-runbook { max-width: 980px; margin: 18px auto; padding: 34px clamp(20px, 4vw, 54px) 48px; border: 1px solid #cbd5e2; background: #fff; box-shadow: 0 12px 32px rgb(34 54 80 / 9%); color: #26343f; }

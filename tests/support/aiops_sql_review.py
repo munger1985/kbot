@@ -5,6 +5,8 @@ from aiops_agent.contracts.sql_diagnostic_response import SqlDiagnosticResponse
 
 def diagnostic_response(draft, plan=None):
     data = draft.model_dump(mode="json")
+    data["answer_markdown"] = "\n\n".join((draft.summary, *(item.statement + "\n" + item.reasoning for item in draft.conclusions),
+                                           *(item.action for item in draft.recommendations)))
     conclusions = data.pop("conclusions")
     data.pop("schema_version", None)
     data.pop("unresolved_questions", None)

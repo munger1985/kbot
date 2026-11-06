@@ -2415,7 +2415,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         ]
         primary = [block for block in tables if block.payload.get("presentation_role") == "PRIMARY"]
         self.assertEqual(1, len(primary))
-        self.assertEqual("Top SQL（已采集候选的窗口增量）", primary[0].payload["title"])
+        self.assertEqual("Top SQL（已跟踪热点的窗口增量）", primary[0].payload["title"])
         self.assertEqual(0, primary[0].payload["row_count"])
         self.assertTrue(any(block.payload.get("presentation_role") == "SUPPORTING" for block in tables))
 

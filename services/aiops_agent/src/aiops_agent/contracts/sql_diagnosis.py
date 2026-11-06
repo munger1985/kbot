@@ -193,3 +193,5 @@ class SqlDiagnosticCheckpoint(BaseModel):
     scope_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     evidence_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     model_receipt: dict[str, Any] | None = None
+    answer_markdown: str | None = Field(default=None, min_length=1, max_length=24000)
+    streamed_run_id: str | None = None
