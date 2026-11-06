@@ -1328,8 +1328,11 @@
     if (!item.database) return { draft_resource_id: item.draft_resource_id, mode: "NEW", resource_type_key: item.resource_type_key, display_name: item.display_name.trim(), identity_kind: "STABLE", owner_group_id: item.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: null, location_name: item.location_name.trim() || null, display_order: item.display_order, attributes: item.attributes || {}, monitoring: hardware.mapping(item) };
     return { draft_resource_id: item.draft_resource_id, mode: "NEW", resource_type_key: item.resource_type_key, display_name: item.display_name.trim(), identity_kind: "STABLE", owner_group_id: item.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: null, location_name: item.location_name.trim() || null, display_order: item.display_order, attributes: {}, database: { target: targetPayload(item), monitoring: monitoringPayload(item) } };
   }
+  function relationPatchPayload(item, systemIdByDraft = null) {
+    return { display_name: item.display_name.trim() || null, responsibility_group_id: item.responsibility_group_id || null, confirmation_status: "CONFIRMED", attributes: item.attributes || {}, participants: item.participants.map((participant) => systemIdByDraft ? { system_resource_id: systemIdByDraft.get(participant.draft_resource_id), participant_role: participant.participant_role, display_order: participant.display_order } : participant) };
+  }
   function relationPayload(item, systemIdByDraft = null) {
-    return { relation_type_key: item.relation_type_key, display_name: item.display_name.trim() || null, responsibility_group_id: item.responsibility_group_id || null, origin: item.origin || (isInferredRelation(item) ? "DISCOVERY" : "MANUAL"), confirmation_status: "CONFIRMED", attributes: item.attributes || {}, participants: item.participants.map((participant) => systemIdByDraft ? { system_resource_id: systemIdByDraft.get(participant.draft_resource_id), participant_role: participant.participant_role, display_order: participant.display_order } : participant) };
+    return { ...relationPatchPayload(item, systemIdByDraft), relation_type_key: item.relation_type_key, origin: item.origin || (isInferredRelation(item) ? "DISCOVERY" : "MANUAL") };
   }
   function draftPayload() {
     return {
@@ -1373,8 +1376,16 @@
     detail.row_version = updatedSystem.row_version || detail.row_version;
     const originalResources = new Map(detail.resources.map((item) => [item.system_resource_id, item]));
     const retainedSystemIds = new Set(resources.map((item) => item.system_resource_id).filter(Boolean));
-    const retainedRelationIds = new Set(relations.map((item) => item.relation_id).filter(Boolean));
-    for (const original of detail.relations) if (!retainedRelationIds.has(original.relation_id)) await request(`/business-systems/${encodeURIComponent(systemId)}/relations/${encodeURIComponent(original.relation_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${original.row_version}"` } });
+    const originalRelations = new Map(detail.relations.map((item) => [item.relation_id, item]));
+    const editedRelations = new Map(relations.map((item) => [item.relation_id, item]));
+    for (const original of originalRelations.values()) {
+      const edited = editedRelations.get(original.relation_id);
+      if (edited && original.relation_type_key === edited.relation_type_key && (original.origin || "MANUAL") === relationPayload(edited).origin) continue;
+      // 类型和来源仅在创建时指定；改动时重建关系，成功后立即记录以便重试。
+      await request(`/business-systems/${encodeURIComponent(systemId)}/relations/${encodeURIComponent(original.relation_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${original.row_version}"` } });
+      detail.relations = detail.relations.filter((item) => item.relation_id !== original.relation_id);
+      if (edited) { delete edited.relation_id; delete edited.row_version; }
+    }
     let current = await request(`/business-systems/${encodeURIComponent(systemId)}`);
     for (const item of resources) {
       if (item.system_resource_id) {
@@ -1398,13 +1409,25 @@
         if (!added) throw new Error(`无法确认新增资源“${item.display_name}”的服务端标识`);
         Object.assign(item, { system_resource_id: added.system_resource_id, resource_id: added.resource.resource_id, system_row_version: added.row_version, resource_row_version: added.resource.row_version });
       }
+      detail.resources = current.resources;
     }
     const systemIdByDraft = new Map(resources.map((item) => [item.draft_resource_id, item.system_resource_id]));
     for (const item of relations) {
-      if (item.relation_id) current = await request(`/business-systems/${encodeURIComponent(systemId)}/relations/${encodeURIComponent(item.relation_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.row_version}"` }, body: JSON.stringify(relationPayload(item, systemIdByDraft)) });
+      const before = new Set(current.relations.map((row) => row.relation_id));
+      if (item.relation_id) current = await request(`/business-systems/${encodeURIComponent(systemId)}/relations/${encodeURIComponent(item.relation_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.row_version}"` }, body: JSON.stringify(relationPatchPayload(item, systemIdByDraft)) });
       else current = await request(`/business-systems/${encodeURIComponent(systemId)}/relations`, { method: "POST", headers: { "Idempotency-Key": uuid7() }, body: JSON.stringify(relationPayload(item, systemIdByDraft)) });
+      const saved = current.relations.find((row) => item.relation_id ? row.relation_id === item.relation_id : !before.has(row.relation_id));
+      if (!saved) throw new Error(`无法确认关系“${item.display_name || item.relation_type_key}”的服务端标识`);
+      item.relation_id = saved.relation_id;
+      item.row_version = saved.row_version;
+      detail.relations = current.relations;
     }
-    for (const original of originalResources.values()) if (!retainedSystemIds.has(original.system_resource_id)) await request(`/business-systems/${encodeURIComponent(systemId)}/resources/${encodeURIComponent(original.system_resource_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${original.row_version}"` } });
+    for (const original of originalResources.values()) {
+      if (!retainedSystemIds.has(original.system_resource_id)) {
+        await request(`/business-systems/${encodeURIComponent(systemId)}/resources/${encodeURIComponent(original.system_resource_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${original.row_version}"` } });
+        detail.resources = detail.resources.filter((item) => item.system_resource_id !== original.system_resource_id);
+      }
+    }
     return request(`/business-systems/${encodeURIComponent(systemId)}`);
   }
 

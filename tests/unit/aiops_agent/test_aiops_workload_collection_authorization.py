@@ -13,15 +13,17 @@ from sqlalchemy.dialects import oracle, postgresql, sqlite
 from aiops_agent.application.top_sql_collection import (
     collection_failure_reason, collection_runtime_note, collection_runtime_state,
 )
+from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.diagnostics import DiagnosticRegistry
 from aiops_agent.entities import (
     AIOpsAgentEntity, AIOpsAgentVersionEntity, AIOpsAgentVersionBusinessSystemEntity,
-    BusinessSystemResourceEntity, DatabaseResourceEntity, ManagedResourceEntity, TargetEntity,
+    BusinessSystemEntity, BusinessSystemResourceEntity, DatabaseResourceEntity, ManagedResourceEntity, TargetEntity,
 )
 from aiops_agent.repositories.agent import AIOpsAgentRepository
 from aiops_agent.scheduling.workload_collection import WorkloadCollectionScheduler
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
 from platform_core.identity import uuid7
+from platform_core.contracts.aiops import ClaimOpsTaskCommand
 
 
 TENANT_SCOPED = hasattr(TargetEntity, "tenant_id")
@@ -42,6 +44,7 @@ class AuthorizationDatabase:
             AIOpsAgentEntity: ["agent_id", "current_version_id", "domain_id", "status"],
             AIOpsAgentVersionEntity: ["agent_version_id", "agent_id"],
             AIOpsAgentVersionBusinessSystemEntity: ["agent_version_id", "business_system_id"],
+            BusinessSystemEntity: ["business_system_id", "status"],
             BusinessSystemResourceEntity: ["business_system_id", "resource_id", "status"],
             ManagedResourceEntity: ["resource_id", "domain_id", "lifecycle_status"],
             DatabaseResourceEntity: ["resource_id", "target_id"],
@@ -59,6 +62,7 @@ class AuthorizationDatabase:
                         domain_id=DOMAIN, status="ACTIVE", **({"tenant_id": TENANT} if TENANT_SCOPED else {}))
             self.insert(AIOpsAgentVersionEntity, agent_version_id=version_id, agent_id=agent_id)
             self.insert(AIOpsAgentVersionBusinessSystemEntity, agent_version_id=version_id, business_system_id=SYSTEM)
+        self.insert(BusinessSystemEntity, business_system_id=SYSTEM, status="ENABLED")
         self.insert(BusinessSystemResourceEntity, business_system_id=SYSTEM, resource_id=RESOURCE, status="ACTIVE")
         self.insert(ManagedResourceEntity, resource_id=RESOURCE, domain_id=DOMAIN, lifecycle_status="ACTIVE",
                     **({"tenant_id": TENANT} if TENANT_SCOPED else {}))
@@ -114,6 +118,8 @@ def test_current_business_system_authorization_needs_no_direct_target_binding():
     (AIOpsAgentVersionEntity, "agent_id", "other-agent"),
     (AIOpsAgentVersionBusinessSystemEntity, "agent_version_id", "old-version"),
     (AIOpsAgentVersionBusinessSystemEntity, "business_system_id", "other-system"),
+    (BusinessSystemEntity, "status", "DISABLED"),
+    (BusinessSystemEntity, "status", "DRAFT"),
     (BusinessSystemResourceEntity, "status", "INACTIVE"),
     (BusinessSystemResourceEntity, "resource_id", "other-resource"),
     (ManagedResourceEntity, "domain_id", "other-domain"),
@@ -212,6 +218,59 @@ def test_due_workload_creates_one_frozen_run_without_legacy_binding():
     assert state["workload_last_error_code"] is None
     assert "workload_consecutive_failures" not in state
     uow.commit.assert_awaited_once()
+
+
+@pytest.mark.parametrize("db_type,version", [("ORACLE", "19c"), ("MYSQL", "8.4"), ("POSTGRESQL", "16")])
+def test_minute_workload_run_can_be_claimed_and_projected_without_conversation(db_type, version):
+    """真实调度冻结的 Run 可进入 Worker，不因不存在的 Primary Turn 回滚。"""
+    async def execute():
+        scheduler, target, _, uow = scheduler_context()
+        target.db_type, target.version_code = db_type, version
+        target.workload_snapshot_policy_json["interval_minutes"] = 1
+        assert await scheduler._schedule_one("WORKLOAD")
+        run = uow.runs.add_run.await_args.args[0]
+        task = uow.runs.add_tasks.await_args.args[0][0]
+        assert run.workflow_kind == "INSPECTION"
+        assert run.interaction_mode == "AUTONOMOUS"
+        assert run.plan_snapshot_json["workload_collection"]["window_seconds"] == 60
+        assert "turn_id" not in run.plan_snapshot_json
+        assert uow.targets.update_workload_runtime_state.await_args.kwargs["values"]["workload_next_run_at"] == NOW + timedelta(minutes=1)
+
+        async def claim(**kwargs):
+            task.status, task.attempt_count, task.row_version = "RUNNING", 1, 1
+            task.started_at = NOW
+            task.lease_owner, task.lease_token = kwargs["lease_owner"], kwargs["lease_token"]
+            return task
+
+        uow.runs.claim_task = AsyncMock(side_effect=claim)
+        uow.runs.get_run = AsyncMock(return_value=run)
+        uow.runs.append_event.return_value = SimpleNamespace(sequence_no=1)
+        uow.turns = SimpleNamespace(
+            get_run_link_by_ops_run_id=AsyncMock(return_value=None),
+            get_turn=AsyncMock(),
+        )
+        runtime = object.__new__(AIOpsRuntimeService)
+        runtime._uow_factory = scheduler._uow_factory
+        runtime._input_artifacts = AsyncMock(return_value=[])
+        runtime._append_turn_event = AsyncMock()
+        lease = await runtime.claim_task(ClaimOpsTaskCommand(
+            worker_id="snapshot-worker", lease_seconds=30, trace_id="snapshot-claim",
+        ))
+        assert lease.run_id == run.ops_run_id
+        assert lease.handler_id == "database.scope"
+        assert lease.plan_snapshot["workload_collection"]["window_seconds"] == 60
+        assert run.status == "RUNNING"
+        assert uow.commit.await_count == 2
+        await runtime._project_turn_task(
+            uow=uow, run=run, task=task, artifact=SimpleNamespace(), now=NOW,
+        )
+        await runtime._project_turn_terminal(
+            uow=uow, run=run, status="FAILED", error_code="OPS_RUN_EXPIRED",
+            public_summary="周期快照采集超期", now=NOW,
+        )
+        uow.turns.get_turn.assert_not_awaited()
+        runtime._append_turn_event.assert_not_awaited()
+    asyncio.run(execute())
 
 
 def test_unauthorized_collection_records_reason_but_creates_no_run():
