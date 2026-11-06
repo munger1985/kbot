@@ -211,3 +211,14 @@ npx playwright test tests/notification-delivery.spec.mjs \
 - 两主工作区后端定向回归：KBot 230 passed、3 subtests passed；Ammolite 142 passed。覆盖可选绑定、版本冲突、身份占用、解绑、无绑定跳过、个人收件箱聚合及空旧结构切换保护。
 - Portal／KBot 通知浏览器回归 43 passed，Portal 生产构建通过（保留大 chunk 警告）；两项目架构边界、离线 canonical Schema 与跨项目语义对齐检查通过。
 - 本次未进行 Oracle／PostgreSQL 实库结构切换或真实飞书验收。现有旧范围结构必须先按 2.1 预检；存在任何旧外发记录或活动旧通知凭据时停止，不清数据、不自动转换。
+
+### 6.4 kbotdev 渠道新增 500 的范围升级补漏（2026-11-06）
+
+- 真实异常是 PostgreSQL 的 `platform_notification_external_connection.domain_id` 仍为 NOT NULL；已部署代码按 Tenant 保存，不再提供 Domain。历史 v8 外发表创建成功，并不代表后续范围切换已完成。此次不是飞书接口失败，也不能通过默认 Domain 或兼容写入规避。
+- 已在 `/home/ubuntu/Ammolite` 执行既有 `scripts/deployment/upgrade_notification_scope.py` 的定向切换逻辑。事前核对七张相关外发表均为零行、通知托管凭据为零行；外发总开关原本关闭，Worker 空闲，Outbox 不入外发队列。PostgreSQL 在事务内持有目标表排他锁，移除四张空配置表的旧 Domain 列，放宽 Job／Attempt 的 Domain 可空性，替换租户范围普通索引。
+- 升级后八张通知外发表的列、类型、可空性、主外键、普通索引、限流种子及通知权限规范验收通过。未清理业务记录、站内通知或投递历史；限流种子保留。未修改服务器代码、停启服务或开启外发。
+- 新增 Ammolite 实库验收入口 `tests/smoke/smoke_notification_connection_postgresql.py --run`。使用部署配置、假飞书凭据和既有租户外键；只接受外发关闭且目标外发结构为空的环境。应用 UoW 和真实加密凭据存储共享一个外层事务，内部提交仅释放保存点，结束时整体回滚；不调用飞书。
+- 此次已在 kbotdev PostgreSQL 执行上述验收：生产 HTTP 路由新增返回 201；读取、改名、密钥轮换、重复配置冲突及凭据清理、过期版本冲突及凭据清理、跨租户连接／凭据隔离、三次写操作审计均通过。回滚后各目标表与通知凭据数量恢复基线，测试数据零残留。
+- 验收 HTTP 使用进程内 ASGI 与注入测试身份，未替代用户真实登录会话、在线网关或飞书接收验收。KBot Oracle 未在本次事件中执行范围切换；其发布仍须分别完成第 2.1 节预检、升级和 Oracle 规范验收，不能套用本次 PostgreSQL 结果。
+
+后续发布顺序固定为：核对目标部署与数据 → 范围升级预检／应用 → 当前 canonical 验收 → 真实数据库保存回归 → 页面手工验收。单元测试、按钮可点击、服务 readiness 或历史 v8 升级报告均不能替代当前结构与持久化链路验收。自身 Schema 验收仍只在部署／测试入口执行，不加到运行时请求或启动门禁。
