@@ -14723,9 +14723,16 @@
         "additionalProperties": false,
         "properties": {
           "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
           },
           "completed_at": {
             "anyOf": [
@@ -25535,6 +25542,7 @@
       },
       "WorkflowKind": {
         "enum": [
+          "RESOURCE_COLLECTION",
           "ALERT_DIAGNOSIS",
           "INSPECTION",
           "CHAT_TURN",

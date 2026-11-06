@@ -144,8 +144,7 @@ def test_internal_route_enforces_dedicated_service_scope_and_returns_no_secret(a
     async def run():
         f = service_fixture()
         # 只选择平台自身的正式 audience；产品合同与授权语义相同。
-        import aiops_agent.api.executions.routes as routes
-        audience = "kbot-aiops-db-executor" if "kbot" in routes.__file__ else "ammolite-aiops-db-executor"
+        audience = "kbot-aiops-db-executor" if isinstance(f.run.domain_id, int) else "ammolite-aiops-db-executor"
         f.grant.audience = audience
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
             configuration_service=SimpleNamespace(_uow_factory=f.factory), diagnostic_grant_codec=f.codec,
@@ -361,3 +360,73 @@ def test_internal_client_uses_separate_service_scope_and_original_signed_receipt
         bootstrap = (root / "services/aiops_agent/src/aiops_agent/bootstrap/api.py").read_text()
         assert '"aiops.readonly.check"' in bootstrap
     asyncio.run(run())
+
+def resource_collection_fixture(kind="WORKLOAD"):
+    f = service_fixture()
+    f.run.workflow_kind = "RESOURCE_COLLECTION"
+    f.run.agent_id = f.run.agent_version_id = None
+    f.run.trigger_type, f.run.interaction_mode = "SCHEDULE", "AUTONOMOUS"
+    f.run.plan_snapshot_json = {
+        "workload_collection": {"kind": kind},
+        "database_diagnostics": {"tools": [{
+            "tool_id": "db.instance.identity", "tool_version": "1.0.0", "template_sha256": "a" * 64,
+        }]},
+    }
+    f.target.workload_snapshot_policy_json = {"enabled": True}
+    f.target.activity_sampler_policy_json = {"enabled": True}
+    f.task.handler_id, f.task.task_key = "database.diagnostic", "diagnostic:db.instance.identity"
+    f.grant.tool_id, f.grant.tool_version, f.grant.template_sha256 = "db.instance.identity", "1.0.0", "a" * 64
+    return f
+
+
+@pytest.mark.parametrize("kind", ["WORKLOAD", "ACTIVITY"])
+@pytest.mark.parametrize("mode", [
+    "valid", "disabled_policy", "disabled_target", "changed_credential", "expired_lease",
+    "invalid_kind", "wrong_task", "wrong_handler", "wrong_tool", "wrong_template", "dynamic_query", "attached_agent",
+])
+def test_collection_fence_uses_current_resource_policy_not_agent(kind, mode):
+    async def execute():
+        f = resource_collection_fixture(kind)
+        if mode == "disabled_policy":
+            f.target.workload_snapshot_policy_json = f.target.activity_sampler_policy_json = {"enabled": False}
+        if mode == "disabled_target": f.target.status = "DISABLED"
+        if mode == "changed_credential": f.target.diagnostic_credential_id = uuid7()
+        if mode == "expired_lease": f.task.lease_until = now() - timedelta(seconds=1)
+        if mode == "invalid_kind": f.run.plan_snapshot_json["workload_collection"]["kind"] = "OTHER"
+        if mode == "wrong_task": f.task.task_key = "diagnostic:db.other"
+        if mode == "wrong_handler": f.task.handler_id = "dba.tool.invoke"
+        if mode == "wrong_tool": f.grant.tool_id = "db.other"
+        if mode == "wrong_template": f.grant.template_sha256 = "b" * 64
+        if mode == "dynamic_query": del f.grant.tool_id
+        if mode == "attached_agent": f.run.agent_id = uuid7()
+        receipt = await f.service.check(f.request)
+        assert receipt.allowed is (mode == "valid")
+        if mode != "valid":
+            assert receipt.reason is not None
+        f.credentials.read.assert_not_awaited()
+        f.uow.commit.assert_not_awaited()
+    asyncio.run(execute())
+
+
+def test_collection_credentials_can_be_issued_without_agent_and_policy_revocation_blocks_read():
+    from aiops_agent.application.credential_issuance import CredentialIssuanceService, CredentialIssueError
+    async def execute():
+        for enabled in (True, False):
+            f = resource_collection_fixture()
+            f.uow.resources.get_lease.return_value = None
+            f.target.workload_snapshot_policy_json["enabled"] = enabled
+            service = CredentialIssuanceService(
+                uow_factory=f.factory, diagnostic_codec=f.codec, mutation_codec=Mock(),
+                credential_service=f.credentials, audience="test-executor",
+            )
+            if enabled:
+                result = await service.issue("signed-grant")
+                assert result.resource_lease is not None
+                f.credentials.read.assert_awaited_once()
+                f.uow.commit.assert_awaited_once()
+            else:
+                with pytest.raises(CredentialIssueError, match="CREDENTIAL_GRANT_INVALID"):
+                    await service.issue("signed-grant")
+                f.credentials.read.assert_not_awaited()
+                f.uow.commit.assert_not_awaited()
+    asyncio.run(execute())

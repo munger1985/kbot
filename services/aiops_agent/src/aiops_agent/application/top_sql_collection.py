@@ -4,7 +4,6 @@ from typing import Any
 
 
 _COLLECTION_FAILURE_REASONS = {
-    "ACTIVE_AGENT_BINDING_MISSING": "当前业务系统资源授权中没有可用的启用 Agent",
     "TARGET_CONFIGURATION_INCOMPLETE": "数据库 Target 的版本、连接或诊断凭据配置不完整",
     "IDENTITY_TOOL_UNAVAILABLE": "数据库身份采集工具不可用",
 }

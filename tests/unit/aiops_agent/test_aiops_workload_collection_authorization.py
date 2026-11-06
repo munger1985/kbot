@@ -1,29 +1,24 @@
-"""周期采集现行授权、确定性调度和真实错误展示回归。"""
+"""周期采集只依赖资源策略、只读连接与执行围栏，不依赖 Agent。"""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-import sqlite3
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
-from uuid import UUID
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from sqlalchemy.dialects import oracle, postgresql, sqlite
+from sqlalchemy.dialects import oracle, postgresql
 
 from aiops_agent.application.top_sql_collection import (
     collection_failure_reason, collection_runtime_note, collection_runtime_state,
 )
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.diagnostics import DiagnosticRegistry
-from aiops_agent.entities import (
-    AIOpsAgentEntity, AIOpsAgentVersionEntity, AIOpsAgentVersionBusinessSystemEntity,
-    BusinessSystemEntity, BusinessSystemResourceEntity, DatabaseResourceEntity, ManagedResourceEntity, TargetEntity,
-)
-from aiops_agent.repositories.agent import AIOpsAgentRepository
+from aiops_agent.entities import TargetEntity, OpsRunEntity
+from aiops_agent.repositories.target import TargetRepository
 from aiops_agent.scheduling.workload_collection import WorkloadCollectionScheduler
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
-from platform_core.identity import uuid7
 from platform_core.contracts.aiops import ClaimOpsTaskCommand
+from platform_core.identity import uuid7
 
 
 TENANT_SCOPED = hasattr(TargetEntity, "tenant_id")
@@ -32,140 +27,39 @@ DOMAIN = uuid7() if TENANT_SCOPED else 87
 TENANT, TARGET, RESOURCE, SYSTEM = (uuid7() for _ in range(4))
 
 
-class AuthorizationDatabase:
-    """执行真实 Repository 生成的查询，只建立该查询需要的内存测试列。"""
+class NoAgentAccess:
+    """不论 Agent 是否存在、停用或未授权，采集都不得查询 Agent。"""
 
-    def __init__(self, *, agent_ids=(UUID(int=1),)):
-        self.connection = sqlite3.connect(":memory:")
-        self.statement = None
-        self.agent_ids = agent_ids
-        self.version_ids = {agent_id: uuid7() for agent_id in agent_ids}
-        tables = {
-            AIOpsAgentEntity: ["agent_id", "current_version_id", "domain_id", "status"],
-            AIOpsAgentVersionEntity: ["agent_version_id", "agent_id"],
-            AIOpsAgentVersionBusinessSystemEntity: ["agent_version_id", "business_system_id"],
-            BusinessSystemEntity: ["business_system_id", "status"],
-            BusinessSystemResourceEntity: ["business_system_id", "resource_id", "status"],
-            ManagedResourceEntity: ["resource_id", "domain_id", "lifecycle_status"],
-            DatabaseResourceEntity: ["resource_id", "target_id"],
-            TargetEntity: ["target_id", "domain_id", "status"],
-        }
-        if TENANT_SCOPED:
-            for entity in (AIOpsAgentEntity, ManagedResourceEntity, TargetEntity):
-                tables[entity].append("tenant_id")
-        for entity, columns in tables.items():
-            definitions = ", ".join(f'"{column}" TEXT' for column in columns)
-            self.connection.execute(f'CREATE TABLE "{entity.__tablename__}" ({definitions})')
-        for agent_id in agent_ids:
-            version_id = self.version_ids[agent_id]
-            self.insert(AIOpsAgentEntity, agent_id=agent_id, current_version_id=version_id,
-                        domain_id=DOMAIN, status="ACTIVE", **({"tenant_id": TENANT} if TENANT_SCOPED else {}))
-            self.insert(AIOpsAgentVersionEntity, agent_version_id=version_id, agent_id=agent_id)
-            self.insert(AIOpsAgentVersionBusinessSystemEntity, agent_version_id=version_id, business_system_id=SYSTEM)
-        self.insert(BusinessSystemEntity, business_system_id=SYSTEM, status="ENABLED")
-        self.insert(BusinessSystemResourceEntity, business_system_id=SYSTEM, resource_id=RESOURCE, status="ACTIVE")
-        self.insert(ManagedResourceEntity, resource_id=RESOURCE, domain_id=DOMAIN, lifecycle_status="ACTIVE",
-                    **({"tenant_id": TENANT} if TENANT_SCOPED else {}))
-        self.insert(DatabaseResourceEntity, resource_id=RESOURCE, target_id=TARGET)
-        self.insert(TargetEntity, target_id=TARGET, domain_id=DOMAIN, status="ENABLED",
-                    **({"tenant_id": TENANT} if TENANT_SCOPED else {}))
-
-    def insert(self, entity, **values):
-        names = ", ".join(f'"{name}"' for name in values)
-        placeholders = ", ".join("?" for _ in values)
-        self.connection.execute(
-            f'INSERT INTO "{entity.__tablename__}" ({names}) VALUES ({placeholders})',
-            tuple(str(value) for value in values.values()),
-        )
-
-    def replace(self, entity, column, value):
-        self.connection.execute(f'UPDATE "{entity.__tablename__}" SET "{column}" = ?', (str(value),))
-
-    async def scalar(self, statement):
-        self.statement = statement
-        compiled = statement.compile(dialect=sqlite.dialect(paramstyle="named"))
-        parameters = {key: str(value) if isinstance(value, UUID) else value for key, value in compiled.params.items()}
-        row = self.connection.execute(str(compiled), parameters).fetchone()
-        return UUID(row[0]) if row else None
+    def __getattr__(self, name):
+        raise AssertionError(f"资源采集不得访问 Agent：{name}")
 
 
-def resolve(database):
-    binding = SimpleNamespace(agent_id=database.agent_ids[0], binding_id=uuid7())
-    repository = AIOpsAgentRepository(database, lambda: None)
-    repository.get_active = AsyncMock(return_value=binding)
-    result = asyncio.run(repository.get_active_for_collection(domain_id=DOMAIN, target_id=TARGET))
-    return result, binding, repository
-
-
-def test_current_business_system_authorization_needs_no_direct_target_binding():
-    database = AuthorizationDatabase()
-    try:
-        result, binding, repository = resolve(database)
-        assert result is binding
-        repository.get_active.assert_awaited_once_with(domain_id=DOMAIN, agent_id=database.agent_ids[0], target_id=TARGET)
+@pytest.mark.parametrize("kind", ["WORKLOAD", "ACTIVITY"])
+def test_due_query_retains_target_readonly_and_connection_guards_without_agents(kind):
+    async def execute():
+        session = SimpleNamespace(execute=AsyncMock(
+            return_value=SimpleNamespace(scalar_one_or_none=lambda: None, out_parameters={"claimed_id": None}),
+        ))
+        repository = TargetRepository(session)
+        method = repository.claim_due_workload if kind == "WORKLOAD" else repository.claim_due_activity
+        assert await method(now=NOW) is None
+        statement = session.execute.await_args.args[0]
         for dialect in (oracle.dialect(), postgresql.dialect()):
-            compiled = str(database.statement.compile(dialect=dialect)).lower()
-            assert "target_binding" not in compiled
-            assert "order by" in compiled
-    finally:
-        database.connection.close()
+            sql = str(statement.compile(dialect=dialect, compile_kwargs={"literal_binds": True})).lower()
+            assert "readonly_connection_enabled" in sql
+            assert "'enabled'" in sql
+            assert "'connected'" in sql and "'degraded'" in sql
+            assert "skip locked" in sql
+            assert "aiops_agent_version" not in sql and "kbot_ops_agent" not in sql
+    asyncio.run(execute())
 
 
-@pytest.mark.parametrize("entity,column,value", [
-    (AIOpsAgentEntity, "status", "PAUSED"),
-    (AIOpsAgentEntity, "domain_id", "other-domain"),
-    (AIOpsAgentEntity, "current_version_id", "other-version"),
-    (AIOpsAgentVersionEntity, "agent_id", "other-agent"),
-    (AIOpsAgentVersionBusinessSystemEntity, "agent_version_id", "old-version"),
-    (AIOpsAgentVersionBusinessSystemEntity, "business_system_id", "other-system"),
-    (BusinessSystemEntity, "status", "DISABLED"),
-    (BusinessSystemEntity, "status", "DRAFT"),
-    (BusinessSystemResourceEntity, "status", "INACTIVE"),
-    (BusinessSystemResourceEntity, "resource_id", "other-resource"),
-    (ManagedResourceEntity, "domain_id", "other-domain"),
-    (ManagedResourceEntity, "lifecycle_status", "ARCHIVED"),
-    (DatabaseResourceEntity, "target_id", "other-target"),
-    (TargetEntity, "domain_id", "other-domain"),
-    (TargetEntity, "status", "DISABLED"),
-])
-def test_collection_cannot_use_inactive_stale_or_out_of_scope_authorization(entity, column, value):
-    database = AuthorizationDatabase()
-    try:
-        database.replace(entity, column, value)
-        result, _, repository = resolve(database)
-        assert result is None
-        repository.get_active.assert_not_awaited()
-    finally:
-        database.connection.close()
+def test_resource_run_canonical_columns_allow_no_agent_without_fake_ids():
+    assert OpsRunEntity.__table__.c.agent_id.nullable
+    assert OpsRunEntity.__table__.c.agent_version_id.nullable
 
 
-@pytest.mark.skipif(not TENANT_SCOPED, reason="KBot 的隔离范围为业务空间")
-@pytest.mark.parametrize("entity", [AIOpsAgentEntity, ManagedResourceEntity])
-def test_collection_cannot_cross_tenants(entity):
-    database = AuthorizationDatabase()
-    try:
-        database.replace(entity, "tenant_id", uuid7())
-        result, _, _ = resolve(database)
-        assert result is None
-    finally:
-        database.connection.close()
-
-
-def test_shared_resource_and_multiple_agents_choose_one_stable_executor():
-    database = AuthorizationDatabase(agent_ids=(UUID(int=2), UUID(int=1)))
-    try:
-        database.insert(BusinessSystemResourceEntity, business_system_id=SYSTEM, resource_id=RESOURCE, status="ACTIVE")
-        _, _, repository = resolve(database)
-        assert repository.get_active.await_args.kwargs["agent_id"] == UUID(int=1)
-        database.replace(AIOpsAgentEntity, "current_version_id", "removed-version")
-        result, _, _ = resolve(database)
-        assert result is None
-    finally:
-        database.connection.close()
-
-
-def scheduler_context(*, authorized=True, enabled=True):
-    binding = SimpleNamespace(agent_id=uuid7(), binding_id=uuid7())
+def scheduler_context(*, enabled=True):
     target = SimpleNamespace(
         tenant_id=TENANT, domain_id=DOMAIN, target_id=TARGET, db_type="ORACLE", version_code="19c",
         diagnostic_credential_id=uuid7(), endpoint_json={"host": "database.internal", "port": 1521},
@@ -182,7 +76,7 @@ def scheduler_context(*, authorized=True, enabled=True):
             claim_due_activity=AsyncMock(return_value=target),
             update_workload_runtime_state=AsyncMock(),
         ),
-        agents=SimpleNamespace(get_active_for_collection=AsyncMock(return_value=binding if authorized else None)),
+        agents=NoAgentAccess(),
         runs=SimpleNamespace(database_now=AsyncMock(return_value=NOW), add_run=AsyncMock(),
                              add_tasks=AsyncMock(), append_event=AsyncMock()),
         workloads=SimpleNamespace(latest_hotspot_snapshot=AsyncMock(return_value=None)),
@@ -200,16 +94,76 @@ def scheduler_context(*, authorized=True, enabled=True):
         uow_factory=UnitOfWork, diagnostic_registry=DiagnosticRegistry.load(),
         scheduler_id="test", actor_id=uuid7(), interval_seconds=1,
     )
-    return scheduler, target, binding, uow
+    return scheduler, target, uow
+
+
+def test_resource_collection_can_complete_without_agent_work_item_routing(monkeypatch):
+    """真实采集终态不进入 Agent 工作项路由，也不依赖对话。"""
+    from platform_core.contracts.aiops import ArtifactInput, CompleteOpsTaskCommand
+    import aiops_agent.application.runtime.service as runtime_module
+
+    route = AsyncMock(side_effect=AssertionError("周期采集不得路由 Agent 工作项"))
+    monkeypatch.setattr(runtime_module, "route_completed_run_work_items", route)
+
+    async def execute():
+        scheduler, _, uow = scheduler_context()
+        await scheduler._schedule_one("WORKLOAD")
+        run = uow.runs.add_run.await_args.args[0]
+        tasks = uow.runs.add_tasks.await_args.args[0]
+        run.status, run.row_version = "RUNNING", 1
+        for item in tasks:
+            item.status = "SUCCEEDED"
+            item.attempt_count, item.row_version = 1, 1
+        task = tasks[-1]
+        task.status, task.started_at = "RUNNING", NOW
+        task.lease_owner, task.lease_token = "snapshot-worker", uuid7()
+        task.lease_until = NOW + timedelta(seconds=30)
+
+        async def store_artifact(row):
+            row.artifact_id = uuid7()
+            return row
+
+        uow.runs.get_task = AsyncMock(return_value=task)
+        uow.runs.get_run = AsyncMock(return_value=run)
+        uow.runs.get_event_by_key = AsyncMock(return_value=None)
+        uow.runs.get_artifact_by_key = AsyncMock(return_value=None)
+        uow.runs.list_tasks = AsyncMock(return_value=tasks)
+        uow.runs.add_artifact = AsyncMock(side_effect=store_artifact)
+        uow.runs.append_event.return_value = SimpleNamespace(sequence_no=1)
+        uow.turns = NoAgentAccess()
+        runtime = object.__new__(AIOpsRuntimeService)
+        runtime._uow_factory = scheduler._uow_factory
+        runtime._handlers = SimpleNamespace(resolve=Mock(return_value=SimpleNamespace(
+            output_schema_version=task.output_schema_version,
+        )))
+        runtime._add_outbox = AsyncMock()
+        receipt = await runtime.complete_task(CompleteOpsTaskCommand(
+            task_id=task.ops_task_id, worker_id="snapshot-worker", lease_token=task.lease_token,
+            idempotency_key=str(task.ops_task_id), trace_id="snapshot-completion",
+            artifact=ArtifactInput(
+                artifact_type="EVIDENCE", schema_version=task.output_schema_version,
+                producer=task.handler_id, producer_version=task.handler_version,
+                payload={"status": "READY"}, provenance={}, trust_level="SOURCE_VERIFIED",
+                security_level=2,
+            ),
+        ))
+        assert task.status == "SUCCEEDED"
+        assert run.status == "COMPLETED"
+        assert run.final_artifact_id == receipt.artifact_id
+        assert run.agent_id is None and run.agent_version_id is None
+        runtime._add_outbox.assert_awaited_once()
+        route.assert_not_awaited()
+        uow.commit.assert_awaited()
+    asyncio.run(execute())
 
 
 def test_due_workload_creates_one_frozen_run_without_legacy_binding():
-    scheduler, target, binding, uow = scheduler_context()
+    scheduler, target, uow = scheduler_context()
     assert asyncio.run(scheduler._schedule_one("WORKLOAD"))
-    uow.agents.get_active_for_collection.assert_awaited_once_with(domain_id=DOMAIN, target_id=TARGET)
     uow.runs.add_run.assert_awaited_once()
     run = uow.runs.add_run.await_args.args[0]
-    assert (run.agent_id, run.agent_version_id) == (binding.agent_id, binding.binding_id)
+    assert (run.agent_id, run.agent_version_id) == (None, None)
+    assert run.workflow_kind == "RESOURCE_COLLECTION"
     tasks = uow.runs.add_tasks.await_args.args[0]
     assert tasks[-1].handler_id == "workload.snapshot.collect"
     assert all(".awr." not in str(task.input_artifacts_json) for task in tasks)
@@ -224,13 +178,14 @@ def test_due_workload_creates_one_frozen_run_without_legacy_binding():
 def test_minute_workload_run_can_be_claimed_and_projected_without_conversation(db_type, version):
     """真实调度冻结的 Run 可进入 Worker，不因不存在的 Primary Turn 回滚。"""
     async def execute():
-        scheduler, target, _, uow = scheduler_context()
+        scheduler, target, uow = scheduler_context()
         target.db_type, target.version_code = db_type, version
         target.workload_snapshot_policy_json["interval_minutes"] = 1
         assert await scheduler._schedule_one("WORKLOAD")
         run = uow.runs.add_run.await_args.args[0]
         task = uow.runs.add_tasks.await_args.args[0][0]
-        assert run.workflow_kind == "INSPECTION"
+        assert run.workflow_kind == "RESOURCE_COLLECTION"
+        assert run.agent_id is None and run.agent_version_id is None
         assert run.interaction_mode == "AUTONOMOUS"
         assert run.plan_snapshot_json["workload_collection"]["window_seconds"] == 60
         assert "turn_id" not in run.plan_snapshot_json
@@ -258,6 +213,7 @@ def test_minute_workload_run_can_be_claimed_and_projected_without_conversation(d
         ))
         assert lease.run_id == run.ops_run_id
         assert lease.handler_id == "database.scope"
+        assert lease.agent_id is None
         assert lease.plan_snapshot["workload_collection"]["window_seconds"] == 60
         assert run.status == "RUNNING"
         assert uow.commit.await_count == 2
@@ -273,55 +229,55 @@ def test_minute_workload_run_can_be_claimed_and_projected_without_conversation(d
     asyncio.run(execute())
 
 
-def test_unauthorized_collection_records_reason_but_creates_no_run():
-    scheduler, target, _, uow = scheduler_context(authorized=False)
+@pytest.mark.parametrize("field,value", [("version_code", ""), ("diagnostic_credential_id", None), ("endpoint_json", {})])
+def test_incomplete_resource_configuration_records_error_without_agents(field, value):
+    scheduler, target, uow = scheduler_context()
+    setattr(target, field, value)
     assert asyncio.run(scheduler._schedule_one("WORKLOAD"))
     uow.runs.add_run.assert_not_awaited()
     uow.runs.add_tasks.assert_not_awaited()
     values = uow.targets.update_workload_runtime_state.await_args.kwargs["values"]
-    assert values["workload_last_error_code"] == "ACTIVE_AGENT_BINDING_MISSING"
+    assert values["workload_last_error_code"] == "TARGET_CONFIGURATION_INCOMPLETE"
     assert values["workload_consecutive_failures"] == 2301
     assert target.workload_snapshot_policy_json["enabled"]
 
 
 def test_disabled_policy_is_not_implicitly_enabled_or_scheduled():
-    scheduler, target, _, uow = scheduler_context(enabled=False)
+    scheduler, target, uow = scheduler_context(enabled=False)
     assert asyncio.run(scheduler._schedule_one("WORKLOAD"))
-    uow.agents.get_active_for_collection.assert_not_awaited()
     uow.runs.add_run.assert_not_awaited()
     assert uow.targets.update_workload_runtime_state.await_args.kwargs["values"] == {"workload_next_run_at": None}
     assert not target.workload_snapshot_policy_json["enabled"]
 
 
 @pytest.mark.parametrize("db_type", ["MYSQL", "POSTGRESQL"])
-def test_activity_sampler_uses_same_current_authorization(db_type):
-    scheduler, target, binding, uow = scheduler_context()
+def test_activity_sampler_uses_resource_policy_without_agents(db_type):
+    scheduler, target, uow = scheduler_context()
     target.db_type = db_type
     activity_tool = "db.mysql.activity.sample" if db_type == "MYSQL" else "db.postgresql.activity.sample"
     scheduler._freeze_tools = lambda **kwargs: ([{"tool_id": "db.instance.identity"}, {"tool_id": activity_tool}], [])
     assert asyncio.run(scheduler._schedule_one("ACTIVITY"))
-    uow.agents.get_active_for_collection.assert_awaited_once()
-    assert uow.runs.add_run.await_args.args[0].agent_id == binding.agent_id
+    assert uow.runs.add_run.await_args.args[0].agent_id is None
     assert uow.runs.add_tasks.await_args.args[0][-1].handler_id == "workload.activity.collect"
 
 
 def test_runtime_projection_contains_attempt_not_claimed_success_and_no_secrets():
     target = SimpleNamespace(
         workload_last_collected_at=NOW, workload_next_run_at=NOW + timedelta(minutes=5),
-        workload_last_error_code="ACTIVE_AGENT_BINDING_MISSING", workload_consecutive_failures=12,
+        workload_last_error_code="TARGET_CONFIGURATION_INCOMPLETE", workload_consecutive_failures=12,
         endpoint_json={"password": "must-not-be-exported"},
     )
     state = collection_runtime_state(target)
     assert state == {"last_attempt_at": NOW.isoformat(), "next_run_at": (NOW + timedelta(minutes=5)).isoformat(),
-                     "last_error_code": "ACTIVE_AGENT_BINDING_MISSING", "consecutive_failures": 12}
+                     "last_error_code": "TARGET_CONFIGURATION_INCOMPLETE", "consecutive_failures": 12}
     result = {"snapshot_count": 0, "collection_enabled": True, "collection_state": state}
     assert "本次读取快照：0 条" in collection_runtime_note(result)
-    assert "资源授权" in collection_failure_reason(result)
+    assert "配置不完整" in collection_failure_reason(result)
     result["collection_enabled"] = False
     assert collection_failure_reason(result) is None
 
 
-@pytest.mark.parametrize("error_code", ["ACTIVE_AGENT_BINDING_MISSING", "TARGET_CONFIGURATION_INCOMPLETE", "IDENTITY_TOOL_UNAVAILABLE", "PERMISSION_DENIED"])
+@pytest.mark.parametrize("error_code", ["TARGET_CONFIGURATION_INCOMPLETE", "IDENTITY_TOOL_UNAVAILABLE", "PERMISSION_DENIED"])
 def test_failed_collection_reports_actual_reason_not_just_waiting(error_code):
     result = {
         "requested_start": NOW.isoformat(), "requested_end": (NOW + timedelta(minutes=15)).isoformat(),
@@ -350,7 +306,7 @@ def test_failed_collection_reports_actual_reason_not_just_waiting(error_code):
 
 
 def test_scheduling_does_not_clear_an_unrelated_execution_error():
-    scheduler, target, _, uow = scheduler_context()
+    scheduler, target, uow = scheduler_context()
     target.workload_last_error_code = "PERMISSION_DENIED"
     assert asyncio.run(scheduler._schedule_one("WORKLOAD"))
     values = uow.targets.update_workload_runtime_state.await_args.kwargs["values"]
@@ -392,7 +348,7 @@ def test_two_scheduled_collections_persist_then_produce_resource_window():
     from aiops_agent.workers.top_sql_window_handler import TopSqlWindowHandler
     from aiops_agent.application.diagnosis.evidence_projection import top_sql_window_evidence_fact
 
-    scheduler, target, _, uow = scheduler_context()
+    scheduler, target, uow = scheduler_context()
     target.workload_last_collected_at = None
     snapshots, statements = [], []
 
@@ -495,3 +451,44 @@ def test_two_scheduled_collections_persist_then_produce_resource_window():
     fact = top_sql_window_evidence_fact(result=result, artifact_id=uuid7())
     assert fact is not None
     assert "本次读取快照：2 条" in "；".join(fact.warnings)
+
+@pytest.mark.parametrize("db_type,version", [("ORACLE", "19c"), ("MYSQL", "8.4"), ("POSTGRESQL", "16")])
+def test_resource_collection_frozen_tools_reach_signed_executor_without_agent(db_type, version):
+    """使用真实 Handler 发出固定工具授权，防止调度与执行合同脱节。"""
+    from aiops_agent.workers.database_handlers import DatabaseDiagnosticHandler
+    from aiops_agent.workers.handlers import TaskExecutionContext
+
+    async def execute():
+        scheduler, target, uow = scheduler_context()
+        target.db_type, target.version_code = db_type, version
+        assert await scheduler._schedule_one("WORKLOAD")
+        run = uow.runs.add_run.await_args.args[0]
+        client = SimpleNamespace(execute_diagnostic=AsyncMock(return_value=SimpleNamespace(
+            status="FAILED", observation=None, error_code="PERMISSION_DENIED", retryable=False, object_access=(),
+        )))
+        codec = SimpleNamespace(issue=Mock(return_value="s" * 64))
+        handler = DatabaseDiagnosticHandler(
+            executor_client=client, grant_codec=codec, grant_issuer="test",
+            grant_audience="test-executor", grant_ttl_seconds=20,
+        )
+        tools = run.plan_snapshot_json["database_diagnostics"]["tools"]
+        for task in uow.runs.add_tasks.await_args.args[0]:
+            if task.handler_id != "database.diagnostic":
+                continue
+            context = TaskExecutionContext(
+                run_id=str(run.ops_run_id), task_id=str(task.ops_task_id), task_key=task.task_key,
+                target_id=str(target.target_id), agent_id=None, actor_id=run.actor_id,
+                trigger_type="SCHEDULE", trace_id=run.trace_id, attempt=1,
+                deadline_at=None, plan_snapshot=run.plan_snapshot_json, policy_snapshot={},
+                input_artifacts=(), lease_token=str(uuid7()),
+                lease_until=(datetime.now(UTC) + timedelta(seconds=30)).isoformat(),
+            )
+            result = await handler.execute(context)
+            assert result.gap.code == "PERMISSION_DENIED"
+            grant = codec.issue.call_args.args[0]
+            assert grant.run_id == run.ops_run_id
+            assert grant.target_id == target.target_id
+            assert grant.tool_version == next(tool["tool_version"] for tool in tools if tool["tool_id"] == grant.tool_id)
+        assert client.execute_diagnostic.await_count == len(tools)
+        assert codec.issue.call_count == len(tools)
+    asyncio.run(execute())

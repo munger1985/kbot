@@ -371,7 +371,7 @@ class AIOpsTaskWorker:
             task_id=str(lease.task_id),
             task_key=lease.task_key,
             target_id=str(lease.target_id),
-            agent_id=str(lease.agent_id),
+            agent_id=str(lease.agent_id) if lease.agent_id is not None else None,
             trigger_type=str(
                 lease.plan_snapshot.get("trigger", {}).get("type", "API")
             ),

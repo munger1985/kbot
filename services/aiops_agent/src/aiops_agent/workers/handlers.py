@@ -28,7 +28,7 @@ class TaskExecutionContext:
     task_id: str
     task_key: str
     target_id: str
-    agent_id: str
+    agent_id: str | None
     trigger_type: str
     trace_id: str
     attempt: int

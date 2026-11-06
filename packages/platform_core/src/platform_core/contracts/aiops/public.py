@@ -241,7 +241,7 @@ class OpsRunReceipt(AIOpsContract):
 class OpsRunSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     ops_run_id: UUIDv7
-    agent_id: UUIDv7
+    agent_id: UUIDv7 | None
     target_id: UUIDv7
     trigger_type: TriggerType
     interaction_mode: Literal["INTERACTIVE", "AUTONOMOUS"]

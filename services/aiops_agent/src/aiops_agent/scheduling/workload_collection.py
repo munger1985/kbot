@@ -121,24 +121,6 @@ class WorkloadCollectionScheduler:
                 )
                 await uow.commit()
                 return True
-            binding = await self._active_binding(uow, target)
-            if binding is None:
-                logger.warning(
-                    "数据库周期采集未创建任务：kind={} target_id={} error_code=ACTIVE_AGENT_BINDING_MISSING；当前资源授权中没有可用 Agent",
-                    kind, target.target_id,
-                )
-                values = self._defer_without_binding_values(
-                    target=target,
-                    kind=kind,
-                    now=now,
-                    policy=policy,
-                )
-                await uow.targets.update_workload_runtime_state(
-                    target_id=target.target_id, values=values
-                )
-                await uow.commit()
-                return True
-
             scheduled_for = (
                 target.workload_next_run_at
                 if kind == "WORKLOAD"
@@ -234,11 +216,11 @@ class WorkloadCollectionScheduler:
                     ops_run_id=run_id,
                     domain_id=target.domain_id,
                     target_id=target.target_id,
-                    agent_id=binding.agent_id,
-                    agent_version_id=binding.binding_id,
+                    agent_id=None,
+                    agent_version_id=None,
                     trigger_type="SCHEDULE",
                     interaction_mode="AUTONOMOUS",
-                    workflow_kind="INSPECTION",
+                    workflow_kind="RESOURCE_COLLECTION",
                     actor_id=str(self._actor_id),
                     original_request=(
                         f"{target.db_type} workload snapshot"
@@ -296,7 +278,7 @@ class WorkloadCollectionScheduler:
                     )
                 }
             if kind == "WORKLOAD" and getattr(target, "workload_last_error_code", None) == "ACTIVE_AGENT_BINDING_MISSING":
-                # 授权已恢复并创建任务，不继续展示过期的授权阻塞；执行失败计数由快照落库收敛。
+                # 资源级采集不再依赖 Agent；清除旧阻塞提示，执行失败计数仍由快照落库收敛。
                 values["workload_last_error_code"] = None
             await uow.targets.update_workload_runtime_state(
                 target_id=target.target_id, values=values
@@ -309,11 +291,6 @@ class WorkloadCollectionScheduler:
                 run_id,
             )
             return True
-
-    async def _active_binding(self, uow, target):
-        return await uow.agents.get_active_for_collection(
-            domain_id=target.domain_id, target_id=target.target_id
-        )
 
     def _freeze_tools(self, *, target, kind: str, policy: dict, previous_pool: dict | None = None) -> tuple[list[dict], list[dict]]:
         capabilities = _capability_names(target.capabilities_json)
@@ -368,7 +345,7 @@ class WorkloadCollectionScheduler:
             tools.append(
                 {
                     "tool_id": definition.tool_id,
-                    "version": definition.version,
+                    "tool_version": definition.version,
                     "variant": definition.variant,
                     "template_sha256": definition.template_sha256,
                     "parameters": self._registry.validate_parameters(
@@ -537,30 +514,6 @@ class WorkloadCollectionScheduler:
             )
         )
         return tasks
-
-    @staticmethod
-    def _defer_without_binding_values(*, target, kind: str, now: datetime, policy: dict) -> dict[str, object]:
-        if kind == "WORKLOAD":
-            return {
-                "workload_consecutive_failures": (
-                    int(target.workload_consecutive_failures) + 1
-                ),
-                "workload_last_error_code": "ACTIVE_AGENT_BINDING_MISSING",
-                "workload_next_run_at": now + timedelta(minutes=5),
-            }
-        return {
-            "activity_consecutive_failures": (
-                int(target.activity_consecutive_failures) + 1
-            ),
-            "activity_sampler_status": "DEGRADED",
-            "activity_sampler_disabled_reason": (
-                "ACTIVE_AGENT_BINDING_MISSING"
-            ),
-            "activity_next_sample_at": now
-            + timedelta(
-                seconds=min(300, int(policy.get("interval_seconds") or 5) * 4)
-            ),
-        }
 
     @staticmethod
     def _defer_capability_gap_values(*, target, kind: str, now: datetime, policy: dict, reason: str) -> dict[str, object]:

@@ -48,7 +48,7 @@
   }
   addEventListener("aiops:proposal-resolved", () => { if (state.activeId) void loadNotificationTask(state.activeId); });
   const text = (id,value) => {document.getElementById(id).textContent = value ?? "";};
-  const workflowLabel = value => ({CHAT_TURN:"智能诊断",ALERT_DIAGNOSIS:"告警诊断",INSPECTION:"日常巡检",CHANGE:"受控变更",VERIFICATION:"结果验证",EVIDENCE_FOLLOWUP:"后台未来观察"})[value] || value;
+  const workflowLabel = value => ({RESOURCE_COLLECTION:"资源周期采集",CHAT_TURN:"智能诊断",ALERT_DIAGNOSIS:"告警诊断",INSPECTION:"日常巡检",CHANGE:"受控变更",VERIFICATION:"结果验证",EVIDENCE_FOLLOWUP:"后台未来观察"})[value] || value;
   const triggerLabel = value => ({CHAT:"对话发起",API:"接口触发",ROOT:"根任务",ALERT:"监控告警",SCHEDULE:"巡检计划"})[value] || value;
   const statusLabel = value => ({CREATED:"已创建",QUEUED:"等待执行",RUNNING:"运行中",WAITING_USER:"等待补充信息",COMPLETED:"已完成",PARTIAL:"部分完成",FAILED:"失败",CANCELLED:"已取消",EXPIRED:"已过期"})[value] || value;
   const statusClass = value => value === "FAILED" ? "status-danger" : ["RUNNING","CREATED"].includes(value) ? "status-warning" : "status-success";
@@ -74,8 +74,9 @@
     const run = state.selected;if (!run) return;
     text("run-detail-eyebrow",`${workflowLabel(run.workflow_kind)} · ${statusLabel(run.status)}`);text("run-detail-id",run.ops_run_id);
     document.getElementById("run-detail-facts").innerHTML = `<table class="key-value-table"><tbody><tr><th>触发方式</th><td>${esc(triggerLabel(run.trigger_type))}</td></tr><tr><th>目标</th><td class="technical-value">${esc(run.target_id)}</td></tr><tr><th>创建时间</th><td>${esc(shell.fmt(run.created_at))}</td></tr><tr><th>完成时间</th><td>${esc(shell.fmt(run.completed_at))}</td></tr></tbody></table>`;
-    const empty = state.result?.final_artifact ? "本次诊断尚未形成可展示的四段结论。" : !terminal.has(run.status) ? `Agent 正在诊断，当前状态：${run.status}。页面会自动更新结果。` : `本次运行已结束但未形成可展示结果，最终状态：${run.status}。`;
+    const empty = run.workflow_kind === "RESOURCE_COLLECTION" ? `资源周期采集状态：${statusLabel(run.status)}。采集结果用于历史窗口统计，不生成 Agent 诊断结论。` : state.result?.final_artifact ? "本次诊断尚未形成可展示的四段结论。" : !terminal.has(run.status) ? `Agent 正在诊断，当前状态：${run.status}。页面会自动更新结果。` : `本次运行已结束但未形成可展示结果，最终状态：${run.status}。`;
     const output = document.getElementById("run-result");
+    text("run-result-title", run.workflow_kind === "RESOURCE_COLLECTION" ? "周期采集" : "自动诊断");
     if (run.workflow_kind === "EVIDENCE_FOLLOWUP" && state.result?.payload) output.innerHTML = observationHtml(state.result.payload);
     else output.innerHTML = `<div class="aiops-turn-result">${KBotAIOpsTurnResult.html(state.result?.payload,empty)}</div>`;
     KBotAIOpsTurnResult.mount(output);
@@ -83,7 +84,7 @@
     lifecycle.hidden = !items.length;
     const labels = {IN_PROGRESS:"执行租约有效，尚无终止回执",RELEASED:"连接清理完成，额度已归还",CANCEL_REQUESTED:"已请求取消，尚未确认终止",TERMINATION_CONFIRMED:"自有查询清理已获协议确认",TERMINATION_UNKNOWN:"终止状态未知，不能确认数据库已停止"};
     lifecycle.innerHTML = items.length ? `<h3>只读查询清理回执</h3><p>仅描述本次执行器自有查询的清理状态，不是 SQL 根因证据。运行已取消不等于数据库已停止；回执可能稍后到达，可刷新查看。</p><div class="table-scroll"><table><thead><tr><th>数据库</th><th>清理状态</th><th>租约</th></tr></thead><tbody>${items.map(item => `<tr><td>${esc(item.observation?.db_type ?? "—")}</td><td>${esc(labels[item.status] || "终止状态未知")}</td><td class="technical-value">${esc(item.lease_id)}</td></tr>`).join("")}</tbody></table></div>${run.readonly_lifecycle.truncated ? "<p>仅展示最近 50 条自有查询租约，不代表本次运行的全部查询。</p>" : ""}` : "";
-    document.getElementById("continue-run-diagnosis").hidden = !state.result?.final_artifact || run.workflow_kind === "EVIDENCE_FOLLOWUP";
+    document.getElementById("continue-run-diagnosis").hidden = !state.result?.final_artifact || ["EVIDENCE_FOLLOWUP", "RESOURCE_COLLECTION"].includes(run.workflow_kind);
     document.getElementById("cancel-future-observation").hidden = run.workflow_kind !== "EVIDENCE_FOLLOWUP" || terminal.has(run.status);
     document.getElementById("cancel-future-observation").disabled = state.busy;
   }

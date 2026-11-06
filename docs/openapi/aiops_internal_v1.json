@@ -12682,9 +12682,16 @@
         "additionalProperties": false,
         "properties": {
           "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
           },
           "completed_at": {
             "anyOf": [
@@ -19751,9 +19758,16 @@
             "type": "string"
           },
           "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
           },
           "attempt": {
             "minimum": 1.0,
@@ -21786,6 +21800,7 @@
       },
       "WorkflowKind": {
         "enum": [
+          "RESOURCE_COLLECTION",
           "ALERT_DIAGNOSIS",
           "INSPECTION",
           "CHAT_TURN",

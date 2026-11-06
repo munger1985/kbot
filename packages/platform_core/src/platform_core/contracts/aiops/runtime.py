@@ -135,7 +135,7 @@ class TaskLease(AIOpsContract):
     timeout_seconds: int = Field(ge=1)
     row_version: int = Field(ge=1)
     target_id: UUIDv7
-    agent_id: UUIDv7
+    agent_id: UUIDv7 | None
     actor_id: str
     trace_id: str
     original_request: str

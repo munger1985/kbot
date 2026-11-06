@@ -44,6 +44,24 @@ async def validate_diagnostic_fence(*, uow, grant, now):
         or int(target.row_version) != int(grant.target_row_version)
         or target.diagnostic_credential_id != grant.diagnostic_credential_id):
         raise ExecutionFenceError("EXECUTION_AUTHORIZATION_REVOKED")
+    if run.workflow_kind == "RESOURCE_COLLECTION":
+        # 资源策略是周期采集的授权来源，不读取 Agent，也不接受动态诊断查询。
+        snapshot = dict(run.plan_snapshot_json or {})
+        kind = dict(snapshot.get("workload_collection") or {}).get("kind")
+        policy = (
+            target.workload_snapshot_policy_json if kind == "WORKLOAD"
+            else target.activity_sampler_policy_json if kind == "ACTIVITY" else {}
+        )
+        tool = next((item for item in dict(snapshot.get("database_diagnostics") or {}).get("tools", ())
+                     if item.get("tool_id") == getattr(grant, "tool_id", None)), None)
+        if (run.trigger_type != "SCHEDULE" or run.interaction_mode != "AUTONOMOUS"
+            or run.agent_id is not None or run.agent_version_id is not None
+            or not dict(policy or {}).get("enabled") or tool is None
+            or task.handler_id != "database.diagnostic"
+            or task.task_key != f"diagnostic:{tool['tool_id']}"
+            or grant.tool_version != tool["tool_version"]
+            or grant.template_sha256 != tool["template_sha256"]):
+            raise ExecutionFenceError("EXECUTION_AUTHORIZATION_REVOKED")
     return run, task, target
 
 

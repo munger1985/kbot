@@ -2258,12 +2258,13 @@ class AIOpsRuntimeService:
                     )
                 run.final_artifact_id = final_artifact.artifact_id
                 run.completed_at = now
-                await route_completed_run_work_items(
-                    uow=uow,
-                    run=run,
-                    now=now,
-                    actor_id="system:work-item-router",
-                )
+                if run.workflow_kind != "RESOURCE_COLLECTION":
+                    await route_completed_run_work_items(
+                        uow=uow,
+                        run=run,
+                        now=now,
+                        actor_id="system:work-item-router",
+                    )
                 if (
                     run.trigger_type == "CHAT"
                     and final_artifact.schema_version

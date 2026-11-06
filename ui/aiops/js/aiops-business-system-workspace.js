@@ -631,7 +631,7 @@
       else content += '<p>连接测试请使用抽屉底部的“测试连接”；测试或保存草稿不会启动采集。</p>';
     }
     const hint = isPublishedView() ? "运行中的业务系统仅供查看；下线后可编辑采集策略。" : "修改保存在业务系统草稿中，发布时生效；RAC 按当前节点配置。";
-    return `<section class="snapshot-settings readonly-detail-section"><header><span>04</span><div><strong>历史 SQL 采集</strong><small>${hint}</small></div></header><div class="snapshot-body"><p>统计来源：${esc(source)}。采集需要已启用的 Target、可用的只读连接、有效的 Agent 业务系统资源授权和运行中的采集服务。</p><p>多指标热点发现与连续跟踪，默认每分钟最多 100 条；预留新热点名额，连续无增量后退出。只采集 SQL 摘要与计数器，计划和对象按需诊断；不代表全库完整排名。</p><p>启用后至少需要两次可比较的快照才能计算窗口增量，不回填历史；窗口可能未被完整覆盖。</p>${content}</div></section>`;
+    return `<section class="snapshot-settings readonly-detail-section"><header><span>04</span><div><strong>历史 SQL 采集</strong><small>${hint}</small></div></header><div class="snapshot-body"><p>统计来源：${esc(source)}。采集需要已启用的 Target、可用的只读连接和运行中的采集服务，不依赖 Agent 绑定。</p><p>多指标热点发现与连续跟踪，默认每分钟最多 100 条；预留新热点名额，连续无增量后退出。只采集 SQL 摘要与计数器，计划和对象按需诊断；不代表全库完整排名。</p><p>启用后至少需要两次可比较的快照才能计算窗口增量，不回填历史；窗口可能未被完整覆盖。</p>${content}</div></section>`;
   }
 
   function renderBusiness() {
