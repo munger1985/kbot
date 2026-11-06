@@ -11,6 +11,7 @@ import pytest
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.application.diagnosis.deadline_result import deadline_result
 from aiops_agent.application.diagnosis.evidence_projection import database_evidence_fact
+from aiops_agent.application.diagnosis.sql_diagnosis import exact_wire
 from aiops_agent.application.investigation import TurnPlanningService
 from aiops_agent.application.investigation.selected_sql import selected_sql_investigation
 from aiops_agent.config import AIOpsDiagnosisConfig
@@ -36,14 +37,19 @@ SUBJECTS = (
 )
 
 
-@pytest.mark.parametrize("engine,subject", SUBJECTS)
-def test_selected_sql_is_compiled_before_any_model_call_and_keeps_open_capabilities(engine, subject):
+@pytest.mark.parametrize("wire_format", [False, True])
+@pytest.mark.parametrize("engine,subject", (*SUBJECTS, (
+    "ORACLE", {**SUBJECTS[0][1], "dbid": 123, "inst_id": 1, "container_id": 3,
+               "child_number": 0, "plan_hash_value": 456},
+)))
+def test_selected_sql_is_compiled_before_any_model_call_and_keeps_open_capabilities(engine, subject, wire_format):
     async def exercise():
         uow = planning._PlanningUow()
         uow.target.db_type = engine
         uow.target.version_code = {"ORACLE": "19c", "MYSQL": "8.0.36", "POSTGRESQL": "16.15"}[engine]
         question = "继续深入分析所选 SQL，沿用上一轮数据库资源和证据"
-        uow.message.payload_json = {"text": question, "content": [{"content_type": "TEXT", "text": question}], "sql_selection": {"subject_ref": subject}}
+        selected_subject = exact_wire(subject) if wire_format else subject
+        uow.message.payload_json = {"text": question, "content": [{"content_type": "TEXT", "text": question}], "sql_selection": {"subject_ref": selected_subject}}
         diagnostics = DiagnosticRegistry.load()
         registry = PlaybookRegistry.load(allowed_tools=frozenset((item.definition.tool_id, item.definition.version) for item in diagnostics.tools))
         reasoner = SimpleNamespace(freeze_prompts=AsyncMock(return_value={}), plan=AsyncMock(side_effect=AssertionError("选行首轮不应重新规划")), plan_compact=AsyncMock(side_effect=AssertionError("选行不应重新分类")))
@@ -57,10 +63,15 @@ def test_selected_sql_is_compiled_before_any_model_call_and_keeps_open_capabilit
         await service.execute({"domain_id": str(uow.run.domain_id), "turn_id": str(uow.turn.turn_id)})
         snapshot = uow.run.plan_snapshot_json
         assert snapshot["planning_route"]["mode"] == "SELECTED_SQL_EVIDENCE_FIRST"
-        assert snapshot["answer_context"]["task_frame"]["subject_ref"] == subject
+        assert snapshot["answer_context"]["task_frame"]["subject_ref"] == selected_subject
         actions = snapshot["answer_context"]["investigation_plan"]["actions"]
         assert actions[0]["tool_id"] == "db.instance.identity"
-        assert len(actions) == 2
+        assert len(actions) == (3 if "plan_hash_value" in subject else 2)
+        for action in actions[1:]:
+            for key in action["input"].keys() & subject.keys():
+                assert action["input"][key] == subject[key]
+                assert type(action["input"][key]) is type(subject[key])
+        assert uow.message.payload_json["sql_selection"]["subject_ref"] == selected_subject
         assert all("readonly_query" not in action["tool_id"] for action in actions)
         assert uow.tasks and uow.revisions
         assert snapshot["answer_context"]["task_frame"]["success_criteria"]
@@ -70,6 +81,34 @@ def test_selected_sql_is_compiled_before_any_model_call_and_keeps_open_capabilit
         capabilities = DbaCapabilitySnapshot.model_validate(snapshot["capability_snapshot"])
         assert "db.sql.object_candidates" in {tool["tool_id"] for tool in service._tool_snapshot_builder.discover_tools(capabilities)}
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("engine,subject", [
+    ("POSTGRESQL", {**SUBJECTS[2][1], "database_oid": True}),
+    ("POSTGRESQL", {**SUBJECTS[2][1], "database_oid": "16510.0"}),
+    ("POSTGRESQL", {**SUBJECTS[2][1], "database_oid": "-1"}),
+    ("POSTGRESQL", {**SUBJECTS[2][1], "database_oid": str(2**32)}),
+    ("POSTGRESQL", {**SUBJECTS[2][1], "user_oid": False}),
+    ("POSTGRESQL", {**SUBJECTS[2][1], "top_level": "true"}),
+    ("POSTGRESQL", {**SUBJECTS[2][1], "query_id": str(2**63)}),
+    ("POSTGRESQL", SUBJECTS[0][1]),
+    ("ORACLE", {**SUBJECTS[0][1], "child_number": True}),
+])
+def test_binding_rejects_invalid_selected_dimensions_before_tool_dispatch(engine, subject):
+    from aiops_agent.application.investigation import InvestigationPlanValidationError
+
+    investigation = selected_sql_investigation(
+        question="继续分析已选 SQL",
+        target_context={"db_type": "POSTGRESQL", "sql_selection": {"subject_ref": SUBJECTS[2][1]}},
+        tools=({"tool_id": "db.postgresql.statement.details"},),
+    )
+    with pytest.raises(InvestigationPlanValidationError, match="主体与当前 Target"):
+        TurnPlanningService._bind_target_to_plan(
+            investigation=investigation,
+            target_context={"db_type": engine, "sql_selection": {"subject_ref": subject}},
+            available_tools=({"tool_id": "db.instance.identity"},),
+        )
+    assert investigation.plan.actions[0].input["database_oid"] == 16510
 
 
 def test_selected_oracle_cached_plan_requires_complete_cursor_identity():

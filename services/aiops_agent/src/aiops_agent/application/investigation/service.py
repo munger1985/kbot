@@ -3202,6 +3202,18 @@ class TurnPlanningService:
     ) -> InvestigationPlanningOutput:
         """冻结目标语义，并为数据库调查补充可审计的实例身份前置步骤。"""
         selection = dict(target_context.get("sql_selection") or {})
+        selected_subject = {}
+        if selection:
+            from aiops_agent.domain.sql_subjects import normalize_sql_subject
+            # 证据保留精确的字符串表示，工具输入按引擎身份合同恢复原生类型。
+            selected_subject = normalize_sql_subject(
+                selection.get("subject_ref"),
+                str(target_context.get("db_type") or "").strip().upper(),
+            )
+            if selected_subject is None:
+                raise InvestigationPlanValidationError(
+                    "已选 SQL 的主体与当前 Target 不匹配或参数类型无效"
+                )
         task_frame = investigation.task_frame.model_copy(
             update={
                 "database_context": dict(target_context),
@@ -3218,7 +3230,7 @@ class TurnPlanningService:
         actions = [
             action.model_copy(update={"input": {
                 **dict(action.input),
-                **{key: value for key, value in selection.get("subject_ref", {}).items() if key in action.input},
+                **{key: value for key, value in selected_subject.items() if key in action.input},
             }}) if selection else action
             for action in investigation.plan.actions
         ]
