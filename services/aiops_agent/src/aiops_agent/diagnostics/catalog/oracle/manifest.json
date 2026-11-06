@@ -4989,7 +4989,7 @@
         }
       ],
       "template_ref": "sql/awr_snapshots.sql",
-      "template_sha256": "4ed7f55ea4559de1f609b4b388abae4077fd378bd7756fa5776055793bc8fb0c",
+      "template_sha256": "8f8468c90eabf6a33a6c3ee946b20794432fd1e6210fa69ff087122315f55812",
       "timeout_seconds": 30,
       "max_rows": 1000,
       "max_bytes": 1048576,
@@ -5418,7 +5418,7 @@
         }
       ],
       "template_ref": "sql/ash_report_html.sql",
-      "template_sha256": "373984ecb2d772a254311937a9f4cc86039f72dd9f1d54f72b89894d39e0c75e",
+      "template_sha256": "5e98494d31d648b1a57cf70d47284821d0bd183a86b6ade11cd4577b5cc0c2f8",
       "timeout_seconds": 180,
       "max_rows": 10000,
       "max_bytes": 20971520,

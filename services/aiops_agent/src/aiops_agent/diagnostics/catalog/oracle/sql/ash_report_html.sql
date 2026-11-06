@@ -5,11 +5,11 @@ SELECT output
             (SELECT instance_number FROM v$instance),
             to_timestamp_tz(
                 :begin_time,
-                'YYYY-MM-DD"T"HH24:MI:SS TZH:TZM'
+                'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'
             ),
             to_timestamp_tz(
                 :end_time,
-                'YYYY-MM-DD"T"HH24:MI:SS TZH:TZM'
+                'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'
             ),
             0,
             0

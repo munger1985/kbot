@@ -71,7 +71,7 @@ def _source_freshness(source, now):
 
 
 def target_entitlements(target: object) -> tuple[str, ...]:
-    """入口可用性与规划快照统一读取持久化的显式许可声明。"""
+    """规划快照读取持久化的显式许可声明，不从数据库类型推定授权。"""
     payload = dict(getattr(target, "capabilities_json", None) or {})
     return tuple(sorted(_string_values(payload.get("entitlements"))))
 

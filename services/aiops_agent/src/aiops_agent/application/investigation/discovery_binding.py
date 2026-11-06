@@ -1004,11 +1004,6 @@ def _parse_datetime(value: object) -> datetime | None:
     return parsed
 
 
-def _wall_clock(value: datetime) -> datetime:
-    """按产品墙钟比较快照时间，忽略错误的 UTC 标签。"""
-    return datetime(value.year, value.month, value.day, value.hour, value.minute)
-
-
 def _match_row(
     *,
     target: datetime | None,
@@ -1017,7 +1012,6 @@ def _match_row(
 ) -> tuple[dict | None, str | None]:
     if target is None:
         return None, "UNBINDABLE"
-    target_clock = _wall_clock(target)
     candidates = [
         row
         for row in rows
@@ -1030,7 +1024,7 @@ def _match_row(
     exact = [
         row
         for row in candidates
-        if _wall_clock(row["_time"]) == target_clock
+        if row["_time"] == target
     ]
     if len(exact) == 1:
         return exact[0], None
@@ -1038,10 +1032,10 @@ def _match_row(
         return None, "AMBIGUOUS"
     nearest = []
     for row in candidates:
-        delta = abs(_wall_clock(row["_time"]) - target_clock)
+        delta = abs(row["_time"] - target)
         if delta <= NEAREST_WINDOW:
             nearest.append((delta, row))
-    nearest.sort(key=lambda item: (item[0], _wall_clock(item[1]["_time"])))
+    nearest.sort(key=lambda item: (item[0], item[1]["_time"]))
     if not nearest:
         return None, "UNBINDABLE"
     if len(nearest) > 1 and nearest[0][0] == nearest[1][0]:

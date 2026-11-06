@@ -233,7 +233,11 @@ class DiagnosticRegistry:
                 raise ValueError("ASH 报告起始时间必须早于结束时间")
             if (end - begin).total_seconds() > 86_400:
                 raise ValueError("ASH 报告时间范围不能超过 24 小时")
-            if tool_id == "db.oracle.statement.ash":
+            if tool_id == "db.oracle.ash.report":
+                # 与原生报告 SQL 的 FF 偏移格式一致，保留用户的亚秒边界。
+                parameters["begin_time"] = begin.astimezone(UTC).isoformat(timespec="microseconds")
+                parameters["end_time"] = end.astimezone(UTC).isoformat(timespec="microseconds")
+            else:
                 parameters["begin_time"] = begin.astimezone(UTC).isoformat(timespec="seconds")
                 parameters["end_time"] = end.astimezone(UTC).isoformat(timespec="seconds")
                 if parameters["begin_time"] >= parameters["end_time"]:

@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiops_agent.application.conversation_starters import ConversationStarterCatalog
-from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.conversation_starters.service import (
     ConversationStarterService,
 )
@@ -485,7 +484,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
 
 
 class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
-    async def test_report_ui_selection_rejects_unlicensed_oracle_target(self) -> None:
+    async def test_report_ui_selection_freezes_license_check_for_execution(self) -> None:
         catalog = ConversationStarterCatalog()
         for starter_id, parameters in (
             ("oracle.report.awr", {
@@ -504,18 +503,17 @@ class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
             }),
         ):
             with self.subTest(starter_id=starter_id):
-                with self.assertRaises(AIOpsApplicationError) as raised:
-                    catalog.freeze(
-                        selection=ConversationStarterSelection(
-                            starter_id=starter_id,
-                            catalog_version=catalog.version,
-                            parameters=parameters,
-                        ),
-                        target=_target(capabilities_json={}),
-                        capabilities={"ACTIVE_DIAGNOSIS"},
-                    )
-                self.assertEqual("AIOPS_STARTER_ENTITLEMENT_REQUIRED", raised.exception.code)
-                self.assertFalse(raised.exception.retryable)
+                frozen = catalog.freeze(
+                    selection=ConversationStarterSelection(
+                        starter_id=starter_id,
+                        catalog_version=catalog.version,
+                        parameters=parameters,
+                    ),
+                    target=_target(capabilities_json={}),
+                    capabilities={"ACTIVE_DIAGNOSIS"},
+                )
+                self.assertEqual(starter_id, frozen["starter_id"])
+                self.assertEqual(["ORACLE_DIAGNOSTICS_PACK"], frozen["required_entitlements"])
 
     def _diagnostic_output(
         self,

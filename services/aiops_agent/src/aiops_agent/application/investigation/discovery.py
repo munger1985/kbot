@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from aiops_agent.application.diagnosis.awr_facts import AWR_FACT_TOOL_IDS
 from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL
@@ -740,9 +741,28 @@ def _claim_consumer_instantiation(
     for index, (consumer, filled) in enumerate(unused):
         if str(consumer.get("tool_id") or "") != action.tool_id:
             continue
-        if action.input == filled or _consumer_input_unbound(action, consumer):
+        if _same_consumer_input(action.input, filled) or _consumer_input_unbound(action, consumer):
             return unused.pop(index)
     return None
+
+
+def _same_consumer_input(current: dict, expected: dict) -> bool:
+    """按实际时刻识别同一窗口，避免 Z 与偏移写法重复生成消费动作。"""
+    if current.keys() != expected.keys():
+        return False
+    for name, value in expected.items():
+        if current[name] == value:
+            continue
+        if not isinstance(current[name], str) or not isinstance(value, str):
+            return False
+        try:
+            left = datetime.fromisoformat(current[name].replace("Z", "+00:00"))
+            right = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if left.tzinfo is None or right.tzinfo is None or left != right:
+            return False
+    return True
 
 
 def _consumer_input_unbound(action: InvestigationAction, consumer: dict) -> bool:

@@ -1,8 +1,8 @@
 SELECT
     snap_id AS snapshot_id,
     instance_number AS instance_number,
-    begin_interval_time AS begin_time,
-    end_interval_time AS end_time,
+    sys_extract_utc(begin_interval_time_tz) AS begin_time,
+    sys_extract_utc(end_interval_time_tz) AS end_time,
     startup_time AS startup_time
   FROM dba_hist_snapshot
  WHERE dbid = (SELECT dbid FROM v$database)

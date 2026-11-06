@@ -460,7 +460,7 @@ class DiscoveryBindingTest(unittest.TestCase):
 
         self.assertIn("固定诊断工具输入未通过目录约束", str(raised.exception))
 
-    def test_wall_clock_binds_utc_tagged_oracle_timestamps(self) -> None:
+    def test_snapshot_binding_compares_instants_across_timezone_offsets(self) -> None:
         plan = _plan(
             _action(
                 action_id="a1",
@@ -496,14 +496,14 @@ class DiscoveryBindingTest(unittest.TestCase):
                             [
                                 Decimal("100"),
                                 Decimal("1"),
-                                "2026-09-14T00:00:00+00:00",
-                                "2026-09-14T01:00:00+00:00",
+                                "2026-09-13T16:00:00+00:00",
+                                "2026-09-13T17:00:00+00:00",
                             ],
                             [
                                 Decimal("101"),
                                 Decimal("1"),
-                                "2026-09-14T01:00:00+00:00",
-                                "2026-09-14T02:00:00+00:00",
+                                "2026-09-13T17:00:00+00:00",
+                                "2026-09-13T18:00:00+00:00",
                             ],
                         ],
                     },
@@ -518,6 +518,18 @@ class DiscoveryBindingTest(unittest.TestCase):
             {"begin_snapshot_id": 100, "end_snapshot_id": 101},
             bound.plan.actions[1].input,
         )
+
+    def test_same_wall_clock_with_different_offset_is_not_same_snapshot(self) -> None:
+        plan = _plan(_action(
+            deferred=True,
+            input={
+                "begin_snapshot_id": "2026-09-14T01:00:00+00:00",
+                "end_snapshot_id": "2026-09-14T02:00:00+00:00",
+            },
+        ))
+        bound = bind_discovery_parameters(plan=plan, tool_results=(_snapshot_result(),))
+        self.assertEqual("UNBINDABLE", bound.status)
+        self.assertTrue(bound.plan.actions[0].deferred)
 
     def test_empty_input_binds_iso_datetimes_from_question(self) -> None:
         plan = _plan(
