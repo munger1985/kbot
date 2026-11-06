@@ -39,5 +39,21 @@ const multiples=chart.option({...spec,layout:'SMALL_MULTIPLES',series:[...spec.s
 assert.equal(multiples.grid.length,2);
 assert.equal(multiples.series[1].xAxisIndex,1);
 assert.equal(multiples.legend,undefined);
-assert.ok(chart.html({...spec,layout:'SMALL_MULTIPLES',series:[...spec.series,...spec.series]}).includes('height:330px'));
+assert.ok(chart.html({...spec,layout:'SMALL_MULTIPLES',series:[...spec.series,...spec.series]}).includes('height:370px'));
+for (const count of [3, 5, 8]) {
+  const facets = {...spec,layout:'SMALL_MULTIPLES',series:Array.from({length:count},(_,index)=>({...spec.series[0],series_key:`s${index}`}))};
+  const plots = chart.option(facets);
+  const canvasHeight = Number(chart.html(facets).match(/height:(\d+)px/)[1]);
+  assert.ok(plots.grid.at(-1).top + plots.grid.at(-1).height + 32 <= canvasHeight);
+  assert.ok(chart.html(facets).includes('class="agent-chart-plot"'));
+}
+const mixed=[{block_type:'MARKDOWN',payload:{}},{block_type:'CHART',payload:spec},{block_type:'CHART',payload:comparison},{block_type:'SOLUTION_MARKDOWN',payload:{}},{block_type:'CHART',payload:spec}];
+const original=JSON.stringify(mixed);
+const grouped=chart.groupBlocks(mixed);
+assert.deepEqual(plain(grouped.map(block=>block.block_type)),['MARKDOWN','CHART_GROUP','SOLUTION_MARKDOWN','CHART_GROUP']);
+assert.equal(grouped[1].chart_blocks.length,2);
+assert.equal(JSON.stringify(mixed),original);
+assert.ok(chart.groupHtml(grouped[1].chart_blocks).includes('class="aiops-answer-charts aiops-diagnosis-chart"'));
+assert.ok(chart.groupHtml(grouped[1].chart_blocks,false).includes('class="aiops-answer-charts"'));
+assert.equal(chart.groupHtml([{payload:{}}]),'');
 console.log('通过：工作台折线、对比、归一化堆叠、分面图和同源数据表合同。');

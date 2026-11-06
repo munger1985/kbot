@@ -11,13 +11,29 @@
     return Number.isFinite(number) ? `${number.toLocaleString(undefined,{maximumFractionDigits:Math.abs(number) >= 100 ? 1 : 2})}${unit ? ` ${unit}` : ""}` : "—";
   };
   const valid = spec => spec?.schema_version === "CHART_SPEC.v1" && ["LINE","BAR","STACKED_BAR"].includes(spec.chart_type) && Array.isArray(spec.series) && spec.series.length;
-  const height = spec => spec.chart_type === "LINE" ? spec.layout === "SMALL_MULTIPLES" ? Math.min(440,Math.max(260,30 + spec.series.length * 150)) : 280 : Math.min(420,Math.max(260,150 + categories(spec).length * 32));
+  const height = spec => spec.chart_type === "LINE" ? spec.layout === "SMALL_MULTIPLES" ? Math.max(280,spec.series.length * 174 + 22) : 280 : Math.min(420,Math.max(260,150 + categories(spec).length * 32));
+
+  // 只归并连续图表，保留其他回答块的顺序。
+  function groupBlocks(blocks) {
+    const grouped=[];
+    for(const block of blocks) {
+      const previous=grouped[grouped.length-1];
+      if(block.block_type !== "CHART") grouped.push(block);
+      else if(previous?.chart_blocks) previous.chart_blocks.push(block);
+      else grouped.push({...block,block_type:"CHART_GROUP",chart_blocks:[block]});
+    }
+    return grouped;
+  }
+  const groupHtml = (blocks, conversation=true) => {
+    const charts=blocks.map(block=>html(block.payload)).join("");
+    return charts ? `<section class="aiops-answer-charts${conversation ? " aiops-diagnosis-chart" : ""}" aria-label="诊断监控图表">${charts}</section>` : "";
+  };
 
   function html(spec) {
     if (!valid(spec)) return "";
     const summary = `${spec.title}，${spec.series.length} 个数据序列。`;
     const coverage = spec.metadata?.coverage_ratio;
-    return `<figure class="agent-chart aiops-diagnosis-chart" data-chat-chart="${escape(JSON.stringify(spec))}"><figcaption><div><strong>${escape(spec.title)}</strong>${coverage != null ? `<span>监控采样覆盖率 ${(Number(coverage) * 100).toFixed(1)}%</span>` : ""}</div><button class="row-action" type="button" data-chart-data-toggle>查看数据</button></figcaption><p class="sr-only">${escape(summary)}</p>${spec.metadata?.coverage_warning ? `<p class="agent-chart-warning">${escape(spec.metadata.coverage_warning)}</p>` : ""}<div class="agent-chart-canvas" style="height:${height(spec)}px" role="img" aria-label="${escape(summary)}"></div><div class="agent-chart-data table-card" hidden><table><thead><tr><th>${escape(spec.x_axis?.label || "分类")}</th>${spec.series.map(series => `<th>${escape(series.name)}</th>`).join("")}</tr></thead><tbody>${categories(spec).map(category => `<tr><td>${escape(category)}</td>${spec.series.map(series => {const point=series.points.find(point => String(point.x) === category);return `<td>${escape(point?.display_value ?? point?.y ?? "—")}</td>`;}).join("")}</tr>`).join("")}</tbody></table></div></figure>`;
+    return `<figure class="agent-chart" data-chat-chart="${escape(JSON.stringify(spec))}"><figcaption><div><strong>${escape(spec.title)}</strong>${coverage != null ? `<span>监控采样覆盖率 ${(Number(coverage) * 100).toFixed(1)}%</span>` : ""}</div><button class="row-action" type="button" data-chart-data-toggle>查看数据</button></figcaption><p class="sr-only">${escape(summary)}</p>${spec.metadata?.coverage_warning ? `<p class="agent-chart-warning">${escape(spec.metadata.coverage_warning)}</p>` : ""}<div class="agent-chart-plot" tabindex="0" aria-label="图表区域，多序列可滚动查看"><div class="agent-chart-canvas" style="height:${height(spec)}px" role="img" aria-label="${escape(summary)}"></div></div><div class="agent-chart-data table-card" hidden><table><thead><tr><th>${escape(spec.x_axis?.label || "分类")}</th>${spec.series.map(series => `<th>${escape(series.name)}</th>`).join("")}</tr></thead><tbody>${categories(spec).map(category => `<tr><td>${escape(category)}</td>${spec.series.map(series => {const point=series.points.find(point => String(point.x) === category);return `<td>${escape(point?.display_value ?? point?.y ?? "—")}</td>`;}).join("")}</tr>`).join("")}</tbody></table></div></figure>`;
   }
 
   function option(spec) {
@@ -61,5 +77,5 @@
     });
   }
   addEventListener("pagehide",() => {for(const {chart,observer} of instances.values()) {observer.disconnect();chart.dispose();}instances.clear();});
-  globalThis.AIOpsChatCharts={html,mount,option};
+  globalThis.AIOpsChatCharts={html,mount,option,groupBlocks,groupHtml};
 })();

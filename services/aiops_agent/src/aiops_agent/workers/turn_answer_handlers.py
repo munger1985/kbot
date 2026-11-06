@@ -1132,6 +1132,18 @@ class DbaEvidenceAssessmentHandler:
             if getattr(context, "deadline_at", None) and (datetime.fromisoformat(context.deadline_at) - datetime.now(UTC)).total_seconds() <= 3:
                 return scoped
             return await self._review_sql(context, scoped, task_frame, on_text_delta=on_text_delta)
+        if (
+            dict(context.plan_snapshot.get("planning_route") or {}).get("mode") == "CONVERSATION_STARTER"
+            and scoped.status in {SufficiencyStatus.ANSWERABLE, SufficiencyStatus.PARTIAL}
+        ):
+            # 固定入口已完成确定性取证校验，直接把完整事实和缺口交给最终诊断。
+            # 不再用第二次模型阅读决定是否重规划；ANSWER 只代表进入回答，不代表健康。
+            return scoped.model_copy(update={"investigation": InvestigationAssessment(
+                round_no=int(context.plan_snapshot.get("revision_no") or 1),
+                sufficiency_status=scoped.status, next_action="ANSWER", progress_made=bool(scoped.evidence),
+                remaining_unknowns=tuple(gap.detail for gap in scoped.gaps),
+                reason="固定功能取证已结束，基于实际观测与缺口形成有边界的诊断；不将取证完成解释为整体健康。",
+            )})
         if (assessment_deadline is not None and assessment_deadline <= datetime.now(UTC)) or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
             return scoped
         model_snapshot = dict(answer_context.get("model") or {})
@@ -1658,7 +1670,7 @@ class DbaAnswerComposeHandler:
             diagnosis_failed = False
             try:
                 if self._model is None or self._prompts is None:
-                    raise ValueError("诊断模型或 Prompt 未配置")
+                    raise AIOpsModelError("MODEL_CONFIGURATION_REQUIRED")
                 prompt = await self._prompts.resolve(
                     "diagnosis_answer_compose",
                     frozen_prompts=dict(answer_context["prompts"]),
@@ -1694,12 +1706,27 @@ class DbaAnswerComposeHandler:
                     await on_text_delta(ModelTextDelta(reset=True))
                 logger.warning("诊断回答未完成，保留已采集证据：task_id={} error_type={} error_code={}",
                                context.task_id, type(exc).__name__, getattr(exc, "code", "DIAGNOSIS_VALIDATION_FAILED"))
+                code = getattr(exc, "code", "DIAGNOSIS_VALIDATION_FAILED")
+                if code == "MODEL_DEADLINE_EXCEEDED":
+                    failure_reason = "诊断模型未能在本轮执行预算内完成回答；已采集的证据仍保留，这不是证据校验失败。"
+                elif code == "MODEL_CONFIGURATION_REQUIRED":
+                    failure_reason = "尚未配置诊断模型或 Prompt，无法形成诊断回答；已采集的证据仍保留。"
+                elif code in {"MODEL_SERVICE_UNAVAILABLE", "MODEL_STREAM_INTERRUPTED"}:
+                    failure_reason = "诊断模型服务暂不可用或响应中断，尚未形成完整可核验的回答。"
+                elif code == "MODEL_OUTPUT_INVALID":
+                    failure_reason = "诊断模型返回内容不符合结构化回答合同，未作为正式结论发布。"
+                else:
+                    failure_reason = "诊断回答未通过结构或证据引用校验，未核验内容未作为正式结论发布。"
+                assessment = assessment.model_copy(update={"gaps": (*assessment.gaps, TurnEvidenceGap(
+                    source_id="diagnosis.answer", code=code, detail=failure_reason,
+                    retryable=code in {"MODEL_DEADLINE_EXCEEDED", "MODEL_SERVICE_UNAVAILABLE", "MODEL_STREAM_INTERRUPTED"},
+                ))})
                 draft = DiagnosisAnswerDraft(
                     claims=({
                         "claim_id": "c1", "kind": "INTERPRETATION", "subject": "当前调查",
                         "statement": "本次已采集的证据仍可查看，但原因判断与处置方案尚未完成。",
                         "level": "UNKNOWN", "applicable_time": "本轮采集范围",
-                        "reasoning": "诊断生成未通过证据校验或模型服务不可用。",
+                        "reasoning": failure_reason,
                         "limitations": ("不能据此确认根因或声称问题已解决。",),
                     },),
                     unresolved_questions=("需基于已有证据重新形成可核验判断；无需因此重跑数据库取证。",),

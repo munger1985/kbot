@@ -1091,6 +1091,7 @@
   }
 
   function answerBlockHtml(block, turn) {
+    if (block.chart_blocks) return globalThis.AIOpsChatCharts.groupHtml(block.chart_blocks);
     const payload = block.payload || {};
     const dictionary = turn?.display_dictionary || {};
     if (block.block_type === "MARKDOWN") {
@@ -1278,8 +1279,9 @@
       const visible = new Set(["FINDING_CARDS","ANALYSIS_MARKDOWN","CHART","SOLUTION_MARKDOWN","FACT_CONFIRMATION","MARKDOWN","REPORT_ARTIFACT_LINKS","PROPOSAL_SUMMARY"]);
       const blocks = values(payload?.blocks).filter(block => block && typeof block === "object" && visible.has(block.block_type));
       if (!blocks.length) return `<p class="ops-turn-result-empty">${esc(emptyText)}</p>`;
-      return blocks.map(block => {
+      return globalThis.AIOpsChatCharts.groupBlocks(blocks).map(block => {
         const data = block.payload || {};
+        if (block.chart_blocks) return globalThis.AIOpsChatCharts.groupHtml(block.chart_blocks, false);
         if (block.block_type === "FINDING_CARDS") return findingCardsHtml(data,dictionary,true);
         if (block.block_type === "CHART") return globalThis.AIOpsChatCharts?.html(data) || "";
         if (["ANALYSIS_MARKDOWN","SOLUTION_MARKDOWN","MARKDOWN"].includes(block.block_type)) {
@@ -1752,7 +1754,7 @@
     const answerBlocks = normalizePrimaryTopSqlBlocks(turn.answer_blocks);
     const narrativeBlocks = answerBlocks.filter((block) => (chat ? chatVisibleAnswerTypes.has(block.block_type) : !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type))
       || (block.block_type === "TABLE" && block.payload?.presentation_role === "PRIMARY"));
-    const blocks = narrativeBlocks.map((block) => answerBlockHtml(block, turn)).join("");
+    const blocks = (chat ? globalThis.AIOpsChatCharts.groupBlocks(narrativeBlocks) : narrativeBlocks).map((block) => answerBlockHtml(block, turn)).join("");
     const planMaterial = turn.ops_run_id && ["COMPLETED","PARTIAL"].includes(turn.status) && answerBlocks.some(block => block.payload?.sql_plan_acquisition)
       ? '<details class="key-value-card aiops-action-card"><summary>已有执行计划材料</summary><p>只读取数据库已有计划、统计和运行证据，不发起估算、不重放业务 SQL、不请求业务表权限。已有计划 JSON 可通过诊断材料上传后继续分析；来源及匹配边界随材料保留。</p></details>' : "";
     const evidence = chat ? chatTurnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary, planMaterial) : turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary);

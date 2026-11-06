@@ -26,6 +26,7 @@ from tests.unit.aiops_agent.test_aiops_model_serving import _SequencedSession
 from tests.unit.aiops_agent.test_aiops_native_answer_stream import Session, generate, stream_response
 from tests.unit.aiops_agent.test_aiops_series_calculation import monitoring
 from tests.unit.aiops_agent.test_aiops_turn_answer import _context, _tool_artifact, _TestPrompts
+from tests.unit.aiops_agent.test_aiops_turn_answer import _AnswerModel
 
 
 def assessment_output(**updates):
@@ -111,6 +112,68 @@ def test_assessment_uses_shorter_of_stage_budget_and_remaining_work(remaining, c
         else:
             assert before + timedelta(seconds=cap) <= actual
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("missing_metric", [False, True])
+def test_fixed_health_starter_uses_one_model_call_for_verified_final_answer(missing_metric):
+    async def exercise():
+        tools = ("db.instance.identity", "db.session.active", "db.session.blocking_chain",
+                 "db.storage.capacity", "db.transaction.long_running", "db.replication.status")
+        artifacts = tuple(_tool_artifact(semantics="CURRENT_ACTIVITY", tool_id=tool, row_count=0 if index == 2 else 1)
+                          for index, tool in enumerate(tools))
+        context = _context(artifacts=artifacts, task_frame_overrides={"diagnostic_profile": "GENERAL"})
+        context = replace(context, deadline_at=(datetime.now(UTC) + timedelta(seconds=85)).isoformat(),
+                          plan_snapshot={**context.plan_snapshot, "planning_route": {"mode": "CONVERSATION_STARTER"},
+                            "monitoring": {"initial_gaps": [{"code": "SOURCE_UNAVAILABLE", "detail": "监控源不可用"}]} if missing_metric else {}})
+        model = _AnswerModel(evidence_refs=())
+        model.generate_structured = AsyncMock(side_effect=model.generate_structured)
+        assessed = await DbaEvidenceAssessmentHandler(model_client=model, prompts=_TestPrompts()).execute(context)
+        model.generate_structured.assert_not_awaited()
+        # 身份探测只用于来源校验，不冒充第六项健康结论。
+        assert len(assessed.evidence) == 5
+        assert assessed.investigation.next_action == "ANSWER"
+        assert assessed.status == ("PARTIAL" if missing_metric else "ANSWERABLE")
+        assert bool(assessed.gaps) == missing_metric
+        final_context = replace(context, input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1",
+            "artifact_id": "assessment", "payload": assessed.model_dump(mode="json")},))
+        result = await DbaAnswerComposeHandler(model_client=model, prompts=_TestPrompts()).execute(final_context)
+        model.generate_structured.assert_awaited_once()
+        request = model.generate_structured.await_args.kwargs
+        assert request["purpose"] == "aiops.dba-diagnosis-answer-compose"
+        assert (request["deadline"] - datetime.now(UTC)).total_seconds() > 80
+        assert len(request["input_payload"]["sufficiency"]["evidence"]) == 5
+        assert result.investigation_record is not None
+        assert result.investigation_record.claims[0].level == "SUPPORTED"
+        assert result.evidence_gaps == assessed.gaps
+        assert result.status == ("PARTIAL" if missing_metric else "COMPLETED")
+    asyncio.run(exercise())
+
+
+def test_many_monitor_series_share_metadata_without_losing_rows_or_sources():
+    artifact = monitoring(("9007199254740993.000000001", "9007199254740993.000000004"))
+    from copy import deepcopy
+    from aiops_agent.contracts.evidence import ObservationSet
+    base = artifact["payload"]["observations"][0]
+    artifact["payload"]["observations"] = []
+    for index in range(32):
+        observation = deepcopy(base)
+        observation["metric_code"] = f"health.metric.{index}"
+        artifact["payload"]["observations"].append(observation)
+    fact = DbaEvidenceAssessmentHandler._monitoring_fact(artifact_id=artifact["artifact_id"],
+        result=ObservationSet.model_validate(artifact["payload"]))
+    before = fact.model_dump_json()
+    projected = evidence_model_payload(fact)
+    originals = [item.model_dump(mode="json", exclude={"samples"}) for item in fact.series_computations]
+    assert len(originals) == 32
+    for original, compact in zip(originals, projected["series_computations"], strict=True):
+        assert {**projected["series_computation_defaults"], **compact} == original
+        assert compact["input_ref"] == original["input_ref"]
+        assert compact["row_index"] == original["row_index"]
+        assert compact["summary"] == original["summary"]
+    assert len(json.dumps(projected["series_computations"]) + json.dumps(projected["series_computation_defaults"])) < len(json.dumps(originals)) * 0.8
+    assert projected["rows"] == fact.model_dump(mode="json")["rows"]
+    assert projected["provenance"] == fact.model_dump(mode="json")["provenance"]
+    assert fact.model_dump_json() == before
 
 
 def test_native_metadata_compaction_is_lossless_and_does_not_merge_per_row_quality():
@@ -206,7 +269,34 @@ def test_answer_model_timeout_resets_draft_and_finishes_partial_before_worker_de
         body = "\n".join(block.payload.get("markdown", "") for block in result.blocks)
         assert fact.captured_at in body and fact.tool_id in body and "不等同于健康结论" in body
         assert any(block.payload.get("rows") == [["abc123", 120.5]] for block in result.blocks)
+        assert "执行预算" in body and "这不是证据校验失败" in body
+        assert "诊断生成未通过证据校验或模型服务不可用" not in body
+        assert any(gap.source_id == "diagnosis.answer" and gap.code == "MODEL_DEADLINE_EXCEEDED" for gap in result.evidence_gaps)
         model.generate_structured.assert_awaited_once()
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("error,message,code", [
+    (AIOpsModelError("MODEL_CONFIGURATION_REQUIRED"), "尚未配置诊断模型", "MODEL_CONFIGURATION_REQUIRED"),
+    (AIOpsModelError("MODEL_SERVICE_UNAVAILABLE"), "服务暂不可用", "MODEL_SERVICE_UNAVAILABLE"),
+    (AIOpsModelError("MODEL_STREAM_INTERRUPTED"), "响应中断", "MODEL_STREAM_INTERRUPTED"),
+    (AIOpsModelError("MODEL_OUTPUT_INVALID"), "结构化回答合同", "MODEL_OUTPUT_INVALID"),
+    (ValueError("不应泄漏的内部错误详情"), "证据引用校验", "DIAGNOSIS_VALIDATION_FAILED"),
+])
+def test_answer_failure_explains_actual_stage_without_exposing_internal_details(error, message, code):
+    async def exercise():
+        _, fact = raw_fact()
+        assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,))
+        context = replace(_context(task_frame_overrides={"diagnostic_profile": "GENERAL"}),
+            input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1", "artifact_id": "assessment",
+                              "payload": assessment.model_dump(mode="json")},))
+        result = await DbaAnswerComposeHandler(model_client=SimpleNamespace(
+            generate_structured=AsyncMock(side_effect=error)), prompts=_TestPrompts()).execute(context)
+        body = "\n".join(block.payload.get("markdown", "") for block in result.blocks)
+        assert message in body and code in body
+        assert "不应泄漏" not in body
+        assert result.status == "PARTIAL" and result.evidence == assessment.evidence
+        assert result.evidence_gaps[-1].code == code
     asyncio.run(exercise())
 
 

@@ -17,6 +17,21 @@ def evidence_model_payload(fact: TurnEvidenceFact) -> dict:
     if fact.tool_id in HTML_REPORT_TOOLS:
         payload["rows"] = []
         payload["columns"] = []
+    computations = payload["series_computations"]
+    if len(computations) > 1:
+        # 仅上提完全相同的元数据；数值摘要、行号、原始引用和质量始终逐条保留。
+        candidates = (
+            "schema_version", "formula_version", "target_id", "source_id", "source_version",
+            "binding_id", "unit", "value_kind", "window_start", "window_end",
+            "effective_step_seconds", "forecast_horizon_days",
+        )
+        shared = {key: computations[0][key] for key in candidates
+                  if all(item[key] == computations[0][key] for item in computations)}
+        payload["series_computation_defaults"] = shared
+        payload["series_computations"] = [
+            {key: value for key, value in item.items() if key not in shared} for item in computations
+        ]
+        payload["series_computation_policy"] = "每条 series_computations 继承 series_computation_defaults；各行数值、质量和来源引用不变。原始样本仅用于服务端重放，不要求模型重复计算。"
     return payload
 
 

@@ -1,5 +1,5 @@
 /* 自动同步自 Ammolite shared/ui/styles.css；请修改源文件后重新生成。
- * 源文件 SHA-256: 0e202d8e598bfc71b67a43ab8d4422996d6eba1e0af836a962ef8db3d13a9c71
+ * 源文件 SHA-256: 6e5f5dc1b2c4ed619efde3ebcba82b2f6fc269fdf02ac276ded1622c5f501dd3
  * 仅保留 AIOps 及其公共控件；字体使用同一系统回退栈，不从 CDN 加载。
  */
 button { all: revert; }
@@ -1038,6 +1038,16 @@ a { color: inherit; text-decoration: none; }
 .agent-chart figcaption { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }.agent-chart figcaption>div { display:grid; gap:3px; }.agent-chart figcaption strong { color:var(--ink); font-size:15px; }.agent-chart figcaption span,.agent-chart>footer { color:var(--muted); font-size:13px; }
 .agent-chart-canvas { width:100%; height:320px; min-height:240px; }.agent-chart-data { overflow-x:auto; }.agent-chart-data table { min-width:520px; }
 .agent-chart>footer { display:flex; justify-content:space-between; gap:12px; padding-top:8px; border-top:1px solid var(--line); }
+.aiops-answer-charts { display:grid; min-width:0; grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr)); gap:var(--space-3,12px); margin-block:var(--space-3,12px); align-items:start; }
+.aiops-answer-charts > .agent-chart { box-sizing:border-box; display:flex; flex-direction:column; width:100%; max-width:520px; height:380px; min-height:0; margin:0; overflow:hidden; border-radius:var(--radius-sm); }
+.aiops-answer-charts .agent-chart figcaption { flex:none; gap:var(--space-2,8px); }
+.aiops-answer-charts .agent-chart figcaption > div { min-width:0; }
+.aiops-answer-charts .agent-chart figcaption strong { display:-webkit-box; overflow:hidden; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; font-size:var(--text-sm,14px); }
+.aiops-answer-charts .agent-chart figcaption .row-action { flex-shrink:0; }
+.agent-chart-plot { min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.aiops-answer-charts .agent-chart-plot { flex:1; }
+.aiops-answer-charts .agent-chart-data { flex:0 1 180px; min-height:0; overflow:auto; }
+.aiops-answer-charts .agent-chart-warning { flex:none; max-height:54px; overflow:auto; }
 .sr-only { position:absolute!important; width:1px!important; height:1px!important; overflow:hidden!important; clip:rect(0,0,0,0)!important; white-space:nowrap!important; }
 :root .chat-composer-textarea { box-sizing:border-box; width:100%; min-height:42px; max-height:150px; resize:vertical; padding:10px 13px; border:1px solid var(--line-strong); border-radius:9px; outline:0; color:var(--ink); background:var(--surface-raised); font:400 15px/1.55 var(--font-ui); transition:border-color .15s,box-shadow .15s; }
 :root .chat-composer-textarea::placeholder { color:var(--faint); }

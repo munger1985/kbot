@@ -25,6 +25,7 @@ const sourceFiles = new Set([
   "src/app/BusinessAppShell.vue", "src/shared/ui/ConversationList.vue",
   "src/shared/ui/CatalogCardActions.vue", "src/shared/ui/DateTimePicker.vue",
   "src/shared/ui/AgentMarkdownContent.vue", "src/shared/ui/AgentChart.vue",
+  "src/features/aiops/business/AIOpsAnswerCharts.vue",
   "src/shared/ui/LifecycleStatusBadge.vue", "src/shared/ui/LifecycleToggleButton.vue",
   "src/shared/ui/ConfirmDialog.vue",
 ]);
