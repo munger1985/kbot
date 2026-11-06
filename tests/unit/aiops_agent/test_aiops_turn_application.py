@@ -1006,6 +1006,140 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("TOP_SQL_LIST", frozen["planning"]["kind"])
         self.assertEqual(10, frozen["parameters"]["limit"])
 
+    async def test_top_five_sql_accepts_database_with_non_database_resources(self) -> None:
+        for db_type in ("POSTGRESQL", "MYSQL", "ORACLE"):
+            for resource_type in ("HOST", "VIRTUAL_MACHINE", "APPLICATION"):
+                with self.subTest(db_type=db_type, resource_type=resource_type):
+                    uow = _Uow()
+                    uow.target.db_type = db_type
+                    host = SimpleNamespace(
+                        resource_id=uuid7(), lifecycle_status="ACTIVE",
+                        resource_code="APP-NODE", display_name="应用节点",
+                        resource_type_key=resource_type, location_name=None,
+                        attributes_json={},
+                    )
+                    host_link = SimpleNamespace(
+                        system_resource_id=uuid7(), resource_id=host.resource_id,
+                        status="ACTIVE",
+                    )
+                    rows = await uow.business_systems.list_system_resource_rows(
+                        uow.system.business_system_id
+                    )
+                    uow.business_systems.list_system_resource_rows = AsyncMock(
+                        return_value=[*rows, (host_link, host, None, None)]
+                    )
+                    await self._start(uow)
+                    uow.turns.messages[0].payload_json["text"] = "MES系统top5 sql"
+                    await TurnQueueService(uow_factory=lambda: uow).accept_created(
+                        dict(uow.outbox.rows[0].payload_json)
+                    )
+                    payload = dict(uow.outbox.rows[1].payload_json)
+                    planner = _turn_planner(uow)
+                    planner._structured_model.resolved_capability_id = (
+                        "database.sql.top-current"
+                    )
+                    planner._structured_model.resolved_parameters = {"limit": 5}
+
+                    routed = await planner.begin(payload)
+
+                    self.assertEqual("ACTIVE_DIAGNOSIS", routed["dispatch"])
+                    turn = uow.turns.turns[0]
+                    self.assertEqual(
+                        {"DATABASE", resource_type},
+                        {item["resource_type_key"]
+                         for item in turn.scope_resolution_json["resources"]},
+                    )
+                    selected = turn.orchestration_internal_json["selected_scope"]
+                    self.assertEqual(2, len(selected["resource_catalog"]))
+                    self.assertEqual(1, len(selected["execution_targets"]))
+                    self.assertEqual(
+                        str(uow.target.target_id),
+                        selected["execution_targets"][0]["target_id"],
+                    )
+                    self.assertEqual(1, len(planner._structured_model.input_payloads))
+                    await planner.start_active_diagnosis(payload)
+                    self.assertEqual(1, len(uow.runs.rows))
+                    frozen = uow.runs.rows[0].plan_snapshot_json["client_metadata"][
+                        "conversation_starter"
+                    ]
+                    self.assertEqual(5, frozen["parameters"]["limit"])
+                    self.assertEqual("TOP_SQL_LIST", frozen["planning"]["kind"])
+
+    async def test_frozen_capability_still_rejects_incompatible_database(self) -> None:
+        for db_type, starter_id, parameters in (
+            ("POSTGRESQL", "oracle.sql.performance", {"sql_id": "6tjx7su0q5ttj"}),
+            ("", "database.sql.top-current", {"limit": 5}),
+        ):
+            with self.subTest(db_type=db_type):
+                uow = _Uow()
+                uow.target.db_type = db_type
+                await self._start(uow)
+                await TurnQueueService(uow_factory=lambda: uow).accept_created(
+                    dict(uow.outbox.rows[0].payload_json)
+                )
+                payload = dict(uow.outbox.rows[1].payload_json)
+                planner = _turn_planner(uow)
+                context = await planner._load_context(payload)
+                context["conversation_starter"] = (
+                    ConversationStarterCatalog().freeze_natural_language(
+                        capability_id=starter_id, parameters=parameters
+                    )
+                )
+                planner._load_context = AsyncMock(return_value=context)
+
+                with self.assertRaises(AIOpsApplicationError) as caught:
+                    await planner.begin(payload)
+
+                self.assertEqual("OPS_VALIDATION_FAILED", caught.exception.code)
+                self.assertEqual([], uow.runs.rows)
+                self.assertEqual([], uow.turns.run_links)
+
+    async def test_clarification_rechecks_database_capability_support(self) -> None:
+        for starter_id, parameters, supported in (
+            ("database.sql.top-current", {"limit": 5}, True),
+            ("oracle.sql.performance", {"sql_id": "6tjx7su0q5ttj"}, False),
+        ):
+            with self.subTest(starter_id=starter_id):
+                uow = _Uow()
+                uow.target.db_type = "POSTGRESQL"
+                await self._start(uow)
+                await TurnQueueService(uow_factory=lambda: uow).accept_created(
+                    dict(uow.outbox.rows[0].payload_json)
+                )
+                payload = dict(uow.outbox.rows[1].payload_json)
+                planner = _turn_planner(uow)
+                context = await planner._load_context(payload)
+                context["conversation_starter"] = (
+                    ConversationStarterCatalog().freeze_natural_language(
+                        capability_id=starter_id, parameters=parameters
+                    )
+                )
+                plan, _ = await planner._plan(context)
+                scope, internal, _ = planner._resolve_scope(context, plan)
+                turn = uow.turns.turns[0]
+                turn.capability_plan_json = plan.model_dump(mode="json")
+                turn.orchestration_internal_json = {
+                    "capability_invocation": context["conversation_starter"],
+                    "clarification_candidates": {
+                        "confirmed-system": {
+                            "scope": scope.model_dump(mode="json"),
+                            "internal_scope": internal,
+                        },
+                    },
+                }
+                resumed_payload = {
+                    **payload, "response": {"candidate_id": "confirmed-system"},
+                }
+
+                if supported:
+                    result = await planner.resume(resumed_payload)
+                    self.assertEqual("ACTIVE_DIAGNOSIS", result["dispatch"])
+                else:
+                    with self.assertRaises(AIOpsApplicationError) as caught:
+                        await planner.resume(resumed_payload)
+                    self.assertEqual("OPS_VALIDATION_FAILED", caught.exception.code)
+                self.assertEqual([], uow.runs.rows)
+
     async def test_natural_language_top_sql_uses_same_frozen_capability(
         self,
     ) -> None:

@@ -1737,21 +1737,6 @@ class TurnPlannerService:
             capability_invocation = dict(
                 context.get("conversation_starter") or {}
             )
-            if capability_invocation and clarification is None:
-                selected_db_types = {
-                    str(dict(item.get("database") or {}).get("db_type") or "")
-                    for item in internal_scope.get("resource_catalog", ())
-                }
-                supported_db_types = {
-                    str(value)
-                    for value in capability_invocation.get(
-                        "supported_db_types", ()
-                    )
-                }
-                if selected_db_types - supported_db_types:
-                    raise validation_failed(
-                        "所选运维能力不支持已解析数据库资源"
-                    )
             turn.orchestration_internal_json = {
                 "schema_version": "aiops.orchestration-internal.v1",
                 "planning_deadline_at": dict(payload.get("execution_context") or {}).get("deadline_at"),
@@ -1811,6 +1796,23 @@ class TurnPlannerService:
                 "PARTIAL",
                 ("NO_ELIGIBLE_RESOURCE",),
             )
+        capability_invocation = dict(
+            dict(turn.orchestration_internal_json or {}).get("capability_invocation")
+            or {}
+        )
+        if capability_invocation:
+            # 主机等拓扑上下文不是数据库，不参与数据库能力兼容性校验。
+            selected_db_types = {
+                str(dict(item.get("database") or {}).get("db_type") or "")
+                for item in internal_scope.get("resource_catalog", ())
+                if item.get("resource_type_key") == "DATABASE"
+            }
+            supported_db_types = {
+                str(value)
+                for value in capability_invocation.get("supported_db_types", ())
+            }
+            if selected_db_types - supported_db_types:
+                raise validation_failed("所选运维能力不支持已解析数据库资源")
         capabilities = tuple(
             AIOpsCapability(item) for item in plan.requested_capabilities
         )
