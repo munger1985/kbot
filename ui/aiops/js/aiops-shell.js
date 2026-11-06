@@ -88,7 +88,8 @@
   }
   function enforceDrawerClosePolicy() {
     const blockBackdropInteraction = (event) => {
-      if (event.target instanceof HTMLDialogElement && event.target.matches('[class*="drawer"]')) {
+      if (event.target instanceof HTMLElement && (event.target.matches('.admin-drawer-backdrop, .api-key-drawer-backdrop') ||
+          (event.target instanceof HTMLDialogElement && event.target.matches('[class*="drawer"]')))) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
@@ -99,6 +100,7 @@
     document.addEventListener("cancel", (event) => {
       if (event.target instanceof HTMLDialogElement && event.target.matches('[class*="drawer"]')) {
         event.preventDefault();
+        event.stopImmediatePropagation();
       }
     }, true);
   }

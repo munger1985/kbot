@@ -16,7 +16,8 @@ router = APIRouter(prefix="/api/v1/notification-delivery", tags=["Notification D
 
 @router.get("/capabilities")
 async def capabilities(request: Request):
-    return await external_capabilities(request)
+    result = await external_capabilities(request)
+    return {**result, "runtime": request.app.state.external_notification_service.runtime_status()}
 
 
 @router.get("/catalog")
@@ -72,7 +73,9 @@ async def _invoke(request, method, *, permission, **kwargs):
         return await getattr(request.app.state.external_notification_service, method)(
             scope=scope, actor_id=actor_id, **kwargs)
     except ExternalDeliveryError as exc:
-        raise HTTPException(exc.status_code, {"code": exc.code, "message": "操作未完成，请核对状态与权限"}) from exc
+        message = ("外部通知尚未在部署配置中启用，请联系部署管理员完成配置；站内通知不受影响。"
+                   if exc.code == "NOTIFICATION_EXTERNAL_DISABLED" else "操作未完成，请核对当前状态")
+        raise HTTPException(exc.status_code, {"code": exc.code, "message": message}) from exc
 
 
 async def _list(request, kind, permission, limit):

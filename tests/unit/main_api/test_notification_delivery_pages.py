@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from main_api.api.notification_delivery import router
 from main_api.application.notification_delivery import ExternalNotificationService
+from main_api.application.notification_delivery import ExternalDeliveryError
+from platform_core.notifications.external_config import ExternalDeliveryConfig
 from main_api.repositories.notification_delivery import ExternalDeliveryRepository
 from platform_core.notifications.delivery import DeliveryScope
 
@@ -58,6 +60,46 @@ def test_http_defaults_and_no_domain_partition(http):
     assert context.await_args.kwargs == {"permission": "read"}
     assert service.list_jobs.await_args.kwargs["scope"].domain_id is None
     assert service.list_jobs.await_args.kwargs["limit"] == 20
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_capabilities_distinguish_runtime_gate_from_permissions(http, monkeypatch, enabled):
+    client, service, _ = http
+    application = ExternalNotificationService(uow_factory=None,
+        config=ExternalDeliveryConfig(enabled=enabled, public_origin="https://portal.test"),
+        vault=None, sender=None, authority=None)
+    service.runtime_status = application.runtime_status
+    monkeypatch.setattr("main_api.api.notification_delivery.external_capabilities",
+        AsyncMock(return_value={"capabilities": ["channel"]}))
+    response = client.get("/api/v1/notification-delivery/capabilities")
+    assert response.status_code == 200
+    assert response.json()["capabilities"] == ["channel"]
+    runtime = response.json()["runtime"]
+    assert runtime["enabled"] is enabled
+    assert runtime["code"] == (None if enabled else "NOTIFICATION_EXTERNAL_DISABLED")
+    assert "public_origin" not in runtime
+
+
+def test_disabled_connection_write_explains_deployment_gate(http):
+    client, service, _ = http
+    service.create_connection = AsyncMock(side_effect=ExternalDeliveryError("NOTIFICATION_EXTERNAL_DISABLED", 503))
+    response = client.post("/api/v1/notification-delivery/connections",
+        json={"name": "测试连接", "app_id": "cli_fixture", "app_secret": "fixture-only-secret"})
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "NOTIFICATION_EXTERNAL_DISABLED"
+    assert "部署配置" in response.json()["detail"]["message"]
+    assert "权限" not in response.json()["detail"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_disabled_service_cannot_save_credentials_or_send():
+    vault, sender = SimpleNamespace(write=AsyncMock()), SimpleNamespace(send=AsyncMock())
+    service = ExternalNotificationService(uow_factory=None, config=ExternalDeliveryConfig(),
+        vault=vault, sender=sender, authority=None)
+    with pytest.raises(ExternalDeliveryError, match="NOTIFICATION_EXTERNAL_DISABLED"):
+        await service.create_connection(scope=DeliveryScope(), actor_id="admin", body=None)
+    vault.write.assert_not_awaited()
+    sender.send.assert_not_awaited()
 
 
 @pytest.mark.parametrize("query", [

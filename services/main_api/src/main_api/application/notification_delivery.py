@@ -54,6 +54,13 @@ class ExternalNotificationService:
         if not self.config.enabled:
             raise ExternalDeliveryError("NOTIFICATION_EXTERNAL_DISABLED", 503)
 
+    def runtime_status(self):
+        """公开部署门禁状态，不暴露密钥、地址或其他部署信息。"""
+        return {"enabled": self.config.enabled,
+                "code": None if self.config.enabled else "NOTIFICATION_EXTERNAL_DISABLED",
+                "message": "" if self.config.enabled else
+                    "外部通知尚未在部署配置中启用，请联系部署管理员完成配置；站内通知不受影响。"}
+
     async def list(self, kind, *, scope, limit=100, offset=0, status=None):
         async with self._uow_factory() as uow:
             return [public_record(kind, row) for row in await uow.external_delivery.list(

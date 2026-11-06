@@ -9,7 +9,7 @@
 .delivery-card > header > div:first-child:has(> p) { display: grid; gap: 6px; }
 .delivery-card > header > button { flex-shrink: 0; }
 .delivery-card h2 { margin: 0; font-size: 20px; color: var(--ink); }
-.delivery-card p, .delivery-note, .delivery-dialog p { color: var(--muted); line-height: 1.7; }
+.delivery-card p, .delivery-note { color: var(--muted); line-height: 1.7; }
 .delivery-card > footer { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
 .delivery-provider-mark { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 10px; color: var(--accent); background: var(--surface-subtle); font-weight: 700; }
 .delivery-placeholder { background: var(--surface-subtle); }
@@ -40,24 +40,15 @@
 .delivery-timeline { display: grid; gap: 12px; }
 .delivery-timeline > article { display: grid; gap: 7px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
 .delivery-timeline span, .delivery-timeline small { color: var(--muted); }
-.delivery-dialog { position: fixed; inset: 0; margin: 0 0 0 auto; padding: 0; box-sizing: border-box; width: min(560px, 100%); max-width: 100%; height: 100dvh; max-height: 100dvh; border: 0; border-left: 1px solid var(--line); border-radius: 0; color: var(--ink); background: var(--surface-raised, var(--surface)); }
-.delivery-dialog::backdrop { background: rgb(0 0 0 / 48%); }
-.delivery-dialog-layout { display: flex; flex-direction: column; height: 100%; }
-.delivery-dialog-layout > header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
-.delivery-dialog-layout h2 { margin: 0; font-size: 22px; }
-.delivery-dialog-body { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; }
-.delivery-dialog-layout > footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--surface-subtle); }
 .delivery-form { display: grid; gap: 22px; }
 .delivery-form fieldset { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
 .delivery-form legend { padding: 0 6px; font-weight: 600; }
 .delivery-choice { display: flex; align-items: flex-start; gap: 10px; color: var(--ink); font-size: 14px; cursor: pointer; }
 .delivery-choice input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; min-height: 0; margin: 2px 0 0; accent-color: var(--accent); }
 .delivery-choice small { display: block; margin-top: 5px; color: var(--muted); font-weight: 400; }
-.delivery-form .control-field { display: grid; gap: 8px; }
-.delivery-form input:not([type="checkbox"]), .delivery-form select { box-sizing: border-box; width: 100%; min-height: 40px; padding: 10px 12px; color: var(--ink); background: var(--surface-subtle); border: 1px solid var(--line-strong); border-radius: 7px; }
 .delivery-form .field-help { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
 @media (max-width: 900px) { .delivery-channel-grid { grid-template-columns: 1fr; } .delivery-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .delivery-page .section-toolbar { flex-direction: column; } .delivery-card { padding: 18px; } .delivery-metrics { grid-template-columns: 1fr; } .delivery-filters { grid-template-columns: 1fr; } .delivery-pagination { flex-wrap: wrap; } .delivery-facts > div { grid-template-columns: 1fr; gap: 6px; } .delivery-dialog-body { padding: 20px 16px; } .delivery-rule { flex-wrap: wrap; } }
+@media (max-width: 600px) { .delivery-page .section-toolbar { flex-direction: column; } .delivery-card { padding: 18px; } .delivery-metrics { grid-template-columns: 1fr; } .delivery-filters { grid-template-columns: 1fr; } .delivery-pagination { flex-wrap: wrap; } .delivery-facts > div { grid-template-columns: 1fr; gap: 6px; } .delivery-rule { flex-wrap: wrap; } }
 
 /* 窄屏优先保证筛选与详情入口可见，不要求横向寻找操作列。 */
 @media (max-width: 600px) {
@@ -75,4 +66,3 @@
   .delivery-table td:last-child { justify-self: end; }
   .delivery-table td.empty-cell { grid-column: 1 / -1; justify-self: stretch; }
 }
-.delivery-dialog:modal { border-radius: 0; }

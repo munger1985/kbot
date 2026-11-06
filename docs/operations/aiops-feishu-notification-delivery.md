@@ -100,6 +100,20 @@ App Secret 通过现有托管凭据设施加密。API 不回显已有 Secret、T
 
 ## 5. 故障处理
 
+### 渠道保存返回 503：先区分部署开关与权限
+
+- `GET /api/v1/notification-delivery/capabilities` 同时返回权限 `capabilities` 与部署状态 `runtime`（`enabled/code/message`）。两者独立，未启用外发不等于租户／平台管理员缺少权限。
+- 缺少顶层 `[external_delivery]` 时总开关默认关闭。页面保留配置与历史记录读取，明确显示部署未启用，并禁用渠道保存、检查、真实试发及规则写操作；不会自动打开开关。
+- 即使绕过页面直接写接口，后端仍以 503／`NOTIFICATION_EXTERNAL_DISABLED` 阻断，且提示部署未启用，不再提示核对权限。不会写入凭据或调用飞书。
+- 按第 3、4 节完成独立凭据密钥、可达 HTTPS `public_origin` 和总开关配置，再经授权发布／重启对应组件。不得仅为了消除 503 而开启 fixture、跳过 HTTPS 或自动向真实用户发送消息。
+- 站内铃铛 `/api/v1/notifications/summary` 与外部渠道创建不是同一请求；应按 URL、状态码与时间分别核对日志。
+
+### 抽屉共用规范
+
+通知配置、试发、规则与投递详情统一复用项目 `admin-drawer` 的遮罩、面板、标题栏、正文、底栏、按钮与响应式样式。Portal 使用共享 `AdminDrawer`；KBot 使用共享 `KBotDrawer` 控制器。禁止增加页面私有的原生 dialog 抽屉样式或关闭策略。
+
+遮罩点击与 Escape 均不关闭抽屉，只有显式关闭／取消或业务成功后关闭；写请求期间显式关闭按钮锁定。关闭编辑清空本次 Secret，重新打开不回显。共享确认框位于抽屉上层，取消确认不会关闭底层抽屉。
+
 - PENDING／RETRY_WAIT：短事务领取后才发送；全局→连接→目标固定锁序限流。
 - ACCEPTED：只有 HTTP200、业务 code=0 和合法 message_id 同时成立才记录。
 - UNKNOWN：超时、响应丢失、已标记网络起点后的 Worker 崩溃等；不能当作“未发送”。

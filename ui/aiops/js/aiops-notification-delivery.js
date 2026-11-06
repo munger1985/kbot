@@ -13,9 +13,11 @@
     const date = value => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString("zh-CN", { hour12:false }) : "—";
     const node = (tag, text, className) => { const element = document.createElement(tag); if (text != null) element.textContent = text; if (className) element.className = className; return element; };
     const option = (value, text) => { const element = node("option", text); element.value = value; return element; };
+    let runtime = null;
     let caps = [], events = {}, connection = null, bindings = [], busy = false, loading = false, loadVersion = 0;
     let offset = 0, pageSize = 20, hasMore = false, applied = new URLSearchParams(), selected = null, detailVersion = 0;
     const can = key => caps.includes(key);
+    const available = () => runtime?.enabled === true;
     const eventLabel = key => events[key]?.[0] || ({"connection.test":"测试消息","identity.verification":"身份验证"}[key] || key || "—");
     const personal = () => bindings.filter(item => item.connection_id === connection?.id && item.target_type === "open_id" && item.status !== "DISABLED");
     const verified = () => personal().filter(item => item.status === "VERIFIED");
@@ -29,14 +31,14 @@
       container.append(dl);
     }
     function controls() {
-      document.querySelectorAll(".delivery-dialog button").forEach(item => { item.disabled = busy; });
+      document.querySelectorAll(".admin-drawer button").forEach(item => { item.disabled = busy; });
       byId("delivery-refresh").disabled = busy || loading;
       if (page === "notification-channels") {
-        byId("delivery-edit").disabled = busy || loading;
-        byId("delivery-check").disabled = busy || loading;
-        byId("delivery-test-open").disabled = busy || loading || !connection?.enabled;
-        byId("delivery-rule-open").disabled = busy || loading || !connection;
-        document.querySelector('[form="delivery-test"]').disabled = busy || !verified().length;
+        byId("delivery-edit").disabled = busy || loading || !available();
+        byId("delivery-check").disabled = busy || loading || !available();
+        byId("delivery-test-open").disabled = busy || loading || !available() || !connection?.enabled;
+        byId("delivery-rule-open").disabled = busy || loading || !available() || !connection;
+        document.querySelector('[form="delivery-test"]').disabled = busy || !available() || !verified().length;
       }
       if (page === "notification-delivery") {
         byId("delivery-prev").disabled = busy || loading || offset === 0;
@@ -47,21 +49,14 @@
     }
     function close(id) {
       if (busy) return;
-      byId(id).close();
+      KBotDrawer.close(id);
       if (id === "delivery-editor") byId("delivery-connection").elements.app_secret.value = "";
       if (id === "delivery-detail") { selected = null; ++detailVersion; }
     }
     document.querySelectorAll("[data-close]").forEach(item => { item.onclick = () => close(item.dataset.close); });
-    document.querySelectorAll(".delivery-dialog").forEach(dialog => {
-      dialog.addEventListener("cancel", event => { event.preventDefault(); close(dialog.id); });
-      dialog.addEventListener("click", event => {
-        if (event.target !== dialog) return;
-        const box = dialog.getBoundingClientRect();
-        if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) close(dialog.id);
-      });
-    });
     async function action(task, message = "操作已保存") {
       if (busy) return;
+      if (!available()) { status.textContent = runtime?.message || "外部通知部署状态尚未就绪，请刷新重试。"; return; }
       busy = true; controls(); status.textContent = "处理中…";
       try { await task(); status.textContent = message; await refresh(); }
       catch (error) { status.textContent = error.message || "操作未完成"; }
@@ -84,7 +79,7 @@
         const article = node("article",null,"delivery-rule"), description = node("div");
         description.append(node("strong",item.event_types.map(eventLabel).join("、")),node("small","仅向业务已授权的配置目标发送；既有其他绑定本轮不调整"));
         article.append(description,node("span",item.enabled ? "启用" : "暂停","status-pill"),button(item.enabled ? "暂停" : "启用", async () => {
-          if (busy) return;
+          if (busy || !available()) return;
           if (item.enabled && !await KBotAIOpsShell.confirmAction({title:"暂停消息规则",message:"停止生成新的外部消息；站内通知、业务任务和既有投递任务不受影响。",confirmLabel:"暂停规则",tone:"warning"})) return;
           await action(() => request("/policies/" + item.id,{expected_row_version:item.row_version,enabled:!item.enabled},"PUT"));
         }));
@@ -98,6 +93,8 @@
       connection = targets.connections.find(item => item.provider === "FEISHU") || null; bindings = targets.bindings;
       byId("delivery-channels-content").hidden = false;
       renderConnection(); renderPolicies(policies.items);
+      document.querySelectorAll("#delivery-policies button").forEach(item => { item.disabled = !available(); });
+      if (!available()) status.textContent = (runtime?.message || "外部通知部署状态尚未就绪。") + " 部署管理员需配置 external_delivery.enabled、public_origin 与独立凭据密钥；此状态不是账号权限不足。";
     }
     async function openDetail(item) {
       const current = ++detailVersion;
@@ -107,7 +104,7 @@
       facts(summary,[["接收对象",item.target_type === "chat_id" ? "受控群（既有记录）" : item.recipient_actor_id],["投递 ID",item.id],["来源事件",item.source_event_id],["飞书回执",item.message_id],["安全错误码",item.last_error_code],["有效期至",date(item.expires_at)]]);
       if (item.entry_id) { const link = node("a","打开原任务","secondary-button"); link.href = "./notification-open.html?entry=" + encodeURIComponent(item.entry_id); summary.append(link); }
       byId("delivery-retry").hidden = !can("retry") || !["UNKNOWN","BLOCKED","DEAD"].includes(item.status);
-      attempts.replaceChildren(node("p","正在读取尝试历史…")); byId("delivery-detail").showModal();
+      attempts.replaceChildren(node("p","正在读取尝试历史…")); KBotDrawer.open("delivery-detail");
       try {
         const result = await request("/jobs/" + item.id + "/attempts");
         if (current !== detailVersion) return;
@@ -199,14 +196,14 @@
         form.elements.name.value = connection?.name || "飞书"; form.elements.app_id.value = connection?.app_id || "";
         form.elements.app_id.disabled = Boolean(connection); form.elements.enabled.checked = Boolean(connection?.enabled); form.elements.app_secret.required = !connection;
         byId("delivery-editor-title").textContent = connection ? "编辑飞书配置" : "配置飞书";
-        byId("delivery-secret-label").textContent = connection ? "替换 Secret（留空不变）" : "App Secret"; byId("delivery-editor").showModal();
+        byId("delivery-secret-label").textContent = connection ? "替换 Secret（留空不变）" : "App Secret"; KBotDrawer.open("delivery-editor");
       };
       byId("delivery-connection").onsubmit = event => {
         event.preventDefault(); const form = event.currentTarget;
         void action(async () => {
           await request(connection ? "/connections/" + connection.id : "/connections", connection ? {name:form.elements.name.value.trim(),enabled:form.elements.enabled.checked,expected_row_version:connection.row_version,...(form.elements.app_secret.value ? {app_secret:form.elements.app_secret.value} : {})}
             : {name:form.elements.name.value.trim(),provider:"FEISHU",app_id:form.elements.app_id.value.trim(),app_secret:form.elements.app_secret.value,enabled:form.elements.enabled.checked},connection ? "PUT" : "POST");
-          form.elements.app_secret.value = ""; byId("delivery-editor").close();
+          form.elements.app_secret.value = ""; KBotDrawer.close("delivery-editor");
         },"飞书配置已保存，未发送测试消息");
       };
       byId("delivery-check").onclick = () => action(async () => {
@@ -216,12 +213,12 @@
       byId("delivery-test-open").onclick = () => {
         byId("delivery-test-binding").replaceChildren(option("","选择已验证的用户"),...verified().map(item => option(item.id,item.external_id)));
         byId("delivery-test-note").textContent = verified().length ? "发送后请核对投递记录和飞书客户端。" : "暂无已验证的个人目标，请先绑定并由本人完成验证。";
-        byId("delivery-tester").showModal();
+        KBotDrawer.open("delivery-tester");
       };
       byId("delivery-test").onsubmit = async event => {
         event.preventDefault(); const bindingId = byId("delivery-test-binding").value;
         if (!verified().some(item => item.id === bindingId) || !await KBotAIOpsShell.confirmAction({title:"发送飞书测试消息",message:"将向选定用户发送一条真实消息，不会执行业务任务。",confirmLabel:"确认发送",tone:"warning"})) return;
-        void action(async () => { await request("/connections/" + connection.id + "/test",{binding_id:bindingId}); byId("delivery-tester").close(); },"测试消息已入队，请到通知投递页查看结果");
+        void action(async () => { await request("/connections/" + connection.id + "/test",{binding_id:bindingId}); KBotDrawer.close("delivery-tester"); },"测试消息已入队，请到通知投递页查看结果");
       };
       byId("delivery-rule-open").onclick = () => {
         byId("delivery-policy").reset();
@@ -231,12 +228,12 @@
         Object.entries(events).forEach(([key,value]) => add(eventOptions,"event_types",key,value[0]));
         personal().forEach(item => add(bindingOptions,"binding_ids",item.id,item.external_id + " · " + (item.status === "VERIFIED" ? "已验证" : "待本人验证")));
         if (!personal().length) bindingOptions.append(node("p","暂无个人绑定，请先在用户管理中维护。","delivery-empty"));
-        byId("delivery-rule-editor").showModal();
+        KBotDrawer.open("delivery-rule-editor");
       };
       byId("delivery-policy").onsubmit = event => {
         event.preventDefault(); const form = event.currentTarget, data = new FormData(form);
         if (!data.getAll("event_types").length || !data.getAll("binding_ids").length) { status.textContent = "请选择消息类型和接收用户。"; return; }
-        void action(async () => { await request("/policies",{connection_id:connection.id,event_types:data.getAll("event_types"),binding_ids:data.getAll("binding_ids"),actor_ids:[],enabled:form.elements.enabled.checked}); byId("delivery-rule-editor").close(); },"规则已保存，不会补发历史消息");
+        void action(async () => { await request("/policies",{connection_id:connection.id,event_types:data.getAll("event_types"),binding_ids:data.getAll("binding_ids"),actor_ids:[],enabled:form.elements.enabled.checked}); KBotDrawer.close("delivery-rule-editor"); },"规则已保存，不会补发历史消息");
       };
     }
     if (page === "notification-delivery") {
@@ -251,7 +248,7 @@
         if (!item || busy) return;
         const result = await KBotAIOpsShell.confirmActionWithOption({title:"重试外部通知",message:"仅重试此投递目标，不会重新执行业务任务。结果待核实时可能已送达，超出去重窗口的新代次可能产生重复消息。",option:{label:"我明确接受新发送代次可能产生重复消息"},confirmLabel:"重试通知",tone:"warning"});
         if (!result.confirmed) return;
-        void action(async () => { await request("/jobs/" + item.id + "/retry",{expected_row_version:item.row_version,acknowledge_duplicate_risk:result.optionSelected}); byId("delivery-detail").close(); selected = null; ++detailVersion; },"重试已入队，不会重新执行业务任务");
+        void action(async () => { await request("/jobs/" + item.id + "/retry",{expected_row_version:item.row_version,acknowledge_duplicate_risk:result.optionSelected}); KBotDrawer.close("delivery-detail"); selected = null; ++detailVersion; },"重试已入队，不会重新执行业务任务");
       };
       byId("delivery-audit-panel").ontoggle = async event => {
         if (!event.currentTarget.open || !can("read")) return;
@@ -265,7 +262,8 @@
     }
     byId("delivery-refresh").onclick = () => { if (page === "notification-delivery" && can("read")) applyFilters(); else void refresh(); };
     try {
-      caps = (await request("/capabilities")).capabilities;
+      const capabilities = await request("/capabilities");
+      caps = capabilities.capabilities; runtime = capabilities.runtime;
       document.querySelectorAll("[data-capability]").forEach(item => { item.hidden = !can(item.dataset.capability); });
       if ((page === "notification-channels" && can("channel")) || (page === "notification-delivery" && can("read"))) events = (await request("/catalog")).events;
       if (page === "notification-delivery" && can("read")) {
