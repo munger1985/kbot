@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="./css/workspaces.css?v=20261029_3">
   <link rel="stylesheet" href="./css/sql-plan-viewer.css?v=20261029_2">
   <link rel="stylesheet" href="./css/chat.css?v=20261030_1">
-<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261106_2"><link rel="stylesheet" href="./css/reference-chat.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261106_2"><link rel="stylesheet" href="./css/reference-chat.css?v=20261107_1"><link rel="stylesheet" href="./css/alignment.css?v=20261030_1"></head>
 <body data-page="chat">
   <main class="ops-main ops-chat-main">
     <header class="ops-head">
@@ -24,17 +24,16 @@
         <nav id="conversation-list" class="ops-workspace-items" aria-label="历史诊断会话"></nav>
         <footer class="agent-chat-session-toggle-row"><button id="chat-rail-toggle" class="icon-button" type="button" aria-label="展开会话列表" aria-controls="chat-rail-content" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14 M5 12h14 M5 17h14"/></svg></button></footer>
       </aside>
-      <article class="ops-conversation">
-        <header class="ops-conversation-head agent-chat-conversation-head aiops-diagnosis-conversation-head">
-          <div><p id="conversation-eyebrow" class="eyebrow">新的运维会话</p><h2 id="conversation-title">新运维会话</h2><p id="conversation-context">每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。</p></div>
+      <article class="ops-conversation aiops-chat-conversation">
+        <header class="ops-conversation-head agent-chat-conversation-head aiops-diagnosis-conversation-head aiops-chat-toolbar">
+          <div class="aiops-chat-toolbar-title"><h2 id="conversation-title">新运维会话</h2><span id="conversation-eyebrow" class="aiops-chat-toolbar-turn" hidden>新的运维会话</span><p id="conversation-context" hidden></p></div>
           <div class="aiops-diagnosis-head-context">
-            <label class="control-field" for="agent-select"><span class="field-label">AIOps Agent</span><select id="agent-select" aria-label="选择 Agent" aria-describedby="agent-target-context"><option value="">正在读取 Agent…</option></select></label>
+            <label class="control-field" for="agent-select"><span class="visually-hidden">AIOps Agent</span><select id="agent-select" aria-label="选择 Agent" aria-describedby="agent-target-context"><option value="">正在读取 Agent…</option></select></label>
             <span id="agent-target-context" class="visually-hidden"></span>
           </div>
-          <div class="button-row"><button id="chat-session-toggle" type="button" aria-controls="chat-rail-content" aria-expanded="false">会话列表</button><span id="conversation-actions" class="button-row"></span></div>
+          <div class="button-row"><button id="chat-session-toggle" class="aiops-chat-session-button" type="button" aria-label="会话列表" title="会话列表" aria-controls="chat-rail-content" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14 M5 12h14 M5 17h14"/></svg></button><span id="conversation-actions" class="button-row"></span><section id="conversation-output-jobs" hidden></section></div>
         </header>
         <p id="conversation-output-unavailable" class="aiops-diagnosis-notice" role="status" hidden></p>
-        <section id="conversation-output-jobs" hidden></section>
         <p id="agent-empty-notice" class="aiops-diagnosis-notice" hidden>暂无已启用的 AIOps Agent。请先配置业务系统、能力与模型角色。</p>
         <div id="message-list" class="ops-messages agent-chat-transcript aiops-diagnosis-transcript" aria-live="polite"></div>
         <form id="conversation-form" class="ops-composer agent-chat-composer aiops-diagnosis-composer">
@@ -67,7 +66,7 @@
   <script src="./js/aiops-sql-plan-viewer.js?v=20261029_2"></script>
   <script src="../vendor/echarts.min.js"></script>
   <script src="./js/aiops-chat-charts.js?v=20261030_1"></script>
-  <script src="./js/aiops-output-jobs.js?v=20261103_1"></script>
-  <script src="./js/aiops-workspaces.js?v=20261105_confirm1"></script>
+  <script src="./js/aiops-output-jobs.js?v=20261107_1"></script>
+  <script src="./js/aiops-workspaces.js?v=20261107_1"></script>
 </body>
 </html>

@@ -15,13 +15,18 @@ const portal = resolve(ammolite, "apps/portal-web");
 const require = createRequire(resolve(portal, "package.json"));
 const { chromium } = require("@playwright/test");
 const { compile } = require("@vue/compiler-dom");
-const { compileStyle } = require("@vue/compiler-sfc");
+const { compileStyle, compileScript, parse } = require("@vue/compiler-sfc");
 const read = (path) => readFileSync(path, "utf8");
 const typescript = require("typescript");
 const referenceDateTime = typescript.transpileModule(read(resolve(portal, "src/shared/lib/dateTime.ts")), {
   compilerOptions: { module: typescript.ModuleKind.CommonJS, target: typescript.ScriptTarget.ES2022 },
 }).outputText;
 const diagnosis = read(resolve(portal, "src/features/aiops/business/AIOpsDiagnosisView.vue"));
+const outputJobs = parse(read(resolve(portal, "src/features/aiops/business/AIOpsOutputJobs.vue"))).descriptor;
+const outputJobsScript = typescript.transpileModule(compileScript(outputJobs, { id: 'output-jobs', inlineTemplate: true }).content,
+  { compilerOptions: { target: typescript.ScriptTarget.ES2022, module: typescript.ModuleKind.ES2022 } }).outputText
+  .replace(/import\s*\{([^}]+)\}\s*from\s*['"]vue['"];?/gs, (_, names) => `const { ${names.replace(/\s+as\s+/g, ': ')} } = Vue;`)
+  .replace(/import[^;]+from\s*['"][^'"]+['"];?/g, '').replace('export default', 'return');
 const conversations = read(resolve(portal, "src/shared/ui/ConversationList.vue"));
 const confirmation = read(resolve(portal, "src/shared/ui/ConfirmDialog.vue"));
 const navIcon = read(resolve(portal, "src/shared/ui/NavIcon.vue"));
@@ -82,6 +87,7 @@ try {
     globalThis.KBotAIOpsAuth = {
       load: () => ({ access_token: "browser-fixture-only" }),
       uuid: () => crypto.randomUUID(),
+      uuid7: () => crypto.randomUUID(),
       request: async (path, options = {}) => {
         globalThis.fixtureRequests.push({ path, method: options.method || "GET", body: options.body });
         if (options.method === "POST") {
@@ -90,6 +96,7 @@ try {
         }
         if (path.endsWith("/access")) return { permissions: ["aiops:use"], user_id: "fixture", domain_id: "fixture" };
         if (path.endsWith("/agents")) return location.search.includes("empty-agents") ? [] : globalThis.fixtureAgents;
+        if (path.includes("/output-jobs?")) return { items: [], next_cursor: null };
         if (path.includes("/conversation-starters?")) return { starters: [starter], business_systems: systems, catalog_version: "fixture" };
         if (path.endsWith('/session-report-templates')) return globalThis.fixtureReportTemplates || [];
         if(path.includes('/case-candidate')) return globalThis.fixtureCaseCandidate;
@@ -113,12 +120,14 @@ try {
   reference.on("pageerror", (error) => errors.push(`Ammolite 模板：${error.message}`));
   reference.on("console", (message) => { if (message.type() === "error") console.error(message.text()); });
   await reference.setContent('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"></head><body><div class="business-app-shell business-app-aiops"><header class="business-app-topbar"></header><div class="business-app-layout"><aside class="reference-sidebar"></aside><div id="reference" class="business-app-content is-viewport-contained"></div></div></div></body></html>');
-  await reference.addStyleTag({ content: `${sharedCss}\n${style(diagnosis, "data-v-diagnosis")}\n${style(conversations, "data-v-conversations")}\n@media(max-width:900px) { .reference-sidebar { display:none; } }` });
+  await reference.addStyleTag({ content: `${sharedCss}\n${style(diagnosis, "data-v-diagnosis")}\n${style(conversations, "data-v-conversations")}\n${outputJobs.styles[0].content}\n@media(max-width:900px) { .reference-sidebar { display:none; } }` });
   await reference.addStyleTag({ content: "*, *::before, *::after { transition:none!important; animation:none!important; }" });
   await reference.addScriptTag({ path: require.resolve("vue/dist/vue.global.prod.js") });
   await reference.addScriptTag({ content: `(function(){const exports={};${referenceDateTime}\nglobalThis.referenceFormatPortalDateTime=exports.formatPortalDateTime;})();` });
   for (const file of ['ui/vendor/marked.umd.js','ui/vendor/purify.min.js','ui/shared/kbot-markdown.js']) await reference.addScriptTag({path:resolve(root,file)});
-  await reference.evaluate(({ render, list, agents, shortcuts, sessions, icons }) => {
+  await reference.evaluate(({ render, list, agents, shortcuts, sessions, icons, outputJobsScript }) => {
+    const jobs = new Function('Vue', 'useRoute', 'businessFetch', 'formatPortalDateTime', 'toast', outputJobsScript)(Vue,
+      () => ({params:{domainCode:'fixture'},query:{domainId:'fixture'}}), async () => ({items:[],next_cursor:null}), value=>value, {error(){}});
     const icon = { props: ["name"], data: () => ({ icons }), template: '<svg viewBox="0 0 24 24" aria-hidden="true"><path v-for="path in icons[name] || icons.default" :key="path" :d="path"/></svg>' };
     const listComponent = {
       __scopeId: "data-v-conversations", props: ["items", "selectedId", "collapsed", "label"],
@@ -129,8 +138,8 @@ try {
     };
     const app = Vue.createApp({
       __scopeId: "data-v-diagnosis",
-      computed:{selectedAgent(){return this.availableAgents.find(agent=>agent.agent_id===this.selectedAgentId)}},
-      components: { NavIcon: icon, ConversationList: listComponent, AgentMarkdownContent: {props:['markdown'],template:'<div class="agent-markdown-content" v-html="rendered"></div>',computed:{rendered(){return KBotMarkdown.render(this.markdown || '')}}} },
+      computed:{selectedAgent(){return this.availableAgents.find(agent=>agent.agent_id===this.selectedAgentId)},showConversationOutputs(){return Boolean(this.selectedConversationId)}},
+      components: { NavIcon: icon, ConversationList: listComponent, AIOpsOutputJobs: jobs, AgentMarkdownContent: {props:['markdown'],template:'<div class="agent-markdown-content" v-html="rendered"></div>',computed:{rendered(){return KBotMarkdown.render(this.markdown || '')}}} },
       data: () => ({ conversationTurns:[], loading: false, sidebarOpen: false, submitting: false, currentTurn: null, continuationSource: null, conversations: [], selectedConversationId: null, sessionItems: sessions.map((item) => ({ id: item.conversation_id, title: item.title, updatedAt: item.updated_at })), selectedAgentId: "agent-1", availableAgents: agents, canCloseDiagnosis: false, canGenerateReport: false, availableCapabilityShortcuts: shortcuts, starterHomeSections: [], selectedStarterId: "", diagnosticInProgress: false, clarificationPending: false, pendingFiles: [], question: "诊断问题", canSubmit: true, starterDrawerOpen:false,starterDrawerMode:'catalog',selectedStarter:null,allStarterSections:[],starterBusinessSystems:[],selectedStarterBusinessSystem:null,selectedStarterBusinessSystemId:'',selectedStarterResourceId:'',starterParameters:{} }),
       methods: { resetConversation() {}, selectSession() {}, deleteSession() {}, changeAgent() {}, executeCapabilityShortcut() {}, selectStarter() {}, openStarterCatalog() {this.starterDrawerOpen=true}, closeStarterDrawer(){this.starterDrawerOpen=false}, executeSelectedStarter(){}, changeStarterBusinessSystem(){},starterTargetSelectable(){return true},starterTargetStatus(){return '连接正常'},starterHint(){return '需要填写参数'}, returnToStarterCatalog(){},useAutomaticStarterConfiguration(){},openAttachmentPicker() {}, selectAttachments() {}, submitOnEnter() {}, submit() {} },
       render: new Function("Vue", render)(Vue),
@@ -149,11 +158,11 @@ try {
       closureLines:value=>String(value || '').split('\n').map(item=>item.trim()).filter(Boolean),toggleClosureTurn(){},closeDiagnosis(){},
     });
     const initialData=app._component.data;
-    app._component.data=()=>({...initialData(),reportTemplateDrawerOpen:false,reportTemplatesLoading:false,sessionReportTemplates:[],selectedReportTemplateRef:'',generatingReport:false,caseClosureLoading:false,caseClosureSaving:false,submittingClarificationId:'',clarificationFreeText:{},caseClosureDrawerOpen:false,caseCandidate:null,caseClosureDraft:{display_name:'',symptoms:'',root_cause_summary:'',actions:'',verification_result:'NOT_VERIFIED',action_evidence_ids:[],before_evidence_ids:[],after_evidence_ids:[],applicability:'',contraindications:''}});
-    Object.assign(app._component.computed,{reportableTurnCount(){return this.conversationTurns.filter(turn=>['COMPLETED','PARTIAL'].includes(turn.status)).length},incompleteTurnCount(){return this.conversationTurns.length-this.reportableTurnCount}});
+    app._component.data=()=>({...initialData(),outputSourceUnavailableReason:'',caseOutputUnavailableReason:'',reportOutputUnavailableReason:'',reportTemplateDrawerOpen:false,reportTemplatesLoading:false,sessionReportTemplates:[],selectedReportTemplateRef:'',generatingReport:false,caseClosureLoading:false,caseClosureSaving:false,submittingClarificationId:'',clarificationFreeText:{},caseClosureDrawerOpen:false,caseCandidate:null,caseClosureDraft:{display_name:'',symptoms:'',root_cause_summary:'',actions:'',verification_result:'NOT_VERIFIED',action_evidence_ids:[],before_evidence_ids:[],after_evidence_ids:[],applicability:'',contraindications:''}});
+    Object.assign(app._component.computed,{selectedStarterFields(){return this.selectedStarter?.input_schema || []},reportableTurnCount(){return this.conversationTurns.filter(turn=>['COMPLETED','PARTIAL'].includes(turn.status)).length},incompleteTurnCount(){return this.conversationTurns.length-this.reportableTurnCount}});
     const vm = app.mount("#reference");
     globalThis.referenceVm = vm;
-  }, { render: referenceRender, list: listRender, agents: fixtureAgents, shortcuts: fixtureShortcuts, sessions: fixtureSessions, icons: iconPaths });
+  }, { render: referenceRender, list: listRender, agents: fixtureAgents, shortcuts: fixtureShortcuts, sessions: fixtureSessions, icons: iconPaths, outputJobsScript });
   await reference.locator("textarea").focus();
   await reference.evaluate(render=>{
     const host=document.createElement('div');document.body.append(host);
@@ -289,7 +298,7 @@ try {
   await kbot.waitForFunction(() => document.getElementById("conversation-title").textContent === "MES 系统诊断");
   assert.equal(await kbot.locator("#agent-select").inputValue(), "agent-1");
   assert.equal(await kbot.locator('#conversation-actions [data-close-diagnosis]').count(), 1);
-  assert.equal(await kbot.locator('#conversation-actions [data-generate-report-conversation]').textContent(), "生成会话报告");
+  assert.equal(await kbot.locator('#conversation-actions [data-generate-report-conversation]').textContent(), "生成报告");
   assert.equal(await kbot.locator(".aiops-chat-message-user .ops-message-content").textContent(), "诊断 <script> 与业务系统");
   assert.equal(await kbot.locator(".ops-message-content script").count(), 0);
   await kbot.locator("#new-conversation").click();
@@ -337,6 +346,40 @@ try {
   writeFileSync(resolve(artifactDir,'differences.json'),JSON.stringify(differences,null,2));
   if(differences.length) console.log(JSON.stringify(differences.slice(0,40),null,2));
   assert.equal(differences.length,0,'消息、轮次与回答必须继续对齐真实模板');
+  for (const width of [1440, 1024, 420, 320]) {
+    for (const [prefix, page] of [['kbot', kbot], ['ammolite', reference]]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const toolbar = page.locator('.aiops-chat-toolbar');
+      const transcript = page.locator('.agent-chat-transcript');
+      const header = await toolbar.boundingBox();
+      assert.ok(header.height <= 88, `${prefix} ${width}px 工具栏最多两行`);
+      if (width === 1440) assert.ok(header.height <= 50, `${prefix} 宽屏工具栏保持单行`);
+      const title = toolbar.locator('h2').first();
+      const previousTitle = await title.textContent();
+      await title.evaluate(node => { node.textContent = '执行功能：全面健康诊断，检查数据库负载与等待事件的很长会话标题'.repeat(4); });
+      assert.equal((await toolbar.boundingBox()).height, header.height, '长标题不得增加工具栏高度');
+      assert.equal(await title.evaluate(node => getComputedStyle(node).whiteSpace), 'nowrap');
+      await title.evaluate((node, text) => { node.textContent = text; }, previousTitle);
+      const summary = toolbar.locator('summary');
+      const top = (await transcript.boundingBox()).y;
+      await summary.click();
+      const panel = toolbar.locator('.aiops-output-jobs-panel');
+      await panel.waitFor();
+      await panel.getByRole('button', {name:'刷新生成记录'}).click();
+      const box = await panel.boundingBox();
+      assert.ok(box.width >= Math.min(760, header.width - 16) - 1, '生成记录浮层宽度应以聊天容器计算，不受入口的卡片悬停样式影响');
+      assert.ok(box.x >= header.x && box.x + box.width <= header.x + header.width, '生成记录浮层不得超出聊天容器');
+      assert.equal((await transcript.boundingBox()).y, top, '生成记录不得挤占正文高度');
+      await page.screenshot({path:resolve(artifactDir,`${prefix}-compact-toolbar-${width}.png`)});
+      await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+      await page.screenshot({path:resolve(artifactDir,`${prefix}-compact-toolbar-dark-${width}.png`)});
+      await page.evaluate(() => { delete document.documentElement.dataset.theme; });
+      await page.keyboard.press('Escape');
+      assert.equal(await panel.isVisible(), false);
+      assert.equal(await summary.evaluate(node => node === document.activeElement), true);
+      assert.equal((await transcript.boundingBox()).y, top);
+    }
+  }
   for(const empty of [false,true]) for(const width of [1440,420]) {
     await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));
     await kbot.evaluate(templates=>{globalThis.fixtureReportTemplates=templates},empty?[]:fixtureReportTemplates);
@@ -401,7 +444,7 @@ try {
       await kbot.waitForFunction(()=>Boolean(globalThis.fixtureReleasePost));
       await kbot.keyboard.press('Escape');
       assert.equal(await kbot.locator('.aiops-case-closure-drawer').evaluate(dialog=>dialog.open),true);
-      assert.equal(await kbot.getByRole('button',{name:'关闭诊断收口',exact:true}).isDisabled(),true);
+      assert.equal(await kbot.getByRole('button',{name:'关闭沉淀案例',exact:true}).isDisabled(),true);
       const body=await kbot.evaluate(()=>JSON.parse(fixtureRequests.find(item=>item.method==='POST').body));
       assert.deepEqual(body.included_turn_ids,['text-turn-1']);
       assert.equal(body.source_fingerprint,'fixture-fingerprint');
@@ -410,7 +453,7 @@ try {
       await kbot.waitForFunction(()=>!document.querySelector('.aiops-case-closure-drawer').dataset.busy);
       assert.equal(await kbot.locator('.aiops-case-closure-form [name="display_name"]').inputValue(),candidate.display_name);
     }
-    await kbot.getByRole('button',{name:'关闭诊断收口',exact:true}).click();
+    await kbot.getByRole('button',{name:'关闭沉淀案例',exact:true}).click();
     await reference.evaluate(()=>{referenceVm.caseClosureDrawerOpen=false;});
   }
   writeFileSync(resolve(artifactDir,'differences.json'),JSON.stringify(differences,null,2));

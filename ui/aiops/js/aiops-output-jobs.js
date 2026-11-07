@@ -24,13 +24,29 @@
     }
     function render() {
       const expanded = element.querySelector("details")?.open || false;
+      const scrollTop = element.querySelector(".aiops-output-jobs-panel")?.scrollTop || 0;
+      const scrollLeft = element.querySelector(".table-scroll")?.scrollLeft || 0;
+      const focused = element.contains(document.activeElement) ? document.activeElement : null;
+      const focusSelector = focused?.matches("summary") ? "summary"
+        : focused?.hasAttribute("data-output-refresh") ? "[data-output-refresh]"
+        : focused?.hasAttribute("data-output-earlier") ? "[data-output-earlier]"
+        : focused?.hasAttribute("data-output-retry") ? `[data-output-retry="${CSS.escape(focused.dataset.outputRetry)}"]`
+        : focused?.matches("a.row-action") ? `[data-job-id="${CSS.escape(focused.closest("tr").dataset.jobId)}"] a.row-action` : null;
       element.hidden = Boolean(options.requireConversation && !conversationId);
       if (element.hidden) return;
       element.innerHTML = `<header class="resource-list-header"><div class="resource-list-heading"><h2>我的生成记录</h2><p>后台处理，可离开页面。案例成功代表草稿就绪，人工发布后才供 Agent 检索。</p></div><div class="resource-list-tools"><button type="button" class="secondary-button" data-output-refresh ${loading ? "disabled" : ""}>刷新生成记录</button></div></header>${error ? `<p class="empty-cell" role="alert">${escape(error)}；可手动刷新重试。</p>` : ""}<div class="table-scroll"><table><thead><tr><th>输出</th><th>提交时间</th><th>阶段</th><th>结果 / 原因</th><th>操作</th></tr></thead><tbody>${rows.map(row => `<tr data-job-id="${escape(row.job_id)}"><td>${row.job_type === "CASE_EXTRACTION" ? "沉淀案例" : "生成报告"}<small class="table-secondary technical-value">${escape(row.job_id)}</small></td><td>${escape(shell.fmt(row.submitted_at))}</td><td><span class="status-pill ${row.status === "FAILED" ? "status-danger" : row.status === "SUCCEEDED" ? "status-success" : "status-warning"}">${label(row)}</span></td><td>${escape(row.status === "FAILED" ? row.error_message || row.error_code || "生成失败" : row.status === "SUCCEEDED" ? "已保存至对应页面" : "后台处理，无需停留")}</td><td>${row.result ? `<a class="row-action" href="${escape(resultHref(row))}">${row.job_type === "CASE_EXTRACTION" ? "查看案例版本" : "查看报告"}</a>` : ""}${row.status === "FAILED" && row.retryable ? `<button class="row-action" type="button" data-output-retry="${escape(row.job_id)}" ${retrying ? "disabled" : ""}>重试生成</button>` : ""}</td></tr>`).join("") || `<tr><td class="empty-cell" colspan="5">${loading ? "正在读取生成记录…" : "暂无生成任务。"}</td></tr>`}</tbody></table></div><footer class="button-row">${before ? '<button type="button" class="secondary-button" data-output-refresh>最新记录</button>' : ""}${next ? '<button type="button" class="secondary-button" data-output-earlier>更早记录</button>' : ""}</footer>`;
       if (options.requireConversation) {
-        const summary = `<summary class="resource-list-header">我的生成记录 · ${rows.length} 项 · ${rows.filter(active).length} 项处理中<span>查看阶段、结果与重试</span></summary>`;
-        element.innerHTML = `<details ${expanded ? "open" : ""}>${summary}${element.innerHTML}</details>`;
+        const count = rows.filter(active).length;
+        const summary = options.compact
+          ? `<summary class="resource-list-header">生成记录${count ? `<span class="aiops-output-jobs-count" aria-label="${count} 项处理中">${count}</span>` : ""}</summary>`
+          : `<summary class="resource-list-header">我的生成记录 · ${rows.length} 项 · ${count} 项处理中<span>查看阶段、结果与重试</span></summary>`;
+        element.innerHTML = `<details ${expanded ? "open" : ""}>${summary}<div class="aiops-output-jobs-panel">${element.innerHTML}</div></details>`;
       }
+      const panel = element.querySelector(".aiops-output-jobs-panel");
+      if (panel) panel.scrollTop = scrollTop;
+      const table = element.querySelector(".table-scroll");
+      if (table) table.scrollLeft = scrollLeft;
+      if (focusSelector) element.querySelector(focusSelector)?.focus({ preventScroll: true });
     }
     function schedule() {
       clearTimeout(timer);
@@ -90,6 +106,15 @@
       if (button) void retry(button.dataset.outputRetry);
     }
     function visibility() { if (!document.hidden) void load(); else clearTimeout(timer); }
+    function dismiss(event) {
+      const details = element.querySelector("details");
+      if (!options.compact || !details?.open) return;
+      if (event.type === "keydown") {
+        if (event.key !== "Escape") return;
+        event.preventDefault(); details.open = false;
+        details.querySelector("summary")?.focus();
+      } else if (!element.contains(event.target)) details.open = false;
+    }
     function pagehide(event) {
       if (!event.persisted) { destroy(); return; }
       sequence += 1; controller?.abort(); clearTimeout(timer);
@@ -101,17 +126,24 @@
       stopped = true; sequence += 1; controller?.abort(); clearTimeout(timer);
       element.removeEventListener("click", click);
       document.removeEventListener("visibilitychange", visibility);
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", dismiss);
       window.removeEventListener("pagehide", pagehide);
       window.removeEventListener("pageshow", pageshow);
     }
     function setConversation(value) {
       if (conversationId === value) return;
+      const details = element.querySelector("details");
+      if (details) details.open = false;
       conversationId = value || ""; rows = []; before = ""; next = null; failures = 0; error = ""; void load();
     }
     element.classList.add("table-card", "aiops-output-jobs");
+    element.classList.toggle("is-compact", Boolean(options.compact));
     element.setAttribute("aria-label", "我的生成记录");
     element.addEventListener("click", click);
     document.addEventListener("visibilitychange", visibility);
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", dismiss);
     window.addEventListener("pagehide", pagehide);
     window.addEventListener("pageshow", pageshow);
     void load();

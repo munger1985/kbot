@@ -6,7 +6,7 @@
   let outputTasks = null;
   shell.ready.then(() => {
     outputTasks = globalThis.KBotAIOpsOutputJobs?.mount(document.getElementById("conversation-output-jobs"), {
-      requireConversation: true, conversationId: state.conversation?.conversation_id,
+      requireConversation: true, compact: true, conversationId: state.conversation?.conversation_id,
     });
   });
   const markdown = globalThis.KBotMarkdown;
@@ -1796,6 +1796,8 @@
     outputTasks?.setConversation(conversation.conversation_id);
     state.turns = turns;
     document.getElementById("conversation-title").textContent = conversation.title || "诊断对话";
+    document.getElementById("conversation-title").title = conversation.title || "诊断对话";
+    document.getElementById("conversation-eyebrow").hidden = !turns.length;
     document.getElementById("conversation-eyebrow").textContent = turns.length ? `第 ${turns.at(-1).turn_no} 轮` : "新的运维会话";
     document.getElementById("conversation-context").textContent = "每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。"
       + (conversation.source_type === "RUN" ? "已继承来源 RUN。" : "");
@@ -1929,7 +1931,9 @@
     document.querySelectorAll(".ops-workspace-item").forEach((button) => button.removeAttribute("aria-current"));
     syncAgentTargetContext();
     document.getElementById("conversation-title").textContent = "新运维会话";
+    document.getElementById("conversation-title").title = "新运维会话";
     const source = continuationSource();
+    document.getElementById("conversation-eyebrow").hidden = !source;
     document.getElementById("conversation-eyebrow").textContent = source ? "继续深入诊断" : "新的运维会话";
     document.getElementById("conversation-context").textContent = "每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。" + (source ? `已继承来源 ${source.sourceType}。` : "");
     document.getElementById("conversation-actions").innerHTML = "";

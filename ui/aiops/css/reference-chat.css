@@ -369,3 +369,59 @@
   :is([data-page="chat"]) .sql-plan-canvas { max-height: 350px; }
   :is([data-page="chat"]) .sql-plan-viewer.is-expanded { inset: 0; padding: 12px; }
 }
+/* 紧凑会话工具栏：按聊天容器宽度换行，生成记录浮层不占正文高度。 */
+.aiops-chat-conversation { container: aiops-chat / inline-size; }
+.aiops-diagnosis-conversation-head.aiops-chat-toolbar {
+  position:relative; z-index:2; flex-shrink:0; display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(140px,210px) auto;
+  align-items:center; gap:8px; min-height:49px; padding:8px 12px;
+}
+.aiops-chat-toolbar.aiops-diagnosis-conversation-head .aiops-chat-toolbar-title { display:flex; align-items:center; min-width:0; gap:8px; }
+.aiops-chat-toolbar.aiops-diagnosis-conversation-head h2 { min-width:0; margin:0; font-size:14px; line-height:1.4; white-space:nowrap; }
+.aiops-chat-toolbar-turn { flex-shrink:0; color:var(--faint); font-size:12px; white-space:nowrap; }
+.aiops-chat-toolbar-turn[hidden] { display:none; }
+.aiops-chat-toolbar.aiops-diagnosis-conversation-head .aiops-diagnosis-head-context,
+.aiops-chat-toolbar.aiops-diagnosis-conversation-head .control-field { display:block; min-width:0; }
+:root .aiops-chat-toolbar.aiops-diagnosis-conversation-head .aiops-diagnosis-head-context .control-field > select { height:32px; min-height:32px; padding:0 26px 0 8px; font-size:12px; }
+.aiops-chat-toolbar.aiops-diagnosis-conversation-head > .button-row { grid-column:auto; display:flex; width:auto; align-items:center; justify-content:flex-end; flex-wrap:nowrap; gap:4px; }
+.aiops-chat-toolbar.aiops-diagnosis-conversation-head > .button-row > button,
+.aiops-chat-toolbar.aiops-diagnosis-conversation-head #conversation-actions > button { flex:none; min-height:32px; height:32px; padding:0 8px; font-size:12px; white-space:nowrap; }
+.aiops-chat-toolbar.aiops-diagnosis-conversation-head :is(.aiops-chat-session-button,#chat-session-toggle) { display:inline-flex; width:32px; min-height:32px; height:32px; align-items:center; justify-content:center; padding:0; }
+.aiops-chat-session-button svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
+@container aiops-chat (max-width:760px) {
+  .aiops-chat-toolbar.aiops-diagnosis-conversation-head { grid-template-columns:minmax(0,1fr) minmax(140px,210px); gap:6px 8px; padding:8px; }
+  .aiops-chat-toolbar.aiops-diagnosis-conversation-head > .button-row { grid-column:1/-1; justify-content:flex-end; }
+}
+@container aiops-chat (max-width:400px) {
+  .aiops-chat-toolbar.aiops-diagnosis-conversation-head { grid-template-columns:minmax(0,1fr) 140px; }
+  .aiops-chat-toolbar-turn { display:none; }
+  .aiops-chat-toolbar.aiops-diagnosis-conversation-head > .button-row { justify-content:space-between; }
+}
+
+/* 聊天页仅显示生成记录入口；独立管理页保留完整列表。 */
+.aiops-output-jobs.is-compact { position:static; flex:none; width:auto; min-width:0; overflow:visible; margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; transform:none; }
+.aiops-output-jobs.is-compact > details { position:static; }
+.aiops-output-jobs.is-compact summary.resource-list-header {
+  display:flex; flex-direction:row; align-items:center; justify-content:center; gap:4px;
+  min-height:32px; height:32px; margin:0; padding:0 8px;
+  border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface);
+  color:var(--ink); font-size:12px; line-height:1; font-weight:500; white-space:nowrap; cursor:pointer; list-style:none;
+}
+.aiops-output-jobs.is-compact summary::-webkit-details-marker { display:none; }
+.aiops-output-jobs.is-compact summary::after { content:'⌄'; color:var(--faint); }
+.aiops-output-jobs.is-compact summary:hover,
+.aiops-output-jobs.is-compact[open] > summary,
+.aiops-output-jobs.is-compact details[open] > summary { border-color:var(--line-strong); background:var(--surface-subtle); }
+.aiops-output-jobs.is-compact summary:focus-visible { outline:2px solid var(--accent-strong); outline-offset:2px; }
+.aiops-output-jobs.is-compact .aiops-output-jobs-count { color:var(--accent-strong); font-size:12px; }
+.aiops-output-jobs.is-compact .aiops-output-jobs-panel {
+  position:absolute; z-index:5; top:calc(100% + 4px); right:8px;
+  width:min(760px,calc(100% - 16px)); max-height:min(440px,45dvh); overflow:auto;
+  border:1px solid var(--line-strong); border-radius:var(--radius-sm); background:var(--surface); box-shadow:var(--shadow-soft); white-space:normal;
+}
+.aiops-output-jobs.is-compact .aiops-output-jobs-panel > .resource-list-header { padding:12px; gap:8px; }
+.aiops-output-jobs.is-compact .resource-list-heading h2 { margin:0; font-size:14px; }
+.aiops-output-jobs.is-compact .resource-list-heading p { margin:4px 0 0; color:var(--muted); font-size:12px; }
+.aiops-output-jobs.is-compact .table-scroll { overflow:auto; }
+.aiops-output-jobs.is-compact table { min-width:620px; width:100%; }
+.aiops-output-jobs.is-compact .aiops-output-jobs-panel > .button-row { margin:0; padding:8px 12px; }
