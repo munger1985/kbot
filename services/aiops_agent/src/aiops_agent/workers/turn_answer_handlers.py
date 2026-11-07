@@ -10,6 +10,7 @@ from aiops_agent.application.diagnosis.model_evidence import (
     evidence_model_payload,
     compact_native_values,
 )
+from aiops_agent.application.diagnosis.number_presentation import NUMBER_PRESENTATION_POLICY, monitoring_display_values
 from aiops_agent.application.top_sql_collection import collection_failure_reason, collection_runtime_note
 
 import hashlib
@@ -2408,6 +2409,7 @@ class DbaAnswerComposeHandler:
             "workflow_kind": str(answer_context.get("workflow_kind") or ""),
             "findings": compilation.model_dump(mode="json"),
             "response_presentation": "先在 answer_markdown 中用自然 Markdown 直接回答用户问题，包含有依据的分析与针对性建议；保留模型原文，不用固定卡片模板，不重复追加通用免责声明。正文与 claims/recommendations 一致，其余结构化字段随后供正式证据核验。没有相关发现卡片时，只说明证据支持的结论及关键缺口，不解释内部卡片状态。",
+            "number_presentation": NUMBER_PRESENTATION_POLICY,
             "sufficiency": sufficiency,
             "capacity_plan": decide_capacity_actions(
                 findings=compilation.findings,
@@ -2434,6 +2436,9 @@ class DbaAnswerComposeHandler:
     @classmethod
     def _compose_evidence_payload(cls, fact: TurnEvidenceFact) -> dict[str, Any]:
         payload = evidence_model_payload(fact)
+        display_values = monitoring_display_values(fact)
+        if display_values:
+            payload["display_values"] = display_values
         from aiops_agent.application.diagnosis.native_measurements import native_table_projection
         native_values = native_table_projection(fact.provenance, columns=fact.columns, rows=fact.rows)
         if native_values is not None:

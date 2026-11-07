@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from decimal import Decimal, InvalidOperation, localcontext, ROUND_HALF_UP
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -701,9 +702,34 @@ def format_metric_value(value: object, unit: object = "") -> str:
         return "无有效值"
     if normalized_unit == "state":
         return _display_dimension_value(value)
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
         return str(value)
-    numeric = float(value)
+    try:
+        numeric = Decimal(str(value))
+    except InvalidOperation:
+        return str(value)
+    if not numeric.is_finite():
+        return "无有效值"
+    # 高精度证据可能以字符串传输；展示舍入不经过 float，不改变源证据。
+    with localcontext() as context:
+        context.prec = max(28, len(numeric.as_tuple().digits) + 8)
+        context.rounding = ROUND_HALF_UP
+        return _format_metric_decimal(numeric, normalized_unit)
+
+
+def _readable_decimal(numeric: Decimal, *, fixed=False) -> str:
+    if numeric.is_zero():
+        return "0.00" if fixed else "0"
+    if abs(numeric) < Decimal("0.01"):
+        # 极小的真实观测不能被两位小数抹为零，保留三位有效数字。
+        if numeric.adjusted() < -6:
+            return f"{numeric:.2E}"
+        return f"{numeric:.{2 - numeric.adjusted()}f}".rstrip("0").rstrip(".")
+    rendered = f"{numeric:,.2f}"
+    return rendered if fixed else rendered.rstrip("0").rstrip(".")
+
+
+def _format_metric_decimal(numeric: Decimal, normalized_unit: str) -> str:
     if normalized_unit in {"bytes", "bytes_per_second"}:
         suffix = "/秒" if normalized_unit == "bytes_per_second" else ""
         units = ("B", "KiB", "MiB", "GiB", "TiB", "PiB")
@@ -713,12 +739,14 @@ def format_metric_value(value: object, unit: object = "") -> str:
             numeric /= 1024
             magnitude /= 1024
             index += 1
-        return f"{numeric:,.2f} {units[index]}{suffix}"
-    rendered = f"{numeric:,.2f}".rstrip("0").rstrip(".")
+        return f"{_readable_decimal(numeric, fixed=True)} {units[index]}{suffix}"
+    rendered = _readable_decimal(numeric)
     suffixes = {
         "count": "",
         "errors_per_second": " 次错误/秒",
         "milliseconds": " 毫秒",
+        "seconds": " 秒",
+        "sessions": " 个会话",
         "percent": "%",
         "queries_per_second": " 次查询/秒",
         "transactions_per_second": " 个事务/秒",

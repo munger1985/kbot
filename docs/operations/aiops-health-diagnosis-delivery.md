@@ -10,6 +10,15 @@
 
 会话及只读诊断结果中的连续图表采用响应式网格。每张卡片高 380px、最大宽 520px；小屏自动单列。多序列的完整分面在卡片内滚动，修正旧画布高度不足导致末尾分面被裁切的问题。覆盖率、缺口提示和完整同源数据表继续可查看，展开数据不撑高卡片；不影响实时监控的既有布局。
 
+诊断模型的最终输入另外提供按行号关联的 `display_values` 与 `number_presentation` 展示约束。
+常规测量值最多两位小数并带指标单位，例如事务吞吐 `0.15438596491228068` 显示为约
+`0.15 个事务/秒`，窗口均值 `0.16982456` 显示为约 `0.17 个事务/秒`；一小时采样窗口
+不改变每秒速率的含义。容量/带宽使用 KiB、MiB、GiB 等单位；极小非零值保留有效位或科学计数法，
+不能显示成零。展示换算使用 Decimal，原始行、完整采样、质量与精度不变，阈值比较和正式引用
+仍取原值。未知单位、时间戳、状态和标识不猜测换算，SQL 与代码不做正文正则替换。
+这些约束在生成前提供，不在流式输出后改写正文；不需要更改数据库 Prompt 或历史回复。
+回归入口为 `tests/unit/aiops_agent/test_aiops_number_presentation.py`。
+
 验证入口：`tests/unit/aiops_agent/test_aiops_health_diagnosis_delivery.py`；Ammolite Portal 的 `tests/aiops-answer-charts.spec.mjs` 同时覆盖两端真实图表组件；KBot 的 `tests/contract/aiops_chat_charts.mjs` 校验分面坐标、归组顺序与原始数据不变。离线回归不替代真实模型和在线环境验收；部署与重启需另行授权。
 
 本次预算与模型判断视图另由 `tests/unit/aiops_agent/test_aiops_diagnosis_generation_budget.py` 回归：可信入口预算、已有期限及伪造元数据、32 指标高精度输入、完整采样重放不变、身份范围不升级为连续证明、真实适配器处理模拟 SSE 后的成功冻结与错误引用时保留原文，以及无正文的流式阶段统计。原文交付与页面稳定交接见 `aiops-native-answer-stream.md`。无需 DDL 或 Prompt 数据同步。
