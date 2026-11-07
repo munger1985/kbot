@@ -108,6 +108,9 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
     assert "--query.timeout=15" in oracle_exporter["command"]
     assert any("kbot-custom-metrics.yaml" in item for item in oracle_exporter["volumes"])
     assert len(oracle_exporter["environment"]["KBOT_CUSTOM_METRICS_REVISION"]) == 64
+    assert len(oracle_exporter["environment"]["KBOT_DEFAULT_METRICS_REVISION"]) == 64
+    assert "--default.metrics=/etc/oracledb_exporter/default-metrics.toml" in oracle_exporter["command"]
+    assert any("default-metrics.toml:ro" in item for item in oracle_exporter["volumes"])
     oracle_collector = generated["services"][
         "oracle-oracle-prod-01-alert-collector"
     ]
@@ -858,5 +861,6 @@ def test_oracle_custom_metrics_use_pdb_compatible_sources() -> None:
     assert "avg_cpu_utilization" in custom_metrics
     assert "v$parameter" in custom_metrics
     assert "max_pdb_sessions" in custom_metrics
-    assert "v$resource_limit" not in custom_metrics
+    connection_metrics = custom_metrics.split("  - context: kbot_connection", 1)[1]
+    assert "v$resource_limit" not in connection_metrics
     assert "Host CPU Utilization (%)" not in custom_metrics

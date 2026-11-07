@@ -29,6 +29,26 @@ Oracle DBA在目标PDB创建专用数据库诊断用户时，使用
 `V$`/`GV$`、`DBA_`/`CDB_`以及AWR/ASH等系统诊断视图。AIOps不根据Oracle许可证
 裁剪数据库诊断能力；许可证管理由部署和使用该数据库的组织负责。
 
+### Oracle PDB采集与空结果
+
+Exporter显式加载受版本管理的`configuration/oracle/default-metrics.toml`，不依赖
+镜像内置默认SQL。两份指标文件的内容Hash均参与容器配置，修改后会重建受影响Exporter。
+
+PDB的`V$RESOURCE_LIMIT`、`V$WAITCLASSMETRIC`可能成功查询但返回零行；
+仅这些可选基础视图允许空结果，ASM仍沿用未使用ASM时允许为空的语义。
+连接、权限、SQL错误不会被忽略，`OracleExporterScrapeFailed`告警保持启用。
+`oracledb_kbot_source_row_count{source="resource|wait_time|cpu_window"}`
+显式记录各原生数据源本轮行数；零行不代表健康，也不会补成零使用率。
+
+连接使用率继续使用PDB会话数和有效会话上限。非空闲等待通过
+`oracledb_kbot_wait_seconds_total{wait_class="..."}`提供当前容器累计秒数，
+使用`rate(...[1m])`计算窗口速率，不与原生等待窗口值混用。
+CPU优先使用最近两分钟内的原生PDB窗口；无窗口时，使用当前容器
+`DB CPU`累计秒数的一分钟速率除以`V$OSSTAT.NUM_CPUS`，乘100得到
+相对主机CPU容量的百分比，不使用可能不同的`CPU_COUNT`作分母。
+缺少有效分母或采样不足时不产生虚假数值；连续两分钟仍缺少CPU使用率时，
+`OracleCpuMetricUnavailable`单独报告覆盖缺口。
+
 OEM不属于此安装包，部署完成后在AIOps App内配置。Grafana Server及其Dashboard资产
 不再随观测栈部署；Prometheus、Zabbix的标准时序统一由AIOps原生实时监控页面展示。
 Grafana Alloy仍作为日志采集器保留，与Grafana Server没有运行依赖。

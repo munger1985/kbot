@@ -5,15 +5,57 @@ metrics:
   - context: kbot_cpu
     metricsdesc:
       utilization_percent: 当前PDB最近一分钟相对数据库主机总CPU容量的平均使用率百分比。
+    ignorezeroresult: true
     request: |-
       SELECT utilization_percent
       FROM (
         SELECT ROUND(avg_cpu_utilization, 6) AS utilization_percent
         FROM v$rsrcpdbmetric
         WHERE intsize_csec > 0
+          AND end_time >= SYSDATE - 2 / 1440
         ORDER BY end_time DESC
       )
       WHERE ROWNUM = 1
+
+  - context: kbot_cpu_time
+    metricsdesc:
+      seconds_total: 当前容器累计DB CPU秒数，用于无资源管理器采样时计算真实CPU使用率。
+      host_cpu_count: 数据库主机逻辑CPU数量，用于统一CPU使用率分母。
+    metricstype:
+      seconds_total: counter
+    request: |-
+      SELECT t.value / 1000000 AS seconds_total, o.value AS host_cpu_count
+      FROM v$sys_time_model t
+      CROSS JOIN v$osstat o
+      WHERE t.stat_name = 'DB CPU'
+        AND o.stat_name = 'NUM_CPUS'
+        AND o.value > 0
+
+  - context: kbot_wait
+    labels: [wait_class]
+    metricsdesc:
+      seconds_total: 当前容器非空闲等待累计秒数，必须通过rate计算窗口等待速率。
+    metricstype:
+      seconds_total: counter
+    ignorezeroresult: true
+    request: |-
+      SELECT wait_class, SUM(time_waited_micro) / 1000000 AS seconds_total
+      FROM v$system_event
+      WHERE wait_class <> 'Idle'
+      GROUP BY wait_class
+
+  - context: kbot_source
+    labels: [source]
+    metricsdesc:
+      row_count: 本轮原生视图行数；0只表示无数据，不表示数据库健康，也不等同于查询失败。
+    request: |-
+      SELECT 'resource' AS source, COUNT(*) AS row_count FROM v$resource_limit
+      UNION ALL
+      SELECT 'wait_time' AS source, COUNT(*) AS row_count FROM v$waitclassmetric
+      UNION ALL
+      SELECT 'cpu_window' AS source, COUNT(*) AS row_count
+      FROM v$rsrcpdbmetric
+      WHERE intsize_csec > 0 AND end_time >= SYSDATE - 2 / 1440
 
   - context: kbot_connection
     metricsdesc:

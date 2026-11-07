@@ -735,7 +735,14 @@ def _prometheus_rules() -> str:
     interval: 15s
     rules:
       - record: kbot_db_cpu_utilization_percent
-        expr: oracledb_kbot_cpu_utilization_percent{job="oracle"}
+        expr: |
+          oracledb_kbot_cpu_utilization_percent{job="oracle"}
+          or on (instance, target_key)
+          (
+            100 * rate(oracledb_kbot_cpu_time_seconds_total{job="oracle"}[1m])
+            / on (instance, job, target_key)
+            (oracledb_kbot_cpu_time_host_cpu_count{job="oracle"} > 0)
+          )
 
       - record: kbot_db_active_connections
         expr: sum by (instance, target_key) (oracledb_sessions_value{job="oracle", status="ACTIVE", type="USER"})
@@ -790,6 +797,21 @@ def _prometheus_rules() -> str:
         annotations:
           summary: "Oracle连接使用率过高"
           description: "{{ $labels.target_key }}连接使用率连续10分钟超过85%。"
+
+      - alert: OracleCpuMetricUnavailable
+        expr: |
+          (oracledb_up{job="oracle"} == 1)
+          unless on (instance, target_key)
+          (kbot_db_cpu_utilization_percent >= 0)
+        for: 2m
+        labels:
+          severity: warning
+          event_class: diagnostic_source.metric_missing
+          metric_code: db.cpu.utilization
+          diagnostic_window_seconds: "120"
+        annotations:
+          summary: "Oracle CPU指标缺失"
+          description: "{{ $labels.target_key }}数据库可连接，但原生CPU窗口和累计CPU采样均未产生有效使用率，不能据此判断CPU健康。"
 
       - alert: OracleDatabaseCpuHigh
         expr: kbot_db_cpu_utilization_percent > 90
@@ -1492,6 +1514,7 @@ def _database_generated_compose(
                 },
                 "command": [
                     f"--query.timeout={query_timeout}",
+                    "--default.metrics=/etc/oracledb_exporter/default-metrics.toml",
                     "--custom.metrics=/etc/oracledb_exporter/kbot-custom-metrics.yaml",
                 ],
                 "environment": {
@@ -1500,9 +1523,17 @@ def _database_generated_compose(
                             STACK_ROOT
                             / "configuration/oracle/custom-metrics.yaml"
                         ).read_bytes()
-                    ).hexdigest()
+                    ).hexdigest(),
+                    "KBOT_DEFAULT_METRICS_REVISION": hashlib.sha256(
+                        (
+                            STACK_ROOT
+                            / "configuration/oracle/default-metrics.toml"
+                        ).read_bytes()
+                    ).hexdigest(),
                 },
                 "volumes": [
+                    str(STACK_ROOT / "configuration/oracle/default-metrics.toml")
+                    + ":/etc/oracledb_exporter/default-metrics.toml:ro",
                     str(
                         STACK_ROOT
                         / "configuration/oracle/custom-metrics.yaml"
