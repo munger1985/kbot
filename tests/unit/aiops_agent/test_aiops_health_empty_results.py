@@ -15,6 +15,7 @@ from aiops_agent.contracts.investigation import DiagnosisAnswerDraft, DiagnosisS
 from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment, TurnEvidenceGap
 from aiops_agent.ports.model import ModelTextDelta
+from platform_core.prompts import ResolvedPrompt, StrictPromptRenderer, load_prompt_catalog
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
 from tests.unit.aiops_agent.test_aiops_health_diagnosis_delivery import raw_fact
 from tests.unit.aiops_agent.test_aiops_turn_answer import _AnswerModel, _TestPrompts, _context, _tool_artifact
@@ -190,3 +191,16 @@ def test_health_prompts_use_dba_judgment_without_inventing_completion_requiremen
     assert "diagnostic_completion_policy" in diagnosis
     assert "$result.row_count" in diagnosis
     assert "无异常检查可以满足goal_catalog" in diagnosis
+
+
+def test_empty_result_reference_literals_survive_catalog_loading_and_strict_rendering():
+    entry = load_prompt_catalog().active_for("aiops_agent.diagnosis_answer_compose")
+    assert entry is not None
+    assert entry.input_variables == ()
+    resolved = ResolvedPrompt(prompt_key=entry.prompt_key, version=entry.version,
+        sha256=entry.sha256, content=entry.content, input_variables=entry.input_variables,
+        output_schema=entry.output_schema, source="DATABASE")
+    rendered = StrictPromptRenderer.render(resolved, {})
+    assert 'field="$result.row_count"' in rendered
+    assert '"$result.captured_at"' in rendered
+    assert "$$result" not in rendered

@@ -958,8 +958,8 @@ action_use=WARNING_ONLY 的失败教训只用于警告与排除，不推荐其�
 claims 每项给出 claim_id、kind、subject、statement、level、applicable_time、evidence_fields、
 counterevidence_fields、reasoning、alternatives、limitations、revision_state。
 引用 evidence_fields 必须指定 evidence_ref、真实的零基 row_index 和 field，取自 sufficiency.evidence。
-空结果没有业务行；可使用证据给出的empty_result_reference，引用field="$result.row_count"
-或"$result.captured_at"且row_index=0，分别证明返回零行和实际采集时点。不得编造第零行业务值，
+空结果没有业务行；可使用证据给出的empty_result_reference，引用field="$$result.row_count"
+或"$$result.captured_at"且row_index=0，分别证明返回零行和实际采集时点。不得编造第零行业务值，
 也不得把权限探针零行、无有效监控样本或失败的查询解读成没有业务活动。
 FACT 可以 OBSERVED；CAUSE/INTERPRETATION/RISK/PREDICTION/EXCLUDED 不能 OBSERVED。
 有支持不等于已确认原因；必须核对对象、时间、机制、替代解释和反证。人工材料与知识不冒充现场事实。
