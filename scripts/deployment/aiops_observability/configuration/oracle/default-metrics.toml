@@ -1,0 +1,58 @@
+# Oracle Exporter 0.6.0基础采集合同；PDB中可选视图为空时不伪造数值。
+# ignorezeroresult只接受成功查询的空结果，不会吞掉连接、权限或SQL错误。
+[[metric]]
+context = "sessions"
+labels = ["status", "type"]
+metricsdesc = { value = "按状态和类型统计当前容器会话数。" }
+request = "SELECT status, type, COUNT(*) AS value FROM v$session GROUP BY status, type"
+
+[[metric]]
+context = "resource"
+labels = ["resource_name"]
+metricsdesc = { current_utilization = "实例资源当前使用量；PDB可能不提供此视图。", limit_value = "实例资源上限，UNLIMITED为-1；PDB可能不提供此视图。" }
+request = "SELECT resource_name,current_utilization,CASE WHEN TRIM(limit_value) LIKE 'UNLIMITED' THEN '-1' ELSE TRIM(limit_value) END AS limit_value FROM v$resource_limit"
+ignorezeroresult = true
+
+[[metric]]
+context = "asm_diskgroup"
+labels = ["name"]
+metricsdesc = { total = "ASM磁盘组总字节数。", free = "ASM磁盘组空闲字节数。" }
+request = "SELECT name,total_mb*1024*1024 AS total,free_mb*1024*1024 AS free FROM v$asm_diskgroup_stat WHERE EXISTS (SELECT 1 FROM v$datafile WHERE name LIKE '+%')"
+ignorezeroresult = true
+
+[[metric]]
+context = "activity"
+metricsdesc = { value = "当前容器系统活动累计次数。" }
+fieldtoappend = "name"
+request = "SELECT name, value FROM v$sysstat WHERE name IN ('parse count (total)', 'execute count', 'user commits', 'user rollbacks')"
+
+[[metric]]
+context = "process"
+metricsdesc = { count = "Oracle进程数，不等同于PDB会话数。" }
+request = "SELECT COUNT(*) AS count FROM v$process"
+
+[[metric]]
+context = "wait_time"
+metricsdesc = { value = "Oracle原生等待类窗口值；PDB可能不提供此视图。" }
+fieldtoappend = "wait_class"
+request = """
+SELECT n.wait_class AS wait_class, ROUND(m.time_waited/m.intsize_csec,3) AS value
+FROM v$waitclassmetric m, v$system_wait_class n
+WHERE m.wait_class_id=n.wait_class_id AND n.wait_class != 'Idle'
+"""
+ignorezeroresult = true
+
+[[metric]]
+context = "tablespace"
+labels = ["tablespace", "type"]
+metricsdesc = { bytes = "表空间已用字节数。", max_bytes = "表空间最大字节数。", free = "表空间可用字节数。", used_percent = "表空间已用百分比。" }
+request = """
+SELECT dt.tablespace_name AS tablespace, dt.contents AS type,
+       dt.block_size * dtum.used_space AS bytes,
+       dt.block_size * dtum.tablespace_size AS max_bytes,
+       dt.block_size * (dtum.tablespace_size - dtum.used_space) AS free,
+       dtum.used_percent
+FROM dba_tablespace_usage_metrics dtum, dba_tablespaces dt
+WHERE dtum.tablespace_name = dt.tablespace_name
+ORDER BY tablespace
+"""
