@@ -11,7 +11,7 @@ from aiops_agent.contracts.investigation import (
 )
 
 
-def validate_diagnosis(draft, evidence):
+def validate_diagnosis(draft, evidence, *, gaps=()):
     from aiops_agent.domain.evidence.series_calculation import replay_series_computation
     for fact in evidence:
         names = [str(column.get("name")) for column in fact.columns]
@@ -52,11 +52,13 @@ def validate_diagnosis(draft, evidence):
             fact = facts.get(reference.evidence_ref)
             if fact is None:
                 raise ValueError("诊断引用不在本轮授权证据集合")
-            columns = {str(item.get("name")) for item in fact.columns}
-            if reference.field not in columns or reference.row_index >= len(fact.rows):
-                raise ValueError("诊断证据行或字段不存在")
-            if len(fact.rows[reference.row_index]) != len(fact.columns):
-                raise ValueError("证据行与列不一致")
+            if reference.field.startswith("$result.") and any(
+                gap.evidence_ref == fact.evidence_ref
+                or gap.source_id == fact.source_id and gap.step_id == fact.step_id
+                for gap in gaps
+            ):
+                raise ValueError("存在查询缺口的结果不能引用为成功空结果")
+            reference.observed_value(fact)
             if reference in claim.evidence_fields:
                 supporting.append(fact)
         if claim.level in {"OBSERVED", "SUPPORTED"} and not any(
@@ -71,7 +73,7 @@ def validate_diagnosis(draft, evidence):
 
 
 def freeze_investigation(*, draft, evidence, context, gaps=()):
-    validate_diagnosis(draft, evidence)
+    validate_diagnosis(draft, evidence, gaps=gaps)
     answer = dict(context.plan_snapshot.get("answer_context") or {})
     frame = dict(answer.get("task_frame") or {})
     parent_data = answer.get("parent_investigation")

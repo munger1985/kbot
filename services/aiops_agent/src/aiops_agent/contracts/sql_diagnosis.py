@@ -14,7 +14,35 @@ class EvidenceFieldReference(BaseModel):
 
     evidence_ref: str = Field(min_length=1, max_length=512)
     row_index: int = Field(ge=0)
-    field: str = Field(min_length=1, max_length=128)
+    field: str = Field(
+        min_length=1, max_length=128,
+        description="原始列名；已核验完整空结果可用$result.row_count或$result.captured_at引用结果元数据，此时row_index固定为0，不表示存在数据行。",
+    )
+
+    def observed_value(self, fact):
+        """解析行字段或完整空结果回执；元数据不冒充数据库业务行。"""
+        if self.field.startswith("$result."):
+            fields = self.empty_result_fields(fact)
+            if self.field not in fields or self.row_index != 0:
+                raise ValueError("空结果引用必须绑定已核验、未截断且确实为零行的观察")
+            return fields[self.field]
+        names = [str(column.get("name")) for column in fact.columns]
+        if self.field not in names or self.row_index >= len(fact.rows):
+            raise ValueError("诊断证据行或字段不存在")
+        if len(fact.rows[self.row_index]) != len(names):
+            raise ValueError("证据行与列不一致")
+        return fact.rows[self.row_index][names.index(self.field)]
+
+    @staticmethod
+    def empty_result_fields(fact):
+        """指标序列无采样不是业务查询无匹配，不能生成正常空结果回执。"""
+        if (
+            fact.trust_level != "SOURCE_VERIFIED" or fact.row_count != 0
+            or fact.rows or fact.truncated
+            or fact.tool_id in {"metric.query_range", "monitor.query_native_metric"}
+        ):
+            return {}
+        return {"$result.row_count": 0, "$result.captured_at": fact.captured_at}
 
 
 class SqlConclusion(BaseModel):

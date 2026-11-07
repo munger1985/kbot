@@ -338,3 +338,6 @@ class InvestigationRecord(BaseModel):
             replay_sql_object_graph(graph, evidence)
         from aiops_agent.domain.evidence.sql_plan_matching import replay_sql_plan_assessments
         replay_sql_plan_assessments(self.sql_plan_assessments, self.sql_graphs, evidence)
+        for claim in self.claims:
+            for reference in (*claim.evidence_fields, *claim.counterevidence_fields):
+                reference.observed_value(actual[reference.evidence_ref])

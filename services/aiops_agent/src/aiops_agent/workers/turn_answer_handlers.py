@@ -1143,7 +1143,7 @@ class DbaEvidenceAssessmentHandler:
                 round_no=int(context.plan_snapshot.get("revision_no") or 1),
                 sufficiency_status=scoped.status, next_action="ANSWER", progress_made=bool(scoped.evidence),
                 remaining_unknowns=tuple(gap.detail for gap in scoped.gaps),
-                reason="固定功能取证已结束，基于实际观测与缺口形成有边界的诊断；不将取证完成解释为整体健康。",
+                reason="固定功能取证已结束，按本轮检查结果形成诊断结论；完整零行结果属于已完成检查，失败或采样缺失仍按实际缺口处理。",
             )})
         if (assessment_deadline is not None and assessment_deadline <= datetime.now(UTC)) or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
             return scoped
@@ -2409,6 +2409,14 @@ class DbaAnswerComposeHandler:
             "workflow_kind": str(answer_context.get("workflow_kind") or ""),
             "findings": compilation.model_dump(mode="json"),
             "response_presentation": "先在 answer_markdown 中用自然 Markdown 直接回答用户问题，包含有依据的分析与针对性建议；保留模型原文，不用固定卡片模板，不重复追加通用免责声明。正文与 claims/recommendations 一致，其余结构化字段随后供正式证据核验。没有相关发现卡片时，只说明证据支持的结论及关键缺口，不解释内部卡片状态。",
+            "diagnostic_completion_policy": {
+                "basis": "FROZEN_TASK_SCOPE",
+                "successful_empty_result": "查询成功且未截断的零行结果表示检查已完成、该查询范围内无匹配记录；没有慢SQL、阻塞、长事务或当前告警不是取证缺口。",
+                "actual_gaps": "查询失败、权限不足、监控无有效采样、请求窗口未覆盖、结果截断或模型未完成仍是实际缺口，不得改写为正常。",
+                "goal_assessment": "完成状态表示冻结目标是否已检查并回答，不表示必须发现故障、证明所有时段健康或实施处置；按goal_catalog逐项评估，不新增目标。",
+                "historical_baseline": "仅在用户目标要求同库历史对比、性能劣化判断或SLO验证时需要相应基线。普通健康诊断缺少额外历史基线不新增完成缺口；也不能据此编造改善或劣化。",
+                "empty_result_citation": "可按empty_result_reference引用$result.row_count或$result.captured_at；row_index=0仅为结果回执定位，不存在第零条业务数据。",
+            },
             "number_presentation": NUMBER_PRESENTATION_POLICY,
             "sufficiency": sufficiency,
             "capacity_plan": decide_capacity_actions(
@@ -2498,6 +2506,11 @@ class DbaAnswerComposeHandler:
             cls._compose_evidence_payload(fact)
             for fact in assessment.evidence
         ]
+        for fact, projected in zip(assessment.evidence, payload["evidence"], strict=True):
+            if any(gap.evidence_ref == fact.evidence_ref
+                   or gap.source_id == fact.source_id and gap.step_id == fact.step_id
+                   for gap in assessment.gaps):
+                projected.pop("empty_result_reference", None)
         payload["allowed_evidence_refs"] = [
             fact.evidence_ref for fact in assessment.evidence
         ]

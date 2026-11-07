@@ -1,6 +1,7 @@
 """模型只读取判断所需的数值与口径；完整样本和重放工件仍留在正式证据中。"""
 
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference
 from aiops_agent.domain.evidence.physical_identity import identity_sample_extent
 
 
@@ -12,6 +13,15 @@ HTML_REPORT_TOOLS = frozenset({
 def evidence_model_payload(fact: TurnEvidenceFact) -> dict:
     """判断视图保留所有事实行；样本重放和重复数值不要求模型再次阅读。"""
     payload = fact.model_dump(mode="json", exclude={"visualizations", "series_computations", "source_identity_witnesses"})
+    result_fields = EvidenceFieldReference.empty_result_fields(fact)
+    if result_fields:
+        # 只增加结果元数据的引用说明，原始零行、列定义和来源保持不变。
+        payload["empty_result_reference"] = {
+            "evidence_ref": fact.evidence_ref, "row_index": 0,
+            "fields": result_fields,
+            "scope": str(fact.measurement_semantics),
+            "policy": "这是已返回的完整零行结果，不是虚构数据行；可引用结果行数或采集时间。是否查询成功仍须核对本轮gaps，不将权限探测、无指标采样或失败解释为未发现问题。",
+        }
     computations = []
     for trace in fact.series_computations:
         item = trace.model_dump(mode="json", exclude={"samples"})
