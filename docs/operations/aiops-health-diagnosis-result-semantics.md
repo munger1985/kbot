@@ -54,3 +54,39 @@ Ammolite与KBot使用相同产品语义。四个Prompt基线
 `aiops_agent.answer_stream`、`aiops_agent.diagnosis_answer_compose`
 保持版本 `1.0.0`。发布时先更新支持结果元数据引用的代码，再定向同步开发基线，
 核对来源与内容Hash、保留手工维护版本和历史冻结记录，最后核验激活指针与运行时解析结果。
+
+## 2026-11-07 开发环境定向发布记录
+
+用户授权后，在 kbotdev 发布配套代码并同步上述四个Prompt；没有整仓拉取、全库初始化、
+DDL变更或业务记录清理。连接使用指定密钥及 `curve25519-sha256`。
+
+- Ammolite以线上 `ae1e779b` 为基线，发布6个文件，来源为 `5c0f9ab0`。
+- KBot线上为 `3870ec44`，与当前分支之间包含其他业务改动，故只发布健康诊断及其必要依赖，
+  共22个文件；诊断配置只纳入本次链路所需字段，不发布知识库配置与其他业务改动。
+  发布包SHA-256为 `eca3bb25ddfd9332240702e040b15fff1413775751496646fe0af1480884ba7e`。
+- 发布前逐文件核对线上未提交修改，保留原有监控部署脚本及配置修改。KBot源文件Catalog只
+  合并四个Prompt，其他条目保持原样；数据库也只同步这四个Key。
+- 仅重启各自AIOps API与Worker，Ammolite其余22个、KBot其余21个服务进程保持不变；
+  Scheduler、DB Executor、Main API及模型服务未重启。
+
+首次检查误用了 `/readyz`，触发自动回退，期间未写入Prompt数据库。核对实际拓扑及
+OpenAPI后使用 `/ready`：Ammolite监听19130/19132，KBot监听18110/18112。
+两套服务均重新启动并返回过包含数据库、后台组件状态的HTTP 200就绪响应。
+
+四个Prompt在两套开发数据库中均原地同步为 `1.0.0`，Ammolite来源为 `BUILTIN`，
+KBot来源为 `FILE_SEED`；版本ID保持不变，没有删除版本历史或覆盖管理员版本。
+同步后逐项核验激活指针、内容Hash、变量和输出合同，运行时解析及严格模板渲染均通过；
+再次只读检查，两套数据库各4项均为 `MATCH`。`$$result`渲染为字面量 `$result`。
+
+回滚材料保存在 kbotdev 的 `/tmp/aiops-health-release-20261107/`（受限目录）：
+
+- `ammolite-code-before-retry/files-before.tar`、`kbot-code-before-retry/files-before.tar`：原代码。
+- 对应 `manifest.json`：文件Hash、原版本及进程标识。
+- `ammolite-prompts-before.json`、`kbot-prompts-before.json`：同步前四个Prompt的完整记录。
+
+本次验证包括KBot“线上旧版本加定向发布文件”的隔离回归233项、12个子测试通过，
+Ammolite相关回归155项、12个子测试通过；未自动发起真实LLM全库健康诊断。
+
+另发现KBot既有运行数据会间歇导致Worker `/ready` 返回503。在线日志指向
+`Agent Turn Run 缺少 Primary Turn 关联`，该领取循环错误在本次发布前已存在；
+一次就绪恢复不代表该数据问题已解决。本次没有修改或删除相关Run、Task、Turn记录。
