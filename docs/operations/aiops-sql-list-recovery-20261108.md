@@ -23,7 +23,7 @@
 
 回归覆盖二进制身份 SQL AST、目录 Hash、参数绑定、调度宽限边界、两天未启动、禁用策略、缺失计划、具体错误优先、空结果/失败区分，以及三引擎采集授权、窗口增量、执行围栏、资源 Run Schema 和独立 Run 生命周期。测试使用各仓自己的源码路径，避免共用 Python 环境的 editable install 串仓。Ammolite 238 项、KBot 240 项通过，两仓架构边界检查通过。
 
-## 尚需单独授权的线上发布
+## 线上发布步骤
 
 1. Ammolite 需要在明确的目标 Schema 内，将 aiops_run 的 agent_id、agent_version_id 两列 DROP NOT NULL。现有 scripts/deployment/init_postgresql.py 的 _align_aiops_resource_collection 已定义精确变更。不要为了这两列运行可能清理其他对象的全库初始化。
 2. 经授权后拉取对应提交、重启受影响 AIOps 进程并核验实际目录 Hash 及新 Run 生命周期；不处理无关服务或此前失败的历史数据。
@@ -31,3 +31,17 @@
 4. KBot 同步代码语义；本文的 PostgreSQL 约束取证仅针对 Ammolite，不表示已对 KBot 的 Oracle 运行库执行验收。
 
 仅提交推送代码不等于线上采集已经恢复。
+
+## 授权后上线验收（2026-11-08）
+
+用户明确授权上述定向 Schema 变更、拉取和重启后，在 kbotdev 的 /home/ubuntu/Ammolite 执行：
+
+- 工作区已跟踪文件干净，原有三个未跟踪配置备份保留。只快进到代码提交 25b8448b，没有修改服务器源码。
+- 仅停止并重新启动 Ammolite 的 AIOps API、DB Executor、Worker、Scheduler。KBot 的同名进程及其他服务未重启；使用现有进程拓扑和启动脚本，内部包预检通过，没有运行全库初始化。
+- 在单一事务中调用规范部署函数 _align_aiops_resource_collection，只解除 agent_id、agent_version_id 两列 NOT NULL。执行前两列 is_nullable=NO，提交后均为 YES；未改写历史业务数据。
+- 端口 19130–19133 的 /ready 均返回 HTTP 200，实际进程、数据库连接及 Worker 后台组件正常。此前尝试 /readyz 返回 404，本服务的正确就绪路径是 /ready。
+- MySQL、PostgreSQL 在 06:34 和 06:35 UTC 连续两轮产生 READY 快照，周期 Run 均已 COMPLETED，采集错误为空且连续失败为 0。MySQL 每轮语句采集返回 100 行，执行产物中的模板 Hash 与本次修复一致。
+- 按用户参数调用同一 WorkloadService：最近 15 分钟、TOTAL_DURATION、DESC、limit=10。读取两条快照，实际可比较区间为 06:34:02.558461–06:35:02.646850 UTC，匹配 21 条并按总耗时倒序返回 10 条。恢复前缺失的窗口仍如实标记 WINDOW_NOT_FULLY_COVERED，不以这一分钟证明完整 15 分钟已覆盖；热点候选集与新增/淘汰限制仍保留。
+- 在线日志显示启动后的开发环境默认 Mutation Grant 密钥警告；未再出现此前的采集 Run 非空约束错误或 MySQL 1267。就绪状态不能替代上述实际落库与窗口计算验收。
+
+独立遗留项：两个 Oracle Target 的能力列表为空，db.oracle.workload.identity、db.oracle.workload.statements 因缺少 dynamic_performance_views 被过滤，快照仍报 ORACLE_SNAPSHOT_IDENTITY_UNAVAILABLE。没有擅自补写能力声明、扩大数据库权限或重置失败历史；本次不声称 Oracle SQL 快照已恢复。
