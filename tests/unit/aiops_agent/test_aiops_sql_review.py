@@ -19,6 +19,7 @@ from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment, TurnEvidenceGap
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
 from platform_core.identity import uuid7
+from platform_core.contracts.aiops.investigation import InvestigationAssessment
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis
 from tests.unit.aiops_agent.test_aiops_sql_plan_import import SUBJECTS, anchor
 from tests.unit.aiops_agent.test_aiops_sql_plan_priority import frame
@@ -224,7 +225,7 @@ def test_completed_answer_keeps_source_options_without_replanning():
 
 
 @pytest.mark.parametrize("engine", ["ORACLE", "POSTGRESQL", "MYSQL"])
-def test_full_assessment_invokes_sql_review_instead_of_generic_assessment(engine):
+def test_full_assessment_checks_acquisition_then_streams_sql_review_once(engine):
     async def exercise():
         entry, task, context, model, prompts, _ = setup(engine)
         context = replace(context, target_id=str(uuid7()))
@@ -235,11 +236,16 @@ def test_full_assessment_invokes_sql_review_instead_of_generic_assessment(engine
         ], rows=[list(entry.rows[0])], row_count=1)
         source = DbaToolResult.model_validate(raw["payload"])
         projected = database_evidence_fact(result=source, outcome=source.tool_outcomes[0], artifact_id=raw["artifact_id"])
-        model.generate_structured.return_value.output = diagnostic_response(review(projected))
+        final = SimpleNamespace(output=diagnostic_response(review(projected)), receipt=None)
+        preflight = SimpleNamespace(output=InvestigationAssessment(round_no=1, sufficiency_status="ANSWERABLE",
+            next_action="ANSWER", progress_made=True, reason="完成本轮必要采集"), receipt=None)
+        model.generate_structured.side_effect = [preflight, final]
         context = replace(context, input_artifacts=(raw,))
         assessed = await DbaEvidenceAssessmentHandler(model_client=model, prompts=prompts).execute(context)
         assert assessed.sql_checkpoint is not None and assessed.status == "ANSWERABLE"
-        model.generate_structured.assert_awaited_once()
+        assert model.generate_structured.await_count == 2
+        assert model.generate_structured.await_args_list[0].kwargs["purpose"] == "aiops.investigation-assessment"
+        assert "on_text_delta" not in model.generate_structured.await_args_list[0].kwargs
         assert model.generate_structured.await_args.kwargs["purpose"] == "aiops.sql-diagnosis"
     asyncio.run(exercise())
 
@@ -412,5 +418,6 @@ def test_mixed_observation_and_repair_does_not_create_empty_rollback_runbook_ste
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(answer_context)
         assert result.status == "COMPLETED"
         steps = result.investigation_record.runbook.phases[0].steps
-        assert len(steps) == 1 and steps[0].step_id == "diagnosis.r1"
+        assert [step.step_id for step in steps] == ["diagnosis.r1", "diagnosis.r2"]
+        assert not steps[1].rollback and not steps[1].rollback_conditions
     asyncio.run(exercise())

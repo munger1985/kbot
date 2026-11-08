@@ -249,7 +249,12 @@ class MySQLDiagnosticDriver:
                         (limits.statement_timeout_seconds * 1000,),
                     )
                     sql = _mysql_bound_sql(sql_template)
-                    if variant == "mysql_8_digest_window":
+                    if variant == "mysql_8_active_statement_plan":
+                        from .statement_plan import PLAN_COLUMNS, mysql_statement_plan
+                        rows = await mysql_statement_plan(cursor, bound_source_sql=sql,
+                            parameters=parameters, ensure_active=owner.ensure_active)
+                        columns, truncated = PLAN_COLUMNS, False
+                    elif variant == "mysql_8_digest_window":
                         samples = []
                         for sample in range(2):
                             if sample:

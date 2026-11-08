@@ -6,6 +6,8 @@ import re
 from html import escape
 from typing import Any
 
+from .presentation import step_groups
+
 
 def _items(value: object) -> list[Any]:
     return list(value) if isinstance(value, (list, tuple)) else []
@@ -100,7 +102,7 @@ def render_implementation_runbook_markdown(payload: dict[str, Any]) -> str:
     lines = [
         f"# {title}",
         "",
-        "> KBot 智能运维 · 数据库实施操作文档",
+        "> KBot 智能运维 · " + ("诊断建议与验证方案" if payload.get("profile") == "NONE" else "数据库实施操作文档"),
         "",
         "| 项目 | 值 |",
         "| --- | --- |",
@@ -139,11 +141,6 @@ def render_implementation_runbook_markdown(payload: dict[str, Any]) -> str:
                 )
         lines.append("")
 
-    group_labels = (
-        ("commands", "实施命令"),
-        ("verification_commands", "验证命令"),
-        ("rollback", "回退命令"),
-    )
     for phase_index, phase_value in enumerate(phases, start=1):
         phase = _mapping(phase_value)
         phase_title = _text(
@@ -182,32 +179,8 @@ def render_implementation_runbook_markdown(payload: dict[str, Any]) -> str:
                     + "、".join(f"`{_text(item)}`" for item in required_inputs),
                     "",
                 ))
-            for key, label in group_labels:
-                values = _items(step.get(key))
-                if key == "commands":
-                    executable = [
-                        item for item in values
-                        if "MANUAL" not in {
-                            str(_mapping(item).get("command_type") or "").upper(),
-                            str(_mapping(item).get("executor") or "").upper(),
-                        }
-                    ]
-                    manual = [
-                        item for item in values
-                        if "MANUAL" in {
-                            str(_mapping(item).get("command_type") or "").upper(),
-                            str(_mapping(item).get("executor") or "").upper(),
-                        }
-                    ]
-                    _append_commands(
-                        lines,
-                        manual,
-                        heading="人工确认项",
-                        manual=True,
-                    )
-                    _append_commands(lines, executable, heading=label)
-                    continue
-                _append_commands(lines, values, heading=label)
+            for label, values, manual in step_groups(step):
+                _append_commands(lines, values, heading=label, manual=manual)
             risks = _items(step.get("risks"))
             if risks:
                 lines.extend(("### 风险与注意事项", ""))

@@ -118,7 +118,7 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
         blocks.append(TurnAnswerBlock(block_type="SOLUTION_MARKDOWN", schema_version="AIOPS_SOLUTION_BLOCK.v1",
             payload={"markdown": solution}, evidence_refs=refs))
     if bundle is not None:
-        blocks.append(plan_availability_block(database_type=database_type, bundle=bundle))
+        blocks.append(plan_availability_block(database_type=database_type, bundle=bundle, gaps=tuple(gaps.values())))
     return AIOpsTurnResult(
         status="PARTIAL", sufficiency_status="PARTIAL", evidence=evidence,
         blocks=tuple(blocks),

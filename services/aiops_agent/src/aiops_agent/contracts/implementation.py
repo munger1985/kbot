@@ -176,6 +176,8 @@ class RunbookStep(BaseModel):
     commands: tuple[RunbookCommand, ...] = ()
     verification_commands: tuple[RunbookCommand, ...] = ()
     rollback: tuple[RunbookCommand, ...] = ()
+    verification_notes: tuple[str, ...] = ()
+    rollback_conditions: tuple[str, ...] = ()
     risks: tuple[str, ...] = ()
     required_inputs: tuple[str, ...] = ()
 

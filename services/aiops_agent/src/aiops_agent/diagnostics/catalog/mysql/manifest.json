@@ -1946,6 +1946,62 @@
         "max_rows": 500,
         "max_bytes": 1048576,
         "cost_level": "MEDIUM"
-      }
+      },
+    {
+      "tool_id": "db.mysql.statement.plan",
+      "description": "按已核验Digest、Schema及文本哈希读取当前活动连接的原生估算计划；前后核对执行事件，不执行原SQL，不把Digest中的问号改成猜测参数。",
+      "version": "1.0.0",
+      "db_type": "MYSQL",
+      "variant": "mysql_8_active_statement_plan",
+      "supported_version_min": 8,
+      "supported_version_max_exclusive": 10,
+      "required_capabilities": [
+        "performance_schema"
+      ],
+      "required_privileges": [
+        "SELECT_PERFORMANCE_SCHEMA"
+      ],
+      "parameters": [
+        {
+          "name": "digest",
+          "type": "string",
+          "max_length": 64
+        },
+        {
+          "name": "schema_name",
+          "type": "string",
+          "max_length": 64
+        },
+        {
+          "name": "source_sql_sha256",
+          "type": "string",
+          "max_length": 64
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "subject_json",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "source_sql_sha256",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "plan_nodes_json",
+          "logical_type": "STRING",
+          "nullable": false
+        }
+      ],
+      "template_ref": "sql/statement_plan_source.sql",
+      "template_sha256": "03a04fcee028bc16037af598f011affd517df1afcf7c6d853386baf0b6dded90",
+      "timeout_seconds": 15,
+      "max_rows": 1,
+      "max_bytes": 262144,
+      "cost_level": "LOW",
+      "measurement_semantics": "NOT_APPLICABLE"
+    }
   ]
 }

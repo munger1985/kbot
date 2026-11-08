@@ -61,6 +61,14 @@ class TurnEvidenceFact(BaseModel):
 
     @model_validator(mode="after")
     def validate_series_budget(self):
+        if self.sql_plan is not None and self.sql_plan.origin == "DATABASE_ESTIMATE" and (
+            self.trust_level != "SOURCE_VERIFIED" or self.tool_id not in {"db.postgresql.statement.plan", "db.mysql.statement.plan"}
+            or self.sql_plan.database_type != {"db.postgresql.statement.plan": "POSTGRESQL", "db.mysql.statement.plan": "MYSQL"}.get(self.tool_id)
+            or self.measurement_semantics != "NOT_APPLICABLE" or self.provenance is None
+            or self.sql_plan.observed_at != self.captured_at or self.row_count != 1 or len(self.rows) != 1
+            or self.truncated or self.sql_plan.physical_identity != dict(self.provenance.physical_identity)
+        ):
+            raise ValueError("数据库估算计划必须绑定固定工具完整原始回执、物理来源和采集时间")
         if self.source_identity_witnesses and (
             self.tool_id != "metric.query_range" or self.source_id != "monitoring.overview"
             or self.trust_level != "SOURCE_VERIFIED" or any(

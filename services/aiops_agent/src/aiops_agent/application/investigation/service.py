@@ -2373,7 +2373,7 @@ class TurnPlanningService:
                 context=context, revision_no=revision_no, inputs=inputs, investigation=investigation,
                 planning_receipt=None, dynamic_queries=dynamic_queries, source_queries=source_queries,
                 diagnosis_model_snapshot=diagnosis_model_snapshot, planner_model_snapshot=planner_model_snapshot,
-                public_summary="按完整 SQL 游标及已观测执行直接补齐计划与 Oracle 运行证据，不经过模型重规划",
+                public_summary="按已核验 SQL 主体直接补齐只读计划及可用运行证据，不经过模型重规划",
             )
         decision = decide_discovery_continuation(
             plan=inputs.prior_plan,

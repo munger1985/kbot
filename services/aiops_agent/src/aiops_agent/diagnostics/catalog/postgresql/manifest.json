@@ -2159,6 +2159,73 @@
       "parameters":[{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100}],
       "output_columns":[{"name":"wait_event_type","logical_type":"STRING"},{"name":"wait_event","logical_type":"STRING"},{"name":"query_id","logical_type":"STRING"},{"name":"sample_count","logical_type":"INTEGER"}],
       "template_ref":"sql/wait_sampling_profile.sql","template_sha256":"e19513b8e4d38874bc0bf46fa02e26cffaec687d506f49d64231479d6f0e992a","timeout_seconds":20,"max_rows":500,"max_bytes":1048576,"cost_level":"LOW"
+    },
+    {
+      "tool_id": "db.postgresql.statement.plan",
+      "description": "按已核验完整统计主体及文本哈希，在只读事务中自动采集通用估算计划；不执行原SQL或ANALYZE，不猜绑定值，权限不足记录实际缺口。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_14_plus_generic_statement_plan",
+      "supported_version_min": 14,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": [
+        "pg_stat_statements"
+      ],
+      "required_privileges": [
+        "pg_read_all_stats"
+      ],
+      "parameters": [
+        {
+          "name": "query_id",
+          "type": "string",
+          "max_length": 20
+        },
+        {
+          "name": "database_oid",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        {
+          "name": "user_oid",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        {
+          "name": "top_level",
+          "type": "boolean"
+        },
+        {
+          "name": "source_sql_sha256",
+          "type": "string",
+          "max_length": 64
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "subject_json",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "source_sql_sha256",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "plan_nodes_json",
+          "logical_type": "STRING",
+          "nullable": false
+        }
+      ],
+      "template_ref": "sql/statement_plan_source.sql",
+      "template_sha256": "40da2bb8edf13a3740b7aacfd5dc39e0a52e66cb3bb43721ee2ad4370f5513b8",
+      "timeout_seconds": 15,
+      "max_rows": 1,
+      "max_bytes": 262144,
+      "cost_level": "LOW",
+      "measurement_semantics": "NOT_APPLICABLE"
     }
   ]
 }

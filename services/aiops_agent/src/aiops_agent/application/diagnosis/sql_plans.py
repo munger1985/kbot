@@ -54,6 +54,8 @@ def sql_plan_upload_fact(artifact: dict) -> TurnEvidenceFact | None:
 
 def database_cursor_plan(observation):
     """从固定工具原始观测重建缓存计划；截断、混合游标或破损树不伪装完整计划。"""
+    if observation.tool_id in {"db.postgresql.statement.plan", "db.mysql.statement.plan"}:
+        return database_estimate_plan(observation)
     if observation.tool_id != CURSOR_PLAN_TOOL_ID:
         return None, ()
     if (observation.db_type != "ORACLE" or observation.tool_version != "1.0.0"
@@ -85,6 +87,32 @@ def database_cursor_plan(observation):
         return SqlPlanDocument.model_validate(document.model_dump(mode="python")), ()
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, SqlPlanImportError):
         return None, ("CURSOR_PLAN_STRUCTURE_INVALID",)
+
+
+def database_estimate_plan(observation):
+    """固定目录返回的安全节点保留原始行，不借用人工计划或历史审批来源。"""
+    if observation.row_count == 0:
+        return None, ()
+    try:
+        expected = {"POSTGRESQL": ("db.postgresql.statement.plan", "postgresql_14_plus_generic_statement_plan"),
+            "MYSQL": ("db.mysql.statement.plan", "mysql_8_active_statement_plan")}
+        if (expected.get(observation.db_type) != (observation.tool_id, observation.variant)
+            or observation.tool_version != "1.0.0" or observation.truncated or observation.row_count != 1):
+            raise ValueError
+        fields = dict(zip((column.name for column in observation.columns), observation.rows[0], strict=True))
+        if set(fields) != {"subject_json", "source_sql_sha256", "plan_nodes_json"}:
+            raise ValueError
+        from aiops_agent.application.diagnosis.provenance import database_provenance
+        document = SqlPlanDocument(database_type=observation.db_type, origin="DATABASE_ESTIMATE",
+            native_format="POSTGRESQL_EXPLAIN_JSON" if observation.db_type == "POSTGRESQL" else "MYSQL_EXPLAIN_JSON",
+            subject=json.loads(fields["subject_json"]), source_sql_sha256=fields["source_sql_sha256"],
+            nodes=json.loads(fields["plan_nodes_json"]), observed_at=observation.captured_at.isoformat(),
+            physical_identity=dict(database_provenance(observation).physical_identity),
+            warnings=("固定目录按完整主体和SQL文本哈希采集；仅含优化器估算，不含实际行数或运行耗时。",
+                "未执行原SQL或ANALYZE，未猜测代表参数；原业务解析环境与参数代表性未经核验。"))
+        return document, ()
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        return None, ("SQL_PLAN_OUTPUT_INVALID",)
 
 
 def controlled_estimate_document(verified):
@@ -124,7 +152,7 @@ def controlled_plan_appendix(assessments):
     results = []
     for raw in assessments:
         plan = SqlPlanAssessment.model_validate(raw)
-        if plan.origin == "CONTROLLED_ESTIMATE":
+        if plan.origin in {"CONTROLLED_ESTIMATE", "DATABASE_ESTIMATE"}:
             results.append("受控估算计划｜仅说明采集环境及所提交参数下的优化器估算，不证明生产实际执行。"
                 "原解析环境按逐项来源核验；缺失项与总体参数代表性不补全，优化器成本不是毫秒。" + "；".join(plan.limitations))
             if plan.native_verification is not None:

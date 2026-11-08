@@ -6,6 +6,8 @@ from html import escape
 from io import BytesIO
 from typing import Any
 
+from .presentation import step_groups
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -241,7 +243,7 @@ def _page_chrome(canvas: Canvas, document: SimpleDocTemplate) -> None:
     canvas.line(18 * mm, height - 15 * mm, width - 18 * mm, height - 15 * mm)
     canvas.setFont(_pdf_report_font_name(), 7.5)
     canvas.setFillColor(colors.HexColor("#536B7A"))
-    canvas.drawString(18 * mm, height - 11 * mm, "KBot AIOps  ·  数据库实施操作文档")
+    canvas.drawString(18 * mm, height - 11 * mm, "KBot AIOps  ·  " + document.runbook_label)
     canvas.drawRightString(width - 18 * mm, 11 * mm, f"第 {document.page} 页")
     canvas.line(18 * mm, 15 * mm, width - 18 * mm, 15 * mm)
     canvas.restoreState()
@@ -262,6 +264,7 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
         title=title,
         author="KBot AIOps",
     )
+    document.runbook_label = "诊断建议与验证方案" if payload.get("profile") == "NONE" else "数据库实施操作文档"
     body = ParagraphStyle(
         "实施正文",
         fontName=font_name,
@@ -341,11 +344,6 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
     )
     story.extend((contents, PageBreak()))
 
-    group_labels = (
-        ("commands", "实施命令"),
-        ("verification_commands", "验证命令"),
-        ("rollback", "回退命令"),
-    )
     phases = _items(payload.get("phases"))
     for phase_index, phase_value in enumerate(phases, start=1):
         phase = _mapping(phase_value)
@@ -382,78 +380,54 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
                     _paragraph("所需输入：" + "、".join(map(str, required_inputs))),
                     body,
                 ))
-            for key, label in group_labels:
-                commands = _items(step.get(key))
-                if not commands:
+            for group_label, group_commands, manual_group in step_groups(step):
+                if not group_commands:
                     continue
-                groups = ((label, commands, False),)
-                if key == "commands":
-                    executable = [
-                        item for item in commands
-                        if "MANUAL" not in {
-                            str(_mapping(item).get("command_type") or "").upper(),
-                            str(_mapping(item).get("executor") or "").upper(),
-                        }
-                    ]
-                    manual = [
-                        item for item in commands
-                        if "MANUAL" in {
-                            str(_mapping(item).get("command_type") or "").upper(),
-                            str(_mapping(item).get("executor") or "").upper(),
-                        }
-                    ]
-                    groups = (
-                        ("人工确认项", manual, True),
-                        (label, executable, False),
+                story.append(Paragraph(_paragraph(group_label), body))
+                for command_value in group_commands:
+                    command = _mapping(command_value)
+                    heading = " · ".join(
+                        item
+                        for item in (
+                            str(command.get("executor") or command.get("command_type") or ""),
+                            str(command.get("title") or ""),
+                        )
+                        if item
                     )
-                for group_label, group_commands, manual_group in groups:
-                    if not group_commands:
-                        continue
-                    story.append(Paragraph(_paragraph(group_label), body))
-                    for command_value in group_commands:
-                        command = _mapping(command_value)
-                        heading = " · ".join(
-                            item
-                            for item in (
-                                str(command.get("executor") or command.get("command_type") or ""),
-                                str(command.get("title") or ""),
-                            )
-                            if item
+                    if manual_group:
+                        story.append(Paragraph(
+                            _paragraph(command.get("title") or "人工确认"),
+                            step_style,
+                        ))
+                        story.append(Paragraph(
+                            _paragraph(command.get("content")),
+                            body,
+                        ))
+                    else:
+                        formatted_code = _formatted_code(
+                            command.get("content"),
+                            command.get("command_type"),
                         )
-                        if manual_group:
-                            story.append(Paragraph(
-                                _paragraph(command.get("title") or "人工确认"),
-                                step_style,
-                            ))
-                            story.append(Paragraph(
-                                _paragraph(command.get("content")),
-                                body,
-                            ))
-                        else:
-                            formatted_code = _formatted_code(
-                                command.get("content"),
-                                command.get("command_type"),
-                            )
-                            story.append(_RunbookCodeBlock(
-                                title=heading or "COMMAND",
-                                code=formatted_code,
-                                text_font_name=font_name,
-                            ))
-                        execution_metadata = " · ".join(
-                            item for item in (
-                                f"身份 {command.get('run_as')}" if command.get("run_as") else "",
-                                f"节点 {'、'.join(map(str, _items(command.get('node_scope'))))}" if _items(command.get("node_scope")) else "",
-                                f"风险 {command.get('risk_level')}" if command.get("risk_level") else "",
-                            ) if item
-                        )
-                        if execution_metadata:
-                            story.append(Paragraph(_paragraph(execution_metadata), body))
-                        for expected in _items(command.get("expected_result")):
-                            story.append(Paragraph(
-                                _paragraph(f"预期：{expected}"), body, bulletText="•"
-                            ))
-                        for note in _items(command.get("notes")):
-                            story.append(Paragraph(_paragraph(note), body, bulletText="•"))
+                        story.append(_RunbookCodeBlock(
+                            title=heading or "COMMAND",
+                            code=formatted_code,
+                            text_font_name=font_name,
+                        ))
+                    execution_metadata = " · ".join(
+                        item for item in (
+                            f"身份 {command.get('run_as')}" if command.get("run_as") else "",
+                            f"节点 {'、'.join(map(str, _items(command.get('node_scope'))))}" if _items(command.get("node_scope")) else "",
+                            f"风险 {command.get('risk_level')}" if command.get("risk_level") else "",
+                        ) if item
+                    )
+                    if execution_metadata:
+                        story.append(Paragraph(_paragraph(execution_metadata), body))
+                    for expected in _items(command.get("expected_result")):
+                        story.append(Paragraph(
+                            _paragraph(f"预期：{expected}"), body, bulletText="•"
+                        ))
+                    for note in _items(command.get("notes")):
+                        story.append(Paragraph(_paragraph(note), body, bulletText="•"))
             for risk in _items(step.get("risks")):
                 story.append(Paragraph(_paragraph(f"注意：{risk}"), body))
 

@@ -69,6 +69,7 @@ class PostgreSQLDiagnosticDriver:
             parameters=parameters,
             limits=limits,
             trace_id=trace_id,
+            statement_plan=tool.definition.tool_id == "db.postgresql.statement.plan",
         )
 
     async def execute_dynamic(
@@ -99,6 +100,7 @@ class PostgreSQLDiagnosticDriver:
         parameters: dict[str, Any],
         limits: DiagnosticLimits,
         trace_id: str,
+        statement_plan: bool = False,
     ) -> DriverQueryResult:
         del trace_id
         username = secret.values.get("username")
@@ -115,6 +117,7 @@ class PostgreSQLDiagnosticDriver:
             )
         except TLSProfileError as exc:
             raise DiagnosticDriverError("TLS_PROFILE_INVALID") from exc
+        source_template = sql
         try:
             sql, names = postgresql_named_bindings(sql)
         except SqlBindingInvalid:
@@ -142,6 +145,16 @@ class PostgreSQLDiagnosticDriver:
             # 独占连接显式管理事务；取消时走原后端密钥协议，不等待事务自动回滚。
             transaction = connection.transaction(readonly=True)
             await transaction.start()
+            if statement_plan:
+                from .statement_plan import PLAN_COLUMNS, postgresql_statement_plan
+                async with asyncio.timeout(limits.statement_timeout_seconds):
+                    rows = await postgresql_statement_plan(connection, source_sql=source_template,
+                        parameters=parameters)
+                await transaction.rollback()
+                from aiops_agent.executor.identity import observe_postgresql_identity
+                return DriverQueryResult(columns=PLAN_COLUMNS, rows=rows, truncated=False,
+                    db_version=str(version), database_types=("text", "text", "text"),
+                    instance_identity=await observe_postgresql_identity(connection))
             statement = await connection.prepare(sql)
             attributes = tuple(statement.get_attributes())
             if len(attributes) > limits.max_columns:
@@ -212,6 +225,10 @@ class PostgreSQLDiagnosticDriver:
                 mapped = "QUERY_COLUMN_INVALID"
             elif isinstance(exc, asyncpg.UndefinedFunctionError):
                 mapped = "CAPABILITY_UNAVAILABLE"
+            elif isinstance(exc, (asyncpg.QueryCanceledError, asyncpg.LockNotAvailableError)):
+                mapped = "TIMEOUT"
+            elif isinstance(exc, (asyncpg.IndeterminateDatatypeError, asyncpg.AmbiguousParameterError)):
+                mapped = "SQL_PLAN_PARAMETER_TYPES_UNAVAILABLE" if statement_plan else "QUERY_BIND_INVALID"
             else:
                 mapped = "EXECUTOR_INTERNAL_ERROR"
             raise DiagnosticDriverError(

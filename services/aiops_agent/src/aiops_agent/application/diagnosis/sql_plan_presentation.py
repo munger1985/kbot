@@ -4,7 +4,7 @@ import re
 from aiops_agent.contracts.turn_answer import TurnAnswerBlock
 
 
-ORIGINS = {"DATABASE_CURSOR": "数据库缓存计划", "CONTROLLED_ESTIMATE": "受控估算计划", "USER_UPLOAD": "用户提供计划（待核验）"}
+ORIGINS = {"DATABASE_CURSOR": "数据库缓存计划", "CONTROLLED_ESTIMATE": "受控估算计划", "DATABASE_ESTIMATE": "数据库只读估算计划", "USER_UPLOAD": "用户提供计划（待核验）"}
 
 
 def native_xplan_for(fact, evidence):
@@ -68,7 +68,7 @@ def plan_table_block(fact, native_evidence=()):
     indexes = [index for index in range(len(columns)) if index < 3 or any(row[index] is not None for row in rows)]
     boundary = (
         "缓存计划及 LAST 行源，不证明属于某次代表参数执行" if document.origin == "DATABASE_CURSOR"
-        else "优化器估算，未执行原 SQL，不代表生产实际使用的计划" if document.origin == "CONTROLLED_ESTIMATE"
+        else "优化器估算，未执行原 SQL，不代表生产实际使用的计划" if document.origin in {"CONTROLLED_ESTIMATE", "DATABASE_ESTIMATE"}
         else "人工提供的计划，来源、参数及生产匹配情况以核验结果为准"
     )
     identity = document.subject
@@ -98,10 +98,17 @@ def matching_plan_refs(bundle):
             and item.get("physical_match") in {"SOURCE_MATCH", "DECLARED_MATCH"}}
 
 
-def plan_availability_block(*, database_type, bundle):
+def plan_availability_block(*, database_type, bundle, gaps=()):
     assessments = bundle.get("plan_assessments") or ()
     matched = matching_plan_refs(bundle)
     available = [item for item in assessments if item.get("evidence_ref") in matched]
+    plan_tools = {"db.oracle.statement.plan", "db.postgresql.statement.plan", "db.mysql.statement.plan"}
+    attempts = [{"tool_id": item["tool_id"], "captured_at": item.get("captured_at"),
+        "row_count": len(item.get("records", ())), "truncated": item.get("truncated", False)}
+        for item in bundle.get("observations", ()) if item.get("tool_id") in plan_tools]
+    failures = [gap.model_dump(mode="json") if hasattr(gap, "model_dump") else gap
+        for gap in gaps if (gap.get("source_id") if isinstance(gap, dict) else gap.source_id) in plan_tools]
+    collection_state = "SUCCEEDED" if available else "FAILED" if failures else "NO_MATCHING_PLAN" if attempts else "NOT_ATTEMPTED"
     if available:
         message = "已取得主体和物理来源核对一致的执行计划，可切换图形计划与原始计划；人工材料仅为声明匹配，来源、参数及时间边界随计划保留。计划仅覆盖已取得的主体，不代表全部子游标。"
     else:
@@ -110,12 +117,17 @@ def plan_availability_block(*, database_type, bundle):
             "MYSQL": "performance_schema 的 Digest 统计不保存可按 Digest 直接读取的历史执行计划。",
             "ORACLE": "尚未取得与完整游标身份匹配的缓存执行计划，不能据累计统计猜测访问路径。",
         }.get(database_type, "当前没有取得匹配执行计划。")
-        message = mechanism + "AIOps 只读取数据库已有计划、统计与运行证据，不发起估算或请求业务表权限。可上传 DBA 已提供的计划 JSON；没有计划时仍依据语句统计、等待与监控判断可确认的问题，不猜测访问路径。"
+        message = mechanism + "系统在正文生成前按已核验主体尝试可用的只读计划采集；采集失败、无匹配活动、权限或解析条件受限时保留具体回执，不自动提权或执行原 SQL。可上传 DBA 已提供的计划 JSON；未取得计划时不猜测访问路径。"
+        message += ("本轮尚无计划采集回执，不能据此认定数据源没有计划。" if collection_state == "NOT_ATTEMPTED"
+            else "本轮计划采集失败：" + "、".join(str(item["code"]) for item in failures) + "。" if failures
+            else "本轮已采集，但未返回完整且匹配的计划。")
     return TurnAnswerBlock(
         block_type="MARKDOWN", schema_version="AIOPS_MARKDOWN_BLOCK.v1",
         payload={"markdown": "执行计划：" + message, "sql_plan_acquisition": {
             "database_type": database_type, "status": "AVAILABLE" if available else "MISSING",
-            "read_existing_only": True,
+            "read_existing_only": database_type == "ORACLE",
+            "collection_state": collection_state, "attempts": attempts,
+            "failure_codes": [item["code"] for item in failures],
             "automatic_cursor_limit": 4 if database_type == "ORACLE" else None,
             "original_execution_authorized": False,
         }}, evidence_refs=tuple(item["evidence_ref"] for item in available if item.get("evidence_ref")),

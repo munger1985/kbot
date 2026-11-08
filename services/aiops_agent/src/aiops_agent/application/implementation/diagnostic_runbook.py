@@ -9,15 +9,11 @@ from platform_core.contracts.aiops import ImplementationProfile
 
 
 def compile_diagnostic_runbook(record, *, database_type, database_version):
-    if database_type not in {"ORACLE", "POSTGRESQL", "MYSQL"} or not any(
-        item.draft_sql or item.intent in {"MITIGATE", "REPAIR"} for item in record.recommendations
-    ):
+    if database_type not in {"ORACLE", "POSTGRESQL", "MYSQL"} or not record.recommendations:
         return None
     executors = {"ORACLE": RunbookExecutor.SQLPLUS, "POSTGRESQL": RunbookExecutor.PSQL, "MYSQL": RunbookExecutor.MYSQL}
     steps, missing = [], []
     for action in record.recommendations:
-        if not action.draft_sql and action.intent not in {"MITIGATE", "REPAIR"}:
-            continue
         step_id = "diagnosis." + action.recommendation_id
         unresolved = tuple(action.missing_parameters) + tuple(
             item.name for item in action.parameters if item.source != "OBSERVATION"
@@ -42,22 +38,15 @@ def compile_diagnostic_runbook(record, *, database_type, database_version):
             applicability=RunbookApplicability.BLOCKED if unresolved else RunbookApplicability.CONDITIONAL,
             rationale="关联判断：" + "、".join(action.conclusion_ids) + "；适用条件：" + "；".join(action.preconditions),
             commands=commands,
-            verification_commands=(RunbookCommand(
-                command_id=step_id + ".verify", command_type=RunbookCommandType.MANUAL,
-                executor=RunbookExecutor.MANUAL, run_as="诊断操作者", node_scope=(record.target_id,),
-                title="同口径验证与护栏", content="；".join(action.validation),
-            ),),
-            rollback=(RunbookCommand(
-                command_id=step_id + ".stop", command_type=RunbookCommandType.MANUAL,
-                executor=RunbookExecutor.MANUAL, run_as="已审批的实施人员", node_scope=(record.target_id,),
-                title="停止或回退条件", content=action.rollback_or_stop,
-            ),),
+            verification_notes=action.validation,
+            rollback_conditions=(action.rollback_or_stop,) if action.rollback_or_stop else (),
             risks=action.risks, required_inputs=unresolved,
         ))
     return ImplementationRunbook(
-        profile=ImplementationProfile.NONE, title=f"{database_type} 诊断处置审阅方案",
+        profile=ImplementationProfile.NONE, title=f"{database_type} 诊断建议与验证方案",
         database_type=database_type, database_version=database_version,
-        status=RunbookStatus.BLOCKED_BY_REQUIRED_INPUTS if missing else RunbookStatus.PARTIAL_EVIDENCE,
+        status=(RunbookStatus.BLOCKED_BY_REQUIRED_INPUTS if missing else
+            RunbookStatus.READY if record.stop_reason == "GOAL_ANSWERED" else RunbookStatus.PARTIAL_EVIDENCE),
         execution_policy="仅是同一调查的条件化审阅稿，不是已审批变更；未知参数不得猜测。目录不支持的动作只能按人工变更流程执行。",
         current_state=({"label": "来源调查", "value": f"{record.record_id}@{record.revision}", "status": "FROZEN"},
                        {"label": "目标", "value": record.target_id, "status": "LOGICAL_TARGET"}),

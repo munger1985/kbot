@@ -170,7 +170,7 @@ def test_three_engines_display_plan_tree_native_units_and_safe_acquisition(engin
     missing = plan_availability_block(database_type=engine, bundle={"plan_assessments": []})
     assert missing.payload["sql_plan_acquisition"]["status"] == "MISSING"
     assert "可上传 DBA 已提供的计划 JSON" in missing.payload["markdown"]
-    assert missing.payload["sql_plan_acquisition"]["read_existing_only"] is True
+    assert missing.payload["sql_plan_acquisition"]["read_existing_only"] is (engine == "ORACLE")
 
 
 @pytest.mark.parametrize("dimension", ["identity_match", "physical_match"])

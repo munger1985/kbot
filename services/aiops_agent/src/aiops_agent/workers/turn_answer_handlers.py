@@ -1126,30 +1126,28 @@ class DbaEvidenceAssessmentHandler:
                     round_no=int(context.plan_snapshot.get("revision_no") or 1), sufficiency_status="PARTIAL",
                     next_action="REPLAN", progress_made=True,
                     clarification_question=None,
-                    reason="已取得完整游标身份，先补齐可用执行计划及 Oracle 专属运行证据，再分析机制。",
+                    reason="已取得完整 SQL 主体，先尝试可用的只读计划与运行证据采集，再形成诊断正文。",
                 ),
             })
-        if task_frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} and scoped.status != SufficiencyStatus.UNSAFE:
+        async def finish_assessment(value):
+            if task_frame.get("diagnostic_profile") not in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} or value.status in {
+                SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION,
+            } or value.investigation is not None and value.investigation.next_action == "REPLAN":
+                return value
             if getattr(context, "deadline_at", None) and (datetime.fromisoformat(context.deadline_at) - datetime.now(UTC)).total_seconds() <= 3:
-                return scoped
-            return await self._review_sql(context, scoped, task_frame, on_text_delta=on_text_delta)
-        if (
-            dict(context.plan_snapshot.get("planning_route") or {}).get("mode") == "CONVERSATION_STARTER"
-            and scoped.status in {SufficiencyStatus.ANSWERABLE, SufficiencyStatus.PARTIAL}
-        ):
-            # 固定入口已完成确定性取证校验，直接把完整事实和缺口交给最终诊断。
-            # 不再用第二次模型阅读决定是否重规划；ANSWER 只代表进入回答，不代表健康。
-            return scoped.model_copy(update={"investigation": InvestigationAssessment(
-                round_no=int(context.plan_snapshot.get("revision_no") or 1),
-                sufficiency_status=scoped.status, next_action="ANSWER", progress_made=bool(scoped.evidence),
-                remaining_unknowns=tuple(gap.detail for gap in scoped.gaps),
-                reason="固定功能取证已结束，按本轮检查结果形成诊断结论；完整零行结果属于已完成检查，失败或采样缺失仍按实际缺口处理。",
-            )})
+                return value
+            return await self._review_sql(context, value, task_frame, on_text_delta=on_text_delta)
         if (assessment_deadline is not None and assessment_deadline <= datetime.now(UTC)) or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
-            return scoped
+            return await finish_assessment(scoped)
         model_snapshot = dict(answer_context.get("model") or {})
         if not model_snapshot:
-            return with_prior(deterministic)
+            return await finish_assessment(scoped)
+        from aiops_agent.application.investigation.sql_plan_priority import authorized_evidence_tools
+        acquisition_tools = authorized_evidence_tools(capability)
+        attempted_tools = {fact.tool_id for fact in scoped.evidence if fact.source_id != "prior_turn.sql_observation"
+            and fact.followup_run_id is None} | {gap.source_id for gap in scoped.gaps}
+        attempted_tools.update(action["tool_id"] for action in dict(answer_context.get("investigation_plan") or {}).get("actions", ()) if action.get("tool_id"))
+        unattempted_tools = tuple(item for item in acquisition_tools if item["tool_id"] not in attempted_tools)
         prompt = await self._prompts.resolve(
             "investigation_assessor",
             frozen_prompts=dict(answer_context["prompts"]),
@@ -1180,6 +1178,12 @@ class DbaEvidenceAssessmentHandler:
                     ),
                     "deterministic_sufficiency": model_sufficiency,
                     "measurement_boundaries": _measurement_boundaries(deterministic),
+                    "available_tools": acquisition_tools,
+                    "evidence_acquisition": {
+                        "stage": "BEFORE_FINAL_ANSWER", "attempted_tool_ids": sorted(attempted_tools),
+                        "unattempted_tools": unattempted_tools,
+                        "policy": "每轮按当前目标主动补证。上下文没有不等于来源没有；关键证据尚未采集且有可用只读来源时必须REPLAN。只有实际采集失败、完整零行、权限/能力受限或无法安全绑定参数，才按具体回执说明不可得。不得虚构原始参数或提权。成功完整零行是完成检查；不为可选历史基线扩大健康检查目标。最终正文开始后不再重规划或重写。",
+                    },
                     **physical_identity_model_context(scoped.evidence),
                     "sql_evidence_bundle": sql_bundle,
                 },
@@ -1194,7 +1198,7 @@ class DbaEvidenceAssessmentHandler:
                 context.task_id,
                 exc.code,
             )
-            return with_prior(deterministic)
+            return await finish_assessment(scoped)
         try:
             # 不能直接校验已构造的 Pydantic 实例：model_copy(update=...)
             # 会绕过其校验器。先转成原始数据，确保每次都重跑完整契约校验。
@@ -1208,8 +1212,12 @@ class DbaEvidenceAssessmentHandler:
                 context.task_id,
                 str(exc),
             )
-            return with_prior(self._incomplete_model_assessment(deterministic))
+            return await finish_assessment(with_prior(self._incomplete_model_assessment(deterministic)))
         assessed_status = SufficiencyStatus(investigation.sufficiency_status)
+        if (assessed_status in {SufficiencyStatus.PARTIAL, SufficiencyStatus.NEEDS_EVIDENCE}
+            and investigation.evidence_gaps and investigation.next_action == "ANSWER" and unattempted_tools):
+            investigation = investigation.model_copy(update={"next_action": "REPLAN",
+                "reason": "关键证据仍有尚未尝试的可用采集路径，先按实际工具与参数边界补证，再形成最终回答。"})
         if facts and assessed_status == SufficiencyStatus.NEEDS_EVIDENCE:
             assessed_status = SufficiencyStatus.PARTIAL
         window_gaps = tuple(
@@ -1277,7 +1285,7 @@ class DbaEvidenceAssessmentHandler:
             )
             if detail
         )
-        return with_prior(DbaSufficiencyAssessment.model_validate(
+        return await finish_assessment(with_prior(DbaSufficiencyAssessment.model_validate(
             {
                 **deterministic.model_dump(mode="python"),
                 "status": assessed_status,
@@ -1295,7 +1303,7 @@ class DbaEvidenceAssessmentHandler:
                 ),
                 "investigation": investigation.model_dump(mode="python"),
             }
-        ))
+        )))
 
     async def _review_sql(self, context, assessment, task_frame, *, on_text_delta=None):
         """一次推理同时完成诊断和补证决策，已校验结果持久化后直接交付。"""
@@ -2004,7 +2012,7 @@ class DbaAnswerComposeHandler:
                 schema_version="AIOPS_MARKDOWN_BLOCK.v1",
                 payload={**(narrative_payload(narrative) if narrative else {"markdown": markdown, "raw_model_output": bool(native_markdown),
                          "answer_notice": fallback_reason if native_markdown else None}),
-                         "sql_plan_acquisition": plan_availability_block(database_type=self._database_type(context), bundle=bundle).payload["sql_plan_acquisition"],
+                         "sql_plan_acquisition": plan_availability_block(database_type=self._database_type(context), bundle=bundle, gaps=assessment.gaps).payload["sql_plan_acquisition"],
                          "diagnosis_status": "COMPLETED" if completed else "PARTIAL" if draft else "INCOMPLETE",
                          "sql_diagnosis": draft.model_dump(mode="json") if draft else None,
                          "subject": bundle["subject"], "subject_resolution": bundle["subject_resolution"]},

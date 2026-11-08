@@ -117,7 +117,7 @@ def assess_sql_plans(*, database_type, subject, evidence):
     for fact in plans[:4]:
         document = fact.sql_plan
         native = document.origin == "DATABASE_CURSOR"
-        estimate = document.origin == "CONTROLLED_ESTIMATE"
+        estimate = document.origin in {"CONTROLLED_ESTIMATE", "DATABASE_ESTIMATE"}
         identity_match = _match(document.subject, subject, required) if document.database_type == database_type else "MISMATCH"
         physical_match = _match(document.physical_identity, expected_physical, _PHYSICAL_KEYS[database_type]) if document.database_type == database_type else "MISMATCH"
         if native and document.database_type == database_type:
@@ -160,7 +160,7 @@ def assess_sql_plans(*, database_type, subject, evidence):
                 "Root 的行容器需显式核验；RAC 远端实例不可借用本地连接启动代次。",
                 "缺失或零启动行源不能当作实际执行；LAST 各节点也不保证来自一个可定位的完整执行。",
             ) if native else (
-                "来源为独立审批的受控估算；节点仅证明采集环境和所提交参数下的优化器估算，不证明生产实际路径。",
+                "来源为受控工具估算；节点仅说明采集环境中的优化器估算，不证明生产实际路径。",
                 "原解析环境按逐项原生核验解释，未知项和总体参数代表性不补全；同主体、文本、物理身份或相近时点不能代替运行时证明。",
                 "不能从估算计划生成实际行数偏差、实际耗时或根因确认；成本是优化器单位，不是毫秒。",
                 "Oracle来源游标标识不是本次估算计划哈希，估算不证明参数窥探；MySQL对象名可能是别名。",

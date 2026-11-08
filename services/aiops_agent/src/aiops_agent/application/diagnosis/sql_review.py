@@ -60,6 +60,9 @@ def _reference_projection(value, aliases):
 
 def _plan_rows(observation):
     records = observation["records"]
+    if (dict(observation.get("sql_plan") or {}).get("origin") == "DATABASE_ESTIMATE"
+        and len(records) == 1 and "plan_nodes_json" in records[0]["fields"]):
+        return {node["node_id"]: records[0] for node in observation["sql_plan"]["nodes"]}
     if records and "node_id" in records[0]["fields"]:
         return {int(row["fields"]["node_id"]): row for row in records}
     # Oracle 原生行号可稀疏且顺序不保证是深度优先；必须复现计划投影遍历，不按行号猜节点。
@@ -133,7 +136,7 @@ def expand_diagnostic_response(response, bundle, aliases):
             row = rows[node_id]
             finding["evidence_fields"].extend(
                 {"evidence_ref": ref, "row_index": row["row_index"], "field": field}
-                for field in ("operation", "options") if field in row["fields"])
+                for field in ("operation", "options", "plan_nodes_json") if field in row["fields"])
         finding["reasoning"] += f"\n\n计划节点 {','.join(map(str, review['node_ids']))}：{review['mechanism']}\n{review['impact']}"
         reviewed.add(ref)
     if matched and not reviewed:
@@ -234,7 +237,7 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
                 "evidence": "累计值可用于单次开销和机制分析；仅窗口排名、退化和效果验证要求对应窗口。缺基线不能抹去已有计划、锁等待或错误证据。",
                 "next_evidence": "只有会改变当前问题结论、当前授权可能补齐的关键缺口才填写 next_evidence（每项说明要验证什么及如何改变判断）。可使用数据库、监控、日志等任意适用来源；一般性限制只写结论边界，不触发补证。",
                 "oracle": "Oracle 不降级为三库最低共同能力。已有XPLAN时解释相关谓词和Outline，但不把Outline当作调优建议或某次生产执行。已有Monitor时分析精确单次执行的CPU/等待、I/O及本实例进程行源/工作区，结合匹配计划行解释；不能相加父子或PX计数。ASH用于按计划行、ON CPU/等待及阻塞者的采样归因，样本数/比例不是精确耗时，不能用没有样本证明健康。需要且尚未尝试的Oracle证据用oracle_evidence_requests声明kind、真实subject_id和改变判断的reason，不在next_evidence重复；只申请oracle_evidence_policy中可用的工具，ASH显式历史窗口必须带时区且不超过24小时，否则使用已冻结默认窗口；不能冒充未覆盖的历史故障。原生HTML报告按需下载，不作为所有SQL诊断的前置条件。",
-                "recommendations": "没有证据支持问题时不强造优化方案；OBSERVE/VERIFY无需虚构变更风险和回滚。变更建议仍须具备条件、风险、验证、回退和审批。",
+                "recommendations": "没有证据支持问题时不强造优化方案；保留必要的VERIFY/OBSERVE补证与验证步骤。需要SQL且对象和参数已核验时，draft_sql填写真实SQL草案，不填操作描述；缺少参数或不能安全生成时保持null并列出missing_parameters，文字验证与回退条件放validation/rollback_or_stop，不伪装成命令。OBSERVE/VERIFY无需虚构变更风险和回滚；SQL草案不是执行授权。变更建议仍须具备条件、风险、验证、回退和审批。",
                 "continuity": "之前的阶段判断不是新事实；新证据反驳时明确修正，补证失败不抹去仍成立的局部判断。",
                 "record_consistency": "goal_assessments 只能使用 goal_catalog 中的目标标识，填写时须逐项覆盖全部目标。parent_investigation 为空时，不得声明 continues_investigation 或 claim_revisions；沿用 SQL 证据不等于存在可修订的调查记录。观测参数值须与引用的原始字段一致；截断观测必须说明适用范围。",
             },

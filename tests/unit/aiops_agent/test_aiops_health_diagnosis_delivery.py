@@ -118,7 +118,7 @@ def test_assessment_uses_shorter_of_stage_budget_and_remaining_work(remaining, c
 
 
 @pytest.mark.parametrize("missing_metric", [False, True])
-def test_fixed_health_starter_uses_one_model_call_for_verified_final_answer(missing_metric):
+def test_fixed_health_starter_preflights_evidence_then_generates_final_answer_once(missing_metric):
     async def exercise():
         tools = ("db.instance.identity", "db.session.active", "db.session.blocking_chain",
                  "db.storage.capacity", "db.transaction.long_running", "db.replication.status")
@@ -129,9 +129,22 @@ def test_fixed_health_starter_uses_one_model_call_for_verified_final_answer(miss
                           plan_snapshot={**context.plan_snapshot, "planning_route": {"mode": "CONVERSATION_STARTER"},
                             "monitoring": {"initial_gaps": [{"code": "SOURCE_UNAVAILABLE", "detail": "监控源不可用"}]} if missing_metric else {}})
         model = _AnswerModel(evidence_refs=())
-        model.generate_structured = AsyncMock(side_effect=model.generate_structured)
+        original_generate = model.generate_structured
+        async def generate(**kwargs):
+            if kwargs["purpose"] == "aiops.investigation-assessment":
+                from types import SimpleNamespace
+                from platform_core.contracts.aiops.investigation import InvestigationAssessment
+                return SimpleNamespace(output=InvestigationAssessment(round_no=1,
+                    sufficiency_status="PARTIAL" if missing_metric else "ANSWERABLE",
+                    next_action="ANSWER", progress_made=True,
+                    reason="已完成本轮可用采集，监控源失败按实际回执保留" if missing_metric else "完整零行属于已完成检查"))
+            return await original_generate(**kwargs)
+        model.generate_structured = AsyncMock(side_effect=generate)
         assessed = await DbaEvidenceAssessmentHandler(model_client=model, prompts=_TestPrompts()).execute(context)
-        model.generate_structured.assert_not_awaited()
+        model.generate_structured.assert_awaited_once()
+        preflight = model.generate_structured.await_args.kwargs
+        assert preflight["purpose"] == "aiops.investigation-assessment"
+        assert "on_text_delta" not in preflight
         # 身份探测只用于来源校验，不冒充第六项健康结论。
         assert len(assessed.evidence) == 5
         assert assessed.investigation.next_action == "ANSWER"
@@ -140,7 +153,7 @@ def test_fixed_health_starter_uses_one_model_call_for_verified_final_answer(miss
         final_context = replace(context, input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1",
             "artifact_id": "assessment", "payload": assessed.model_dump(mode="json")},))
         result = await DbaAnswerComposeHandler(model_client=model, prompts=_TestPrompts()).execute(final_context)
-        model.generate_structured.assert_awaited_once()
+        assert model.generate_structured.await_count == 2
         request = model.generate_structured.await_args.kwargs
         assert request["purpose"] == "aiops.dba-diagnosis-answer-compose"
         assert (request["deadline"] - datetime.now(UTC)).total_seconds() > 80
