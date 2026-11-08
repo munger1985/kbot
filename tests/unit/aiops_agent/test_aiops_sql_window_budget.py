@@ -176,7 +176,8 @@ def test_failure_writeback_after_deadline_still_requires_current_owned_lease():
         runtime._ensure_lease(run=run, task=task, worker_id="worker", lease_token=token, now=now)
 
 
-def test_deadline_partial_is_persisted_then_projected_without_new_tasks():
+@pytest.mark.parametrize("published", ["", "已向用户输出的 SQL 分析。"])
+def test_deadline_partial_is_persisted_then_projected_without_new_tasks(published):
     async def exercise():
         source, fact = backed_observation()
         turn = SimpleNamespace(turn_id=uuid7(), status="COLLECTING")
@@ -185,6 +186,8 @@ def test_deadline_partial_is_persisted_then_projected_without_new_tasks():
             turns=SimpleNamespace(
                 get_run_link_by_ops_run_id=AsyncMock(return_value=SimpleNamespace(turn_id=turn.turn_id)),
                 get_turn=AsyncMock(return_value=turn),
+                list_events=AsyncMock(return_value=[SimpleNamespace(sequence_no=1, event_type="answer.delta",
+                    payload_json={"delta": published, "validation_status": "PENDING"})]),
                 list_evidence=AsyncMock(return_value=[SimpleNamespace(artifact_id=source.artifact_id), SimpleNamespace(artifact_id=fact.artifact_id)]),
             ),
         )
@@ -195,6 +198,11 @@ def test_deadline_partial_is_persisted_then_projected_without_new_tasks():
         payload = runtime._project_turn_answer.await_args.kwargs["payload"]
         assert payload["status"] == "PARTIAL"
         assert payload["evidence"][0]["rows"] == [list(fact.rows[0])]
+        if published:
+            block = next(block for block in payload["blocks"] if block["block_type"] == "MARKDOWN")
+            assert block["payload"]["markdown"] == published
+            assert block["payload"]["validation_status"] == "UNVERIFIED"
+            assert payload["answer_streamed"]
         assert uow.runs.add_artifact.await_count == 1
         assert uow.runs.add_artifact.await_args.args[0].security_level == source.security_level
         turn.status = "PARTIAL"

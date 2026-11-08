@@ -18,6 +18,7 @@
   const maxDiagnosticFiles = 15;
   const streamRecoveryAttempts = 120;
   const activeTurnFollowers = new Set();
+  const publishedAnswers = new Map();
   const terminalTurnStatuses = new Set([
     "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
   ]);
@@ -1791,7 +1792,22 @@
     return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${orchestration}${plan}${progress}${future}${answer}${planAcquisition}`;
   }
 
+  function retainPublishedAnswer(turn) {
+    const published = publishedAnswers.get(String(turn.turn_id));
+    if (!published) return turn;
+    const narrativeTypes = new Set(["MARKDOWN", "ANALYSIS_MARKDOWN", "SOLUTION_MARKDOWN"]);
+    const narrative = values(turn.answer_blocks).filter(block => narrativeTypes.has(block.block_type));
+    const finalText = narrative.map(block => String(block.payload?.markdown || "")).join("\n\n");
+    if (finalText.startsWith(published)) return turn;
+    return { ...turn, answer_blocks: [{
+      block_type: "MARKDOWN", payload: { markdown: published, raw_model_output: true,
+        validation_status: "UNVERIFIED", answer_notice: terminalTurnStatuses.has(turn.status)
+          ? "正文已保留；最终诊断未完成，不作为已核验结论或执行授权。" : null },
+    }, ...values(turn.answer_blocks).filter(block => !narrativeTypes.has(block.block_type))] };
+  }
+
   async function renderConversation(conversation, turns, resume = true) {
+    turns = turns.map(retainPublishedAnswer);
     state.conversation = conversation;
     outputTasks?.setConversation(conversation.conversation_id);
     state.turns = turns;
@@ -2437,6 +2453,7 @@
     const panel = document.getElementById("message-list");
     const followBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight <= 120;
     pending.displayedMarkdown += delta;
+    if (pending.turnId) publishedAnswers.set(String(pending.turnId), pending.displayedMarkdown);
     markdown.patch(pending.content, markdown.render(pending.displayedMarkdown));
     if (followBottom) panel.scrollTop = panel.scrollHeight;
   }
@@ -2491,6 +2508,7 @@
             message.querySelector(".ops-message-content").classList.add("is-streaming");
           }
           pending = {
+            turnId,
             message,
             content: message.querySelector(".ops-message-content"),
             displayedMarkdown: "",

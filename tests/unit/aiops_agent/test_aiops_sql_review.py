@@ -211,13 +211,13 @@ def test_sql_validation_logs_reason_without_original_model_input(error_kind):
     asyncio.run(exercise())
 
 
-def test_only_conclusion_changing_requests_replan_and_keep_all_source_options():
+def test_completed_answer_keeps_source_options_without_replanning():
     async def exercise():
         _, task, context, model, prompts, assessment = setup(needs_more=True)
         assessed = await DbaEvidenceAssessmentHandler(model_client=model, prompts=prompts)._review_sql(context, assessment, task)
-        assert assessed.status == "PARTIAL" and assessed.investigation.next_action == "REPLAN"
+        assert assessed.status == "PARTIAL" and assessed.investigation.next_action == "ANSWER"
         assert any(gap.code == "SQL_DIAGNOSIS_KEY_EVIDENCE" for gap in assessed.gaps)
-        assert AIOpsRuntimeService._should_replan_investigation(assessment=assessed, task_frame=task,
+        assert not AIOpsRuntimeService._should_replan_investigation(assessment=assessed, task_frame=task,
             deterministic_replan=False, no_progress_count=0)
         assert "数据库、监控、日志" in model.generate_structured.await_args.kwargs["input_payload"]["delivery_requirements"]["next_evidence"]
     asyncio.run(exercise())

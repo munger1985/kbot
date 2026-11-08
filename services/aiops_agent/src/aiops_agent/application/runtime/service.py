@@ -2006,6 +2006,19 @@ class AIOpsRuntimeService:
                 if artifact_payload is not None
                 else {"payload_uri": command.artifact.payload_uri}
             )
+            if (
+                command.artifact.schema_version == "AIOPS_TURN_RESULT.v1"
+                and run.workflow_kind in _AGENT_TURN_WORKFLOWS
+                and isinstance(artifact_payload, dict)
+            ):
+                turn = await self._turn_for_projection(uow=uow, run=run)
+                if turn is not None:
+                    from aiops_agent.application.diagnosis.answer_stream import preserve_published_answer
+                    artifact_payload = preserve_published_answer(
+                        AIOpsTurnResult.model_validate(artifact_payload),
+                        await self._published_model_answer(uow=uow, turn=turn),
+                    ).model_dump(mode="json")
+                    content = artifact_payload
             content_hash = sha256_json(content)
             if prior is not None and existing is not None:
                 self._ensure_same_artifact(
@@ -2513,6 +2526,8 @@ class AIOpsRuntimeService:
                     )
                 ),
             )
+            if should_replan and await self._published_model_answer(uow=uow, turn=turn):
+                should_replan = False
             if should_replan and run.workflow_kind != "INSPECTION":
                 await self._schedule_turn_replan(
                     uow=uow,
@@ -2554,7 +2569,10 @@ class AIOpsRuntimeService:
         deadline_reached: bool = False,
         tool_budget_remaining: bool = True,
     ) -> bool:
-        """存在可执行缺口时按截止时间、工具预算和连续进展决定补证。"""
+        """只在尚未交付正文时，按截止时间、工具预算和连续进展决定补证。"""
+        from aiops_agent.application.diagnosis.answer_stream import assessment_has_answer
+        if assessment_has_answer(assessment):
+            return False
         next_action = (
             assessment.investigation.next_action
             if assessment.investigation is not None
@@ -2704,6 +2722,8 @@ class AIOpsRuntimeService:
         )
         if result is None:
             return False
+        from aiops_agent.application.diagnosis.answer_stream import preserve_published_answer
+        result = preserve_published_answer(result, await self._published_model_answer(uow=uow, turn=turn))
         payload = result.model_dump(mode="json")
         artifact = await uow.runs.add_artifact(OpsArtifactEntity(
             ops_run_id=run.ops_run_id, ops_task_id=None,
@@ -3190,6 +3210,23 @@ class AIOpsRuntimeService:
             },
         )
 
+    @staticmethod
+    async def _published_model_answer(*, uow, turn) -> str:
+        """读取已提交的模型增量；终态回放帧不参与，保证完成重试幂等。"""
+        cursor = 0
+        chunks = []
+        while True:
+            rows = await uow.turns.list_events(
+                turn_id=turn.turn_id, after_sequence=cursor, limit=200,
+            )
+            for row in rows:
+                if row.event_type == "answer.delta" and row.payload_json.get("validation_status"):
+                    chunks.append(str(row.payload_json.get("delta") or ""))
+            if len(rows) < 200:
+                break
+            cursor = int(rows[-1].sequence_no)
+        return "".join(chunks)
+
     async def _project_turn_answer(
         self,
         *,
@@ -3245,13 +3282,22 @@ class AIOpsRuntimeService:
         evidence_by_artifact = {
             str(row.artifact_id): row for row in evidence_rows
         }
-        if not result.answer_streamed:
-            for offset in range(0, len(markdown), 120):
+        if result.answer_streamed:
+            published = await self._published_model_answer(uow=uow, turn=turn)
+            final_text = "\n\n".join(
+                str(block.payload.get("markdown", "")) for block in result.blocks
+                if str(block.block_type) in {"MARKDOWN", "ANALYSIS_MARKDOWN", "SOLUTION_MARKDOWN"}
+            )
+            remaining = final_text[len(published):] if published and final_text.startswith(published) else ""
+        else:
+            remaining = markdown
+        if remaining:
+            for offset in range(0, len(remaining), 120):
                 await self._append_turn_event(
                     uow,
                     turn,
                     event_type="answer.delta",
-                    payload={"delta": markdown[offset:offset + 120]},
+                    payload={"delta": remaining[offset:offset + 120]},
                 )
         for block_no, block in enumerate(result.blocks, start=1):
             block_payload = dict(block.payload)

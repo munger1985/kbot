@@ -1369,6 +1369,8 @@ class DbaEvidenceAssessmentHandler:
         status = SufficiencyStatus.ANSWERABLE if complete else (
             assessment.status if not current and assessment.status != SufficiencyStatus.ANSWERABLE else SufficiencyStatus.PARTIAL
         )
+        # 正文是本轮交付终点；缺口保留为后续建议，不在用户阅读后再次调用模型。
+        delivered = bool(narrative and narrative.markdown or checkpoint and checkpoint.answer_markdown)
         return assessment.model_copy(update={
             "status": status, "sql_checkpoint": checkpoint, "sql_diagnosis_error": error,
             "answer_narrative": narrative,
@@ -1376,7 +1378,7 @@ class DbaEvidenceAssessmentHandler:
                 code="SQL_DIAGNOSIS_KEY_EVIDENCE", detail=request, retryable=True) for index, request in enumerate(requests, 1))),
             "investigation": InvestigationAssessment(
                 round_no=int(context.plan_snapshot.get("revision_no") or 1), sufficiency_status=status,
-                next_action="REPLAN" if requests else "ANSWER", progress_made=current,
+                next_action="REPLAN" if requests and not delivered else "ANSWER", progress_made=current,
                 remaining_unknowns=draft.unresolved_questions if draft else (), evidence_gaps=requests,
                 clarification_question=None, reason=draft.summary if draft else "诊断阶段未完成，交付已取得的局部结果，不重复调用失败阶段。",
             ),
@@ -1943,7 +1945,11 @@ class DbaAnswerComposeHandler:
                     fallback_reason = "本轮后续取证或诊断未完成，以下保留上一阶段已核验判断及原适用时点；不将其冒充对新增证据的完整结论。"
             if draft is None and assessment.sql_diagnosis_error:
                 fallback_reason = f"诊断阶段未完成（{assessment.sql_diagnosis_error}）；已停止重复生成，保留已核验观测。"
-            elif draft is None and self._model is not None and self._prompts is not None:
+            elif (
+                draft is None and narrative is None
+                and not (checkpoint and checkpoint.answer_markdown)
+                and self._model is not None and self._prompts is not None
+            ):
                 checkpoint = await generate_sql_review(context=context, task_frame=task_frame, database_type=self._database_type(context),
                     evidence=assessment.evidence, gaps=assessment.gaps, model=self._model, prompts=self._prompts,
                     on_text_delta=capture.on_delta if on_text_delta is not None else None)
@@ -1984,6 +1990,11 @@ class DbaAnswerComposeHandler:
         plan_blocks = [block for block in data_blocks if block.payload.get("result_kind") == "SQL_EXECUTION_PLAN"
                        and any(ref in matched_plans for ref in block.evidence_refs)]
         completed = bool(record and record.stop_reason == "GOAL_ANSWERED" and assessment.status == SufficiencyStatus.ANSWERABLE)
+        if narrative is None and draft is None and checkpoint and checkpoint.answer_markdown:
+            from aiops_agent.contracts.turn_answer import AnswerNarrative
+            narrative = AnswerNarrative(markdown=checkpoint.answer_markdown, generation_status="COMPLETED",
+                validation_status="UNVERIFIED", streamed_run_id=checkpoint.streamed_run_id,
+                notice="模型正文已保留；当前证据核验未完成，不作为已核验结论或执行授权。")
         native_markdown = narrative.markdown if narrative else checkpoint.answer_markdown if draft is not None and checkpoint is not None else None
         markdown = native_markdown or f"## 分析\n\n{analysis}\n\n## 解决方案\n\n{solution}"
         blocks = [

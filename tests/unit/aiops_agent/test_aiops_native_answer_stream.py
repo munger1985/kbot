@@ -176,12 +176,13 @@ def test_incomplete_or_invalid_stream_never_returns_success(failure):
     asyncio.run(exercise())
 
 
-def test_sql_checkpoint_keeps_original_text_and_compose_does_not_regenerate_or_replay():
+@pytest.mark.parametrize("needs_more", [False, True])
+def test_sql_checkpoint_keeps_original_text_and_compose_does_not_regenerate_or_replay(needs_more):
     from tests.unit.aiops_agent.test_aiops_sql_review import setup, review
     from tests.support.aiops_sql_review import diagnostic_response
 
     async def exercise():
-        fact, task_frame, ctx, model, prompts, assessment = setup()
+        fact, task_frame, ctx, model, prompts, assessment = setup(needs_more=needs_more)
         gate = asyncio.Event()
         native = "## 分析\n已有观测支持局部判断。\n\n## 方案\n暂不变更。\n"
 
@@ -189,7 +190,7 @@ def test_sql_checkpoint_keeps_original_text_and_compose_does_not_regenerate_or_r
             await kwargs["on_text_delta"](ModelTextDelta(reset=True))
             await kwargs["on_text_delta"](ModelTextDelta(delta=native))
             await gate.wait()
-            output = diagnostic_response(review(fact)).model_dump()
+            output = diagnostic_response(review(fact, needs_more=needs_more)).model_dump()
             output["answer_markdown"] = native
             return SimpleNamespace(output=kwargs["output_model"].model_validate(output), receipt=None)
 
@@ -208,6 +209,11 @@ def test_sql_checkpoint_keeps_original_text_and_compose_does_not_regenerate_or_r
         await stream.aclose()
         assert assessed.sql_checkpoint.answer_markdown == native
         assert assessed.sql_checkpoint.streamed_run_id == str(ctx.run_id)
+        from aiops_agent.application.runtime.service import AIOpsRuntimeService
+        assert assessed.investigation.next_action == "ANSWER"
+        assert not AIOpsRuntimeService._should_replan_investigation(
+            assessment=assessed, task_frame=task_frame, deterministic_replan=True,
+            no_progress_count=0, has_deferred=True)
         answer_ctx = replace(ctx, input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1", "payload": assessed.model_dump(mode="json")},))
         composer = DbaAnswerComposeHandler(model_client=model, prompts=prompts)
         items = [item async for item in composer.execute_stream(answer_ctx)]

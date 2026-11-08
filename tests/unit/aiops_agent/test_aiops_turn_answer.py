@@ -325,6 +325,10 @@ class _ProjectionTurns:
         return row
 
 
+    async def list_events(self, *, turn_id, after_sequence=0, limit=200):
+        return [row for row in self.events if row.turn_id == turn_id and row.sequence_no > after_sequence][:limit]
+
+
 class _ProjectionConversations:
     def __init__(self, conversation) -> None:
         self.conversation = conversation
