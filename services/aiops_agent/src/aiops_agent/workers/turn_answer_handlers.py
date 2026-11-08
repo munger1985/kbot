@@ -1870,7 +1870,7 @@ class DbaAnswerComposeHandler:
             message = (
                 "下表是采集时点的当前活跃 SQL 快照。"
                 if fact and fact.row_count else
-                "当前活跃 SQL 快照未返回匹配记录；这不能证明其他时刻没有 SQL 执行。"
+                "采集时点，所选数据库未发现正在执行的 SQL。"
                 if fact else "当前活跃 SQL 暂不可用，请查看证据缺口。"
             )
         else:

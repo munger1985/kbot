@@ -1385,7 +1385,7 @@
           }
         ],
         "template_ref": "sql/statement_digest_top.sql",
-        "template_sha256": "363b7a7d1c49d4c84213b443199d43f7c3961dc61e0ad12ec04cfd5901aea4cd",
+        "template_sha256": "5b30033a9f4fcbd072ab83358dda002c2f738b324b16e5543ed73d64d1b801ba",
         "timeout_seconds": 20,
         "max_rows": 500,
         "max_bytes": 16777216,

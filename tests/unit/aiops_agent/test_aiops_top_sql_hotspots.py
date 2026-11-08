@@ -124,6 +124,32 @@ def test_policy_has_one_strategy_and_one_minute_default_without_enabling_collect
             WorkloadPolicy(top_statement_limit=limit)
 
 
+def test_mysql_hotspot_keys_use_binary_comparison_without_target_collation():
+    import sqlglot
+    from sqlglot import exp
+    from aiops_agent.executor.drivers.mysql import _mysql_bound_sql
+
+    registry = DiagnosticRegistry.load()
+    tool = next(tool for tool in registry.tools if tool.definition.tool_id == "db.mysql.statement.digest.top")
+    tree = sqlglot.parse_one(tool.sql, read="mysql")
+    comparisons = list(tree.find_all(exp.In))
+    assert len(comparisons) == 3
+    for comparison in comparisons:
+        assert isinstance(comparison.this, exp.Cast)
+        assert comparison.this.args["to"].sql(dialect="mysql") == "BINARY"
+        assert "UPPER(digest)" in comparison.this.sql(dialect="mysql")
+        assert "schema_name IS NULL" in comparison.this.sql(dialect="mysql")
+    key_types = [kind for kind in tree.find_all(exp.DataType) if kind.this == exp.DataType.Type.VARBINARY]
+    assert len(key_types) == 2
+    assert all(kind.sql(dialect="mysql") == "VARBINARY(2048)" for kind in key_types)
+    assert not list(tree.find_all(exp.Collate))
+    values = {"limit": 10, "tracked_keys": json.dumps(["A:V订单", "A:VOrders", "A:Vorders", "A:N", "A:V"]), "excluded_keys": "[]"}
+    assert registry.validate_parameters(tool, values) == values
+    bound = _mysql_bound_sql(tool.sql)
+    assert "%(tracked_keys)s" in bound and "%(excluded_keys)s" in bound
+    assert "订单" not in bound
+
+
 def test_latest_pool_query_is_scoped_bounded_and_ordered():
     session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: None, out_parameters={"claimed_id": None})))
     repository = WorkloadRepository(session)
@@ -143,7 +169,7 @@ def test_latest_pool_query_is_scoped_bounded_and_ordered():
 def test_scheduler_freezes_previous_pool_and_discards_stale_state():
     from tests.unit.aiops_agent.test_aiops_workload_collection_authorization import NOW, scheduler_context
     for age in (timedelta(minutes=1), timedelta(hours=1)):
-        scheduler, target, _, uow = scheduler_context()
+        scheduler, target, uow = scheduler_context()
         previous = pool([statement()])
         uow.workloads.latest_hotspot_snapshot.return_value = SimpleNamespace(
             collected_at=NOW - age, continuity_json={"sql_collection": {"pool": previous}},

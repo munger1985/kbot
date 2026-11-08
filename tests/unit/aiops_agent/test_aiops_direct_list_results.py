@@ -180,6 +180,18 @@ def test_other_direct_lists_keep_their_scope_and_empty_result(kind, tool_id):
     assert len(result.blocks) == 2
     assert result.blocks[1].evidence_refs == (entry.evidence_ref,)
     assert result.blocks[1].payload["row_count"] == 0
+    if kind == "CURRENT_SQL_LIST":
+        assert result.blocks[0].payload["markdown"] == "采集时点，所选数据库未发现正在执行的 SQL。"
+
+
+def test_unavailable_active_sql_is_not_reported_as_no_running_sql():
+    assessment = DbaSufficiencyAssessment(status="NEEDS_EVIDENCE", gaps=(
+        TurnEvidenceGap(source_id="db.sql.active_current", step_id="a1", code="PERMISSION_DENIED", detail="查询权限不足"),
+    ))
+    result = DbaAnswerComposeHandler._direct_list_result("CURRENT_SQL_LIST", assessment)
+    assert result.status == "PARTIAL"
+    assert "暂不可用" in result.blocks[0].payload["markdown"]
+    assert "未发现" not in result.blocks[0].payload["markdown"]
 
 
 def test_direct_entry_does_not_bypass_unsafe_or_clarification():

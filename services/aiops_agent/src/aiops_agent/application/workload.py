@@ -1098,7 +1098,7 @@ class WorkloadService:
             )
             result["snapshot_ids"] = [str(item) for item in ids]
             result["snapshot_count"] = len(ids)
-            result["collection_state"] = collection_runtime_state(target)
+            result["collection_state"] = collection_runtime_state(target, now=datetime.now(UTC))
             result["target_id"] = str(target_id)
             result["collection_enabled"] = bool(
                 dict(target.workload_snapshot_policy_json or {}).get("enabled")

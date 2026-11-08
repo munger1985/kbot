@@ -267,9 +267,10 @@ def test_runtime_projection_contains_attempt_not_claimed_success_and_no_secrets(
         workload_last_error_code="TARGET_CONFIGURATION_INCOMPLETE", workload_consecutive_failures=12,
         endpoint_json={"password": "must-not-be-exported"},
     )
-    state = collection_runtime_state(target)
+    state = collection_runtime_state(target, now=NOW)
     assert state == {"last_attempt_at": NOW.isoformat(), "next_run_at": (NOW + timedelta(minutes=5)).isoformat(),
-                     "last_error_code": "TARGET_CONFIGURATION_INCOMPLETE", "consecutive_failures": 12}
+                     "last_error_code": "TARGET_CONFIGURATION_INCOMPLETE", "consecutive_failures": 12,
+                     "checked_at": NOW.isoformat(), "schedule_delay_seconds": 0, "schedule_grace_seconds": 150}
     result = {"snapshot_count": 0, "collection_enabled": True, "collection_state": state}
     assert "本次读取快照：0 条" in collection_runtime_note(result)
     assert "配置不完整" in collection_failure_reason(result)
@@ -312,6 +313,57 @@ def test_scheduling_does_not_clear_an_unrelated_execution_error():
     values = uow.targets.update_workload_runtime_state.await_args.kwargs["values"]
     assert "workload_last_error_code" not in values
     assert "workload_consecutive_failures" not in values
+
+
+@pytest.mark.parametrize("delay,expected", [(0, False), (149, False), (150, False), (151, True), (172800, True)])
+def test_unstarted_collection_detects_schedule_overdue_without_fabricating_execution_error(delay, expected):
+    target = SimpleNamespace(
+        workload_next_run_at=NOW - timedelta(seconds=delay),
+        workload_snapshot_policy_json={"enabled": True, "interval_minutes": 1, "round_timeout_seconds": 30},
+    )
+    state = collection_runtime_state(target, now=NOW)
+    assert state["schedule_delay_seconds"] == delay
+    assert state["last_error_code"] is None and state["consecutive_failures"] == 0
+    result = {"collection_enabled": True, "collection_state": state}
+    reason = collection_failure_reason(result)
+    assert bool(reason) is expected
+    if expected:
+        assert "调度逾期" in reason and "任务创建日志" in reason
+    assert collection_failure_reason({**result, "collection_enabled": False}) is None
+
+
+def test_overdue_collection_reports_scheduler_problem_instead_of_wait_for_snapshots():
+    state = collection_runtime_state(SimpleNamespace(workload_next_run_at=NOW - timedelta(days=2)), now=NOW)
+    result = {
+        "requested_start": (NOW - timedelta(minutes=15)).isoformat(), "requested_end": NOW.isoformat(),
+        "covered_intervals": [], "gaps": {"INSUFFICIENT_SNAPSHOTS": 1},
+        "collection_enabled": True, "snapshot_count": 0, "collection_state": state,
+        "top_statements": [],
+    }
+    context = SimpleNamespace(
+        input_artifacts=({"schema_version": "TOP_SQL_WINDOW_RESULT.v1", "artifact_id": uuid7(), "payload": {"result": result}},),
+        plan_snapshot={"answer_context": {"task_frame": {}}}, trigger_type="MANUAL",
+    )
+    assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(context))
+    assert "COLLECTION_FAILED" in {gap.code for gap in assessment.gaps}
+    answer = DbaAnswerComposeHandler._direct_list_result("TOP_SQL_LIST", assessment)
+    text = answer.blocks[0].payload["markdown"]
+    assert "调度逾期" in text and "不能仅靠等待" in text
+    assert "待快照覆盖所需窗口后重试" not in text
+
+
+def test_overdue_collection_respects_policy_budget_and_missing_schedule():
+    target = SimpleNamespace(
+        workload_next_run_at=NOW - timedelta(minutes=10),
+        workload_snapshot_policy_json={"interval_minutes": 5, "round_timeout_seconds": 180},
+    )
+    state = collection_runtime_state(target, now=NOW)
+    assert state["schedule_grace_seconds"] == 780
+    assert collection_failure_reason({"collection_enabled": True, "collection_state": state}) is None
+    target.workload_next_run_at = None
+    state = collection_runtime_state(target, now=NOW)
+    assert state["schedule_delay_seconds"] == 0
+    assert collection_failure_reason({"collection_enabled": True, "collection_state": state}) is None
 
 
 def test_current_collection_failure_preserves_valid_historical_window():
