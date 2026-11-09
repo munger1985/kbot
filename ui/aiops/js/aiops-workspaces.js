@@ -655,6 +655,7 @@
     EXACHECK_FAIL: "ExaCheck 失败",
     EXACHECK_WARNING: "ExaCheck 警告",
     REPLICATION_LAG: "复制延迟",
+    REPLICATION_APPLY_LATENCY: "最近事务应用耗时偏高",
     DEAD_TUPLES: "无效元组堆积",
     AUTOVACUUM: "自动清理异常",
     IDLE_SESSION: "空闲会话异常",

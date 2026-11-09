@@ -88,6 +88,7 @@ _DISPLAY_NAMES = {
     "EXACHECK_FAIL": "ExaCheck 检查失败",
     "EXACHECK_WARNING": "ExaCheck 检查警告",
     "REPLICATION_LAG": "复制延迟",
+    "REPLICATION_APPLY_LATENCY": "最近事务应用耗时偏高",
     "DEAD_TUPLES": "无效元组堆积",
     "AUTOVACUUM": "自动清理异常",
     "IDLE_SESSION": "空闲会话异常",
@@ -574,6 +575,10 @@ _METRIC_FIELD_DISPLAY_NAMES = {
     "trend_slope_per_day": "每日趋势斜率",
 }
 _FIELD_TOKEN_DISPLAY_NAMES = {
+    "applied": "已应用", "applying": "正在应用", "coordinator": "协调线程",
+    "latest": "最近", "paused": "暂停", "receive": "接收", "received": "已接收",
+    "replay": "回放", "replayed": "已回放", "gap": "缺口", "lsn": "LSN",
+    "worker": "工作线程",
     "active": "活动", "age": "年龄", "allocated": "已分配", "analyze": "分析",
     "applier": "应用线程", "archive": "归档", "archived": "已归档", "at": "时间",
     "autoanalyze": "自动分析", "autovacuum": "自动清理", "average": "平均",

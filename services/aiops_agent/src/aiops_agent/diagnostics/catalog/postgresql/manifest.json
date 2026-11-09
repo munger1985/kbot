@@ -827,7 +827,7 @@
         }
       ],
       "template_ref": "sql/session_active.sql",
-      "template_sha256": "348f63b24da859c262ee211ea20dab96e82039a4d1b96fca30d28034f91e5516",
+      "template_sha256": "218f2e0e4a7f72586a92f673f9f8a6d6f5ee398f75eec6acf2e13f1a4e006fb0",
       "timeout_seconds": 20,
       "max_rows": 200,
       "max_bytes": 1048576,
@@ -1414,17 +1414,36 @@
       "variant": "postgresql_pg_stat_activity_waits",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": ["pg_stat_activity"],
-      "required_privileges": ["pg_read_all_stats"],
+      "required_capabilities": [
+        "pg_stat_activity"
+      ],
+      "required_privileges": [
+        "pg_read_all_stats"
+      ],
       "parameters": [],
       "output_columns": [
-        {"name": "wait_event_type", "logical_type": "STRING", "nullable": false},
-        {"name": "wait_event", "logical_type": "STRING", "nullable": false},
-        {"name": "session_count", "logical_type": "INTEGER", "nullable": false},
-        {"name": "maximum_query_seconds", "logical_type": "INTEGER"}
+        {
+          "name": "wait_event_type",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "wait_event",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "session_count",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "maximum_query_seconds",
+          "logical_type": "INTEGER"
+        }
       ],
       "template_ref": "sql/wait_current.sql",
-      "template_sha256": "d3a5f0fc466c461fe297dbfe409743f2995a9af37f6f9e2e9b7a77c9557e15aa",
+      "template_sha256": "93ba2dbe6f2a8dab9a33f1f78ff9925e9994da589a91b792034afa717a514148",
       "timeout_seconds": 20,
       "max_rows": 200,
       "max_bytes": 524288,
@@ -1461,23 +1480,60 @@
       "variant": "postgresql_pg_replication_slots_12_plus",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": ["pg_replication_slots"],
-      "required_privileges": ["pg_read_all_stats"],
+      "required_capabilities": [
+        "pg_replication_slots"
+      ],
+      "required_privileges": [
+        "pg_read_all_stats"
+      ],
       "parameters": [],
       "output_columns": [
-        {"name": "slot_name", "logical_type": "STRING", "nullable": false},
-        {"name": "slot_type", "logical_type": "STRING", "nullable": false},
-        {"name": "database_name", "logical_type": "STRING"},
-        {"name": "active", "logical_type": "BOOLEAN", "nullable": false},
-        {"name": "active_pid", "logical_type": "INTEGER"},
-        {"name": "restart_lsn", "logical_type": "STRING"},
-        {"name": "confirmed_flush_lsn", "logical_type": "STRING"},
-        {"name": "retained_wal_bytes", "logical_type": "DECIMAL"},
-        {"name": "xmin", "logical_type": "STRING"},
-        {"name": "catalog_xmin", "logical_type": "STRING"}
+        {
+          "name": "slot_name",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "slot_type",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "database_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "active",
+          "logical_type": "BOOLEAN",
+          "nullable": false
+        },
+        {
+          "name": "active_pid",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "restart_lsn",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "confirmed_flush_lsn",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "retained_wal_bytes",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "xmin",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "catalog_xmin",
+          "logical_type": "STRING"
+        }
       ],
       "template_ref": "sql/replication_slot_retention.sql",
-      "template_sha256": "6a094ff2c90625ecbd3c06a54bb64a5e5e8deea3c7d84a3625c4470e42465acc",
+      "template_sha256": "908e7544440e28c0c39487f262b71defd337e0f8edc0943801d7122507f3ba63",
       "timeout_seconds": 20,
       "max_rows": 200,
       "max_bytes": 1048576,
@@ -2226,6 +2282,65 @@
       "max_bytes": 262144,
       "cost_level": "LOW",
       "measurement_semantics": "NOT_APPLICABLE"
+    },
+    {
+      "tool_id": "db.postgresql.replication.replay",
+      "description": "核对本地备库回放、暂停状态及接收至回放位点差；回放年龄不是当前复制延迟。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_12_local_replay",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": [
+        "pg_stat_replication"
+      ],
+      "required_privileges": [
+        "pg_read_all_stats"
+      ],
+      "parameters": [],
+      "output_columns": [
+        {
+          "name": "database_role",
+          "logical_type": "STRING",
+          "nullable": true
+        },
+        {
+          "name": "replay_paused",
+          "logical_type": "BOOLEAN",
+          "nullable": true
+        },
+        {
+          "name": "received_lsn",
+          "logical_type": "STRING",
+          "nullable": true
+        },
+        {
+          "name": "replay_lsn",
+          "logical_type": "STRING",
+          "nullable": true
+        },
+        {
+          "name": "receive_replay_gap_bytes",
+          "logical_type": "DECIMAL",
+          "nullable": true
+        },
+        {
+          "name": "last_replayed_transaction_at",
+          "logical_type": "DATETIME",
+          "nullable": true
+        },
+        {
+          "name": "last_replay_age_seconds",
+          "logical_type": "DECIMAL",
+          "nullable": true
+        }
+      ],
+      "template_ref": "sql/replication_replay.sql",
+      "template_sha256": "9a601f0f58d1ff7668fee2cb02005b2950f90a558ee5dd0b4496b63c4cc9e618",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
     }
   ]
 }

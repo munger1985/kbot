@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from aiops_agent.application.conversation_starters.common import (
+    COMMON_BASELINES, COMMON_CONSTRAINTS, OUTPUT_SECTIONS, starter_measurement_semantics,
+)
+from aiops_agent.application.conversation_starters.sql_input import sql_starter_subject
+
 import json
 import re
 from dataclasses import dataclass, replace
@@ -567,7 +572,8 @@ class TurnPlanningService:
                 compact, context.target_context, available_playbooks
             )
         elif kind == "SINGLE_SQL":
-            sql_id = str(parameters.get("sql_id") or "").lower()
+            subject = sql_starter_subject(parameters, str(context.target_context.get("db_type") or ""))
+            sql_id = self._single_sql_subject_value(subject)
             compact = CompactPlanningOutput(
                 planning_mode=CompactPlanningMode.READ_ONLY_LOOKUP,
                 objectives=(TaskObjective.DIAGNOSE,),
@@ -575,8 +581,8 @@ class TurnPlanningService:
                 diagnostic_profile=DiagnosticProfile.SINGLE_SQL_PERFORMANCE,
                 implementation_profile=ImplementationProfile.NONE,
                 evidence_source_strategy=EvidenceSourceStrategy.DATABASE_FIRST,
-                subject_ref={"subject_type": "ORACLE_SQL_ID", "sql_id": sql_id},
-                problem_statement=f"深度分析 SQL_ID {sql_id}",
+                subject_ref=subject,
+                problem_statement=f"深度分析 SQL {sql_id}",
                 success_criteria=("形成单 SQL 性能证据基线和优化结论",),
                 public_reasoning_summary="已按单 SQL 固定诊断档案建立计划",
             )
@@ -584,7 +590,7 @@ class TurnPlanningService:
                 question=context.question,
                 compact=compact,
                 target_context=context.target_context,
-                subject={"subject_type": "ORACLE_SQL_ID", "sql_id": sql_id},
+                subject=subject,
             )
             requested_tool_ids = self._profile_tool_ids(compact, context.target_context)
             requested_playbook_ids = self._profile_playbook_ids(
@@ -701,41 +707,9 @@ class TurnPlanningService:
             ]["hours"] * 3_600
             temporal_mode = TemporalAnalysisMode.HISTORICAL
         elif kind == "CURRENT_PERFORMANCE":
-            tool_ids = {
-                "ORACLE": (
-                    "db.instance.identity",
-                    "db.instance.performance",
-                    "db.session.active",
-                    "db.wait.class_summary",
-                ),
-                "MYSQL": (
-                    "db.instance.identity",
-                    "db.mysql.instance.throughput",
-                    "db.session.active",
-                    "db.mysql.connection.utilization",
-                ),
-                "POSTGRESQL": (
-                    "db.instance.identity",
-                    "db.postgresql.instance.throughput",
-                    "db.session.active",
-                    "db.postgresql.connection.utilization",
-                ),
-            }.get(db_type, ("db.instance.identity", "db.session.active"))
+            tool_ids = COMMON_BASELINES[kind][db_type]
         elif kind == "REPLICATION":
-            lag_tool = {
-                "ORACLE": "db.replication.lag",
-                "MYSQL": "db.mysql.replication.lag",
-                "POSTGRESQL": "db.postgresql.replication.lag",
-            }.get(db_type)
-            tool_ids = tuple(
-                value
-                for value in (
-                    "db.instance.identity",
-                    "db.replication.status",
-                    lag_tool,
-                )
-                if value
-            )
+            tool_ids = COMMON_BASELINES[kind][db_type]
         elif kind == "BACKUP_RECOVERY":
             tool_ids = {
                 "ORACLE": (
@@ -923,7 +897,7 @@ class TurnPlanningService:
                                 tool_id == "db.sql.top_current"
                                 and db_type == "ORACLE"
                             )
-                            else MeasurementSemantics.CURRENT_ACTIVITY
+                            else MeasurementSemantics(starter_measurement_semantics(tool_id, db_type))
                         ),
                         depends_on=(("a1",) if index > 1 else ()),
                         deferred=(tool_id == "db.oracle.awr.report"),
@@ -953,7 +927,10 @@ class TurnPlanningService:
                 temporal_analysis_mode=temporal_mode,
                 known_facts=(f"用户明确选择功能入口：{title}",),
                 unknowns=(),
-                constraints=("只执行当前 Target 的只读取证，不执行变更",),
+                constraints=(
+                    "只执行当前 Target 的只读取证，不执行变更", *COMMON_CONSTRAINTS,
+                    *(("按共同业务章节输出：" + "、".join(OUTPUT_SECTIONS[kind]),) if kind in OUTPUT_SECTIONS else ()),
+                ),
                 success_criteria=(f"完成{title}并正面回答用户问题",),
                 completion_requirements=completion_requirements,
                 action_intent=ActionIntent.NONE,
@@ -1529,6 +1506,7 @@ class TurnPlanningService:
             return (
                 "db.sql.cursor_details",
                 "db.mysql.statement.history",
+                "db.mysql.statement.plan",
                 "db.sql.object_statistics",
                 "db.table.statistics",
                 "db.index.health",
@@ -1542,6 +1520,7 @@ class TurnPlanningService:
         return (
             "db.postgresql.statement.subjects",
             "db.postgresql.statement.details",
+            "db.postgresql.statement.plan",
             "db.sql.object_statistics",
             "db.postgresql.table.statistics",
             "db.postgresql.index.statistics",
@@ -1745,14 +1724,13 @@ class TurnPlanningService:
                 "user_oid": int(subject.get("user_oid") or 0),
                 "limit": 20,
             }
-            if "top_level" in subject:
-                statement_input["top_level"] = bool(subject["top_level"])
-                if "database_oid" not in subject:
-                    statement_input["include_nested"] = False
+            exact_subject = all(key in subject for key in ("database_oid", "user_oid", "top_level"))
+            if exact_subject:
+                statement_input["top_level"] = subject["top_level"]
             action_specs = (
                 (
                     "pg_stat_statements累计性能指标和脱敏语句",
-                    "db.postgresql.statement.details" if "database_oid" in subject and "top_level" in subject else "db.postgresql.statement.subjects",
+                    "db.postgresql.statement.details" if exact_subject else "db.postgresql.statement.subjects",
                     statement_input,
                     MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
                     False,
@@ -1795,7 +1773,7 @@ class TurnPlanningService:
                 (
                     "长事务和xmin风险",
                     "db.transaction.long_running",
-                    {"minimum_seconds": 60, "limit": 100},
+                    {"min_seconds": 60},
                     MeasurementSemantics.CURRENT_ACTIVITY,
                     True,
                 ),

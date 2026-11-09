@@ -719,13 +719,13 @@ class FindingCompilerTest(unittest.TestCase):
             compilation.empty_reasons,
         )
 
-    def test_mysql_replication_lag_compiles_when_threshold_reached(self) -> None:
+    def test_mysql_last_applied_latency_is_not_current_lag(self) -> None:
         load_finding_catalog.cache_clear()
         compilation = compile_findings(
             (
                 _fact(
                     tool_id="db.mysql.replication.lag",
-                    columns=("channel_name", "lag_seconds"),
+                    columns=("channel_name", "latest_applied_transaction_latency_seconds"),
                     rows=(("", 45),),
                 ),
             ),
@@ -733,9 +733,9 @@ class FindingCompilerTest(unittest.TestCase):
         )
         self.assertEqual(1, len(compilation.findings))
         card = compilation.findings[0]
-        self.assertEqual(FindingType.REPLICATION_LAG, card.finding_type)
+        self.assertEqual(FindingType.REPLICATION_APPLY_LATENCY, card.finding_type)
         self.assertEqual(FindingSeverity.HIGH, card.severity)
-        self.assertEqual(45, card.fields["lag_seconds"])
+        self.assertEqual(45, card.fields["latest_applied_transaction_latency_seconds"])
         self.assertEqual("mysql.replication.lag", card.playbook_id)
 
     def test_postgresql_dead_tuples_below_threshold_are_not_findings(self) -> None:

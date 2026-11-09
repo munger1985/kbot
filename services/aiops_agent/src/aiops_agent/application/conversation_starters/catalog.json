@@ -1,5 +1,5 @@
 {
-  "catalog_version": "2.2.0",
+  "catalog_version": "2.3.0",
   "starters": [
     {
       "starter_id": "database.health.overview",
@@ -9,7 +9,7 @@
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
       "input_schema": [],
-      "planning": {"kind": "TOOLS", "visualization_profile_id": "health.overview", "tool_ids": ["db.instance.identity", "db.session.active", "db.session.blocking_chain", "db.storage.capacity", "db.transaction.long_running", "db.replication.status"]},
+      "planning": {"kind": "HEALTH_OVERVIEW", "visualization_profile_id": "health.overview", "tool_ids": ["db.instance.identity", "db.session.active", "db.session.blocking_chain", "db.storage.capacity", "db.transaction.long_running", "db.replication.status"]},
       "sort_order": 10
     },
     {
@@ -64,7 +64,7 @@
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
       "input_schema": [],
-      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.session.blocking_chain", "db.session.active", "db.transaction.long_running"]},
+      "planning": {"kind": "SESSIONS_BLOCKING", "tool_ids": ["db.instance.identity", "db.session.blocking_chain", "db.session.active", "db.transaction.long_running"]},
       "sort_order": 30
     },
     {
@@ -112,13 +112,13 @@
       "sort_order": 70
     },
     {
-      "starter_id": "oracle.sql.performance",
+      "starter_id": "database.sql.performance",
       "category": "REPORT",
       "title": "单 SQL 深度分析",
-      "description": "采集游标、计划、对象统计、DBMS_XPLAN 和实时监控基线。",
-      "supported_db_types": ["ORACLE"],
+      "description": "按 SQL 标识采集语句、统计主体、执行计划和对象证据，输出统一的性能分析与计划图。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
-      "input_schema": [{"name": "sql_id", "label": "SQL_ID", "type": "text", "required": true, "pattern": "^[a-zA-Z0-9]{13}$"}],
+      "input_schema": [{"name":"sql_id","label":"SQL_ID","type":"text","required":true,"pattern":"^[a-zA-Z0-9]{13}$","supported_db_types":["ORACLE"]},{"name":"query_id","label":"Query ID","type":"text","required":true,"pattern":"^-?[0-9]{1,19}$","supported_db_types":["POSTGRESQL"]},{"name":"database_oid","label":"Database OID（可选）","type":"integer","required":false,"min":1,"max":4294967295,"supported_db_types":["POSTGRESQL"]},{"name":"user_oid","label":"User OID（可选）","type":"integer","required":false,"min":1,"max":4294967295,"supported_db_types":["POSTGRESQL"]},{"name":"top_level","label":"语句层级（可选）","type":"select","required":false,"options":[{"value":"true","label":"顶层语句"},{"value":"false","label":"嵌套语句"}],"supported_db_types":["POSTGRESQL"]},{"name":"digest","label":"Digest","type":"text","required":true,"pattern":"^[a-fA-F0-9]{64}$","supported_db_types":["MYSQL"]},{"name":"schema_name","label":"Schema（可选）","type":"text","required":false,"max_length":64,"supported_db_types":["MYSQL"]}],
       "planning": {"kind": "SINGLE_SQL"},
       "sort_order": 80
     },
@@ -141,7 +141,7 @@
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
       "input_schema": [],
-      "planning": {"kind": "REPLICATION"},
+      "planning": {"kind": "REPLICATION", "visualization_profile_id": "replication.status"},
       "sort_order": 100
     },
     {
@@ -167,14 +167,14 @@
       "sort_order": 130
     },
     {
-      "starter_id": "oracle.parameters.review",
+      "starter_id": "database.parameters.review",
       "category": "DIAGNOSTIC",
       "title": "数据库参数检查",
-      "description": "读取实例参数并分析配置风险。",
-      "supported_db_types": ["ORACLE"],
+      "description": "按内存、连接、优化器及日志类别分析实例参数与配置风险。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
       "input_schema": [],
-      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.instance.parameters"]},
+      "planning": {"kind": "PARAMETERS", "tool_ids": ["db.instance.identity", "db.instance.parameters"]},
       "sort_order": 140
     },
     {"starter_id": "oracle.runbook.adg-build", "category": "RUNBOOK", "title": "ADG 部署文档", "description": "根据当前主库事实生成可执行的 ADG 建设文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_ADG_BUILD"}, "sort_order": 200},

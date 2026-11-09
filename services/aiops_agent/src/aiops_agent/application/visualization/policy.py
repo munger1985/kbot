@@ -10,6 +10,7 @@ from typing import Any
 from aiops_agent.contracts.evidence import MetricObservation, ObservationSet
 from platform_core.contracts.visualization import ChartSpec
 from platform_core.visualization import ChartSkill
+from .selection import ChartSelectionPolicy
 
 
 _CATALOG_PATH = Path(__file__).with_name("chart_profiles.json")
@@ -32,6 +33,15 @@ def _profiles() -> dict[str, dict[str, Any]]:
             raise ValueError(f"图表档案缺少指标槽位：{profile_id}")
         profile["slots"] = slots
         profiles[profile_id] = profile
+    common = json.loads(Path(__file__).with_name("common_profiles.v1.json").read_text(encoding="utf-8"))
+    for raw in common["profiles"]:
+        profiles[raw["profile_id"]] = {
+            **raw,
+            "slots": [{**slot, "title": slot["label"],
+                       "candidate_metric_codes": [item["metric_code"] for item in slot["candidates"]],
+                       "metric_titles": {item["metric_code"]: item["title"] for item in slot["candidates"]}}
+                      for slot in raw["slots"]],
+        }
     return profiles
 
 
@@ -69,12 +79,24 @@ class AIOpsChartSelectionPolicy:
         profile_id: str | None,
         artifact_id: str,
         result: ObservationSet,
+        apply_policy: bool = True,
     ) -> tuple[ChartSpec, ...]:
         if not profile_id:
             return ()
         profile = _profiles().get(profile_id)
         if profile is None:
             raise ValueError(f"未知图表档案：{profile_id}")
+        if profile_id != "inspection.weekly":
+            metric_codes = set(chart_profile_metric_codes(profile_id))
+            charts = tuple(
+                chart for observation in result.observations
+                if observation.metric_code in metric_codes and cls._has_chartable_series(observation)
+                for chart in (cls._compile_observation(
+                    profile_id=profile_id, artifact_id=artifact_id, observation=observation,
+                    slot={"slot_id": observation.metric_code, "title": observation.metric_code},
+                ),) if chart is not None
+            )
+            return ChartSelectionPolicy().select(profile_id=profile_id, charts=charts) if apply_policy else charts
         observations = {
             item.metric_code: item for item in result.observations
         }

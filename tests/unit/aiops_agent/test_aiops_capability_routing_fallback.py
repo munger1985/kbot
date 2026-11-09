@@ -66,24 +66,24 @@ def _planner(model):
 @pytest.mark.parametrize("db_type", ["POSTGRESQL", "MYSQL"])
 def test_wrong_database_capability_falls_back_and_never_executes_oracle_entry(db_type):
     context = _context([_system("MES", db_type), _system("ERP", "ORACLE")])
-    model = _Model("oracle.sql.performance", {"sql_id": "1285382359565720997"})
+    model = _Model("database.sql.performance", {"sql_id": "1285382359565720997"})
     plan, _ = asyncio.run(_planner(model)._plan(context))
     assert plan.requires_active_diagnosis
     assert [call["purpose"] for call in model.calls] == ["aiops_capability_resolver", "aiops_turn_router"]
     assert model.calls[1]["input_payload"]["question"] == context["question"]
-    assert "oracle.sql.performance" not in {item["capability_id"] for item in model.calls[0]["input_payload"]["eligible_capabilities"]}
+    assert "database.sql.performance" in {item["capability_id"] for item in model.calls[0]["input_payload"]["eligible_capabilities"]}
     assert not context["conversation_starter"]
 
 
 def test_invalid_model_parameters_fall_back_but_explicit_ui_remains_strict():
     context = _context([_system("OracleDB", "ORACLE")])
-    model = _Model("oracle.sql.performance", {"sql_id": "1285382359565720997"})
+    model = _Model("database.sql.performance", {"sql_id": "1285382359565720997"})
     plan, _ = asyncio.run(_planner(model)._plan(context))
     assert plan.requires_active_diagnosis and len(model.calls) == 2
     target = SimpleNamespace(db_type="ORACLE", status="ENABLED", readonly_connection_enabled=True,
                              connectivity_status="CONNECTED")
     catalog = ConversationStarterCatalog()
-    selection = SimpleNamespace(starter_id="oracle.sql.performance", catalog_version=catalog.version,
+    selection = SimpleNamespace(starter_id="database.sql.performance", catalog_version=catalog.version,
                                 parameters={"sql_id": "1285382359565720997"})
     with pytest.raises(AIOpsApplicationError) as caught:
         catalog.freeze(selection=selection, target=target, capabilities={"ACTIVE_DIAGNOSIS"})
@@ -92,11 +92,11 @@ def test_invalid_model_parameters_fall_back_but_explicit_ui_remains_strict():
 
 def test_valid_oracle_and_cross_database_top_sql_keep_deterministic_entry():
     oracle = _context([_system("OracleDB", "ORACLE")])
-    model = _Model("oracle.sql.performance", {"sql_id": "6tjx7su0q5ttj"})
+    model = _Model("database.sql.performance", {"sql_id": "6tjx7su0q5ttj"})
     plan, receipt = asyncio.run(_planner(model)._plan(oracle))
     assert plan.requires_active_diagnosis and len(model.calls) == 1
-    assert oracle["conversation_starter"]["starter_id"] == "oracle.sql.performance"
-    assert receipt.starter_id == "oracle.sql.performance"
+    assert oracle["conversation_starter"]["starter_id"] == "database.sql.performance"
+    assert receipt.starter_id == "database.sql.performance"
     mixed = _context([_system("MES", "POSTGRESQL"), _system("ERP", "MYSQL")])
     model = _Model("database.sql.top-current", {"limit": 10})
     asyncio.run(_planner(model)._plan(mixed))
@@ -111,7 +111,7 @@ def test_resolver_candidates_follow_explicit_system_before_trusted_hint():
     model = _Model("database.sql.top-current", {"limit": 10})
     asyncio.run(_planner(model)._plan(context))
     ids = {item["capability_id"] for item in model.calls[0]["input_payload"]["eligible_capabilities"]}
-    assert "oracle.sql.performance" not in ids
+    assert "database.sql.performance" in ids
 
 
 def test_resolver_candidates_follow_trusted_postgresql_context_for_followup():
@@ -119,8 +119,8 @@ def test_resolver_candidates_follow_trusted_postgresql_context_for_followup():
     oracle = _system("ERP", "ORACLE")
     question = "继续深入分析 SQL 1285382359565720997，沿用上一轮数据库资源和证据。"
     context = _context([pg, oracle], question=question, hint={"business_system_id": pg["business_system_id"]})
-    model = _Model("oracle.sql.performance", {"sql_id": "1285382359565720997"})
+    model = _Model("database.sql.performance", {"sql_id": "1285382359565720997"})
     asyncio.run(_planner(model)._plan(context))
     ids = {item["capability_id"] for item in model.calls[0]["input_payload"]["eligible_capabilities"]}
-    assert "oracle.sql.performance" not in ids
+    assert "database.sql.performance" in ids
     assert model.calls[1]["input_payload"]["question"] == question

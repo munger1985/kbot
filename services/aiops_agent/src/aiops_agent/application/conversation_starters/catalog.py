@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from aiops_agent.application.errors import validation_failed
+from .sql_input import sql_starter_engine, sql_starter_subject
 from aiops_agent.application.implementation.inputs import (
     implementation_input_schema,
     normalize_implementation_parameters,
@@ -132,6 +133,7 @@ class ConversationStarterCatalog:
             item=item,
             supplied_parameters=dict(selection.parameters),
             source="UI_ENTRY",
+            database_type=str(target.db_type) if target is not None else "",
             required=required,
         )
 
@@ -156,11 +158,18 @@ class ConversationStarterCatalog:
         )
 
     def freeze_natural_language(
-        self, *, capability_id: str, parameters: dict[str, Any]
+        self, *, capability_id: str, parameters: dict[str, Any], supported_db_types: set[str] | None = None
     ) -> dict[str, Any]:
         item = self._items.get(str(capability_id))
         if item is None:
             raise validation_failed("自然语言选择了目录外的运维能力")
+        if str(dict(item.get("planning") or {}).get("kind")) == "SINGLE_SQL":
+            try:
+                engine = sql_starter_engine(parameters)
+                if supported_db_types is not None and supported_db_types != {engine}:
+                    raise ValueError("单 SQL 入口需要与所选数据库匹配的唯一主体范围")
+            except ValueError as exc:
+                raise validation_failed(str(exc)) from exc
         return self._freeze_item(
             item=item,
             supplied_parameters=parameters,
@@ -174,11 +183,18 @@ class ConversationStarterCatalog:
         item: dict[str, Any],
         supplied_parameters: dict[str, Any],
         source: str,
+        database_type: str = "",
         required: set[str],
     ) -> dict[str, Any]:
         input_schema = self._input_schema(item)
         try:
-            if str(dict(item.get("planning") or {}).get("kind") or "") == "IMPLEMENTATION":
+            kind = str(dict(item.get("planning") or {}).get("kind") or "")
+            if kind == "SINGLE_SQL":
+                engine = sql_starter_engine(supplied_parameters, database_type)
+                schema = [field for field in input_schema if engine in field.get("supported_db_types", (engine,))]
+                parameters = self._validate_parameters(schema, supplied_parameters)
+                sql_starter_subject(parameters, engine)
+            elif kind == "IMPLEMENTATION":
                 profile = ImplementationProfile(
                     str(item["planning"]["implementation_profile"])
                 )

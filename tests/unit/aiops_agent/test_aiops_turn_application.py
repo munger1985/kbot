@@ -1067,7 +1067,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_frozen_capability_still_rejects_incompatible_database(self) -> None:
         for db_type, starter_id, parameters in (
-            ("POSTGRESQL", "oracle.sql.performance", {"sql_id": "6tjx7su0q5ttj"}),
+            ("POSTGRESQL", "database.sql.performance", {"sql_id": "6tjx7su0q5ttj"}),
             ("", "database.sql.top-current", {"limit": 5}),
         ):
             with self.subTest(db_type=db_type):
@@ -1097,7 +1097,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
     async def test_clarification_rechecks_database_capability_support(self) -> None:
         for starter_id, parameters, supported in (
             ("database.sql.top-current", {"limit": 5}, True),
-            ("oracle.sql.performance", {"sql_id": "6tjx7su0q5ttj"}, False),
+            ("database.sql.performance", {"sql_id": "6tjx7su0q5ttj"}, False),
         ):
             with self.subTest(starter_id=starter_id):
                 uow = _Uow()

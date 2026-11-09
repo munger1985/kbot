@@ -425,13 +425,13 @@
       "impact_template": "ExaCheck 检查 {check_name} 存在警告：{message}"
     },
     {
-      "finding_type": "REPLICATION_LAG",
+      "finding_type": "REPLICATION_APPLY_LATENCY",
       "database_types": ["MYSQL"],
       "source_tool_id": "db.mysql.replication.lag",
       "playbook_id": "mysql.replication.lag",
       "zero_row_policy": "NO_FINDING",
-      "empty_reason": "当前没有 MySQL 复制延迟指标。",
-      "no_match_reason": "当前 MySQL 复制延迟未达到 30 秒阈值。",
+      "empty_reason": "当前没有 MySQL 最近事务应用耗时记录。",
+      "no_match_reason": "最近已完成事务的提交至应用耗时未达到 30 秒阈值；不代表当前复制延迟为零。",
       "severity": "HIGH",
       "object_kind": "REPLICATION",
       "identity_fields": [
@@ -439,11 +439,11 @@
       ],
       "required_columns": [
         "channel_name",
-        "lag_seconds"
+        "latest_applied_transaction_latency_seconds"
       ],
       "field_columns": [
         "channel_name",
-        "lag_seconds"
+        "latest_applied_transaction_latency_seconds"
       ],
       "object_ref": {
         "object_name": "channel_name"
@@ -451,17 +451,17 @@
       "predicates": [
         {
           "op": "gte",
-          "column": "lag_seconds",
+          "column": "latest_applied_transaction_latency_seconds",
           "value": 30
         }
       ],
       "threshold": {
-        "metric": "lag_seconds",
+        "metric": "latest_applied_transaction_latency_seconds",
         "operator": ">=",
         "limit": 30,
-        "current_column": "lag_seconds"
+        "current_column": "latest_applied_transaction_latency_seconds"
       },
-      "impact_template": "复制通道 {channel_name} 延迟 {lag_seconds} 秒，已超过 30 秒阈值。"
+      "impact_template": "复制通道 {channel_name} 最近已完成事务的提交至应用耗时为 {latest_applied_transaction_latency_seconds} 秒；需结合线程、当前应用状态与积压判断，不代表当前复制延迟。"
     },
     {
       "finding_type": "REPLICATION_LAG",

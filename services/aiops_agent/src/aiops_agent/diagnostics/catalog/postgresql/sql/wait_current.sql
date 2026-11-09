@@ -8,6 +8,7 @@ SELECT
 FROM pg_stat_activity
 WHERE state = 'active'
   AND pid <> pg_backend_pid()
+  AND datname = current_database()
   AND wait_event_type IS NOT NULL
 GROUP BY wait_event_type, wait_event
 ORDER BY session_count DESC, maximum_query_seconds DESC, wait_event_type, wait_event

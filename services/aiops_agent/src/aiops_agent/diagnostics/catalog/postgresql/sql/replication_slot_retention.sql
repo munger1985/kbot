@@ -8,7 +8,10 @@ SELECT
     CAST(confirmed_flush_lsn AS text) AS confirmed_flush_lsn,
     CASE
         WHEN restart_lsn IS NULL THEN NULL
-        ELSE CAST(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn) AS numeric)
+        ELSE CAST(pg_wal_lsn_diff(
+            CASE WHEN pg_is_in_recovery()
+                 THEN COALESCE(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn())
+                 ELSE pg_current_wal_lsn() END, restart_lsn) AS numeric)
     END AS retained_wal_bytes,
     CAST(xmin AS text) AS xmin,
     CAST(catalog_xmin AS text) AS catalog_xmin

@@ -285,7 +285,7 @@
         }
       ],
       "template_ref": "sql/session_active.sql",
-      "template_sha256": "7ceeb1bfb89deb08d10ea5b9087fd7a9040faf23c393428897bb66c859fcb171",
+      "template_sha256": "2d15f9096777e9db7a956cb4d6fa7d5f4fe04456e74e76e0ad5faeddfc7835f4",
       "timeout_seconds": 20,
       "max_rows": 200,
       "max_bytes": 1048576,
@@ -494,11 +494,26 @@
         {
           "name": "channel_name",
           "logical_type": "STRING",
-          "nullable": false
+          "nullable": true
         },
         {
-          "name": "lag_seconds",
+          "name": "latest_applied_transaction_latency_seconds",
+          "logical_type": "DECIMAL",
+          "nullable": true
+        },
+        {
+          "name": "applying_transaction_age_seconds",
+          "logical_type": "DECIMAL",
+          "nullable": true
+        },
+        {
+          "name": "applying_worker_count",
           "logical_type": "INTEGER",
+          "nullable": true
+        },
+        {
+          "name": "last_applied_at",
+          "logical_type": "DATETIME",
           "nullable": true
         }
       ],
@@ -507,7 +522,8 @@
       "max_rows": 32,
       "max_bytes": 262144,
       "cost_level": "LOW",
-      "template_sha256": "e9aa7021c5c99df786205f974f0c6ec433397f7270231fd8ecb46de86e23f477"
+      "template_sha256": "73eb2f2755085ac2011d5b27ef0bb47c7cb6877bac1d9960a0a50cfeffe0d720",
+      "description": "最近完成事务提交至应用耗时与正在应用事务年龄；不代表当前复制队列延迟，缺值不视为零。"
     },
     {
       "tool_id": "db.session.idle",
@@ -1703,10 +1719,35 @@
           {
             "name": "last_processed_transaction",
             "logical_type": "STRING"
+          },
+          {
+            "name": "coordinator_state",
+            "logical_type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "worker_count",
+            "logical_type": "INTEGER",
+            "nullable": true
+          },
+          {
+            "name": "running_worker_count",
+            "logical_type": "INTEGER",
+            "nullable": true
+          },
+          {
+            "name": "worker_error_count",
+            "logical_type": "INTEGER",
+            "nullable": true
+          },
+          {
+            "name": "worker_last_error_number",
+            "logical_type": "INTEGER",
+            "nullable": true
           }
         ],
         "template_ref": "sql/replication_channel_status.sql",
-        "template_sha256": "73df4758bd91086e1aa614fefeb5b1993c757564a1e9a0788f80506e026fc881",
+        "template_sha256": "6bdd2b3cb1138211460c994329470abad14c16bd639b11c1c3ed8e96478a38df",
         "timeout_seconds": 20,
         "max_rows": 64,
         "max_bytes": 1048576,

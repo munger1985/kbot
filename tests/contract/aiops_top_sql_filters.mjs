@@ -113,7 +113,7 @@ try {
     const starterParameters = ref({ window: "15m", rank_metric: "CPU_TIME", sort_direction: "DESC", min_cpu_seconds: "1.25" });
     const { selectedStarterFields, updateStarterParameter } = new Function("computed", "watch", "selectedStarter", "selectedStarterTarget", "starterParameters",
       logic + "; return { selectedStarterFields, updateStarterParameter };")(computed, watch, selectedStarter, selectedStarterTarget, starterParameters);
-    globalThis.portalFilters = { selectedStarterTarget, starterParameters };
+    globalThis.portalFilters = { selectedStarter, selectedStarterTarget, starterParameters };
     createApp({ template, setup: () => ({ selectedStarter, selectedStarterFields, starterParameters, updateStarterParameter,
       submitting: false, diagnosticInProgress: false }) }).mount("#app");
   }, { starter, template, logic });
@@ -133,6 +133,47 @@ try {
   assert.equal(await page.locator('option[value="SHARED_BLOCK_ACCESSES"]').count(), 0);
   assert.equal(await page.locator('input[type="number"][step="any"]').count(), 1);
   assert.deepEqual(errors, []);
+  // 使用两端真实目录校验新增通用 SQL 入口，不以手写字段代替产品 Schema。
+  const catalogPath = "services/aiops_agent/src/aiops_agent/application/conversation_starters/catalog.json";
+  const catalogs = [root, resolve(portal, "../..")].map(dir => JSON.parse(readFileSync(resolve(dir, catalogPath), "utf8")));
+  assert.deepEqual(catalogs[0], catalogs[1]);
+  const commonSql = catalogs[0].starters.find(item => item.starter_id === "database.sql.performance");
+  assert.deepEqual(commonSql.supported_db_types, ["ORACLE", "MYSQL", "POSTGRESQL"]);
+  await page.evaluate(starter => {
+    portalFilters.selectedStarter.value = starter;
+    portalFilters.selectedStarterTarget.value = { db_type: "ORACLE" };
+    portalFilters.starterParameters.value = { sql_id: "49fbb8nm4fkr2" };
+  }, commonSql);
+  await page.waitForFunction(() => document.querySelector("input[required]"));
+  assert.equal(await page.getByText("SQL_ID", { exact: true }).count(), 1);
+  await page.evaluate(() => { portalFilters.selectedStarterTarget.value = { db_type: "POSTGRESQL" }; });
+  await page.waitForFunction(() => document.querySelector('select:not([required])'));
+  assert.equal(await page.getByText("SQL_ID", { exact: true }).count(), 0);
+  assert.equal(await page.getByText("Digest", { exact: true }).count(), 0);
+  assert.equal(await page.locator('select:not([required])').inputValue(), "");
+  assert.equal(await page.evaluate(() => "sql_id" in portalFilters.starterParameters.value), false);
+  await page.evaluate(() => { portalFilters.starterParameters.value.query_id = "-6589067333046971749"; portalFilters.selectedStarterTarget.value = { db_type: "MYSQL" }; });
+  await page.waitForFunction(() => document.querySelector('input[maxlength="64"]'));
+  assert.equal(await page.getByText("Query ID", { exact: true }).count(), 0);
+  assert.equal(await page.getByText("Digest", { exact: true }).count(), 1);
+  assert.equal(await page.evaluate(() => "query_id" in portalFilters.starterParameters.value), false);
+
+  await page.setContent('<select id="agent-select"><option value="agent">Agent</option></select><dialog id="starter-dialog"><h2 id="starter-dialog-title"></h2><p id="starter-dialog-description"></p><form><div id="starter-dialog-content"></div></form></dialog>');
+  await page.addScriptTag({ content: instrumented });
+  await page.evaluate(({ starter, systems }) => { topSqlFilterTest.seed(starter, systems); topSqlFilterTest.selectStarter(starter.starter_id); }, { starter: commonSql, systems });
+  await page.locator('[name="starter_business_system_id"]').selectOption("sys");
+  for (const engine of ["ORACLE", "POSTGRESQL", "MYSQL"]) {
+    await page.locator('[name="starter_resource_id"][value="' + engine + '"]').check();
+    const identity = { ORACLE: "sql_id", POSTGRESQL: "query_id", MYSQL: "digest" }[engine];
+    assert.equal(await page.locator('[name="' + identity + '"]').isVisible(), true);
+    for (const field of commonSql.input_schema) {
+      const visible = field.supported_db_types.includes(engine);
+      assert.equal(await page.locator('[name="' + field.name + '"]').isDisabled(), !visible);
+    }
+    if (engine === "POSTGRESQL") assert.equal(await page.locator('[name="top_level"]').inputValue(), "");
+  }
+  assert.deepEqual(errors, []);
+  console.log("两端三库通用 SQL 表单、主体切换与可选层级未猜测回归通过");
   console.log("两端 Top SQL 资源指标切换、阈值清理与服务端参数回归通过");
 } finally {
   await browser.close();

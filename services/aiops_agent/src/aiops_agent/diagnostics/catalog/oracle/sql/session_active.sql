@@ -13,4 +13,7 @@ FROM gv$session s
 WHERE s.type = 'USER'
   AND s.status = 'ACTIVE'
   AND s.username IS NOT NULL
+  AND s.con_id = TO_NUMBER(SYS_CONTEXT('USERENV', 'CON_ID'))
+  AND NOT (s.inst_id = TO_NUMBER(SYS_CONTEXT('USERENV', 'INSTANCE'))
+           AND s.sid = TO_NUMBER(SYS_CONTEXT('USERENV', 'SID')))
 ORDER BY s.seconds_in_wait DESC

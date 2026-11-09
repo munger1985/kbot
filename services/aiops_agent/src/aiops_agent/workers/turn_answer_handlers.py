@@ -86,6 +86,7 @@ from aiops_agent.application.sqlhc_report import (
     SQLHC_REPORT_KIND,
 )
 from aiops_agent.application.visualization import AIOpsChartSelectionPolicy
+from aiops_agent.application.visualization.selection import ChartSelectionPolicy
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
     DbaAnswerDraft,
@@ -1584,6 +1585,7 @@ class DbaEvidenceAssessmentHandler:
             profile_id=visualization_profile_id,
             artifact_id=artifact_id,
             result=result,
+            apply_policy=False,
         )
         return TurnEvidenceFact(
             evidence_ref=f"artifact:{artifact_id}#prometheus",
@@ -2391,6 +2393,8 @@ class DbaAnswerComposeHandler:
         subject_ref = dict(task_frame.get("subject_ref") or {})
         data_blocks = list(self._data_blocks(
             assessment.evidence,
+            visualization_profile_id=task_frame.get("visualization_profile_id"),
+            finding_types=tuple(str(card.finding_type) for card in compilation.findings) if compilation else (),
             primary_result_kind=(
                 str(subject_ref.get("primary_result_kind"))
                 if subject_ref.get("primary_result_kind") else None
@@ -3242,6 +3246,8 @@ class DbaAnswerComposeHandler:
         *,
         primary_result_kind: str | None = None,
         selection_artifact_id: str | None = None,
+        visualization_profile_id: str | None = None,
+        finding_types: tuple[str, ...] = (),
     ) -> tuple[TurnAnswerBlock, ...]:
         blocks: list[TurnAnswerBlock] = []
         top_sql_primary = _top_sql_primary_fact(evidence, primary_result_kind)
@@ -3329,8 +3335,12 @@ class DbaAnswerComposeHandler:
                     )
                 )
             charts = list(fact.visualizations)
+            if fact.source_id == "monitoring.overview" and visualization_profile_id != "inspection.weekly":
+                charts = list(ChartSelectionPolicy().select(
+                    profile_id=visualization_profile_id, charts=charts, finding_types=finding_types,
+                ))
             if not charts:
-                chart = DbaAnswerComposeHandler._chart_payload(fact)
+                chart = None if fact.source_id == "monitoring.overview" else DbaAnswerComposeHandler._chart_payload(fact)
                 if chart is not None:
                     charts.append(chart)
             if fact.presentation_kind not in {"CHART", "TABLE_AND_CHART"}:

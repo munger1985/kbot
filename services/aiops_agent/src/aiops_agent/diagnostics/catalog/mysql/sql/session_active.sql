@@ -8,4 +8,6 @@ SELECT
     state AS session_state
 FROM information_schema.processlist
 WHERE command <> 'Sleep'
+  AND id <> CONNECTION_ID()
+  AND db = DATABASE()
 ORDER BY time DESC

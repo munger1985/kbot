@@ -1440,6 +1440,7 @@ class TurnPlannerService:
             frozen = self._conversation_starter_catalog.freeze_natural_language(
                 capability_id=resolution.capability_id,
                 parameters=dict(resolution.parameters),
+                supported_db_types=db_types,
             )
         except AIOpsApplicationError as exc:
             if exc.code != "OPS_VALIDATION_FAILED":
@@ -1821,6 +1822,14 @@ class TurnPlannerService:
             }
             if selected_db_types - supported_db_types:
                 raise validation_failed("所选运维能力不支持已解析数据库资源")
+            if dict(capability_invocation.get("planning") or {}).get("kind") == "SINGLE_SQL":
+                from aiops_agent.application.conversation_starters.sql_input import sql_starter_engine
+                try:
+                    engine = sql_starter_engine(dict(capability_invocation.get("parameters") or {}))
+                except ValueError as exc:
+                    raise validation_failed(str(exc)) from exc
+                if selected_db_types != {engine}:
+                    raise validation_failed("所选 SQL 标识不支持已解析数据库资源，请重新选择匹配的 SQL 主体")
         capabilities = tuple(
             AIOpsCapability(item) for item in plan.requested_capabilities
         )

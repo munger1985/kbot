@@ -2026,7 +2026,7 @@
         }
       ],
       "template_ref": "sql/session_active.sql",
-      "template_sha256": "390e4b5a8256e7b3cb0c4bdd065d44e97b417aa66bf4c350fde5834a19d6672b",
+      "template_sha256": "912984e2f31a3eb50eb4b235799d506e7c709a005fccc8eb58ea6a8778eabcb2",
       "timeout_seconds": 20,
       "max_rows": 200,
       "max_bytes": 1048576,

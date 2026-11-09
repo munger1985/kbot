@@ -151,9 +151,9 @@ class AIOpsChartSelectionPolicyTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(1, len(charts))
         self.assertEqual(
-            "db.storage.used_bytes", charts[0].metadata["metric_code"]
+            ["db.storage.used_bytes", "db.storage.utilization", "db.storage.max_bytes"],
+            [chart.metadata["metric_code"] for chart in charts],
         )
 
     def test_low_coverage_is_explicitly_marked(self) -> None:
@@ -171,7 +171,7 @@ class AIOpsChartSelectionPolicyTest(unittest.TestCase):
 
         self.assertEqual("LOW", charts[0].metadata["coverage_status"])
         self.assertEqual(
-            "监控采样覆盖率低于80%，图表仅供观察",
+            "监控采样覆盖率低于 80%，该图仅供参考，不能据此给出强趋势结论。",
             charts[0].metadata["coverage_warning"],
         )
 

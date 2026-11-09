@@ -1,0 +1,363 @@
+{
+  "schema_version": "AIOPS_VISUALIZATION_PROFILES.v1",
+  "profiles": [
+    {
+      "profile_id": "health.overview",
+      "default_window_seconds": 3600,
+      "eager_monitoring": true,
+      "max_charts": 4,
+      "slots": [
+        {
+          "slot_id": "cpu",
+          "label": "CPU",
+          "required": true,
+          "candidates": [
+            {
+              "metric_code": "runtime.cpu.utilization",
+              "title": "数据库运行环境 CPU 使用率趋势"
+            },
+            {
+              "metric_code": "db.cpu.utilization",
+              "title": "数据库 CPU 使用率趋势"
+            },
+            {
+              "metric_code": "host.cpu.utilization",
+              "title": "主机 CPU 使用率趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "connection_utilization",
+          "label": "连接使用率",
+          "required": true,
+          "finding_types": [
+            "CONNECTION_USAGE"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.connection.utilization",
+              "title": "数据库连接使用率趋势"
+            },
+            {
+              "metric_code": "mysql.connection.utilization",
+              "title": "MySQL 连接使用率趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "active_connections",
+          "label": "活跃连接数",
+          "required": true,
+          "finding_types": [
+            "CONNECTION_USAGE",
+            "LONG_SESSION"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.connection.active",
+              "title": "数据库活跃连接数趋势"
+            },
+            {
+              "metric_code": "postgresql.connection.active",
+              "title": "PostgreSQL 活跃连接数趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "workload",
+          "label": "吞吐或延迟",
+          "required": true,
+          "finding_types": [
+            "QUERY_RATE",
+            "WAIT_CLASS",
+            "TOP_SQL"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.transaction.throughput",
+              "title": "数据库事务吞吐趋势"
+            },
+            {
+              "metric_code": "mysql.transaction.throughput",
+              "title": "MySQL 事务吞吐趋势"
+            },
+            {
+              "metric_code": "postgresql.transaction.throughput",
+              "title": "PostgreSQL 事务吞吐趋势"
+            },
+            {
+              "metric_code": "db.response.latency",
+              "title": "数据库响应延迟趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "availability",
+          "label": "可用性",
+          "required": false,
+          "finding_types": [
+            "DATA_QUALITY"
+          ],
+          "display_condition": "CHANGED_OR_ALERT",
+          "candidates": [
+            {
+              "metric_code": "db.availability",
+              "title": "数据库可用状态变化"
+            },
+            {
+              "metric_code": "mysql.availability",
+              "title": "MySQL 可用状态变化"
+            },
+            {
+              "metric_code": "postgresql.availability",
+              "title": "PostgreSQL 可用状态变化"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "profile_id": "performance.current",
+      "default_window_seconds": 900,
+      "eager_monitoring": true,
+      "max_charts": 4,
+      "slots": [
+        {
+          "slot_id": "cpu",
+          "label": "CPU",
+          "required": true,
+          "candidates": [
+            {
+              "metric_code": "runtime.cpu.utilization",
+              "title": "数据库运行环境 CPU 使用率趋势"
+            },
+            {
+              "metric_code": "db.cpu.utilization",
+              "title": "数据库 CPU 使用率趋势"
+            },
+            {
+              "metric_code": "host.cpu.utilization",
+              "title": "主机 CPU 使用率趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "throughput",
+          "label": "吞吐",
+          "required": true,
+          "finding_types": [
+            "QUERY_RATE"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.transaction.throughput",
+              "title": "数据库事务吞吐趋势"
+            },
+            {
+              "metric_code": "mysql.transaction.throughput",
+              "title": "MySQL 事务吞吐趋势"
+            },
+            {
+              "metric_code": "postgresql.transaction.throughput",
+              "title": "PostgreSQL 事务吞吐趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "latency",
+          "label": "延迟",
+          "required": true,
+          "finding_types": [
+            "WAIT_CLASS",
+            "TOP_SQL"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.response.latency",
+              "title": "数据库响应延迟趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "connections",
+          "label": "连接",
+          "required": true,
+          "finding_types": [
+            "CONNECTION_USAGE",
+            "LONG_SESSION"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.connection.utilization",
+              "title": "数据库连接使用率趋势"
+            },
+            {
+              "metric_code": "mysql.connection.utilization",
+              "title": "MySQL 连接使用率趋势"
+            },
+            {
+              "metric_code": "db.connection.active",
+              "title": "数据库活跃连接数趋势"
+            },
+            {
+              "metric_code": "postgresql.connection.active",
+              "title": "PostgreSQL 活跃连接数趋势"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "profile_id": "storage.trend",
+      "eager_monitoring": true,
+      "max_charts": 4,
+      "slots": [
+        {
+          "slot_id": "storage_used",
+          "label": "已用空间",
+          "required": true,
+          "finding_types": [
+            "TABLESPACE",
+            "BLOAT_CANDIDATE"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.storage.used_bytes",
+              "title": "数据库已用空间趋势"
+            },
+            {
+              "metric_code": "postgresql.database.size_bytes",
+              "title": "PostgreSQL 数据库逻辑容量趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "storage_utilization",
+          "label": "空间使用率",
+          "required": false,
+          "finding_types": [
+            "TABLESPACE"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.storage.utilization",
+              "title": "数据库空间使用率趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "storage_free",
+          "label": "可用空间",
+          "required": false,
+          "finding_types": [
+            "TABLESPACE"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.storage.free_bytes",
+              "title": "数据库可用空间趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "storage_max",
+          "label": "最大空间",
+          "required": false,
+          "finding_types": [
+            "TABLESPACE"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.storage.max_bytes",
+              "title": "数据库最大容量趋势"
+            }
+          ]
+        }
+      ],
+      "default_window_seconds": 604800
+    },
+    {
+      "profile_id": "sessions.blocking",
+      "eager_monitoring": false,
+      "max_charts": 3,
+      "slots": [
+        {
+          "slot_id": "blocked_sessions",
+          "label": "阻塞会话",
+          "required": true,
+          "finding_types": [
+            "LOCK_WAIT"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.session.blocked.count",
+              "title": "数据库阻塞会话数趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "wait_duration",
+          "label": "等待时长",
+          "required": true,
+          "finding_types": [
+            "LOCK_WAIT",
+            "LONG_TRANSACTION"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.wait.duration",
+              "title": "数据库阻塞等待时长趋势"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "profile_id": "replication.status",
+      "default_window_seconds": 3600,
+      "eager_monitoring": true,
+      "max_charts": 3,
+      "slots": [
+        {
+          "slot_id": "replication_lag",
+          "label": "复制延迟",
+          "required": true,
+          "finding_types": [
+            "DG_LAG",
+            "REPLICATION_LAG"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.replication.lag",
+              "title": "数据库复制延迟趋势"
+            },
+            {
+              "metric_code": "postgresql.replication.lag_bytes",
+              "title": "PostgreSQL WAL 复制缺口趋势"
+            }
+          ]
+        },
+        {
+          "slot_id": "log_gap",
+          "label": "日志缺口",
+          "required": true,
+          "finding_types": [
+            "DG_LAG",
+            "REPLICATION_LAG",
+            "REPLICATION_SLOT"
+          ],
+          "candidates": [
+            {
+              "metric_code": "db.replication.log_gap_bytes",
+              "title": "数据库复制日志缺口趋势"
+            },
+            {
+              "metric_code": "postgresql.replication.slot_retained_bytes",
+              "title": "PostgreSQL Slot WAL 保留量趋势"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

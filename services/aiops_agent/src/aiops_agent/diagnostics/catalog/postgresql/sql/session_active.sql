@@ -8,4 +8,5 @@ SELECT
     wait_event_type || ':' || wait_event AS session_state
 FROM pg_stat_activity
 WHERE state = 'active' AND pid <> pg_backend_pid()
+  AND datname = current_database()
 ORDER BY query_start
