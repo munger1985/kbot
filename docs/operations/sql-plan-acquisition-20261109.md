@@ -18,4 +18,15 @@ MES (demo) 的 PostgreSQL SQL `-6589067333046971749` 在 16:30（Asia/Shanghai�
 
 本轮无 Schema、权限或目标业务数据修改。Prompt 文件基线保持 `1.0.0`，开发环境定向原地同步且保留管理员版本，不改写历史运行。
 
-两仓各 133 项核心测试通过；计划导入、展示、优先取证、流式输出、动态查询与 Prompt 专项回归中，Ammolite 253 项通过，KBot 247 项通过；两仓架构边界和 `git diff --check` 通过。完整 AIOps 单测与线上固定工具验收结果另在发布后补充。
+最终专项回归覆盖安全解析、失败回执、计划导入/展示/优先取证、诊断、流式输出、动态查询及 Prompt：Ammolite 366 项通过（另 14 个子测试），KBot 360 项通过（另 9 个子测试）；两仓架构边界和 `git diff --check` 通过。
+
+更大范围 AIOps 回归未全部通过：两仓各 8 项既有失败已在修改前快照复现（Top SQL 计算测试、MySQL 原生字段模板哈希、旧 SQL 测试上下文缺 run_id）；KBot 另 2 项既有 Schema 工件断言失败也已在修改前复现。当前本地 Python 环境缺 pytest-asyncio，另 22 个异步通知测试不能执行。本轮未将这些结果计为通过，未扩展修改其生产逻辑。
+
+## kbotdev 发布与真实取证
+
+- 两项目均从已推送提交快进更新，未在线修改仓库源码。Ammolite 定向重启 AIOps；KBot 使用现有全量重启脚本，均返回成功。
+- 两项目本轮 5 个 Prompt 基线定向原地更新到 `1.0.0`，19 个 AIOps Prompt 均经运行时 Hash 核验；无管理员版本被覆盖。
+- 两项目分别使用现有 MES (demo) 目标诊断凭据，经正式 PostgreSQLDiagnosticDriver 和固定目录工具读取相同 SQL 的计划，均成功返回 **16 个节点**：Limit、Sort、Gather、Append 与 12 个分区 Seq Scan。来源为 `DATABASE_ESTIMATE`，有同连接物理身份和原 SQL 哈希，`runtime_statistics=NONE`。
+- 未执行原 SQL、ANALYZE、猜测真实参数或修改历史 Artifact。这是数据库通用估算计划，不是生产代表参数的实际行源统计。未把直接工具验收冒充完整浏览器 LLM 会话验收。
+- 本地 Ammolite Prompt 同步成功；本地 KBot 的 Oracle 连接不可达，未完成本地 Prompt 数据库同步。线上 KBot 同步及运行时解析核验已完成。
+- 发布后 10 个 Main API / AIOps 就绪端点均为 200；两项目各 4 个 AIOps 进程及 Main API 存活。当前在线日志中，KBot 未见近期业务 ERROR；Ammolite Main API 在 08:52:21 UTC 有一条 `aiops.report.ready` 通知 Outbox 隔离记录，本轮计划验收不产生报告通知，未将此记录宣称为已修复或无错误。Ammolite 重启产生的 4 个 SIGTERM 退出已单独识别。
