@@ -16,6 +16,7 @@ from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
 )
 from aiops_agent.application.turn_replay import pending_diagnosis_dispatch
+from aiops_agent.application.alert_query import AlertQueryParameters
 from aiops_agent.application.inspections.routing import (
     is_scheduled_inspection,
     scheduled_inspection_plan,
@@ -1317,6 +1318,13 @@ class TurnPlannerService:
                 "policy_snapshot_hash": context["policy_snapshot_hash"],
                 "question": context["question"],
                 "allowed_capabilities": list(context["capabilities"]),
+                "capability_parameter_contracts": {
+                    "ALERT_QUERY": {
+                        "parameters_schema": AlertQueryParameters.model_json_schema(),
+                        "policy": "查询当前健康或当前告警使用CURRENT，默认仅最近1小时观测且未恢复/未关闭的入库告警；不混入旧记录。用户明确查历史、已恢复或指定过去时段时使用HISTORY，默认最近24小时。用户指定的时间统一填入time_range，可按status/severity筛选；不得因会话历史存在旧告警就改为历史查询。入库信号不是实时重查，RESOLVED表示告警恢复，不是人工处置完成。",
+                    },
+                },
+                "reference_time": datetime.now(UTC).isoformat(),
                 "trusted_context_hint": context["context_hint"],
                 "recent_conversation_context": context.get(
                     "recent_conversation_context", []

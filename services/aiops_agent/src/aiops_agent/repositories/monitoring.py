@@ -348,6 +348,9 @@ class SituationRepository(AIOpsRepository):
         self, *, domain_id: int, target_id: UUID | None = None,
         agent_id: UUID | None = None, status: str | None = None,
         severity: str | None = None,
+        exclude_statuses: tuple[str, ...] = (),
+        observed_since: datetime | None = None,
+        observed_until: datetime | None = None,
         before_created_at: datetime | None = None,
         before_id: UUID | None = None, limit: int = 51,
     ) -> list[SituationEntity]:
@@ -369,6 +372,12 @@ class SituationRepository(AIOpsRepository):
             statement = statement.where(SituationEntity.status == status)
         if severity is not None:
             statement = statement.where(SituationEntity.severity == severity)
+        if exclude_statuses:
+            statement = statement.where(SituationEntity.status.notin_(exclude_statuses))
+        if observed_since is not None:
+            statement = statement.where(SituationEntity.last_observed_at >= observed_since)
+        if observed_until is not None:
+            statement = statement.where(SituationEntity.last_observed_at < observed_until)
         if before_created_at is not None and before_id is not None:
             statement = statement.where(or_(
                 SituationEntity.created_at < before_created_at,

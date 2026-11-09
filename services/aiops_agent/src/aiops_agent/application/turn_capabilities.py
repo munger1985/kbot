@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aiops_agent.application.configuration.common import ConfigurationScope
+from aiops_agent.application.alert_query import (
+    AlertQueryParameters, TERMINAL_SIGNAL_STATUSES, signal_status_label,
+)
 from aiops_agent.contracts.knowledge import KnowledgeSearchRequest
 from platform_core.contracts.aiops import (
     AIOpsCapability,
@@ -255,7 +259,7 @@ class RuntimeQueryAdapter:
         parameters = _step_parameters(plan, capability)
         try:
             if capability == AIOpsCapability.ALERT_QUERY:
-                return await self._alerts(query_scope, targets, parameters)
+                return await self._alerts(query_scope, targets, parameters, plan.time_range)
             if capability == AIOpsCapability.INSPECTION_QUERY:
                 return await self._inspections(query_scope, targets, parameters)
             if capability == AIOpsCapability.REPORT_CASE_QUERY:
@@ -276,18 +280,33 @@ class RuntimeQueryAdapter:
             f"{capability.value}_VIEW_UNAVAILABLE",
         )
 
-    async def _alerts(self, scope, targets, parameters) -> CapabilityResult:
+    async def _alerts(self, scope, targets, parameters, time_range=None) -> CapabilityResult:
+        try:
+            parameters = AlertQueryParameters.model_validate(parameters)
+        except ValidationError:
+            return CapabilityResult(AIOpsCapability.ALERT_QUERY, False,
+                "告警筛选条件无效，请指定当前或历史告警及有效的状态条件。", "ALERT_QUERY_INVALID_FILTER")
+        start, end = parameters.time_bounds(time_range, now=datetime.now(UTC))
+        excluded = TERMINAL_SIGNAL_STATUSES if parameters.mode == "CURRENT" else ()
+        status_label = signal_status_label(parameters.status) if parameters.status else (
+            "未恢复、未关闭" if excluded else "全部监控信号状态"
+        )
         rows = []
+        truncated = False
         for target_id in targets:
             page = await self._runtime.list_situations(
                 scope=scope,
                 target_id=target_id,
                 agent_id=None,
-                status=parameters.get("status"),
-                severity=parameters.get("severity"),
+                status=parameters.status,
+                severity=parameters.severity,
                 cursor=None,
-                limit=min(int(parameters.get("limit") or 20), 50),
+                limit=parameters.limit,
+                exclude_statuses=excluded,
+                observed_since=start,
+                observed_until=end,
             )
+            truncated = truncated or bool(getattr(page, "has_more", False))
             rows.extend(page.items)
         rows.sort(key=lambda item: item.last_observed_at, reverse=True)
         evidence = tuple(
@@ -296,18 +315,28 @@ class RuntimeQueryAdapter:
                 "source_id": str(item.situation_id),
                 "target_id": str(item.target_id),
                 "snapshot": _model_dump(item),
+                "signal_status_label": signal_status_label(item.status),
+                "query_mode": parameters.mode,
+                "observed_since": start.isoformat(), "observed_until": end.isoformat(),
             }
             for item in rows[:50]
         )
-        lines = ["### 告警情况"]
+        lines = ["### 当前告警" if excluded else "### 历史告警",
+            f"最近观测筛选：{start.isoformat()} 至 {end.isoformat()}（不含结束时刻）；状态：{status_label}。",
+            "状态来自最近入库的监控信号；告警恢复不代表人工处置完成。"]
+        if parameters.severity:
+            lines.append(f"严重程度筛选：{parameters.severity}。")
         lines.extend(
-            f"- [{item.severity}] {item.title}（{item.status}，最近 {item.last_observed_at.isoformat()}）"
+            f"- [{item.severity}] {item.title}（{signal_status_label(item.status)}，最近观测 {item.last_observed_at.isoformat()}）"
             for item in rows[:50]
         )
         if not rows:
-            lines.append("- 当前范围内没有符合条件的告警情境。")
+            lines.append("- 当前授权资源在上述时间与状态条件下未查到匹配的告警记录。")
+        if truncated or len(rows) > 50:
+            lines.append("- 仍有匹配记录未展示，可缩小筛选范围继续查询。")
         return CapabilityResult(
-            AIOpsCapability.ALERT_QUERY, True, "\n".join(lines), evidence=evidence
+            AIOpsCapability.ALERT_QUERY, True, "\n".join(lines), evidence=evidence,
+            gap_code="ALERT_QUERY_TRUNCATED" if truncated or len(rows) > 50 else None,
         )
 
     async def _inspections(self, scope, targets, parameters) -> CapabilityResult:

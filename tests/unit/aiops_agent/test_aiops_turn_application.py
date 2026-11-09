@@ -2147,6 +2147,11 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], uow.turns.run_links)
         block = uow.turns.answer_blocks[0]
         self.assertEqual("ALERT", block.payload_json["citations"][0]["source_kind"])
+        router_input = planner._structured_model.input_payloads[-1]
+        self.assertIn("reference_time", router_input)
+        alert_contract = router_input["capability_parameter_contracts"]["ALERT_QUERY"]
+        self.assertEqual("CURRENT", alert_contract["parameters_schema"]["properties"]["mode"]["default"])
+        self.assertIn("RESOLVED表示告警恢复", alert_contract["policy"])
         assistant = next(
             item for item in uow.turns.messages
             if item.message_type == "ASSISTANT_MESSAGE"

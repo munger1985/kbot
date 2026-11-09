@@ -7016,10 +7016,24 @@ class AIOpsRuntimeService:
         self, *, scope: ConfigurationScope, target_id: UUID | None,
         agent_id: UUID | None, status: str | None, severity: str | None,
         cursor: str | None, limit: int,
+        exclude_statuses: tuple[str, ...] = (),
+        observed_since: datetime | None = None,
+        observed_until: datetime | None = None,
     ) -> SituationPage:
         filters = {"target_id": str(target_id) if target_id else None,
                    "agent_id": str(agent_id) if agent_id else None,
                    "status": status, "severity": severity}
+        observation_filters = {}
+        if exclude_statuses:
+            observation_filters["exclude_statuses"] = tuple(sorted(set(exclude_statuses)))
+        if observed_since is not None:
+            observation_filters["observed_since"] = observed_since
+        if observed_until is not None:
+            observation_filters["observed_until"] = observed_until
+        if observed_since is not None and observed_until is not None and observed_since >= observed_until:
+            raise validation_failed("告警观测开始时间必须早于结束时间")
+        filters.update({key: value.isoformat() if isinstance(value, datetime) else list(value)
+            for key, value in observation_filters.items()})
         before_at = before_id = None
         if cursor:
             before_at, before_id = self._decode_cursor(token=cursor, scope=scope, filters=filters)
@@ -7027,6 +7041,7 @@ class AIOpsRuntimeService:
             entities = await uow.situations.page_situations(
                 domain_id=scope.domain_id, target_id=target_id,
                 agent_id=agent_id, status=status, severity=severity,
+                **observation_filters,
                 before_created_at=before_at,
                 before_id=before_id, limit=limit + 1,
             )

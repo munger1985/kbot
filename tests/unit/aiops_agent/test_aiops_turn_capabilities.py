@@ -161,7 +161,7 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
             runtime_service=SimpleNamespace(list_situations=list_situations)
         ).execute(
             capability=AIOpsCapability.ALERT_QUERY,
-            plan=SimpleNamespace(steps=()),
+            plan=SimpleNamespace(steps=(), time_range=None),
             scope=SimpleNamespace(),
             internal_scope=_internal(*targets),
         )
