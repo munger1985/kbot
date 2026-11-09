@@ -147,6 +147,7 @@ def test_collector_scope_and_replication_semantics():
     assert "current_database()" in (root / "postgresql/sql/session_active.sql").read_text()
     mysql = (root / "mysql/sql/replication_lag.sql").read_text()
     assert "immediate_commit_timestamp" not in mysql and " AS lag_seconds" not in mysql
+    assert "0000-00-00" not in mysql  # 严格日期模式在无通道时也会拒绝零日期常量。
     assert "latest_applied_transaction_latency_seconds" in mysql
     assert "replication_applier_status_by_worker" in mysql
     replay = (root / "postgresql/sql/replication_replay.sql").read_text()

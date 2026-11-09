@@ -522,7 +522,7 @@
       "max_rows": 32,
       "max_bytes": 262144,
       "cost_level": "LOW",
-      "template_sha256": "73eb2f2755085ac2011d5b27ef0bb47c7cb6877bac1d9960a0a50cfeffe0d720",
+      "template_sha256": "a3ce64af4ab7cf4cb07196ec2be257b92ab9202f74cc9f406ddd51bdef9acf75",
       "description": "最近完成事务提交至应用耗时与正在应用事务年龄；不代表当前复制队列延迟，缺值不视为零。"
     },
     {
