@@ -662,7 +662,99 @@ def _monitoring_artifact() -> dict:
     }
 
 
+def _storage_trend_context(db_type="MYSQL", *, coverage=1, window_days=7, gap_code="SOURCE_NO_DATA"):
+    artifact = _monitoring_artifact()
+    observation = artifact["payload"]["observations"][0]
+    start = datetime.now(UTC) - timedelta(days=window_days)
+    metric_code = "postgresql.database.size_bytes" if db_type == "POSTGRESQL" else "db.storage.used_bytes"
+    observation.update({
+        "metric_code": metric_code, "semantic_role": "DATABASE_SIZE" if db_type == "POSTGRESQL" else "STORAGE_USED",
+        "unit": "bytes", "coverage_ratio": coverage,
+        "window_start": start.isoformat(), "window_end": (start + timedelta(days=window_days)).isoformat(),
+        "series": [{"dimensions": {"database": "demo"}, "points": [
+            {"observed_at": (start + timedelta(days=index)).isoformat(), "value": (100 + index) * 1024**2}
+            for index in range(window_days + 1)
+        ]}], "expected_points": window_days + 1, "actual_points": window_days + 1,
+    })
+    artifact["payload"]["gaps"] = [{
+        "metric_code": "db.storage.utilization", "code": gap_code, "detail": "辅助空间使用率不可得",
+        "source_id": artifact["payload"]["source_id"], "binding_id": artifact["payload"]["binding_id"],
+    }]
+    ctx = _context(artifacts=(artifact,), task_frame_overrides={
+        "problem_statement": "最近七天空间变化趋势", "success_criteria": ["给出已用空间变化与增长速率"],
+        "visualization_profile_id": "storage.trend", "requested_window_seconds": 604800,
+        "temporal_analysis_mode": "HISTORICAL", "action_intent": "NONE", "evidence_source_strategy": "MONITORING_FIRST",
+    })
+    return replace(ctx, plan_snapshot={**ctx.plan_snapshot,
+        "capability_snapshot": {"database_type": db_type},
+        "monitoring": {"bindings": [{"metrics": [
+            {"metric_code": metric_code, "semantic_role": observation["semantic_role"], "resource_scope": "DATABASE"},
+            {"metric_code": "db.storage.utilization", "semantic_role": "STORAGE_UTILIZATION", "resource_scope": "DATABASE"},
+        ]}]},
+    })
+
+
 class DbaTurnAnswerTest(unittest.TestCase):
+    def test_storage_trend_optional_gap_does_not_block_three_database_results(self):
+        for database_type in ("ORACLE", "POSTGRESQL", "MYSQL"):
+            with self.subTest(database_type=database_type):
+                context = _storage_trend_context(database_type)
+                model = SimpleNamespace(generate_structured=AsyncMock(side_effect=AssertionError("已完成的历史趋势不应新增目标")))
+                assessment = asyncio.run(DbaEvidenceAssessmentHandler(model_client=model, prompts=_TestPrompts()).execute(context))
+                self.assertEqual(SufficiencyStatus.ANSWERABLE, assessment.status)
+                self.assertEqual(["SOURCE_NO_DATA"], [gap.code for gap in assessment.gaps])
+                self.assertTrue(assessment.evidence)
+                self.assertIsNone(DbaAnswerComposeHandler._evidence_request_block(assessment, context))
+                model.generate_structured.assert_not_called()
+
+    def test_storage_trend_actual_gaps_remain_blocking(self):
+        for changes in ({"coverage": .5}, {"window_days": 1}, {"gap_code": "SOURCE_AUTH_FAILED"}):
+            with self.subTest(changes=changes):
+                assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(_storage_trend_context(**changes)))
+                self.assertEqual(SufficiencyStatus.PARTIAL, assessment.status)
+                self.assertTrue(assessment.gaps)
+
+    def test_storage_trend_missing_primary_and_inactive_source_remain_blocking(self):
+        for failure in ("primary", "source"):
+            with self.subTest(failure=failure):
+                context = _storage_trend_context()
+                if failure == "primary":
+                    context.input_artifacts[0]["payload"]["observations"] = []
+                else:
+                    context.plan_snapshot["monitoring"]["initial_gaps"] = [{"code": "DIAGNOSTIC_SOURCE_INACTIVE", "detail": "另一个监控源未激活"}]
+                assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(context))
+                self.assertNotEqual(SufficiencyStatus.ANSWERABLE, assessment.status)
+
+    def test_storage_trend_keeps_explicit_forecast_and_completion_requirements(self):
+        for extra, expected_gap in (
+            ({"temporal_analysis_mode": "HISTORICAL_AND_FORECAST", "forecast_horizon_seconds": 2592000},
+             "MONITORING_FORECAST_LOW_CONFIDENCE"),
+            ({"completion_requirements": [{"requirement_id": "r1", "description": "采集物理容量上限",
+                "accepted_tool_ids": ["db.storage.capacity"], "minimum_successful_results": 1}]},
+             "COMPLETION_REQUIREMENT_UNSATISFIED"),
+        ):
+            with self.subTest(extra=extra):
+                context = _storage_trend_context()
+                context.plan_snapshot["answer_context"]["task_frame"].update(extra)
+                assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(context))
+                self.assertEqual(SufficiencyStatus.PARTIAL, assessment.status)
+                self.assertIn(expected_gap, {gap.code for gap in assessment.gaps})
+
+    def test_storage_model_input_requires_server_capacity_semantics(self):
+        from aiops_agent.application.diagnosis.storage_scope import STORAGE_ANALYSIS_POLICY
+        context = _storage_trend_context()
+        assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(context))
+        handler = DbaAnswerComposeHandler(model_client=None, prompts=_TestPrompts())
+        payload = handler._diagnosis_model_input(
+            context=context, assessment=assessment,
+            compilation=SimpleNamespace(findings=(), model_dump=lambda **kw: {}), proposal_summary=None,
+        )
+        self.assertEqual(STORAGE_ANALYSIS_POLICY, payload["storage_analysis_policy"])
+        self.assertIn("data_free", payload["storage_analysis_policy"]["time_to_limit"])
+        fact = next(fact for fact in assessment.evidence if fact.tool_id == "metric.query_range")
+        indexes = {column["name"]: index for index, column in enumerate(fact.columns)}
+        self.assertIsNone(fact.rows[0][indexes["estimated_days_to_limit"]])
+
     def test_inspection_preserves_invalid_template_step_reason_without_duplicate_gap(self):
         context = _context(artifacts=(_identity_tool_artifact(source_type="TOOL"),))
         gap = {

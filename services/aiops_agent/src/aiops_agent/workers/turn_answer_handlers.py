@@ -10,6 +10,9 @@ from aiops_agent.application.diagnosis.model_evidence import (
     evidence_model_payload,
     compact_native_values,
 )
+from aiops_agent.application.diagnosis.storage_scope import (
+    STORAGE_ANALYSIS_POLICY, storage_metric_scope, storage_trend_ready, supporting_storage_gap,
+)
 from aiops_agent.application.diagnosis.number_presentation import NUMBER_PRESENTATION_POLICY, monitoring_display_values
 from aiops_agent.application.target_identity import target_answer_presentation
 from aiops_agent.application.top_sql_collection import collection_failure_reason, collection_runtime_note
@@ -734,6 +737,16 @@ class DbaEvidenceAssessmentHandler:
                 )
             )
 
+        monitoring_snapshot = dict(context.plan_snapshot.get("monitoring") or {})
+        storage_ready = storage_trend_ready(task_frame, monitoring_snapshot, facts)
+        storage_primary, storage_supporting = storage_metric_scope(task_frame, monitoring_snapshot)
+        if storage_ready:
+            monitoring_gap_found = any(
+                gap.source_id in {"monitoring.overview", "logging.range"}
+                and not supporting_storage_gap(gap, storage_supporting)
+                for gap in gaps
+            )
+
         monitoring_facts = tuple(
             fact for fact in facts if fact.source_id == "monitoring.overview"
         )
@@ -754,6 +767,9 @@ class DbaEvidenceAssessmentHandler:
                 "forecast_confidence"
             )
             for row in fact.rows:
+                metric_index = column_indexes.get("metric_code")
+                if storage_ready and metric_index is not None and row[metric_index] in storage_supporting:
+                    continue
                 if (
                     forecast_index is not None
                     and isinstance(row[forecast_index], (int, float))
@@ -1094,6 +1110,15 @@ class DbaEvidenceAssessmentHandler:
             # 把补证设想追加成新的巡检缺口，导致报告重复并偏离模板范围。
             return with_prior(deterministic)
         scoped = with_prior(deterministic)
+        if (
+            storage_ready
+            and scoped.status == SufficiencyStatus.ANSWERABLE
+            and task_frame.get("temporal_analysis_mode") == "HISTORICAL"
+            and set(task_frame.get("objectives", ())) <= {"ASSESS", "UNDERSTAND", "EXPLAIN"}
+            and not task_frame.get("completion_requirements")
+        ):
+            # 确定性目标已满足，不为辅助容量缺口再生成补证义务或实施目标。
+            return scoped
         if scoped.status == SufficiencyStatus.NEEDS_CLARIFICATION:
             return scoped
         assessment_deadline = work_deadline(
@@ -1174,6 +1199,7 @@ class DbaEvidenceAssessmentHandler:
                 prompt_ref={**prompt.ref(), "content": prompt.content},
                 input_payload={
                     "task_frame": task_frame,
+                    "storage_analysis_policy": STORAGE_ANALYSIS_POLICY if storage_primary else None,
                     "investigation_plan": dict(
                         answer_context.get("investigation_plan") or {}
                     ),
@@ -2428,6 +2454,7 @@ class DbaAnswerComposeHandler:
             "question": str(answer_context.get("question", "")),
             "input_envelope": dict(answer_context.get("input_envelope", {})),
             "task_frame": task_frame,
+            "storage_analysis_policy": STORAGE_ANALYSIS_POLICY if task_frame.get("visualization_profile_id") == "storage.trend" else None,
             "parent_investigation": answer_context.get("parent_investigation"),
             "goal_catalog": self._goal_catalog(task_frame),
             "workflow_kind": str(answer_context.get("workflow_kind") or ""),
@@ -2994,6 +3021,15 @@ class DbaAnswerComposeHandler:
         assessment: DbaSufficiencyAssessment,
         context: TaskExecutionContext,
     ) -> TurnAnswerBlock | None:
+        task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
+        monitoring = dict(context.plan_snapshot.get("monitoring") or {})
+        _, supporting = storage_metric_scope(task_frame, monitoring)
+        ready = storage_trend_ready(task_frame, monitoring, assessment.evidence)
+        # 非阻断的容量辅助缺口保留在证据中，不向用户追加必填任务。
+        actionable_gaps = tuple(
+            gap for gap in assessment.gaps
+            if not (ready and supporting_storage_gap(gap, supporting))
+        )
         execution = dict(
             context.plan_snapshot.get("investigation_execution", {})
         )
@@ -3026,11 +3062,11 @@ class DbaAnswerComposeHandler:
         requests: list[tuple[TurnEvidenceGap, dict[str, Any]]] = []
         monitoring_gaps = [
             gap
-            for gap in assessment.gaps
+            for gap in actionable_gaps
             if gap.source_id == "monitoring.overview"
         ]
         seen_tools: set[str] = set()
-        for gap in assessment.gaps:
+        for gap in actionable_gaps:
             tool = tools_by_step.get((gap.source_id, gap.step_id))
             tool_id = str((tool or {}).get("tool_id", ""))
             if tool is None or not tool_id or tool_id in seen_tools:

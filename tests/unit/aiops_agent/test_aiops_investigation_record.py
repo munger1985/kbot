@@ -323,6 +323,7 @@ def test_parent_loading_rechecks_authorization_and_immutable_provenance(failure)
 @pytest.mark.parametrize("database_type,executor", [("ORACLE", "SQLPLUS"), ("POSTGRESQL", "PSQL"), ("MYSQL", "MYSQL")])
 def test_three_database_remediation_runbook_is_environment_scoped_and_never_execution_authority(database_type, executor):
     ctx = context()
+    ctx.plan_snapshot["answer_context"]["task_frame"] = {"action_intent": "ADVISORY", "objectives": ["PLAN"]}
     ctx.plan_snapshot["capability_snapshot"] = {"database_type": database_type, "database_version": "待现场核验"}
     data = draft().model_dump()
     data["recommendations"][0].update({
@@ -340,3 +341,29 @@ def test_three_database_remediation_runbook_is_environment_scoped_and_never_exec
     data["recommendations"][0]["parameters"][0]["value"] = "999"
     with pytest.raises(ValueError):
         freeze_investigation(draft=DiagnosisAnswerDraft.model_validate(data), evidence=(evidence(),), context=ctx)
+
+
+@pytest.mark.parametrize("database_type", ["ORACLE", "POSTGRESQL", "MYSQL"])
+@pytest.mark.parametrize("mode", ["HISTORICAL", "HISTORICAL_AND_FORECAST"])
+def test_storage_analysis_does_not_promote_recommendations_to_blocked_runbook(database_type, mode):
+    ctx = context()
+    ctx.plan_snapshot["capability_snapshot"] = {"database_type": database_type}
+    ctx.plan_snapshot["answer_context"]["task_frame"] = {
+        "visualization_profile_id": "storage.trend", "action_intent": "NONE",
+        "objectives": ["ASSESS"], "temporal_analysis_mode": mode,
+    }
+    original = draft()
+    recommendation = original.recommendations[0].model_copy(update={"missing_parameters": ("保留周期天数",)})
+    original = original.model_copy(update={"recommendations": (recommendation,)})
+    value = freeze_investigation(draft=original, evidence=(evidence(),), context=ctx)
+    assert value.runbook is None
+    assert value.recommendations == original.recommendations
+    assert value.stop_reason == "GOAL_ANSWERED"
+
+
+def test_explicit_plan_objective_still_delivers_runbook_without_execution_request():
+    ctx = context()
+    ctx.plan_snapshot["capability_snapshot"] = {"database_type": "MYSQL"}
+    ctx.plan_snapshot["answer_context"]["task_frame"] = {"action_intent": "NONE", "objectives": ["PLAN"]}
+    value = freeze_investigation(draft=draft(), evidence=(evidence(),), context=ctx)
+    assert value.runbook is not None

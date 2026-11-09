@@ -150,10 +150,15 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             )})
     record = type(record).model_validate(record.model_dump(mode="python"))
     record.validate_observations(evidence)
+    # 模型建议不是用户的实施请求；观察、诊断和预测不能自行升级为操作文档。
+    runbook_requested = (
+        str(frame.get("action_intent") or "NONE") in {"ADVISORY", "EXECUTE"}
+        or "PLAN" in frame.get("objectives", ())
+    )
     runbook = compile_diagnostic_runbook(
         record, database_type=str(capability.get("database_type") or database.get("db_type") or ""),
         database_version=capability.get("database_version"),
-    )
+    ) if runbook_requested else None
     return record.model_copy(update={"runbook": runbook})
 
 
