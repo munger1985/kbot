@@ -941,7 +941,7 @@ class TurnPlanningService:
                         context.conversation_starter.get("starter_id")
                     ),
                     "primary_result_kind": (
-                        kind if kind in {"TOP_SQL_LIST", "CURRENT_SQL_LIST", "ALERT_LOG_LIST"}
+                        kind if kind in {"TOP_SQL_LIST", "CURRENT_SQL_LIST", "ALERT_LOG_LIST", "AWR_REPORT", "ASH_REPORT", "AWR_DIFF"}
                         else None
                     ),
                 },

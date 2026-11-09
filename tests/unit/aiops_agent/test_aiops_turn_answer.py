@@ -2264,14 +2264,18 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 }
             ],
         }
+        def report_artifact(tool_id):
+            artifact = _tool_artifact(semantics="SNAPSHOT_DELTA", tool_id=tool_id)
+            observation = artifact["payload"]["tool_outcomes"][0]["observation"]
+            observation.update(columns=[{"name": "output", "logical_type": "STRING", "sensitivity": "PUBLIC"}],
+                rows=[["<html>原生报告</html>"]])
+            return artifact
+
         single_report = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(
                 _context(
                     artifacts=(
-                        _tool_artifact(
-                            semantics="SNAPSHOT_DELTA",
-                            tool_id="db.oracle.awr.report",
-                        ),
+                        report_artifact("db.oracle.awr.report"),
                     ),
                     task_frame_overrides=task_frame,
                 )
@@ -2288,10 +2292,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             DbaEvidenceAssessmentHandler().execute(
                 _context(
                     artifacts=(
-                        _tool_artifact(
-                            semantics="SNAPSHOT_DELTA",
-                            tool_id="db.oracle.awr.diff_report",
-                        ),
+                        report_artifact("db.oracle.awr.diff_report"),
                     ),
                     task_frame_overrides=task_frame,
                 )

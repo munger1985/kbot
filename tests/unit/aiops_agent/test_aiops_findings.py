@@ -1234,7 +1234,7 @@ class DiagnosisComposeTest(unittest.TestCase):
         fact = _lock_fact()
         awr = _fact(
             tool_id="db.oracle.awr.report",
-            columns=("REPORT",),
+            columns=("output",),
             rows=(("<html>awr</html>",),),
             step_id="a1",
             evidence_ref="artifact:awr#fact",
@@ -1277,7 +1277,7 @@ class DiagnosisComposeTest(unittest.TestCase):
     def test_html_report_without_action_id_keeps_label_only(self) -> None:
         awr = _fact(
             tool_id="db.oracle.awr.report",
-            columns=("REPORT",),
+            columns=("output",),
             rows=(("<html>awr</html>",),),
             step_id="prometheus",
             evidence_ref="artifact:awr#fact",

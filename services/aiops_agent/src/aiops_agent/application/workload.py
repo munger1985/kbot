@@ -1897,26 +1897,18 @@ class WorkloadService:
                 reports: list[tuple[str, bytes]] = []
                 for outcome in result.tool_outcomes:
                     observation = outcome.observation
-                    if (
-                        observation is None
-                        or observation.truncated
-                        or len(observation.columns) != 1
-                        or observation.columns[0].name != "output"
-                    ):
+                    from aiops_agent.application.native_reports import native_report_html
+                    from aiops_agent.application.diagnosis.model_evidence import HTML_REPORT_TOOLS
+                    if observation is None or outcome.status != "SUCCEEDED" or outcome.tool_id not in HTML_REPORT_TOOLS:
                         continue
-                    body = "".join(
-                        str(row[0])
-                        for row in observation.rows
-                        if row and row[0] is not None
-                    ).encode("utf-8")
-                    if body:
-                        reports.append((outcome.tool_id, body))
-                if (
-                    len(reports) != 1
-                    or not reports[0][1].lstrip().lower().startswith(
-                        (b"<!doctype html", b"<html")
+                    body = native_report_html(
+                        columns=tuple(column.model_dump() for column in observation.columns),
+                        rows=observation.rows, row_count=observation.row_count,
+                        truncated=observation.truncated,
                     )
-                ):
+                    if body is not None:
+                        reports.append((outcome.tool_id, body.encode("utf-8")))
+                if len(reports) != 1:
                     raise resource_not_found("Artifact content")
                 tool_id, content = reports[0]
                 file_name = _safe_file_name(

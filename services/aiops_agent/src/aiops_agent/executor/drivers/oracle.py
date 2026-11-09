@@ -59,6 +59,42 @@ class OracleDiagnosticDriver:
             operation_id=tool.definition.tool_id,
         )
 
+    @staticmethod
+    async def _report_resolution_error(connection, operation_id: str) -> str:
+        """报告接口存在但对诊断账号不可见时，按真实权限回执识别 ORA-00904。"""
+        procedures = {
+            "db.oracle.awr.report": "AWR_REPORT_HTML",
+            "db.oracle.ash.report": "ASH_REPORT_HTML",
+            "db.oracle.awr.diff_report": "AWR_DIFF_REPORT_HTML",
+        }
+        procedure = procedures.get(operation_id)
+        if procedure is None or connection is None:
+            return "QUERY_COLUMN_INVALID"
+        cursor = None
+        try:
+            cursor = connection.cursor()
+            async with asyncio.timeout(2):
+                await cursor.execute(
+                    "SELECT "
+                    "(SELECT COUNT(*) FROM sys.dba_procedures "
+                    "WHERE owner='SYS' AND object_name='DBMS_WORKLOAD_REPOSITORY' "
+                    "AND procedure_name=:procedure_name) AS installed, "
+                    "(SELECT COUNT(*) FROM sys.all_procedures "
+                    "WHERE owner='SYS' AND object_name='DBMS_WORKLOAD_REPOSITORY' "
+                    "AND procedure_name=:procedure_name) AS accessible FROM dual",
+                    {"procedure_name": procedure},
+                )
+                installed, accessible = await cursor.fetchone()
+                if installed > 0 and accessible == 0:
+                    return "PRIVILEGE_MISSING"
+        except (oracledb.Error, TimeoutError):
+            # 无法核实权限时保留原始错误，不能把任意无效列或元数据失败认作缺权限。
+            pass
+        finally:
+            if cursor is not None:
+                cursor.close()
+        return "QUERY_COLUMN_INVALID"
+
     async def execute_dynamic(
         self,
         *,
@@ -245,7 +281,7 @@ class OracleDiagnosticDriver:
             elif code == 942:
                 mapped = "QUERY_OBJECT_UNAVAILABLE"
             elif code == 904:
-                mapped = "QUERY_COLUMN_INVALID"
+                mapped = await self._report_resolution_error(connection, operation_id)
             elif code == 918:
                 mapped = "QUERY_COLUMN_AMBIGUOUS"
             elif code in {933, 936}:

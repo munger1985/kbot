@@ -56,6 +56,7 @@ from aiops_agent.application.display_dictionary import (
     display_name,
     display_text,
 )
+from aiops_agent.application.native_reports import native_report_spec, complete_report_fact
 from aiops_agent.application.investigation.projection import direct_list_result_kind
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
@@ -963,13 +964,14 @@ class DbaEvidenceAssessmentHandler:
             matching = {
                 fact.evidence_ref
                 for fact in facts
-                if fact.tool_id in accepted_tools
+                if (fact.tool_id not in _HTML_REPORT_TOOLS or complete_report_fact(fact))
+                and (fact.tool_id in accepted_tools
                 or str(
                     plan_actions.get(fact.step_id, {}).get(
                         "expected_evidence_kind", ""
                     )
                 )
-                in accepted_kinds
+                in accepted_kinds)
             }
             minimum = int(
                 requirement.get("minimum_successful_results") or 1
@@ -1111,6 +1113,9 @@ class DbaEvidenceAssessmentHandler:
             # 把补证设想追加成新的巡检缺口，导致报告重复并偏离模板范围。
             return with_prior(deterministic)
         scoped = with_prior(deterministic)
+        if native_report_spec(task_frame):
+            # 原生报告完成与否由真实正文和执行回执决定，不进入诊断模型。
+            return scoped
         if (
             storage_ready
             and scoped.status == SufficiencyStatus.ANSWERABLE
@@ -1657,6 +1662,8 @@ class DbaAnswerComposeHandler:
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
         task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
+        if native_report_spec(task_frame) and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
+            return self._native_report_result(assessment, context)
         kind = direct_list_result_kind(task_frame)
         if kind and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
             return self._direct_list_result(kind, assessment, context)
@@ -1873,6 +1880,55 @@ class DbaAnswerComposeHandler:
         )
 
     @staticmethod
+    def _native_report_result(assessment: DbaSufficiencyAssessment, context: TaskExecutionContext) -> AIOpsTurnResult:
+        """原生报告直接交付，不生成根因分析、解决方案或实施命令。"""
+        from collections import Counter
+        answer = dict(context.plan_snapshot.get("answer_context") or {})
+        _, primary_tool, title = native_report_spec(dict(answer.get("task_frame") or {}))
+        from aiops_agent.application.native_reports import NATIVE_REPORT_TOOLS
+        actions = tuple(dict(answer.get("investigation_plan") or {}).get("actions") or ())
+        expected = Counter(action["tool_id"] for action in actions
+            if action.get("tool_id") in NATIVE_REPORT_TOOLS and not action.get("optional"))
+        expected[primary_tool] = max(1, expected[primary_tool])
+        valid = tuple({fact.evidence_ref: fact for fact in assessment.evidence
+            if fact.tool_id in NATIVE_REPORT_TOOLS and complete_report_fact(fact)}.values())
+        obtained = Counter(fact.tool_id for fact in valid)
+        report_steps = {action["action_id"] for action in actions if action.get("action_id") and action.get("tool_id") in expected}
+        failures = tuple(gap for gap in assessment.gaps
+            if gap.source_id in expected or gap.step_id in report_steps)
+        completed = not failures and all(obtained[tool] >= count for tool, count in expected.items())
+        if completed:
+            markdown = f"{title}已生成，可下载原生 HTML 文件。"
+        else:
+            markdown = f"{title}未生成完整交付文件。"
+            if obtained[primary_tool]:
+                markdown = f"{title}已生成，但配套报告尚未全部完成。"
+            if any(gap.code == "PRIVILEGE_MISSING" for gap in failures):
+                markdown += ("当前目标库诊断账号缺少 SYS.DBMS_WORKLOAD_REPOSITORY 包的 EXECUTE 权限。"
+                    "请 DBA 在所连接的目标容器核实并授予该账号所需的报告包执行权限后重试。")
+            elif failures:
+                markdown += "原因：" + "；".join(dict.fromkeys(display_text(gap.detail) for gap in failures)) + "。"
+            elif any(fact.tool_id in expected and not complete_report_fact(fact) for fact in assessment.evidence):
+                markdown += "数据库返回的报告正文为空、已截断或不完整，不能作为可下载的正式报告。"
+            else:
+                relevant = tuple(gap for gap in assessment.gaps
+                    if gap.source_id != "investigation.assessment")
+                markdown += ("原因：" + "；".join(dict.fromkeys(display_text(gap.detail) for gap in relevant)) + "。"
+                    if relevant else "尚未取得数据库返回的完整原生报告，请检查快照选择及报告执行回执。")
+            if valid:
+                markdown += "已成功生成的报告仍保留在下方下载区。"
+        blocks = [TurnAnswerBlock(block_type=AnswerBlockType.MARKDOWN,
+            schema_version="AIOPS_MARKDOWN_BLOCK.v1", payload={"markdown": markdown},
+            evidence_refs=tuple(fact.evidence_ref for fact in valid))]
+        links = DbaAnswerComposeHandler._report_artifact_links_block(valid, context)
+        if links:
+            blocks.append(links)
+        return AIOpsTurnResult(status="COMPLETED" if completed else "PARTIAL",
+            sufficiency_status=SufficiencyStatus.ANSWERABLE if completed else SufficiencyStatus.PARTIAL if valid else SufficiencyStatus.NEEDS_EVIDENCE,
+            blocks=tuple(blocks), evidence=assessment.evidence, evidence_gaps=assessment.gaps,
+            assessment_reasons=assessment.reasons)
+
+    @staticmethod
     def _direct_list_result(kind: str, assessment: DbaSufficiencyAssessment, context: TaskExecutionContext | None = None) -> AIOpsTurnResult:
         """列表事实和口径由服务端直接生成，模型不能改写排名或时间。"""
         if kind == "TOP_SQL_LIST":
@@ -2084,6 +2140,12 @@ class DbaAnswerComposeHandler:
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
         task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
+        if native_report_spec(task_frame) and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
+            result = self._native_report_result(assessment, context).model_copy(update={"answer_streamed": True})
+            yield DbaAnswerProgress(event_type="answer.delta", event_key="answer-delta:1",
+                payload={"chunk_index": 1, "delta": result.blocks[0].payload["markdown"]})
+            yield result
+            return
         kind = direct_list_result_kind(task_frame)
         if kind and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
             result = self._direct_list_result(kind, assessment, context).model_copy(update={"answer_streamed": True})
@@ -2588,7 +2650,7 @@ class DbaAnswerComposeHandler:
         context: TaskExecutionContext,
     ) -> TurnAnswerBlock | None:
         report_facts = tuple(
-            fact for fact in evidence if fact.tool_id in _HTML_REPORT_TOOLS
+            fact for fact in evidence if fact.tool_id in _HTML_REPORT_TOOLS and complete_report_fact(fact)
         )
         if not report_facts:
             return None

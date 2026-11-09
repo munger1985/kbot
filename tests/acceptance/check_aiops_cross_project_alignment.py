@@ -13,6 +13,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("services/aiops_agent/src/aiops_agent/application/native_reports.py"),
+    Path("tests/unit/aiops_agent/test_aiops_native_oracle_reports.py"),
+    Path("docs/operations/oracle-native-report-delivery.md"),
     Path("services/aiops_agent/src/aiops_agent/application/operations_documents.py"),
     Path("tests/support/aiops_documents.py"),
     Path("tests/unit/knowledge_foundation/test_aiops_child.py"),
@@ -703,8 +706,8 @@ def _capability_alignment(
     violations = []
     if local_catalog != peer_catalog:
         violations.append("版本化运维能力目录不一致")
-    if local_catalog.get("catalog_version") != "2.2.0":
-        violations.append("运维能力目录必须使用2.2.0语义合同")
+    if local_catalog.get("catalog_version") != "2.3.0":
+        violations.append("运维能力目录必须使用2.3.0语义合同")
     if len(local_catalog.get("starters", ())) != 26:
         violations.append("运维能力目录必须完整包含26项能力")
     for key, equal in prompt_alignment.items():

@@ -1027,26 +1027,20 @@ class ConversationTurnService:
                 report_labels: list[str] = []
                 for outcome in result.tool_outcomes:
                     observation = outcome.observation
-                    if (
-                        observation is None
-                        or observation.truncated
-                        or len(observation.columns) != 1
-                        or observation.columns[0].name != "output"
-                    ):
+                    from aiops_agent.application.native_reports import native_report_html
+                    from aiops_agent.application.diagnosis.model_evidence import HTML_REPORT_TOOLS
+                    if observation is None or outcome.status != "SUCCEEDED" or outcome.tool_id not in HTML_REPORT_TOOLS:
                         continue
-                    content = "".join(
-                        str(row[0]) for row in observation.rows
-                        if row and row[0] is not None
-                    ).encode("utf-8")
-                    if content:
-                        reports.append(content)
+                    content = native_report_html(
+                        columns=tuple(column.model_dump() for column in observation.columns),
+                        rows=observation.rows, row_count=observation.row_count,
+                        truncated=observation.truncated,
+                    )
+                    if content is not None:
+                        reports.append(content.encode("utf-8"))
                         report_labels.append(outcome.tool_id)
                 if len(reports) != 1:
                     raise state_conflict("报告Artifact必须且只能包含一份完整正文")
-                if not reports[0].lstrip().lower().startswith(
-                    (b"<!doctype html", b"<html")
-                ):
-                    raise state_conflict("报告Artifact正文不是受支持的HTML")
                 return (
                     reports[0],
                     "text/html",

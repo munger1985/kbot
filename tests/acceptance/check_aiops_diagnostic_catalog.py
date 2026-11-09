@@ -15,6 +15,9 @@ from aiops_agent.diagnostics import DiagnosticRegistry
 
 REQUIRED_TOOLS = {
     "ORACLE": {
+        "db.oracle.awr.report",
+        "db.oracle.ash.report",
+        "db.oracle.awr.diff_report",
         "db.instance.identity",
         "db.sql.top_current",
         "db.sql.active_current",
