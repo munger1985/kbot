@@ -18,4 +18,11 @@
 
 ## 部署验收
 
-代码提交后从远端仓库拉取部署，不在线编辑仓库源码。待记录新进程就绪、自动采集、通知投影与 Webhook 后续观测。
+- 功能提交：Ammolite `5076940b`（dev）；KBot `0bffdf8a`（kbot4.1.1），均已推送并在 kbotdev fast-forward 拉取。
+- 2026-11-09 05:43:05 UTC 定向重启 Ammolite AIOps/Main API；05:43:08 UTC 按官方脚本全量重启 KBot。两套 Main API 与各四项 AIOps readiness 共 10 项全部 200；新进程 cwd 均指向对应仓库。
+- Ammolite 两个受影响 Oracle 目标在新进程启动后连续产生 READY 工作负载快照；本轮取样 5 条 Oracle 语句证据持久化成功，逐条 content_hash、byte_size 核验一致。真实 PostgreSQL 驱动完成含 NUL、中文、嵌套键的只读往返校验。
+- Ammolite 新通知事件已 published，error 为空；最后一条真实采集错误为 05:42:45 UTC，最后一条真实通知 Outbox 错误为 05:42:59 UTC，均早于本次重启。历史失败事件保留为审计，不批量重放、删除或伪造成功。
+- KBot 7 条来源缺失运行投影于 05:45:20–05:45:22 UTC 被正常后台对账标为 EXPIRED / NOTIFICATION_SOURCE_UNAVAILABLE；专项复查候选数为 0，最早 3 条原故障记录均核对一致。原 Run 未被创建、修改或删除。
+- KBot 重启后观测到 15 条 Webhook Inbox 为 PROCESSED；旧路由的真实请求已返回 202。10.0.0.195 的唯一配置和两个 Secret 均有 05:41:47 UTC 的受限权限回退副本，未改仓库源码。
+- 当前线上日志 API 复查未见新的上述四类失败。对无时间戳的旧 traceback 片段，以原始日志头核对时间，不把文件 mtime 当作新故障发生时间。
+- 本轮不需要 Schema 变更，也未修改 Prompt、清理历史或覆盖线上未跟踪配置备份。
