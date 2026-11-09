@@ -27,6 +27,8 @@ from tests.unit.aiops_agent.test_aiops_sql_review import setup
     "SELECT CASE WHEN id=$1 AND metric_id=$2 THEN metric_value WHEN id=$3 OR metric_id=$4 THEN 0 ELSE -1 END FROM mes.signal",
     "WITH chosen AS (SELECT id FROM mes.signal WHERE id=$1 AND metric_id=$2) SELECT id FROM chosen WHERE id>$3 OR id=$4",
     "SELECT COUNT(*) FROM mes.signal WHERE CAST(id AS bigint)>$1 AND COALESCE(metric_id,0)>$2",
+    "SELECT CASE WHEN pg_is_in_recovery() THEN GREATEST(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP-pg_last_xact_replay_timestamp()),0) ELSE 0 END",
+    "SELECT pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn(), pg_current_wal_lsn(), pg_wal_lsn_diff($1, $2)",
 ])
 def test_plan_accepts_structural_conditions_without_function_name_exceptions(sql):
     assert readonly_plan_sql(sql) == sql
@@ -43,6 +45,9 @@ def test_plan_accepts_structural_conditions_without_function_name_exceptions(sql
     'SELECT id FROM mes.signal WHERE id=$1 AND "and"(id,metric_id)',
     'SELECT CASE WHEN id=$1 THEN "if"(id,metric_id,$2) ELSE 0 END FROM mes.signal',
     "SELECT id FROM mes.signal WHERE id=$1 AND EXISTS(SELECT pg_advisory_lock(1))",
+    "SELECT EXTRACT(EPOCH FROM pg_sleep(1))",
+    "SELECT pg_wal_replay_pause()",
+    "SELECT pg_logical_emit_message(true, 'test', 'test')",
 ])
 def test_condition_or_case_does_not_hide_unsupported_function(sql):
     with pytest.raises(DiagnosticDriverError) as error:
@@ -103,6 +108,7 @@ def test_placeholder_pruned_partitions_cannot_be_presented_as_complete_estimate(
     "SQL_PLAN_SUBJECT_AMBIGUOUS","SQL_PLAN_SOURCE_CHANGED","SQL_PLAN_DATABASE_MISMATCH",
     "SQL_PLAN_PARAMETER_LIMIT","SQL_PLAN_PARAMETER_TYPES_UNAVAILABLE","SQL_PLAN_OUTPUT_INVALID","SQL_PLAN_EXECUTION_CHANGED",
     "SQL_PLAN_PARTITION_PRUNING_INCOMPLETE",
+    "SQL_PLAN_SAMPLE_INVALID",
 ])
 def test_plan_failure_retains_specific_receipt_and_readable_reason(code):
     detail=_database_gap_detail(code)

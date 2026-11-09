@@ -1961,7 +1961,7 @@ class DbaAnswerComposeHandler:
         )
         if bundle is None:
             return None
-        from aiops_agent.application.diagnosis.sql_plan_presentation import plan_availability_block, matching_plan_refs
+        from aiops_agent.application.diagnosis.sql_plan_presentation import plan_availability_block, matching_plan_refs, missing_plan_table_block
         matched_plans = matching_plan_refs(bundle)
         draft = None
         receipt = None
@@ -2026,6 +2026,9 @@ class DbaAnswerComposeHandler:
         data_blocks = self._data_blocks(assessment.evidence, primary_result_kind="SINGLE_SQL_DETAIL")
         plan_blocks = [block for block in data_blocks if block.payload.get("result_kind") == "SQL_EXECUTION_PLAN"
                        and any(ref in matched_plans for ref in block.evidence_refs)]
+        availability = plan_availability_block(database_type=self._database_type(context), bundle=bundle, gaps=assessment.gaps)
+        if not plan_blocks:
+            plan_blocks = [missing_plan_table_block(availability)]
         completed = bool(record and record.stop_reason == "GOAL_ANSWERED" and assessment.status == SufficiencyStatus.ANSWERABLE)
         if narrative is None and draft is None and checkpoint and checkpoint.answer_markdown:
             from aiops_agent.contracts.turn_answer import AnswerNarrative
@@ -2035,18 +2038,18 @@ class DbaAnswerComposeHandler:
         native_markdown = narrative.markdown if narrative else checkpoint.answer_markdown if draft is not None and checkpoint is not None else None
         markdown = native_markdown or f"## 分析\n\n{analysis}\n\n## 解决方案\n\n{solution}"
         blocks = [
-            *plan_blocks,
             TurnAnswerBlock(
                 block_type=AnswerBlockType.MARKDOWN,
                 schema_version="AIOPS_MARKDOWN_BLOCK.v1",
                 payload={**(narrative_payload(narrative) if narrative else {"markdown": markdown, "raw_model_output": bool(native_markdown),
                          "answer_notice": fallback_reason if native_markdown else None}),
-                         "sql_plan_acquisition": plan_availability_block(database_type=self._database_type(context), bundle=bundle, gaps=assessment.gaps).payload["sql_plan_acquisition"],
+                         "sql_plan_acquisition": availability.payload["sql_plan_acquisition"],
                          "diagnosis_status": "COMPLETED" if completed else "PARTIAL" if draft else "INCOMPLETE",
                          "sql_diagnosis": draft.model_dump(mode="json") if draft else None,
                          "subject": bundle["subject"], "subject_resolution": bundle["subject_resolution"]},
                 evidence_refs=() if narrative and narrative.validation_status == "UNVERIFIED" else refs,
             ),
+            *plan_blocks,
         ]
         comparison_blocks = self._sql_candidate_blocks(assessment, context, comparison=True)
         blocks.extend(comparison_blocks)

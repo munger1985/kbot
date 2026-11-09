@@ -90,6 +90,7 @@ def _database_gap_detail(code: str, *, dynamic: bool = False, object_access=()) 
         "SQL_PLAN_PARAMETER_LIMIT": "原 SQL 的参数类型数量超出受控计划工具范围，未猜测业务参数",
         "SQL_PLAN_PARAMETER_TYPES_UNAVAILABLE": "计划采集已尝试，但数据库无法从原语句安全推断参数类型，未猜测类型或业务绑定值",
         "SQL_PLAN_OUTPUT_INVALID": "计划采集返回内容未通过安全归一化校验，未将其作为有效计划",
+        "SQL_PLAN_SAMPLE_INVALID": "已尝试读取数据库捕获的 SQL 样本，但样本被截断或 Digest 不匹配；未猜测参数或生成替代计划",
         "SQL_PLAN_PARTITION_PRUNING_INCOMPLETE": "计划采集已尝试，但占位参数使分区子计划被裁剪，未取得完整扫描节点；未猜测业务参数，未将残缺计划作为完整估算",
         "SQL_PLAN_EXECUTION_CHANGED": "采集期间活动连接的语句或事件身份已变化，未采用其他执行的计划",
         "QUERY_VALUE_FORMAT_INVALID": "查询中的值与 Oracle 要求的格式不匹配",

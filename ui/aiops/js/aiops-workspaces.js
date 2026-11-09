@@ -1773,7 +1773,7 @@
       || (block.block_type === "TABLE" && block.payload?.presentation_role === "PRIMARY"));
     const blocks = (chat ? globalThis.AIOpsChatCharts.groupBlocks(narrativeBlocks) : narrativeBlocks).map((block) => answerBlockHtml(block, turn)).join("");
     const planMaterial = turn.ops_run_id && ["COMPLETED","PARTIAL"].includes(turn.status) && answerBlocks.some(block => block.payload?.sql_plan_acquisition)
-      ? '<details class="key-value-card aiops-action-card"><summary>已有执行计划材料</summary><p>只读取数据库已有计划、统计和运行证据，不发起估算、不重放业务 SQL、不请求业务表权限。已有计划 JSON 可通过诊断材料上传后继续分析；来源及匹配边界随材料保留。</p></details>' : "";
+      ? '<details class="key-value-card aiops-action-card"><summary>已有执行计划材料</summary><p>优先读取已有计划；PG 和 MySQL 可通过固定只读工具取得优化器估算计划，不重放业务 SQL、不猜参数、不请求额外权限。已有计划 JSON 也可通过诊断材料上传；来源及匹配边界随材料保留。</p></details>' : "";
     const evidence = chat ? chatTurnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary, planMaterial) : turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary);
     const orchestration = turnOrchestrationHtml(turn);
     const plan = investigationPlanHtml(turn.investigation_plan, turn.display_dictionary);
@@ -1935,7 +1935,7 @@
       if (!anchor) continue;
       const root = document.createElement("details");
       root.className = "ops-evidence";
-      root.innerHTML = '<summary>已有执行计划材料</summary><div class="ops-evidence-body"><p>只读取数据库已有执行计划；缺少计划时可上传 DBA 已提供的计划 JSON 继续分析。AIOps 不发起估算、不重放业务 SQL，也不请求业务表权限。</p></div>';
+      root.innerHTML = '<summary>已有执行计划材料</summary><div class="ops-evidence-body"><p>优先读取已有计划；PG 和 MySQL 可通过固定只读工具取得优化器估算计划，不重放业务 SQL、不猜参数、不请求额外权限。已有计划 JSON 也可通过诊断材料上传。</p></div>';
       anchor.appendChild(root);
     }
   }

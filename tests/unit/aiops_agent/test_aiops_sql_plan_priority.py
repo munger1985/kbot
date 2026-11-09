@@ -210,7 +210,8 @@ def test_no_anomaly_conclusion_and_plan_survive_both_answer_modes():
         handler = DbaAnswerComposeHandler(model_client=model, prompts=prompts)
         result = await handler.execute(ctx)
         assert result.status == "COMPLETED"
-        assert result.blocks[0].payload["result_kind"] == "SQL_EXECUTION_PLAN"
+        assert result.blocks[0].block_type == "MARKDOWN"
+        assert result.blocks[1].payload["result_kind"] == "SQL_EXECUTION_PLAN"
         analysis = next(block for block in result.blocks if block.block_type == "MARKDOWN")
         assert analysis.payload["markdown"] == response.output.answer_markdown
         assert analysis.payload["markdown"].startswith("在已观察范围未发现明显异常")
@@ -281,7 +282,8 @@ def test_model_timeout_keeps_acquired_plan_and_does_not_request_the_same_plan_ag
         prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="诊断", ref=lambda: {})))
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(ctx)
         assert result.status == "PARTIAL"
-        assert result.blocks[0].payload["result_kind"] == "SQL_EXECUTION_PLAN"
+        assert result.blocks[0].block_type == "MARKDOWN"
+        assert result.blocks[1].payload["result_kind"] == "SQL_EXECUTION_PLAN"
         analysis = next(block for block in result.blocks if block.block_type == "MARKDOWN")
         assert "MODEL_DEADLINE_EXCEEDED" in analysis.payload["markdown"]
         assert analysis.payload["diagnosis_status"] == "INCOMPLETE"

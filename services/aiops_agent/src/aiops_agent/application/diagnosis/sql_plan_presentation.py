@@ -144,3 +144,19 @@ def plan_availability_block(*, database_type, bundle, gaps=()):
             "original_execution_authorized": False,
         }}, evidence_refs=tuple(item["evidence_ref"] for item in available if item.get("evidence_ref")),
     )
+
+
+def missing_plan_table_block(availability):
+    """缺计划仍占用统一计划卡片，显示真实采集状态，不伪造图形节点。"""
+    state = availability.payload["sql_plan_acquisition"]
+    labels = {"FAILED": "采集失败", "NO_MATCHING_PLAN": "未取得匹配计划", "NOT_ATTEMPTED": "尚未采集"}
+    empty_reason = ("采集时没有匹配的活动连接或可用语句样本。" if state["database_type"] == "MYSQL"
+        else "采集未返回完整且匹配的计划。")
+    reason = ("；".join(item.get("detail") or item["code"] for item in state["failures"])
+        if state["failures"] else "本轮尚无计划采集回执。" if state["collection_state"] == "NOT_ATTEMPTED" else empty_reason)
+    refs = tuple(dict.fromkeys(item["evidence_ref"] for item in state["attempts"] if item.get("evidence_ref")))
+    return TurnAnswerBlock(block_type="TABLE", schema_version="AIOPS_TABLE_BLOCK.v1", evidence_refs=refs,
+        payload={"title": "执行计划 · " + labels.get(state["collection_state"], "未取得计划"),
+            "result_kind": "SQL_EXECUTION_PLAN", "presentation_role": "PRIMARY",
+            "columns": [], "rows": [], "row_count": 0, "has_row_actions": False,
+            "sql_plan_acquisition": {**state, "display_reason": reason}})

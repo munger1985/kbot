@@ -40,6 +40,11 @@ const unsafe = structuredClone(payload);
 unsafe.plan_graph.nodes[2].relation_name = '<img src=x onerror="attack()">';
 assert.ok(!viewer.html(unsafe).includes("<img"));
 assert.equal(viewer.graphFrom({}), null);
+for (const database_type of ["ORACLE", "POSTGRESQL", "MYSQL"]) {
+  const missing = viewer.html({ sql_plan_acquisition: { database_type, status: "MISSING", collection_state: "FAILED", display_reason: '<img src=x>读取失败' } });
+  assert.ok(missing.includes('role="status"') && missing.includes("读取失败"));
+  assert.ok(!missing.includes("<img") && !missing.includes("sql-plan-tabs") && !missing.includes("<svg"));
+}
 const cyclic = structuredClone(payload);
 cyclic.plan_graph.nodes[0].parent_id = 1;
 assert.equal(viewer.graphFrom(cyclic), null);

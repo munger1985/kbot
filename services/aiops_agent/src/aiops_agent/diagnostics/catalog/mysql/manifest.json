@@ -1950,7 +1950,7 @@
       },
     {
       "tool_id": "db.mysql.statement.plan",
-      "description": "按已核验Digest、Schema及文本哈希读取当前活动连接的原生估算计划；前后核对执行事件，不执行原SQL，不把Digest中的问号改成猜测参数。",
+      "description": "按已核验Digest、Schema及文本哈希优先读取活动连接计划；无活动实例时仅对数据库捕获、完整且Digest复核一致的SELECT样本取只读估算计划，不执行原SQL、不猜参数。",
       "version": "1.0.0",
       "db_type": "MYSQL",
       "variant": "mysql_8_active_statement_plan",
@@ -1997,7 +1997,7 @@
         }
       ],
       "template_ref": "sql/statement_plan_source.sql",
-      "template_sha256": "03a04fcee028bc16037af598f011affd517df1afcf7c6d853386baf0b6dded90",
+      "template_sha256": "5028acc63efe15d48e93b47ebe0ee95c226f93d11a7f6083d1a2611832f7ac46",
       "timeout_seconds": 15,
       "max_rows": 1,
       "max_bytes": 262144,

@@ -168,7 +168,7 @@
     const node = state.graph?.nodes.find(n => n.node_id === state.selected);
     if (!node) return '<div class="sql-plan-detail-empty">选择图中节点，查看对象、原生指标和上下游。</div>';
     const children = state.graph.nodes.filter(n => n.parent_id === node.node_id);
-    const origin = { DATABASE_CURSOR: "缓存计划 / LAST 行源", CONTROLLED_ESTIMATE: "受控估算计划", USER_UPLOAD: "用户提供计划（待核验）" }[state.payload.plan_origin] || "以证据来源为准";
+    const origin = { DATABASE_CURSOR: "缓存计划 / LAST 行源", DATABASE_ESTIMATE: "数据库只读估算计划", CONTROLLED_ESTIMATE: "受控估算计划", USER_UPLOAD: "用户提供计划（待核验）" }[state.payload.plan_origin] || "以证据来源为准";
     const metrics = Object.entries(node.metrics || {}).map(([key, value]) => '<div><dt>' + esc(metricNames[key] || key) + "</dt><dd>" + esc(value) + "</dd></div>").join("");
     const navigation = (id, label) => '<button class="text-button" type="button" data-plan-node="' + id + '">' + esc(label) + "</button>";
     return '<div class="sql-plan-detail-head"><span>节点 #' + node.node_id + " · " + kinds[category(node)] + '</span>'
@@ -184,6 +184,11 @@
       + (children.length ? button("collapse", state.collapsed.has(node.node_id) ? "展开输入分支" : "折叠输入分支") : "") + "</div>";
   }
   function html(payload) {
+    const acquisition = payload.sql_plan_acquisition;
+    if (acquisition?.status === "MISSING" && !graphFrom(payload)) {
+      return '<div class="sql-plan-viewer"><p class="sql-plan-empty" role="status">'
+        + esc(acquisition.display_reason || "本轮未取得匹配执行计划。") + "</p></div>";
+    }
     const uid = "sql-plan-" + (++serial);
     const state = dataFor(payload, uid);
     if (!state.graph) state.tab = "raw";

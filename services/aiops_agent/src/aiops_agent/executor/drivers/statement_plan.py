@@ -11,6 +11,14 @@ from .base import DiagnosticDriverError
 
 PLAN_COLUMNS = ("subject_json", "source_sql_sha256", "plan_nodes_json")
 
+# 仅供固定计划工具使用的只读内置函数；不扩大模型动态查询的授权范围。
+_PLAN_READONLY_FUNCTIONS = {
+    "postgres": frozenset({"EXTRACT", "PG_IS_IN_RECOVERY", "PG_LAST_WAL_RECEIVE_LSN",
+        "PG_LAST_WAL_REPLAY_LSN", "PG_LAST_XACT_REPLAY_TIMESTAMP", "PG_CURRENT_WAL_LSN",
+        "PG_WAL_LSN_DIFF"}),
+    "mysql": frozenset({"EXTRACT", "DATE", "DATEDIFF", "TIMESTAMPDIFF", "NOW", "IF", "IFNULL"}),
+}
+
 
 def plan_source(rows, *, expected_hash):
     if not rows:
@@ -24,18 +32,20 @@ def plan_source(rows, *, expected_hash):
     return row
 
 
-def readonly_plan_sql(sql):
+def readonly_plan_sql(sql, *, dialect="postgres"):
     """仅估算可解析单条 SELECT；限定对象解析环境，拒绝未知函数和隐含写入。"""
     from aiops_agent.diagnostics.dynamic_query import _POSTGRESQL_SAFE_FUNCTIONS
     try:
-        statements = parse(sql, read="postgres")
+        statements = parse(sql, read=dialect)
         if len(statements) != 1 or not isinstance(statements[0], exp.Select):
             raise ValueError
         tree = statements[0]
-        if any(isinstance(node, (exp.DML, exp.DDL, exp.Command, exp.Into, exp.Lock)) for node in tree.walk()):
+        if any(isinstance(node, (exp.DML, exp.DDL, exp.Command, exp.Into, exp.Lock, exp.Hint)) for node in tree.walk()):
             raise ValueError
+        if dialect == "mysql" and any(isinstance(node, (exp.Parameter, exp.Placeholder, exp.PropertyEQ, exp.SessionParameter)) for node in tree.walk()):
+            raise DiagnosticDriverError("SQL_PLAN_PARAMETER_TYPES_UNAVAILABLE")
         ctes = {cte.alias_or_name for cte in tree.find_all(exp.CTE)}
-        if any(not table.db and table.name not in ctes for table in tree.find_all(exp.Table)):
+        if dialect == "postgres" and any(not table.db and table.name not in ctes for table in tree.find_all(exp.Table)):
             raise DiagnosticDriverError("SQL_PLAN_PARSE_CONTEXT_REQUIRED")
         if any(table.catalog for table in tree.find_all(exp.Table)):
             raise ValueError
@@ -45,7 +55,10 @@ def readonly_plan_sql(sql):
             if isinstance(function, (exp.Case, exp.Connector, exp.If)) and "start" not in function.meta:
                 continue
             name = function.name.upper() if isinstance(function, exp.Anonymous) else function.sql_name().upper()
-            if name not in _POSTGRESQL_SAFE_FUNCTIONS:
+            # MySQL DATE 被解析器归一化为内部节点名，仍按原生内置函数校验。
+            if dialect == "mysql" and isinstance(function, exp.TsOrDsToDate):
+                name = "DATE"
+            if name not in _POSTGRESQL_SAFE_FUNCTIONS | _PLAN_READONLY_FUNCTIONS[dialect]:
                 raise DiagnosticDriverError("SQL_PLAN_FUNCTION_UNSUPPORTED")
         # pg_catalog 之外的限定函数可能有规划期副作用；不扩展读取授权。
         if any(dot.find(exp.Func) is not None for dot in tree.find_all(exp.Dot)):
@@ -125,7 +138,7 @@ async def postgresql_statement_plan(connection, *, source_sql, parameters):
 
 
 async def mysql_statement_plan(cursor, *, bound_source_sql, parameters, ensure_active):
-    """仅取正在执行的同 Digest 原生计划；前后核对事件身份，不能把摘要当可执行 SQL。"""
+    """优先取活动计划；否则仅 EXPLAIN 数据库捕获且 Digest 已复核的完整 SELECT 样本。"""
     ensure_active()
     await cursor.execute(bound_source_sql, parameters)
     columns = tuple(str(item[0]).lower() for item in cursor.description)
@@ -133,6 +146,26 @@ async def mysql_statement_plan(cursor, *, bound_source_sql, parameters, ensure_a
     source = plan_source(rows, expected_hash=parameters["source_sql_sha256"])
     if source is None:
         return ()
+    if source.get("sample_sql") is not None:
+        if not source.get("sample_complete") or str(source.get("sample_digest", "")).upper() != str(source["digest"]).upper():
+            raise DiagnosticDriverError("SQL_PLAN_SAMPLE_INVALID")
+        if source.get("current_database") != source["schema_name"]:
+            raise DiagnosticDriverError("SQL_PLAN_DATABASE_MISMATCH")
+        sql = readonly_plan_sql(source["sample_sql"], dialect="mysql")
+        ensure_active()
+        await cursor.execute("EXPLAIN FORMAT=JSON " + sql)
+        native = await cursor.fetchone()
+        if not native or len(native) != 1:
+            raise DiagnosticDriverError("SQL_PLAN_OUTPUT_INVALID")
+        ensure_active()
+        await cursor.execute(bound_source_sql, parameters)
+        after = [dict(zip(columns, row, strict=True)) for row in await cursor.fetchmany(2)]
+        if len(after) != 1 or any(after[0].get(key) != source[key] for key in
+            ("digest", "schema_name", "source_sql", "sample_sql", "sample_captured_at")):
+            raise DiagnosticDriverError("SQL_PLAN_SOURCE_CHANGED")
+        return (safe_plan_row(native[0], database_type="MYSQL",
+            subject={key: source[key] for key in ("digest", "schema_name")},
+            source_hash=parameters["source_sql_sha256"]),)
     connection_id = source["connection_id"]
     if type(connection_id) is not int or not 0 < connection_id < 2**64:
         raise DiagnosticDriverError("SQL_PLAN_SUBJECT_AMBIGUOUS")
