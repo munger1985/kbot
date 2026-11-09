@@ -33,6 +33,7 @@ class SqlFollowUpSnapshotTest(unittest.IsolatedAsyncioTestCase):
     async def _routed(self, engine):
         uow = turn_support._Uow()
         uow.target.db_type = engine
+        uow.target.display_name = f"MES {engine} 主库"
         uow.target.row_version = 409
         await turn_support.ConversationTurnApplicationTest._start(self, uow)
         await TurnQueueService(uow_factory=lambda: uow).accept_created(
@@ -125,6 +126,7 @@ class SqlFollowUpSnapshotTest(unittest.IsolatedAsyncioTestCase):
                 expected = {
                     "target_id": str(created.target.target_id),
                     "row_version": 409, "db_type": engine,
+                    "display_name": created.target.display_name,
                 }
                 self.assertEqual(expected, created.runs.rows[0].plan_snapshot_json["target"])
                 snapshot = await self._compile_top_sql(created)
@@ -141,6 +143,7 @@ class SqlFollowUpSnapshotTest(unittest.IsolatedAsyncioTestCase):
                 uow, planner, payload = await self._created(engine)
                 frozen = deepcopy(uow.runs.rows[0].plan_snapshot_json["target"])
                 uow.target.row_version += 1
+                uow.target.display_name = "后来修改的目标名"
                 await planner.start_active_diagnosis(payload)
                 self.assertEqual(1, len(uow.runs.rows))
                 self.assertEqual(frozen, uow.runs.rows[0].plan_snapshot_json["target"])

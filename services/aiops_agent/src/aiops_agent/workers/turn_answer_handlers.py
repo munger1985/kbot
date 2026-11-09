@@ -11,6 +11,7 @@ from aiops_agent.application.diagnosis.model_evidence import (
     compact_native_values,
 )
 from aiops_agent.application.diagnosis.number_presentation import NUMBER_PRESENTATION_POLICY, monitoring_display_values
+from aiops_agent.application.target_identity import target_answer_presentation
 from aiops_agent.application.top_sql_collection import collection_failure_reason, collection_runtime_note
 
 import hashlib
@@ -1799,6 +1800,8 @@ class DbaAnswerComposeHandler:
         )
         model_input = {
             "question": str(answer_context.get("question", "")),
+            "target_presentation": target_answer_presentation(context),
+            "number_presentation": NUMBER_PRESENTATION_POLICY,
             "input_envelope": dict(
                 answer_context.get("input_envelope", {})
             ),
@@ -2189,6 +2192,8 @@ class DbaAnswerComposeHandler:
             parts: list[str] = []
             last_input_payload = {
                 "question": str(answer_context.get("question", "")),
+                "target_presentation": target_answer_presentation(context),
+                "number_presentation": NUMBER_PRESENTATION_POLICY,
                 "input_envelope": dict(
                     answer_context.get("input_envelope", {})
                 ),
@@ -2437,6 +2442,7 @@ class DbaAnswerComposeHandler:
                 "empty_result_citation": "可按empty_result_reference引用$result.row_count或$result.captured_at；row_index=0仅为结果回执定位，不存在第零条业务数据。",
             },
             "number_presentation": NUMBER_PRESENTATION_POLICY,
+            "target_presentation": target_answer_presentation(context),
             "sufficiency": sufficiency,
             "capacity_plan": decide_capacity_actions(
                 findings=compilation.findings,
