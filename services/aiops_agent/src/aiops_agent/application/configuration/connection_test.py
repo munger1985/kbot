@@ -14,6 +14,7 @@ import oracledb
 from loguru import logger
 
 from aiops_agent.executor.tls_profiles import TLSProfileError, TLSProfileResolver
+from aiops_agent.adapters.oracle_capabilities import probe_oracle_read_capabilities
 
 from platform_core.contracts.aiops import (
     TargetConnectionTest,
@@ -65,6 +66,8 @@ async def test_target_connection(
                 container_name,
                 container_number,
                 database_name,
+                capabilities,
+                privileges,
                 capability_details,
             ) = await _test_oracle(request)
             error_code = _oracle_container_error(
@@ -85,7 +88,9 @@ async def test_target_connection(
                 oracle_container_name=container_name,
                 oracle_container_number=container_number,
                 oracle_database_name=database_name,
-                capability_probe_version="oracle-controlled-options.v1",
+                capability_probe_version="oracle-capabilities.v1",
+                discovered_capabilities=capabilities,
+                discovered_privileges=privileges,
                 capability_details=capability_details,
                 error_code=error_code,
             )
@@ -154,7 +159,7 @@ async def test_target_connection(
 
 async def _test_oracle(
     request: TargetConnectionTest,
-) -> tuple[str, str, str, int, str, dict[str, object]]:
+) -> tuple[str, str, str, int, str, tuple[str, ...], tuple[str, ...], dict[str, object]]:
     endpoint = request.endpoint
     credential = request.diagnostic_credential
     dsn = (
@@ -187,6 +192,9 @@ async def _test_oracle(
                 container_name, container_number, cdb_enabled, database_name = (
                     await cursor.fetchone()
                 )
+                connection.call_timeout = 1_000
+                capabilities, privileges, capability_details = await probe_oracle_read_capabilities(cursor)
+                connection.call_timeout = 10_000
                 controlled_action_options = (
                     await _probe_oracle_controlled_action_options(cursor)
                 )
@@ -206,7 +214,10 @@ async def _test_oracle(
                 normalized_name,
                 normalized_number,
                 str(database_name),
+                capabilities,
+                privileges,
                 {
+                    **capability_details,
                     "controlled_action_options": controlled_action_options,
                 },
             )

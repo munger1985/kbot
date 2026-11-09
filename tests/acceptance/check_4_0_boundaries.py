@@ -56,6 +56,7 @@ EXTERNAL_DATABASE_SCHEMA_PATHS = (
     "services/aiops_agent/src/aiops_agent/application/configuration/"
     "connection_test.py",
     "services/aiops_agent/src/aiops_agent/adapters/target_connection.py",
+    "services/aiops_agent/src/aiops_agent/adapters/oracle_capabilities.py",
     "services/aiops_agent/src/aiops_agent/executor/drivers/",
     "services/aiops_agent/src/aiops_agent/diagnostics/",
 )

@@ -260,8 +260,10 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual("ORCLPDB1", result.oracle_container_name)
                 self.assertEqual(3, result.oracle_container_number)
                 self.assertEqual("ORCLCDB", result.oracle_database_name)
+                self.assertIn("dynamic_performance_views", result.discovered_capabilities)
+                self.assertIn("V_$SQLSTATS", result.discovered_privileges)
                 self.assertEqual(
-                    "oracle-controlled-options.v1",
+                    "oracle-capabilities.v1",
                     result.capability_probe_version,
                 )
                 self.assertEqual(
@@ -274,6 +276,40 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
                         "controlled_action_options"
                     ],
                 )
+
+    async def test_oracle_probe_results_persist_without_losing_other_metadata(self):
+        uow = _ConnectivityUow()
+        uow.target.capabilities_json = {"custom_metadata": {"owner": "test"}}
+        with patch("aiops_agent.application.configuration.connection_test.oracledb.connect_async",
+                AsyncMock(return_value=_OracleConnection())):
+            result = await run_connection_test(_request("ORACLE"))
+        service = TargetConnectivityCheckService(
+            uow_factory=lambda: uow,
+            managed_credentials=SimpleNamespace(read=AsyncMock(return_value={"username": "diag", "password": "secret"})),
+            target_connection_tester=AsyncMock(return_value=result),
+        )
+        await service.execute({"domain_id": str(uow.target.domain_id), "aggregate_id": str(uow.target_id),
+            "details": {"connectivity_check_request_id": str(uow.request_id)}})
+        observation = uow.update["capability_observation"]
+        self.assertTrue(uow.committed)
+        self.assertIn("dynamic_performance_views", observation["capabilities"])
+        self.assertIn("V_$SQLSTATS", observation["privileges"])
+        self.assertEqual({"owner": "test"}, observation["custom_metadata"])
+        self.assertEqual("AVAILABLE", observation["capability_probe"]["details"]["read_access"]["V$SQLSTATS"])
+
+    async def test_oracle_synchronous_check_persists_verified_capabilities(self):
+        from aiops_agent.application.configuration.target_service import TargetConfigurationMixin
+
+        uow = _ConnectivityUow()
+        uow.target.capabilities_json = {"custom_metadata": "preserved"}
+        with patch("aiops_agent.application.configuration.connection_test.oracledb.connect_async",
+                AsyncMock(return_value=_OracleConnection())):
+            result = await run_connection_test(_request("ORACLE"))
+        TargetConfigurationMixin._apply_target_connectivity_result(
+            entity=uow.target, result=result, checked_at=datetime.now(UTC))
+        self.assertIn("dynamic_performance_views", uow.target.capabilities_json["capabilities"])
+        self.assertIn("V_$SQLSTATS", uow.target.capabilities_json["privileges"])
+        self.assertEqual("preserved", uow.target.capabilities_json["custom_metadata"])
 
     async def test_timeout_returns_stable_error_without_exception_detail(self):
         with patch(
@@ -288,6 +324,7 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual("TIMEOUT", result.error_code)
+        self.assertIsNone(result.capability_probe_version)
         self.assertNotIn("secret", result.model_dump_json())
         logged = " ".join(str(item) for item in warning.call_args.args)
         self.assertIn("TIMEOUT", logged)
