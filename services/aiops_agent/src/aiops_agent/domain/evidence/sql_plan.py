@@ -188,6 +188,18 @@ def _parse(raw):
             if depth > 32:
                 _reject()
             if isinstance(row, list):
+                if kind == "nested_loop":
+                    # 原生数组表示一组有序连接输入，不为每个输入伪造一个连接节点。
+                    if not row:
+                        _reject()
+                    node = add(kind, parent, semantics="ALIAS_OR_NAME")
+                    for item in row:
+                        if not isinstance(item, dict) or not any(edge in item for edge in edges):
+                            _reject()
+                        for edge in edges:
+                            if edge in item:
+                                visit(item[edge], edge, node, depth + 1)
+                    return
                 for item in row:
                     visit(item, kind, parent, depth + 1)
                 return
