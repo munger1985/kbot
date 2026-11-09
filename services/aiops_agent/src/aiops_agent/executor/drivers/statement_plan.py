@@ -40,6 +40,10 @@ def readonly_plan_sql(sql):
         if any(table.catalog for table in tree.find_all(exp.Table)):
             raise ValueError
         for function in tree.find_all(exp.Func):
+            # 布尔连接和 CASE/WHEN 的结构节点不带函数名的源位置；真正的函数调用带有。
+            # 不能跳过被解析为同类节点的 "and"(...)、"if"(...)；子节点仍逐一检查。
+            if isinstance(function, (exp.Case, exp.Connector, exp.If)) and "start" not in function.meta:
+                continue
             name = function.name.upper() if isinstance(function, exp.Anonymous) else function.sql_name().upper()
             if name not in _POSTGRESQL_SAFE_FUNCTIONS:
                 raise DiagnosticDriverError("SQL_PLAN_FUNCTION_UNSUPPORTED")

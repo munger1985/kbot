@@ -169,7 +169,8 @@ def test_three_engines_display_plan_tree_native_units_and_safe_acquisition(engin
     assert status.payload["sql_plan_acquisition"]["original_execution_authorized"] is False
     missing = plan_availability_block(database_type=engine, bundle={"plan_assessments": []})
     assert missing.payload["sql_plan_acquisition"]["status"] == "MISSING"
-    assert "可上传 DBA 已提供的计划 JSON" in missing.payload["markdown"]
+    assert "本轮尚无计划采集回执" in missing.payload["markdown"]
+    assert "不自动提权或执行原 SQL" in missing.payload["markdown"]
     assert missing.payload["sql_plan_acquisition"]["read_existing_only"] is (engine == "ORACLE")
 
 

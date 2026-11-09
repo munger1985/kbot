@@ -263,7 +263,7 @@ def test_unchanged_evidence_does_not_repeat_diagnosis_and_problem_measures_survi
         answer_context = replace(context, input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1", "payload": reused.model_dump(mode="json")},))
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(answer_context)
         assert result.status == "COMPLETED"
-        assert result.investigation_record.runbook is not None
+        assert result.investigation_record.runbook is None
         assert "调用合并" in next(block.payload["markdown"] for block in result.blocks if block.block_type == "MARKDOWN")
         model.generate_structured.assert_awaited_once()
     asyncio.run(exercise())
@@ -409,6 +409,8 @@ def test_review_keeps_quality_window_and_reset_scope_in_compact_source():
 def test_mixed_observation_and_repair_does_not_create_empty_rollback_runbook_steps():
     async def exercise():
         fact, task, context, model, prompts, assessment = setup()
+        # 操作稿必须由用户明确请求；普通 SQL 诊断只保留建议，不自动生成操作稿。
+        task["objectives"] = [*task.get("objectives", ()), "PLAN"]
         original = diagnosis(fact)
         model.generate_structured.return_value.output = diagnostic_response(original.model_copy(update={"recommendations": (
             *original.recommendations, review(fact).recommendations[0].model_copy(update={"recommendation_id": "r2"}),

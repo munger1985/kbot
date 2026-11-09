@@ -8,7 +8,7 @@ from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft, SqlDiagnosisR
 from aiops_agent.contracts.sql_diagnostic_response import (
     SqlDiagnosticResponse, SingleSqlDiagnosticResponse, SingleSqlPlanDiagnosticResponse, SqlPlanDiagnosticResponse,
 )
-from aiops_agent.application.diagnosis.sql_plan_presentation import matching_plan_refs
+from aiops_agent.application.diagnosis.sql_plan_presentation import matching_plan_refs, plan_availability_block
 from aiops_agent.playbooks import canonical_hash
 
 
@@ -218,6 +218,8 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
         model_snapshot=dict(answer.get("model") or {}), prompt_ref={**prompt.ref(), "content": prompt.content},
         input_payload={
             "question": answer.get("question", ""), "evidence_bundle": _reference_projection(projected, aliases),
+            "plan_acquisition": _reference_projection(
+                plan_availability_block(database_type=database_type, bundle=bundle, gaps=gaps).payload["sql_plan_acquisition"], aliases),
             "oracle_evidence_policy": oracle_policy,
             "plan_review_tasks": _reference_projection([
                 {**{key: value for key, value in task.items() if key != "nodes"},
@@ -234,6 +236,7 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
                 "format": "返回精简 SqlDiagnosticResponse，不是完整报告。单主体用1至4项 findings、1至3项建议；省略空的可选字段，不复制 SQL、统计表、计划树、JSON Schema、输入材料或报告模板。每项只写一次机制与针对性措施。",
                 "verdict": "必须区分 PROBLEM_FOUND、NO_OBVIOUS_ISSUE、INSUFFICIENT_EVIDENCE，先正面回答；没有发现问题时明确检查范围及暂不变更，不能凭均值低或缺证判断健康。",
                 "execution_plan": "plan_review_tasks 非空时必须填写 plan_reviews，引用真实 evidence_ref、node_ids 和关联 conclusion_id；完整计划在 evidence_bundle 对应观察的 sql_plan.nodes，不重复传送。分别说明机制和对该 SQL 的影响：关键访问/连接/聚合节点如何影响开销，估算与实际有何差异；仅列节点或说已取得计划不算分析。FIXED TABLE FULL 是固定表访问，不等于业务大表全扫。保留技术术语原文。",
+                "plan_acquisition": "按 plan_acquisition 的真实回执说明计划采集状态：FAILED 时在正文相关判断处简短说明已尝试的工具、具体失败原因及对判断的影响，不能写成未采集或数据库没有计划，不能直接将内部采集失败转成请 DBA 提供。NOT_ATTEMPTED 不冒充失败；NO_MATCHING_PLAN 不冒充权限不足。DATABASE_ESTIMATE 是未执行原 SQL 的数据库通用估算，可分析节点但不是代表参数的实际执行计划，不能要求先提供实际计划才分析已有估算。plan_count=0 不证明没有计划。只有实际运行证据确实会改变结论且现有授权来源不可得时，才说明需人工补充什么和为什么。",
                 "evidence": "累计值可用于单次开销和机制分析；仅窗口排名、退化和效果验证要求对应窗口。缺基线不能抹去已有计划、锁等待或错误证据。",
                 "next_evidence": "只有会改变当前问题结论、当前授权可能补齐的关键缺口才填写 next_evidence（每项说明要验证什么及如何改变判断）。可使用数据库、监控、日志等任意适用来源；一般性限制只写结论边界，不触发补证。",
                 "oracle": "Oracle 不降级为三库最低共同能力。已有XPLAN时解释相关谓词和Outline，但不把Outline当作调优建议或某次生产执行。已有Monitor时分析精确单次执行的CPU/等待、I/O及本实例进程行源/工作区，结合匹配计划行解释；不能相加父子或PX计数。ASH用于按计划行、ON CPU/等待及阻塞者的采样归因，样本数/比例不是精确耗时，不能用没有样本证明健康。需要且尚未尝试的Oracle证据用oracle_evidence_requests声明kind、真实subject_id和改变判断的reason，不在next_evidence重复；只申请oracle_evidence_policy中可用的工具，ASH显式历史窗口必须带时区且不超过24小时，否则使用已冻结默认窗口；不能冒充未覆盖的历史故障。原生HTML报告按需下载，不作为所有SQL诊断的前置条件。",

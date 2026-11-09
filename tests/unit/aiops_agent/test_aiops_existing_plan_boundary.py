@@ -1,4 +1,4 @@
-"""诊断只读取已有信息；旧配置、Grant、队列和通用查询均不能恢复主动估算。"""
+"""动态查询不越权；仅固定授权工具可采集不执行原 SQL 的数据库通用计划。"""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -135,11 +135,12 @@ def test_queued_legacy_capture_fails_without_credentials_or_retry_classification
 
 
 @pytest.mark.parametrize("engine", ["ORACLE", "POSTGRESQL", "MYSQL"])
-def test_missing_plan_is_not_an_estimate_request_or_a_diagnosis_blocker(engine):
+def test_missing_plan_reports_real_collection_state_without_diagnosis_blocking(engine):
     block = plan_availability_block(database_type=engine, bundle={})
-    assert block.payload["sql_plan_acquisition"]["read_existing_only"] is True
-    assert "不发起估算" in block.payload["markdown"]
-    assert "仍依据语句统计、等待与监控" in block.payload["markdown"]
+    assert block.payload["sql_plan_acquisition"]["read_existing_only"] is (engine == "ORACLE")
+    assert block.payload["sql_plan_acquisition"]["collection_state"] == "NOT_ATTEMPTED"
+    assert "本轮尚无计划采集回执" in block.payload["markdown"]
+    assert "不自动提权或执行原 SQL" in block.payload["markdown"]
     assert "独立审批" not in block.payload["markdown"]
     assert "controlled_estimate_supported" not in block.payload["sql_plan_acquisition"]
 
@@ -154,5 +155,6 @@ def test_prompt_keeps_seed_version_and_database_optimizer_boundary():
     from platform_core.prompts.catalog import load_prompt_catalog
     prompt = next(row for row in load_prompt_catalog().entries if row.prompt_key == "aiops_agent.sql_diagnosis")
     assert prompt.version == "1.0.0"
-    for phrase in ("由数据库和 CBO 负责", "不主动发起估算", "不索取业务表访问权限", "不自动收集统计信息"):
+    for phrase in ("由数据库和 CBO 负责", "仅固定目录工具 db.postgresql.statement.plan", "不索取额外权限", "不自动收集统计信息",
+                   "禁止模型拼接 EXPLAIN/PREPARE", "EXPLAIN ANALYZE", "plan_acquisition", "DATABASE_ESTIMATE"):
         assert phrase in prompt.content
