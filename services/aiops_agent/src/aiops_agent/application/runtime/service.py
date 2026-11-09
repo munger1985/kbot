@@ -2586,6 +2586,10 @@ class AIOpsRuntimeService:
             or not tool_budget_remaining
         ):
             return False
+        from aiops_agent.application.native_reports import native_report_spec
+        if native_report_spec(task_frame or {}):
+            # 报告只继续已冻结的快照绑定；终态失败不进入模型补证或改写交付目标。
+            return has_deferred
         if task_frame and task_frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} and (
             assessment.sql_checkpoint is not None or assessment.sql_diagnosis_error is not None
         ):

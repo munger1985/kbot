@@ -256,3 +256,18 @@ def test_diff_never_completes_when_plan_only_contains_baseline_reports():
     result = asyncio.run(DbaAnswerComposeHandler(model_client=None, prompts=None).execute(ctx))
     assert result.status == "PARTIAL"
     assert "对比报告未生成" in result.blocks[0].payload["markdown"]
+
+
+@pytest.mark.parametrize("starter", REPORT_STARTERS)
+@pytest.mark.parametrize("has_deferred", [False, True])
+def test_report_runtime_only_continues_frozen_discovery_not_model_replanning(starter, has_deferred):
+    from aiops_agent.application.runtime import AIOpsRuntimeService
+    assessment = DbaSufficiencyAssessment(status="PARTIAL", gaps=(
+        TurnEvidenceGap(source_id="task.completion-requirement",
+            code="COMPLETION_REQUIREMENT_UNSATISFIED", detail="尚未取得报告", retryable=True),))
+    task_frame = context(starter, assessment).plan_snapshot["answer_context"]["task_frame"]
+    assert AIOpsRuntimeService._should_replan_investigation(
+        assessment=assessment, task_frame=task_frame, deterministic_replan=True,
+        no_progress_count=0, has_deferred=has_deferred, deadline_reached=False,
+        tool_budget_remaining=True,
+    ) is has_deferred
