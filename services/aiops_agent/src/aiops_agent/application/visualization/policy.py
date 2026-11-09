@@ -195,7 +195,7 @@ class AIOpsChartSelectionPolicy:
             return None
         low_coverage = observation.coverage_ratio < _LOW_COVERAGE_RATIO
         return ChartSkill.time_series(
-            title=str(slot["title"]),
+            title=str((slot.get("metric_titles") or {}).get(observation.metric_code, slot["title"])),
             unit=observation.unit,
             series=series_items,
             source_ids=(f"artifact:{artifact_id}#prometheus",),

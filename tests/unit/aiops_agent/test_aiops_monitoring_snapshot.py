@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -92,6 +92,36 @@ class MonitoringSnapshotBuilderTest(unittest.IsolatedAsyncioTestCase):
                 for metric in snapshot["bindings"][0]["metrics"]
             ],
         )
+
+    async def test_storage_profile_keeps_seven_day_window_and_database_specific_metrics(self):
+        from aiops_agent.application.visualization.policy import chart_profile_metric_codes
+        from aiops_agent.domain.evidence import DEFAULT_BASELINE_METRICS
+
+        for db_type, expected_metric in (
+            ("POSTGRESQL", "postgresql.database.size_bytes"),
+            ("ORACLE", "db.storage.used_bytes"),
+            ("MYSQL", "db.storage.used_bytes"),
+        ):
+            with self.subTest(db_type=db_type):
+                uow, target, _ = self._fixtures(DEFAULT_BASELINE_METRICS, db_type=db_type)
+                now = datetime(2026, 11, 9, tzinfo=UTC)
+                snapshot = await MonitoringSnapshotBuilder(
+                    metric_catalog=load_metric_catalog(),
+                    default_window_seconds=3600, max_response_bytes=1_000_000,
+                ).build(
+                    uow=uow, domain_id=7, target=target, now=now,
+                    window_start=now - timedelta(days=7), window_end=now,
+                    requested_metric_codes=chart_profile_metric_codes("storage.trend"),
+                )
+                metrics = {item["metric_code"] for item in snapshot["bindings"][0]["metrics"]}
+                self.assertIn(expected_metric, metrics)
+                self.assertNotIn("host.cpu.utilization", metrics)
+                self.assertFalse(snapshot["initial_gaps"])
+                self.assertEqual(
+                    timedelta(days=7),
+                    datetime.fromisoformat(snapshot["window"]["end"])
+                    - datetime.fromisoformat(snapshot["window"]["start"]),
+                )
 
     async def test_empty_intersection_records_gap_without_observation_task(
         self,

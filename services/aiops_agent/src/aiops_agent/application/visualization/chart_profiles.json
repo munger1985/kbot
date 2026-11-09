@@ -79,7 +79,8 @@
         {
           "slot_id": "used_space",
           "title": "表空间使用量趋势",
-          "candidate_metric_codes": ["db.storage.used_bytes", "db.storage.utilization"]
+          "candidate_metric_codes": ["db.storage.used_bytes", "postgresql.database.size_bytes", "db.storage.utilization"],
+          "metric_titles": {"postgresql.database.size_bytes": "PostgreSQL 数据库逻辑容量趋势"}
         },
         {
           "slot_id": "maximum_space",
@@ -112,7 +113,8 @@
         {
           "slot_id": "used_space",
           "title": "表空间使用量趋势",
-          "candidate_metric_codes": ["db.storage.used_bytes", "db.storage.utilization"]
+          "candidate_metric_codes": ["db.storage.used_bytes", "postgresql.database.size_bytes", "db.storage.utilization"],
+          "metric_titles": {"postgresql.database.size_bytes": "PostgreSQL 数据库逻辑容量趋势"}
         }
       ]
     }

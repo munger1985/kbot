@@ -175,6 +175,20 @@ class AIOpsChartSelectionPolicyTest(unittest.TestCase):
             charts[0].metadata["coverage_warning"],
         )
 
+    def test_postgresql_storage_and_inspection_use_database_logical_capacity(self):
+        from aiops_agent.application.visualization.policy import chart_profile_metric_codes
+
+        for profile in ("storage.trend", "inspection.weekly"):
+            with self.subTest(profile=profile):
+                self.assertIn("postgresql.database.size_bytes", chart_profile_metric_codes(profile))
+                charts = AIOpsChartSelectionPolicy.compile(
+                    profile_id=profile, artifact_id="storage-history",
+                    result=_result(_observation("postgresql.database.size_bytes", unit="bytes")),
+                )
+                self.assertEqual(1, len(charts))
+                self.assertEqual("postgresql.database.size_bytes", charts[0].metadata["metric_code"])
+                self.assertEqual("PostgreSQL 数据库逻辑容量趋势", charts[0].title)
+
 
 if __name__ == "__main__":
     unittest.main()

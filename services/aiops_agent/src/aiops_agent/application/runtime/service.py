@@ -2999,17 +2999,42 @@ class AIOpsRuntimeService:
         artifact,
         payload: dict[str, Any],
     ) -> None:
-        """把本轮 Prometheus 观测登记为可引用的 Turn 证据。"""
+        """登记时序、原生采样、目录及事件查询，保留成功零行的事件口径。"""
         result = ObservationSet.model_validate(payload)
+        samples = (*result.observations, *result.native_metrics)
+        windows = (
+            *samples,
+            *result.metric_catalogs,
+            *((result.event_query,) if result.event_query is not None else ()),
+        )
+        has_events = result.event_query is not None or bool(result.active_alerts)
+        has_evidence = bool(windows) or has_events
+        evidence_kind = "TIME_SERIES" if samples else "OBSERVATION"
+        measurement_semantics = (
+            "HISTORICAL_SAMPLES" if samples else
+            "CURRENT_ACTIVITY" if has_events else "NOT_APPLICABLE"
+        )
+        evidence_tool_id = (
+            "monitor.query_range" if result.observations else
+            "monitor.query_native_metric" if result.native_metrics else
+            "monitor.event.query" if has_events else "monitor.discover_metrics"
+        )
+        tool_results = {
+            "monitor.query_range": bool(result.observations),
+            "monitor.query_native_metric": any(item.points for item in result.native_metrics),
+            "monitor.event.query": has_events,
+            "monitor.discover_metrics": bool(result.metric_catalogs),
+        }
         monitoring_tool_row = None
         for tool_row in await uow.turns.list_tool_invocations(
             turn_id=turn.turn_id,
             lock=True,
         ):
-            if tool_row.tool_id == "monitor.query_range":
-                monitoring_tool_row = tool_row
+            if tool_row.tool_id in tool_results:
+                if tool_row.tool_id == evidence_tool_id:
+                    monitoring_tool_row = tool_row
                 tool_row.status = (
-                    "SUCCEEDED" if result.observations else "NO_DATA"
+                    "SUCCEEDED" if tool_results[tool_row.tool_id] else "NO_DATA"
                 )
                 tool_row.output_artifact_id = artifact.artifact_id
                 tool_row.completed_at = result.collected_at
@@ -3017,12 +3042,12 @@ class AIOpsRuntimeService:
             turn_id=turn.turn_id,
             artifact_id=artifact.artifact_id,
         )
-        if result.observations and existing is None:
+        if has_evidence and existing is None:
             window_start = min(
-                item.window_start for item in result.observations
+                (item.window_start for item in windows), default=None
             )
             window_end = max(
-                item.window_end for item in result.observations
+                (item.window_end for item in windows), default=None
             )
             await uow.turns.add_evidence(
                 OpsTurnEvidenceEntity(
@@ -3035,15 +3060,15 @@ class AIOpsRuntimeService:
                         else None
                     ),
                     source_kind="MONITORING",
-                    evidence_kind="TIME_SERIES",
+                    evidence_kind=evidence_kind,
                     confidence=1,
                     evidence_role="SUPPORTS",
-                    measurement_semantics="HISTORICAL_SAMPLES",
+                    measurement_semantics=measurement_semantics,
                     observed_at=result.collected_at,
                     window_start_at=window_start,
                     window_end_at=window_end,
                     freshness_status="FRESH",
-                    usage_reason="用于回答本轮问题的监控时间序列",
+                    usage_reason="用于回答本轮问题的监控来源观测与查询口径",
                     linked_by="aiops.turn-projector",
                 )
             )
@@ -3053,7 +3078,7 @@ class AIOpsRuntimeService:
                 event_type="evidence.added",
                 payload={
                     "source_kind": "MONITORING",
-                    "evidence_kind": "TIME_SERIES",
+                    "evidence_kind": evidence_kind,
                     "public_summary": "新的监控诊断依据已加入本轮调查",
                 },
             )
@@ -3064,8 +3089,11 @@ class AIOpsRuntimeService:
             payload={
                 "source_id": result.source_id,
                 "observation_count": len(result.observations),
+                "native_metric_count": len(result.native_metrics),
+                "metric_catalog_count": len(result.metric_catalogs),
+                "event_query_completed": has_events,
                 "gap_count": len(result.gaps),
-                "public_summary": "监控时间序列查询已经完成",
+                "public_summary": "监控来源查询已经完成",
             },
         )
 

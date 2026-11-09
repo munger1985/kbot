@@ -3091,5 +3091,143 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual("当前没有阻塞会话。", turns.messages[0].payload_json["text"])
 
 
+class MonitoringEvidenceProjectionTest(unittest.TestCase):
+    def _fixture(self):
+        service = object.__new__(AIOpsRuntimeService)
+        turn = SimpleNamespace(
+            turn_id=uuid7(), conversation_id=uuid7(), domain_id=7,
+            created_by="dba@example.com", event_cursor=0, status="COLLECTING",
+            sufficiency_status=None, completed_at=None,
+        )
+        turns = _ProjectionTurns(invocation=None)
+        uow = SimpleNamespace(
+            turns=turns,
+            conversations=_ProjectionConversations(SimpleNamespace(
+                last_message_no=1, updated_by=None, updated_at=None,
+            )),
+        )
+        payload = _monitoring_artifact()["payload"]
+        payload["observations"] = []
+        return service, turn, turns, uow, payload
+
+    def _project(self, service, turn, uow, payload, artifact_id=None):
+        artifact = SimpleNamespace(artifact_id=artifact_id or uuid7())
+        asyncio.run(service._project_monitoring_result(
+            uow=uow, turn=turn, artifact=artifact, payload=payload,
+        ))
+        return artifact
+
+    def _answer(self, service, turn, uow, refs):
+        asyncio.run(service._project_turn_answer(
+            uow=uow, turn=turn, artifact=SimpleNamespace(artifact_id=uuid7()),
+            payload={
+                "schema_version": "AIOPS_TURN_RESULT.v1", "status": "COMPLETED",
+                "sufficiency_status": "ANSWERABLE",
+                "blocks": [{
+                    "block_type": "MARKDOWN", "schema_version": "AIOPS_MARKDOWN_BLOCK.v1",
+                    "payload": {"markdown": "已完成来源查询。"}, "evidence_refs": refs,
+                }],
+            }, now=datetime.now(UTC),
+        ))
+
+    def _event_query(self, payload):
+        return {
+            "source_type": "PROMETHEUS", "source_id": payload["source_id"],
+            "target_id": payload["target_id"], "binding_id": payload["binding_id"],
+            "query_scope": "CURRENT_ALERTS",
+            "window_start": (datetime.now(UTC) - timedelta(days=7)).isoformat(),
+            "window_end": payload["collected_at"], "captured_at": payload["collected_at"],
+            "source_version": "1", "response_sha256": "a" * 64,
+        }
+
+    def test_empty_event_queries_across_rounds_are_citable_and_idempotent(self):
+        service, turn, turns, uow, payload = self._fixture()
+        payload["event_query"] = self._event_query(payload)
+        refs = []
+        for _ in range(2):
+            artifact = self._project(service, turn, uow, payload)
+            self._project(service, turn, uow, payload, artifact.artifact_id)
+            refs.append(f"artifact:{artifact.artifact_id}#source-events")
+        self.assertEqual(2, len(turns.evidence))
+        self.assertEqual(2, sum(row.event_type == "evidence.added" for row in turns.events))
+        self.assertEqual("OBSERVATION", turns.evidence[0].evidence_kind)
+        self.assertEqual("CURRENT_ACTIVITY", turns.evidence[0].measurement_semantics)
+        self.assertEqual(
+            payload["event_query"]["window_start"],
+            turns.evidence[0].window_start_at.isoformat(),
+        )
+        self._answer(service, turn, uow, refs)
+        self.assertEqual("COMPLETED", turn.status)
+        self.assertEqual(2, len(turns.citations))
+        self.assertEqual("已完成来源查询。", turns.messages[0].payload_json["text"])
+
+    def test_events_without_query_receipt_preserve_unknown_window(self):
+        service, turn, turns, uow, payload = self._fixture()
+        payload["active_alerts"] = [{"name": "数据库告警", "source_type": "PROMETHEUS"}]
+        artifact = self._project(service, turn, uow, payload)
+        self.assertIsNone(turns.evidence[0].window_start_at)
+        self.assertEqual("CURRENT_ACTIVITY", turns.evidence[0].measurement_semantics)
+        self._answer(service, turn, uow, [f"artifact:{artifact.artifact_id}#source-events"])
+        self.assertEqual("COMPLETED", turn.status)
+
+    def test_successful_empty_event_query_does_not_claim_metric_samples(self):
+        service, turn, turns, uow, payload = self._fixture()
+        rows = [
+            SimpleNamespace(tool_id=tool_id, tool_invocation_id=uuid7(), status="RUNNING")
+            for tool_id in ("monitor.query_range", "monitor.event.query")
+        ]
+        turns.list_tool_invocations = AsyncMock(return_value=rows)
+        payload["event_query"] = self._event_query(payload)
+        self._project(service, turn, uow, payload)
+        self.assertEqual(["NO_DATA", "SUCCEEDED"], [row.status for row in rows])
+        self.assertEqual(rows[1].tool_invocation_id, turns.evidence[0].tool_invocation_id)
+
+    def test_catalog_and_native_history_are_citable_without_standard_metrics(self):
+        for kind in ("metric_catalogs", "native_metrics"):
+            with self.subTest(kind=kind):
+                service, turn, turns, uow, payload = self._fixture()
+                item = {
+                    "action_id": "source-query", "target_id": payload["target_id"],
+                    "binding_id": payload["binding_id"], "source_id": payload["source_id"],
+                    "window_start": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+                    "window_end": payload["collected_at"], "captured_at": payload["collected_at"],
+                    "response_sha256": "a" * 64,
+                }
+                if kind == "metric_catalogs":
+                    item.update(scope="DATABASE", entries=[])
+                    expected_semantics, suffix = "NOT_APPLICABLE", "metric-catalog/0"
+                else:
+                    item.update(metric_name="database.size", native_value_type="UNSIGNED",
+                                source_version="1", points=[[payload["collected_at"], "1024"]])
+                    expected_semantics, suffix = "HISTORICAL_SAMPLES", "native-metric/0"
+                payload[kind] = [item]
+                artifact = self._project(service, turn, uow, payload)
+                self.assertEqual(expected_semantics, turns.evidence[0].measurement_semantics)
+                self._answer(service, turn, uow, [f"artifact:{artifact.artifact_id}#{suffix}"])
+                self.assertEqual("COMPLETED", turn.status)
+
+    def test_failed_or_unexecuted_queries_do_not_create_observation_evidence(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                service, turn, turns, uow, payload = self._fixture()
+                if failed:
+                    payload["gaps"] = [{
+                        "metric_code": "monitor.events", "code": "SOURCE_ERROR",
+                        "source_id": payload["source_id"], "binding_id": payload["binding_id"],
+                        "detail": "来源查询失败", "retryable": True,
+                    }]
+                self._project(service, turn, uow, payload)
+                self.assertEqual([], turns.evidence)
+
+    def test_unknown_artifact_reference_is_still_rejected(self):
+        from aiops_agent.application.errors import AIOpsApplicationError
+
+        service, turn, turns, uow, payload = self._fixture()
+        payload["event_query"] = self._event_query(payload)
+        self._project(service, turn, uow, payload)
+        with self.assertRaisesRegex(AIOpsApplicationError, "尚未投影"):
+            self._answer(service, turn, uow, [f"artifact:{uuid7()}#source-events"])
+        self.assertNotEqual("COMPLETED", turn.status)
+
 if __name__ == "__main__":
     unittest.main()
