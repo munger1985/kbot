@@ -19,6 +19,8 @@ from aiops_agent.application.source_authorization import source_scope_is_current
 from aiops_agent.contracts.evidence import ObservationSet
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 from aiops_agent.diagnostics import DiagnosticRegistry
+from aiops_agent.monitoring.catalog import resolve_metric_definitions
+from aiops_agent.monitoring.query_policy import MonitoringQueryRejected, PromQueryPolicy, PromQueryPolicySnapshot
 from aiops_agent.repositories.business_system import BusinessSystemRepository
 from aiops_agent.workers.turn_answer_handlers import DbaEvidenceAssessmentHandler
 from platform_core.identity import uuid7
@@ -215,6 +217,38 @@ def test_storage_tools_are_versioned_readonly_and_bounded():
     assert definition.resource_scope == "HOST"
     assert definition.value_kind == "STATE"
     assert "@ end()" in definition.providers["PROMETHEUS"].query_template
+
+
+def test_live_storage_host_snapshot_survives_execution_query_validation():
+    uow, run, snapshot, source, _ = host_scope()
+    attach(uow, run, snapshot, source)
+    definitions = resolve_metric_definitions(snapshot["bindings"][-1])
+    assert len(definitions) == 5
+    mapping = next(item for item in definitions if item.semantic_role == "STORAGE_LOCATION")
+    assert "@ end()" in mapping.providers["PROMETHEUS"].query_template
+
+
+@pytest.mark.parametrize("modifier", ["@ end()", "@ start()", "@ 1234567890", "offset 5m"])
+def test_ad_hoc_query_cannot_opt_in_to_mapping_time_policy(modifier):
+    query = 'up{target_key="${host_target}"} ' + modifier
+    with pytest.raises(MonitoringQueryRejected):
+        PromQueryPolicy(PromQueryPolicySnapshot()).validate(query)
+
+
+@pytest.mark.parametrize("modifier", ["@ start()", "@ 1234567890", "offset 5m", "@ end() offset 5m"])
+def test_mapping_policy_does_not_allow_time_escape(modifier):
+    definition = load_metric_catalog().get("host.storage.mount_info").model_dump(mode="json")
+    definition["providers"]["PROMETHEUS"]["query_template"] = (
+        'aiops_database_storage_mount_info{target_key="${host_target}"} ' + modifier)
+    with pytest.raises(MonitoringQueryRejected):
+        resolve_metric_definitions({"metrics": [definition]})
+
+
+def test_end_modifier_is_not_enabled_for_regular_catalog_metrics():
+    definition = load_metric_catalog().get("host.filesystem.used_bytes").model_dump(mode="json")
+    definition["providers"]["PROMETHEUS"]["query_template"] += " @ end()"
+    with pytest.raises(MonitoringQueryRejected):
+        resolve_metric_definitions({"metrics": [definition]})
 
 
 def host_scope():

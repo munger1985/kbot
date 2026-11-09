@@ -65,7 +65,8 @@ class PromQueryPolicy:
         self.snapshot = snapshot
 
     def validate(
-        self, query: str, *, window_seconds: int | None = None
+        self, query: str, *, window_seconds: int | None = None,
+        allow_window_end: bool = False,
     ) -> ValidatedPromQuery:
         if not query.strip() or len(query) > self.snapshot.max_query_chars:
             raise MonitoringQueryRejected(
@@ -134,7 +135,11 @@ class PromQueryPolicy:
                     "PROMQL_METRIC_INVALID", "PromQL 指标名称无效"
                 )
             metrics.add(metric_name)
-            if vector.at is not None or vector.offset is not None:
+            permitted_end = (
+                allow_window_end and vector.at is not None
+                and vector.at.type == promql_parser.AtModifierType.End
+            )
+            if (vector.at is not None and not permitted_end) or vector.offset is not None:
                 raise MonitoringQueryRejected(
                     "PROMQL_TIME_MODIFIER_FORBIDDEN",
                     "PromQL 禁止 @ 和 offset 时间逃逸",
@@ -181,7 +186,7 @@ class PromQueryPolicy:
         return ValidatedPromQuery(
             normalized_query=normalized,
             query_sha256=self._sha256(normalized),
-            policy_sha256=self._policy_hash(),
+            policy_sha256=self._policy_hash(allow_window_end=allow_window_end),
             target_scopes=tuple(sorted(scopes)),
             metric_names=tuple(sorted(metrics)),
             window_seconds=window,
@@ -189,10 +194,13 @@ class PromQueryPolicy:
             max_series=self.snapshot.max_series,
         )
 
-    def _policy_hash(self) -> str:
+    def _policy_hash(self, *, allow_window_end: bool = False) -> str:
+        policy = self.snapshot.model_dump(mode="json")
+        if allow_window_end:
+            policy["allow_window_end"] = True
         return self._sha256(
             json.dumps(
-                self.snapshot.model_dump(mode="json"),
+                policy,
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),

@@ -372,7 +372,9 @@ def resolve_metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
                 PromQueryPolicySnapshot().max_window_seconds,
             )
             checked = policy.validate(
-                provider.query_template, window_seconds=window
+                provider.query_template, window_seconds=window,
+                # 仅当前位置元数据可固定在本轮末端；普通指标和临时查询仍禁止时间修饰。
+                allow_window_end=definition.semantic_role == "STORAGE_LOCATION",
             )
             definition = definition.model_copy(
                 update={
@@ -383,7 +385,8 @@ def resolve_metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
                                 "query_template": checked.normalized_query,
                                 "fallback_query_templates": tuple(
                                     policy.validate(
-                                        fallback, window_seconds=window
+                                        fallback, window_seconds=window,
+                                        allow_window_end=definition.semantic_role == "STORAGE_LOCATION",
                                     ).normalized_query
                                     for fallback in provider.fallback_query_templates
                                 ),
