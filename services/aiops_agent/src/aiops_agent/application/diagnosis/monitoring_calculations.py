@@ -6,6 +6,7 @@ from decimal import Decimal, localcontext
 from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.domain.evidence.observations import numeric_wire, parse_numeric_sample
 from aiops_agent.domain.evidence.series_calculation import summarize_series, series_number
+from aiops_agent.domain.evidence.trends import decimal_seconds
 
 
 MAX_TRACE_INPUTS = 8192
@@ -78,10 +79,15 @@ def build_monitoring_rows(*, artifact_id, result, forecast_horizon_days=None):
             confidence = None
             requested_horizon = parse_numeric_sample(forecast_horizon_days)
             elapsed = series_number(summary, "elapsed_days")
+            minimum_days = min(Decimal(7), requested_horizon) if requested_horizon is not None else Decimal(7)
+            window_seconds = decimal_seconds(observation.window_end - observation.window_start)
+            # 范围查询末点通常早于窗口终点；仅容忍一个真实采样间隔，不放宽缺样标记。
+            endpoint_allowance = min(Decimal(observation.effective_step_seconds) / 86400, minimum_days / 2)
             if (computed is not None and not flags and observation.value_kind == "GAUGE"
                 and requested_horizon is not None and 0 < requested_horizon <= 365
                 and int(summary.get("representative_sample_count") or 0) >= 7
-                and elapsed is not None and elapsed >= min(Decimal(7), requested_horizon)):
+                and window_seconds + Decimal("0.001") >= minimum_days * 86400
+                and elapsed is not None and elapsed + endpoint_allowance >= minimum_days):
                 horizon = requested_horizon
                 summary, daily = summarize_series(tuple(points), value_kind="GAUGE", forecast_horizon_days=horizon)
                 confidence = "MEDIUM" if elapsed >= horizon * Decimal("0.8") else "LOW"

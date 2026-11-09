@@ -110,6 +110,32 @@ def test_logical_database_size_is_not_disk_limit_and_volume_has_own_forecast():
     assert not any("TREND_SEMANTICS_UNSUPPORTED" in warning for warning in fact.warnings)
 
 
+@pytest.mark.parametrize("offset_minutes,coverage,expected", [
+    (30, 1, True), (90, 1, True), (110, 1, False), (30, .99, False),
+])
+def test_full_window_sampling_endpoint_does_not_permanently_block_forecast(offset_minutes, coverage, expected):
+    artifact, _, paths, monitoring = storage_fixture()
+    for observation in artifact["payload"]["observations"][:-1]:
+        observation["effective_step_seconds"] = 6000
+        observation["coverage_ratio"] = coverage
+        observation["series"][0]["points"][-1]["observed_at"] = (
+            NOW - timedelta(minutes=offset_minutes)).isoformat()
+    result = resolve(remake(artifact), paths, monitoring)
+    days = result["volumes"][0]["metrics"]["host.filesystem.used_bytes"]["estimated_days_to_limit"]
+    assert (days is not None) == expected
+
+
+def test_sampling_allowance_cannot_turn_a_short_requested_window_into_seven_days():
+    artifact, _, paths, monitoring = storage_fixture()
+    for observation in artifact["payload"]["observations"][:-1]:
+        observation["window_start"] = (NOW - timedelta(days=6)).isoformat()
+        observation["effective_step_seconds"] = 86400
+        observation["series"][0]["points"] = observation["series"][0]["points"][1:]
+        observation["expected_points"] = observation["actual_points"] = 7
+    result = resolve(remake(artifact), paths, monitoring)
+    assert result["volumes"][0]["metrics"]["host.filesystem.used_bytes"]["estimated_days_to_limit"] is None
+
+
 @pytest.mark.parametrize("horizon,growth,expected", [(None, 1, None), (30, 0, None), (30, -1, None)])
 def test_no_forecast_request_or_non_growing_volume_does_not_fabricate_days(horizon, growth, expected):
     _, fact, paths, monitoring = storage_fixture(horizon=horizon, growth=growth)
