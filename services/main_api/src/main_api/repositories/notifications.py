@@ -300,13 +300,22 @@ class NotificationRepository:
         return [dict(operation_id=item.operation_id, domain_id=int(item.domain_id),
             resource_id=item.source_operation_id, row_version=int(item.row_version)) for item in rows]
 
-    async def reconcile_workflow_operation(self, *, row, status):
+    async def reconcile_workflow_operation(self, *, row, status, source_unavailable=False):
         operation = BackgroundOperationEntity
+        values = dict(status=status if status is not None else operation.status,
+            last_reconciled_at=_now(), row_version=operation.row_version + 1)
+        if source_unavailable:
+            if status != "EXPIRED":
+                raise ValueError("来源缺失只能将平台任务投影标为失效")
+            values.update(error_code="NOTIFICATION_SOURCE_UNAVAILABLE",
+                summary="当前作用域内已无来源运维记录，任务投影已失效；原执行结果未知。")
         await self._session.execute(update(operation).where(
             operation.operation_id == row["operation_id"], operation.domain_id == row["domain_id"],
+            operation.producer_service == "aiops", operation.resource_type == "aiops_run",
+            operation.source_operation_id == str(row["resource_id"]),
             operation.row_version == row["row_version"], operation.source_version.is_(None),
-        ).values(status=status if status is not None else operation.status,
-            last_reconciled_at=_now(), row_version=operation.row_version + 1))
+            operation.status.in_(("RUNNING", "WAITING_USER", "PARTIAL")),
+        ).values(**values))
 
     async def reconcile_workflow_item(self, *, row, status):
         result = await self._session.execute(update(WorkItemEntity).where(

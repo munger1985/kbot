@@ -66,7 +66,8 @@ def sanitize_statement_text(value: str | None) -> str | None:
 
     if value is None:
         return None
-    compact = " ".join(value.split())
+    # 原始证据仍无损保存；面向检索与展示的摘要显式显示空字符，避免文本入库失败。
+    compact = " ".join(value.replace("\x00", r"\u0000").split())
     return _SQL_LITERAL.sub("?", compact)[:4000]
 
 

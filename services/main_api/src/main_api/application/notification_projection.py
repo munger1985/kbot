@@ -16,6 +16,7 @@ from platform_core.notifications.aiops import presentation_severity, work_item_i
 from platform_core.notifications.source_order import output_event_version, source_version_decision
 from platform_core.contracts.aiops.output_projection import OutputProjectionRequest
 from platform_core.contracts.aiops.notification_projection import WorkflowProjectionRequest
+from main_api.application.aiops_workflow_reconciliation import WorkflowSourceUnavailable
 from main_api.application.aiops_output_reconciliation import projection_presentation
 
 
@@ -377,6 +378,9 @@ async def reconcile_workflow_items(*, uow_factory, resolver, limit: int = 50) ->
                 resource_type=row["resource_type"], resource_id=row["resource_id"],
                 domain_id=str(row["domain_id"])))
             status = snapshot.work_item_status
+        except WorkflowSourceUnavailable:
+            status = "CANCELLED"
+            logger.info("通知待办来源已不可用，关闭失效投影 | work_item_id={}", row["work_item_id"])
         except Exception as exc:
             logger.warning("AIOps 待办对账失败 | work_item_id={} | error={}",
                 row["work_item_id"], type(exc).__name__)
@@ -386,6 +390,7 @@ async def reconcile_workflow_items(*, uow_factory, resolver, limit: int = 50) ->
             applied += int(changed and status is not None)
     for row in operations:
         status = None
+        source_unavailable = False
         try:
             snapshot = await resolver.resolve(WorkflowProjectionRequest(resource_type="aiops_run",
                 resource_id=row["resource_id"], domain_id=str(row["domain_id"])))
@@ -393,10 +398,14 @@ async def reconcile_workflow_items(*, uow_factory, resolver, limit: int = 50) ->
                 "WAITING_INPUT": "WAITING_USER", "WAITING_APPROVAL": "WAITING_USER",
                 "COMPLETED": "SUCCEEDED", "PARTIAL": "PARTIAL", "FAILED": "FAILED",
                 "CANCELLED": "CANCELLED", "EXPIRED": "EXPIRED"}[snapshot.source_status]
+        except WorkflowSourceUnavailable:
+            status, source_unavailable = "EXPIRED", True
+            logger.info("运行来源已不可用，任务投影已失效；不推断原执行结果 | operation_id={}", row["operation_id"])
         except Exception as exc:
             logger.warning("AIOps 运行投影对账失败 | operation_id={} | error={}",
                 row["operation_id"], type(exc).__name__)
         async with uow_factory() as uow:
-            await uow.notifications.reconcile_workflow_operation(row=row, status=status)
+            await uow.notifications.reconcile_workflow_operation(row=row, status=status,
+                **({"source_unavailable": True} if source_unavailable else {}))
             await uow.commit()
     return applied
