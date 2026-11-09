@@ -21,7 +21,7 @@ def metric_source_quality_flags(observation):
 def _scope(observation, series):
     return (str(observation.target_id), str(observation.source_id), observation.source_version,
         str(observation.binding_id), observation.external_target_fingerprint,
-        tuple(sorted(series.dimensions.items())), observation.unit)
+        tuple(sorted(series.dimensions.items())), observation.unit, observation.window_start, observation.window_end)
 
 
 def build_monitoring_rows(*, artifact_id, result, forecast_horizon_days=None):
@@ -35,7 +35,9 @@ def build_monitoring_rows(*, artifact_id, result, forecast_horizon_days=None):
             valid = [(point.observed_at, number) for point in series.points
                 if point.quality == "GOOD" and observation.window_start <= point.observed_at <= observation.window_end
                 and (number := parse_numeric_sample(point.value)) is not None]
-            if valid and not observation.truncated and observation.coverage_ratio == 1:
+            if (valid and not observation.truncated and observation.coverage_ratio == 1
+                and not metric_source_quality_flags(observation)
+                and len(valid) == len(series.points) and len({value for _, value in valid}) == 1):
                 stamp = max(at for at, _ in valid)
                 maxima.setdefault((_scope(observation, series), stamp), set()).update(value for at, value in valid if at == stamp)
     for metric_index, observation in enumerate(result.observations):
@@ -83,7 +85,7 @@ def build_monitoring_rows(*, artifact_id, result, forecast_horizon_days=None):
                 horizon = requested_horizon
                 summary, daily = summarize_series(tuple(points), value_kind="GAUGE", forecast_horizon_days=horizon)
                 confidence = "MEDIUM" if elapsed >= horizon * Decimal("0.8") else "LOW"
-            if observation.value_kind != "GAUGE":
+            if observation.value_kind != "GAUGE" and observation.semantic_role != "STORAGE_LOCATION":
                 warnings.append(f"{observation.metric_code}: TREND_SEMANTICS_UNSUPPORTED：原始计数器或状态仅保留样本统计，不生成普通趋势预测")
             estimated, utilization = None, None
             with localcontext() as context:

@@ -1001,6 +1001,9 @@ preconditions、risks、validation、rollback_or_stop、requires_approval、draf
 给出针对当前证据的检查或候选措施，不重复泛化免责声明。需要审批的建议与真实执行分开。
 空间分析遵循 storage_analysis_policy。先报告请求窗口内的已用容量、变化量与增长速率；仅在用户
 要求预测时增加未来用量，耗尽时间仅引用服务端 estimated_days_to_limit。字段为空则具体说明不可计算，
+MySQL 按 storage_capacity_resolution.volumes 分卷引用已核验的数据路径、承载盘、使用率和预测；
+禁止从其余主机磁盘中任意选盘。当前路径映射不证明历史始终不变；磁盘增长包含同卷其他写入，
+不能与逻辑库增长混算。路径或映射不可得时引用实际取证回执，不要求用户猜挂载点、指标名。
 不得把 MySQL data_free/free_mb、对象已分配空间、InnoDB FILE_SIZE/ALLOCATED_SIZE 当作磁盘余量或上限，
 不得自行用它们除以增长率预测写满，也不得把数据库逻辑增长与未核验归属的任意主机挂载点配对。
 不要求表空间查询行数与表数一一对应。缺少辅助容量口径不否定已完成的趋势目标，不自行新增归档、

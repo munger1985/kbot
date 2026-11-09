@@ -35,6 +35,11 @@ class MonitoringSnapshotBuilder:
         self._default_window_seconds = default_window_seconds
         self._max_response_bytes = max_response_bytes
 
+    @property
+    def metric_catalog(self):
+        """关联资源取证复用同一已配置目录与清单哈希。"""
+        return self._metric_catalog
+
     async def build(
         self,
         *,

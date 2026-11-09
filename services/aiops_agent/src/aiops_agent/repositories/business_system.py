@@ -40,6 +40,48 @@ class BusinessSystemRepository(BusinessSystemDeletionRepositoryMixin, AIOpsRepos
             statement = statement.where(ResourceSourceBindingEntity.status == "ACTIVE")
         return list((await self._session.execute(statement.order_by(ResourceSourceBindingEntity.priority, ResourceSourceBindingEntity.resource_source_binding_id))).scalars())
 
+    async def list_storage_host_bindings(self, *, target_id, domain_id, business_system_ids):
+        """只在已授权系统内沿已确认承载关系读取主机，不按地址推断关联。"""
+        self._check_active()
+        if not business_system_ids:
+            return []
+        host_link = aliased(BusinessSystemResourceEntity)
+        db_link = aliased(BusinessSystemResourceEntity)
+        host_member = aliased(RelationParticipantEntity)
+        db_member = aliased(RelationParticipantEntity)
+        database = aliased(ManagedResourceEntity)
+        statement = (
+            select(ManagedResourceEntity, ResourceSourceBindingEntity, BusinessSystemEntity, ResourceRelationEntity)
+            .select_from(ResourceRelationEntity)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == ResourceRelationEntity.business_system_id)
+            .join(host_member, host_member.relation_id == ResourceRelationEntity.relation_id)
+            .join(host_link, (host_link.system_resource_id == host_member.system_resource_id) & (host_link.business_system_id == BusinessSystemEntity.business_system_id))
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == host_link.resource_id)
+            .join(ResourceSourceBindingEntity, ResourceSourceBindingEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(db_member, db_member.relation_id == ResourceRelationEntity.relation_id)
+            .join(db_link, (db_link.system_resource_id == db_member.system_resource_id) & (db_link.business_system_id == BusinessSystemEntity.business_system_id))
+            .join(database, database.resource_id == db_link.resource_id)
+            .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == database.resource_id)
+            .where(
+                DatabaseResourceEntity.target_id == target_id,
+                database.domain_id == domain_id,
+                ManagedResourceEntity.domain_id == domain_id,
+                BusinessSystemEntity.domain_id == domain_id,
+                BusinessSystemEntity.business_system_id.in_(business_system_ids),
+                BusinessSystemEntity.status == "ENABLED", database.lifecycle_status == "ACTIVE",
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
+                ManagedResourceEntity.resource_type_key.in_(("PHYSICAL_SERVER", "VIRTUAL_MACHINE")),
+                ResourceRelationEntity.relation_type_key == "RUNS_ON",
+                ResourceRelationEntity.confirmation_status == "CONFIRMED",
+                host_member.participant_role == "HOST", db_member.participant_role == "WORKLOAD",
+                host_link.status == "ACTIVE", db_link.status == "ACTIVE",
+                ResourceSourceBindingEntity.status == "ACTIVE",
+            )
+            .order_by(ManagedResourceEntity.resource_id, ResourceSourceBindingEntity.resource_source_binding_id)
+            .limit(17)
+        )
+        return list((await self._session.execute(statement)).all())
+
     async def find_resource_binding_by_locator(self, *, source_id, locator_key):
         self._check_active()
         return (await self._session.execute(select(ResourceSourceBindingEntity).where(

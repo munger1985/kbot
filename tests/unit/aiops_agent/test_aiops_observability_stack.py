@@ -149,7 +149,7 @@ def test_template_has_one_required_section_and_modules_are_disabled() -> None:
     assert "[deployment]" in stack.CONFIG_TEMPLATE
     assert "deployment_id = CHANGE_ME" in stack.CONFIG_TEMPLATE
     assert "OEM不在此部署文件中配置" in stack.CONFIG_TEMPLATE
-    assert stack.CONFIG_TEMPLATE.count("# enabled = true") == 8
+    assert stack.CONFIG_TEMPLATE.count("# enabled = true") == 9
 
 
 def test_single_config_generates_every_enabled_module(tmp_path: Path) -> None:

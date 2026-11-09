@@ -1,6 +1,7 @@
 {
   "catalog_version": "mysql-baseline.v1",
   "tools": [
+    {"tool_id":"db.storage.locations","version":"1.0.0","db_type":"MYSQL","variant":"mysql_storage_locations","description":"只读、有界采集实例数据目录及实际 InnoDB 表空间文件路径（包括外部 DATA DIRECTORY）。server_uuid 用于核对同库路径映射；相对路径以真实 datadir 解析。需要 FILES 目录读取权限，失败保留回执，不推断磁盘总容量或自动提权。","supported_version_min":8,"supported_version_max_exclusive":10,"parameters":[{"name":"limit","type":"integer","required":false,"default":200,"minimum":1,"maximum":500}],"output_columns":[{"name":"location_kind","logical_type":"STRING"},{"name":"storage_name","logical_type":"STRING"},{"name":"file_path","logical_type":"STRING"},{"name":"server_uuid","logical_type":"STRING"}],"template_ref":"sql/storage_locations.sql","template_sha256":"b8b350d360e433acb7bb70e98f69d0f02e041b82ff7bcd7dc8868f828047b78f","timeout_seconds":10,"max_rows":500,"max_bytes":524288,"cost_level":"LOW","measurement_semantics":"CURRENT_ACTIVITY","limit_semantics":"BOUNDED_ENUMERATION"},
     {
       "tool_id": "db.sql.problem_candidates",
       "description": "巡检问题 SQL 候选：先按单次开销筛选，不按累计调用次数截取；只读累计统计，资源不可测时保留空值。",

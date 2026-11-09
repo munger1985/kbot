@@ -134,6 +134,17 @@ local_access = false
 # aiops_log_source=mysql_error
 # aiops_log_source=postgresql_log
 
+# 可选：主机侧数据库路径映射。仅在启用 host 时可用；每个实际挂载单独登记。
+# 容器路径、主机路径来自部署时的挂载核验，server_uuid 来自同实例只读查询。
+# 不填写密码；不把表空间内部空闲或表大小声明为磁盘总容量。
+[storage_path:mysql-data]
+# enabled = true
+# database_target_key = mysql-prod-01
+# server_uuid = 00000000-0000-0000-0000-000000000000
+# container_id = 填写实际容器的完整64位ID
+# database_path = /var/lib/mysql
+# host_path = /srv/mysql-data
+
 # 每个数据库使用一个独立配置段；复制整段即可增加数据库。
 # 冒号后的值就是稳定Target Key，必须与AIOps App中的Target绑定一致。
 [oracle:oracle-prod-01]
@@ -364,6 +375,39 @@ def _prometheus_target_sections(parser: configparser.ConfigParser) -> tuple[str,
     )
 
 
+def _storage_path_mappings(parser: configparser.ConfigParser) -> list[dict[str, str]]:
+    """显式路径清单不包含凭据，也不自动扩大主机或来源授权。"""
+    mappings = []
+    seen = set()
+    for section in parser.sections():
+        if not section.startswith("storage_path:") or not _enabled(parser, section):
+            continue
+        if not _enabled(parser, "host"):
+            raise ValueError("数据库路径映射必须先启用host模块")
+        mapping = {key: _required(parser, section, key) for key in
+            ("database_target_key", "server_uuid", "container_id", "database_path", "host_path")}
+        if not re.fullmatch(r"[0-9a-f]{64}", mapping["container_id"]):
+            raise ValueError("数据库路径映射必须登记实际容器的完整64位ID")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", mapping["database_target_key"]):
+            raise ValueError("数据库路径映射Target Key无效")
+        if not re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", mapping["server_uuid"]):
+            raise ValueError("数据库路径映射server_uuid无效")
+        for key in ("database_path", "host_path"):
+            value = mapping[key]
+            if (not value.startswith("/") or ".." in value.split("/")
+                or any(char in value for char in ("\x00", "\n", "\\", ":")) or value == "/"):
+                raise ValueError("数据库路径映射必须是明确的绝对目录，不能登记整个根目录")
+            mapping[key] = value.rstrip("/")
+        identity = (mapping["database_target_key"], mapping["database_path"])
+        if identity in seen:
+            raise ValueError("数据库路径映射重复，不允许任选主机路径")
+        seen.add(identity)
+        mappings.append(mapping)
+    if len(mappings) > 64:
+        raise ValueError("数据库路径映射最多64条")
+    return mappings
+
+
 def _load_settings(path: Path) -> DeploymentSettings:
     if path.stat().st_mode & 0o077:
         raise ValueError(f"配置文件权限必须为0600：chmod 600 {path}")
@@ -415,6 +459,9 @@ def _load_settings(path: Path) -> DeploymentSettings:
         values=parser,
     )
     _validate_module_settings(settings)
+    mappings = _storage_path_mappings(parser)
+    if mappings and role == "central":
+        raise ValueError("数据库路径映射必须部署在数据库所在Collector主机")
     return settings
 
 
@@ -1420,15 +1467,41 @@ def _database_generated_compose(
     local_targets: list[dict[str, object]] = []
     alloy_mounts: list[str] = []
 
-    if "host" in settings.profiles and settings.role == "collector":
+    mappings = _storage_path_mappings(parser)
+    if mappings:
+        volumes["storage-path-textfile"] = {}
         services["node-exporter"] = {
+            "command": [
+                "--path.rootfs=/host",
+                "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)",
+                "--collector.textfile.directory=/textfile",
+            ],
+            "volumes": ["storage-path-textfile:/textfile:ro"],
+        }
+        services["storage-path-collector"] = {
+            "build": {"context": str(STACK_ROOT / "storage_path_collector")},
+            "image": "kbot/storage-path-collector:1.0.0",
+            "restart": "unless-stopped", "read_only": True, "user": "0:0",
+            "network_mode": "none", "cap_drop": ["ALL"],
+            "security_opt": ["no-new-privileges:true"],
+            "volumes": [
+                "/proc/1/mountinfo:/host-mountinfo:ro",
+                "/proc:/host-proc:ro",
+                f"{settings.runtime_dir}/storage-paths.json:/config/mappings.json:ro",
+                "storage-path-textfile:/output",
+                *[f"{path}:/host{path}:ro,rslave" for path in sorted({item["host_path"] for item in mappings})],
+            ],
+        }
+
+    if "host" in settings.profiles and settings.role == "collector":
+        services.setdefault("node-exporter", {}).update({
             "ports": [
                 "{}:{}:9100".format(
                     _required(parser, "host", "exporter_bind_address"),
                     _bounded_int(parser, "host", "exporter_port", 19100, 1, 65535),
                 )
             ]
-        }
+        })
 
     if "containers" in settings.profiles and settings.role == "collector":
         services["cadvisor"] = {
@@ -1707,6 +1780,7 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
     os.chmod(runtime, 0o750)
     secrets.mkdir(parents=True, exist_ok=True)
     os.chmod(secrets, 0o750)
+    _write_text(runtime / "storage-paths.json", json.dumps({"mappings": _storage_path_mappings(parser)}, ensure_ascii=False))
 
     env_lines = IMAGES_FILE.read_text(encoding="utf-8").rstrip().splitlines()
     env_lines.extend(
@@ -2111,6 +2185,8 @@ def _selected_services(settings: DeploymentSettings) -> list[str]:
         selected.update(PROFILE_SERVICES.get(profile, set()))
     if settings.role != "all-in-one":
         selected.intersection_update(ROLE_SERVICES[settings.role])
+    if _storage_path_mappings(settings.values):
+        selected.add("storage-path-collector")
     if settings.role != "central":
         for target in _database_targets(settings.values):
             base_name = _service_name(target.engine, target.target_key)

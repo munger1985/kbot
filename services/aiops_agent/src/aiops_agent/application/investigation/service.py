@@ -431,6 +431,7 @@ class TurnPlanningService:
                     investigation.task_frame.visualization_window_seconds
                     or investigation.task_frame.requested_window_seconds
                 ),
+                visualization_profile_id=investigation.task_frame.visualization_profile_id,
                 requested_metric_codes=(
                     chart_profile_metric_codes(
                         investigation.task_frame.visualization_profile_id
@@ -756,6 +757,8 @@ class TurnPlanningService:
                 ),
             }.get(db_type, ("db.instance.identity",))
         elif kind == "STORAGE_TREND":
+            if db_type == "MYSQL":
+                tool_ids = tuple(dict.fromkeys((*tool_ids, "db.storage.locations")))
             days = int(parameters.get("days") or 7)
             requested_window_seconds = days * 86_400
             visualization_window_seconds = requested_window_seconds
@@ -1268,6 +1271,9 @@ class TurnPlanningService:
             dict.fromkeys(
                 (
                     *compact.selected_tool_ids,
+                    *(("db.storage.locations",) if str(context.target_context.get("db_type") or "") == "MYSQL"
+                      and compact.temporal_analysis_mode != TemporalAnalysisMode.CURRENT
+                      and "db.storage.locations" in available_tool_ids else ()),
                     *(action.tool_id for action in compact.actions),
                     *profile_candidate_ids,
                 )
@@ -2653,6 +2659,7 @@ class TurnPlanningService:
                     investigation.task_frame.visualization_window_seconds
                     or investigation.task_frame.requested_window_seconds
                 ),
+                visualization_profile_id=investigation.task_frame.visualization_profile_id,
                 requested_metric_codes=(
                     chart_profile_metric_codes(
                         investigation.task_frame.visualization_profile_id
@@ -3245,6 +3252,21 @@ class TurnPlanningService:
             }}) if selection else action
             for action in investigation.plan.actions
         ]
+        if (task_frame.visualization_profile_id == "storage.trend"
+            and str(target_context.get("db_type") or "").upper() == "MYSQL"
+            and any(tool.get("tool_id") == "db.storage.locations" for tool in available_tools)
+            and not any(action.tool_id == "db.storage.locations" for action in actions)):
+            used_ids = {action.action_id for action in actions}
+            ordinal = 1
+            while f"a{ordinal}" in used_ids:
+                ordinal += 1
+            actions.append(InvestigationAction(
+                action_id=f"a{ordinal}", question="采集数据目录和外部表空间路径以定位承载文件系统",
+                tool_id="db.storage.locations", input={"limit": 200},
+                expected_evidence_kind="STORAGE_LOCATIONS",
+                measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+                optional=True,
+            ))
         database_actions = [
             action for action in actions if action.tool_id.startswith("db.")
         ]
@@ -4367,6 +4389,7 @@ class TurnPlanningService:
         *,
         requested_window_seconds: int | None = None,
         requested_metric_codes: tuple[str, ...] | None = None,
+        visualization_profile_id: str | None = None,
         align_with_realtime_profile: bool = False,
     ) -> dict:
         if self._monitoring_snapshot_builder is None:
@@ -4424,6 +4447,14 @@ class TurnPlanningService:
                 ),
                 requested_metric_codes=requested_metric_codes,
             )
+            if visualization_profile_id == "storage.trend" and str(target.db_type) == "MYSQL":
+                from aiops_agent.application.diagnosis.storage_hosts import attach_storage_hosts
+                run = await uow.runs.get_run(ops_run_id=context.ops_run_id)
+                if run is not None:
+                    await attach_storage_hosts(
+                        uow=uow, snapshot=snapshot, target=target, run=run,
+                        allowed_source_ids=context.source_ids, metric_catalog=self._monitoring_snapshot_builder.metric_catalog,
+                    )
             if current_inspection:
                 snapshot["current_window"] = dict(snapshot["window"])
                 snapshot["snapshot_max_age_seconds"] = sample_max_age

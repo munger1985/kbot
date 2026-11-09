@@ -2450,7 +2450,12 @@ class DbaAnswerComposeHandler:
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
         sufficiency = self._model_assessment_payload(assessment)
         task_frame = dict(answer_context.get("task_frame", {}))
+        from aiops_agent.application.diagnosis.storage_capacity import storage_capacity_resolution
         payload = {
+            "storage_capacity_resolution": storage_capacity_resolution(
+                task_frame=task_frame, monitoring=dict(context.plan_snapshot.get("monitoring") or {}),
+                evidence=assessment.evidence,
+            ),
             "question": str(answer_context.get("question", "")),
             "input_envelope": dict(answer_context.get("input_envelope", {})),
             "task_frame": task_frame,

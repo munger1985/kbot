@@ -876,6 +876,9 @@
       }
     },
     {
+      "metric_code":"host.storage.mount_info","resource_scope":"HOST","semantic_role":"STORAGE_LOCATION","semantic_version":"1.0.0","name":"数据库路径与文件系统映射","description":"当前经主机核验的数据库路径到承载文件系统映射；数值为核验时间，不表示历史路径始终不变或空间大小。","unit":"timestamp_seconds","value_kind":"STATE","expected_dimensions":["target_key","database_target_key","server_uuid","database_path","host_path","mountpoint","device","fstype"],"supported_db_types":["MYSQL"],"allowed_aggregations":["LAST"],"default_window_seconds":300,"min_step_seconds":60,"max_points":120,"max_series":128,"providers":{"PROMETHEUS":{"template_id":"prom.host.storage.mount_info","template_version":"1","query_template":"aiops_database_storage_mount_info{job=\"node\",target_key=\"${host_target}\"} @ end()","required_labels":["target_key"]}}
+    },
+    {
       "metric_code": "host.disk.io.utilization", "resource_scope": "HOST",
       "semantic_role": "DISK_IO_UTILIZATION",
       "semantic_version": "1.0.0",
