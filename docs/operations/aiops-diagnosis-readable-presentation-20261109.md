@@ -22,4 +22,28 @@
 
 不使用 UUID 正则替换或事后正文改写，不清空或重新生成已交付回复，
 不改写原始证据及历史回答，也不改变诊断状态或执行授权。
-本次仅修改仓库代码和 1.0.0 Prompt 基线，未执行数据库写入、线上 Prompt 同步或服务重启。
+实现提交阶段仅修改仓库代码和 1.0.0 Prompt 基线；后续线上部署记录如下。
+
+## kbotdev 部署验收（2026-11-09）
+
+- 两仓功能提交均已推送并在线上快进拉取：Ammolite `072f2f47`（dev），
+  KBot `58eb3275`（kbot4.1.1）。未在线修改源码，未重置或清理工作区；配置备份全部保留。
+- 两套开发数据库各核对 19 个 AIOps Prompt，其中各有 8 个文件基线落后，已定向原地同步并激活：
+  `turn_router`、`investigation_planner`、`investigation_policy_repair`、
+  `investigation_replanner`、`answer_compose`、`answer_stream`、
+  `diagnosis_answer_compose`、`sql_diagnosis`（均为 `aiops_agent.` 前缀）。
+- 版本维持 `1.0.0`，Ammolite 来源为 `BUILTIN`，KBot 来源为 `FILE_SEED`；
+  本次未发现需要跳过的手工维护版本。未执行全库初始化、DDL、清除历史或改写历史运行。
+  数据库激活指针与文件 Hash 一致，分别通过正常 PromptResolver 核验全部 19 项实际解析结果。
+- KBot 使用标准 `restart_kbot.sh` 全量重启，新 AIOps/Main API 进程启动于 `05:01:42 UTC`；
+  Ammolite 使用 `restart_ammolite.sh aiops-agent main-api` 定向重启，实际 Python 进程启动于
+  `05:03:35 UTC`。Ammolite Main API 停止超过脚本的 10 秒等待，由标准脚本强制结束后重新拉起。
+- 两套 Main API 的 `/readyz`，以及 AIOps API、DB Executor、Worker、Scheduler 的 `/ready`
+  共 10 项均返回 HTTP 200 / ready；核对了新进程 PID、所属仓库和监听端口。
+- 验收使用线上 development/logs API。本次重启后的 KBot AIOps 错误日志样本未见新错误，
+  但 Main API 有 Webhook 路由不存在及运行投影对账警告，不将这些链路视为已验收通过。
+- Ammolite 仍存在重启前已出现的自动采集失败：`UntranslatableCharacterError` /
+  `unsupported Unicode escape sequence`；同时通知 Outbox 写入 operation watcher 时引用的用户不存在，
+  触发 `ForeignKeyViolationError`。这些问题未在本次部署中修改或清理，不能据 readiness 宣称业务全链路正常。
+- 未以真实用户发起新的模型对话，未宣称已完成浏览器端完整回答验收。
+  资料目录修复不等于历史全文索引缺列已处理，本次未执行相关 AIOps Schema 变更。
