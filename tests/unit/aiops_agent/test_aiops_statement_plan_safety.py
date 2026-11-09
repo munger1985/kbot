@@ -1,6 +1,7 @@
 """计划工具区分语法与函数，并在流式生成前保留真实采集状态。"""
 
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -10,7 +11,8 @@ from aiops_agent.application.diagnosis.sql_plan_presentation import plan_availab
 from aiops_agent.contracts.turn_answer import TurnEvidenceGap
 from aiops_agent.diagnostics import DiagnosticRegistry
 from aiops_agent.executor.drivers.base import DiagnosticDriverError
-from aiops_agent.executor.drivers.statement_plan import postgresql_statement_plan, readonly_plan_sql
+from aiops_agent.executor.drivers.statement_plan import postgresql_statement_plan, readonly_plan_sql, safe_plan_row
+from aiops_agent.domain.evidence.sql_plan import parse_sql_plan_json, SqlPlanImportError
 from aiops_agent.playbooks import canonical_hash
 from aiops_agent.workers.database_handlers import _database_gap_detail
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
@@ -53,17 +55,37 @@ def test_parameterized_conditions_reach_generic_explain_without_executing_busine
         sql="SELECT metric_value FROM mes.signal WHERE equipment_id=$1 AND metric_id=$2 ORDER BY observed_at DESC LIMIT $3"
         source=dict(query_id="-6589067333046971749",database_oid=42,user_oid=11,top_level=True,source_sql=sql)
         connection=SimpleNamespace(fetch=AsyncMock(return_value=[source]),execute=AsyncMock(),
-            fetchval=AsyncMock(side_effect=[42,3,[{"Plan":{"Node Type":"Limit","Plan Rows":1}}]]))
+            fetchval=AsyncMock(side_effect=[42,3,[{"Plan":{"Node Type":"Limit","Plan Rows":1},
+                "Query Identifier":5378376035200847435}]]))
         params={key:source[key] for key in ("query_id","database_oid","user_oid","top_level")}
         params["source_sql_sha256"]=canonical_hash(sql)
         tool=next(item for item in DiagnosticRegistry.load().tools if item.definition.tool_id=="db.postgresql.statement.plan")
         result=await postgresql_statement_plan(connection,source_sql=tool.sql,parameters=params)
         assert len(result)==1
+        assert json.loads(result[0][0]) == {"query_id":"-6589067333046971749",
+            "database_oid":"42","user_oid":"11","top_level":True}
+        assert result[0][1] == params["source_sql_sha256"]
         assert connection.fetchval.await_args.args[0]=="EXPLAIN (FORMAT JSON, VERBOSE TRUE) EXECUTE aiops_statement_plan(NULL,NULL,NULL)"
         commands=[call.args[0] for call in connection.execute.await_args_list]
         assert "SET LOCAL plan_cache_mode = force_generic_plan" in commands
         assert not any(command.startswith("EXECUTE ") or "ANALYZE" in command for command in commands)
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize("as_text", [False, True])
+def test_fixed_estimate_binds_verified_source_but_uploaded_native_identity_remains_strict(as_list, as_text):
+    subject={"query_id":"-6589067333046971749","database_oid":42,"user_oid":11,"top_level":True}
+    native={"Plan":{"Node Type":"Index Scan","Plan Rows":7,"Index Name":"signal_idx"},
+        "Query Identifier":5378376035200847435}
+    native=[native] if as_list else native
+    row=safe_plan_row(json.dumps(native) if as_text else native, database_type="POSTGRESQL",
+        subject=subject,source_hash="a"*64)
+    assert json.loads(row[0])["query_id"]==subject["query_id"]
+    assert json.loads(row[2])[0]["operation"]=="Index Scan"
+    with pytest.raises(SqlPlanImportError):
+        parse_sql_plan_json(json.dumps({"schema_version":"SQL_PLAN_IMPORT.v1",
+            "database_type":"POSTGRESQL","subject":subject,"plan":native}))
 
 
 @pytest.mark.parametrize("code", [

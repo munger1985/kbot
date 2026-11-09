@@ -109,7 +109,9 @@ def database_estimate_plan(observation):
             nodes=json.loads(fields["plan_nodes_json"]), observed_at=observation.captured_at.isoformat(),
             physical_identity=dict(database_provenance(observation).physical_identity),
             warnings=("固定目录按完整主体和SQL文本哈希采集；仅含优化器估算，不含实际行数或运行耗时。",
-                "未执行原SQL或ANALYZE，未猜测代表参数；原业务解析环境与参数代表性未经核验。"))
+                "未执行原SQL或ANALYZE，未猜测代表参数；原业务解析环境与参数代表性未经核验。",
+                *(("统计归一化文本经数据库重新解析，估算语句的 Query Identifier 不替代原统计 Query ID。",)
+                  if observation.db_type == "POSTGRESQL" else ())))
         return document, ()
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return None, ("SQL_PLAN_OUTPUT_INVALID",)

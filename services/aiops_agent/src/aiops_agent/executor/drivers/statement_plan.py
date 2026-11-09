@@ -64,6 +64,14 @@ def safe_plan_row(native_json, *, database_type, subject, source_hash):
         if isinstance(native_json, str) and len(native_json.encode("utf-8")) > MAX_PLAN_BYTES:
             raise ValueError
         native = json.loads(native_json) if isinstance(native_json, str) else native_json
+        if database_type == "POSTGRESQL":
+            # 统计归一化文本在 PREPARE 中重新解析，Query Identifier 可能与原统计不同。
+            # 固定工具的来源主体已由同连接复核完整统计维度和原文本哈希；不能被估算语句覆盖。
+            # 只在此固定工具移除重新解析的标识，人工上传仍按原生标识严格核对。
+            if isinstance(native, list) and len(native) == 1 and isinstance(native[0], dict):
+                native = [{key: value for key, value in native[0].items() if key != "Query Identifier"}]
+            elif isinstance(native, dict):
+                native = {key: value for key, value in native.items() if key != "Query Identifier"}
         document = parse_sql_plan_json(json.dumps({"schema_version": "SQL_PLAN_IMPORT.v1",
             "database_type": database_type, "subject": subject, "plan": native}, ensure_ascii=False))
         if document.runtime_statistics != "NONE":
