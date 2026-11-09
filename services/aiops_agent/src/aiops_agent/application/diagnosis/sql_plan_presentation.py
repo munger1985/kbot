@@ -95,7 +95,10 @@ def matching_plan_refs(bundle):
     """只有身份和物理来源均核对一致的计划才能进入目标 SQL 主展示。"""
     return {item["evidence_ref"] for item in bundle.get("plan_assessments") or ()
             if item.get("identity_match") in {"SOURCE_MATCH", "DECLARED_MATCH"}
-            and item.get("physical_match") in {"SOURCE_MATCH", "DECLARED_MATCH"}}
+            and (item.get("physical_match") in {"SOURCE_MATCH", "DECLARED_MATCH"}
+                 or (item.get("physical_match") == "SOURCE_SERVER_MATCH" and item.get("database_type") == "MYSQL"
+                     and item.get("origin") == "DATABASE_ESTIMATE" and item.get("identity_match") == "SOURCE_MATCH"
+                     and item.get("runtime_statistics") == "NONE" and item.get("time_relation") == "SOURCE_NEAR_OBSERVATION"))}
 
 
 def plan_availability_block(*, database_type, bundle, gaps=()):

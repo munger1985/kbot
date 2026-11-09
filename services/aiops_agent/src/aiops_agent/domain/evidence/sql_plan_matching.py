@@ -149,6 +149,17 @@ def assess_sql_plans(*, database_type, subject, evidence):
                 time_relation = ("SOURCE_NEAR_OBSERVATION" if native or estimate else "DECLARED_NEAR_OBSERVATION") if age <= 300 else "HISTORICAL_OR_DIFFERENT_TIME"
             except (ValueError, TypeError):
                 pass
+        # MySQL 驱动仅有原生 server_uuid，不能编造启动时间。
+        # 固定工具同连接复核当前 Digest/Schema/文本后取得的估算可作服务器级匹配，
+        # 不升级为启动代次一致、历史执行或运行时对象解析的证明。
+        if (database_type == "MYSQL" and document.origin == "DATABASE_ESTIMATE" and document.runtime_statistics == "NONE"
+            and identity_match == "SOURCE_MATCH" and physical_match == "INCOMPLETE"
+            and time_relation == "SOURCE_NEAR_OBSERVATION" and fact.trust_level == "SOURCE_VERIFIED"
+            and fact.tool_id == fact.source_id == "db.mysql.statement.plan" and not fact.truncated
+            and fact.followup_run_id is None and document.observed_at == fact.captured_at
+            and "instance_started_at" not in document.physical_identity and "instance_started_at" not in expected_physical
+            and _match(document.physical_identity, expected_physical, ("server_uuid",)) == "DECLARED_MATCH"):
+            physical_match = "SOURCE_SERVER_MATCH"
         results.append(SqlPlanAssessment(evidence_ref=fact.evidence_ref, anchor_ref=anchor.evidence_ref if anchor else None, database_type=database_type,
             origin=document.origin,
             subject=subject, identity_match=identity_match, physical_match=physical_match, time_relation=time_relation,
@@ -169,7 +180,8 @@ def assess_sql_plans(*, database_type, subject, evidence):
                 "参数仅保留类型；代表性、环境以及与某次执行的绑定关系均未核验。",
                 "估算行数偏差按引擎的每循环/每启动语义计算；零循环或零估算不计算比率。",
                 "每主体最多投影四份已有计划；计划缺失或不匹配不阻断其他诊断。",
-            ))))
+            )) + (("仅核验服务器 UUID；启动代次未知，不关联历史实际计划或实际运行统计。",)
+                if physical_match == "SOURCE_SERVER_MATCH" else ())))
     return tuple(results)
 
 

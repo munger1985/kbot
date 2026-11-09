@@ -34,11 +34,23 @@ from .mysql_cancellation import OwnedMySQLExecution
 from aiops_agent.executor.readonly_lifecycle import confirm_database_error_completion
 
 
+class _PlanCaptureCursor(aiomysql.Cursor):
+    """EXPLAIN 的 Note 可能包含完整 SQL 与字面值，只保留告警编号。"""
+
+    async def _show_warnings(self, connection):
+        if self._result and self._result.has_next:
+            return
+        rows = await connection.show_warnings()
+        if rows:
+            logger.debug("MySQL 计划采集返回告警，编号={}", tuple(int(row[1]) for row in rows))
+
+
 @asynccontextmanager
-async def _diagnostic_cursor(connection, *, paged, owner):
+async def _diagnostic_cursor(connection, *, paged, owner, plan_capture=False):
     """流式游标用独占连接释放；不在关闭时排空超出预算的剩余结果。"""
     if not paged:
-        async with connection.cursor() as cursor:
+        manager = connection.cursor(_PlanCaptureCursor) if plan_capture else connection.cursor()
+        async with manager as cursor:
             yield cursor
         return
     cursor = await connection.cursor(aiomysql.SSCursor)
@@ -237,7 +249,8 @@ class MySQLDiagnosticDriver:
             from aiops_agent.executor.identity import observe_mysql_connection_identity
             instance_identity = await observe_mysql_connection_identity(connection)
             owner.attach(connection, instance_identity)
-            async with _diagnostic_cursor(connection, paged=limits.pagination is not None, owner=owner) as cursor:
+            async with _diagnostic_cursor(connection, paged=limits.pagination is not None, owner=owner,
+                plan_capture=variant == "mysql_8_active_statement_plan") as cursor:
                 async with owner.statement_window(
                     limits.statement_timeout_seconds
                 ):

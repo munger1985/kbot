@@ -2,7 +2,7 @@
 
 import json
 
-from sqlglot import exp, parse
+from sqlglot import Dialect, exp, parse
 
 from aiops_agent.domain.evidence.sql_plan import MAX_PLAN_BYTES, parse_sql_plan_json
 from aiops_agent.playbooks import canonical_hash
@@ -69,6 +69,22 @@ def readonly_plan_sql(sql, *, dialect="postgres"):
         raise
     except Exception:
         raise DiagnosticDriverError("SQL_PLAN_STATEMENT_UNSUPPORTED") from None
+    if dialect == "postgres":
+        # pg_stat_statements 将 EXTRACT 的文本字段也归一化为 $n；该形式不能直接 PREPARE。
+        # PG14+ 的原生 extract(text, value) 与关键字语法同型同返回类型，不猜测 epoch 等字段值。
+        fields = {node.this.this.meta.get("start") for node in tree.find_all(exp.Extract)
+            if isinstance(node.this, exp.Parameter) and isinstance(node.this.this, exp.Literal)}
+        if fields:
+            tokens = Dialect.get_or_raise("postgres").tokenize(sql)
+            edits = []
+            for index, token in enumerate(tokens[:-4]):
+                opening, parameter, number, separator = tokens[index+1:index+5]
+                if (token.text.upper() == "EXTRACT" and number.start in fields
+                    and opening.text == "(" and parameter.text == "$" and separator.text.upper() == "FROM"):
+                    edits.append((token.start, separator.end + 1,
+                        'pg_catalog."extract"(' + sql[parameter.start:number.end+1] + ','))
+            for start, end, replacement in reversed(edits):
+                sql = sql[:start] + replacement + sql[end:]
     return sql.rstrip().removesuffix(";")
 
 

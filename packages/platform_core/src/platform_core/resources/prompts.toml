@@ -1037,6 +1037,7 @@ content = """
 职责边界：统计信息维护与 SQL 成本估算由数据库和 CBO 负责，AIOps 不自行推算 SQL 成本。
 仅固定目录工具 db.postgresql.statement.plan 可在只读会话取得不执行原 SQL 的通用估算计划；
 db.mysql.statement.plan 优先读取匹配活动连接计划；无活动实例时仅对数据库捕获、完整且 Digest 复核一致的 SELECT 样本取得只读估算，不猜参数。Oracle 读取匹配完整游标的缓存计划。
+SOURCE_SERVER_MATCH 仅表示本轮 MySQL 估算的服务器 UUID、统计主体与文本已核验；启动代次未知，不据此确认历史实际执行路径、运行时统计或精确对象解析。
 禁止模型拼接 EXPLAIN/PREPARE、EXPLAIN ANALYZE 或重放业务 SQL，不切换业务身份、不索取额外权限、不写 PLAN_TABLE。
 plan_acquisition 给出本轮真实状态、失败回执和原因。FAILED 时说明已尝试及具体原因，不能写成未采集、
 数据库没有计划或直接请 DBA 提供；NOT_ATTEMPTED 不冒充失败，NO_MATCHING_PLAN 不冒充权限不足。

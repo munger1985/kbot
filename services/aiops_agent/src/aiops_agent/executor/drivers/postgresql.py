@@ -229,6 +229,8 @@ class PostgreSQLDiagnosticDriver:
                 mapped = "TIMEOUT"
             elif isinstance(exc, (asyncpg.IndeterminateDatatypeError, asyncpg.AmbiguousParameterError)):
                 mapped = "SQL_PLAN_PARAMETER_TYPES_UNAVAILABLE" if statement_plan else "QUERY_BIND_INVALID"
+            elif statement_plan and isinstance(exc, asyncpg.PostgresSyntaxError):
+                mapped = "SQL_PLAN_STATEMENT_UNSUPPORTED"
             else:
                 mapped = "EXECUTOR_INTERNAL_ERROR"
             raise DiagnosticDriverError(

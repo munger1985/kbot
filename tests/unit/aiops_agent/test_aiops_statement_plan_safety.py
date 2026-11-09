@@ -55,6 +55,15 @@ def test_condition_or_case_does_not_hide_unsupported_function(sql):
     assert error.value.code == "SQL_PLAN_FUNCTION_UNSUPPORTED"
 
 
+def test_normalized_extract_parameter_keeps_native_numeric_semantics_without_guessing_field():
+    sql = "SELECT EXTRACT($1 FROM CURRENT_TIMESTAMP), EXTRACT($2 FROM pg_last_xact_replay_timestamp()), 'EXTRACT($3 FROM ts)'"
+    expected = 'SELECT pg_catalog."extract"($1, CURRENT_TIMESTAMP), pg_catalog."extract"($2, pg_last_xact_replay_timestamp()), \'EXTRACT($3 FROM ts)\''
+    assert readonly_plan_sql(sql) == expected
+    assert readonly_plan_sql("SELECT EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)") == "SELECT EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)"
+    with pytest.raises(DiagnosticDriverError, match="SQL_PLAN_FUNCTION_UNSUPPORTED"):
+        readonly_plan_sql("SELECT EXTRACT($1 FROM evil.custom_func())")
+
+
 @pytest.mark.parametrize("server_major", [14, 15, 16, 17])
 def test_parameterized_conditions_reach_generic_explain_without_executing_business_sql(server_major):
     async def exercise():

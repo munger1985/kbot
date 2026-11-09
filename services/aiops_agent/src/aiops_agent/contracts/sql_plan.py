@@ -90,7 +90,7 @@ class SqlPlanAssessment(BaseModel):
     subject: dict[str, str | int | bool | None] = Field(max_length=16)
     origin: Literal["USER_UPLOAD", "DATABASE_CURSOR", "CONTROLLED_ESTIMATE", "DATABASE_ESTIMATE"] = "USER_UPLOAD"
     identity_match: Literal["DECLARED_MATCH", "SOURCE_MATCH", "MISMATCH", "INCOMPLETE"]
-    physical_match: Literal["DECLARED_MATCH", "SOURCE_MATCH", "MISMATCH", "INCOMPLETE"]
+    physical_match: Literal["DECLARED_MATCH", "SOURCE_MATCH", "SOURCE_SERVER_MATCH", "MISMATCH", "INCOMPLETE"]
     time_relation: Literal["DECLARED_NEAR_OBSERVATION", "SOURCE_NEAR_OBSERVATION", "HISTORICAL_OR_DIFFERENT_TIME", "UNKNOWN"]
     runtime_statistics: Literal["NONE", "PARTIAL", "PRESENT"]
     representative_parameters: Literal["UNVERIFIED"] = "UNVERIFIED"
@@ -102,6 +102,12 @@ class SqlPlanAssessment(BaseModel):
 
     @model_validator(mode="after")
     def validate_origin(self):
+        if self.physical_match == "SOURCE_SERVER_MATCH" and not (
+            self.database_type == "MYSQL" and self.origin == "DATABASE_ESTIMATE"
+            and self.identity_match == "SOURCE_MATCH" and self.runtime_statistics == "NONE"
+            and self.time_relation == "SOURCE_NEAR_OBSERVATION"
+        ):
+            raise ValueError("仅本轮固定工具的 MySQL 估算可声明服务器级匹配，不能冒充启动代次或实际执行证明")
         if self.native_verification is not None and self.origin != "CONTROLLED_ESTIMATE":
             raise ValueError("只有独立回执重放的估算计划可携带原生核验")
         if self.origin == "USER_UPLOAD" and (
