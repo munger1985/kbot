@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import UTC, datetime
+from math import ceil
 
 import aiohttp
 from loguru import logger
@@ -389,13 +390,12 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                     )
                 )
                 continue
-            duration = int(
-                (request.window_end - request.window_start).total_seconds()
-            )
+            duration = (request.window_end - request.window_start).total_seconds()
             step = max(
                 request.requested_step_seconds,
                 definition.min_step_seconds,
-                max(1, duration // definition.max_points),
+                # 范围查询包含首点；向上取整以免额外采样被预算截掉末点。
+                max(1, ceil(duration / (definition.max_points - 1))),
             )
             query_templates = (
                 provider.query_template,

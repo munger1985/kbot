@@ -8,11 +8,12 @@ import inspect
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
+from aiops_agent.adapters.diagnostic_sources.prometheus import PrometheusAdapter
 from aiops_agent.application.diagnosis.storage_capacity import storage_capacity_resolution
 from aiops_agent.application.diagnosis.storage_hosts import attach_storage_hosts
 from aiops_agent.application.source_authorization import source_scope_is_current
@@ -21,6 +22,7 @@ from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 from aiops_agent.diagnostics import DiagnosticRegistry
 from aiops_agent.monitoring.catalog import resolve_metric_definitions
 from aiops_agent.monitoring.query_policy import MonitoringQueryRejected, PromQueryPolicy, PromQueryPolicySnapshot
+from aiops_agent.ports.diagnostic_source import DiagnosticSourceContext, MetricsEvidenceRequest
 from aiops_agent.repositories.business_system import BusinessSystemRepository
 from aiops_agent.workers.turn_answer_handlers import DbaEvidenceAssessmentHandler
 from platform_core.identity import uuid7
@@ -134,6 +136,38 @@ def test_sampling_allowance_cannot_turn_a_short_requested_window_into_seven_days
         observation["expected_points"] = observation["actual_points"] = 7
     result = resolve(remake(artifact), paths, monitoring)
     assert result["volumes"][0]["metrics"]["host.filesystem.used_bytes"]["estimated_days_to_limit"] is None
+
+
+def test_prometheus_full_week_grid_preserves_last_sample_and_permits_volume_forecast():
+    artifact, _, paths, monitoring = storage_fixture()
+    payload = artifact["payload"]
+    request = MetricsEvidenceRequest(
+        target_id=payload["target_id"], binding_id=payload["binding_id"],
+        source_locator_key="host-1", source_locator={"resource_scope": "HOST"},
+        metric_definitions=tuple(load_metric_catalog().get(code) for code in (
+            "host.filesystem.used_bytes", "host.filesystem.size_bytes")),
+        window_start=NOW-timedelta(days=7), window_end=NOW,
+        requested_step_seconds=60, max_response_bytes=262144, trace_id="grid-regression",
+    )
+    adapter = PrometheusAdapter(context=DiagnosticSourceContext(
+        source_id=payload["source_id"], source_type="PROMETHEUS", adapter_id="prometheus",
+        adapter_version="1.0.0", config_version=1, endpoint="http://prometheus",
+        declared_capabilities={"metric.query_range": {}},
+    ), session=Mock(), request_timeout_seconds=10, webhook_replay_seconds=300)
+    async def query_range(*, request, query, step):
+        count = int((request.window_end-request.window_start).total_seconds() // step) + 1
+        assert count <= min(item.max_points for item in request.metric_definitions)
+        points = [(request.window_start+timedelta(seconds=index*step),
+                   10+index*step/86400 if " - " in query else 100) for index in range(count)]
+        return [(FILESYSTEM, points)], "a"*64
+    adapter._query_range = query_range
+    queried = asyncio.run(adapter.query_metrics(request))
+    assert not queried.gaps
+    payload["observations"] = [item.model_dump(mode="json") for item in queried.observations] + payload["observations"][-1:]
+    result = resolve(remake(artifact), paths, monitoring)
+    metric = result["volumes"][0]["metrics"]["host.filesystem.used_bytes"]
+    assert not metric["quality_flags"]
+    assert metric["estimated_days_to_limit"] is not None
 
 
 @pytest.mark.parametrize("horizon,growth,expected", [(None, 1, None), (30, 0, None), (30, -1, None)])
