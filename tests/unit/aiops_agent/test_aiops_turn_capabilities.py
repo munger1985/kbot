@@ -133,7 +133,7 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("连接管理、备份恢复", result.markdown)
         request = knowledge.search.await_args.kwargs["request"]
         self.assertEqual("CATALOG", request.purpose)
-        self.assertEqual(("MANUAL",), request.source_kinds)
+        self.assertEqual(("MANUAL", "DIAGNOSIS_CASE"), request.source_kinds)
         model.generate_structured.assert_not_awaited()
 
     async def test_alert_query_only_reads_resolved_targets(self):

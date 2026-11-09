@@ -521,7 +521,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         await self._session.flush()
 
     async def get_version_relations(
-        self, *, asset_version_id: UUID
+        self, *, asset_version_id: UUID, include_indexes: bool = True
     ) -> dict[str, list]:
         self._check_active()
         scopes = list((await self._session.execute(
@@ -537,11 +537,13 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 OperationsKnowledgeSourceEntity.asset_version_id == asset_version_id
             ).order_by(OperationsKnowledgeSourceEntity.created_at)
         )).scalars())
-        indexes = list((await self._session.execute(
-            select(OperationsKnowledgeIndexEntity).where(
-                OperationsKnowledgeIndexEntity.asset_version_id == asset_version_id
-            ).order_by(OperationsKnowledgeIndexEntity.created_at)
-        )).scalars())
+        indexes = []
+        if include_indexes:
+            indexes = list((await self._session.execute(
+                select(OperationsKnowledgeIndexEntity).where(
+                    OperationsKnowledgeIndexEntity.asset_version_id == asset_version_id
+                ).order_by(OperationsKnowledgeIndexEntity.created_at)
+            )).scalars())
         reviews = list((await self._session.execute(
             select(OperationsKnowledgeReviewEntity).where(
                 OperationsKnowledgeReviewEntity.asset_version_id == asset_version_id
@@ -614,20 +616,64 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 OperationsKnowledgeAssetEntity.security_level <= max_security_level,
             )
         )
-        if not source_kinds:
-            return []
-        statement = statement.where(OperationsKnowledgeAssetEntity.asset_kind.in_(tuple(source_kinds)))
-        if knowledge_base_ids:
-            statement = statement.where(
-                (OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE")
-                | OperationsKnowledgeAssetEntity.knowledge_base_id.in_(tuple(knowledge_base_ids))
-            )
         if after_index_id is not None:
             statement = statement.where(OperationsKnowledgeIndexEntity.index_ref_id > after_index_id)
         if asset_version_ids:
             statement = statement.where(OperationsKnowledgeVersionEntity.asset_version_id.in_(tuple(asset_version_ids)))
         if document_version_ids:
             statement = statement.where(OperationsKnowledgeIndexEntity.document_version_id.in_(tuple(document_version_ids)))
+        statement = self._published_scope(
+            statement, target_id=target_id, source_kinds=source_kinds,
+            knowledge_base_ids=knowledge_base_ids, scope_filters=scope_filters,
+        )
+        statement = statement.order_by(OperationsKnowledgeIndexEntity.index_ref_id)
+        if limit is not None:
+            statement = statement.limit(limit)
+        return list((await self._session.execute(statement)).all())
+
+    async def list_published_catalog(
+        self, *, domain_id: int, target_id: UUID | None,
+        source_kinds: Sequence[str], knowledge_base_ids: Sequence[UUID] = (),
+        max_security_level: int, scope_filters: dict[str, Sequence[str]],
+        limit: int | None, after_asset_id: UUID | None = None,
+        asset_version_ids: Sequence[UUID] = (),
+    ) -> list[tuple[OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity]]:
+        """资料目录只读取当前发布的元数据，不依赖正文索引或解析代次。"""
+        self._check_active()
+        if limit is not None and limit < 1:
+            raise ValueError("知识目录分页大小必须大于零")
+        statement = (
+            select(OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity)
+            .join(OperationsKnowledgeVersionEntity,
+                OperationsKnowledgeVersionEntity.asset_version_id == OperationsKnowledgeAssetEntity.current_version_id)
+            .where(
+                OperationsKnowledgeAssetEntity.domain_id == domain_id,
+                OperationsKnowledgeAssetEntity.status == "PUBLISHED",
+                OperationsKnowledgeVersionEntity.status == "PUBLISHED",
+                OperationsKnowledgeAssetEntity.security_level <= max_security_level,
+            )
+        )
+        if after_asset_id is not None:
+            statement = statement.where(OperationsKnowledgeAssetEntity.asset_id > after_asset_id)
+        if asset_version_ids:
+            statement = statement.where(OperationsKnowledgeVersionEntity.asset_version_id.in_(tuple(asset_version_ids)))
+        statement = self._published_scope(
+            statement, target_id=target_id, source_kinds=source_kinds,
+            knowledge_base_ids=knowledge_base_ids, scope_filters=scope_filters,
+        ).order_by(OperationsKnowledgeAssetEntity.asset_id)
+        if limit is not None:
+            statement = statement.limit(limit)
+        return list((await self._session.execute(statement)).all())
+
+    @staticmethod
+    def _published_scope(statement, *, target_id, source_kinds, knowledge_base_ids, scope_filters):
+        """目录与正文共用来源、知识库、目标及标签范围，不能因展示方式绕过授权。"""
+        statement = statement.where(OperationsKnowledgeAssetEntity.asset_kind.in_(tuple(source_kinds)))
+        if knowledge_base_ids:
+            statement = statement.where(
+                (OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE")
+                | OperationsKnowledgeAssetEntity.knowledge_base_id.in_(tuple(knowledge_base_ids))
+            )
         scope = OperationsKnowledgeScopeEntity
         version_scope = scope.asset_version_id == OperationsKnowledgeVersionEntity.asset_version_id
         # 手册的显式目标范围仍是硬边界；案例目标是来源，不等于只能原机复用。
@@ -649,7 +695,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                     try:
                         tag_id = UUID(value)
                     except ValueError:
-                        return []
+                        return statement.where(False)
                     statement = statement.where(select(scope.asset_version_id).where(
                         version_scope, scope.tag_id == tag_id,
                     ).exists())
@@ -662,10 +708,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 statement = statement.where(
                     (OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE") | ~known | matched
                 )
-        statement = statement.order_by(OperationsKnowledgeIndexEntity.index_ref_id)
-        if limit is not None:
-            statement = statement.limit(limit)
-        return list((await self._session.execute(statement)).all())
+        return statement
 
     async def overview(self, *, domain_id: int) -> dict[str, int]:
         self._check_active()

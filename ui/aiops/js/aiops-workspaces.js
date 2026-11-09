@@ -1986,7 +1986,7 @@
     { capability: "ALERT_QUERY", title: "查看告警", description: "查询近期告警、严重程度和处理状态。", prompt: "查看我有权访问的业务系统最近的告警事件、严重程度和处理状态。" },
     { capability: "INSPECTION_QUERY", title: "查询巡检", description: "查询近期巡检结果和主要发现。", prompt: "查询我有权访问的业务系统最近的巡检执行结果和主要发现。" },
     { capability: "REPORT_CASE_QUERY", title: "查询历史案例", description: "查找已审核发布的历史诊断案例。", prompt: "查询我有权访问的业务系统中已发布的历史诊断案例，并说明可供继续提问的主题。" },
-    { capability: "KNOWLEDGE_QA", title: "查询运维知识", description: "检索已发布运维资料和诊断经验。", prompt: "查询已发布的运维知识和历史诊断案例，并说明可供继续提问的主题。" },
+    { capability: "KNOWLEDGE_QA", title: "查询运维知识", description: "列出已发布资料、历史案例和可提问主题。", prompt: "列出当前 Agent 授权范围内已发布的运维资料和历史诊断案例，包括标题、类别、版本和可继续提问的主题。" },
   ];
 
   function availableCapabilityShortcuts() {

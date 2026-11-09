@@ -55,7 +55,7 @@ async def _eligible_case(service, *, uow, domain_id, agent_id, asset, version):
         return False
 
 
-def _snapshot(asset, version, index):
+def _catalog_snapshot(asset, version):
     profile = dict(version.profile_json or {})
     manifest = profile.get("knowledge_projection") or {}
     return {
@@ -63,6 +63,12 @@ def _snapshot(asset, version, index):
         "asset_kind": str(asset.asset_kind), "title": str(manifest.get("title") or asset.display_name),
         "version": int(version.version_no), "profile": profile,
         "created_at": getattr(version, "created_at", None),
+    }
+
+
+def _snapshot(asset, version, index):
+    return {
+        **_catalog_snapshot(asset, version),
         "index_ref_id": str(index.index_ref_id),
         **{key: str(getattr(index, key)) for key in
            ("document_id", "document_version_id", "ingestion_job_id", "parse_run_id", "index_generation_id")},
@@ -96,7 +102,7 @@ async def search_published_knowledge(
     service, *, domain_id, agent_id, request, context, target_id, filters, kc_scope,
 ):
     from aiops_agent.application.operations_knowledge import (
-        _profile_dimensions_from_profile, _catalog_topics_from_profile,
+        _profile_dimensions_from_profile,
     )
 
     async with service._uow_factory() as uow:
@@ -112,6 +118,10 @@ async def search_published_knowledge(
     scope = dict(domain_id=domain_id, target_id=target_id,
         source_kinds=request.source_kinds, knowledge_base_ids=knowledge_base_ids,
         max_security_level=request.max_security_level, scope_filters=filters)
+    if request.purpose == "CATALOG":
+        return await _published_catalog(service, domain_id=domain_id, agent_id=agent_id,
+            target_id=target_id, request=request, knowledge_base_ids=knowledge_base_ids,
+            scope=scope, budget=budget)
     snapshots, scanned, cursor, exhausted = [], 0, None, False
     # 短分页事务；禁止把 ORM 对象带到检索调用后再访问。
     while scanned < budget.max_candidates:
@@ -156,7 +166,7 @@ async def search_published_knowledge(
     case_search_context = None
 
     async def revalidate_snapshots():
-        """目录和正文输出使用同一当前授权／精确版本围栏，目录也不能泄漏撤权资产。"""
+        """正文输出复核当前授权和精确文档版本。"""
         current = set()
         async with service._uow_factory() as uow:
             checked = await _current_knowledge_authorization(
@@ -181,19 +191,6 @@ async def search_published_knowledge(
                     current.add((str(version.asset_version_id), str(index.document_version_id), str(index.parse_run_id), str(index.index_generation_id)))
         return [row for row in snapshots if (row["asset_version_id"], row["document_version_id"], row["parse_run_id"], row["index_generation_id"]) in current]
 
-    if request.purpose == "CATALOG":
-        catalog = await revalidate_snapshots()
-        if catalog is None:
-            return response("KNOWLEDGE_SCOPE_CHANGED", [], ["读取期间 Agent 知识授权或范围已变化，请重新检索。"])
-        results = [{
-            **{key: row[key] for key in ("asset_id", "asset_version_id", "asset_kind", "title", "version")},
-            "authority": "APPROVED_MANUAL" if row["asset_kind"] == "MANUAL" else row["profile"].get("case_kind"),
-            "applicability": "CATALOG", "topics": list(_catalog_topics_from_profile(row["profile"])),
-            "citation_pack": [],
-        } for row in catalog[:request.max_results]]
-        if len(catalog) > request.max_results:
-            warnings.append("目录仅显示本次请求的结果数，不代表全部已发布资产。")
-        return response("READY" if results else "NO_APPLICABLE_KNOWLEDGE", results)
     if any(row["asset_kind"] == "DIAGNOSIS_CASE" for row in snapshots):
         async with service._uow_factory() as uow:
             case_search_context = await load_case_search_context(
@@ -363,6 +360,72 @@ async def search_published_knowledge(
             break
     return response("READY" if results else "NO_APPLICABLE_KNOWLEDGE" if case_candidates else "NO_EVIDENCE_MATCH", results,
         () if results else ("当前发布范围没有形成可安全用于本次用途的正文结果",))
+
+
+async def _published_catalog(
+    service, *, domain_id, agent_id, target_id, request, knowledge_base_ids, scope, budget,
+):
+    """直接列出发布资料；不检索正文、不调用模型，也不宣称正文检索已就绪。"""
+    from aiops_agent.application.operations_knowledge import _catalog_topics_from_profile
+
+    snapshots, scanned, cursor, exhausted = [], 0, None, False
+    while scanned < budget.max_candidates:
+        page_size = min(budget.registry_page_size, budget.max_candidates - scanned)
+        async with service._uow_factory() as uow:
+            rows = await uow.operations_knowledge.list_published_catalog(
+                **scope, limit=page_size, after_asset_id=cursor,
+            )
+            for asset, version in rows:
+                scanned += 1
+                if await _eligible_case(service, uow=uow, domain_id=domain_id,
+                    agent_id=agent_id, asset=asset, version=version):
+                    snapshots.append(_catalog_snapshot(asset, version))
+            exhausted = len(rows) < page_size
+            if rows:
+                next_cursor = rows[-1][0].asset_id
+                if cursor is not None and next_cursor <= cursor:
+                    raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_CURSOR_CONFLICT",
+                        message="知识目录分页未前进，请刷新后重试", status_code=409)
+                cursor = next_cursor
+        if exhausted:
+            break
+    warnings = []
+    async with service._uow_factory() as uow:
+        checked = await _current_knowledge_authorization(
+            uow=uow, domain_id=domain_id, agent_id=agent_id, target_id=target_id, request=request,
+        )
+        if isinstance(checked, str) or checked != (request, knowledge_base_ids):
+            return {"status": "KNOWLEDGE_SCOPE_CHANGED", "results": [],
+                "warnings": ["读取期间 Agent 知识授权或范围已变化，请重新查询目录。"]}
+        if not exhausted:
+            remaining = await uow.operations_knowledge.list_published_catalog(
+                **scope, limit=1, after_asset_id=cursor,
+            )
+            exhausted = not remaining
+            if remaining:
+                warnings.append("资料范围超过本次目录预算，仅展示已扫描范围；请缩小知识库或资料范围。")
+        catalog = []
+        if snapshots:
+            rows = await uow.operations_knowledge.list_published_catalog(
+                **scope, limit=None,
+                asset_version_ids=tuple(UUID(row["asset_version_id"]) for row in snapshots),
+            )
+            for asset, version in rows:
+                if await _eligible_case(service, uow=uow, domain_id=domain_id,
+                    agent_id=agent_id, asset=asset, version=version):
+                    catalog.append(_catalog_snapshot(asset, version))
+    results = [{
+        **{key: row[key] for key in ("asset_id", "asset_version_id", "asset_kind", "title", "version")},
+        "authority": "APPROVED_MANUAL" if row["asset_kind"] == "MANUAL" else row["profile"].get("case_kind"),
+        "applicability": "CATALOG", "topics": list(_catalog_topics_from_profile(row["profile"])),
+        "citation_pack": [],
+    } for row in catalog[:request.max_results]]
+    if len(catalog) > request.max_results:
+        warnings.append("目录仅显示本次请求的结果数，不代表全部已发布资产。")
+    return {"status": "READY" if results else "NO_APPLICABLE_KNOWLEDGE",
+        "results": results, "warnings": warnings,
+        "coverage": {"scanned_candidates": scanned, "candidate_budget": budget.max_candidates,
+            "registry_scope_complete": exhausted, "discovery_shards": 0, "evidence_batches": 0}}
 
 
 async def _current_knowledge_authorization(*, uow, domain_id, agent_id, target_id, request):

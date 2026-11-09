@@ -6,7 +6,9 @@ from aiops_agent.application.report_source_revision import report_source_is_usab
 
 
 async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None, plan_capture_reader=None):
-    relations = await uow.operations_knowledge.get_version_relations(asset_version_id=version_id)
+    relations = await uow.operations_knowledge.get_version_relations(
+        asset_version_id=version_id, include_indexes=False,
+    )
     sources = relations.get("sources") or ()
     return await validate_case_source_rows(
         uow=uow, domain_id=domain_id, sources=sources, agent_id=agent_id,

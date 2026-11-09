@@ -419,7 +419,9 @@ RESOURCE_CATALOG_QUERY 只用于查询 authorized_business_systems 及其 resour
 来源、当前目标和结构化上下文，不得依靠领域产品名或固定关键词特判。
 
 用户要求列出、盘点已发布运维知识或说明可继续提问的主题时，为 KNOWLEDGE_QA 步骤设置
-parameters.query_mode=CATALOG；要求列出已发布历史诊断案例时，为 REPORT_CASE_QUERY 步骤设置同一参数。
+parameters.query_mode=CATALOG，直接展示授权范围内的资料标题、类别、版本和可继续提问的主题，
+不检索正文、不生成诊断结论；用户同时盘点运维资料与历史案例时也使用此目录能力，不重复规划案例步骤。
+仅盘点已发布历史诊断案例时，为 REPORT_CASE_QUERY 步骤设置同一参数。
 需要根据正文回答知识问题或按问题匹配相似案例时不设置该参数。正式报告不是历史案例，
 REPORT_CASE_QUERY 不得返回普通诊断报告、性能报告或巡检报告。
 

@@ -321,7 +321,11 @@ class AIOpsDomainOutboxSink:
             "aiops.turn.clarification_resolved",
         }:
             return
-        error_code = getattr(exc, "code", "AIOPS_INVESTIGATION_PLAN_FAILED")
+        safe_error = isinstance(exc, (AIOpsApplicationError, TurnPlanningStageError, StarterAdmissionError))
+        error_code = getattr(exc, "code", "AIOPS_INVESTIGATION_PLAN_FAILED") if safe_error else "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR"
+        public_message = str(exc) if safe_error else (
+            "本轮请求处理发生内部错误，请稍后重试；若仍失败，请将本轮错误编号提供给管理员。"
+        )
         # 阶段错误已经提取安全位置；不展开可能携带输入或 Prompt 的原始异常链。
         failure_logger = (
             logger if isinstance(exc, (TurnPlanningStageError, StarterAdmissionError))
@@ -348,7 +352,7 @@ class AIOpsDomainOutboxSink:
         await terminal_service.fail_terminal(
             payload,
             error_code=error_code,
-            error_message=str(exc),
+            error_message=public_message,
         )
 
     async def _create_verification_run(

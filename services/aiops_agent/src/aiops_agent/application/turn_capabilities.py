@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from loguru import logger
 
 from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.alert_query import (
@@ -134,12 +135,12 @@ class KnowledgeQuestionAdapter:
                 "当前 Agent 版本未启用运维知识问答。",
                 "KNOWLEDGE_POLICY_DISABLED",
             )
-        if catalog_mode and "MANUAL" not in policy.source_kinds:
+        if catalog_mode and not policy.source_kinds:
             return CapabilityResult(
                 capability,
                 False,
-                "当前 Agent 版本没有授权查询已发布运维手册。",
-                "KNOWLEDGE_MANUAL_POLICY_DISABLED",
+                "当前 Agent 版本没有授权查询运维资料或历史案例。",
+                "KNOWLEDGE_SOURCE_POLICY_DISABLED",
             )
         model_id = dict(runtime.get("models") or {}).get("composer_llm")
         if not catalog_mode and not model_id:
@@ -178,21 +179,26 @@ class KnowledgeQuestionAdapter:
                     purpose="CATALOG" if catalog_mode else "EXPLAIN",
                     knowledge_base_ids=policy.knowledge_base_ids,
                     tag_ids=tuple(str(item) for item in policy.tag_ids),
-                    source_kinds=("MANUAL",) if catalog_mode else policy.source_kinds,
+                    source_kinds=policy.source_kinds,
                     max_results=policy.maximum_references,
                     max_security_level=policy.max_security_level,
                 ),
             )
         except Exception:
+            logger.exception("运维资料目录查询失败：agent_id={}", runtime.get("agent_id"))
             return CapabilityResult(
                 capability,
                 False,
-                "运维知识检索暂时不可用，未生成无依据回答。",
+                "资料目录暂时无法读取，请稍后重试；这不表示没有已发布资料。",
                 "OPERATIONS_KNOWLEDGE_UNAVAILABLE",
             )
         if catalog_mode:
+            if result.get("status") not in {"READY", "NO_APPLICABLE_KNOWLEDGE"}:
+                return CapabilityResult(capability, False,
+                    "当前知识授权或资料范围不可用，请刷新后重新查询目录。",
+                    "KNOWLEDGE_CATALOG_SCOPE_UNAVAILABLE")
             evidence = []
-            lines = ["### 已发布运维知识"]
+            lines = ["### 已发布资料目录"]
             for item in result.get("results", ()):
                 topics = tuple(item.get("topics") or ())
                 topic_text = "、".join(str(topic) for topic in topics)
@@ -204,7 +210,7 @@ class KnowledgeQuestionAdapter:
                 evidence.append(
                     {
                         "label": f"K{len(evidence) + 1}",
-                        "source_kind": "KNOWLEDGE",
+                        "source_kind": "DIAGNOSIS_CASE" if item["asset_kind"] == "DIAGNOSIS_CASE" else "KNOWLEDGE",
                         "source_id": str(item["asset_version_id"]),
                         "title": str(item["title"]),
                         "quote": summary,
@@ -215,11 +221,15 @@ class KnowledgeQuestionAdapter:
                     }
                 )
                 lines.append(
-                    f"- {item['title']}（版本 {item['version']}）："
+                    f"- {item['title']}（{'历史诊断案例' if item['asset_kind'] == 'DIAGNOSIS_CASE' else '运维资料'}，版本 {item['version']}）："
                     f"{summary} [K{len(evidence)}]"
                 )
             if not evidence:
-                lines.append("- 当前 Agent 授权范围内没有已发布运维知识。")
+                if result.get("coverage", {}).get("registry_scope_complete") is False:
+                    lines.append("- 本轮已扫描范围内未列出可展示资料，可缩小知识库或资料范围后重试。")
+                else:
+                    lines.append("- 当前 Agent 授权范围内没有已发布运维资料或历史诊断案例。")
+            lines.extend(str(warning) for warning in result.get("warnings", ()))
             return CapabilityResult(
                 capability=capability,
                 supported=True,
@@ -428,6 +438,11 @@ class RuntimeQueryAdapter:
                             max_security_level=policy.max_security_level,
                         ),
                     )
+                    if catalog_mode and result.get("status") not in {"READY", "NO_APPLICABLE_KNOWLEDGE"}:
+                        case_gap = "KNOWLEDGE_CATALOG_SCOPE_UNAVAILABLE"
+                        lines.append("- 当前知识授权或资料范围已变化，请重新查询历史案例目录。")
+                        continue
+                    lines.extend(str(warning) for warning in result.get("warnings", ()))
                     for item in result.get("results", ()):
                         asset_version_id = str(item.get("asset_version_id") or "")
                         if not asset_version_id or asset_version_id in seen_cases:
@@ -473,10 +488,13 @@ class RuntimeQueryAdapter:
                             }
                         )
             except Exception:
+                logger.exception("历史案例查询失败：agent_id={}", runtime.get("agent_id"))
                 case_gap = "DIAGNOSIS_CASE_VIEW_UNAVAILABLE"
         elif "DIAGNOSIS_CASE" not in policy.source_kinds:
             case_gap = "DIAGNOSIS_CASE_POLICY_DISABLED"
-        if not case_count:
+        if case_gap:
+            lines.append("- 历史案例查询未完成，请检查当前知识授权或稍后重试；这不表示没有已发布案例。")
+        elif not case_count:
             lines.append("- 当前范围内没有符合条件的已发布历史诊断案例。")
         return CapabilityResult(
             AIOpsCapability.REPORT_CASE_QUERY,
