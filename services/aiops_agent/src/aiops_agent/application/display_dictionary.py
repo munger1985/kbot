@@ -175,6 +175,7 @@ _DISPLAY_NAMES = {
     "HISTORICAL": "历史分析",
     "HISTORICAL_AND_FORECAST": "历史分析与趋势预测",
     # 工作流与动作
+    "RESOURCE_COLLECTION": "资源周期采集",
     "ALERT_DIAGNOSIS": "告警诊断",
     "INSPECTION": "巡检",
     "CHAT_TURN": "对话诊断",

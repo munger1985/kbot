@@ -14,6 +14,7 @@ from aiops_agent.application.display_dictionary import (
     format_metric_value,
 )
 from aiops_agent.application.inspections.check_catalog import load_check_catalog
+from platform_core.contracts.aiops.types import WorkflowKind
 
 
 class AIOpsDisplayDictionaryTest(unittest.TestCase):
@@ -47,6 +48,24 @@ class AIOpsDisplayDictionaryTest(unittest.TestCase):
         }
 
         self.assertEqual(set(), missing)
+
+    def test_resource_collection_workflow_has_the_existing_product_label(self) -> None:
+        code = WorkflowKind.RESOURCE_COLLECTION.value
+
+        self.assertEqual("资源周期采集", AIOPS_DISPLAY_NAMES[code])
+        self.assertEqual("运行类型：资源周期采集", display_text(f"运行类型：{code}"))
+        self.assertEqual(
+            {code: "资源周期采集"},
+            dictionary_for_payload({"workflow_kind": code}),
+        )
+
+    def test_resource_collection_translation_preserves_technical_code(self) -> None:
+        code = WorkflowKind.RESOURCE_COLLECTION.value
+        text = f"类型为 {code}；原始值 `{code}`。"
+
+        self.assertEqual(f"类型为 资源周期采集；原始值 `{code}`。", display_text(text))
+        fenced = f"```json\n\"{code}\"\n```"
+        self.assertEqual(fenced, display_text(fenced))
 
     def test_registered_codes_are_fully_translated_in_answer_text(self) -> None:
         rendered = display_text(
