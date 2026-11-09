@@ -40,10 +40,42 @@ KBot 的 Oracle 测连返回 oracle-controlled-options.v1，却没有填充发�
 ## 本地验证
 
 两仓各自使用本仓源码路径运行：Oracle 只读探测、三引擎测连、同步/后台能力保存、
-连通性恢复、配置用例、资源采集授权、Oracle 快照及执行围栏共 192 项和 12 个子测试通过。
+连通性恢复、配置用例、资源采集授权、Oracle 快照、执行围栏及窗口查询共 216 项和 12 个子测试通过。
 两仓架构边界检查通过。
+补充报告入口和动作授权回归：45 项及 57 个子测试通过。
 
 额外运行 test_aiops_existing_plan_boundary.py 时，两仓均有 3 个执行计划展示断言失败。
 已分别从修改前 HEAD 导出隔离工作区复跑，均为相同的 38 通过、3 失败；
 失败涉及展示文案及 PostgreSQL/MySQL 只读估算策略，不是本次 Oracle 探测引入。
 本项未更改这些策略或测试，不将其计为通过。
+
+## KBot 线上发布与已确认结果
+
+- 本地修复提交 KBot 3e6d5b55、Ammolite a8452275 均已推送；kbotdev 的 KBot
+  仓库只快进拉取，保留已有未跟踪配置备份，没有在线修改源码。
+- 仅恢复 KBot AIOps API、Worker 两个受影响进程，Scheduler、DB Executor、
+  Main API 及 Ammolite 进程保持不变。四个 AIOps /ready、Main API 18099 /readyz、
+  Ammolite 19090 /readyz 复查均为 200。
+- 使用现有 request_target_connectivity_check 应用用例及原诊断凭据，在版本条件、
+  幂等审计下刷新两个目标；没有直接写入能力列表。两者均为 CONNECTED，
+  oracle-capabilities.v1 的十项视图检查全部 AVAILABLE，能力为
+  dba_catalog_views、dynamic_performance_views。
+- 前后能力与运行态保存在私有目录 /home/ubuntu/kbot4-oracle-capability-1yyese5u；
+  两个目标的既有失败次数及下一次调度时间未改变，不删除历史失败快照。
+- 额外通过相同诊断身份，在只读事务中执行现有目录的工作负载身份和 SQL 模板，
+  分别各返回 1 行和 10 行；不在日志或运维文档保留 SQL 正文、诊断用户名、密码或连接串。
+- 本次没有拉取或重启 Ammolite，也没有修改其线上目标配置；Ammolite 同类产品修复
+  已同步提交，线上发布状态不能据此宣称已更新。
+- 首个目标在 03:16:48、03:17:49 UTC 连续生成 READY 快照；由正常成功采集流程清除
+  采集错误、将连续失败计数归零。读取 15 分钟窗口、TOTAL_DURATION、DESC、limit=10，
+  基于上述两条可比较快照匹配 33 条 SQL，按耗时倒序返回 10 条。
+  修复前的历史窗口缺口仍如实报告，不把约一分钟增量冒称完整 15 分钟。
+- 第二个目标按原退避在 03:25:25、03:26:27 UTC 连续生成 READY 快照，未人为重置
+  计划时间或失败状态。最终复查两个目标分别已有 10 条、2 条新 READY 快照，
+  workload_last_error_code 均为空、连续失败均为 0，持久化探测版本仍为 oracle-capabilities.v1。
+- 最终按相同 15 分钟请求、TOTAL_DURATION / DESC / limit=10 读取窗口：
+  首个目标匹配 44 条、第二个匹配 19 条，均返回 10 条，排序检查通过。
+  实际可比较区间分别为 03:16:48–03:25:56、03:25:25–03:26:27 UTC。
+  查询仍如实标记修复前窗口缺口和有限热点候选集，不承诺全库完整榜单。
+- 四个 AIOps /ready 最终均为 200；03:14 UTC 之后的在线 ERROR 日志查询为空。
+  这些就绪结果之外，以上实际快照、语句行和窗口排名共同构成本轮端到端验收。
