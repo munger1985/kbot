@@ -96,13 +96,14 @@ def test_postgresql_capture_forces_generic_plan_and_does_not_use_analyze_or_orig
         native = [{"Plan": {"Node Type": "Index Scan", "Schema": "mes", "Relation Name": "equipment", "Plan Rows": 1,
             "Index Cond": "secret=$1", "Total Cost": 2}}]
         connection = SimpleNamespace(fetch=AsyncMock(return_value=[source]), execute=AsyncMock(),
+            get_server_version=lambda: SimpleNamespace(major=16),
             fetchval=AsyncMock(side_effect=[42, 1, json.dumps(native)]))
         parameters = {**{key: source[key] for key in ("query_id", "database_oid", "user_oid", "top_level")},
             "source_sql_sha256": canonical_hash(sql)}
         resolved = next(item for item in DiagnosticRegistry.load().tools if item.definition.tool_id == "db.postgresql.statement.plan")
         rows = await postgresql_statement_plan(connection, source_sql=resolved.sql, parameters=parameters)
         assert len(rows) == 1 and "secret" not in rows[0][2]
-        assert connection.fetchval.await_args.args[0] == "EXPLAIN (FORMAT JSON, VERBOSE TRUE) EXECUTE aiops_statement_plan(NULL)"
+        assert connection.fetchval.await_args.args[0] == "EXPLAIN (GENERIC_PLAN TRUE, FORMAT JSON, VERBOSE TRUE) EXECUTE aiops_statement_plan(NULL)"
         commands = [call.args[0] for call in connection.execute.await_args_list]
         assert "SET LOCAL plan_cache_mode = force_generic_plan" in commands
         assert "PREPARE aiops_statement_plan AS " + sql in commands

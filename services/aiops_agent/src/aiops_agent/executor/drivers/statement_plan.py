@@ -72,6 +72,19 @@ def safe_plan_row(native_json, *, database_type, subject, source_hash):
                 native = [{key: value for key, value in native[0].items() if key != "Query Identifier"}]
             elif isinstance(native, dict):
                 native = {key: value for key, value in native.items() if key != "Query Identifier"}
+            root = native[0] if isinstance(native, list) and len(native) == 1 else native
+            pending = [root.get("Plan")] if isinstance(root, dict) else []
+            for _ in range(129):
+                if not pending:
+                    break
+                node = pending.pop()
+                if not isinstance(node, dict):
+                    continue
+                if node.get("Subplans Removed"):
+                    raise DiagnosticDriverError("SQL_PLAN_PARTITION_PRUNING_INCOMPLETE")
+                children = node.get("Plans", [])
+                if isinstance(children, list):
+                    pending.extend(children)
         document = parse_sql_plan_json(json.dumps({"schema_version": "SQL_PLAN_IMPORT.v1",
             "database_type": database_type, "subject": subject, "plan": native}, ensure_ascii=False))
         if document.runtime_statistics != "NONE":
@@ -102,8 +115,10 @@ async def postgresql_statement_plan(connection, *, source_sql, parameters):
     if not isinstance(count, int) or not 0 <= count <= 64:
         raise DiagnosticDriverError("SQL_PLAN_PARAMETER_LIMIT")
     arguments = "(" + ",".join("NULL" for _ in range(count)) + ")" if count else ""
-    # 不使用 ANALYZE；force_generic_plan 禁止把 NULL 当作业务参数生成特化计划。
-    native = await connection.fetchval("EXPLAIN (FORMAT JSON, VERBOSE TRUE) EXECUTE aiops_statement_plan" + arguments)
+    # 不使用 ANALYZE；PG16+ 的 GENERIC_PLAN 同时禁止占位参数在初始化时裁剪分区子计划。
+    # PG14/15 仍强制 generic；若占位触发分区裁剪，归一化层拒绝残缺计划而不猜业务参数。
+    generic = "GENERIC_PLAN TRUE, " if connection.get_server_version().major >= 16 else ""
+    native = await connection.fetchval("EXPLAIN (" + generic + "FORMAT JSON, VERBOSE TRUE) EXECUTE aiops_statement_plan" + arguments)
     subject = {key: source[key] for key in ("query_id", "database_oid", "user_oid", "top_level") if key in source}
     return (safe_plan_row(native, database_type="POSTGRESQL", subject=subject,
         source_hash=parameters["source_sql_sha256"]),)

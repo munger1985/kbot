@@ -50,11 +50,13 @@ def test_condition_or_case_does_not_hide_unsupported_function(sql):
     assert error.value.code == "SQL_PLAN_FUNCTION_UNSUPPORTED"
 
 
-def test_parameterized_conditions_reach_generic_explain_without_executing_business_sql():
+@pytest.mark.parametrize("server_major", [14, 15, 16, 17])
+def test_parameterized_conditions_reach_generic_explain_without_executing_business_sql(server_major):
     async def exercise():
         sql="SELECT metric_value FROM mes.signal WHERE equipment_id=$1 AND metric_id=$2 ORDER BY observed_at DESC LIMIT $3"
         source=dict(query_id="-6589067333046971749",database_oid=42,user_oid=11,top_level=True,source_sql=sql)
         connection=SimpleNamespace(fetch=AsyncMock(return_value=[source]),execute=AsyncMock(),
+            get_server_version=lambda:SimpleNamespace(major=server_major),
             fetchval=AsyncMock(side_effect=[42,3,[{"Plan":{"Node Type":"Limit","Plan Rows":1},
                 "Query Identifier":5378376035200847435}]]))
         params={key:source[key] for key in ("query_id","database_oid","user_oid","top_level")}
@@ -65,7 +67,8 @@ def test_parameterized_conditions_reach_generic_explain_without_executing_busine
         assert json.loads(result[0][0]) == {"query_id":"-6589067333046971749",
             "database_oid":"42","user_oid":"11","top_level":True}
         assert result[0][1] == params["source_sql_sha256"]
-        assert connection.fetchval.await_args.args[0]=="EXPLAIN (FORMAT JSON, VERBOSE TRUE) EXECUTE aiops_statement_plan(NULL,NULL,NULL)"
+        generic="GENERIC_PLAN TRUE, " if server_major>=16 else ""
+        assert connection.fetchval.await_args.args[0]=="EXPLAIN ("+generic+"FORMAT JSON, VERBOSE TRUE) EXECUTE aiops_statement_plan(NULL,NULL,NULL)"
         commands=[call.args[0] for call in connection.execute.await_args_list]
         assert "SET LOCAL plan_cache_mode = force_generic_plan" in commands
         assert not any(command.startswith("EXECUTE ") or "ANALYZE" in command for command in commands)
@@ -88,10 +91,18 @@ def test_fixed_estimate_binds_verified_source_but_uploaded_native_identity_remai
             "database_type":"POSTGRESQL","subject":subject,"plan":native}))
 
 
+def test_placeholder_pruned_partitions_cannot_be_presented_as_complete_estimate():
+    native=[{"Plan":{"Node Type":"Append","Subplans Removed":12,"Plans":[]}}]
+    with pytest.raises(DiagnosticDriverError) as error:
+        safe_plan_row(native,database_type="POSTGRESQL",subject={"query_id":"42"},source_hash="a"*64)
+    assert error.value.code=="SQL_PLAN_PARTITION_PRUNING_INCOMPLETE"
+
+
 @pytest.mark.parametrize("code", [
     "SQL_PLAN_FUNCTION_UNSUPPORTED","SQL_PLAN_PARSE_CONTEXT_REQUIRED","SQL_PLAN_STATEMENT_UNSUPPORTED",
     "SQL_PLAN_SUBJECT_AMBIGUOUS","SQL_PLAN_SOURCE_CHANGED","SQL_PLAN_DATABASE_MISMATCH",
     "SQL_PLAN_PARAMETER_LIMIT","SQL_PLAN_PARAMETER_TYPES_UNAVAILABLE","SQL_PLAN_OUTPUT_INVALID","SQL_PLAN_EXECUTION_CHANGED",
+    "SQL_PLAN_PARTITION_PRUNING_INCOMPLETE",
 ])
 def test_plan_failure_retains_specific_receipt_and_readable_reason(code):
     detail=_database_gap_detail(code)
