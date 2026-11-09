@@ -5,6 +5,12 @@
 
 每个操作必须在文件头说明影响范围、前置条件、是否包含敏感数据以及失败后的恢复方式。
 
+资源采集 Run 的两列 Agent 空值约束使用
+`scripts/deployment/align_aiops_resource_collection.py` 显式定向对齐；默认只读，写入需要
+目标计划指纹和私有审计目录。仅放宽 `KBOT_OPS_RUN.AGENT_ID`、`AGENT_VERSION_ID`，
+不改历史数据、主外键、索引或 Schema 版本。执行及失败处理见
+`docs/operations/aiops-oracle-resource-collection-alignment.md`，不得运行全库初始化代替。
+
 `apply_aiops_schema_20.sql` 用于已有测试数据不能重建时，将 AIOps Schema 19 原地升级到
 Schema 20。执行前必须停止 AIOps API、Worker 和 DB Executor，并完成 Schema 备份；脚本保留
 历史数据，但会关闭历史 Agent–Target 的受控执行，升级后需要在 Agent 页面重新明确授权。
