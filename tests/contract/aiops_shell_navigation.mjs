@@ -170,3 +170,14 @@ test("固定入口与组内链接都保留源模板的图标结构，当前主�
     assert.match(content, /<span class="nav-item-label">/);
   }
 });
+
+test("通知入口遵循使用权限，用户管理仅对成员管理员开放", () => {
+  const viewer = setup("chat", ["aiops:use"]);
+  assert.match(viewer.markup, /href="\.\/notification-channels\.html"/);
+  assert.match(viewer.markup, /href="\.\/notification-delivery\.html"/);
+  assert.doesNotMatch(viewer.markup, /href="\.\/users\.html"/);
+  const manager = setup("users", ["aiops:member_manage"]);
+  assert.match(manager.markup, /href="\.\/users\.html" aria-current="page"/);
+  assert.doesNotMatch(manager.markup, /href="\.\/notification-delivery\.html"/);
+  assert.deepEqual(manager.openKeys(), ["configuration-governance"]);
+});
