@@ -103,6 +103,7 @@ body.aiops-static-page dialog.reference-drawer {
 }
 body.aiops-static-page dialog.reference-drawer::backdrop { background: rgb(20 35 27 / 30%); backdrop-filter: blur(2px); }
 body.aiops-static-page dialog.reference-drawer[open] { display: flex; flex-direction: column; }
+body.aiops-static-page #agent-dialog { width: min(1120px,100vw); }
 body.aiops-static-page :is(#diagnostic-source-dialog,#source-webhook-drawer) { width: min(760px,100vw); padding: var(--drawer-block-gutter) var(--drawer-inline-gutter); overflow-y: auto; box-shadow: -18px 0 42px rgb(22 43 31 / 16%); }
 body.aiops-static-page :is(#diagnostic-source-dialog,#source-webhook-drawer)::backdrop { background: rgb(20 35 27 / 26%); }
 body.aiops-static-page #source-webhook-drawer[open] { display: block; }

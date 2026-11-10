@@ -819,7 +819,7 @@
       "tool_id": "db.mysql.statement.digest.top",
       "tool_version": "1.0.0",
       "variant": "mysql_8_digest",
-      "template_sha256": "363b7a7d1c49d4c84213b443199d43f7c3961dc61e0ad12ec04cfd5901aea4cd",
+      "template_sha256": "5b30033a9f4fcbd072ab83358dda002c2f738b324b16e5543ed73d64d1b801ba",
       "profile": "mysql_digest_top",
       "output_columns": [["schema_name","STRING"],["digest","STRING"],["digest_text","STRING"],["query_sample_text","STRING"],["execution_count","INTEGER"],["total_latency_picoseconds","DECIMAL"],["average_latency_picoseconds","DECIMAL"],["maximum_latency_picoseconds","DECIMAL"],["lock_time_picoseconds","DECIMAL"],["rows_examined","INTEGER"],["rows_sent","INTEGER"],["temp_disk_tables","INTEGER"]]
     },

@@ -21,7 +21,13 @@
 @media(max-width:560px){:is([data-page="situations"]) .aiops-situation-kicker{align-items:flex-start;flex-direction:column;gap:6px}:is([data-page="situations"]) .aiops-situation-action-header{padding:12px 16px}:is([data-page="situations"]) .aiops-situation-mode-switch{width:100%}:is([data-page="situations"]) .aiops-situation-mode-switch button{flex:1}:is([data-page="situations"]) .aiops-situation-result-summary{flex-direction:column}:is([data-page="situations"]) .aiops-diagnosis-statuses{justify-content:flex-start;max-width:100%}:is([data-page="situations"]) .aiops-situation-handoff{align-items:stretch;grid-template-columns:1fr}:is([data-page="situations"]) .aiops-situation-handoff button{width:100%}:is([data-page="situations"]) .aiops-continuation-actions{align-items:stretch;flex-direction:column}:is([data-page="situations"]) .aiops-continuation-actions>div,:is([data-page="situations"]) .aiops-continuation-actions button{width:100%}}
 
 /* business/AIOpsTurnResultView.vue */
-:is([data-page="situations"]) .ops-analysis, :is([data-page="situations"]) .ops-solution, :is([data-page="situations"]) .ops-fact-confirmation, :is([data-page="situations"]) .ops-html-report-readonly, :is([data-page="situations"]) .ops-proposal-readonly {
+:is([data-page="situations"]) .ops-analysis, :is([data-page="situations"]) .ops-solution {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+:is([data-page="situations"]) .ops-fact-confirmation, :is([data-page="situations"]) .ops-html-report-readonly, :is([data-page="situations"]) .ops-proposal-readonly {
   margin: 0 0 16px;
   padding: 13px 15px;
   border: 1px solid var(--line);

@@ -96,7 +96,13 @@
 @media (max-width:680px) { :is([data-page="dashboard"]) .work-item-processing-content { padding:18px; } }
 
 /* business/AIOpsTurnResultView.vue */
-:is([data-page="dashboard"]) .ops-analysis, :is([data-page="dashboard"]) .ops-solution, :is([data-page="dashboard"]) .ops-fact-confirmation, :is([data-page="dashboard"]) .ops-html-report-readonly, :is([data-page="dashboard"]) .ops-proposal-readonly {
+:is([data-page="dashboard"]) .ops-analysis, :is([data-page="dashboard"]) .ops-solution {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+:is([data-page="dashboard"]) .ops-fact-confirmation, :is([data-page="dashboard"]) .ops-html-report-readonly, :is([data-page="dashboard"]) .ops-proposal-readonly {
   margin: 0 0 16px;
   padding: 13px 15px;
   border: 1px solid var(--line);

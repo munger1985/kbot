@@ -42,7 +42,7 @@
 :is([data-page="operations-knowledge"]) .knowledge-tag-option input { margin-top:3px; }
 :is([data-page="operations-knowledge"]) .knowledge-tag-option > span { display:grid; min-width:0; gap:3px; }
 :is([data-page="operations-knowledge"]) .knowledge-tag-option small { color:var(--muted); }
-:is([data-page="operations-knowledge"]) .knowledge-tag-option em { color:var(--brand); font-size:11px; font-style:normal; font-weight:700; }
+:is([data-page="operations-knowledge"]) .knowledge-tag-option em { color:var(--brand); font-size:12px; font-style:normal; font-weight:700; }
 :is([data-page="operations-knowledge"]) .knowledge-tag-evidence { grid-column:1/-1; display:grid; gap:5px; margin:0 0 4px 27px; padding:10px 12px; border-left:3px solid color-mix(in srgb,var(--brand) 46%,var(--line)); color:var(--muted); background:var(--surface); }
 :is([data-page="operations-knowledge"]) .knowledge-tag-evidence small { color:var(--faint); }
 :is([data-page="operations-knowledge"]) .knowledge-tag-evidence q { color:var(--ink); font-size:12px; line-height:1.6; }
@@ -51,7 +51,7 @@
 :is([data-page="operations-knowledge"]) .knowledge-source-card > div { display:grid; min-width:0; gap:4px; }
 :is([data-page="operations-knowledge"]) .knowledge-source-card strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 :is([data-page="operations-knowledge"]) .knowledge-source-card small { color:var(--muted); }
-:is([data-page="operations-knowledge"]) .knowledge-source-card code { overflow:hidden; color:var(--faint); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+:is([data-page="operations-knowledge"]) .knowledge-source-card code { overflow:hidden; color:var(--faint); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
 :is([data-page="operations-knowledge"]) .knowledge-source-actions { display:flex; grid-column:1/-1; justify-content:flex-end; }
 :is([data-page="operations-knowledge"]) .knowledge-technical-list { display:grid; grid-template-columns:100px minmax(0,1fr); grid-column:1/-1; gap:10px 16px; margin:0; }
 :is([data-page="operations-knowledge"]) .knowledge-technical-list dt { color:var(--muted); }

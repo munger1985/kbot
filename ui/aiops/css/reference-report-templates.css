@@ -9,4 +9,4 @@
   :is([data-page="report-templates"]) .aiops-template-switch { margin-left:0; }
   :is([data-page="report-templates"]) .aiops-section-editor { grid-template-columns:1fr; }
 }
-:is([data-page="report-templates"]) .aiops-version-list pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; font-size:11px; }
+:is([data-page="report-templates"]) .aiops-version-list pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; font-size:12px; }

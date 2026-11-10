@@ -17,7 +17,7 @@ body[data-page="agents"] { background:var(--canvas); }
 .management-catalog-actions { margin-top:auto; }
 .agent-editor-panel,.agent-picker { max-width:none;max-height:none;margin:0 0 0 auto;padding:0;border:0;border-left:1px solid var(--line);color:var(--ink);background:var(--canvas); }
 .agent-editor-panel[open] { display:flex; }
-.agent-editor-panel { border-radius:8px;box-shadow:-18px 0 42px rgba(22,43,31,.16); }
+body[data-page="agents"] .agent-editor-panel { width:min(1120px,100vw);border-radius:0;box-shadow:-18px 0 42px rgba(22,43,31,.16); }
 .agent-editor-panel:not([open]),.agent-picker:not([open]) { display:none; }
 .agent-editor-panel::backdrop,.agent-picker::backdrop { background:rgba(20,35,27,.26);backdrop-filter:blur(2px); }
 .admin-drawer-header { display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:1px solid var(--line); }

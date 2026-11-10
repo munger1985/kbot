@@ -10,7 +10,13 @@
 }
 
 /* business/AIOpsTurnResultView.vue */
-:is([data-page="runs"]) .ops-analysis, :is([data-page="runs"]) .ops-solution, :is([data-page="runs"]) .ops-fact-confirmation, :is([data-page="runs"]) .ops-html-report-readonly, :is([data-page="runs"]) .ops-proposal-readonly {
+:is([data-page="runs"]) .ops-analysis, :is([data-page="runs"]) .ops-solution {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+:is([data-page="runs"]) .ops-fact-confirmation, :is([data-page="runs"]) .ops-html-report-readonly, :is([data-page="runs"]) .ops-proposal-readonly {
   margin: 0 0 16px;
   padding: 13px 15px;
   border: 1px solid var(--line);

@@ -152,11 +152,11 @@ test("报告中心独立位于运维工作与知识资产之间，报告详情�
   assert.doesNotMatch(setup("reports", ["aiops:agent_manage"]).markup, /href="\.\/reports\.html"/);
 });
 
-test("配置与治理的七项名称、顺序、链接不变，知识内容入口使用独立名称", () => {
+test("配置与治理保留原七项并追加通知入口，知识内容入口使用独立名称", () => {
   const {markup} = setup("chat");
   const configuration = markup.split('data-group-key="configuration-governance"')[1].split('</section>')[0];
   const actual = [...configuration.matchAll(/href="\.\/([^".]+)\.html"[\s\S]*?class="nav-item-label">([^<]+)</g)].map(([,page,label]) => [page,label]);
-  assert.deepEqual(actual, [["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"]]);
+  assert.deepEqual(actual, [["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"], ["notification-channels", "通知渠道"], ["notification-delivery", "通知投递"]]);
   assert.match(markup, /href="\.\/cases\.html"[\s\S]*?>诊断案例库<\/span>/);
   assert.match(markup, /href="\.\/operations-knowledge\.html"[\s\S]*?>运维资料库<\/span>/);
 });
@@ -164,7 +164,7 @@ test("配置与治理的七项名称、顺序、链接不变，知识内容入�
 test("固定入口与组内链接都保留源模板的图标结构，当前主题决定可见性", () => {
   const app = setup("chat");
   const links = [...app.markup.matchAll(/<a class="nav-item business-nav-item[^>]*>([\s\S]*?)<\/a>/g)];
-  assert.equal(links.length, 16);
+  assert.equal(links.length, 18);
   for (const [, content] of links) {
     assert.match(content, /<span class="nav-item-icon"><svg[^>]*>[\s\S]*?<path d="[^"]+"/);
     assert.match(content, /<span class="nav-item-label">/);

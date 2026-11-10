@@ -165,7 +165,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         pages = manifest["pages"]
         self.assertEqual({path.stem for path in AIOPS_ROOT.glob("*.html")}, set(pages))
         self.assertFalse(any(entry.get("pending_decision") for entry in pages.values()))
-        self.assertEqual({"api-clients", "login"}, {name for name, entry in pages.items() if entry.get("platform_difference")})
+        self.assertEqual({"api-clients", "login", "notification-channels", "notification-delivery", "notification-settings", "notification-open", "users"}, {name for name, entry in pages.items() if entry.get("platform_difference")})
         runner = (ROOT / "tests" / "contract" / "aiops_page_alignment.mjs").read_text(encoding="utf-8")
         default_pages = re.search(r'process\.env\.AIOPS_PAGES \|\| "([^"]+)"', runner).group(1).split(",")
         ready_pages = {name for name, entry in pages.items() if entry["sources"] and not entry.get("pending_decision")}
@@ -260,6 +260,10 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 self.assertIn('class="app-page-head"', page)
             elif path.name == "business-system-workspace.html":
                 self.assertIn('class="workspace-head"', page)
+            elif path.name == "notification-open.html":
+                self.assertIn('id="entry-status" role="status"', page)
+                self.assertIn('aiops-notification-entry.js', page)
+                self.assertNotIn('aiops-shell.js', page)
             elif path.name in {"situations.html", "work-item-detail.html", "inspections.html", "reports.html", "inspection-plans.html", "runs.html"}:
                 self.assertIn('class="platform-home-header"', page)
                 self.assertIn('class="platform-home-hero app-page-head"', page)
@@ -280,6 +284,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "inspection-plans", "inspection-plan-detail",
         "report-templates",
         "api-clients",
+        "notification-channels", "notification-delivery", "notification-settings", "notification-open", "users",
         "login",
     }
 
@@ -297,8 +302,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261105_confirm1"
-        pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
+        expected = "./js/aiops-shell.js?v=20261106_2"
+        pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name not in {"login.html", "notification-open.html"}]
         for path in pages:
             parser = _Parser()
             parser.feed(path.read_text(encoding="utf-8"))
@@ -464,7 +469,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("数据库容量使用率趋势", script)
         stylesheet = (AIOPS_ROOT / "css" / "reference-monitoring.css").read_text(encoding="utf-8")
         self.assertIn(".monitoring-panels .monitoring-panel", stylesheet)
-        self.assertIn("reference-monitoring.css?v=20261104_4", page)
+        self.assertIn("reference-monitoring.css?v=20261110_release1", page)
         self.assertIn(".aiops-monitoring-page .monitoring-dashboard-main > .monitoring-observation-card:hover { transform:none; }", stylesheet)
         self.assertIn(".monitoring-panel:hover { box-shadow:var(--card-shadow-hover); transform:translateY(var(--card-hover-offset)); }", stylesheet)
         self.assertIn("@media (prefers-reduced-motion:reduce)", stylesheet)
@@ -803,16 +808,16 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261029_3", "20261104_1"),
-            "situations": ("20261029_3", "20261104_1"),
+            "chat": ("20261029_3", "20261109_common"),
+            "situations": ("20261029_3", "20261105_confirm1"),
         }
         for page_name, (stylesheet_version, script_version) in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
                 encoding="utf-8"
             )
             self.assertIn(f"workspaces.css?v={stylesheet_version}", page)
-            self.assertIn("aiops-shell.js?v=20261105_confirm1", page)
-            self.assertIn("aiops-workspaces.js?v=20261105_confirm1", page)
+            self.assertIn("aiops-shell.js?v=20261106_2", page)
+            self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
         self.assertIn("reference-inspections.css?v=20261103_1", inspections)
         self.assertIn("aiops-workspaces.js?v=20261105_confirm1", inspections)
