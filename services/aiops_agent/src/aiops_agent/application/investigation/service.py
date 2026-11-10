@@ -796,6 +796,8 @@ class TurnPlanningService:
             strategy = EvidenceSourceStrategy.COMBINED
         actions: list[InvestigationAction] = []
         if kind == "AWR_DIFF":
+            from aiops_agent.application.native_reports import report_time_parameters
+            parameters = report_time_parameters("oracle.report.awr-diff", parameters, "", reference_time=datetime.now(UTC))
             actions = [
                 InvestigationAction(
                     action_id="a1",
@@ -852,7 +854,12 @@ class TurnPlanningService:
                     action_id="a5",
                     question="生成两个等长区间的 AWR 对比报告",
                     tool_id="db.oracle.awr.diff_report",
-                    input={},
+                    input={
+                        "baseline_begin_snapshot_id": parameters["first_begin_time"],
+                        "baseline_end_snapshot_id": parameters["first_end_time"],
+                        "after_begin_snapshot_id": parameters["second_begin_time"],
+                        "after_end_snapshot_id": parameters["second_end_time"],
+                    },
                     expected_evidence_kind="AWR_DIFF_REPORT",
                     measurement_semantics=(
                         MeasurementSemantics.SNAPSHOT_DELTA
@@ -903,6 +910,23 @@ class TurnPlanningService:
                         deferred=(tool_id == "db.oracle.awr.report"),
                     )
                 )
+        include_analysis = bool(context.conversation_starter.get("include_analysis")) and kind in {"AWR_REPORT", "AWR_DIFF"}
+        if include_analysis:
+            from aiops_agent.application.diagnosis.awr_facts import AWR_FACT_TOOL_IDS
+            windows = tuple(dict(action.input) for action in actions if action.tool_id == "db.oracle.awr.report")
+            for tool_id in sorted(AWR_FACT_TOOL_IDS):
+                for window in windows:
+                    actions.append(InvestigationAction(
+                        action_id=f"a{len(actions) + 1}", question="采集报告窗口内的负载、等待及 SQL 统计，用于用户要求的分析",
+                        tool_id=tool_id, input=window, expected_evidence_kind="AWR_WINDOW_FACTS",
+                        measurement_semantics=MeasurementSemantics.SNAPSHOT_DELTA,
+                        depends_on=("a2",), deferred=True,
+                    ))
+                completion_requirements = (*completion_requirements, CompletionRequirement(
+                    requirement_id=f"r{len(completion_requirements) + 1}", description="取得各报告窗口的 AWR 结构化分析事实",
+                    accepted_tool_ids=(tool_id,), minimum_successful_results=len(windows),
+                ))
+            tool_ids = (*tool_ids, *sorted(AWR_FACT_TOOL_IDS))
         output = InvestigationPlanningOutput(
             input_envelope=TurnInputEnvelope(
                 materials=(
@@ -944,6 +968,7 @@ class TurnPlanningService:
                         kind if kind in {"TOP_SQL_LIST", "CURRENT_SQL_LIST", "ALERT_LOG_LIST", "AWR_REPORT", "ASH_REPORT", "AWR_DIFF"}
                         else None
                     ),
+                    **({"report_analysis_requested": True} if include_analysis else {}),
                 },
                 requires_change=False,
             ),

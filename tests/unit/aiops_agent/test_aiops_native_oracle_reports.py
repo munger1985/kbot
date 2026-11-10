@@ -10,6 +10,7 @@ import oracledb
 import pytest
 
 from aiops_agent.application.native_reports import REPORT_STARTERS, native_report_html
+from aiops_agent.application.native_reports import report_time_parameters
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment, TurnEvidenceFact, TurnEvidenceGap, AIOpsTurnResult
 from aiops_agent.executor.drivers.oracle import OracleDiagnosticDriver
 from aiops_agent.executor.drivers.base import DiagnosticDriverError
@@ -256,6 +257,90 @@ def test_diff_never_completes_when_plan_only_contains_baseline_reports():
     result = asyncio.run(DbaAnswerComposeHandler(model_client=None, prompts=None).execute(ctx))
     assert result.status == "PARTIAL"
     assert "对比报告未生成" in result.blocks[0].payload["markdown"]
+
+
+def test_natural_language_report_dates_override_stale_model_context():
+    value = report_time_parameters("oracle.report.awr-diff", {
+        "first_begin_time": "2026-11-09T08:00:00+08:00", "first_end_time": "2026-11-09T09:00:00+08:00",
+        "second_begin_time": "2026-11-08T08:00:00+08:00", "second_end_time": "2026-11-08T09:00:00+08:00",
+    }, "生成今天8点到9点的awr报告，然后和昨天同期对比并分析",
+        reference_time=datetime.fromisoformat("2026-11-10T01:55:40+00:00"))
+    assert value["first_begin_time"] == "2026-11-09T08:00:00+08:00"
+    assert value["second_begin_time"] == "2026-11-10T08:00:00+08:00"
+
+
+def test_compound_report_plan_binds_and_passes_actual_tool_contracts():
+    from aiops_agent.application.investigation.service import TurnPlanningService
+    from aiops_agent.application.investigation.discovery import rewrite_incomplete_discovery_actions
+    from aiops_agent.application.investigation.discovery_binding import decide_discovery_continuation
+    from aiops_agent.tools import ToolExecutionSnapshotBuilder
+    from aiops_agent.diagnostics import DiagnosticRegistry
+    from aiops_agent.playbooks import PlaybookRegistry
+    from platform_core.contracts.aiops.playbooks import DbaCapabilitySnapshot
+    caps = DbaCapabilitySnapshot(agent_id=str(uuid7()), agent_version_id=str(uuid7()), target_id=str(uuid7()),
+        database_type="ORACLE", database_version="19c", target_capabilities=("DB_READONLY",),
+        target_enabled=True, target_reachable=True)
+    builder = ToolExecutionSnapshotBuilder(playbook_registry=PlaybookRegistry.load(), diagnostic_registry=DiagnosticRegistry.load())
+    tools = builder.discover_tools(caps)
+    service = object.__new__(TurnPlanningService)
+    question = "生成今天8点到9点的awr报告，然后和昨天同期对比并分析"
+    ctx = SimpleNamespace(question=question, target_context={"db_type": "ORACLE"},
+        conversation_starter={"starter_id": "oracle.report.awr-diff", "include_analysis": True})
+    output, _ = service._starter_diagnostic_output(context=ctx, kind="AWR_DIFF", planning={}, title="生成 AWR 对比报告",
+        parameters={"first_begin_time": "2026-11-10T08:00:00+08:00", "first_end_time": "2026-11-10T09:00:00+08:00",
+                    "second_begin_time": "2026-11-09T08:00:00+08:00", "second_end_time": "2026-11-09T09:00:00+08:00"})
+    with patch("aiops_agent.application.investigation.discovery_binding._product_now", return_value=datetime.fromisoformat("2026-11-11T09:55:40+08:00")):
+        output = rewrite_incomplete_discovery_actions(investigation=output, available_tools=tools) or output
+    assert len(output.plan.actions) == 11
+    assert output.task_frame.subject_ref["report_analysis_requested"]
+    result = {"schema_version": "DBA_TOOL_RESULT.v1", "tool_outcomes": [{"tool_id": "db.oracle.awr.snapshots", "status": "SUCCEEDED",
+        "observation": {"columns": [{"name": name} for name in ("snapshot_id", "instance_number", "end_time", "startup_time")],
+            "rows": [[714, 1, "2026-11-09T00:00:50+00:00", "2026-11-02T12:00:54+00:00"],
+                     [715, 1, "2026-11-09T01:00:24+00:00", "2026-11-02T12:00:54+00:00"],
+                     [738, 1, "2026-11-10T00:00:50+00:00", "2026-11-02T12:00:54+00:00"],
+                     [739, 1, "2026-11-10T01:00:24+00:00", "2026-11-02T12:00:54+00:00"]]}}]}
+    bound = decide_discovery_continuation(plan=output.plan, tool_results=(result,), available_tools=tools, question=question)
+    assert bound.action == "CONTINUE" and not bound.binding.unbound_action_ids
+    assert len(bound.continuation_actions) == 9
+    normalized = builder.validate_direct_actions(actions=bound.continuation_actions, capabilities=caps)
+    assert normalized["a5"] == {"baseline_begin_snapshot_id": 714, "baseline_end_snapshot_id": 715,
+                                "after_begin_snapshot_id": 738, "after_end_snapshot_id": 739}
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_explicit_report_analysis_streams_once_and_never_loses_files_or_text(interrupted):
+    from aiops_agent.adapters.model_serving import AIOpsModelError
+    load = fact("db.oracle.awr.load_profile").model_copy(update={
+        "columns": ({"name": "snapshot_id"}, {"name": "metric_name"}, {"name": "total_value"}),
+        "rows": ((739, "DB time", 0.5),),
+    })
+    values = (fact("db.oracle.awr.diff_report"), load)
+    assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=values)
+    ctx = context("oracle.report.awr-diff", assessment)
+    ctx.plan_snapshot["answer_context"]["task_frame"]["subject_ref"]["report_analysis_requested"] = True
+    calls = []
+    async def stream(**kwargs):
+        calls.append(kwargs)
+        yield "两段窗口内数据库负载较低，"
+        yield "[E"
+        yield "1]未发现明显等待堆积。"
+        if interrupted:
+            raise AIOpsModelError("MODEL_STREAM_INTERRUPTED")
+    model = SimpleNamespace(stream_text=stream, generate_structured=AsyncMock(side_effect=AssertionError("不得重复生成")))
+    prompt = SimpleNamespace(content="test", ref=lambda: {})
+    handler = DbaAnswerComposeHandler(model_client=model, prompts=SimpleNamespace(resolve=AsyncMock(return_value=prompt)))
+    async def run():
+        return [item async for item in handler.execute_stream(ctx)]
+    events = asyncio.run(run())
+    result = events[-1]
+    assert len(calls) == 1
+    assert result.status == ("PARTIAL" if interrupted else "COMPLETED")
+    assert len(result.blocks[1].payload["reports"]) == 1
+    text = result.blocks[0].payload["markdown"]
+    assert "未发现明显等待堆积。" in text
+    assert "".join(event.payload.get("delta", "") for event in events[:-1]) == text
+    assert "<html>" not in str(calls[0]["input_payload"])
+    model.generate_structured.assert_not_awaited()
 
 
 @pytest.mark.parametrize("starter", REPORT_STARTERS)

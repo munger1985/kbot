@@ -1663,7 +1663,7 @@ class DbaAnswerComposeHandler:
         proposal_summary = self._proposal_summary(context.input_artifacts)
         task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
         if native_report_spec(task_frame) and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
-            return self._native_report_result(assessment, context)
+            return await self._native_report_answer(assessment, context, on_text_delta=on_text_delta)
         kind = direct_list_result_kind(task_frame)
         if kind and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
             return self._direct_list_result(kind, assessment, context)
@@ -1878,6 +1878,74 @@ class DbaAnswerComposeHandler:
             assessment_reasons=assessment.reasons,
             model_receipt=result.receipt.model_dump(mode="json"),
         )
+
+    async def _native_report_answer(self, assessment, context, *, on_text_delta=None):
+        """文件与分析分开交付；模型仅流式生成一次正文，不再重新规划或重写。"""
+        result = self._native_report_result(assessment, context)
+        answer = dict(context.plan_snapshot.get("answer_context") or {})
+        frame = dict(answer.get("task_frame") or {})
+        if not dict(frame.get("subject_ref") or {}).get("report_analysis_requested"):
+            return result
+        from aiops_agent.application.diagnosis.awr_facts import AWR_FACT_TOOL_IDS, summarize_awr_facts
+        from aiops_agent.ports.model import ModelTextDelta
+        from aiops_agent.application.diagnosis.answer_stream import AnswerStreamCapture
+        facts = tuple(fact for fact in assessment.evidence if fact.tool_id in AWR_FACT_TOOL_IDS
+            and fact.trust_level == "SOURCE_VERIFIED" and fact.followup_run_id is None)
+        prefix = result.blocks[0].payload["markdown"]
+        capture = AnswerStreamCapture(run_id=context.run_id, callback=on_text_delta)
+        labels = {f"E{index}": fact.evidence_ref for index, fact in enumerate(facts, start=1)}
+        pending = ""
+        prefix_streamed = False
+        notice = None
+        complete = False
+        try:
+            if result.status != "COMPLETED" or any(gap.code == "COMPLETION_REQUIREMENT_UNSATISFIED" for gap in assessment.gaps) or not facts:
+                raise AIOpsModelError("REPORT_ANALYSIS_EVIDENCE_MISSING")
+            if self._model is None or self._prompts is None:
+                raise AIOpsModelError("MODEL_CONFIGURATION_REQUIRED")
+            prompt = await self._prompts.resolve("answer_stream", frozen_prompts=dict(answer.get("prompts") or {}))
+            if on_text_delta:
+                await on_text_delta(ModelTextDelta(delta=prefix + "\n\n"))
+                prefix_streamed = True
+            async for delta in self._model.stream_text(
+                purpose="aiops.native-report-analysis", model_snapshot=dict(answer["model"]),
+                prompt_ref={**prompt.ref(), "content": prompt.content},
+                input_payload={
+                    "question": answer.get("question"), "target_presentation": target_answer_presentation(context),
+                    "task_frame": frame, "number_presentation": NUMBER_PRESENTATION_POLICY,
+                    "awr_fact_summary": summarize_awr_facts(facts).as_dict(),
+                    "report_windows": [{"tool_id": action.get("tool_id"), "input": action.get("input")}
+                        for action in dict(answer.get("investigation_plan") or {}).get("actions", ())
+                        if action.get("tool_id") in AWR_FACT_TOOL_IDS],
+                    "evidence": [{"label": label, **fact.model_dump(mode="json")} for label, fact in zip(labels, facts)],
+                    "allowed_citation_labels": list(labels),
+                    "evidence_gaps": [gap.model_dump(mode="json") for gap in assessment.gaps],
+                    "report_delivery": prefix,
+                    "output_policy": "正式报告文件已由服务端交付。仅根据结构化事实，用 DBA 专业口吻直接回答用户要求的窗口分析与对比；明确基准和比较时间，给出负载、等待、热点 SQL 的变化及判断。不得解析 HTML，不生成实施文档，不索取已经采集的证据，不改写交付状态。不输出内部 UUID 或原始长小数。",
+                }, deadline=self._answer_deadline(context.deadline_at),
+                idempotency_key=f"turn:{context.run_id}:report-analysis:{context.attempt}",
+            ):
+                if delta:
+                    visible, pending, _ = self._filter_citation_delta(pending + delta, labels=labels)
+                    await capture.on_delta(ModelTextDelta(delta=visible))
+            visible, pending, _ = self._filter_citation_delta(pending, labels=labels, final=True)
+            await capture.on_delta(ModelTextDelta(delta=visible))
+            if not capture.text.strip():
+                raise AIOpsModelError("MODEL_OUTPUT_EMPTY")
+            complete = True
+        except (AIOpsModelError, ValueError, LookupError, TimeoutError) as exc:
+            code = getattr(exc, "code", "MODEL_STREAM_INTERRUPTED")
+            notice = "报告文件保留；分析所需的窗口事实未采集完整。" if code == "REPORT_ANALYSIS_EVIDENCE_MISSING" else "报告文件及已输出的分析正文保留；本轮分析未完整完成。"
+        markdown = prefix + ("\n\n" + capture.text if capture.text or prefix_streamed else "")
+        block = result.blocks[0].model_copy(update={
+            "payload": {"markdown": markdown, "generation_status": "COMPLETED" if complete else "INTERRUPTED", "answer_notice": notice},
+            "evidence_refs": tuple(dict.fromkeys((*result.blocks[0].evidence_refs, *(fact.evidence_ref for fact in facts)))),
+        })
+        return result.model_copy(update={
+            "status": "COMPLETED" if complete else "PARTIAL",
+            "blocks": (block, *result.blocks[1:]), "answer_streamed": bool(on_text_delta),
+            "assessment_reasons": (*result.assessment_reasons, *((notice,) if notice else ())),
+        })
 
     @staticmethod
     def _native_report_result(assessment: DbaSufficiencyAssessment, context: TaskExecutionContext) -> AIOpsTurnResult:
@@ -2141,6 +2209,10 @@ class DbaAnswerComposeHandler:
         proposal_summary = self._proposal_summary(context.input_artifacts)
         task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
         if native_report_spec(task_frame) and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
+            if dict(task_frame.get("subject_ref") or {}).get("report_analysis_requested"):
+                async for item in _model_answer_stream(context, self._execute):
+                    yield item
+                return
             result = self._native_report_result(assessment, context).model_copy(update={"answer_streamed": True})
             yield DbaAnswerProgress(event_type="answer.delta", event_key="answer-delta:1",
                 payload={"chunk_index": 1, "delta": result.blocks[0].payload["markdown"]})
@@ -3493,6 +3565,36 @@ class DbaAnswerComposeHandler:
     @staticmethod
     def _strip_citation_labels(answer: str) -> str:
         return re.sub(r"\s*\[E\d+\]", "", answer).strip()
+
+    @staticmethod
+    def _filter_citation_delta(value: str, *, labels: dict[str, str], final: bool = False) -> tuple[str, str, tuple[str, ...]]:
+        """按完整标签核对引用；跨分片的半个标签延后，不撤回已交付正文。"""
+        output: list[str] = []
+        used_labels: list[str] = []
+        pending = value
+        while pending:
+            marker_index = pending.find("[")
+            if marker_index < 0:
+                output.append(pending)
+                pending = ""
+                break
+            if marker_index > 0:
+                output.append(pending[:marker_index])
+                pending = pending[marker_index:]
+                continue
+            match = re.match(r"^\[(E\d+)\]", pending)
+            if match is not None:
+                label = match.group(1)
+                if label not in labels:
+                    raise ValueError(f"回答使用了未知证据引用：{label}")
+                used_labels.append(label)
+                pending = pending[match.end():]
+                continue
+            if not final and (pending in {"[", "[E"} or re.fullmatch(r"\[E\d+", pending) is not None):
+                break
+            output.append(pending[0])
+            pending = pending[1:]
+        return "".join(output), pending, tuple(used_labels)
 
     @staticmethod
     def _answer_deltas(answer: str) -> tuple[str, ...]:

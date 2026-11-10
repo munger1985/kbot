@@ -164,6 +164,8 @@ def iso_input_from_time_windows(
     named = _window_names(params)
     filled: dict[str, str] = {}
     if named:
+        if set(named) == {"baseline", "after"}:
+            windows = tuple(sorted(windows))
         if len(named) != len(windows):
             return {}
         for window_name, (begin, end) in zip(named, windows):

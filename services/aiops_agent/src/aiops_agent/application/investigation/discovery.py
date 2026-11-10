@@ -658,6 +658,19 @@ def _merged_catalog_tools(available_tools: tuple[dict, ...]) -> dict[str, dict]:
 def _planning_time_windows(
     investigation: InvestigationPlanningOutput,
 ) -> tuple[tuple[object, object], ...]:
+    from aiops_agent.application.native_reports import native_report_spec
+    if native_report_spec(investigation.task_frame.model_dump(mode="python")):
+        # 报告参数已经按本轮创建时间冻结，后续发现不能因跨日重新解释相对日期。
+        frozen_windows = []
+        for action in investigation.plan.actions:
+            if action.tool_id not in {"db.oracle.awr.report", "db.oracle.ash.report"}:
+                continue
+            begin = action.input.get("begin_snapshot_id", action.input.get("begin_time"))
+            end = action.input.get("end_snapshot_id", action.input.get("end_time"))
+            if isinstance(begin, str) and isinstance(end, str):
+                frozen_windows.extend(parse_time_windows(f"{begin} {end}"))
+        if frozen_windows:
+            return tuple(sorted(set(frozen_windows)))
     for text in _planning_time_texts(investigation):
         windows = parse_time_windows(text)
         if windows:

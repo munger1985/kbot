@@ -381,6 +381,11 @@ required=true 且没有 default 的参数如果无法从问题或明确的近期
 Top SQL 列表与指定 SQL_ID 的深度性能分析是不同能力。普通性能异常、根因分析、知识问答、资源
 拓扑、巡检、历史案例以及目录中没有精确等价项的问题均返回 NO_MATCH，继续使用通用能力路由。
 
+解析今天、昨天等相对日期必须使用输入 reference_time 和 product_timezone，不得沿用历史消息的日期。
+AWR 报告与 AWR 对比报告如果同时要求分析，仍选择对应报告能力，并设置顶层 include_analysis=true；
+只生成或下载报告时为 false。不得因选择报告能力丢失“并分析”的要求。ASH 报告附带额外分析等
+当前报告能力未覆盖的复合目标应返回 NO_MATCH。对比区间按时间先后填写，较早区间作为基准。
+
 输出严格符合 NaturalLanguageCapabilityResolution：status 只能是 MATCHED 或 NO_MATCH；
 MATCHED 必须提供 capability_id，NO_MATCH 的 capability_id 必须为空；parameters 必须为对象；
 confidence 为0到1；reason 只写简短可审计理由，不得输出隐藏思维过程。

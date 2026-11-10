@@ -92,6 +92,7 @@ class NaturalLanguageCapabilityResolution(BaseModel):
     status: Literal["MATCHED", "NO_MATCH"]
     capability_id: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    include_analysis: bool = False
     confidence: float = Field(ge=0, le=1)
     reason: str = Field(min_length=1, max_length=1000)
 
@@ -1237,6 +1238,7 @@ class TurnPlannerService:
                 "recent_conversation_context": _recent_routing_context(
                     recent_messages
                 ),
+                "reference_time": turn.created_at.isoformat(),
                 "plan_revision": int(turn.current_plan_revision or 0) + 1,
             }
 
@@ -1404,6 +1406,9 @@ class TurnPlannerService:
         if not model_id:
             raise validation_failed("AIOps Agent 必须配置 models.planner_llm")
         prompt = await self._prompt_registry.resolve("capability_resolver")
+        reference_time = datetime.fromisoformat(context["reference_time"]) if context.get("reference_time") else datetime.now(UTC)
+        if reference_time.tzinfo is None:
+            reference_time = reference_time.replace(tzinfo=UTC)
         result = await self._structured_model.generate_structured(
             purpose="aiops_capability_resolver",
             output_model=NaturalLanguageCapabilityResolution,
@@ -1411,6 +1416,8 @@ class TurnPlannerService:
             prompt_ref={**prompt.ref(), "content": prompt.content},
             input_payload={
                 "question": context["question"],
+                "reference_time": reference_time.isoformat(),
+                "product_timezone": "Asia/Shanghai",
                 "recent_conversation_context": context.get(
                     "recent_conversation_context", []
                 ),
@@ -1437,9 +1444,12 @@ class TurnPlannerService:
         if not resolution.capability_id or resolution.capability_id not in eligible_ids:
             return {}, result.receipt.model_dump(mode="json")
         try:
+            from aiops_agent.application.native_reports import report_time_parameters
+            parameters = report_time_parameters(resolution.capability_id, dict(resolution.parameters),
+                str(context["question"]), reference_time=reference_time)
             frozen = self._conversation_starter_catalog.freeze_natural_language(
                 capability_id=resolution.capability_id,
-                parameters=dict(resolution.parameters),
+                parameters=parameters,
                 supported_db_types=db_types,
             )
         except AIOpsApplicationError as exc:
@@ -1448,6 +1458,8 @@ class TurnPlannerService:
             # 自然语言匹配与参数均来自模型，校验失败时交由通用路由澄清。
             # 显式 UI 功能入口仍使用严格校验，不能借此绕过。
             return {}, result.receipt.model_dump(mode="json")
+        if resolution.include_analysis and resolution.capability_id in {"oracle.report.awr", "oracle.report.awr-diff"}:
+            frozen["include_analysis"] = True
         return frozen, result.receipt.model_dump(mode="json")
 
     def _resolve_scope(self, context: dict[str, Any], plan: TurnPlanV1):

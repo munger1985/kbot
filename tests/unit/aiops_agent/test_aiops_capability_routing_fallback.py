@@ -63,6 +63,27 @@ def _planner(model):
                               model_resolver=AsyncMock(return_value={"technical_name": "test"}))
 
 
+def test_compound_awr_request_preserves_analysis_and_uses_turn_reference_time():
+    ctx = _context([_system("ERP", "ORACLE")],
+        question="生成今天8点到9点的awr报告，然后和昨天同期对比并分析")
+    ctx["reference_time"] = "2026-11-10T01:55:40+00:00"
+    class Model(_Model):
+        async def generate_structured(self, **kwargs):
+            value = await super().generate_structured(**kwargs)
+            value.output["include_analysis"] = True
+            return value
+    model = Model("oracle.report.awr-diff", {
+        "first_begin_time": "2026-11-09T08:00:00+08:00", "first_end_time": "2026-11-09T09:00:00+08:00",
+        "second_begin_time": "2026-11-08T08:00:00+08:00", "second_end_time": "2026-11-08T09:00:00+08:00",
+    })
+    asyncio.run(_planner(model)._plan(ctx))
+    frozen = ctx["conversation_starter"]
+    assert frozen["include_analysis"] is True
+    assert frozen["parameters"]["first_begin_time"] == "2026-11-09T08:00:00+08:00"
+    assert frozen["parameters"]["second_begin_time"] == "2026-11-10T08:00:00+08:00"
+    assert model.calls[0]["input_payload"]["reference_time"] == ctx["reference_time"]
+
+
 @pytest.mark.parametrize("db_type", ["POSTGRESQL", "MYSQL"])
 def test_wrong_database_capability_falls_back_and_never_executes_oracle_entry(db_type):
     context = _context([_system("MES", db_type), _system("ERP", "ORACLE")])
