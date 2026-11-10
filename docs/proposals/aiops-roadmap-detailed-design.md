@@ -441,9 +441,9 @@ identity
 
 不能把方式 C 套到 SQL Monitor 或 SQLHC。
 
-### 6.8 本地模型绑定（P1，改绑定校验 + Provider）
+### 6.8 模型自主绑定（P1，改绑定校验 + Provider）
 
-生产环境的规划/诊断模型必须绑定客户近端 DeepSeek；开发环境可以绑定 GPT。隔离只做在 AIOps Agent 的绑定和解析，不在 Model Serving 全局禁用 GPT。三个入口仍走同一套 Agent 诊断内核，Finding Card、指标分析、根因、方案和逐条审批执行都不改。
+开发与生产环境均由用户从当前有权访问的模型目录中选择规划、诊断与回答组织模型，可分别绑定本地或远程提供方。AIOps 不按环境硬编码模型厂商，不改写已有绑定；部署位置与数据发送范围由用户依据自身安全政策配置。三个入口仍走同一套 Agent 诊断内核，Finding Card、指标分析、根因、方案和逐条审批执行都不改。
 
 新增 Provider `local_deepseek`：
 
@@ -453,13 +453,13 @@ identity
 
 校验时机与错误：
 
-- 仅 Agent 状态为 `ACTIVE` 时强制本地模型；`DRAFT` 不强制，便于先保存再补近端模型；
+- Agent 状态为 `ACTIVE` 时，规划与回答组织模型必选，启用智能诊断还须选择诊断模型；`DRAFT` 可先保存再补齐；
 - 生产环境名与 `Settings.is_production()` 一致：`prod` / `production` / `live`；
 - 生产启用时若模型目录客户端不可用 → `503 AIOPS_AGENT_MODEL_DIRECTORY_UNAVAILABLE`；
-- 生产启用时若规划或诊断模型不是 `local_deepseek` → `422 AIOPS_AGENT_PRODUCTION_LOCAL_MODEL_REQUIRED`；
-- 运行时解析规划/诊断模型再校验一次，避免目录被改成云端模型后继续跑生产诊断。
+- 生产启用时所选模型须有可解析的技术名称，否则返回 `422 AIOPS_AGENT_MODEL_BINDING_INVALID`，不校验提供方是否本地；
+- 运行时按用户绑定的模型 ID 解析规划/诊断模型，仍校验 Agent 状态、Domain 边界、目录可用性及技术名称；目录失败时不自动切换模型。
 
-UI：Agent 模型下拉展示 Provider 中文标签，`local_deepseek` 置顶；新建时预选第一个本地 DeepSeek。Ammolite Portal 的 `local_* → runtime_type=LOCAL` 对 `local_deepseek` 必须例外，其运行方式是 `API`（`PLATFORM_BOUNDARY_ADAPTATION`）：近端推理服务仍走 HTTP，不是进程内 LOCAL 权重。
+UI：Agent 模型下拉展示 Provider 中文标签，按显示名称排序，不对特定提供方置顶；新建预选排序后的首个可用模型，用户可修改，编辑时保留已有选择。Ammolite Portal 的 `local_* → runtime_type=LOCAL` 对 `local_deepseek` 必须例外，其运行方式是 `API`（`PLATFORM_BOUNDARY_ADAPTATION`）：近端推理服务仍走 HTTP，不是进程内 LOCAL 权重。
 
 ## 7. 分阶段改造方案
 
@@ -497,7 +497,7 @@ P0 验收：
 | P1-4 | Target Fact | 加 | 新表 + API + 聊天确认写入 |
 | P1-5 | 容量方案 | 改 | Finding + 事实 → AUTOEXTEND/RESIZE；无余量事实不加文件 |
 | P1-6 | AWR Fact Tool | 加 | Load Profile / Top Wait / Top SQL；HTML 保留 |
-| P1-7 | 本地模型绑定 | 改 | 生产默认 DeepSeek V4，开发隔离 |
+| P1-7 | 模型自主绑定 | 改 | 开发与生产均可自主选择本地或远程模型 |
 
 ### P2｜SQL 诊断包与 Exadata 报告（约 8–12 周）
 

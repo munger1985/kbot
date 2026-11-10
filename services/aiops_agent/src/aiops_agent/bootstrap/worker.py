@@ -166,7 +166,6 @@ def create_aiops_worker_probe(
                 model_client=model_client,
             ),
             model_client=model_client,
-            environment=resolved.environment,
         )
         credential_cipher = ManagedCredentialCipher.from_environment()
         managed_credential_service = AIOpsManagedCredentialService(

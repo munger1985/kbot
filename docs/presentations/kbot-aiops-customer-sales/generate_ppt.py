@@ -562,7 +562,7 @@ def slide_12(prs):
         y += row_h
 
     add_round_rect(slide, 0.68, 6.62, 11.60, 0.34, fill=LIGHT_ORANGE, line=LIGHT_ORANGE, line_width=0)
-    add_text(slide, "AIOps 生产规划/诊断模型要求客户近端 DeepSeek 服务；本地大模型推理建议部署在独立 GPU 节点。", 0.90, 6.62, 11.18, 0.34, size=9.2, color=INK, bold=True, align=PP_ALIGN.CENTER)
+    add_text(slide, "AIOps 规划/诊断模型由用户选择本地或远程服务；本地大模型推理建议部署在独立 GPU 节点。", 0.90, 6.62, 11.18, 0.34, size=9.2, color=INK, bold=True, align=PP_ALIGN.CENTER)
     add_footer(slide, 12, source="来源：Model Serving Provider Catalog（2026-10-12）")
 
 

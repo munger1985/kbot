@@ -126,14 +126,12 @@
 
   function llmModels() {
     return models.filter((item) => Number(item.category) === 1).slice().sort((left, right) => {
-      const leftLocal = String(left.provider || "").toLowerCase() === "local_deepseek" ? 0 : 1;
-      const rightLocal = String(right.provider || "").toLowerCase() === "local_deepseek" ? 0 : 1;
-      return leftLocal - rightLocal || String(left.display_name || "").localeCompare(String(right.display_name || ""), "zh");
+      return String(left.display_name || "").localeCompare(String(right.display_name || ""), "zh");
     });
   }
 
   function defaultLlmId() {
-    return llmModels().find((item) => String(item.provider || "").toLowerCase() === "local_deepseek")?.model_id || llmModels()[0]?.model_id || "";
+    return llmModels()[0]?.model_id || "";
   }
 
   function renderModelOptions(elementId, category, emptyLabel) {

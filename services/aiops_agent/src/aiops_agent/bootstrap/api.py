@@ -199,7 +199,6 @@ def create_aiops_api(
         agent_catalog = AIOpsAgentValidator(
             app.state.agent_service,
             model_client=model_client,
-            environment=resolved.environment,
         )
         secret_store = ConfiguredSecretStore(
             managed_credentials=managed_credential_service,

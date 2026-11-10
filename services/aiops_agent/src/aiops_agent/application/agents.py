@@ -755,15 +755,9 @@ class AIOpsAgentService:
                 )
             ] + await uow.agents.knowledge_model_references(model_id=model_id)
 
-    async def _validate_production_llm_providers(self, values) -> None:
-        """生产环境启用 Agent 时，运行时 LLM 必须是本地 DeepSeek。"""
-        from aiops_agent.application.diagnosis.local_models import (
-            LocalModelBindingError,
-            is_production_environment,
-            require_production_local_llm,
-        )
-
-        if not is_production_environment(self._environment):
+    async def _validate_production_model_bindings(self, values) -> None:
+        """生产启用前核实所选模型可解析，不限制部署方式或提供方。"""
+        if str(self._environment).strip().lower() not in {"prod", "production", "live"}:
             return
         models = dict(values.get("models") or {})
         for role, role_label in (
@@ -777,7 +771,7 @@ class AIOpsAgentService:
             if self._model_client is None:
                 raise AIOpsAgentError(
                     "AIOPS_AGENT_MODEL_DIRECTORY_UNAVAILABLE",
-                    "生产环境无法校验诊断模型提供方",
+                    "模型目录暂时不可用，无法核验所选模型",
                     status_code=503,
                 )
             try:
@@ -788,16 +782,12 @@ class AIOpsAgentService:
                     f"{role_label}模型目录暂时不可用",
                     status_code=503,
                 ) from exc
-            try:
-                require_production_local_llm(
-                    environment=self._environment,
-                    provider=(definition or {}).get("provider"),
-                    role_label=role_label,
-                )
-            except LocalModelBindingError as exc:
+            if not str((definition or {}).get("served_model_name") or "").strip():
                 raise AIOpsAgentError(
-                    exc.code, exc.message, status_code=422
-                ) from exc
+                    "AIOPS_AGENT_MODEL_BINDING_INVALID",
+                    f"{role_label}模型缺少 served_model_name",
+                    status_code=422,
+                )
 
     async def _validate_resources(
         self, uow, domain_id: int, status: str, values, *, inherit_action_policies: bool = False,
@@ -833,7 +823,7 @@ class AIOpsAgentService:
                 status_code=422,
             )
         if status == "ACTIVE":
-            await self._validate_production_llm_providers(values)
+            await self._validate_production_model_bindings(values)
         business_system_ids = tuple(
             values.get("allowed_business_system_ids") or ()
         )
