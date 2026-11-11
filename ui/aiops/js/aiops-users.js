@@ -4,6 +4,9 @@
     if (!access || document.body.dataset.page !== "users") return;
     const form = document.getElementById("user-form"), status = document.getElementById("user-status");
     const api = "/api/v1/apps/aiops/members";
+    const userStates = new Map([
+      ["ACTIVE", ["已启用", "status-active"]], ["DISABLED", ["已停用", "status-disabled"]],
+    ]);
     let selected = null, busy = false;
     function showBindingStatus(binding) {
       const state = ({VERIFIED: ["已验证", "status-success"], UNVERIFIED: ["待本人验证", "status-warning"],
@@ -30,14 +33,33 @@
       } catch (error) { status.textContent = error.message; }
     }
     async function load() {
-      const rows = await KBotAIOpsAuth.request(api), container = document.getElementById("user-list");
+      const container = document.getElementById("user-list"), count = document.getElementById("user-count");
+      let rows;
+      try { rows = await KBotAIOpsAuth.request(api); }
+      catch (error) {
+        const message = document.createElement("li"); message.className = "resource-list-empty";
+        message.textContent = "用户列表读取失败，请刷新后重试。";
+        container.replaceChildren(message); count.textContent = "暂不可用";
+        throw error;
+      }
+      const users = (rows.items || rows).filter(row => row.account_origin === "APP" && row.owner_app_id === "aiops");
       container.replaceChildren();
-      for (const row of rows.items || rows) {
-        if (row.account_origin !== "APP" || row.owner_app_id !== "aiops") continue;
-        const line = document.createElement("div"), label = document.createElement("span"), button = document.createElement("button");
-        label.textContent = (row.display_name || row.user_id) + " · " + row.status;
-        button.textContent = "编辑／飞书绑定"; button.type = "button"; button.onclick = () => edit(row.user_id);
-        line.append(label, button); container.append(line);
+      count.textContent = users.length + " 位用户";
+      if (!users.length) {
+        const message = document.createElement("li"); message.className = "resource-list-empty";
+        message.textContent = "暂无 AIOps 自建用户。"; container.append(message);
+      }
+      for (const row of users) {
+        const line = document.createElement("li"), identity = document.createElement("div"), name = document.createElement("strong");
+        const userId = document.createElement("small"), state = document.createElement("span"), button = document.createElement("button");
+        line.className = "user-list-row"; identity.className = "user-list-identity";
+        name.className = "user-list-name"; name.textContent = row.display_name || row.user_id;
+        userId.className = "user-list-id"; userId.textContent = row.user_id;
+        const presentation = userStates.get(row.status) || ["状态未知", "status-muted"];
+        state.className = "status-pill " + presentation[1]; state.textContent = presentation[0];
+        button.className = "row-action"; button.textContent = "编辑／飞书绑定";
+        button.type = "button"; button.onclick = () => edit(row.user_id);
+        identity.append(name, userId); line.append(identity, state, button); container.append(line);
       }
     }
     form.onsubmit = async event => {

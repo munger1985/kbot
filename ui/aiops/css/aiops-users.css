@@ -1,0 +1,15 @@
+/* 用户目录沿用公共列表、状态标签和行操作规格，不影响其他管理页面。 */
+.user-management-page { display: grid; gap: 20px; min-width: 0; }
+.user-management-page > .ops-head, .user-management-page > .ops-panel { margin: 0; }
+.user-management-page > [role="status"]:empty { display: none; }
+.user-management-page .user-list { margin: 0; padding: 0; list-style: none; }
+.user-management-page .user-list-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 16px; padding: 16px; }
+.user-management-page .user-list-row + .user-list-row { border-top: 1px solid var(--line); }
+.user-management-page .user-list-identity { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
+.user-management-page .user-list-name { color: var(--ink); font-size: var(--type-table); font-weight: 600; }
+.user-management-page .user-list-id { margin: 0; color: var(--muted); font-family: var(--font-data); font-size: var(--type-supporting); }
+.user-management-page .user-list-row > .row-action { justify-self: end; }
+@media (max-width: 640px) {
+  .user-management-page .user-list-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+  .user-management-page .user-list-row > .row-action { grid-column: 1 / -1; justify-self: start; }
+}
