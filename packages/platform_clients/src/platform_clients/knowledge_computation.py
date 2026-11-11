@@ -22,12 +22,16 @@ class KnowledgeComputationClient:
         self.session = session
         self.service_scopes = service_scopes
 
+    def _auth_headers(self, auth_context):
+        """纯计算服务使用带操作范围的短期服务身份。"""
+        return build_scoped_internal_auth_headers(audience=self.audience, caller_service=self.caller_service,
+                                                 scopes=self.service_scopes, context=auth_context)
+
     @asynccontextmanager
     async def response(self, method, path, *, auth_context, payload=None, params=None, extra_headers=None,
                        body=None, content_type=None, idempotency_key=None):
         # base_url 与 path 仅由组合根和本模块静态方法决定。
-        headers = build_scoped_internal_auth_headers(audience=self.audience, caller_service=self.caller_service,
-                                                    scopes=self.service_scopes, context=auth_context)
+        headers = self._auth_headers(auth_context)
         if extra_headers:
             if set(extra_headers) != {"X-Knowledge-Delegation"}:
                 raise ValueError("不允许覆盖内部认证头")
