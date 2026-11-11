@@ -12,10 +12,10 @@
 - 原厂目标：`AIOPS_SIM_EXADATA_DBM01`（oracle_dbmachine）、`AIOPS_SIM_EXADATA_GRID01`（oracle_exadata_grid）、`AIOPS_SIM_EXADATA_CELL01`（oracle_exadata）。
 - 原厂允许的结构是 DB Machine → Grid → Cell，不能直接把 Cell 加入 DB Machine。三者通过原厂 create/modify_system 命令建立，现已通过官方 Data Service 包含关系和 GUID 目录双重独立核验，并与原厂 `get_system_members -depth=2` 结果一致。
 - overview 的 5 项最新值、cell 的 12 项最新值以及 CPU/内存数值历史已被实际 AIOps OEMAdapter 读取。采样不足时不能推断趋势。
-- KBot/Ammolite 分别使用本仓库 Adapter 完成严格整机 latest、cell、history smoke，输出 `inventory_verified=true`；CPU/内存各读到 40 个历史样本。两端各 10 个相关测试文件共 **291 passed + 13 subtests passed**（其中新增成员关系安全合同 38 项、模拟器/SSH/注册安全合同 8 项、Exadata/HTTP 合同 47 项、既有普通 OEM/资源监控回归 198 项）；两端架构边界检查通过。不是全仓测试或页面部署通过声明。
+- KBot/Ammolite 分别使用本仓库 Adapter 完成严格整机 latest、cell、history smoke，输出 `inventory_verified=true`。最后相关回归为两端各 10 文件 **316 passed + 13 subtests passed**；KBot 加 Oracle 验收生成器为 **324 passed + 18 subtests passed**，干净 Git archive 加部署配置环境复跑也通过；两端架构边界检查通过。不是全仓或全部指标覆盖声明。
 - 一分钟调度已在 Agent 集合配置落地；手工仅刷新上传后，OEM 历史包含 09:49、09:50、09:51 UTC 的连续自动采样，CPU 为 26.0/26.2/26.88%，内存为 57.0/57.07/57.29%，不是只保存一条手工采样。上传批次延迟仍存在。
 - **整机发现已修复**：初版 `/members` 为 404；现统一使用官方 GET `/em/websvcs/restful/emws/core/v0/list/dataservice`，固定资源 `TargetAssociations` 和 `internal_contains`，每个父目标精确过滤，要求 `exceedsMaxRows=false`，再逐项查询唯一名称/类型对应的 GUID 并复核详情。只展开根及直接 Grid；歧义、截断、未应用过滤、循环和超预算均失败关闭。没有双路径降级，没有 SQL、直连 OEM 仓库或额外服务。
-- **页面未验收**：未部署/重启 AIOps、未应用 AIOps Schema、未新增业务系统资源绑定。不得把 `--cell-only` 的通过说成页面或整机验收。
+- **KBot 页面已验收**：已按授权部署两端、无损新增 Exadata 两表并定向重启三个 API。KBot 经正常登录、公共发现和系统创建接口新增独立 SIM 业务系统及硬件绑定；Chromium 实际核对 5 行概览、12 行 Cell 最新值、450 行历史样本，CPU/内存值与采样时间一致，无 pageerror。Ammolite 现用 OEM 凭据严格读取通过，尚缺正常 App 登录，未创建绑定或验收其页面。不得把 Adapter smoke 等同于两端页面全部通过。
 
 ## 仅在相同实验环境部署
 
@@ -67,16 +67,20 @@ python tests/smoke/check_exadata_oem_sim.py --endpoint https://127.0.0.1:17804/e
 
 默认模式严格验证根/成员，当前两端已通过，输出 `acceptance_scope=VERIFIED_EXADATA_INVENTORY_AND_METRICS`、`inventory_verified=true`。排障选项 `--cell-only` 仍只读唯一 SIM Cell，输出 `acceptance_scope=METRIC_TRANSPORT_ONLY`、`inventory_verified=false`；不要将该选项用于整机验收。两种模式都不持久化、不生成绑定，不绕过应用授权/绑定流程。
 
-## 页面联调前提
+## 页面联调部署与入口（2026-11-11）
 
-已确认应用环境为 kbotdev（私网 `10.0.0.190`），OEM 位于 aiopsdb（私网 `10.0.0.88`）。2026-11-11 只读核查结果：
+应用环境为 kbotdev（私网 `10.0.0.190`），OEM 位于 aiopsdb（私网 `10.0.0.88`）。完整数据库核验、备份及验收记录见[实施设计 10.3](../../../docs/operations/aiops-exadata-oem-implementation-design.md)。
 
-- KBot 运行目录 `/home/ubuntu/kbot4.0`，分支 `kbot4.1.1`、代码 `6cc14557`；已包含 Exadata 基础功能，尚无本次成员读取修复。监控页面 `http://140.238.44.208:8080/ui/aiops/monitoring.html` 返回 HTML 200，仅证明静态页面可达，不是登录后数据验收。
-- Ammolite 运行目录 `/home/ubuntu/Ammolite`，分支 `dev`、代码 `109138b2`；尚未包含 Exadata 基础功能。Portal `http://140.238.44.208:19080/` 返回 HTML 200；实际监控路由为 `/apps/aiops/:domainCode/monitoring`，需要正常登录及领域授权。
-- 两端均已有启用且连接状态为 CONNECTED 的 `OEM24ai` 来源，`aiops-oem.lab` 在应用主机解析为 `10.0.0.88`；不新增或覆盖既有来源凭据。两端均无 EXADATA 资源和 Exadata 专用两表。
-- KBot 版本视图返回 AIOPS / Schema 57，不能直接运行仅适用于完整 Schema 59 的 `apply_aiops_schema_60.sql`。必须先做部署期只读差异核对，再确定经授权的无损处理范围；不得仅抬高版本视图绕过前置条件。Ammolite 采用规范 Entity/初始化流程处理新增表，不重建或清空现有库。
+- KBot 已部署 `/home/ubuntu/kbot4.0`，`kbot4.1.1@4aa7f4ce`；Ammolite 已部署 `/home/ubuntu/Ammolite`，`dev@51174b7b`。
+- KBot 先完整核对已有对象，再用规范 SQL 新增两表，最后同步版本视图为 Schema 60；没有直接套用不匹配的 59→60 脚本。完整 Oracle 目录验收通过。Ammolite 仅用规范 Entity 定向新增两表，既存知识库 Schema 漂移未处理，不宣称全库验收通过。
+- 仅重启 KBot AIOps API（18110）、Ammolite AIOps API（19130）、Ammolite Main API（19090），各自实际 readiness 为 200。其余服务、Portal、既有 OEM 和数据库 Agent 均未重启。配置及对象元数据备份保留在 kbotdev 的私有 `/home/ubuntu/aiops-exadata-deploy-20261111-6rj5zwyh`，会话/凭据不入库。
+- 两端沿用既有 `OEM24ai` 来源及凭据；仅用官方 EMCLI 给现用监控账号增加三个固定 SIM 目标的 `VIEW_TARGET`，不授管理员或全主机权限，不改既有目标权限。
 
-本轮未拉取代码、未部署或重启应用、未执行 DDL、未修改来源和绑定。应用更新、必要数据库处理及定向重启需先取得明确授权。部署条件满足后，在正常业务系统硬件层新增 EXADATA，选择既有 OEM 来源，发现并选择 `AIOPS_SIM_EXADATA_DBM01`、确认 Grid/Cell 成员后保存，再验收页面最新值和历史。不得绕过正常授权、套用不匹配的升级脚本或复用普通主机绑定。
+KBot 正常登录后进入[实时监控](http://140.238.44.208:8080/ui/aiops/monitoring.html?target_id=01a1ca77-0b23-7cb1-84de-5c806521749a&businessSystemId=01a1ca77-0ad7-7f92-8cd4-30224c93e76b&source_id=01a1a702-71fe-7793-8e47-8cf23f290df8)，选择业务系统 `Exadata OEM 模拟联调（SIM）` → 硬件 `SIM - Exadata DBM01` → 来源 `OEM24ai`。专用场景选“Cell 资源”，可切换“最新快照”和“过去 1 小时历史（仅数值）”。该系统经公共 API 原子创建，未改旧系统/绑定，无直接写业务表或伪造鉴权。
+
+浏览器核验时 CPU 47.95%、内存 64.32%，采样时间 2026-11-11 11:42 UTC；CPU/内存历史各 45 个样本。另经正常公共诊断 API 保存并读回报告，证据一致、结论为 `INCONCLUSIVE`；未将其冒充诊断按钮浏览器验收。所有值均为合成调试数据；OEM 批次上传仍有延迟，不能承诺秒级或一分钟页面更新。
+
+Ammolite Portal 为 `http://140.238.44.208:19080/`，监控路由 `/apps/aiops/:domainCode/monitoring`。其部署进程使用现有托管 OEM 凭据已读到 5 项概览、12 项 Cell 最新值及 CPU/内存各 44 个历史样本，但尚无正常 App 登录会话；未创建模拟系统/绑定，未验证公共 App API 或浏览器数据展示。需通过正常登录并获得领域授权后，在硬件层新建 EXADATA、选择现有 OEM 来源、发现 DBM01 并确认 Grid/Cell 成员；不得重置密码、伪造 SSO 或直接写绑定表。
 
 ## 限制与保留现场
 

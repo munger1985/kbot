@@ -1,6 +1,6 @@
 # Exadata＋OEM 专用监控与诊断实施设计
 
-日期：2026-11-11。状态：代码实现与本地相关回归完成；未部署，真实 OEM REST 与在线数据库验收未完成。
+日期：2026-11-11。状态：已部署 kbotdev 并无损补齐 Exadata 两表；KBot 正常绑定、真实 OEM 专用 API、浏览器最新值/历史验收通过。Ammolite 的现用 OEM 凭据读取通过，尚缺正常应用登录，未完成绑定和浏览器验收。最新记录见 10.3。
 
 ## 1. 目标与不变边界
 
@@ -129,7 +129,9 @@ KBot 规范为 Schema 60（`aiops-oracle-v60-exadata-oem`），102 表、10 视�
 - Ammolite Portal 生产构建通过；仍有现存大包告警，不视为运行时验证或浏览器验收。
 - 旧 `test_aiops_monitoring_precision.py`：KBot 为 24 passed。Ammolite 初次验收为 16 failed / 8 passed，已按后续用户要求补齐 SimpleNamespace 测试替身的 `_monitoring_profile_catalog=None`，与真实构造器默认值及 KBot 测试一致；未修改生产代码或原有断言。修复后该文件为 **24 passed**；与监控快照、巡检主机、专业巡检报告、巡检时间质量共 5 个文件联合回归为 **129 passed + 5 subtests passed**（Ammolite）。
 
-### 8.6 未完成验收与发布条件
+### 8.6 首次实现阶段的未完成验收与发布条件（历史记录）
+
+本节保留首次实现时的验收边界；后续模拟器、成员修订及经授权部署的实际结果以第 9、10 节为准，不代表当前仍未部署。
 
 1. **整机在线 OEM REST 验收未完成**。后续模拟环境已完成部分指标传输验证，详见第 9 节；仍须以现场版本、受控凭据和已确认整机核验成员、完整元数据类型/单位/维度、文本缺口、权限和预算。未新增或宣称 Exadata 事件诊断能力。
 2. **没有应用 Schema 或部署**。只读真实 Oracle Schema 验收因本机 127.0.0.1:1521 无监听而不能完成；真实 PostgreSQL 全实体只读验收因新增两表未应用及既有大量 Schema 漂移而未通过，涉及知识入库、输出任务、资源绑定、通知及旧 KC 对象等。静态工件通过不等于现有数据库可运行。
@@ -150,7 +152,7 @@ KBot 规范为 Schema 60（`aiops-oracle-v60-exadata-oem`），102 表、10 视�
 
 一分钟原厂调度写入 Agent 配置后，未重新手工触发集合，仅调用新 Agent 的 `emctl upload agent` 刷新上传，即在 OEM history 读取到 09:49、09:50、09:51 UTC 的连续自动采样；CPU 为 26.0/26.2/26.88%，内存为 57.0/57.07/57.29%。因此已验证持续合成采集，但仍存在原厂批次上传/入库延迟，不能把一分钟调度说成一分钟页面刷新保证。
 
-只读 smoke 的 `--cell-only` 明确标为 `METRIC_TRANSPORT_ONLY`、`inventory_verified=false`，不持久化或进入产品绑定路径。**目前未完成页面端到端验收**，未部署/重启 AIOps、未执行 Schema 变更、未创建或更改业务系统绑定。需先解决现场 OEM 可验证成员接口能力，再按原有安全绑定流程接入页面。此次没有修改非 Exadata/非 OEM 监控和诊断，也没有修改应用生产适配器。
+只读 smoke 的 `--cell-only` 明确标为 `METRIC_TRANSPORT_ONLY`、`inventory_verified=false`，不持久化或进入产品绑定路径。**第一阶段结束时尚未完成页面端到端验收**，当时未部署/重启 AIOps、未执行 Schema 变更、未创建或更改业务系统绑定。后续成员接口修订和经授权部署见第 10 节。第一阶段没有修改非 Exadata/非 OEM 监控和诊断，也没有修改应用生产适配器。
 
 ## 10. 现场成员关系读取修订
 
@@ -174,10 +176,38 @@ KBot 规范为 Schema 60（`aiops-oracle-v60-exadata-oem`），102 表、10 视�
 - 历史末三项为 2026-11-11 10:25/10:26/10:27 UTC，CPU 30.56/32.58/34.81%，内存 58.52/59.19/59.94%。这些仍是合成调试值，由真实 OEM 原厂插件采集保存；存在批次上传延迟，不保证秒级或一分钟可见。
 - 应用环境已确认为 kbotdev（私网 `10.0.0.190`），2026-11-11 完成只读核查，详见下节；尚未部署/重启应用、执行 DDL 或创建业务系统绑定，未完成浏览器端到端验收。源码和工件同步不等于已推送或已上线。
 
-### 10.2 kbotdev 联调部署前核查
+### 10.2 kbotdev 联调部署前核查（历史快照）
 
 - KBot 当前运行 `/home/ubuntu/kbot4.0`，`kbot4.1.1@6cc14557`，已有 Exadata 基础功能但未包含本次成员修复；`http://140.238.44.208:8080/ui/aiops/monitoring.html` 返回 HTML 200。
 - Ammolite 当前运行 `/home/ubuntu/Ammolite`，`dev@109138b2`，尚未包含 Exadata 基础功能；`http://140.238.44.208:19080/` 返回 HTML 200。监控路由为 `/apps/aiops/:domainCode/monitoring`，必须正常登录并使用授权领域。
 - 两端均已有启用、CONNECTED 的 `OEM24ai` 来源，应用主机将 `aiops-oem.lab` 解析为 OEM 私网地址 `10.0.0.88`。两端均无 EXADATA 资源、Exadata 专用两表；不能仅更新代码就宣称页面可用。
 - KBot 版本视图为 AIOPS / Schema 57，不能直接执行只适用于完整 Schema 59 的 Exadata 增量脚本；先核对实际对象差异并确定经授权的无损方案，不抬高版本号绕过检查，不重建或清空现有库。Ammolite 新表按规范 Entity/初始化流程处理。
 - 本轮只读检查不涉及服务器拉取、DDL、来源/绑定修改或任何重启。后续部署必须明确授权、限定相关服务并保留现有配置备份；既有 OEM/数据库 Agent 和非 Exadata/非 OEM 监控保持不变。HTML 200、来源 CONNECTED 和适配器 smoke 均不能代替页面数据验收。
+
+### 10.3 经授权部署与实际页面验收（2026-11-11）
+
+用户明确授权部署两端、无损补齐必要数据库对象及仅重启相关服务。没有清库、运行全库初始化、重建业务表或处理无关知识库漂移。部署代码为 KBot `kbot4.1.1@4aa7f4ce`、Ammolite `dev@51174b7b`；均先确认目标提交，再 fast-forward，保留既有配置。配置及数据库元数据备份位于 kbotdev 的 `/home/ubuntu/aiops-exadata-deploy-20261111-6rj5zwyh`（私有目录，不提交会话或凭据）。
+
+数据库实际处理：
+
+- KBot 的版本视图虽为 57，完整部署期差异核对证明原有 100 表的列/类型/nullable、375 命名索引、295 命名约束、10 视图、1 属性图已符合当前基线，仅缺 Exadata 两表及对应约束、版本视图。没有直接套用只接受完整 59 的升级脚本，也没有先抬高版本绕过检查。先用规范 `015_ops_exadata.sql` 新增 `KBOT_OPS_EXADATA_INVENTORY`、`KBOT_OPS_EXADATA_REPORT`，复核原有对象未改变后，才同步规范 Schema 60 版本视图。最终全目录验收为 102 表、10 视图、1 图、375 索引、298 命名约束、1,564 列，合同 `aiops-oracle-v60-exadata-oem`。
+- 现场完整验收暴露 Oracle 单次 `ODCIVARCHAR2LIST` 超过 999 参数的 `ORA-00939`；生成器已改为分批并用子查询固定双向 MINUS 的运算边界，规范验收工件与回归同步，不缩小验收集合。
+- Ammolite 仅通过规范 Entity 定向创建 `aiops_exadata_inventory`、`aiops_exadata_report`：11 列、3 外键、2 主键已核验，已有表列/约束元数据前后完全一致。既存的 19 个 `aiops_knowledge_*` 缺表及旧 `kc_*` 等知识库漂移未处理，不能宣称 PostgreSQL 全库 Schema 验收通过。
+
+仅定向重启 KBot AIOps API（18110）、Ammolite AIOps API（19130）、Ammolite Main API（19090）。实际 readiness 分别为 `/ready`、`/ready`、`/readyz`，均 200；AIOps API 的 `/readyz` 并非有效探针。KBot Main、两端 Worker/Scheduler/Executor/通知、Ammolite Portal、既有 OEM/数据库 Agent 未重启。Portal 为 Vite 开发服务，自动加载新源码；远端生产构建也已通过（954 modules，仅大 chunk 告警）。
+
+两端沿用原 `OEM24ai` 来源和托管凭据。正常发现最初为空，核验确认现用非管理员 OEM 账号没有三个 SIM 目标的可见权限；经官方 EMCLI 仅对 DBM01/GRID01/CELL01 三个固定目标新增 `VIEW_TARGET`，未更换账号/密码、未授管理员或全主机权限、未修改既有目标权限。
+
+KBot 真实业务流程：
+
+- 使用正常登录接口取得真实会话，通过公共发现接口选定 DBM01 与其 Grid/Cell，再经公共业务系统 API 原子创建独立 `Exadata OEM 模拟联调（SIM）`，没有改任何既有业务系统或旧绑定。
+- 系统 ID `01a1ca77-0ad7-7f92-8cd4-30224c93e76b`；EXADATA 硬件资源 ID `01a1ca77-0b23-7cb1-84de-5c806521749a`，显示名 `SIM - Exadata DBM01`。资产描述/属性明确标为合成联调数据。
+- 公共专用 view API 实际读到 overview 5 项、cell 12 项最新值；一次过去一小时查询返回 450 个样本，CPU/内存各 45 个。该次最新样本为 2026-11-11 11:42 UTC，CPU 47.95%、内存 64.32%；仍是合成值，不是客户业务值，也不代表秒级刷新。
+- Chromium 加载真实监控页面，使用正常登录结果，无路由 mock、无伪造 AuthContext。核对专用组件标题、SIM 资源、三次真实响应、DOM 行数（5/12/450）及 CPU/内存值和采集时间；最新快照和 HISTORY 切换均通过，无 pageerror。
+- 公共诊断 API 返回 200，保存报告后通过公共 GET 读回，冻结证据完全一致；报告为 `INCONCLUSIVE`，含 440 个证据样本。这是 API/持久化验收，不是诊断按钮浏览器验收，也不是硬件健康规则验收。
+
+Ammolite 已用其部署进程的配置及现用托管 OEM 凭据，分别严格核验整机成员、5 项 overview、12 项 cell 和 10 项数值历史；CPU/内存各 44 个历史样本。尚无正常 App 登录会话，**未创建 Ammolite 模拟系统/绑定、未验收其公共 App API 或浏览器数据页**；没有伪造 SSO、重置密码或直接写业务绑定表。仍需用户提供正常登录配合后完成此部分。
+
+最后联调相关回归：两仓库各 10 个文件 **316 passed + 13 subtests passed**；KBot 加 Oracle 验收生成器为 **324 passed + 18 subtests passed**，并在干净 Git archive 加部署配置环境下复跑通过。两端架构边界检查通过。所有结果均为上述限定范围，不是全仓测试、267 项指标全覆盖或两端页面全部通过声明。
+
+页面仍诚实显示 `THRESHOLDS_UNVERIFIED`、文本历史不支持、OEM 留存分辨率、成员范围和快照/历史差异等缺口，不把部分覆盖当整机健康。既有非 Exadata、非 OEM 监控及诊断保持原路径。

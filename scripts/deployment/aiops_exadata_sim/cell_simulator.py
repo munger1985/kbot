@@ -126,5 +126,3 @@ def render(command, now=None):
                               "objectType": object_type}
                     element(root, kind, fields)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
-
-
