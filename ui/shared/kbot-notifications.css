@@ -1,5 +1,29 @@
-.kbot-notifications .kbot-notification-panel { width: min(28rem, calc(100vw - 2rem)); max-height: 70vh; overflow: auto; }
-.kbot-notification-panel header { display: flex; align-items: center; justify-content: space-between; }
-.kbot-notification-panel article { padding-block: 1rem; border-top: 1px solid var(--line); }
-.kbot-notification-panel p { white-space: normal; color: var(--muted); font-size: var(--type-supporting); }
-.kbot-notification-panel article strong { color: var(--ink); }
+/* 通知面板拥有独立的内容间距，不继承账户菜单的紧凑排版。 */
+.kbot-notifications .kbot-notification-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  top: calc(100% + 24px);
+  width: min(28rem, calc(100vw - 32px));
+  max-height: min(70dvh, 640px);
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--surface-raised);
+  font: var(--type-table)/1.6 var(--font-ui);
+  text-align: left;
+}
+.kbot-notifications .kbot-notification-panel[hidden] { display: none !important; }
+.kbot-notifications > .account-button { gap: 6px; padding: 6px 10px; }
+.kbot-notifications [data-notification-count] { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 99px; color: var(--accent-strong); background: var(--accent-soft); font-size: var(--type-meta); font-weight: 700; }
+.kbot-notification-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid var(--line); }
+.kbot-notification-panel > header > strong { color: var(--ink); font-size: 16px; font-weight: 600; }
+.kbot-notification-panel > [role="status"] { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--muted); background: var(--surface-subtle); font-size: var(--type-supporting); line-height: 1.65; white-space: normal; overflow-wrap: anywhere; }
+.kbot-notification-panel [data-notification-list] { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.kbot-notification-panel article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; min-width: 0; padding: 16px; border-top: 1px solid var(--line); }
+.kbot-notification-panel article:first-child { border-top: 0; }
+.kbot-notification-panel article > strong { grid-column: 1 / -1; color: var(--ink); font-size: var(--type-table); line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
+.kbot-notification-panel article > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: var(--type-supporting); line-height: 1.65; white-space: normal; overflow-wrap: anywhere; }
+.kbot-notification-panel article > small { grid-column: 1; align-self: center; color: var(--faint); font-size: var(--type-supporting); white-space: normal; overflow-wrap: anywhere; }
+.kbot-notification-panel article > .row-action { grid-column: 2; justify-self: end; align-self: end; }
+@media (max-width: 600px) {
+  .kbot-notifications .kbot-notification-panel { position: fixed; top: 72px; right: 16px; left: 16px; width: auto; max-height: calc(100dvh - 88px); }
+}

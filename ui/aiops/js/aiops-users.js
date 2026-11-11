@@ -20,6 +20,10 @@
       document.getElementById("user-form-title").textContent = "新建用户";
       showBindingStatus(null);
     }
+    function focusForm(field) {
+      form.closest("section").scrollIntoView({block: "start"});
+      field.focus({preventScroll: true});
+    }
     async function edit(userId) {
       try {
         selected = await KBotAIOpsAuth.request(api + "/" + encodeURIComponent(userId));
@@ -30,6 +34,8 @@
         form.elements.password.value = "";
         document.getElementById("user-form-title").textContent = "编辑用户";
         showBindingStatus(selected.feishu_binding);
+        status.textContent = "正在编辑：" + (selected.display_name || selected.user_id);
+        focusForm(form.elements.display_name);
       } catch (error) { status.textContent = error.message; }
     }
     async function load() {
@@ -80,7 +86,9 @@
       } catch (error) { status.textContent = error.message; }
       finally { busy = false; }
     };
-    document.getElementById("user-new").onclick = reset;
+    document.getElementById("user-new").onclick = () => {
+      reset(); status.textContent = ""; focusForm(form.elements.user_id);
+    };
     try {
       const roles = await KBotAIOpsAuth.request(api + "/assignable-roles");
       for (const role of roles.items || roles) {

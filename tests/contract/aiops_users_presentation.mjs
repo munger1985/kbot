@@ -104,17 +104,29 @@ try {
           await page.screenshot({path:resolve(artifacts, `users-${width}.png`), fullPage:true});
           await rows.first().getByRole('button', {name:'编辑／飞书绑定', exact:true}).click();
           await page.getByRole('heading', {name:'编辑用户', exact:true}).waitFor();
+          assert.equal(await page.locator('#user-display-name').evaluate(node=>document.activeElement===node), true, '点击编辑后必须将焦点移到编辑表单');
+          const editorTitle=await page.locator('#user-form-title').boundingBox();
+          assert.ok(editorTitle.y>=64 && editorTitle.y+editorTitle.height<1000, '编辑表单标题必须出现在顶栏下方的可视区域');
           assert.equal(await page.locator('#user-id').inputValue(), 'aiopsadmin');
           assert.equal(await page.locator('#user-id').isDisabled(), true);
           assert.equal(await page.locator('#user-password').isDisabled(), true);
           assert.equal(await page.locator('#user-role').isDisabled(), true);
           assert.equal(await page.locator('#user-feishu-open-id').inputValue(), 'ou_fixture');
           assert.equal(await page.locator('#user-binding-status').innerText(), '已验证');
+          assert.equal(await page.locator('#user-status').innerText(), '正在编辑：AIOps 管理员');
+          await page.screenshot({path:resolve(artifacts, `users-edit-${width}.png`)});
           await page.getByRole('button', {name:'保存用户', exact:true}).click();
           await page.waitForFunction(()=>document.getElementById('user-status').textContent.includes('用户已保存'));
           assert.deepEqual(await page.evaluate(()=>fixtureWrites), [{path:'/api/v1/apps/aiops/members/aiopsadmin', method:'PATCH',
             body:{display_name:'AIOps 管理员', feishu_open_id:'ou_fixture', expected_binding_id:'fixture-binding', expected_binding_version:3}}]);
           assert.equal(await page.locator('#user-id').isDisabled(), false);
+          await rows.first().getByRole('button', {name:'编辑／飞书绑定', exact:true}).click();
+          await page.getByRole('heading', {name:'编辑用户', exact:true}).waitFor();
+          await page.getByRole('button', {name:'新建用户', exact:true}).click();
+          assert.equal(await page.locator('#user-id').evaluate(node=>document.activeElement===node), true, '新建用户必须聚焦用户 ID');
+          assert.equal(await page.locator('#user-id').inputValue(), '');
+          assert.equal(await page.locator('#user-feishu-open-id').inputValue(), '');
+          assert.equal(await page.locator('#user-status').innerText(), '');
         } else {
           assert.equal(await page.locator('.user-list-row').count(), 0);
           assert.equal(await page.locator('#user-count').innerText(), mode==='empty'?'0 位用户':'暂不可用');

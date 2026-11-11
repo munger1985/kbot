@@ -1,6 +1,8 @@
 /* 用户目录沿用公共列表、状态标签和行操作规格，不影响其他管理页面。 */
 .user-management-page { display: grid; gap: 20px; min-width: 0; }
 .user-management-page > .ops-head, .user-management-page > .ops-panel { margin: 0; }
+.user-management-page > .ops-panel { scroll-margin-top: 84px; }
+.user-management-page > [role="status"] { margin: 0; color: var(--muted); font-size: var(--type-supporting); }
 .user-management-page > [role="status"]:empty { display: none; }
 .user-management-page .user-list { margin: 0; padding: 0; list-style: none; }
 .user-management-page .user-list-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 16px; padding: 16px; }

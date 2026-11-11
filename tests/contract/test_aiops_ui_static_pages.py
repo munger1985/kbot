@@ -302,7 +302,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261111_notify1"
+        expected = "./js/aiops-shell.js?v=20261111_center1"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name not in {"login.html", "notification-open.html"}]
         for path in pages:
             parser = _Parser()
@@ -816,7 +816,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn(f"workspaces.css?v={stylesheet_version}", page)
-            self.assertIn("aiops-shell.js?v=20261111_notify1", page)
+            self.assertIn("aiops-shell.js?v=20261111_center1", page)
             self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
         self.assertIn("reference-inspections.css?v=20261103_1", inspections)

@@ -135,7 +135,7 @@ test("实际 Shell 与页面脚本完成列表渲染和事件绑定", async () =
   assert.equal(typeof app.elements.get("agent-form").onsubmit, "function");
   assert.equal(app.stylesheets.length, 1);
   assert.equal(app.stylesheets[0].rel, "stylesheet");
-  assert.equal(app.stylesheets[0].href, "../shared/kbot-notifications.css?v=20261103_1");
+  assert.equal(app.stylesheets[0].href, "../shared/kbot-notifications.css?v=20261111_center1");
   assert.deepEqual(app.notices, ["通知中心暂时无法加载，请在对应页面查看生成记录。"]);
 });
 

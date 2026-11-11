@@ -239,7 +239,7 @@
       bindShellActions();
       // 通知沿用共享顶栏能力；加载失败不阻断 App，保留明确的降级提示。
       const notificationStyle = document.createElement("link");
-      notificationStyle.rel = "stylesheet"; notificationStyle.href = "../shared/kbot-notifications.css?v=20261103_1";
+      notificationStyle.rel = "stylesheet"; notificationStyle.href = "../shared/kbot-notifications.css?v=20261111_center1";
       document.head.append(notificationStyle);
       void import("../../shared/kbot-notifications.js?v=20261103_1").then(() => {
         KBotNotificationCenter.mount(document.querySelector(".business-topbar-actions"), {
