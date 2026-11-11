@@ -9,6 +9,8 @@ import unittest
 
 from tools.db.render_aiops_schema_validation import (
     _extract_named_objects,
+    _render_expected_names,
+    _render_set_check,
     render_validation_sql,
 )
 from tools.db.render_aiops_rebuild_schema import _load_canonical_sections
@@ -29,6 +31,27 @@ VALIDATION_SCRIPT = (
 
 
 class AIOpsSchemaValidationScriptTest(unittest.TestCase):
+    def test_collection_constructors_never_exceed_oracle_argument_limit(self) -> None:
+        for count in (0, 999, 1000, 1998, 1999):
+            with self.subTest(count=count):
+                names = [f"COLUMN_{index}" for index in range(count)]
+                sql = _render_expected_names(names)
+                batches = re.findall(r"odcivarchar2list\((.*?)\)\)", sql, re.S)
+                self.assertTrue(batches)
+                self.assertTrue(all(len(re.findall(r"'[^']*'", batch)) <= 999 for batch in batches))
+                self.assertEqual(re.findall(r"'(COLUMN_\d+)'", sql), names)
+                if count > 999:
+                    self.assertTrue(sql.startswith("        SELECT object_name FROM ("))
+                    self.assertTrue(sql.endswith("\n        )"))
+
+    def test_large_expected_set_is_grouped_on_both_sides_of_minus(self) -> None:
+        expected = _render_expected_names([f"COLUMN_{index}" for index in range(1000)])
+        actual = "        SELECT column_name AS object_name FROM user_tab_columns"
+        sql = _render_set_check(label="测试列", expected_names=[f"COLUMN_{index}" for index in range(1000)],
+            actual_query=actual, error_code="TEST_COLUMNS")
+        self.assertIn(expected + "\n        MINUS\n" + actual, sql)
+        self.assertIn(actual + "\n        MINUS\n" + expected, sql)
+
     def setUp(self) -> None:
         self.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         self.sql = VALIDATION_SCRIPT.read_text(encoding="utf-8")

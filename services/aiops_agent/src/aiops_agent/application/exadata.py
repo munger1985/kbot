@@ -141,7 +141,7 @@ class ExadataOEMService:
             gaps.append(ExadataGap(code="HISTORY_UNAVAILABLE", detail="本次仅为最新快照，不生成趋势、增量或跨组件均值"))
         else:
             gaps.append(ExadataGap(code="HISTORY_RESOLUTION_PROVIDER_MANAGED", detail="OEM 按实际留存选择原始/小时/日聚合；不据此推断精确增量或原始执行明细，文本状态不回退快照"))
-        gaps.append(ExadataGap(code="MEMBERSHIP_SCOPE", detail="成员范围仅含 OEM 整机 members 接口可验证的成员；不把未返回的间接组件推断为已覆盖"))
+        gaps.append(ExadataGap(code="MEMBERSHIP_SCOPE", detail="成员仅含 OEM 显式包含关系及 GUID 目录复核的整机直接组件和 Grid 下 Cell；不推断其他间接组件归属"))
         return ExadataView(resource_id=resource_id, binding_id=frozen["binding_id"],
             binding_version=frozen["binding_version"], source_version=frozen["source_version"],
             catalog_version=self.version, catalog_sha256=self.digest, captured_at=datetime.now(UTC),

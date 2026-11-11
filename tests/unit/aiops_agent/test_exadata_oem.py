@@ -25,6 +25,7 @@ from platform_core.contracts.aiops.exadata import ExadataQuery
 from platform_core.identity import uuid7
 from tests.unit.aiops_agent.test_business_system_publication_lifecycle import lab, LocalUow
 from tests.unit.aiops_agent.test_aiops_oem_native_metrics import adapter, collection
+from tests.unit.aiops_agent.test_exadata_oem_inventory import association_rows
 
 ROOT, CELL = "a" * 32, "b" * 32
 ROOT_ID = {"target_id": ROOT, "target_type": "oracle_dbmachine", "display_name": "测试整机"}
@@ -96,12 +97,14 @@ def test_discovery_only_dbmachine_and_verified_members_no_host_guessing():
         {"targetId": ROOT, "targetType": "oracle_dbmachine", "targetName": "测试整机"},
         {"targetId": CELL, "targetType": "oracle_exadata", "targetName": "测试 Cell"}]),
         {"targetId": ROOT, "targetType": "oracle_dbmachine", "targetName": "测试整机"},
+        association_rows(("测试整机", "oracle_dbmachine", "测试 Cell", "oracle_exadata")),
         collection([{"targetId": CELL, "targetType": "oracle_exadata", "targetName": "测试 Cell"}]),
         {"targetId": CELL, "targetType": "oracle_exadata", "targetName": "测试 Cell"})
     result = asyncio.run(value.discover_exadata())
     assert len(result) == 1 and result[0][0]["target_id"] == ROOT
     assert result[0][1] == MEMBERS
-    assert any(url.endswith("/targets/" + ROOT + "/members") for url, _ in calls)
+    assert any(url.endswith("/list/dataservice") for url, _ in calls)
+    assert not any(url.endswith("/members") for url, _ in calls)
 
 
 @pytest.mark.parametrize("kind", ["oracle_exadata", "host", "oracle_database"])
@@ -112,7 +115,7 @@ def test_cell_or_host_cannot_bind_as_machine(kind):
 
 
 def test_unverified_or_duplicate_members_fail_closed():
-    value, _ = adapter({"targetId": ROOT, "targetType": "oracle_dbmachine", "targetName": "测试整机"}, collection([]))
+    value, _ = adapter({"targetId": ROOT, "targetType": "oracle_dbmachine", "targetName": "测试整机"}, association_rows())
     with pytest.raises(DiagnosticSourceAdapterError):
         asyncio.run(value.exadata_inventory(ROOT))
 
@@ -309,7 +312,7 @@ def test_no_data_response_remains_a_gap(exadata_lab):
     asyncio.run(run())
 
 
-def test_members_pagination_never_follows_external_urls():
+def test_incomplete_association_schema_never_follows_external_urls():
     value, calls = adapter({"targetId": ROOT, "targetType": "oracle_dbmachine", "targetName": "测试整机"},
         collection([], links={"next": {"href": "https://outside.invalid/em/api/targets/" + ROOT + "/members?page=foo"}}))
     with pytest.raises(DiagnosticSourceAdapterError):

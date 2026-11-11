@@ -1,4 +1,4 @@
-"""OEM 整机成员发现，只接受官方 members 关系，拒绝名称推断和不完整目录。"""
+"""OEM 整机成员发现，只接受官方显式包含关系，拒绝名称推断和不完整目录。"""
 
 import asyncio
 import hashlib
@@ -10,6 +10,7 @@ from .base import DiagnosticSourceAdapterError
 
 from .oem_target_identity import normalize_target, target_error
 from .oem_latest import query_latest
+from .oem_exadata_inventory import verified_members
 from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
 
 
@@ -42,22 +43,7 @@ class OEMExadata:
             root = normalize_target(payload, expected_guid=root_id)
             if root["targetType"] != "oracle_dbmachine":
                 target_error("SOURCE_TARGET_MISMATCH")
-            members = {}
-            async for rows in self._target_pages("/targets/" + root_id + "/members"):
-                for row in rows:
-                    item = normalize_target(row)
-                    guid = item["targetId"]
-                    if guid == root_id or guid in members or len(members) >= 128:
-                        target_error("SOURCE_DISCOVERY_LIMIT")
-                    detail, _ = await self._native_get("/targets/" + guid, max_bytes=65536)
-                    detail = normalize_target(detail, expected_guid=guid)
-                    if (detail["targetType"], detail["targetName"]) != (item["targetType"], item["targetName"]):
-                        target_error("SOURCE_TARGET_MISMATCH")
-                    members[guid] = {"target_id": guid, "target_type": item["targetType"],
-                        "display_name": item["targetName"]}
-            if not members:
-                target_error("SOURCE_EXADATA_MEMBERS_UNVERIFIED")
-            ordered = sorted(members.values(), key=lambda item: item["target_id"])
+            ordered = await verified_members(self, root)
             identity = {"target_id": root_id, "target_type": "oracle_dbmachine",
                 "display_name": root["targetName"]}
             return identity, ordered, inventory_digest(identity, ordered)

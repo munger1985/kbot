@@ -55,6 +55,30 @@ def _format_names(names: list[str], *, indent: str = "            ") -> str:
     return ",\n".join(f"{indent}'{name}'" for name in names)
 
 
+def _render_expected_names(names: list[str]) -> str:
+    """分批构造目录集合，避免 Oracle 集合构造器超过 999 个参数。"""
+    if len(names) <= 999:
+        return (
+            "        SELECT column_value AS object_name\n"
+            "          FROM TABLE(sys.odcivarchar2list(\n"
+            f"{_format_names(names)}\n"
+            "          ))"
+        )
+    batches = [
+        "            SELECT column_value AS object_name\n"
+        "              FROM TABLE(sys.odcivarchar2list(\n"
+        f"{_format_names(names[offset:offset + 999], indent='                ')}\n"
+        "              ))"
+        for offset in range(0, len(names), 999)
+    ]
+    # 必须先把 UNION ALL 包在子查询中；否则反向 MINUS 会错误地合入后续批次。
+    return (
+        "        SELECT object_name FROM (\n"
+        + "\n            UNION ALL\n".join(batches)
+        + "\n        )"
+    )
+
+
 def _render_set_check(
     *,
     label: str,
@@ -63,13 +87,10 @@ def _render_set_check(
     error_code: str,
 ) -> str:
     """生成期望集合与数据库实际集合的双向差异检查。"""
-    expected_sql = _format_names(expected_names)
+    expected_sql = _render_expected_names(expected_names)
     return f"""    l_issue_count := 0;
     FOR missing_row IN (
-        SELECT column_value AS object_name
-          FROM TABLE(sys.odcivarchar2list(
 {expected_sql}
-          ))
         MINUS
 {actual_query}
     ) LOOP
@@ -80,10 +101,7 @@ def _render_set_check(
     FOR extra_row IN (
 {actual_query}
         MINUS
-        SELECT column_value AS object_name
-          FROM TABLE(sys.odcivarchar2list(
 {expected_sql}
-          ))
     ) LOOP
         l_issue_count := l_issue_count + 1;
         dbms_output.put_line('[多余] {label}: ' || extra_row.object_name);

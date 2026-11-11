@@ -106,11 +106,11 @@ KBot4 与 Ammolite 同步维护合同、业务行为、UI、模型、规范 Sche
 
 每页默认 12、最多 24 个“组件×指标”查询，每项最多 256 个样本、262,144 字节；指标采集 30 秒，成员复核与采集合计 55 秒。发现最多扫描 2,000 个目标、16 台整机，每台最多确认 128 个成员。预算耗尽或分页均明确标为部分覆盖，不作整机健康结论。
 
-根目标必须为 `oracle_dbmachine`。仅以 `GET /targets/{rootId}/members` 返回项作为成员证明，并逐项复核 GUID、名称和类型；成员未返回的间接端口、ASM 或其他对象不自动纳入。可用目标类型的目录定义不代表这些组件已经属于该整机。
+根目标必须为 `oracle_dbmachine`。成员必须有 OEM 原生包含关系证明，并逐项复核 GUID、名称和类型；不得从名称/IP、同 Agent 或指标目录推断归属。初版使用 `/members`，现场验证后的正式关系读取设计见第 10 节。可用目标类型的目录定义不代表这些组件已经属于该整机。
 
 候选签名绑定租户（平台适用时）、Domain、来源、操作者、EXADATA 候选类型、来源版本和成员摘要；**不预先绑定某个资源 UUID**。资源与系统的权限、归属和类型由保存入口另行检查。采集前后重读成员并检查资源、系统、绑定、来源版本；成员变化要求重新发现确认。
 
-官方成员接口依据为 [Oracle Enterprise Manager 24.1 members REST 文档](https://docs.oracle.com/en/enterprise-manager/cloud-control/enterprise-manager-cloud-control/24.1/emrest/op-https-em_host-em_console_https_port-em-api-targets-targetid-members-get.html)。这不证明现场 13.5 或其他版本支持该接口；真实版本不支持时失败关闭，不猜名称、不直连 OEM 仓库补成员。
+初版成员接口依据为 [Oracle Enterprise Manager 24.1 members REST 文档](https://docs.oracle.com/en/enterprise-manager/cloud-control/enterprise-manager-cloud-control/24.1/emrest/op-https-em_host-em_console_https_port-em-api-targets-targetid-members-get.html)。这不证明现场相同版本号即支持该接口；第 10 节改用已验证的官方 Data Service，仍不猜名称、不直连 OEM 仓库补成员。
 
 ### 8.4 Schema 与部署工件
 
@@ -131,7 +131,53 @@ KBot 规范为 Schema 60（`aiops-oracle-v60-exadata-oem`），102 表、10 视�
 
 ### 8.6 未完成验收与发布条件
 
-1. **没有在线 OEM REST 联调结果**。须以现场版本、受控凭据和已确认整机核验成员、元数据类型/单位/维度、latest、数值 history、文本缺口、权限和预算；归档只证明当时仓库有定义/采样。未新增或宣称 Exadata 事件诊断能力。
+1. **整机在线 OEM REST 验收未完成**。后续模拟环境已完成部分指标传输验证，详见第 9 节；仍须以现场版本、受控凭据和已确认整机核验成员、完整元数据类型/单位/维度、文本缺口、权限和预算。未新增或宣称 Exadata 事件诊断能力。
 2. **没有应用 Schema 或部署**。只读真实 Oracle Schema 验收因本机 127.0.0.1:1521 无监听而不能完成；真实 PostgreSQL 全实体只读验收因新增两表未应用及既有大量 Schema 漂移而未通过，涉及知识入库、输出任务、资源绑定、通知及旧 KC 对象等。静态工件通过不等于现有数据库可运行。
 3. 发布前先单独核对数据库完整基线和安排相应初始化/切换，不能在业务请求中补表，也不能直接对漂移环境套用 Schema 60 两表脚本。
 4. 实施验收阶段未执行数据库 DDL/初始化、部署或服务重启；后续代码提交/推送不代表上线或在线验收通过。无关工作区修改保持独立，不纳入本功能提交。
+
+## 9. 模拟 Cell 与真实 OEM 第一阶段联调（2026-11-11）
+
+用户授权在 aiopsdb 实验主机新建模拟容器，用真实 OEM 采集并保存，再由 AIOps 正常 OEM 接口读取。采用 **CellCLI XML/独立 SSH → 标准 OEM Agent/XA 原厂插件 → 真实 OEM latest/history → AIOps OEMAdapter**；不模拟 OEM REST，不写仓库内部表，不注入客户真实业务数值。
+
+工件和操作说明见 [Exadata 模拟夹具 README](../../scripts/deployment/aiops_exadata_sim/README.md)。新增 `aiops-exadata-sim-monitor`、`aiops-exadata-cellcli-sim` 及 `AIOPS_SIM_EXADATA_*` 目标，原有 OEM、数据库和 Agent 不重启、不接管。标准 Agent 原厂 11 项 prerequisite 全部通过，XA 插件部署、心跳与上传成功；模拟目标的状态/性能集合调度已设一分钟，不承诺仓库即时刷新。
+
+原厂系统模型要求 DB Machine → Grid → Cell；现场通过 create/modify_system 建立该结构。命令接受不等于成员读验收：现场根/Grid 的 `/members` 均为 404 HTML，`expand=associates` 返回空，严格整机 smoke 返回 `SOURCE_QUERY_UNSUPPORTED`。只读检查现场 TargetsController 未检出 members 路由，但尚未查明支持接口所需的确切 RU，不自动升级 OEM、不以名称/IP猜归属、不把 Cell 当整机根，不放宽已有失败关闭行为。
+
+实际 KBot 和 Ammolite 的 OEMAdapter 分别 已从真实 OEM 读到 overview 5 项、cell 12 项最新值以及 CPU/内存数值历史。最初样本中 CPU 为 42.801%、内存为 62.601%，采样时间是 2026-11-11 09:45:00 UTC；这些是模拟器按原生字段生成、由真实插件计算保存的合成数据，不是用户导出包中的业务值。部分单位为 n/a/null 时保留 OEM 原值，不擅自补单位。
+
+两端各 9 个相关测试文件通过 **253 passed + 13 subtests passed**：模拟器/SSH/注册安全合同 8 项、Exadata/HTTP 合同 47 项、既有普通 OEM/资源监控回归 198 项。部署工件与 smoke 两仓库同步；整理后的注册器未删除重建现场目标进行复跑，因此不声明全新部署全自动验收。CellCLI 仅用于隔离实验模拟，不新增产品内的 Shell/CellCLI 执行能力。
+
+一分钟原厂调度写入 Agent 配置后，未重新手工触发集合，仅调用新 Agent 的 `emctl upload agent` 刷新上传，即在 OEM history 读取到 09:49、09:50、09:51 UTC 的连续自动采样；CPU 为 26.0/26.2/26.88%，内存为 57.0/57.07/57.29%。因此已验证持续合成采集，但仍存在原厂批次上传/入库延迟，不能把一分钟调度说成一分钟页面刷新保证。
+
+只读 smoke 的 `--cell-only` 明确标为 `METRIC_TRANSPORT_ONLY`、`inventory_verified=false`，不持久化或进入产品绑定路径。**目前未完成页面端到端验收**，未部署/重启 AIOps、未执行 Schema 变更、未创建或更改业务系统绑定。需先解决现场 OEM 可验证成员接口能力，再按原有安全绑定流程接入页面。此次没有修改非 Exadata/非 OEM 监控和诊断，也没有修改应用生产适配器。
+
+## 10. 现场成员关系读取修订
+
+用户确认继续处理成员发现。现场官方 REST `members`、`immediateRelationships` 和 `configMetricGroups` 均为 404；原厂 `get_system_members -depth=2` 则明确返回 DB Machine → Grid → Cell。已验证官方 EMCLI `invoke_ws` 文档中的 GET `/em/websvcs/restful/emws/core/v0/list/dataservice`，使用固定 `name=TargetAssociations` 及 `TARGET_NAME/TARGET_TYPE/ASSOC_TYPE` 精确过滤，能读到同样的真实关系。
+
+将 Exadata 专用成员读取**统一改为**该 Data Service；不保留先试 members 再降级的双路径，不修改普通 OEM Adapter 读取。不增加客户端软件、SSH、直连 OEM 仓库、新服务或凭据种类。
+
+1. 仍以 `/api/targets/{rootGuid}` 核验 `oracle_dbmachine`。Data Service 固定在同一 OEM `/em` 基址，只读取 `TargetAssociations`，固定过滤 `ASSOC_TYPE='internal_contains'`；不开放 SQL、资源名、查询字段、端点或关联类型给用户/模型。
+2. 返回的关系必须逐行精确匹配当前父目标名称、类型和关联方向。这里名称/类型来自 **OEM 显式关系**，仅用于查回唯一 GUID，不是按相似名称猜归属。再通过 `/api/targets?name=...&typeName=...&limit=2` 唯一定位，以及 GUID detail 复核身份；缺失、歧义、目录分页或类型/名称漂移均失败关闭。
+3. 只遍历根整机及其直接 `oracle_exadata_grid` 的包含边；保留 Grid 自身以及实际返回的直接组件。Grid → Cell 必须有独立显式包含关系；不把 `hosted_by`、`monitored_by`、`stores_on`、部署关系或数据库关系混入硬件成员。不遍历任意间接端口/ASM/其他系统，不允许循环、重复成员或跨整机根；至少须有一个可核验 Cell。
+4. Data Service 不提供此资源的分页合同，故必须有布尔 `exceedsMaxRows=false`、完整列名和合法数据数组。缺失标志、截断、超预算或服务未正确应用过滤时拒绝整批结果，不把已收到部分当完整 Inventory。
+5. 保留既有 128 成员、4 MiB、30 秒 Inventory 预算，发现 2,000 目标/16 根预算以及读前读后的成员摘要、来源/绑定/权限复核。全部 HTTP GET 禁止重定向和跟随响应地址；沿用来源托管凭据和字节预算。无新持久化模型或对现有绑定的自动改写。
+
+依据：[Oracle EMCLI invoke_ws](https://docs.oracle.com/en/enterprise-manager/cloud-control/enterprise-manager-cloud-control/24.1/emcli/invoke_ws.html)、[list](https://docs.oracle.com/en/enterprise-manager/cloud-control/enterprise-manager-cloud-control/24.1/emcli/list.html)、[get_system_members](https://docs.oracle.com/en/enterprise-manager/cloud-control/enterprise-manager-cloud-control/24.1/emcli/get_system_members.html)；现场资源 help 明确五列及可搜索字段，过滤后的 `internal_contains` 与原厂系统成员命令一致。官方 REST `/targets` 的精确名称/类型查询也已现场验证。
+
+### 10.1 修订实现与验证结果
+
+- 两端同步新增 `adapters/diagnostic_sources/oem_exadata_inventory.py`，只被 Exadata 专用入口调用；普通 OEM/其他来源监控、诊断、认证和 Schema 未修改。专用页面的成员范围提示同步改为实际证明范围。
+- 两端各新增 38 项关系安全测试，覆盖两层包含、固定同源端点、精确过滤、重复/循环、唯一 GUID、详情漂移、截断/格式错误、认证/限流/服务错误、禁止重定向和任意地址。连同已有相关合同及隔离回归，各 **291 passed + 13 subtests passed**（10 个文件）；两端架构边界检查通过。
+- 使用各仓库自身实际 OEMAdapter，在真实 OEM 上分别通过默认严格整机 overview、cell、数值 history 三种 smoke。结果均为 `inventory_verified=true`、`VERIFIED_EXADATA_INVENTORY_AND_METRICS`，确认 DBM01、GRID01、CELL01；overview 5 项和 cell 12 项最新值非空，CPU/内存各返回 40 个历史样本。成员摘要一致；没有使用 `--cell-only` 或假绑定。
+- 历史末三项为 2026-11-11 10:25/10:26/10:27 UTC，CPU 30.56/32.58/34.81%，内存 58.52/59.19/59.94%。这些仍是合成调试值，由真实 OEM 原厂插件采集保存；存在批次上传延迟，不保证秒级或一分钟可见。
+- 应用环境已确认为 kbotdev（私网 `10.0.0.190`），2026-11-11 完成只读核查，详见下节；尚未部署/重启应用、执行 DDL 或创建业务系统绑定，未完成浏览器端到端验收。源码和工件同步不等于已推送或已上线。
+
+### 10.2 kbotdev 联调部署前核查
+
+- KBot 当前运行 `/home/ubuntu/kbot4.0`，`kbot4.1.1@6cc14557`，已有 Exadata 基础功能但未包含本次成员修复；`http://140.238.44.208:8080/ui/aiops/monitoring.html` 返回 HTML 200。
+- Ammolite 当前运行 `/home/ubuntu/Ammolite`，`dev@109138b2`，尚未包含 Exadata 基础功能；`http://140.238.44.208:19080/` 返回 HTML 200。监控路由为 `/apps/aiops/:domainCode/monitoring`，必须正常登录并使用授权领域。
+- 两端均已有启用、CONNECTED 的 `OEM24ai` 来源，应用主机将 `aiops-oem.lab` 解析为 OEM 私网地址 `10.0.0.88`。两端均无 EXADATA 资源、Exadata 专用两表；不能仅更新代码就宣称页面可用。
+- KBot 版本视图为 AIOPS / Schema 57，不能直接执行只适用于完整 Schema 59 的 Exadata 增量脚本；先核对实际对象差异并确定经授权的无损方案，不抬高版本号绕过检查，不重建或清空现有库。Ammolite 新表按规范 Entity/初始化流程处理。
+- 本轮只读检查不涉及服务器拉取、DDL、来源/绑定修改或任何重启。后续部署必须明确授权、限定相关服务并保留现有配置备份；既有 OEM/数据库 Agent 和非 Exadata/非 OEM 监控保持不变。HTML 200、来源 CONNECTED 和适配器 smoke 均不能代替页面数据验收。
