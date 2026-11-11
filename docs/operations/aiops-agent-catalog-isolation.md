@@ -1,0 +1,43 @@
+# AIOps Agent 目录故障隔离与 Ammolite 定向修复
+
+## 线上原因与授权范围（2026-11-11）
+
+Ammolite 21:17 在线 development-logs 记录：运维知识库列表因 `aiops_knowledge_base.configuration_json` 缺失返回 500，Main API 对应 `OPS_UPSTREAM_UNAVAILABLE`。实际同一 Domain 有 1 个 `Cyber DBA` Agent、4 个已上线业务系统；前端将 Agent、系统、模型、标签和知识库放在同一组 `Promise.all` 后统一赋值，一个失败会让全部初次加载结果丢失。共用错误变量还会被向导校验清空。
+
+用户批准：修复并部署各目录独立加载/错误提示，定向补齐此次报错的规范字段，保留既有数据；经正常应用会话建立 Ammolite Exadata 模拟系统、硬件及 OEM 绑定。未授权全库初始化、删除旧解析、修复其余知识结构或扩大现有 Agent 授权。
+
+## 两端一致的页面行为
+
+- Agent、系统、模型、标签、知识库分别处理结果和状态。成功目录即时可用，失败目录明确标名；刷新失败保留上次成功数据并标为仅供参考，不把失败当作空目录。
+- 目录错误与表单校验错误分开，在页面和抽屉持续显示；切换步骤不清除目录错误。抽屉可重试目录，名称、模型和授权草稿不因重试被重置。
+- 业务系统目录失败、格式无效或尚有未读取的分页时，不把授权 ID 当成已删除对象进行过滤；草稿保留原 ID 并禁止提交范围。选择器明确显示目录未就绪/失败，不显示假的“没有匹配项”。只有成功完整读取的目录才可按既有规则移除真正不存在的系统。
+- 知识库/标签读取失败不修改原知识授权；未启用知识问答的诊断 Agent 仍可保留原配置保存。没有在前端自动关闭能力、清空知识策略、追加权限或选择特定厂商模型。
+- Ammolite Vue 和 KBot 静态 Agent 页面同步实施；普通监控、诊断、聊天和后端 HTTP 合同不变。
+
+## PostgreSQL 定向部署
+
+规范 Entity 的 `configuration_json` 为非空 JSONB，应用默认空字典。本次不新增持久化合同，仅让显式初始化器具备已有规范字段的定向对齐入口：
+
+```bash
+python scripts/deployment/init_postgresql.py --align-aiops-knowledge-base-configuration-only
+```
+
+生产/开发连接均通过原部署配置或现行服务 Settings 解析，不向命令行或日志打印 DSN、口令。线上可在受控诊断进程中复用同一个 `_align_aiops_knowledge_base_configuration`，只针对已确认的 `ammolite` schema 执行单事务变更。
+
+- 缺列时仅新增 `configuration_json JSONB NOT NULL`，用临时 `DEFAULT '{}'::jsonb` 保留旧知识库为“尚未配置”，随后移除数据库默认值以保持规范。没有猜测模型、表示空间或解析 Profile。
+- 已有规范列时无写入；已有列类型/可空性不符时明确拒绝自动改写。Schema 标识符严格校验，锁等待限 5 秒，失败则 PostgreSQL 事务回滚。
+- 不调用 `initialize`、`reset_aiops_schema`、`create_all` 或其他升级分支；不更新/删除业务行，不创建另外 19 张缺失知识表，也不处理旧索引表的 5 个缺失字段。
+- 正常全量初始化也复用该字段对齐方法；此检查只在显式部署工具内，绝不放入服务启动、readiness、UoW 或业务请求。
+- 部署前后复核旧字段内容/行数、Agent/系统/绑定与配置摘要、目标列及其他表列元数据。此变更和前端发布不需要重启任何服务。
+
+## 验证与交付状态
+
+本地限定 Python 回归 68 项通过（Agent 配置 API、知识库、6 项定向结构合同及初始化器），Ammolite/KBot 架构边界检查和 Ammolite 106 张 AIOps ORM metadata 检查通过；Portal typecheck、生产构建（957 modules，仍有既有大 chunk 告警）及 KBot 脚本语法检查通过。
+
+两端真实组件/静态脚本的浏览器夹具共 43 项：42 项功能通过，其中本次新增 12 项目录失败、授权保留、跨步骤提示和重试恢复测试。一项既有视觉对比仍失败：KBot 抽屉阴影透明度 0.20、Ammolite 0.16。已用修改前的干净 tree `/tmp/exadata-chat-kbot-FFOPtx` 与 `/tmp/exadata-chat-ammolite-DVGshV` 复现同一断言，未放宽断言或改动无关样式。这是受控夹具回归，不是线上正常登录后的页面验收。
+
+待补充实际部署记录；不得把代码提交、构建或数据库 readiness 当成正常登录后的页面验收。
+
+## Exadata 模拟系统
+
+现有 Ammolite `OEM24ai` 已 ENABLED/CONNECTED，沿用标准托管凭据及真实 OEM 中的 `AIOPS_SIM_EXADATA_DBM01/GRID01/CELL01`，无需新模拟容器。必须通过正常应用会话的公共发现/业务系统 API 创建独立模拟系统、EXADATA 硬件和来源绑定；不复制 KBot 主键、绑定行或加密凭据，不修改现有 Agent 授权。若没有正常会话，明确报告该部分未完成，不伪造 SSO、重置密码、直接写业务表或把“代码已部署”说成“模拟系统已配置”。

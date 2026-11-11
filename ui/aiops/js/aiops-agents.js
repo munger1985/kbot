@@ -99,8 +99,11 @@
   let pickerKind = null;
   let pickerPage = 1;
   let saving = false;
-  let loading = true;
+  let loading = false;
   let catalogReady = false;
+  const directoryReady = {};
+  const directoryErrors = {};
+  const directoryLabels = { agents: "Agent 目录", systems: "业务系统目录", models: "模型目录", tags: "知识标签目录", knowledgeBases: "运维知识库目录" };
   const pickerPageSize = 12;
   const queryCapabilities = ["RESOURCE_CATALOG_QUERY", "ALERT_QUERY", "INSPECTION_QUERY", "REPORT_CASE_QUERY"];
   const selectionSets = {
@@ -109,7 +112,7 @@
     tags: new Set(),
   };
 
-  const systemName = (id) => systems.find((item) => item.business_system_id === id)?.display_name || "业务系统已不可用";
+  const systemName = (id) => systems.find((item) => item.business_system_id === id)?.display_name || (directoryReady.systems ? "业务系统已不可用" : `已授权系统（目录未就绪）：${id}`);
   const selected = (name) => [...document.querySelectorAll(`[name="${name}"]:checked`)].map((input) => input.value);
 
   function showResult(message = "", tone = "") {
@@ -150,7 +153,7 @@
   }
 
   function selectionRows(kind) {
-    if (kind === "systems") return systems.filter((item) => selectionSets.systems.has(String(item.business_system_id))).map((item) => ({ id: String(item.business_system_id), title: item.display_name }));
+    if (kind === "systems") return [...selectionSets.systems].map(id => ({ id, title: systemName(id) }));
     if (kind === "knowledgeBases") return knowledgeBases.filter((item) => selectionSets.knowledgeBases.has(String(item.knowledge_base_id))).map((item) => ({ id: String(item.knowledge_base_id), title: item.display_name }));
     return knowledgeTags.filter((item) => selectionSets.tags.has(String(item.tag_id))).map((item) => ({ id: String(item.tag_id), title: item.display_name }));
   }
@@ -290,6 +293,7 @@
   }
   function stepError(step) {
     const form = document.getElementById("agent-form");
+    if (step === 3 && !directoryReady.systems) return "业务系统目录未就绪，请刷新目录后再保存；已有授权保持不变。";
     if (step === 1 && !form.elements.display_name.value.trim()) return "请填写 Agent 名称。";
     if (step === 2 && form.elements.knowledge_enabled.checked) {
       if (!selected("knowledge_source_kinds").length) return "请至少选择一种知识来源。";
@@ -364,6 +368,7 @@
   }
 
   function pickerCandidates() {
+    if (!directoryReady[pickerKind]) return [];
     if (pickerKind === "systems") return systems.filter((item) => item.status === "ENABLED").map((item) => ({ id: String(item.business_system_id), title: item.display_name, meta: `${item.system_code} · ${item.environment} · ${Number(item.resource_count || 0)} 个资源`, environment: item.environment }));
     if (pickerKind === "knowledgeBases") return knowledgeBases.filter((item) => item.status === "ACTIVE").map((item) => ({ id: String(item.knowledge_base_id), title: item.display_name, meta: item.description || "独立运维知识索引空间" }));
     return knowledgeTags.filter((item) => item.status === "ACTIVE").map((item) => ({ id: String(item.tag_id), title: item.display_name, meta: "已启用知识标签" }));
@@ -382,7 +387,7 @@
       const checked = selection.has(item.id);
       const disabled = !checked && limit !== null && selection.size >= limit;
       return `<button class="agent-picker-row ${checked ? "selected" : ""}" type="button" data-picker-id="${escape(item.id)}" ${disabled ? "disabled" : ""}><span class="agent-picker-check">${checked ? "✓" : ""}</span><span><strong>${escape(item.title)}</strong><small>${escape(item.meta)}</small></span></button>`;
-    }).join("") : '<p class="agent-picker-empty">没有匹配的可选项。</p>';
+    }).join("") : `<p class="agent-picker-empty">${escape(directoryErrors[pickerKind] || (directoryReady[pickerKind] ? "没有匹配的可选项。" : "目录加载中，请稍后重试。"))}</p>`;
     list.querySelectorAll("[data-picker-id]").forEach((button) => {
       button.onclick = () => {
         if (selection.has(button.dataset.pickerId)) selection.delete(button.dataset.pickerId);
@@ -409,6 +414,7 @@
   }
 
   function openCreate() {
+    renderResources();
     editing = null;
     const form = document.getElementById("agent-form");
     form.reset();
@@ -442,6 +448,7 @@
 
   async function openEdit(agentId) {
     editing = await KBotAIOpsAuth.request(`${api}/agents/${encodeURIComponent(agentId)}`);
+    renderResources();
     const form = document.getElementById("agent-form");
     form.reset();
     resetChecks();
@@ -476,7 +483,7 @@
     form.elements.max_security_level.value = String(policy.max_security_level || 3);
     form.elements.maximum_references.value = String(policy.maximum_references || 8);
     const availableSystemIds = new Set(systems.map(item => String(item.business_system_id)));
-    const selectedSystemIds = values(editing.allowed_business_system_ids).filter(id => availableSystemIds.has(String(id)));
+    const selectedSystemIds = values(editing.allowed_business_system_ids).filter(id => !directoryReady.systems || availableSystemIds.has(String(id)));
     setChecked("allowed_business_system_ids", selectedSystemIds);
     if (selectedSystemIds.length !== values(editing.allowed_business_system_ids).length) shell.toast("部分业务系统已删除或不可用，已从编辑草稿中移除；保存时请重新确认工作范围。");
     setChecked("capabilities", editing.capabilities);
@@ -610,35 +617,49 @@
   }
 
   async function load() {
+    if (loading) return;
     loading = true;
     setBusy();
     const pageError = document.getElementById("agent-page-error");
-    pageError.hidden = true;
+    async function directory(key, url, accept) {
+      directoryReady[key] = false;
+      delete directoryErrors[key];
+      try {
+        accept(await KBotAIOpsAuth.request(url));
+        directoryReady[key] = true;
+      } catch (error) {
+        directoryErrors[key] = `${directoryLabels[key]}加载失败：${error.message || "请求失败"}。已有数据仅供参考，请重试；不会清空已有授权。`;
+      }
+    }
+    function rows(data) {
+      if (!Array.isArray(data)) throw new Error("目录响应格式无效");
+      return data;
+    }
     try {
-      const [agentRows, systemPage, modelRows, tagPage, knowledgeBasePage] = await Promise.all([
-        KBotAIOpsAuth.request(`${api}/agents`),
-        KBotAIOpsAuth.request(`${api}/business-systems?limit=200`),
-        KBotAIOpsAuth.request("/api/v1/model-catalog"),
-        KBotAIOpsAuth.request(`${api}/operations-knowledge/tags?limit=200`),
-        KBotAIOpsAuth.request(`${api}/operations-knowledge/knowledge-bases`),
+      await Promise.all([
+        directory("agents", `${api}/agents`, data => { agents = rows(data); boundaryStates.clear(); renderRows(); }),
+        directory("systems", `${api}/business-systems?limit=200`, data => {
+          if (data.next_cursor) throw new Error("业务系统目录尚未完整读取");
+          systems = rows(data.items);
+        }),
+        directory("models", "/api/v1/model-catalog", data => { models = rows(data); }),
+        directory("tags", `${api}/operations-knowledge/tags?limit=200`, data => { knowledgeTags = rows(data.items || data); }),
+        directory("knowledgeBases", `${api}/operations-knowledge/knowledge-bases`, data => { knowledgeBases = rows(data.items || data); }),
       ]);
-      agents = values(agentRows);
-      boundaryStates.clear();
-      systems = values(systemPage?.items);
-      models = values(modelRows);
-      knowledgeTags = values(tagPage?.items || tagPage);
-      knowledgeBases = values(knowledgeBasePage?.items || knowledgeBasePage);
-      renderResources();
+      if (!document.getElementById("agent-dialog").open) renderResources();
+      else renderSelectionSummaries();
       const environments = [...new Set(systems.filter((item) => item.status === "ENABLED").map((item) => item.environment).filter(Boolean))].sort((left, right) => String(left).localeCompare(String(right), "zh"));
       document.getElementById("agent-picker-environment").innerHTML = '<option value="">全部环境</option>' + environments.map((item) => `<option value="${escape(item)}">${escape(item)}</option>`).join("");
       renderRows();
       for (const agent of agents) void loadBoundary(values(agent.allowed_business_system_ids));
       catalogReady = true;
-    } catch (error) {
-      pageError.textContent = `Agent 加载失败：${error.message}`;
-      pageError.hidden = false;
-      if (!catalogReady) document.getElementById("agent-rows").innerHTML = '<p class="resource-list-empty">无法读取 Agent 目录，请点击“刷新目录”重试。</p>';
     } finally {
+      pageError.textContent = Object.values(directoryErrors).join("\n");
+      pageError.hidden = !pageError.textContent;
+      const notice = document.getElementById("agent-catalog-errors");
+      document.getElementById("agent-catalog-error-message").textContent = pageError.textContent;
+      notice.hidden = pageError.hidden;
+      if (!agents.length && directoryErrors.agents) document.getElementById("agent-rows").innerHTML = '<p class="resource-list-empty">无法读取 Agent 目录，请点击“刷新目录”重试。</p>';
       loading = false;
       setBusy();
     }
@@ -658,6 +679,7 @@
     });
     document.getElementById("create-agent").onclick = openCreate;
     document.getElementById("refresh-agents").onclick = load;
+    document.getElementById("retry-agent-catalog").onclick = load;
     document.getElementById("agent-search").oninput = renderRows;
     document.querySelector('[name="knowledge_enabled"]').onchange = () => { toggleKnowledgePolicy(); renderCapabilityGroups(); };
     document.querySelector('[name="auto_alert_enabled"]').onchange = toggleAutoAlert;

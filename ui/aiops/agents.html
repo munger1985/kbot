@@ -31,6 +31,7 @@
       </nav>
       <form id="agent-form" class="agent-form" novalidate>
         <p id="agent-result" class="form-error agent-form-error" role="alert" hidden></p>
+        <section id="agent-catalog-errors" class="agent-catalog-errors" role="alert" aria-label="目录加载状态" hidden><p id="agent-catalog-error-message" class="form-error"></p><button id="retry-agent-catalog" class="secondary-button" type="button">重试目录</button></section>
         <section class="agent-step-panel" data-agent-step="1"><header><p class="eyebrow">STEP 01</p><h3>基本信息</h3><span>说明这个 Agent 面向谁、负责什么。</span></header><div class="drawer-form-section"><div class="form-grid-two">
           <label class="control-field"><span class="field-label">Agent 名称</span><input name="display_name" maxlength="256" required placeholder="例如：Oracle 生产诊断 Agent"></label>
           <label class="control-field"><span class="field-label">简短说明</span><input name="description" maxlength="1000" placeholder="说明职责与适用范围"></label>
@@ -95,6 +96,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261111_center2"></script>
-  <script src="./js/aiops-agents.js?v=20261110_model_choice"></script>
+  <script src="./js/aiops-agents.js?v=20261111_catalog_isolation"></script>
 </body>
 </html>
