@@ -76,7 +76,15 @@ class ExadataOEMService:
         if digest != frozen["inventory_sha256"]:
             raise state_conflict("OEM 整机成员已变化，必须重新发现并确认")
 
-    async def collect(self, *, scope, system_id, resource_id, source_id, query: ExadataQuery, _diagnosis=False):
+    async def collect(self, *, scope, system_id, resource_id, source_id, query: ExadataQuery, _diagnosis=False,
+                      _metric_codes: tuple[str, ...] | None = None, _component_names: tuple[str, ...] = ()):
+        # 聊天只能缩小已审核场景；公共页面合同与原有诊断选集不变。
+        profiles = self.diagnosis_profiles if _diagnosis else self.profiles
+        profile = next(item for item in profiles if item["id"] == query.scene)
+        codes = profile["metric_codes"] if _metric_codes is None else _metric_codes
+        if _metric_codes is not None and (_diagnosis or not codes or len(set(codes)) != len(codes)
+                                         or any(code not in profile["metric_codes"] for code in codes)):
+            raise validation_failed("聊天指标必须属于所选审核场景，不能修改诊断指标选集")
         frozen, adapter = await self._snapshot(scope, system_id, resource_id, source_id)
         window_end = datetime.now(UTC) if query.mode == "HISTORY" else None
         window_start = window_end - timedelta(minutes=query.window_minutes) if window_end else None
@@ -87,9 +95,17 @@ class ExadataOEMService:
             components = [item for item in components if item["target_id"] == query.component_id]
             if not components:
                 raise validation_failed("所选组件不属于已确认的 Exadata 整机")
-        profiles = self.diagnosis_profiles if _diagnosis else self.profiles
-        profile = next(item for item in profiles if item["id"] == query.scene)
-        selected = [self.metrics[code] for code in profile["metric_codes"]]
+        if _component_names:
+            matched = []
+            for name in _component_names:
+                matches = [item for item in components
+                           if name.casefold() in {item["target_id"].casefold(), item["display_name"].casefold()}]
+                if len(matches) != 1:
+                    raise validation_failed("指定组件不属于已确认整机，或组件名称不唯一；请提供完整组件名")
+                if matches[0] not in matched:
+                    matched.append(matches[0])
+            components = matched
+        selected = [self.metrics[code] for code in codes]
         reads = [(item, metric) for metric in selected for item in components if item["target_type"] == metric["target_type"]]
         if not reads:
             gaps.append(ExadataGap(code="NO_APPLICABLE_METRICS", detail="此场景没有与已确认组件类型匹配的审核指标"))

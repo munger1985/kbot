@@ -17,6 +17,9 @@ from aiops_agent.application.conversation_starters import (
 )
 from aiops_agent.application.turn_replay import pending_diagnosis_dispatch
 from aiops_agent.application.alert_query import AlertQueryParameters
+from aiops_agent.application.exadata_chat import (
+    exadata_parameters, exadata_parameter_contract, select_exadata_systems,
+)
 from aiops_agent.application.inspections.routing import (
     is_scheduled_inspection,
     scheduled_inspection_plan,
@@ -1321,6 +1324,7 @@ class TurnPlannerService:
                 "question": context["question"],
                 "allowed_capabilities": list(context["capabilities"]),
                 "capability_parameter_contracts": {
+                    "MONITORING_QUERY": exadata_parameter_contract(),
                     "ALERT_QUERY": {
                         "parameters_schema": AlertQueryParameters.model_json_schema(),
                         "policy": "查询当前健康或当前告警使用CURRENT，默认仅最近1小时观测且未恢复/未关闭的入库告警；不混入旧记录。用户明确查历史、已恢复或指定过去时段时使用HISTORY，默认最近24小时。用户指定的时间统一填入time_range，可按status/severity筛选；不得因会话历史存在旧告警就改为历史查询。入库信号不是实时重查，RESOLVED表示告警恢复，不是人工处置完成。",
@@ -1486,6 +1490,23 @@ class TurnPlannerService:
                 ("FROZEN_INSPECTION_TARGET",),
                 True,
             )
+            return scope, internal, None
+        parameters = exadata_parameters(plan)
+        if parameters is not None:
+            try:
+                selected = select_exadata_systems(systems, parameters)
+                reason = "NO_AUTHORIZED_EXADATA_RESOURCE"
+            except ValueError:
+                selected, reason = [], "EXADATA_QUERY_INVALID"
+            if not selected:
+                return (ScopeResolutionV1(status=ScopeResolutionStatus.DENIED,
+                    scope_type=ScopeType.RESOURCE_SET, resolution_basis=(reason,),
+                    authorization_snapshot_hash=authorization_hash), {"execution_targets": []}, None)
+            scope, internal = self._resolved_scope(selected, "", authorization_hash,
+                ("AUTHORIZED_EXADATA_SCOPE",), AIOpsCapability.ACTIVE_DIAGNOSIS in requested)
+            if scope.status == ScopeResolutionStatus.RESOLVED:
+                scope = scope.model_copy(update={"scope_type": ScopeType.RESOURCE if len(scope.resources) == 1 else ScopeType.RESOURCE_SET,
+                    "resolution_basis": ("AUTHORIZED_EXADATA_SCOPE",), "confidence": 1.0})
             return scope, internal, None
         if not systems:
             return (
@@ -1810,12 +1831,16 @@ class TurnPlannerService:
         internal_scope: dict[str, Any],
     ) -> dict:
         if scope.status == ScopeResolutionStatus.DENIED:
+            exadata_denied = "NO_AUTHORIZED_EXADATA_RESOURCE" in scope.resolution_basis
+            invalid_exadata = "EXADATA_QUERY_INVALID" in scope.resolution_basis
             return await self._complete_without_run(
                 uow,
                 turn,
-                "当前 Agent 授权范围内没有满足本轮能力要求的有效资源。",
+                ("当前 Agent 授权范围内没有匹配的 Exadata 资源。请选择已授权该资源的 Agent；未改查其他数据库总览。"
+                 if exadata_denied else "Exadata 指标或筛选条件未能准确解析，请明确所问指标和资源；未改查数据库总览。"
+                 if invalid_exadata else "当前 Agent 授权范围内没有满足本轮能力要求的有效资源。"),
                 "PARTIAL",
-                ("NO_ELIGIBLE_RESOURCE",),
+                ("EXADATA_RESOURCE_SCOPE_EMPTY" if exadata_denied else "EXADATA_QUERY_INVALID" if invalid_exadata else "NO_ELIGIBLE_RESOURCE",),
             )
         capability_invocation = dict(
             dict(turn.orchestration_internal_json or {}).get("capability_invocation")

@@ -34,6 +34,8 @@ from aiops_agent.application.turn_capabilities import (
     RuntimeQueryAdapter,
 )
 from aiops_agent.application.monitoring_views import MonitoringApplicationService
+from aiops_agent.application.configuration import AIOpsConfigurationService
+from aiops_agent.application.exadata import ExadataOEMService
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.application.investigation import (
     InvestigationReasoner,
@@ -302,6 +304,14 @@ def create_aiops_worker_probe(
             secret_store=secret_store,
             max_response_bytes=resolved.monitoring.max_response_bytes,
         )
+        exadata_service = ExadataOEMService(AIOpsConfigurationService(
+            uow_factory=runtime.uow_factory, cursor_codec=cursor_codec,
+            secret_store=secret_store, agent_catalog=agent_catalog,
+            management=resolved.management, credential_cipher=credential_cipher,
+            managed_credential_service=managed_credential_service,
+            target_connection_tester=test_target_connection,
+            diagnostic_source_registry=diagnostic_source_registry,
+        ))
         runtime_service = AIOpsRuntimeService(
             plan_capture_reader=plan_capture_reader,
             uow_factory=runtime.uow_factory,
@@ -423,7 +433,7 @@ def create_aiops_worker_probe(
                             caller_service=config.service_name,
                         ),
                         AIOpsCapability.MONITORING_QUERY: MonitoringQueryAdapter(
-                            monitoring_service=monitoring_service
+                            monitoring_service=monitoring_service, exadata_service=exadata_service
                         ),
                     },
                 ),
