@@ -719,7 +719,7 @@ async def upload_operations_knowledge(
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ):
-    """把单文件或 Bundle multipart 原样转发到 AIOps 业务服务。"""
+    """把单文件或多文件资料 multipart 原样转发到 AIOps 业务服务。"""
     await _require(request, "aiops:knowledge_manage")
     content_type = request.headers.get("Content-Type", "")
     if not content_type.lower().startswith("multipart/form-data"):

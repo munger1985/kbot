@@ -31,7 +31,7 @@ class _AIOpsClient:
 
     async def upload_operations_knowledge(self, **kwargs):
         self.uploaded = kwargs
-        return {"grouping_mode": "SINGLE_BUNDLE", "items": []}
+        return {"grouping_mode": "SINGLE_ASSET", "items": []}
 
     async def delete_operations_knowledge_asset(self, asset_id, **kwargs):
         self.deleted = {"asset_id": asset_id, **kwargs}
@@ -143,7 +143,7 @@ class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="aiops-upload-test",
             )
 
-        self.assertEqual("SINGLE_BUNDLE", result["grouping_mode"])
+        self.assertEqual("SINGLE_ASSET", result["grouping_mode"])
         self.assertEqual("multipart/form-data; boundary=test", client.uploaded["content_type"])
         self.assertEqual("aiops-upload-test", client.uploaded["idempotency_key"])
         self.assertEqual(

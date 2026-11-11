@@ -12,7 +12,6 @@ from pydantic import ValidationError
 
 from aiops_agent.application.operations_knowledge import (
     OperationsKnowledgeService,
-    _bundle_source_hash,
     _diagnosis_case_eligibility,
     _freeze_case_version_identity,
     _prepare_case_revision,
@@ -202,15 +201,6 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
                 "scopes": [{"kind": "DATABASE_TYPE", "value": "ORACLE"}],
             })
 
-    def test_bundle_source_hash_preserves_member_order_and_semantics(self):
-        documents = [
-            {"ordinal": 0, "file_name": "manual.md", "content_sha256": "a" * 64, "role": "CONTENT", "required_flag": True},
-            {"ordinal": 1, "file_name": "appendix.txt", "content_sha256": "b" * 64, "role": "SUPPLEMENT", "required_flag": False},
-        ]
-        digest = _bundle_source_hash(documents)
-        self.assertEqual(digest, _bundle_source_hash([dict(item) for item in documents]))
-        self.assertNotEqual(digest, _bundle_source_hash(list(reversed(documents))))
-
     def test_manual_profile_only_emits_commands_present_in_evidence(self):
         asset = SimpleNamespace(asset_id=uuid7(), display_name="归档配置手册")
         version = SimpleNamespace(asset_version_id=uuid7())
@@ -359,7 +349,6 @@ class OperationsKnowledgeUploadTest(unittest.IsolatedAsyncioTestCase):
             knowledge_base_id=uuid7(),
             context=SimpleNamespace(request_id="single-upload-test"),
             grouping_mode="EACH_FILE",
-            bundle_title=metadata.display_name,
             documents=[document],
             metadata=metadata,
             idempotency_key="single-upload-test",

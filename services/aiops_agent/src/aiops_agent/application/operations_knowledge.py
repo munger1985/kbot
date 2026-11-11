@@ -236,26 +236,6 @@ def _diagnosis_case_markdown(*, title: str, profile: DiagnosisCaseProfile) -> by
     return case_knowledge_markdown(title=title, profile=profile)
 
 
-def _bundle_source_hash(documents: list[dict[str, Any]]) -> str:
-    members = [
-        {
-            "ordinal": int(document["ordinal"]),
-            "file_name": str(document["file_name"]),
-            "content_sha256": str(document["content_sha256"]),
-            "role": str(document["role"]),
-            "required_flag": bool(document["required_flag"]),
-        }
-        for document in documents
-    ]
-    value = json.dumps(
-        members,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(value).hexdigest()
-
-
 def _source_commands(text: str) -> list[str]:
     """只从原文代码块或明确命令行提取内容，不补写任何命令。"""
     commands: list[str] = []
@@ -1486,12 +1466,17 @@ class OperationsKnowledgeService:
         knowledge_base_id: UUID,
         context: AuthContext,
         grouping_mode: str,
-        bundle_title: str,
         documents: list[dict[str, Any]],
         metadata: ManualUploadMetadata,
         idempotency_key: str,
     ) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
+        if grouping_mode not in {"EACH_FILE", "SINGLE_ASSET"}:
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_UPLOAD_INVALID",
+                message="资料组织方式必须是 EACH_FILE 或 SINGLE_ASSET",
+                status_code=422,
+            )
         if grouping_mode == "EACH_FILE":
             for document in documents:
                 try:
@@ -1530,13 +1515,13 @@ class OperationsKnowledgeService:
                 })
         else:
             try:
-                result = await self.ingest_manual_bundle(
+                result = await self._register_manual_documents(
                     domain_id=domain_id,
                     knowledge_base_id=knowledge_base_id,
                     context=context,
-                    title=bundle_title,
+                    title=metadata.display_name,
                     documents=documents,
-                    metadata=metadata.model_copy(update={"display_name": bundle_title}),
+                    metadata=metadata,
                     idempotency_key=idempotency_key,
                 )
             except AIOpsApplicationError as exc:
@@ -1559,12 +1544,6 @@ class OperationsKnowledgeService:
             "items": items,
             "request_id": context.request_id,
         }
-
-    async def ingest_manual_bundle(self, *, domain_id, knowledge_base_id, context,
-            title, documents, metadata, idempotency_key):
-        return await self._register_manual_documents(domain_id=domain_id,
-            knowledge_base_id=knowledge_base_id, context=context, title=title,
-            documents=documents, metadata=metadata, idempotency_key=idempotency_key)
 
     async def ingest_manual(self, *, domain_id, knowledge_base_id, context,
             file_name, media_type, body, metadata, idempotency_key, declared_sha256):

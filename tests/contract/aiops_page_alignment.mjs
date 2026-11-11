@@ -9,6 +9,7 @@ import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {templateAlignmentFixture,verifyInspectionTemplateEditor} from './aiops_template_alignment.mjs';
 import {verifyMonitoringNavigation} from './aiops_monitoring_alignment.mjs';
+import {verifyOperationsKnowledgeUpload} from './aiops_operations_knowledge_upload.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const portal = resolve(process.env.AMMOLITE_ROOT || resolve(root, "../ammolite_cube"), "apps/portal-web");
@@ -126,6 +127,10 @@ function installFixture(data) {
         }
       }
       if(path.endsWith('/operations-knowledge/reports/report-1:extract-case')) return {job_id:'report-case-job',job_type:'CASE_EXTRACTION',status:'QUEUED',result:null};
+      if(globalThis.fixtureKnowledgeUploads && path.endsWith('/operations-knowledge/uploads')) return {
+        grouping_mode:init.body.get('grouping_mode'),
+        items:JSON.parse(init.body.get('files')).map(file=>({client_file_id:file.client_file_id,status:'ACCEPTED',asset_id:'uploaded-asset',asset_version_id:'uploaded-version'})),
+      };
       if(globalThis.fixtureWebhookWrites) {
         if(init.method==='PATCH' && path.endsWith('/diagnostic-sources/source-1')) return {...data.source,source_type:fixtureSourceType,row_version:4,webhook_secret:{configured:true}};
         if(path.endsWith('/diagnostic-sources/source-1/webhook-key:rotate')) {
@@ -1023,6 +1028,9 @@ try {
           await page.locator(editor.drawer).waitFor({state:'hidden'});
         }
       }
+    }
+    if (name==='operations-knowledge' && !empty) {
+      for (const page of [kbot,reference]) await verifyOperationsKnowledgeUpload(page);
     }
     if (name==='dashboard' && !empty) {
       // 仅持有并拒绝写请求，验证载荷、提交互斥和失败后的草稿恢复。

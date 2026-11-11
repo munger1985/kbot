@@ -404,8 +404,8 @@ async def ingest_upload(
     try:
         knowledge_base_id = UUID(str(form.get("knowledge_base_id", "")))
         grouping_mode = str(form.get("grouping_mode", "EACH_FILE")).upper()
-        if grouping_mode not in {"EACH_FILE", "SINGLE_BUNDLE"}:
-            raise ValueError("grouping_mode must be EACH_FILE or SINGLE_BUNDLE")
+        if grouping_mode not in {"EACH_FILE", "SINGLE_ASSET"}:
+            raise ValueError("资料组织方式必须是 EACH_FILE 或 SINGLE_ASSET")
         raw_declarations = json.loads(str(form.get("files", "[]")))
         raw_metadata = json.loads(str(form.get("metadata", "{}")))
         if not isinstance(raw_declarations, list) or not raw_declarations:
@@ -413,12 +413,6 @@ async def ingest_upload(
         if len(raw_declarations) > _MAX_UPLOAD_FILES:
             raise ValueError(f"每次最多上传 {_MAX_UPLOAD_FILES} 个文件")
         metadata = ManualUploadMetadata.model_validate(raw_metadata)
-        bundle_title = metadata.display_name
-        if grouping_mode == "SINGLE_BUNDLE":
-            raw_bundle = json.loads(str(form.get("bundle", "{}")))
-            bundle_title = str(raw_bundle.get("title", "")).strip()
-            if not bundle_title or len(bundle_title) > 256:
-                raise ValueError("Bundle 名称不能为空且不能超过 256 个字符")
         documents: list[dict] = []
         total_bytes = 0
         part_names: set[str] = set()
@@ -471,10 +465,10 @@ async def ingest_upload(
                 "role": role,
                 "required_flag": bool(declaration.get("required_flag", False)),
             })
-        if grouping_mode == "SINGLE_BUNDLE" and not any(
+        if grouping_mode == "SINGLE_ASSET" and not any(
             document["role"] == "CONTENT" for document in documents
         ):
-            raise ValueError("Bundle 至少需要一个正文文件")
+            raise ValueError("多文件资料至少需要一个正文文件")
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         raise HTTPException(
             422,
@@ -487,7 +481,6 @@ async def ingest_upload(
         knowledge_base_id=knowledge_base_id,
         context=context,
         grouping_mode=grouping_mode,
-        bundle_title=bundle_title,
         documents=documents,
         metadata=metadata,
         idempotency_key=idempotency_key,

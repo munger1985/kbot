@@ -1,10 +1,10 @@
 """运维知识提炼、发布与检索合同。"""
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .case_knowledge import CaseActionEffect, CaseInvestigationStep, CaseKnowledgeManifest
 
@@ -25,7 +25,9 @@ class KnowledgeBaseWrite(BaseModel):
 
 class ManualUploadMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    display_name: str = Field(min_length=1, max_length=256)
+    display_name: Annotated[str, StringConstraints(strip_whitespace=True)] = Field(
+        min_length=1, max_length=256,
+    )
     publisher: str | None = Field(default=None, max_length=256)
     document_version: str | None = Field(default=None, max_length=128)
     published_date: str | None = Field(default=None, max_length=64)
