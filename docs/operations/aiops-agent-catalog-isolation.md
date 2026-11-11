@@ -36,7 +36,17 @@ python scripts/deployment/init_postgresql.py --align-aiops-knowledge-base-config
 
 两端真实组件/静态脚本的浏览器夹具共 43 项：42 项功能通过，其中本次新增 12 项目录失败、授权保留、跨步骤提示和重试恢复测试。一项既有视觉对比仍失败：KBot 抽屉阴影透明度 0.20、Ammolite 0.16。已用修改前的干净 tree `/tmp/exadata-chat-kbot-FFOPtx` 与 `/tmp/exadata-chat-ammolite-DVGshV` 复现同一断言，未放宽断言或改动无关样式。这是受控夹具回归，不是线上正常登录后的页面验收。
 
-待补充实际部署记录；不得把代码提交、构建或数据库 readiness 当成正常登录后的页面验收。
+### 实际部署记录（2026-11-11 21:29，UTC+8）
+
+两端代码已推送并在 kbotdev 精确 fast-forward：Ammolite `b8e9d515`、KBot `69fff706`。部署前确认原 HEAD、已跟踪工作区和暂存区，核对提交的完整文件清单；原有未跟踪配置备份保留。旧文件、配置摘要、数据库前后核验和进程基线保存在主机私有目录 `/home/ubuntu/aiops-agent-catalog-20261111-qicd_ty_`。
+
+- Ammolite 单事务新增 `aiops_knowledge_base.configuration_json`，核验为 `JSONB NOT NULL` 且无数据库默认值；原有 1 个知识库配置为 `{}`。所有 `aiops_*` 表列元数据前后只有这一列新增，第二次调用定向 helper 无写入。未处理另外 19 张缺失知识表或旧索引字段。
+- 16 张受保护表的旧字段内容指纹及行数前后相同，包括 1 个 Agent、4 个 Agent 版本、12 条版本/系统授权、4 个业务系统、6 个资源及 11 条监控绑定；未改变已有 Agent 授权或业务数据。
+- 在现行服务配置的受控子进程中，通过真实 UoW/Repository 重新读取知识库列表及 usage，均成功返回 1 项。此项是内部仓储读验证，不是正常会话公共 API 验收。
+- Ammolite 在线 Vue 模块 HTTP 200，包含新目录状态及重试逻辑；KBot `/ui/aiops/agents.html` 与 `/ui/aiops/js/aiops-agents.js` 均 HTTP 200，响应 Hash 与已部署文件一致。
+- 52 个基线进程 PID/启动时间全部不变，两端 `.env` 和 TOML 配置 Hash 不变。两端 Main、AIOps API、Worker 共 6 个实际 readiness 均 HTTP 200；本轮没有重启任何服务。
+
+仍未取得正常 Ammolite 应用会话，未宣称完成登录后列表/选择器的线上浏览器验收，也未创建模拟系统。用户需正常登录配合；不得把文件可达、仓储读取或 readiness 当成页面完整验收。
 
 ## Exadata 模拟系统
 
