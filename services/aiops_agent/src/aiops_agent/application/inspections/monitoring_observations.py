@@ -83,6 +83,7 @@ def empty_monitoring_facts(gaps, *, monitoring):
             continue
         facts.append({
             "kind": "inspection_monitoring_absence", "metric_code": code,
+            "binding_id": str(gap.get("binding_id") or ""),
             "title": metric.get("name") or code, "semantic_role": metric.get("semantic_role"),
             "dimensions": "binding:" + str(gap.get("binding_id")),
             "evidence_ref": gap.get("evidence_ref"),

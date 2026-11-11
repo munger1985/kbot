@@ -86,7 +86,7 @@ class ResourceGovernanceService:
                 or task.lease_until is None or task.lease_until <= now or task.started_at is None):
                 raise ResourceAdmissionError("RESOURCE_EXECUTION_FENCE_INVALID")
             bindings = (run.plan_snapshot_json or {}).get("monitoring", {}).get("bindings", ())
-            if any(item.get("purpose") == "STORAGE_CAPACITY" for item in bindings):
+            if any(item.get("purpose") in {"STORAGE_CAPACITY", "INSPECTION_HOST"} for item in bindings):
                 from aiops_agent.application.source_authorization import source_scope_is_current
                 if not await source_scope_is_current(uow=uow, run=run, domain_id=run.domain_id):
                     raise ResourceAdmissionError("RESOURCE_SOURCE_SCOPE_INVALID")

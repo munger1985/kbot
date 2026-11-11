@@ -4458,6 +4458,17 @@ class TurnPlanningService:
                         uow=uow, snapshot=snapshot, target=target, run=run,
                         allowed_source_ids=context.source_ids, metric_catalog=self._monitoring_snapshot_builder.metric_catalog,
                     )
+            if context.inspection and self._monitoring_profile_catalog is not None:
+                from aiops_agent.application.inspections.monitoring_hosts import attach_inspection_hosts
+                run = await uow.runs.get_run(ops_run_id=context.ops_run_id)
+                if run is None:
+                    raise resource_not_found("巡检运行")
+                await attach_inspection_hosts(
+                    uow=uow, snapshot=snapshot, target=target, run=run,
+                    inspection=context.inspection, allowed_source_ids=context.source_ids,
+                    metric_catalog=self._monitoring_snapshot_builder.metric_catalog,
+                    profile_catalog=self._monitoring_profile_catalog,
+                )
             if current_inspection:
                 snapshot["current_window"] = dict(snapshot["window"])
                 snapshot["snapshot_max_age_seconds"] = sample_max_age

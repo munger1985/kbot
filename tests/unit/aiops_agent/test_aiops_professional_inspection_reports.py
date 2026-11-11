@@ -449,9 +449,11 @@ class ProfessionalInspectionReportTest(unittest.TestCase):
             series_computations=(SimpleNamespace(
                 row_index=0, samples=((START, 10), (START + timedelta(hours=1), 20)),
                 effective_step_seconds=3600, dimensions=(),
+                binding_id="frozen-monitor-binding",
             ),),
         )
         fact = AIOpsRuntimeService._inspection_monitoring_facts(SimpleNamespace(evidence=(evidence,)))[0]
+        self.assertEqual("frozen-monitor-binding", fact["binding_id"])
         self.assertEqual("UTC", fact["daily_points_timezone"])
         self.assertEqual(START.isoformat(), fact["sample_points"][0]["observed_at"])
         self.assertEqual("10", fact["sample_points"][0]["value"])

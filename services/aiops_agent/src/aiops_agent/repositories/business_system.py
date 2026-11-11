@@ -40,7 +40,7 @@ class BusinessSystemRepository(BusinessSystemDeletionRepositoryMixin, AIOpsRepos
             statement = statement.where(ResourceSourceBindingEntity.status == "ACTIVE")
         return list((await self._session.execute(statement.order_by(ResourceSourceBindingEntity.priority, ResourceSourceBindingEntity.resource_source_binding_id))).scalars())
 
-    async def list_storage_host_bindings(self, *, target_id, domain_id, business_system_ids):
+    async def list_storage_host_bindings(self, *, target_id, domain_id, business_system_ids, include_unbound=False):
         """只在已授权系统内沿已确认承载关系读取主机，不按地址推断关联。"""
         self._check_active()
         if not business_system_ids:
@@ -57,7 +57,10 @@ class BusinessSystemRepository(BusinessSystemDeletionRepositoryMixin, AIOpsRepos
             .join(host_member, host_member.relation_id == ResourceRelationEntity.relation_id)
             .join(host_link, (host_link.system_resource_id == host_member.system_resource_id) & (host_link.business_system_id == BusinessSystemEntity.business_system_id))
             .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == host_link.resource_id)
-            .join(ResourceSourceBindingEntity, ResourceSourceBindingEntity.resource_id == ManagedResourceEntity.resource_id)
+            .outerjoin(ResourceSourceBindingEntity, (
+                (ResourceSourceBindingEntity.resource_id == ManagedResourceEntity.resource_id)
+                & (ResourceSourceBindingEntity.status == "ACTIVE")
+            ))
             .join(db_member, db_member.relation_id == ResourceRelationEntity.relation_id)
             .join(db_link, (db_link.system_resource_id == db_member.system_resource_id) & (db_link.business_system_id == BusinessSystemEntity.business_system_id))
             .join(database, database.resource_id == db_link.resource_id)
@@ -75,11 +78,12 @@ class BusinessSystemRepository(BusinessSystemDeletionRepositoryMixin, AIOpsRepos
                 ResourceRelationEntity.confirmation_status == "CONFIRMED",
                 host_member.participant_role == "HOST", db_member.participant_role == "WORKLOAD",
                 host_link.status == "ACTIVE", db_link.status == "ACTIVE",
-                ResourceSourceBindingEntity.status == "ACTIVE",
             )
             .order_by(ManagedResourceEntity.resource_id, ResourceSourceBindingEntity.resource_source_binding_id)
             .limit(17)
         )
+        if not include_unbound:
+            statement = statement.where(ResourceSourceBindingEntity.resource_source_binding_id.is_not(None))
         return list((await self._session.execute(statement)).all())
 
     async def find_resource_binding_by_locator(self, *, source_id, locator_key):

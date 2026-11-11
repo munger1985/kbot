@@ -116,20 +116,34 @@ def _number(value: object) -> float | None:
 def monitoring_checks(
     facts: tuple[dict[str, Any], ...] | list[dict[str, Any]],
     *, profile: dict[str, Any], policy: dict[str, Any],
+    monitoring: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """按冻结 Profile 阈值判读最新样本，不把相对变化或峰值当持续故障。"""
     thresholds = dict(profile.get("metric_thresholds") or {})
+    monitoring = monitoring or {}
+    thresholds.update(dict(monitoring.get("inspection_host_profile") or {}).get("metric_thresholds") or {})
+    expected_hosts = list(monitoring.get("required_host_metrics") or ())
+    host_metrics = {
+        (str(binding_id), str(item["metric_code"])): item
+        for item in expected_hosts for binding_id in item.get("binding_ids") or ()
+    }
     required_roles = dict(policy.get("required_metric_roles") or {})
     result = []
     assessed_roles: set[str] = set()
     for fact in facts:
         if fact.get("kind") == "inspection_monitoring_absence":
             code, role = str(fact["metric_code"]), str(fact.get("semantic_role") or "")
+            host = host_metrics.get((str(fact.get("binding_id") or ""), code))
             title = display_metric_name(code)
+            if host:
+                title = f"{host['resource_name']} · {host['title']}"
             summary = f"{title}查询成功但未返回样本，存在监控盲区；不能据此判定数值为零或数据库异常。"
             result.append({
                 "kind": "inspection_metric_check", "title": title,
-                "check_status": "FINDING", "required": role in required_roles or role == "AVAILABILITY",
+                "check_status": "MISSING" if host else "FINDING",
+                "required": role in required_roles or role == "AVAILABILITY",
+                "binding_id": fact.get("binding_id"),
+                "incomplete_reason": summary if host else "",
                 "check_ids": [f"metric:{code}:{fact.get('dimensions') or '-'}"],
                 "metric_code": code, "semantic_role": role, "dimensions": fact.get("dimensions"),
                 "tool_id": "metric.query_range", "basis": "监控查询执行成功，应返回有效样本；空结果按监控保障风险报告。",
@@ -150,6 +164,9 @@ def monitoring_checks(
             continue
         required = role in required_roles or availability
         title = str(fact.get("title") or display_metric_name(code))
+        host = host_metrics.get((str(fact.get("binding_id") or ""), code))
+        if host:
+            title = f"{host['resource_name']} · {host['title']}"
         current = format_metric_value(value, str(fact.get("unit") or ""))
         findings = []
         incomplete_reason = ""
@@ -197,6 +214,7 @@ def monitoring_checks(
             assessed_roles.add(role)
         result.append({
             "kind": "inspection_metric_check", "title": title,
+            "binding_id": fact.get("binding_id"),
             "check_status": status, "required": required,
             "check_ids": [f"metric:{code}:{fact.get('dimensions') or '-'}"],
             "metric_code": code, "semantic_role": role,
@@ -206,6 +224,21 @@ def monitoring_checks(
             "incomplete_reason": incomplete_reason,
             "evidence_refs": [fact["evidence_ref"]] if fact.get("evidence_ref") else [],
             "observed_at": fact.get("observed_at") or fact.get("window_end"),
+        })
+    for expected in expected_hosts:
+        if any(
+            item.get("metric_code") == expected["metric_code"]
+            and str(item.get("binding_id") or "") in expected.get("binding_ids", ())
+            for item in result
+        ):
+            continue
+        title = f"{expected['resource_name']} · {expected['title']}"
+        result.append({
+            "kind": "inspection_metric_check", "title": title, "required": True,
+            "semantic_role": expected["semantic_role"], "metric_code": expected["metric_code"],
+            "check_ids": [f"host-metric:{expected['resource_id']}:{expected['metric_code']}"],
+            "check_status": "MISSING", "summary": f"{title}未取得可按冻结规则判读的监控样本。",
+            "basis": "每个已确认承载主机均须取得本项授权指标的有效样本，不能由其他主机代替。",
         })
     for role, title in required_roles.items():
         if role not in assessed_roles and not any(item.get("semantic_role") == role for item in result):

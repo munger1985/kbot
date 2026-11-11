@@ -10,11 +10,14 @@ STORAGE_HOST_METRICS = (
 )
 
 
-async def authorized_storage_host_rows(*, uow, run, domain_id):
+async def authorized_storage_host_rows(*, uow, run, domain_id, business_system_id=None, include_unbound=False):
     """每次按冻结 Agent 版本的现存授权重新遍历确认关系。"""
     systems = await uow.agents.version_business_system_ids(agent_version_id=run.agent_version_id)
+    if business_system_id is not None:
+        systems = [value for value in systems if str(value) == str(business_system_id)]
     return await uow.business_systems.list_storage_host_bindings(
         target_id=run.target_id, domain_id=domain_id, business_system_ids=systems,
+        include_unbound=include_unbound,
     )
 
 

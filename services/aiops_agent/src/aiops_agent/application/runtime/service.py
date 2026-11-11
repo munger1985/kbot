@@ -3495,7 +3495,10 @@ class AIOpsRuntimeService:
             str(inspection.get("database_type") or dict(plan.get("target") or {}).get("db_type") or "ORACLE")
         ))
         monitoring_profile = dict(dict(plan.get("monitoring") or {}).get("monitoring_profile") or {})
-        facts = (*facts, *monitoring_checks(facts, profile=monitoring_profile, policy=report_policy))
+        facts = (*facts, *monitoring_checks(
+            facts, profile=monitoring_profile, policy=report_policy,
+            monitoring=dict(plan.get("monitoring") or {}),
+        ))
         if source.inspection_sql_reviews:
             facts = (*facts, {"kind": "inspection_sql_reviews", "reviews": [
                 dict(review) for review in source.inspection_sql_reviews
@@ -3595,6 +3598,12 @@ class AIOpsRuntimeService:
                 "daily_section_catalog": inspection.get("daily_section_catalog"),
                 "business_system_name": inspection.get("business_system_name"),
                 "check_status_counts": check_status_counts,
+                "inspection_host_profile": dict(
+                    dict(plan.get("monitoring") or {}).get("inspection_host_profile") or {}
+                ),
+                "required_host_metrics": list(
+                    dict(plan.get("monitoring") or {}).get("required_host_metrics") or ()
+                ),
                 **coverage,
                 "monitoring_sample_coverage_percent": monitoring_quality[
                     "coverage_percent"
@@ -3861,6 +3870,7 @@ class AIOpsRuntimeService:
                     details.append(f"{sample_count} 个样本")
                 facts.append({
                     "kind": "inspection_monitoring_metric",
+                    "binding_id": traces_by_row[row_index].binding_id if row_index in traces_by_row else None,
                     "metric_dimensions": dict(traces_by_row[row_index].dimensions) if row_index in traces_by_row else {},
                     "title": metric_name,
                     "summary": f"{metric_name}{dimension_display}：" + "，".join(details) + "。",

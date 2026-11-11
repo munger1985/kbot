@@ -18,16 +18,28 @@ async def _validate_source_scope(*, uow, run, domain_id):
     )
     by_id = {str(item.resource_source_binding_id): item for item in current_bindings}
     hosts = {}
-    if any(item.get("purpose") == "STORAGE_CAPACITY" for item in bindings):
+    if any(item.get("purpose") in {"STORAGE_CAPACITY", "INSPECTION_HOST"} for item in bindings):
         from aiops_agent.application.diagnosis.storage_hosts import authorized_storage_host_rows
-        rows = await authorized_storage_host_rows(uow=uow, run=run, domain_id=domain_id)
+        metadata = dict(dict(run.plan_snapshot_json or {}).get("client_metadata") or {})
+        inspection = dict(metadata.get("inspection") or {})
+        rows = await authorized_storage_host_rows(
+            uow=uow, run=run, domain_id=domain_id,
+            business_system_id=(
+                inspection.get("business_system_id")
+                if not any(item.get("purpose") == "STORAGE_CAPACITY" for item in bindings)
+                else None
+            ),
+        )
         if len(rows) > 16:
             return False
         for host, binding, system, relation in rows:
             hosts.setdefault(str(binding.resource_source_binding_id), []).append((host, binding, system, relation))
     for frozen in bindings:
-        if frozen.get("purpose") == "STORAGE_CAPACITY":
-            scope = frozen["storage_context"]
+        if frozen.get("purpose") in {"STORAGE_CAPACITY", "INSPECTION_HOST"}:
+            scope = frozen[
+                "storage_context" if frozen["purpose"] == "STORAGE_CAPACITY"
+                else "inspection_host_context"
+            ]
             candidates = [
                 binding for host, binding, system, relation in hosts.get(str(frozen["binding_id"]), ())
                 if str(host.resource_id) == str(frozen["resource_id"])

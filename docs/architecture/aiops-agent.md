@@ -263,6 +263,9 @@ restore/recover、强制 failover 等破坏性动作只展示固定命令供 DBA
 
 ## 巡检与报告
 
+数据库巡检同时冻结数据库总览及已确认承载主机的必要监控指标；采集范围、逐主机完整性和执行重授权见
+[巡检关联主机监控](../operations/aiops-inspection-host-monitoring.md)。
+
 Inspection Plan 先指定业务系统与全部纳管数据库，再选择取证模板、日报/周报/Cron 调度及
 获该系统授权的已启用 DBA Agent。系统详情提供计划与执行记录入口，日常巡检保留跨系统总览。
 Scheduler 生成 Fire 并提交一次标准 Agent 巡检任务；开始执行时冻结系统、资源、Target 清单与
