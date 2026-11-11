@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>用户管理</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/ammolite-shared.css?v=20261110_release1"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1"><link rel="stylesheet" href="./css/aiops-users.css?v=20261111_users3"></head>
+<body data-page="user-detail">
+<main class="ops-main user-management-page user-detail-page">
+  <header class="ops-head"><div><h1>用户管理</h1><p>查看用户资料，管理个人飞书身份。</p></div><button id="user-detail-refresh" class="secondary-button" type="button">刷新</button></header>
+  <div class="member-detail-heading"><a class="text-button" href="./users.html">← 返回用户</a></div>
+  <p id="user-detail-status" role="status">正在读取用户…</p>
+  <div id="user-detail-content" hidden>
+    <section class="member-access-summary" aria-label="用户概览">
+      <div class="member-access-identity"><p class="eyebrow">用户资料</p><h2 id="user-detail-name"></h2><p id="user-detail-id" class="technical-value"></p></div>
+      <div><span>账号状态</span><strong id="user-detail-state"></strong></div>
+    </section>
+    <section class="access-scope-section member-feishu-section" aria-labelledby="member-feishu-title">
+      <header><h2 id="member-feishu-title">飞书身份（可选）</h2><span id="user-binding-status" class="status-pill status-muted" role="status">未绑定</span></header>
+      <p class="field-help">个人飞书身份全局共用，无需按业务空间重复绑定。不绑定不接收个人飞书通知，站内通知正常；绑定不会增加业务权限。</p>
+      <form id="user-binding-form" class="member-feishu-form">
+        <label class="control-field" for="member-feishu-open-id"><span class="field-label">飞书 open_id</span><input id="member-feishu-open-id" name="feishu_open_id" pattern="ou_.+" maxlength="256" placeholder="ou_…" aria-describedby="member-feishu-hint"><small id="member-feishu-hint" class="field-help">选填。填写当前飞书应用下该用户的 open_id；清空并保存表示解绑。</small></label>
+        <details class="member-feishu-help"><summary>如何获取 open_id？</summary><ol><li>打开飞书 <a href="https://open.feishu.cn/api-explorer" target="_blank" rel="noopener noreferrer">API 调试台</a>，选择通知渠道使用的同一个自建应用，找到“发送消息”接口。</li><li>将接收者 ID 类型设为 open_id，点击“快速复制 open_id”，搜索并选择该用户，点击“复制成员 ID”。无需实际发送消息。</li></ol><p>open_id 以 ou_ 开头；同一个人在不同应用中的值不同，不能使用其他应用的 open_id、user_id 或 union_id。<a href="https://open.feishu.cn/document/uAjLw4CM/ugTN1YjL4UTN24CO1UjN/trouble-shooting/how-to-obtain-openid" target="_blank" rel="noopener noreferrer">查看官方说明</a></p></details>
+        <footer class="member-feishu-actions"><p class="field-help">保存只登记身份；新增或更换后，需本人到“我的通知设置”完成验证码验证。</p><div><button id="user-binding-challenge" class="secondary-button" type="button" hidden>发送验证码</button><button id="user-binding-save" class="primary-button" type="submit">保存绑定</button></div></footer>
+      </form>
+    </section>
+    <section class="access-scope-section" aria-labelledby="user-profile-title"><header><h2 id="user-profile-title">用户资料</h2></header><form id="user-profile-form" class="member-feishu-form"><label class="control-field" for="user-display-name"><span class="field-label">显示名称</span><input id="user-display-name" name="display_name" maxlength="256"></label><footer class="member-feishu-actions"><p class="field-help">仅修改显示名称，不改变账号权限或飞书绑定。</p><div><button class="primary-button" type="submit">保存资料</button></div></footer></form></section>
+  </div>
+</main>
+<script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261111_center2"></script><script src="./js/aiops-user-detail.js?v=20261111_users3"></script>
+</body></html>

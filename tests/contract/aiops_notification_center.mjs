@@ -39,7 +39,7 @@ function installFixture({mode, items}) {
     }
     if(pathname.endsWith('/access'))return {app_id:'aiops', user_id:'fixture', domain_id:12, domain_name:'隔离空间', roles:['app_admin'], permissions:['aiops:use', 'aiops:member_manage']};
     if(pathname.endsWith('/assignable-roles') || pathname==='/api/v1/apps/aiops/members')return {items:[]};
-    if(pathname==='/api/v1/notifications/summary')return {unread:mode==='empty'?0:mode==='many'?20:2};
+    if(pathname==='/api/v1/notifications/summary')return {unread:mode==='empty'?0:mode==='many'?120:2};
     if(pathname==='/api/v1/notifications') {
       if(mode==='failure')throw new Error('隔离通知读取失败');
       return {items:mode==='empty'?[]:mode==='many'?Array.from({length:20}, (_, index)=>({...items[0], title:'数据库通知 '+(index+1)})):items};
@@ -71,17 +71,26 @@ try {
     try {
       await page.goto(`http://127.0.0.1:${server.address().port}/ui/aiops/users.html`);
       await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;}, theme);
-      const toggle=page.getByRole('button', {name:'通知中心', exact:true});
+      const toggle=page.getByRole('button', {name:'打开通知中心', exact:true});
       await toggle.waitFor();
       const panel=page.locator('.kbot-notification-panel');
       assert.equal(await panel.isVisible(), false);
+      assert.equal(await toggle.locator('svg path').getAttribute('d'), 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4');
+      const badge=toggle.locator('[data-notification-count]');
+      await page.waitForFunction(()=>document.querySelector('[data-notification-count]').textContent!=='');
+      assert.equal(await badge.isVisible(), mode!=='empty');
+      if(mode!=='empty')assert.equal(await badge.innerText(), mode==='many'?'99+':'2');
+      if(mode==='normal')await page.screenshot({path:resolve(artifacts, `bell-${width}-${theme}.png`)});
       await toggle.click();
       await page.waitForFunction(()=>Boolean(document.querySelector('[data-notification-status]').textContent));
       const bounds=await panel.boundingBox();
       assert.ok(bounds.x>=0 && bounds.x+bounds.width<=width, '通知面板不能超出屏幕');
-      assert.ok(bounds.y>=64 && bounds.y+bounds.height<=800, '通知面板必须位于顶栏下方的可视区');
-      assert.equal(await panel.locator('header').evaluate(node=>getComputedStyle(node).paddingLeft), '16px');
-      assert.equal(await panel.locator('[role="status"]').evaluate(node=>getComputedStyle(node).paddingLeft), '16px');
+      assert.equal(bounds.x+bounds.width, width, '通知抽屉必须贴右侧');
+      assert.equal(bounds.y, 0);
+      assert.equal(bounds.height, 800, '通知抽屉必须占满可视高度');
+      assert.equal(await panel.locator('header').evaluate(node=>getComputedStyle(node).paddingLeft), width>600?'28px':'16px');
+      assert.equal(await panel.locator('[role="status"]').evaluate(node=>getComputedStyle(node).paddingLeft), width>600?'28px':'16px');
+      assert.equal(await panel.locator('[data-notification-close]').evaluate(node=>document.activeElement===node), true, '打开抽屉聚焦关闭按钮');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth), false);
       if(mode==='normal' || mode==='many') {
         const articles=panel.locator('article');
@@ -91,13 +100,14 @@ try {
         assert.equal(await first.evaluate(node=>getComputedStyle(node).paddingLeft), '16px');
         assert.equal(await first.locator('p').evaluate(node=>getComputedStyle(node).marginTop), '0px');
         const severity=await first.locator('small').boundingBox(), action=await first.getByRole('button', {name:'查看结果'}).boundingBox();
-        assert.ok(action.x>=severity.x+severity.width+13, '原始告警级别与操作按钮不能粘在一起');
+        if(width>600)assert.ok(action.x>=severity.x+severity.width+13, '原始告警级别与操作按钮不能粘在一起');
+        else assert.ok(action.y>=severity.y+severity.height+7, '窄屏查看按钮必须独立换行');
         assert.equal(await articles.locator('img').count(), 0);
         const list=panel.locator('[data-notification-list]');
         if(mode==='many') {
           assert.ok(await list.evaluate(node=>node.scrollHeight>node.clientHeight), '长列表应在面板内部滚动');
           await list.evaluate(node=>{node.scrollTop=node.scrollHeight;});
-          assert.ok((await panel.locator('header').boundingBox()).y>=64, '列表滚动不能带走面板标题');
+          assert.equal((await panel.locator('header').boundingBox()).y, 0, '列表滚动不能带走面板标题');
         } else await page.screenshot({path:resolve(artifacts, `center-${width}-${theme}.png`)});
       } else {
         assert.equal(await panel.locator('article').count(), 0);
@@ -105,11 +115,17 @@ try {
       }
       await panel.getByRole('button', {name:'刷新', exact:true}).click();
       await page.keyboard.press('Escape');
+      assert.equal(await panel.isVisible(), true, '与 Ammolite 一致，Esc 不关闭抽屉');
+      if(width>600) {
+        await page.mouse.click(20, 400);
+        assert.equal(await panel.isVisible(), true, '与 Ammolite 一致，背景误触不关闭抽屉');
+      }
+      await panel.locator('footer a').focus();
+      await page.keyboard.press('Tab');
+      assert.equal(await panel.locator('[data-notification-close]').evaluate(node=>document.activeElement===node), true, '抽屉内必须循环焦点');
+      await panel.getByRole('button', {name:'关闭通知中心', exact:true}).click();
       assert.equal(await panel.isVisible(), false);
       assert.equal(await toggle.evaluate(node=>document.activeElement===node), true);
-      await toggle.click();
-      await page.locator('.ops-current-domain').click();
-      assert.equal(await panel.isVisible(), false);
       if(mode==='normal') {
         await toggle.click();
         await panel.getByRole('button', {name:'查看结果', exact:true}).first().click();

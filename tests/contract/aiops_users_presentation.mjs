@@ -37,7 +37,7 @@ function installFixture({users, mode}) {
     fixtureRequests.push(pathname);
     await globalThis.recordRequest(pathname);
     if(options.method && options.method!=='GET') {
-      if(mode!=='normal' || options.method!=='PATCH' || pathname!==base+'/aiopsadmin') {
+      if(mode!=='normal' || options.method!=='POST' || pathname!==base) {
         fixtureFailures.push(pathname);
         throw new Error('禁止非预期写入');
       }
@@ -52,6 +52,7 @@ function installFixture({users, mode}) {
       return {items:mode==='empty'?users.filter(row=>row.account_origin!=='APP' || row.owner_app_id!=='aiops'):users};
     }
     if(pathname===base+'/aiopsadmin')return {...users[0], feishu_binding:{id:'fixture-binding', row_version:3, external_id:'ou_fixture', status:'VERIFIED'}};
+    if(pathname==='/api/v1/notification-delivery/capabilities')return {capabilities:['binding']};
     if(pathname.endsWith('/notifications/summary'))return {unread:0};
     if(pathname.endsWith('/output-jobs'))return {items:[], has_more:false, next_cursor:null};
     fixtureFailures.push(pathname);
@@ -96,32 +97,32 @@ try {
           for(const row of await rows.all()) {
             const identity=await row.locator('.user-list-identity').boundingBox();
             const state=await row.locator('.status-pill').boundingBox();
-            const action=await row.getByRole('button', {name:'编辑／飞书绑定', exact:true}).boundingBox();
+            const action=await row.getByRole('link', {name:'编辑／飞书绑定', exact:true}).boundingBox();
             assert.ok(state.x>=identity.x+identity.width+11, '用户信息与状态必须分开');
             if(width>640)assert.ok(action.x>=state.x+state.width+15, '状态与按钮必须分开');
             else assert.ok(action.y>=Math.max(identity.y+identity.height, state.y+state.height)+11, '窄屏按钮必须换行');
           }
           await page.screenshot({path:resolve(artifacts, `users-${width}.png`), fullPage:true});
-          await rows.first().getByRole('button', {name:'编辑／飞书绑定', exact:true}).click();
-          await page.getByRole('heading', {name:'编辑用户', exact:true}).waitFor();
-          assert.equal(await page.locator('#user-display-name').evaluate(node=>document.activeElement===node), true, '点击编辑后必须将焦点移到编辑表单');
-          const editorTitle=await page.locator('#user-form-title').boundingBox();
-          assert.ok(editorTitle.y>=64 && editorTitle.y+editorTitle.height<1000, '编辑表单标题必须出现在顶栏下方的可视区域');
-          assert.equal(await page.locator('#user-id').inputValue(), 'aiopsadmin');
-          assert.equal(await page.locator('#user-id').isDisabled(), true);
-          assert.equal(await page.locator('#user-password').isDisabled(), true);
-          assert.equal(await page.locator('#user-role').isDisabled(), true);
-          assert.equal(await page.locator('#user-feishu-open-id').inputValue(), 'ou_fixture');
-          assert.equal(await page.locator('#user-binding-status').innerText(), '已验证');
-          assert.equal(await page.locator('#user-status').innerText(), '正在编辑：AIOps 管理员');
-          await page.screenshot({path:resolve(artifacts, `users-edit-${width}.png`)});
+          await page.locator('#user-id').fill('fixture-new-user');
+          await page.locator('#user-display-name').fill('隔离新用户');
+          await page.locator('#user-password').fill('Isolated-Password-123!');
+          await page.locator('#user-role').selectOption('app_user');
+          await page.locator('#user-feishu-open-id').fill('ou_new_fixture');
           await page.getByRole('button', {name:'保存用户', exact:true}).click();
           await page.waitForFunction(()=>document.getElementById('user-status').textContent.includes('用户已保存'));
-          assert.deepEqual(await page.evaluate(()=>fixtureWrites), [{path:'/api/v1/apps/aiops/members/aiopsadmin', method:'PATCH',
-            body:{display_name:'AIOps 管理员', feishu_open_id:'ou_fixture', expected_binding_id:'fixture-binding', expected_binding_version:3}}]);
-          assert.equal(await page.locator('#user-id').isDisabled(), false);
-          await rows.first().getByRole('button', {name:'编辑／飞书绑定', exact:true}).click();
-          await page.getByRole('heading', {name:'编辑用户', exact:true}).waitFor();
+          assert.deepEqual(await page.evaluate(()=>fixtureWrites), [{path:'/api/v1/apps/aiops/members', method:'POST', body:{
+            display_name:'隔离新用户', feishu_open_id:'ou_new_fixture', user_id:'fixture-new-user', password:'Isolated-Password-123!',
+            must_change_password:true, role_bindings:[{role_code:'app_user', scope_mode:'SELECTED_DOMAINS', domain_ids:[12]}],
+          }}], '新建用户仍使用原有账号、初始角色与候选身份合同');
+          assert.equal(await rows.first().getByRole('link', {name:'编辑／飞书绑定', exact:true}).getAttribute('href'), './user-detail.html?userId=aiopsadmin');
+          await rows.first().getByRole('link', {name:'编辑／飞书绑定', exact:true}).click();
+          await page.locator('#member-feishu-open-id').waitFor();
+          assert.ok(page.url().endsWith('/user-detail.html?userId=aiopsadmin'));
+          assert.equal(await page.locator('#member-feishu-open-id').inputValue(), 'ou_fixture');
+          assert.equal(await page.locator('#user-binding-status').innerText(), '已验证');
+          assert.deepEqual(await page.evaluate(()=>fixtureWrites), [], '进入详情不能自动写入或发送验证码');
+          await page.getByRole('link', {name:'← 返回用户', exact:true}).click();
+          await page.locator('.user-list-row').first().waitFor();
           await page.getByRole('button', {name:'新建用户', exact:true}).click();
           assert.equal(await page.locator('#user-id').evaluate(node=>document.activeElement===node), true, '新建用户必须聚焦用户 ID');
           assert.equal(await page.locator('#user-id').inputValue(), '');

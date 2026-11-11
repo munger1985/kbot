@@ -11,6 +11,34 @@
 .user-management-page .user-list-name { color: var(--ink); font-size: var(--type-table); font-weight: 600; }
 .user-management-page .user-list-id { margin: 0; color: var(--muted); font-family: var(--font-data); font-size: var(--type-supporting); }
 .user-management-page .user-list-row > .row-action { justify-self: end; }
+/* 用户详情沿用 Ammolite 的概览、独立身份表单与折叠帮助，不复制租户治理能力。 */
+.user-detail-page [hidden] { display: none !important; }
+.user-detail-page .member-detail-heading { display: flex; justify-content: flex-start; }
+.user-detail-page .member-access-summary { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(160px, .7fr); overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.user-detail-page .member-access-summary > div { display: grid; gap: 6px; padding: 18px 20px; }
+.user-detail-page .member-access-summary > .member-access-identity { align-content: center; border-right: 1px solid var(--line); background: var(--surface-subtle); }
+.user-detail-page .member-access-summary span { color: var(--muted); font-size: var(--type-supporting); }
+.user-detail-page .member-access-summary strong { color: var(--ink); font-size: 20px; }
+.user-detail-page .member-access-identity h2 { margin: 0; color: var(--ink); font-size: 24px; }
+.user-detail-page .member-access-identity p { margin: 0; overflow-wrap: anywhere; }
+.user-detail-page .access-scope-section { display: grid; gap: 20px; margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.user-detail-page .access-scope-section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.user-detail-page .access-scope-section h2 { margin: 0; color: var(--ink); font-size: 20px; }
+.user-detail-page .field-help { margin: 0; color: var(--muted); font-size: var(--type-supporting); line-height: 1.65; }
+.user-detail-page .member-feishu-section > .field-help { max-inline-size: 80ch; }
+.user-detail-page .member-feishu-form { display: grid; min-inline-size: 0; max-inline-size: 68ch; gap: calc(var(--form-label-control-gap) * 1.5); }
+.user-detail-page .member-feishu-help { min-inline-size: 0; color: var(--muted); font-size: var(--type-supporting); }
+.user-detail-page .member-feishu-help summary { width: fit-content; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
+.user-detail-page .member-feishu-help ol { display: grid; gap: var(--form-label-control-gap); padding-inline-start: 1.5em; }
+.user-detail-page .member-feishu-help p { margin: var(--form-label-control-gap) 0; overflow-wrap: anywhere; }
+.user-detail-page .member-feishu-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--form-label-control-gap); padding-block-start: var(--form-label-control-gap); border-top: 1px solid var(--line); }
+.user-detail-page .member-feishu-actions > p { flex: 1 1 24ch; }
+.user-detail-page .member-feishu-actions > div { display: flex; flex-wrap: wrap; gap: var(--form-label-control-gap); }
+@media (max-width: 760px) {
+  .user-detail-page .member-access-summary { grid-template-columns: 1fr; }
+  .user-detail-page .member-access-summary > .member-access-identity { border-right: 0; border-bottom: 1px solid var(--line); }
+  .user-detail-page .access-scope-section { padding: 18px; }
+}
 @media (max-width: 640px) {
   .user-management-page .user-list-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
   .user-management-page .user-list-row > .row-action { grid-column: 1 / -1; justify-self: start; }

@@ -1,29 +1,40 @@
-/* 通知面板拥有独立的内容间距，不继承账户菜单的紧凑排版。 */
-.kbot-notifications .kbot-notification-panel {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  top: calc(100% + 24px);
-  width: min(28rem, calc(100vw - 32px));
-  max-height: min(70dvh, 640px);
-  overflow: hidden;
-  color: var(--ink);
-  background: var(--surface-raised);
-  font: var(--type-table)/1.6 var(--font-ui);
-  text-align: left;
+/* 与 Ammolite 共用铃铛、未读角标及右侧通知抽屉的视觉规格。 */
+.kbot-notifications { position: relative; }
+.kbot-notifications > .notification-trigger { position: relative; display: inline-grid; place-items: center; width: 36px; height: 36px; min-height: 36px; padding: 7px; }
+.kbot-notifications .notification-trigger > svg { width: 20px; height: 20px; fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.kbot-notifications .notification-badge { position: absolute; top: -4px; right: -5px; display: grid; min-width: 18px; height: 18px; padding: 0 5px; place-items: center; border: 2px solid var(--surface); border-radius: 999px; color: var(--on-accent, #fff); background: var(--danger); font-size: var(--type-meta); font-weight: 800; line-height: 1; }
+.kbot-notifications .notification-badge[hidden] { display: none !important; }
+.kbot-notification-panel {
+  position: fixed; inset: 0 0 0 auto; box-sizing: border-box; display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  width: min(520px, 100vw); height: 100dvh; max-width: none; max-height: 100dvh;
+  margin: 0; padding: 0; overflow: hidden; border: 0; border-left: 1px solid var(--line);
+  color: var(--ink); background: var(--canvas); box-shadow: var(--shadow-soft);
+  font: var(--type-table)/1.6 var(--font-ui); text-align: left;
 }
-.kbot-notifications .kbot-notification-panel[hidden] { display: none !important; }
-.kbot-notifications > .account-button { gap: 6px; padding: 6px 10px; }
-.kbot-notifications [data-notification-count] { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 99px; color: var(--accent-strong); background: var(--accent-soft); font-size: var(--type-meta); font-weight: 700; }
-.kbot-notification-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid var(--line); }
-.kbot-notification-panel > header > strong { color: var(--ink); font-size: 16px; font-weight: 600; }
-.kbot-notification-panel > [role="status"] { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--muted); background: var(--surface-subtle); font-size: var(--type-supporting); line-height: 1.65; white-space: normal; overflow-wrap: anywhere; }
-.kbot-notification-panel [data-notification-list] { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.kbot-notification-panel article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; min-width: 0; padding: 16px; border-top: 1px solid var(--line); }
-.kbot-notification-panel article:first-child { border-top: 0; }
+.kbot-notification-panel:not([open]) { display: none; }
+.kbot-notification-panel::backdrop { background: rgb(20 35 27 / 26%); backdrop-filter: blur(2px); }
+.kbot-notification-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 28px 28px 20px; border-bottom: 1px solid var(--line); }
+.kbot-notification-panel > header h2 { margin: 0; color: var(--ink); font: 700 24px/1.4 var(--font-ui); }
+.kbot-notification-panel > header p:not(.eyebrow) { margin: 7px 0 0; color: var(--muted); font-size: var(--type-supporting); }
+.kbot-notification-panel > header .icon-button { flex-shrink: 0; }
+.kbot-notification-panel .notification-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 28px 0; font-weight: 600; }
+.kbot-notification-panel > [role="status"] { margin: 0; padding: 12px 28px 16px; color: var(--muted); font-size: var(--type-supporting); line-height: 1.65; white-space: normal; overflow-wrap: anywhere; }
+.kbot-notification-panel [data-notification-list] { display: grid; align-content: start; gap: 10px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 1px 28px 18px; }
+.kbot-notification-panel .notification-card { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.kbot-notification-panel .notification-card.unread::before { position: absolute; top: 17px; left: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); content: ""; }
 .kbot-notification-panel article > strong { grid-column: 1 / -1; color: var(--ink); font-size: var(--type-table); line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
 .kbot-notification-panel article > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: var(--type-supporting); line-height: 1.65; white-space: normal; overflow-wrap: anywhere; }
-.kbot-notification-panel article > small { grid-column: 1; align-self: center; color: var(--faint); font-size: var(--type-supporting); white-space: normal; overflow-wrap: anywhere; }
-.kbot-notification-panel article > .row-action { grid-column: 2; justify-self: end; align-self: end; }
+.kbot-notification-panel article > small { grid-column: 1; align-self: center; color: var(--faint); font-size: var(--type-supporting); overflow-wrap: anywhere; }
+.kbot-notification-panel article > .row-action { grid-column: 2; justify-self: end; align-self: end; min-width: 96px; }
+.kbot-notification-panel > footer { padding: 15px 28px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface-glass-strong); text-align: center; }
+.kbot-notification-panel > footer a { color: var(--accent-strong); font-size: var(--type-supporting); font-weight: 600; text-decoration: none; }
 @media (max-width: 600px) {
-  .kbot-notifications .kbot-notification-panel { position: fixed; top: 72px; right: 16px; left: 16px; width: auto; max-height: calc(100dvh - 88px); }
+  .kbot-notification-panel { border-left: 0; }
+  .kbot-notification-panel > header { padding: 20px 16px; }
+  .kbot-notification-panel .notification-toolbar { padding: 18px 16px 0; }
+  .kbot-notification-panel > [role="status"] { padding: 12px 16px 16px; }
+  .kbot-notification-panel [data-notification-list] { padding-inline: 16px; }
+  .kbot-notification-panel .notification-card { grid-template-columns: minmax(0, 1fr); }
+  .kbot-notification-panel article > .row-action { grid-column: 1; justify-self: stretch; width: 100%; min-height: 44px; }
 }

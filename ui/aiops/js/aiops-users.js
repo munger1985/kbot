@@ -7,36 +7,17 @@
     const userStates = new Map([
       ["ACTIVE", ["已启用", "status-active"]], ["DISABLED", ["已停用", "status-disabled"]],
     ]);
-    let selected = null, busy = false;
-    function showBindingStatus(binding) {
-      const state = ({VERIFIED: ["已验证", "status-success"], UNVERIFIED: ["待本人验证", "status-warning"],
-        DISABLED: ["已解绑", "status-muted"]})[binding?.status] || [binding ? "状态待确认" : "未绑定", "status-muted"];
-      const element = document.getElementById("user-binding-status");
-      element.textContent = state[0]; element.className = "status-pill " + state[1];
-    }
+    let busy = false;
     function reset() {
-      selected = null; form.reset(); form.elements.user_id.disabled = false;
+      form.reset(); form.elements.user_id.disabled = false;
       for (const name of ["password", "role_code"]) { form.elements[name].disabled = false; form.elements[name].required = true; }
       document.getElementById("user-form-title").textContent = "新建用户";
-      showBindingStatus(null);
+      const bindingStatus = document.getElementById("user-binding-status");
+      bindingStatus.textContent = "未绑定"; bindingStatus.className = "status-pill status-muted";
     }
     function focusForm(field) {
       form.closest("section").scrollIntoView({block: "start"});
       field.focus({preventScroll: true});
-    }
-    async function edit(userId) {
-      try {
-        selected = await KBotAIOpsAuth.request(api + "/" + encodeURIComponent(userId));
-        form.elements.user_id.value = selected.user_id; form.elements.user_id.disabled = true;
-        form.elements.display_name.value = selected.display_name || "";
-        form.elements.feishu_open_id.value = selected.feishu_binding?.external_id || "";
-        for (const name of ["password", "role_code"]) { form.elements[name].disabled = true; form.elements[name].required = false; }
-        form.elements.password.value = "";
-        document.getElementById("user-form-title").textContent = "编辑用户";
-        showBindingStatus(selected.feishu_binding);
-        status.textContent = "正在编辑：" + (selected.display_name || selected.user_id);
-        focusForm(form.elements.display_name);
-      } catch (error) { status.textContent = error.message; }
     }
     async function load() {
       const container = document.getElementById("user-list"), count = document.getElementById("user-count");
@@ -57,30 +38,25 @@
       }
       for (const row of users) {
         const line = document.createElement("li"), identity = document.createElement("div"), name = document.createElement("strong");
-        const userId = document.createElement("small"), state = document.createElement("span"), button = document.createElement("button");
+        const userId = document.createElement("small"), state = document.createElement("span"), button = document.createElement("a");
         line.className = "user-list-row"; identity.className = "user-list-identity";
         name.className = "user-list-name"; name.textContent = row.display_name || row.user_id;
         userId.className = "user-list-id"; userId.textContent = row.user_id;
         const presentation = userStates.get(row.status) || ["状态未知", "status-muted"];
         state.className = "status-pill " + presentation[1]; state.textContent = presentation[0];
         button.className = "row-action"; button.textContent = "编辑／飞书绑定";
-        button.type = "button"; button.onclick = () => edit(row.user_id);
+        button.href = "./user-detail.html?" + new URLSearchParams({userId: row.user_id});
         identity.append(name, userId); line.append(identity, state, button); container.append(line);
       }
     }
     form.onsubmit = async event => {
       event.preventDefault(); if (busy) return; busy = true;
       const userId = form.elements.user_id.value, openId = form.elements.feishu_open_id.value.trim() || null;
-      const body = {display_name: form.elements.display_name.value || null, feishu_open_id: openId};
-      if (selected) {
-        body.expected_binding_id = selected.feishu_binding?.id || null;
-        body.expected_binding_version = selected.feishu_binding?.row_version || null;
-      } else {
-        Object.assign(body, {user_id: userId, password: form.elements.password.value, must_change_password: true,
-          role_bindings: [{role_code: form.elements.role_code.value, scope_mode: "SELECTED_DOMAINS", domain_ids: [Number(access.domain_id)]}]});
-      }
+      const body = {display_name: form.elements.display_name.value || null, feishu_open_id: openId,
+        user_id: userId, password: form.elements.password.value, must_change_password: true,
+        role_bindings: [{role_code: form.elements.role_code.value, scope_mode: "SELECTED_DOMAINS", domain_ids: [Number(access.domain_id)]}]};
       try {
-        await KBotAIOpsAuth.request(api + (selected ? "/" + encodeURIComponent(userId) : ""), {method: selected ? "PATCH" : "POST", body: JSON.stringify(body)});
+        await KBotAIOpsAuth.request(api, {method: "POST", body: JSON.stringify(body)});
         status.textContent = "用户已保存；候选飞书身份需本人在“我的通知设置”中发送验证码并确认。";
         reset(); await load();
       } catch (error) { status.textContent = error.message; }

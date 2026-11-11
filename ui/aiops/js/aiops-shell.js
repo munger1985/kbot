@@ -14,7 +14,7 @@
     "inspection-plan-detail": "aiops:plan_manage",
     "report-templates": "aiops:plan_manage",
     runs: "aiops:use",
-    "notification-delivery": "aiops:use", "notification-channels": "aiops:use", "notification-settings": "aiops:use", users: "aiops:member_manage",
+    "notification-delivery": "aiops:use", "notification-channels": "aiops:use", "notification-settings": "aiops:use", users: "aiops:member_manage", "user-detail": "aiops:member_manage",
     "api-clients": "aiops:api_key_manage",
   };
   const notificationAdminPages = new Set(["notification-channels", "notification-delivery"]);
@@ -119,6 +119,7 @@
       "inspection-detail": "inspections",
       "work-item-detail": "dashboard", "business-system-workspace": "business-systems",
       "report-detail": "reports",
+      "user-detail": "users",
     };
     const selectedPage = directoryAliases[current] || current;
     const currentNavigation = detailParents[current] || selectedPage;
@@ -133,7 +134,8 @@
       : "";
     const renderGroup = (group) => {
       const open = group.key === activeGroupKey;
-      return `<section class="business-nav-group is-collapsible${open ? " is-open" : ""}" data-group-key="${group.key}" data-current="${open}"><button class="business-nav-group-toggle" type="button" aria-expanded="${open}" aria-controls="ops-nav-group-${group.key}"><span class="business-nav-group-icon">${icon(group.groupIcon)}</span><span class="business-nav-group-copy"><strong>${group.name}</strong></span><span class="business-nav-group-count" aria-label="${group.pages.length} 个功能">${group.pages.length}</span><span class="business-nav-group-chevron">${icon("chevron")}</span></button><div id="ops-nav-group-${group.key}" class="nav-group-items"${open ? "" : " hidden"}>${group.pages.map(([id, label]) => `<a class="nav-item business-nav-item${id === selectedPage ? " business-route-active" : ""}" href="./${id}.html" ${id === selectedPage ? 'aria-current="page"' : ""}><span class="nav-item-icon">${icon(pageIcons[id])}</span><span class="nav-item-label">${label}</span></a>`).join("")}</div></section>`;
+      const links = group.pages.map(([id, label]) => `<a class="nav-item business-nav-item${id === currentNavigation ? " business-route-active" : ""}" href="./${id}.html" ${id === selectedPage ? 'aria-current="page"' : id === currentNavigation ? 'aria-current="location"' : ""}><span class="nav-item-icon">${icon(pageIcons[id])}</span><span class="nav-item-label">${label}</span></a>`).join("");
+      return `<section class="business-nav-group is-collapsible${open ? " is-open" : ""}" data-group-key="${group.key}" data-current="${open}"><button class="business-nav-group-toggle" type="button" aria-expanded="${open}" aria-controls="ops-nav-group-${group.key}"><span class="business-nav-group-icon">${icon(group.groupIcon)}</span><span class="business-nav-group-copy"><strong>${group.name}</strong></span><span class="business-nav-group-count" aria-label="${group.pages.length} 个功能">${group.pages.length}</span><span class="business-nav-group-chevron">${icon("chevron")}</span></button><div id="ops-nav-group-${group.key}" class="nav-group-items"${open ? "" : " hidden"}>${links}</div></section>`;
     };
     const navigation = navigationSections.map((section) => {
       if (section.kind === "group") {
@@ -239,9 +241,9 @@
       bindShellActions();
       // 通知沿用共享顶栏能力；加载失败不阻断 App，保留明确的降级提示。
       const notificationStyle = document.createElement("link");
-      notificationStyle.rel = "stylesheet"; notificationStyle.href = "../shared/kbot-notifications.css?v=20261111_center1";
+      notificationStyle.rel = "stylesheet"; notificationStyle.href = "../shared/kbot-notifications.css?v=20261111_center2";
       document.head.append(notificationStyle);
-      void import("../../shared/kbot-notifications.js?v=20261103_1").then(() => {
+      void import("../../shared/kbot-notifications.js?v=20261111_center2").then(() => {
         KBotNotificationCenter.mount(document.querySelector(".business-topbar-actions"), {
           request: KBotAIOpsAuth.request, domainId: access.domain_id, toast,
         });

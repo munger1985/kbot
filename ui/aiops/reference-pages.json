@@ -32,6 +32,7 @@
     "notification-open": { "route": null, "platform_difference": "KBot 通知安全打开入口；Ammolite 由平台路由恢复业务上下文", "sources": [] },
     "notification-settings": { "route": null, "platform_difference": "KBot 平台通知偏好；Ammolite 复用平台通知中心", "sources": [] },
     "users": { "route": null, "platform_difference": "KBot 平台用户管理；Ammolite 统一在 Tenant 成员工作台管理", "sources": [] },
+    "user-detail": { "route": null, "platform_difference": "交互参考 Ammolite MemberDetailView；KBot 使用 AIOps app_admin 管理自建账号，无租户治理", "sources": [] },
     "work-item-detail": { "route": "work-items/:workItemId", "sources": ["business/AIOpsWorkItemDetailView.vue"] },
     "login": { "route": null, "platform_difference": "使用 KBot 平台登录流程，不复制 Ammolite SSO", "sources": [] }
   }
