@@ -8,7 +8,8 @@ from .oem_catalog import read_pages
 from .oem_native import _fail, _hash, _name, parse_metric_selector
 
 
-async def query_latest(adapter, request, *, metric_name, limit=1000, expected_target_type=None):
+async def query_latest(adapter, request, *, metric_name, limit=1000, expected_target_type=None,
+                       expected_keys=None, expected_value_type=None, allow_empty_number=False):
     if type(limit) is not int or not 1 <= limit <= 1000:
         _fail("SOURCE_QUERY_INVALID")
     group, metric = parse_metric_selector(metric_name)
@@ -36,6 +37,10 @@ async def query_latest(adapter, request, *, metric_name, limit=1000, expected_ta
     names = tuple(_name(key.get("name")) for key in keys)
     if len(set(names)) != len(names):
         _fail()
+    if expected_keys is not None and names != expected_keys:
+        _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
+    if expected_value_type is not None and native_type != expected_value_type:
+        _fail("SOURCE_METRIC_TYPE_MISMATCH")
     captured_at = datetime.now(UTC)
     timestamps = []
     def validate_page(payload):
@@ -79,7 +84,7 @@ async def query_latest(adapter, request, *, metric_name, limit=1000, expected_ta
                 value = str(value)
             if not isinstance(value, str) or len(value) > 8192:
                 _fail()
-            if native_type == "NUMBER":
+            if native_type == "NUMBER" and not (allow_empty_number and value == ""):
                 try:
                     numeric = Decimal(value)
                     if not numeric.is_finite() or abs(numeric.as_tuple().exponent) > 1024:

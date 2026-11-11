@@ -6802,6 +6802,624 @@
         "title": "EvidenceSourceStrategy",
         "type": "string"
       },
+      "ExadataCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_ref": {
+            "title": "Candidate Ref",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "locator_key": {
+            "title": "Locator Key",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ExadataMember"
+            },
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate_ref",
+          "locator_key",
+          "display_name",
+          "members"
+        ],
+        "title": "ExadataCandidate",
+        "type": "object"
+      },
+      "ExadataDiscovery": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExadataCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "warning": {
+            "default": "保存所选整机即确认展示的全部成员；成员变化后必须重新发现并确认。",
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ExadataDiscovery",
+        "type": "object"
+      },
+      "ExadataFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "component_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Id"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "evidence_indexes": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Evidence Indexes",
+            "type": "array"
+          },
+          "metric_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Code"
+          },
+          "severity": {
+            "enum": [
+              "WARNING",
+              "CRITICAL",
+              "INCONCLUSIVE"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "detail"
+        ],
+        "title": "ExadataFinding",
+        "type": "object"
+      },
+      "ExadataGap": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "component_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Id"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "metric_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Code"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ],
+        "title": "ExadataGap",
+        "type": "object"
+      },
+      "ExadataMember": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "target_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_type",
+          "display_name"
+        ],
+        "title": "ExadataMember",
+        "type": "object"
+      },
+      "ExadataMetricDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregation": {
+            "const": "NONE",
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "freshness_policy": {
+            "title": "Freshness Policy",
+            "type": "string"
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
+          "max_age_seconds": {
+            "title": "Max Age Seconds",
+            "type": "integer"
+          },
+          "native_value_type": {
+            "enum": [
+              "NUMBER",
+              "STRING"
+            ],
+            "title": "Native Value Type",
+            "type": "string"
+          },
+          "repository_unit_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repository Unit Codes",
+            "type": "array"
+          },
+          "scene": {
+            "title": "Scene",
+            "type": "string"
+          },
+          "selector": {
+            "title": "Selector",
+            "type": "string"
+          },
+          "semantics": {
+            "title": "Semantics",
+            "type": "string"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          },
+          "threshold_policy": {
+            "title": "Threshold Policy",
+            "type": "string"
+          },
+          "unit_conversion": {
+            "const": "NONE",
+            "title": "Unit Conversion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "target_type",
+          "selector",
+          "display_name",
+          "native_value_type",
+          "repository_unit_codes",
+          "keys",
+          "scene",
+          "semantics",
+          "aggregation",
+          "unit_conversion",
+          "freshness_policy",
+          "max_age_seconds",
+          "threshold_policy"
+        ],
+        "title": "ExadataMetricDefinition",
+        "type": "object"
+      },
+      "ExadataQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "component_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Id"
+          },
+          "limit": {
+            "default": 12,
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "LATEST_SNAPSHOT",
+            "enum": [
+              "LATEST_SNAPSHOT",
+              "HISTORY"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "scene": {
+            "default": "overview",
+            "enum": [
+              "overview",
+              "cell",
+              "disk",
+              "flash",
+              "iorm",
+              "network",
+              "capacity"
+            ],
+            "title": "Scene",
+            "type": "string"
+          },
+          "window_minutes": {
+            "default": 60,
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Window Minutes",
+            "type": "integer"
+          }
+        },
+        "title": "ExadataQuery",
+        "type": "object"
+      },
+      "ExadataReport": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/ExadataView"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ExadataFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "FINDINGS",
+              "INCONCLUSIVE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report_id",
+          "resource_id",
+          "status",
+          "findings",
+          "evidence",
+          "created_at"
+        ],
+        "title": "ExadataReport",
+        "type": "object"
+      },
+      "ExadataSample": {
+        "additionalProperties": false,
+        "properties": {
+          "component_id": {
+            "title": "Component Id",
+            "type": "string"
+          },
+          "dimensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "object"
+          },
+          "metric_code": {
+            "title": "Metric Code",
+            "type": "string"
+          },
+          "native_value_type": {
+            "title": "Native Value Type",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "quality": {
+            "enum": [
+              "OBSERVED",
+              "EMPTY",
+              "STALE",
+              "TRUNCATED"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
+          "response_sha256": {
+            "title": "Response Sha256",
+            "type": "string"
+          },
+          "selector": {
+            "title": "Selector",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "component_id",
+          "metric_code",
+          "selector",
+          "observed_at",
+          "value",
+          "dimensions",
+          "unit",
+          "native_value_type",
+          "quality",
+          "response_sha256"
+        ],
+        "title": "ExadataSample",
+        "type": "object"
+      },
+      "ExadataView": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "format": "uuid",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "catalog_sha256": {
+            "title": "Catalog Sha256",
+            "type": "string"
+          },
+          "catalog_version": {
+            "title": "Catalog Version",
+            "type": "string"
+          },
+          "definitions": {
+            "items": {
+              "$ref": "#/components/schemas/ExadataMetricDefinition"
+            },
+            "title": "Definitions",
+            "type": "array"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/ExadataGap"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "history_resolution": {
+            "anyOf": [
+              {
+                "const": "PROVIDER_MANAGED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Resolution"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ExadataMember"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "query_mode": {
+            "default": "LATEST_SNAPSHOT",
+            "enum": [
+              "LATEST_SNAPSHOT",
+              "HISTORY"
+            ],
+            "title": "Query Mode",
+            "type": "string"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/ExadataSample"
+            },
+            "title": "Samples",
+            "type": "array"
+          },
+          "scene": {
+            "title": "Scene",
+            "type": "string"
+          },
+          "source_version": {
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "total_queries": {
+            "title": "Total Queries",
+            "type": "integer"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          }
+        },
+        "required": [
+          "resource_id",
+          "binding_id",
+          "binding_version",
+          "source_version",
+          "catalog_version",
+          "catalog_sha256",
+          "captured_at",
+          "scene",
+          "members",
+          "samples",
+          "definitions",
+          "gaps",
+          "partial",
+          "total_queries"
+        ],
+        "title": "ExadataView",
+        "type": "object"
+      },
       "ExecutionBudgetV1": {
         "additionalProperties": false,
         "properties": {
@@ -28578,6 +29196,277 @@
         "summary": "Get Delegation Result",
         "tags": [
           "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/exadata/sources/{source_id}/discoveries": {
+      "post": {
+        "operationId": "discover_internal_v1_aiops_exadata_sources__source_id__discoveries_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExadataDiscovery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover",
+        "tags": [
+          "Exadata OEM"
+        ]
+      }
+    },
+    "/internal/v1/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/diagnoses": {
+      "post": {
+        "operationId": "diagnose_internal_v1_aiops_exadata_systems__system_id__resources__resource_id__sources__source_id__diagnoses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "system_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "System Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExadataQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExadataReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Diagnose",
+        "tags": [
+          "Exadata OEM"
+        ]
+      }
+    },
+    "/internal/v1/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/reports/{report_id}": {
+      "get": {
+        "operationId": "report_internal_v1_aiops_exadata_systems__system_id__resources__resource_id__sources__source_id__reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "system_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "System Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExadataReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report",
+        "tags": [
+          "Exadata OEM"
+        ]
+      }
+    },
+    "/internal/v1/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/view": {
+      "post": {
+        "operationId": "view_internal_v1_aiops_exadata_systems__system_id__resources__resource_id__sources__source_id__view_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "system_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "System Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExadataQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExadataView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "View",
+        "tags": [
+          "Exadata OEM"
         ]
       }
     },

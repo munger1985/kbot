@@ -122,7 +122,9 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_SEARCH_UNIT',
             'KBOT_OPS_KNOWLEDGE_UNIT_SOURCE',
             'KBOT_OPS_KNOWLEDGE_VISUAL_ASSET',
-            'KBOT_OPS_KNOWLEDGE_CONFIG'
+            'KBOT_OPS_KNOWLEDGE_CONFIG',
+            'KBOT_OPS_EXADATA_INVENTORY',
+            'KBOT_OPS_EXADATA_REPORT'
           ))
         MINUS
         SELECT table_name AS object_name
@@ -239,7 +241,9 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_SEARCH_UNIT',
             'KBOT_OPS_KNOWLEDGE_UNIT_SOURCE',
             'KBOT_OPS_KNOWLEDGE_VISUAL_ASSET',
-            'KBOT_OPS_KNOWLEDGE_CONFIG'
+            'KBOT_OPS_KNOWLEDGE_CONFIG',
+            'KBOT_OPS_EXADATA_INVENTORY',
+            'KBOT_OPS_EXADATA_REPORT'
           ))
     ) LOOP
         l_issue_count := l_issue_count + 1;
@@ -251,7 +255,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 100 项。');
+        dbms_output.put_line('[通过] AIOps 表: 102 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1178,6 +1182,9 @@ BEGIN
             'FK_OPS_EVID_REQ_QUERY',
             'FK_OPS_EVID_REQ_RESPONSE',
             'FK_OPS_EVID_REQ_TURN',
+            'FK_OPS_EXA_INV_BIND',
+            'FK_OPS_EXA_REP_BIND',
+            'FK_OPS_EXA_REP_RESOURCE',
             'FK_OPS_EXEC_APPROVAL',
             'FK_OPS_EXEC_PROPOSAL',
             'FK_OPS_EXEC_RESULT_ART',
@@ -1492,6 +1499,9 @@ BEGIN
             'FK_OPS_EVID_REQ_QUERY',
             'FK_OPS_EVID_REQ_RESPONSE',
             'FK_OPS_EVID_REQ_TURN',
+            'FK_OPS_EXA_INV_BIND',
+            'FK_OPS_EXA_REP_BIND',
+            'FK_OPS_EXA_REP_RESOURCE',
             'FK_OPS_EXEC_APPROVAL',
             'FK_OPS_EXEC_PROPOSAL',
             'FK_OPS_EXEC_RESULT_ART',
@@ -1753,7 +1763,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 295 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 298 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -2064,6 +2074,17 @@ BEGIN
             'KBOT_OPS_EVIDENCE_REQUEST|STATUS',
             'KBOT_OPS_EVIDENCE_REQUEST|TURN_ID',
             'KBOT_OPS_EVIDENCE_REQUEST|UPDATED_AT',
+            'KBOT_OPS_EXADATA_INVENTORY|BINDING_ID',
+            'KBOT_OPS_EXADATA_INVENTORY|CONFIRMED_AT',
+            'KBOT_OPS_EXADATA_INVENTORY|CONFIRMED_BY',
+            'KBOT_OPS_EXADATA_INVENTORY|INVENTORY_SHA256',
+            'KBOT_OPS_EXADATA_INVENTORY|MEMBERS_JSON',
+            'KBOT_OPS_EXADATA_REPORT|BINDING_ID',
+            'KBOT_OPS_EXADATA_REPORT|CREATED_AT',
+            'KBOT_OPS_EXADATA_REPORT|CREATED_BY',
+            'KBOT_OPS_EXADATA_REPORT|REPORT_ID',
+            'KBOT_OPS_EXADATA_REPORT|REPORT_JSON',
+            'KBOT_OPS_EXADATA_REPORT|RESOURCE_ID',
             'KBOT_OPS_EXECUTION|ACTION_TEMPLATE_HASH',
             'KBOT_OPS_EXECUTION|ACTION_TEMPLATE_ID',
             'KBOT_OPS_EXECUTION|ACTION_TEMPLATE_VERSION',
@@ -3634,6 +3655,17 @@ BEGIN
             'KBOT_OPS_EVIDENCE_REQUEST|STATUS',
             'KBOT_OPS_EVIDENCE_REQUEST|TURN_ID',
             'KBOT_OPS_EVIDENCE_REQUEST|UPDATED_AT',
+            'KBOT_OPS_EXADATA_INVENTORY|BINDING_ID',
+            'KBOT_OPS_EXADATA_INVENTORY|CONFIRMED_AT',
+            'KBOT_OPS_EXADATA_INVENTORY|CONFIRMED_BY',
+            'KBOT_OPS_EXADATA_INVENTORY|INVENTORY_SHA256',
+            'KBOT_OPS_EXADATA_INVENTORY|MEMBERS_JSON',
+            'KBOT_OPS_EXADATA_REPORT|BINDING_ID',
+            'KBOT_OPS_EXADATA_REPORT|CREATED_AT',
+            'KBOT_OPS_EXADATA_REPORT|CREATED_BY',
+            'KBOT_OPS_EXADATA_REPORT|REPORT_ID',
+            'KBOT_OPS_EXADATA_REPORT|REPORT_JSON',
+            'KBOT_OPS_EXADATA_REPORT|RESOURCE_ID',
             'KBOT_OPS_EXECUTION|ACTION_TEMPLATE_HASH',
             'KBOT_OPS_EXECUTION|ACTION_TEMPLATE_ID',
             'KBOT_OPS_EXECUTION|ACTION_TEMPLATE_VERSION',
@@ -4893,7 +4925,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1553 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1564 项。');
     END IF;
 
     l_issue_count := 0;
@@ -4985,19 +5017,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 59
-           OR l_contract_version <> 'aiops-oracle-v58-app-owned-knowledge' THEN
+           OR l_schema_version <> 60
+           OR l_contract_version <> 'aiops-oracle-v60-exadata-oem' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '59/aiops-oracle-v58-app-owned-knowledge'
+                || '60/aiops-oracle-v60-exadata-oem'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/59/'
-                || 'aiops-oracle-v58-app-owned-knowledge'
+                '[通过] Schema 合同：AIOPS/60/'
+                || 'aiops-oracle-v60-exadata-oem'
             );
         END IF;
     EXCEPTION
@@ -5023,10 +5055,10 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：100 张表、10 个视图、'
+        '验证通过：102 张表、10 个视图、'
         || '1 个属性图、'
-        || '375 个命名索引、295 个命名约束、'
-        || '1553 个表列；Schema 与当前规范一致。'
+        || '375 个命名索引、298 个命名约束、'
+        || '1564 个表列；Schema 与当前规范一致。'
     );
 END;
 /

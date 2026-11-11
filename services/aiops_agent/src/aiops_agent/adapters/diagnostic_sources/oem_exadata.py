@@ -1,0 +1,100 @@
+"""OEM 整机成员发现，只接受官方 members 关系，拒绝名称推断和不完整目录。"""
+
+import asyncio
+import hashlib
+import json
+import re
+from functools import wraps
+import aiohttp
+from .base import DiagnosticSourceAdapterError
+
+from .oem_target_identity import normalize_target, target_error
+from .oem_latest import query_latest
+from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
+
+
+def inventory_digest(root, members):
+    return hashlib.sha256(json.dumps({"root": root, "members": members},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def exadata_read(operation):
+    """仅归一专用接口的网络异常，不影响普通 OEM Adapter 行为。"""
+    @wraps(operation)
+    async def guarded(*args, **kwargs):
+        try:
+            return await operation(*args, **kwargs)
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            raise DiagnosticSourceAdapterError("SOURCE_UNREACHABLE", "OEM Exadata 读取超时或连接失败", retryable=True) from exc
+        except ValueError as exc:
+            raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "OEM Exadata 响应或分页无效") from exc
+    return guarded
+
+
+class OEMExadata:
+    @exadata_read
+    async def exadata_inventory(self, root_id):
+        if not re.fullmatch(r"[0-9a-f]{32}", root_id):
+            target_error("SOURCE_TARGET_LOCATOR_INVALID")
+        self._remaining_response_bytes = 4 * 1024 * 1024
+        async with asyncio.timeout(30):
+            payload, _ = await self._native_get("/targets/" + root_id, max_bytes=65536)
+            root = normalize_target(payload, expected_guid=root_id)
+            if root["targetType"] != "oracle_dbmachine":
+                target_error("SOURCE_TARGET_MISMATCH")
+            members = {}
+            async for rows in self._target_pages("/targets/" + root_id + "/members"):
+                for row in rows:
+                    item = normalize_target(row)
+                    guid = item["targetId"]
+                    if guid == root_id or guid in members or len(members) >= 128:
+                        target_error("SOURCE_DISCOVERY_LIMIT")
+                    detail, _ = await self._native_get("/targets/" + guid, max_bytes=65536)
+                    detail = normalize_target(detail, expected_guid=guid)
+                    if (detail["targetType"], detail["targetName"]) != (item["targetType"], item["targetName"]):
+                        target_error("SOURCE_TARGET_MISMATCH")
+                    members[guid] = {"target_id": guid, "target_type": item["targetType"],
+                        "display_name": item["targetName"]}
+            if not members:
+                target_error("SOURCE_EXADATA_MEMBERS_UNVERIFIED")
+            ordered = sorted(members.values(), key=lambda item: item["target_id"])
+            identity = {"target_id": root_id, "target_type": "oracle_dbmachine",
+                "display_name": root["targetName"]}
+            return identity, ordered, inventory_digest(identity, ordered)
+
+    @exadata_read
+    async def discover_exadata(self):
+        self._remaining_response_bytes = 4 * 1024 * 1024
+        roots = []
+        async with asyncio.timeout(45):
+            seen = set()
+            async for rows in self._target_pages("/targets"):
+                for row in rows:
+                    item = normalize_target(row)
+                    if item["targetId"] in seen or len(seen) >= 2000:
+                        target_error("SOURCE_DISCOVERY_LIMIT")
+                    seen.add(item["targetId"])
+                    if item["targetType"] == "oracle_dbmachine":
+                        roots.append(item["targetId"])
+                        if len(roots) > 16:
+                            target_error("SOURCE_DISCOVERY_LIMIT")
+            result = []
+            for guid in sorted(roots):
+                result.append(await self.exadata_inventory(guid))
+            return result
+
+    @exadata_read
+    async def exadata_latest(self, request, definition, target_type):
+        if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
+            target_error("SOURCE_CAPABILITY_FORBIDDEN")
+        return await query_latest(self, request, metric_name=definition["selector"], limit=256,
+            expected_target_type=target_type, expected_keys=tuple(definition["keys"]),
+            expected_value_type=definition["native_value_type"], allow_empty_number=True)
+
+    @exadata_read
+    async def exadata_history(self, request, definition, target_type):
+        if definition["native_value_type"] != "NUMBER":
+            target_error("SOURCE_METRIC_HISTORY_UNSUPPORTED")
+        return await self.query_native_metric(request, metric_name=definition["selector"], limit=256,
+            _expected_target_type=target_type, _expected_keys=tuple(definition["keys"]),
+            _paginate=True, _resource_samples=True)

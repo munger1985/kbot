@@ -1,4 +1,5 @@
 """AIOps 显式、单次提交的 Unit of Work。"""
+from aiops_agent.repositories.exadata import ExadataRepository
 
 from aiops_agent.repositories.knowledge_ingestion import KnowledgeIngestionRepository
 from aiops_agent.repositories.knowledge_documents import OperationsDocumentRepository
@@ -53,6 +54,7 @@ class AIOpsUnitOfWork:
 
     def __init__(self, session_factory: Callable[[], AsyncSession]):
         self.knowledge_documents = None
+        self.exadata = None
         self.knowledge_ingestion = None
         self.knowledge_retrieval = None
         self._session_factory = session_factory
@@ -101,6 +103,7 @@ class AIOpsUnitOfWork:
         self.state = UnitOfWorkState.ACTIVE
         guard = self._require_active
         self.targets = TargetRepository(self.session, guard)
+        self.exadata = ExadataRepository(self.session, guard)
         self.recovery = RecoveryRepository(self.session, guard)
         self.business_systems = BusinessSystemRepository(self.session, guard)
         self.managed_credentials = ManagedCredentialRepository(self.session)
@@ -162,6 +165,7 @@ class AIOpsUnitOfWork:
             await self.session.close()
             self._transaction = None
             self.knowledge_documents = None
+            self.exadata = None
             self.knowledge_ingestion = None
             self.knowledge_retrieval = None
             self.session = None

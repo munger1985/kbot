@@ -1,0 +1,5291 @@
+{
+  "version": "exadata-oem-v1",
+  "provenance": "OEM repository definition and latest snapshot audit 2026-11-10; no REST availability implied",
+  "metrics": [
+    {
+      "code": "oracle_exadata.Aggregated_Exadata_Capacity_Metric.Usage",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_Exadata_Capacity_Metric/Usage",
+      "display_name": "Allocated (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_type"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_Exadata_Capacity_Metric.flashdisktype",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_Exadata_Capacity_Metric/flashdisktype",
+      "display_name": "Flash Type",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_type"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_Exadata_Capacity_Metric.size",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_Exadata_Capacity_Metric/size",
+      "display_name": "Disk Size (GB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "GB"
+      ],
+      "keys": [
+        "object_type"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_Exadata_Diskgroup_Capacity_Metric.count",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_Exadata_Diskgroup_Capacity_Metric/count",
+      "display_name": "Count",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "asminstance",
+        "diskgroup"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_Exadata_Diskgroup_Capacity_Metric.size",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_Exadata_Diskgroup_Capacity_Metric/size",
+      "display_name": "Size (GB)",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "GB"
+      ],
+      "keys": [
+        "asminstance",
+        "diskgroup"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_io_load",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_io_load",
+      "display_name": "Average CellDisk IO Load",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_io_util",
+      "display_name": "Average CellDisk IO Utilization",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_large_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_large_read_iops",
+      "display_name": "Average CellDisk Large Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_large_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_large_read_throughput",
+      "display_name": "Average CellDisk Large Read Throughput",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_large_write_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_large_write_iops",
+      "display_name": "Average CellDisk Large Write IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_large_write_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_large_write_throughput",
+      "display_name": "Average CellDisk Large Write Throughput",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_lg_r_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_lg_r_latency",
+      "display_name": "Average CellDisk Large Read Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_lg_w_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_lg_w_latency",
+      "display_name": "Average CellDisk Large Write Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_read_iops",
+      "display_name": "Average CellDisk Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_read_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_read_latency",
+      "display_name": "Average CellDisk Read Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_read_throughput",
+      "display_name": "Average CellDisk Read Throughput ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_sm_r_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_sm_r_latency",
+      "display_name": "Average CellDisk Small Read Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_sm_w_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_sm_w_latency",
+      "display_name": "Average CellDisk Small Write Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_small_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_small_read_iops",
+      "display_name": "Average CellDisk Small Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_small_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_small_read_throughput",
+      "display_name": "Average CellDisk Small Read Throughput",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_small_write_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_small_write_iops",
+      "display_name": "Average CellDisk Small Write IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_small_write_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_small_write_throughput",
+      "display_name": "Average CellDisk Small Write Throughput",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_write_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_write_iops",
+      "display_name": "Average CellDisk Write IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_write_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_write_latency",
+      "display_name": "Average CellDisk Write Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.avg_cd_write_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/avg_cd_write_throughput",
+      "display_name": "Average CellDisk Write Throughput",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.flash_type",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/flash_type",
+      "display_name": "Flash Type",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.max_cd_sm_r_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/max_cd_sm_r_latency",
+      "display_name": "Maximum CellDisk Small Read Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.max_cd_sm_w_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/max_cd_sm_w_latency",
+      "display_name": "Maximum CellDisk Small Write Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_io_load",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/sum_cd_io_load",
+      "display_name": "Total CellDisk IO Load",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/sum_cd_io_util",
+      "display_name": "Total CellDisk IO Utilization",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/sum_cd_read_iops",
+      "display_name": "Total CellDisk Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/sum_cd_read_throughput",
+      "display_name": "Total CellDisk Read Throughput ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_write_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/sum_cd_write_iops",
+      "display_name": "Total CellDisk Write IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_write_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_HardNFlashDisk_Metric/sum_cd_write_throughput",
+      "display_name": "Total CellDisk Write Throughput ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "celldisk_type"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_io_load",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_io_load",
+      "display_name": "IO Load",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_io_util",
+      "display_name": "IO Utilization",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_latency",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_latency",
+      "display_name": "Average Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_lg_r_bytes",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_lg_r_bytes",
+      "display_name": "Large Read Bytes",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_lg_r_latency",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_lg_r_latency",
+      "display_name": "Average Large Read Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_lg_r_reqs",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_lg_r_reqs",
+      "display_name": "Large Read Requests",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_lg_w_bytes",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_lg_w_bytes",
+      "display_name": "Large Write Bytes",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_lg_w_latency",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_lg_w_latency",
+      "display_name": "Average Large Write Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_lg_w_reqs",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_lg_w_reqs",
+      "display_name": "Large Write Requests",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_read_iops",
+      "display_name": "Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_read_latency",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_read_latency",
+      "display_name": "Average Read Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_read_throughput",
+      "display_name": "Read Throughput (MBPS)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_sm_r_bytes",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_sm_r_bytes",
+      "display_name": "Small Read Bytes",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_sm_r_latency",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_sm_r_latency",
+      "display_name": "Average Small Read Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_sm_r_reqs",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_sm_r_reqs",
+      "display_name": "Small Read Requests",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_sm_w_bytes",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_sm_w_bytes",
+      "display_name": "Small Write Bytes",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_sm_w_latency",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_sm_w_latency",
+      "display_name": "Average Small Write Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_sm_w_reqs",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_sm_w_reqs",
+      "display_name": "Small Write Requests",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_write_iops",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_write_iops",
+      "display_name": "Write IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_write_latency",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_write_latency",
+      "display_name": "Average Write Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.cd_write_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/cd_write_throughput",
+      "display_name": "Write Throughput (MBPS)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.celldisk_type",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/celldisk_type",
+      "display_name": "CellDisk Type",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellDisk_Metric.flash_type",
+      "target_type": "oracle_exadata",
+      "selector": "CellDisk_Metric/flash_type",
+      "display_name": "Flash Type",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellSrv_Status_Metric.Status",
+      "target_type": "oracle_exadata",
+      "selector": "CellSrv_Status_Metric/Status",
+      "display_name": "CellSrv Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellSrv_Status_Metric.msStatus",
+      "target_type": "oracle_exadata",
+      "selector": "CellSrv_Status_Metric/msStatus",
+      "display_name": "MS Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.CellSrv_Status_Metric.rsStatus",
+      "target_type": "oracle_exadata",
+      "selector": "CellSrv_Status_Metric/rsStatus",
+      "display_name": "RS Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.cl_iorm_boost",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/cl_iorm_boost",
+      "display_name": "IORM Boost",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.cl_runq",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/cl_runq",
+      "display_name": "Exadata Run Queue Length",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.cpu_utilization",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/cpu_utilization",
+      "display_name": "CPU Utilization",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.iorm_mode",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/iorm_mode",
+      "display_name": "Disk I/O Objective",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.led_status",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/led_status",
+      "display_name": "LED Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.memory_utilization",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/memory_utilization",
+      "display_name": "Memory Utilization",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.network_received",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/network_received",
+      "display_name": "Network Received",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.network_sent",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/network_sent",
+      "display_name": "Network Sent",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.temperature",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/temperature",
+      "display_name": "Exadata Temperature Reading",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.temperature_lower",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/temperature_lower",
+      "display_name": "Exadata Temperature Lower Threshold",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Cell_Metric.temperature_upper",
+      "target_type": "oracle_exadata",
+      "selector": "Cell_Metric/temperature_upper",
+      "display_name": "Exadata Temperature Upper Threshold",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exadata_Disk_Status_Metric.status",
+      "target_type": "oracle_exadata",
+      "selector": "Exadata_Disk_Status_Metric/status",
+      "display_name": "Disk Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Filesystem_Utilization_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Filesystem_Utilization_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Filesystem_Utilization_Metric.utilization",
+      "target_type": "oracle_exadata",
+      "selector": "Filesystem_Utilization_Metric/utilization",
+      "display_name": "Filesystem Utilization %",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.all_bytes",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/all_bytes",
+      "display_name": "Reads (MB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.all_reqs",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/all_reqs",
+      "display_name": "All I/O Requests",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.default_hits",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/default_hits",
+      "display_name": "Default Hits",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.default_hits_rate",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/default_hits_rate",
+      "display_name": "Default Hits (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.default_misses",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/default_misses",
+      "display_name": "Default Misses",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.default_misses_rate",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/default_misses_rate",
+      "display_name": "Default Misses (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_bykeep_overwr_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_bykeep_overwr_sec",
+      "display_name": "Keep Overwrites Per Second",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_default_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_default_read_iops",
+      "display_name": "Default Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_default_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_default_read_throughput",
+      "display_name": "Default Read Throughput (MBPS)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_default_used",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_default_used",
+      "display_name": "Default Used (GB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "GB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_by_r_dw_per_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_by_r_dw_per_sec",
+      "display_name": "Read Throughput for Scan (MBPS)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_by_r_miss_dw_per_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_by_r_miss_dw_per_sec",
+      "display_name": "Read Throughput Redirected to Disk for Scan (MBPS)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_rq_disk_write_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_rq_disk_write_sec",
+      "display_name": "Destage Write To Disk Per Second",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_rq_r_dw_per_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_rq_r_dw_per_sec",
+      "display_name": "Read IOPS for Scan",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_rq_w_first",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_rq_w_first",
+      "display_name": "First Writes",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_rq_w_first_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_rq_w_first_sec",
+      "display_name": "First Writes Per Second",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_rq_w_overwrite",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_rq_w_overwrite",
+      "display_name": "Overwrites",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_rq_w_overwrite_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_rq_w_overwrite_sec",
+      "display_name": "Overwrites Per Second",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_rq_w_populate_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_rq_w_populate_sec",
+      "display_name": "Flash Cache Population Writes Per Second",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_io_rq_w_skip",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_io_rq_w_skip",
+      "display_name": "Write IO requests that bypass flash cache",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_keeppool_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_keeppool_read_iops",
+      "display_name": "Keep Pool Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_keeppool_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_keeppool_read_throughput",
+      "display_name": "Keep Pool Read Throughput (MBPS)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_keeppool_used",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_keeppool_used",
+      "display_name": "Keep Pool Used (GB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "GB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_read_hit_rate_oltp",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_read_hit_rate_oltp",
+      "display_name": "Read Hit Ratio for Random I/O",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_read_iops",
+      "display_name": "Read IOPS for Random I/O",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_read_throughput",
+      "display_name": "Read Throughput for Random I/O (MBPS)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.fc_used",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/fc_used",
+      "display_name": "Used (GB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "GB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.keep_bytes",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/keep_bytes",
+      "display_name": "Reads for Keep (MB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.keep_hits",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/keep_hits",
+      "display_name": "Keep Hits",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.keep_miss_reqs",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/keep_miss_reqs",
+      "display_name": "I/O Requests Keep Pool Misses",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.keep_misses",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/keep_misses",
+      "display_name": "Keep Misses",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.keep_misses_rate",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/keep_misses_rate",
+      "display_name": "Keep Misses (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.keep_reqs",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/keep_reqs",
+      "display_name": "I/O Requests for keep",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.miss_bytes",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/miss_bytes",
+      "display_name": "Read Misses (MB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.miss_reqs",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/miss_reqs",
+      "display_name": "I/O Requests Read Misses",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_actual_outliers",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_actual_outliers",
+      "display_name": "Redo Writes Exceeding Outlier Threshold",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_by_keep",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_by_keep",
+      "display_name": "Redo Data Kept",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BYTE"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_disk_io_errs",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_disk_io_errs",
+      "display_name": "Cumulative Disk Write Errors",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_efficiency_percentage",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_efficiency_percentage",
+      "display_name": "Efficiency of Smart Flash Logging (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_efficiency_percentage_hour",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_efficiency_percentage_hour",
+      "display_name": "Efficiency of Smart Flash Log Over the Past Hour",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_flash_io_errs",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_flash_io_errs",
+      "display_name": "Cumulative Flash Write Errors",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_flashlog_io_w_skip_busy_min",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_flashlog_io_w_skip_busy_min",
+      "display_name": "Skipped Writes Due to Slow Disk During Last Minute",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_io_db_by_w_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_io_db_by_w_sec",
+      "display_name": "Megabytes per second Written to Hard Disk",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_io_fl_by_w_sec",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_io_fl_by_w_sec",
+      "display_name": "Megabytes per second Written to Flash",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_io_w",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_io_w",
+      "display_name": "Writes Serviced",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_io_w_skip_busy",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_io_w_skip_busy",
+      "display_name": "Skipped Writes Due to Slow Disk",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_io_w_skip_large",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_io_w_skip_large",
+      "display_name": "Skipped Large Writes",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_io_w_skip_no_buffer",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_io_w_skip_no_buffer",
+      "display_name": "Skipped Writes Due to Unavailable Buffer",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashLog_Metric.flashlog_prevented_outliers",
+      "target_type": "oracle_exadata",
+      "selector": "FlashLog_Metric/flashlog_prevented_outliers",
+      "display_name": "Redo Writes Prevented from Exceeding Outlier Threshold",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_io_by_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_io_by_sec",
+      "display_name": "Average I/O Throughput (MB/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_io_rq_lg_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_io_rq_lg_sec",
+      "display_name": "I/O Requests per Second - Large (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_io_rq_sm_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_io_rq_sm_sec",
+      "display_name": "I/O Requests per Second - Small (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_io_tm_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_io_tm_sm_rq",
+      "display_name": "Average Small Block Read/Write Latency (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_io_util",
+      "display_name": "I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_io_wt_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_io_wt_lg_rq",
+      "display_name": "Average IORM Wait Time for Large I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_io_wt_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_io_wt_rq",
+      "display_name": "Average IORM Wait Time for I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_io_wt_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_io_wt_sm_rq",
+      "display_name": "Average IORM Wait Time for Small I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_CG_Metric.cg_fd_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_CG_Metric/cg_fd_iops",
+      "display_name": "I/O Requests per Second (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_by_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_by_sec",
+      "display_name": "Average I/O Throughput (MB/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_rq_lg_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_rq_lg_sec",
+      "display_name": "I/O Requests per Second - Large (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_rq_sm_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_rq_sm_sec",
+      "display_name": "I/O Requests per Second - Small (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_tm",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_tm",
+      "display_name": "Cumulative Block Read/Write Latency (ms)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_tm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_tm_rq",
+      "display_name": "Average Block Read/Write Latency (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_tm_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_tm_sm_rq",
+      "display_name": "Average Small Block Read/Write Latency (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_util",
+      "display_name": "I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_wt_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_wt_lg_rq",
+      "display_name": "Average IORM Wait Time for Large I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_wt_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_wt_rq",
+      "display_name": "Average IORM Wait Time for I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_io_wt_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_io_wt_sm_rq",
+      "display_name": "Average IORM Wait Time for Small I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_DB_Metric.db_fd_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_DB_Metric/db_fd_iops",
+      "display_name": "I/O Requests per Second (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_io_by_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_io_by_sec",
+      "display_name": "Average I/O Throughput (MB/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_io_rq_lg_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_io_rq_lg_sec",
+      "display_name": "I/O Requests per Second - Large (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_io_rq_sm_sec",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_io_rq_sm_sec",
+      "display_name": "I/O Requests per Second - Small (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_io_tm_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_io_tm_sm_rq",
+      "display_name": "Average Small Block Read/Write Latency (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_io_util",
+      "display_name": "I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_io_wt_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_io_wt_lg_rq",
+      "display_name": "Average IORM Wait Time for Large I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_io_wt_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_io_wt_rq",
+      "display_name": "Average IORM Wait Time for I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_io_wt_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_io_wt_sm_rq",
+      "display_name": "Average IORM Wait Time for Small I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Disk_IORM_PDB_Metric.pdb_fd_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Disk_IORM_PDB_Metric/pdb_fd_iops",
+      "display_name": "I/O Requests per Second (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.HostInterConnect_Statistics.c_mb_dropped",
+      "target_type": "oracle_exadata",
+      "selector": "HostInterConnect_Statistics/c_mb_dropped",
+      "display_name": "Host MB Dropped Per Sec",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "network",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.HostInterConnect_Statistics.c_mb_rdma_dropped",
+      "target_type": "oracle_exadata",
+      "selector": "HostInterConnect_Statistics/c_mb_rdma_dropped",
+      "display_name": "Host RDMA MB Dropped Per Sec",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "network",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.HostInterConnect_Statistics.c_mb_received",
+      "target_type": "oracle_exadata",
+      "selector": "HostInterConnect_Statistics/c_mb_received",
+      "display_name": "Host MB Received Per Sec",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "network",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.HostInterConnect_Statistics.c_mb_resent",
+      "target_type": "oracle_exadata",
+      "selector": "HostInterConnect_Statistics/c_mb_resent",
+      "display_name": "Host MB Resent Per Sec",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "network",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.HostInterConnect_Statistics.c_mb_sent",
+      "target_type": "oracle_exadata",
+      "selector": "HostInterConnect_Statistics/c_mb_sent",
+      "display_name": "Host MB Sent Per Sec",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "network",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.HostInterConnect_Statistics.c_rdma_retry_latency",
+      "target_type": "oracle_exadata",
+      "selector": "HostInterConnect_Statistics/c_rdma_retry_latency",
+      "display_name": "Host RDMA Retry Latency (msec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.HostInterConnect_Statistics.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "HostInterConnect_Statistics/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "name",
+        "cell_Id"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_fd_io_tm",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_fd_io_tm",
+      "display_name": "Cumulative latency of reading or writing blocks from flash disks",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_fd_io_tm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_fd_io_tm_rq",
+      "display_name": "Average latency of reading or writing blocks/request from flash ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_by_sec",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_by_sec",
+      "display_name": "Average I/O Throughput (MB/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_load",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_load",
+      "display_name": "Average I/O Load",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_tm_lg",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_tm_lg",
+      "display_name": "Cumulative latency of reading or writing large blocks from hard ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_tm_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_tm_lg_rq",
+      "display_name": "Average latency of reading or writing large blocks/request from ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_tm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_tm_rq",
+      "display_name": "Average latency of reading or writing blocks/request from hard d",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_tm_sm",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_tm_sm",
+      "display_name": "Cumulative latency of reading or writing small blocks from hard ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_tm_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_tm_sm_rq",
+      "display_name": "Average latency of reading or writing small blocks/request from ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_util",
+      "display_name": "I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_util_lg",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_util_lg",
+      "display_name": "Large I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_util_sm",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_util_sm",
+      "display_name": "Small I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_wt_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_wt_lg_rq",
+      "display_name": "Average Wait Time for Large I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_io_wt_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_io_wt_sm_rq",
+      "display_name": "Average Wait Time for Small I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_iops",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_iops",
+      "display_name": "I/O Requests per Second (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.db_rq_wait",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/db_rq_wait",
+      "display_name": "Average Wait Time for I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.num_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/num_lg_rq",
+      "display_name": "I/O Requests per Second - Large (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.num_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/num_sm_rq",
+      "display_name": "I/O Requests per Second - Small (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.wait_time_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/wait_time_lg_rq",
+      "display_name": "Wait Time for Large I/O (ms)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORMDB_Metric.wait_time_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORMDB_Metric/wait_time_sm_rq",
+      "display_name": "Wait Time for Small I/O (ms)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_CONSUMER_GROUP_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_CONSUMER_GROUP_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_CONSUMER_GROUP_Metric.cg_io_by_sec",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_CONSUMER_GROUP_Metric/cg_io_by_sec",
+      "display_name": "Average I/O Throughput (MB/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_CONSUMER_GROUP_Metric.cg_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_CONSUMER_GROUP_Metric/cg_io_util",
+      "display_name": "I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_CONSUMER_GROUP_Metric.cg_iops",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_CONSUMER_GROUP_Metric/cg_iops",
+      "display_name": "I/O Requests per Second (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_CONSUMER_GROUP_Metric.cg_req_wait",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_CONSUMER_GROUP_Metric/cg_req_wait",
+      "display_name": "Average Wait Time for I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.num_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/num_lg_rq",
+      "display_name": "I/O Requests per Second - Large (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.num_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/num_sm_rq",
+      "display_name": "I/O Requests per Second - Small (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_io_by_sec",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_io_by_sec",
+      "display_name": "Average I/O Throughput (MB/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_io_load",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_io_load",
+      "display_name": "Average I/O Load",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_io_util",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_io_util",
+      "display_name": "I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_io_util_lg",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_io_util_lg",
+      "display_name": "Large I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_io_util_sm",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_io_util_sm",
+      "display_name": "Small I/O Utilization (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_io_wt_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_io_wt_lg_rq",
+      "display_name": "Average Wait Time for Large I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_io_wt_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_io_wt_sm_rq",
+      "display_name": "Average Wait Time for Small I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_iops",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_iops",
+      "display_name": "I/O Requests per Second (IO/Sec)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.pdb_rq_wait",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/pdb_rq_wait",
+      "display_name": "Average Wait Time for I/O (ms/req)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.wait_time_lg_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/wait_time_lg_rq",
+      "display_name": "Wait Time for Large I/O (ms)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.IORM_PDB_Metric.wait_time_sm_rq",
+      "target_type": "oracle_exadata",
+      "selector": "IORM_PDB_Metric/wait_time_sm_rq",
+      "display_name": "Wait Time for Small I/O (ms)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECONDS"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "iorm",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.SmartIO_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "SmartIO_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.SmartIO_Metric.smartio_passthru",
+      "target_type": "oracle_exadata",
+      "selector": "SmartIO_Metric/smartio_passthru",
+      "display_name": "Megabytes per second of pass through IOs",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.SmartIO_Metric.smartio_read_flashcache",
+      "target_type": "oracle_exadata",
+      "selector": "SmartIO_Metric/smartio_read_flashcache",
+      "display_name": "Megabytes per second read from flash cache",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.SmartIO_Metric.smartio_read_harddisk",
+      "target_type": "oracle_exadata",
+      "selector": "SmartIO_Metric/smartio_read_harddisk",
+      "display_name": "Megabytes per second read from hard disk",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.SmartIO_Metric.smartio_storage_index",
+      "target_type": "oracle_exadata",
+      "selector": "SmartIO_Metric/smartio_storage_index",
+      "display_name": "Megabytes per second saved by storage index",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "flash",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_server.ComponentState.ComponentState",
+      "target_type": "oracle_si_hw_component_server",
+      "selector": "ComponentState/ComponentState",
+      "display_name": "Component State",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_server.ComponentState.ErrorDetail",
+      "target_type": "oracle_si_hw_component_server",
+      "selector": "ComponentState/ErrorDetail",
+      "display_name": "Error Detail",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_switch.ComponentState.ComponentState",
+      "target_type": "oracle_si_hw_component_switch",
+      "selector": "ComponentState/ComponentState",
+      "display_name": "Component State",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_switch.ComponentState.ErrorDetail",
+      "target_type": "oracle_si_hw_component_switch",
+      "selector": "ComponentState/ErrorDetail",
+      "display_name": "Error Detail",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.PfcIfPriorityEntryMetric.DeltaNumIndications",
+      "target_type": "oracle_si_netswitch",
+      "selector": "PfcIfPriorityEntryMetric/DeltaNumIndications",
+      "display_name": "Delta Indications",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId",
+        "Priority"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.PfcIfPriorityEntryMetric.DeltaNumRequests",
+      "target_type": "oracle_si_netswitch",
+      "selector": "PfcIfPriorityEntryMetric/DeltaNumRequests",
+      "display_name": "Delta Requests",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId",
+        "Priority"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.PfcIfPriorityEntryMetric.NumIndications",
+      "target_type": "oracle_si_netswitch",
+      "selector": "PfcIfPriorityEntryMetric/NumIndications",
+      "display_name": "Indications",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId",
+        "Priority"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.PfcIfPriorityEntryMetric.NumRequests",
+      "target_type": "oracle_si_netswitch",
+      "selector": "PfcIfPriorityEntryMetric/NumRequests",
+      "display_name": "Requests",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId",
+        "Priority"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.AdministrationState",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/AdministrationState",
+      "display_name": "Admin State",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.InDiscard",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/InDiscard",
+      "display_name": "Discarded Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.InErrors",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/InErrors",
+      "display_name": "Inbound Errors",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.InNUcastPackets",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/InNUcastPackets",
+      "display_name": "Inbound Multicast Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.InOctets",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/InOctets",
+      "display_name": "Inbound Octets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.InOctetsRate",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/InOctetsRate",
+      "display_name": "Inbound Octets Rate",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BPS"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.InUcastPackets",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/InUcastPackets",
+      "display_name": "Inbound Unicast Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.MTU",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/MTU",
+      "display_name": "MTU",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.OperStatus",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/OperStatus",
+      "display_name": "Operational Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.OperStatusDown",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/OperStatusDown",
+      "display_name": "Port is down",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BOOLEAN"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.OutDiscards",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/OutDiscards",
+      "display_name": "Outbound Discards",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.OutErrors",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/OutErrors",
+      "display_name": "Outbound Errors",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.OutNUcastPackets",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/OutNUcastPackets",
+      "display_name": "Outbound Multicast Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.OutOctets",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/OutOctets",
+      "display_name": "Outbound Octets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.OutOctetsRate",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/OutOctetsRate",
+      "display_name": "Outbound Octets Rate",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BPS"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.OutUcastPackets",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/OutUcastPackets",
+      "display_name": "Outbound Unicast Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_server.NetworkPortPerformance.TotalOctetsRate",
+      "target_type": "oracle_si_network_port_server",
+      "selector": "NetworkPortPerformance/TotalOctetsRate",
+      "display_name": "Total Octets Rate",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BPS"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.AdministrationState",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/AdministrationState",
+      "display_name": "Admin State",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.InDiscard",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/InDiscard",
+      "display_name": "Discarded Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.InErrors",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/InErrors",
+      "display_name": "Inbound Errors",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.InNUcastPackets",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/InNUcastPackets",
+      "display_name": "Inbound Multicast Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.InOctets",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/InOctets",
+      "display_name": "Inbound Octets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.InOctetsRate",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/InOctetsRate",
+      "display_name": "Inbound Octets Rate",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BPS"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.InUcastPackets",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/InUcastPackets",
+      "display_name": "Inbound Unicast Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.InUnknownProto",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/InUnknownProto",
+      "display_name": "Inbound Unknown Protocol",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.MTU",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/MTU",
+      "display_name": "MTU",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.OperStatus",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/OperStatus",
+      "display_name": "Operational Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.OperStatusDown",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/OperStatusDown",
+      "display_name": "Port is down",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BOOLEAN"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.OutDiscards",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/OutDiscards",
+      "display_name": "Outbound Discards",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.OutErrors",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/OutErrors",
+      "display_name": "Outbound Errors",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.OutNUcastPackets",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/OutNUcastPackets",
+      "display_name": "Outbound Multicast Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.OutOctets",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/OutOctets",
+      "display_name": "Outbound Octets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.OutOctetsRate",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/OutOctetsRate",
+      "display_name": "Outbound Octets Rate",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BPS"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.OutUcastPackets",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/OutUcastPackets",
+      "display_name": "Outbound Unicast Packets",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.Speed",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/Speed",
+      "display_name": "Speed",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.SpeedUnits",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/SpeedUnits",
+      "display_name": "Speed Units",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.NetworkPortPerformance.TotalOctetsRate",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "NetworkPortPerformance/TotalOctetsRate",
+      "display_name": "Total Octets Rate",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "BPS"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.AdminStatus",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/AdminStatus",
+      "display_name": "Admin Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.Bandwidth",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/Bandwidth",
+      "display_name": "Bandwidth (Mb/s)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.NetworkRecdRate",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/NetworkRecdRate",
+      "display_name": "Incoming Traffic(Kb/s)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "KBPS"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.NetworkSentRate",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/NetworkSentRate",
+      "display_name": "Outgoing Traffic(Kb/s)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "KBPS"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SOURCE_RATE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.OperStatus",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/OperStatus",
+      "display_name": "Operational Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentBandwidthUsedIncoming",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/PercentBandwidthUsedIncoming",
+      "display_name": "Incoming Used Bandwidth (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentBandwidthUsedOutgoing",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/PercentBandwidthUsedOutgoing",
+      "display_name": "Outgoing Used Bandwidth (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentDiscardsIn",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/PercentDiscardsIn",
+      "display_name": "Incoming Discards(%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentDiscardsOut",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/PercentDiscardsOut",
+      "display_name": "Outgoing Discards(%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentErrorsIn",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/PercentErrorsIn",
+      "display_name": "Incoming Errors(%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentErrorsOut",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/PercentErrorsOut",
+      "display_name": "Outgoing Errors(%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_network_port_switch.SwitchEthPortsMonitor.PortStatusError",
+      "target_type": "oracle_si_network_port_switch",
+      "selector": "SwitchEthPortsMonitor/PortStatusError",
+      "display_name": "Eth Port Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "PortId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    }
+  ]
+}

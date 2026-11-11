@@ -185,7 +185,7 @@ class OEMNativeMetrics:
 
     async def query_native_metric(self, request, *, metric_name, limit, allow_text=False,
                                   _expected_target_type=None, _shared_budget=False, _paginate=False,
-                                  _summary_only=False):
+                                  _summary_only=False, _resource_samples=False, _expected_keys=None):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             _fail("SOURCE_CAPABILITY_FORBIDDEN")
         group, metric = parse_metric_selector(metric_name)
@@ -217,6 +217,8 @@ class OEMNativeMetrics:
         key_names = tuple(_name(key.get("name")) for key in keys)
         if len(set(key_names)) != len(key_names):
             _fail()
+        if _expected_keys is not None and key_names != _expected_keys:
+            _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
         unit = item.get("unitDisplayName")
         if unit is not None and (not isinstance(unit, str) or len(unit) > 64):
             _fail()
@@ -299,6 +301,10 @@ class OEMNativeMetrics:
             return {"series": tuple({"dimensions": dict(identity), "total": str(value), "sample_count": count}
                     for identity, (value, count) in totals.items()), "unit": unit, "truncated": more,
                     "response_sha256": _hash(target_hash, metadata_hash, response_hash)}
+        if _resource_samples:
+            return {"points": tuple(points), "dimensions": tuple(dimensions), "unit": unit,
+                "native_value_type": "NUMBER", "captured_at": datetime.now(UTC), "truncated": more or total > limit,
+                "response_sha256": _hash(target_hash, metadata_hash, response_hash)}
         return NativeMetricSamples(
             action_id=request.action_id, target_id=request.target_id, binding_id=request.binding_id,
             source_id=self.context.source_id, source_type="OEM", metric_name=metric_name,

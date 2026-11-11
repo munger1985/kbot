@@ -115,6 +115,8 @@ class MonitoringApplicationService:
                     continue
                 if getattr(source, "tenant_id", None) != getattr(scope, "tenant_id", None):
                     continue
+                if resource.resource_type_key == "EXADATA" and source.source_type != "OEM":
+                    continue
                 record[2].append(self._source_summary(
                     source, 1, alert_ingress_ready=False,
                 ))
@@ -126,7 +128,7 @@ class MonitoringApplicationService:
                         continue
                     instance_id = target.target_id if target is not None else resource.resource_id
                     ready = next((source for source in bound_sources if source.monitoring_readiness == "READY"), None)
-                    supported = resource.resource_type_key in {"DATABASE", "PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"}
+                    supported = resource.resource_type_key in {"DATABASE", "PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER", "EXADATA"}
                     enabled = resource.resource_type_key != "DATABASE" or target is not None and target.status == "ENABLED"
                     gaps = ()
                     if not supported or not enabled or not bound_sources:

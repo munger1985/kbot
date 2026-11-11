@@ -9,8 +9,8 @@ exports.relationLabel = relationLabel;
 exports.databaseSummary = databaseSummary;
 exports.hostProjection = hostProjection;
 exports.graphModel = graphModel;
-exports.relationLabels = { ORACLE_RAC: 'Oracle RAC', DATA_GUARD: 'Data Guard', OGG: 'GoldenGate', DEBEZIUM_CDC: 'Debezium CDC', FLINK_CDC: 'Flink CDC', DATAX: 'DataX', MYSQL_REPLICATION: 'MySQL 主从复制', POSTGRES_STREAMING: 'PostgreSQL 流复制', RUNS_ON: '运行于', USES_STORAGE: '使用存储', DEPENDS_ON: '依赖', LOAD_BALANCES: '负载均衡' };
-exports.resourceKinds = { DATABASE: 'DB', PHYSICAL_SERVER: 'SRV', VIRTUAL_MACHINE: 'VM', CONTAINER: 'CTR', POD: 'POD', KUBERNETES_CLUSTER: 'K8S', APPLICATION_SERVICE: 'APP', APPLICATION_SERVER: 'MID', MESSAGE_QUEUE: 'MQ', LOAD_BALANCER: 'LB', NETWORK_DEVICE: 'NET', STORAGE: 'STG' };
+exports.relationLabels = { USES_EXADATA: '使用 Exadata', ORACLE_RAC: 'Oracle RAC', DATA_GUARD: 'Data Guard', OGG: 'GoldenGate', DEBEZIUM_CDC: 'Debezium CDC', FLINK_CDC: 'Flink CDC', DATAX: 'DataX', MYSQL_REPLICATION: 'MySQL 主从复制', POSTGRES_STREAMING: 'PostgreSQL 流复制', RUNS_ON: '运行于', USES_STORAGE: '使用存储', DEPENDS_ON: '依赖', LOAD_BALANCES: '负载均衡' };
+exports.resourceKinds = { EXADATA: 'EXA', DATABASE: 'DB', PHYSICAL_SERVER: 'SRV', VIRTUAL_MACHINE: 'VM', CONTAINER: 'CTR', POD: 'POD', KUBERNETES_CLUSTER: 'K8S', APPLICATION_SERVICE: 'APP', APPLICATION_SERVER: 'MID', MESSAGE_QUEUE: 'MQ', LOAD_BALANCER: 'LB', NETWORK_DEVICE: 'NET', STORAGE: 'STG' };
 exports.hostTypes = new Set(['PHYSICAL_SERVER', 'VIRTUAL_MACHINE', 'CONTAINER', 'POD', 'KUBERNETES_CLUSTER']);
 const replicationTypes = new Set(['DATA_GUARD', 'OGG', 'DEBEZIUM_CDC', 'FLINK_CDC', 'DATAX', 'MYSQL_REPLICATION', 'POSTGRES_STREAMING']);
 const sourceRoles = new Set(['PRIMARY', 'SOURCE', 'WORKLOAD', 'CONSUMER', 'BALANCER']);
@@ -19,7 +19,7 @@ const unique = (values) => [...new Set(values)];
 function relationLabel(key) { return exports.relationLabels[key] || key; }
 function databaseSummary(resource) {
     if (!resource.database)
-        return resource.business_system_names?.join(' / ') || { PHYSICAL_SERVER: '物理服务器', VIRTUAL_MACHINE: '虚拟机', APPLICATION_SERVICE: '应用服务', STORAGE: '存储', NETWORK_DEVICE: '网络设备', CONTAINER: '容器', POD: 'Pod' }[resource.resource_type_key] || resource.resource_type_key;
+        return resource.business_system_names?.join(' / ') || { EXADATA: 'Exadata 一体机', PHYSICAL_SERVER: '物理服务器', VIRTUAL_MACHINE: '虚拟机', APPLICATION_SERVICE: '应用服务', STORAGE: '存储', NETWORK_DEVICE: '网络设备', CONTAINER: '容器', POD: 'Pod' }[resource.resource_type_key] || resource.resource_type_key;
     const db = resource.database;
     return `${db.db_type} ${db.version_code} · ${db.deployment_type === 'RAC' ? `RAC 实例 ${db.rac_node_number || '-'}` : '单实例'}`;
 }

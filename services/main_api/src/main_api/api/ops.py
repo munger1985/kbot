@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from platform_core.http_cache import NoStoreAPIRoute
+from platform_core.contracts.aiops.exadata import ExadataDiscovery, ExadataQuery, ExadataView, ExadataReport
 from platform_core.contracts.aiops.report_filters import ReportCategory
 from platform_core.contracts.aiops.types import ReportType
 from platform_core.contracts.aiops.monitoring_native import (
@@ -167,6 +168,7 @@ def _route_permissions() -> dict[str, str]:
     permissions: dict[str, str] = {}
     groups = {
         "aiops:use": {
+            "get_exadata_view", "diagnose_exadata", "get_exadata_report",
             "list_sql_plan_materials", "revoke_sql_plan_material",
             "list_notification_subscriptions", "upsert_notification_subscription",
             "disable_notification_subscription", "get_report", "generate_report",
@@ -224,6 +226,7 @@ def _route_permissions() -> dict[str, str]:
             "disable_business_system", "delete_business_system",
         },
         "aiops:diagnostic_source_manage": {
+            "discover_exadata",
             "create_diagnostic_source", "test_diagnostic_source_connection",
             "list_diagnostic_sources", "get_diagnostic_source",
             "patch_diagnostic_source", "delete_diagnostic_source",
@@ -2392,3 +2395,26 @@ async def disable_inspection_plan(
         if_match=if_match,
         idempotency_key=idempotency_key,
     )
+
+@router.post("/diagnostic-sources/{source_id}/exadata-discoveries", response_model=ExadataDiscovery)
+async def discover_exadata(source_id: UUID, request: Request):
+    return await _client(request).discover_exadata(source_id, auth_context=request.state.auth_context)
+
+
+@router.post("/business-systems/{system_id}/exadata/{resource_id}/sources/{source_id}/view", response_model=ExadataView)
+async def get_exadata_view(system_id: UUID, resource_id: UUID, source_id: UUID, body: ExadataQuery, request: Request):
+    return await _client(request).exadata_view(system_id, resource_id, source_id,
+        body.model_dump(mode="json"), auth_context=request.state.auth_context)
+
+
+@router.post("/business-systems/{system_id}/exadata/{resource_id}/sources/{source_id}/diagnoses", response_model=ExadataReport)
+async def diagnose_exadata(system_id: UUID, resource_id: UUID, source_id: UUID, body: ExadataQuery,
+                           request: Request, idempotency_key: IdempotencyKey):
+    return await _client(request).diagnose_exadata(system_id, resource_id, source_id,
+        body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+
+
+@router.get("/business-systems/{system_id}/exadata/{resource_id}/sources/{source_id}/reports/{report_id}", response_model=ExadataReport)
+async def get_exadata_report(system_id: UUID, resource_id: UUID, source_id: UUID, report_id: UUID, request: Request):
+    return await _client(request).get_exadata_report(system_id, resource_id, source_id, report_id,
+        auth_context=request.state.auth_context)

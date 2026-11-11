@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   const hostTypes = new Set(["PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"]);
-  const hardwareTypes = new Set([...hostTypes, "STORAGE", "NETWORK_DEVICE"]);
+  const hardwareTypes = new Set([...hostTypes, "STORAGE", "NETWORK_DEVICE", "EXADATA"]);
   function draft(bindings = []) {
     const binding = bindings.find(row => row.status === "ACTIVE") || bindings[0];
     return { source_id: binding?.source_id || "", candidate_ref: binding ? `current:${binding.binding_id}` : "", locator_key: binding?.source_locator_key || "", candidates: binding ? [{ candidate_ref: `current:${binding.binding_id}`, locator_key: binding.source_locator_key, display_name: "当前主机" }] : [], discovering: false, revision: 0, original_binding: binding };
@@ -27,7 +27,7 @@
     return "";
   }
   function relationSpec(item) {
-    return hostTypes.has(item.resource_type_key) ? ["RUNS_ON", "WORKLOAD", "HOST"] : item.resource_type_key === "STORAGE" ? ["USES_STORAGE", "CONSUMER", "PROVIDER"] : ["DEPENDS_ON", "SOURCE", "TARGET"];
+    return item.resource_type_key === "EXADATA" ? ["USES_EXADATA", "DATABASE", "EXADATA"] : hostTypes.has(item.resource_type_key) ? ["RUNS_ON", "WORKLOAD", "HOST"] : item.resource_type_key === "STORAGE" ? ["USES_STORAGE", "CONSUMER", "PROVIDER"] : ["DEPENDS_ON", "SOURCE", "TARGET"];
   }
   function linked(item, relations) {
     const [type, sourceRole, targetRole] = relationSpec(item);
@@ -55,6 +55,13 @@
     const candidates = [];
     let cursor = null;
     try {
+      if (item.resource_type_key === "EXADATA") {
+        const page = await request(`/diagnostic-sources/${encodeURIComponent(sourceId)}/exadata-discoveries`, { method: "POST", body: "{}" });
+        if (ticket !== state.revision || state.source_id !== sourceId) return;
+        state.candidates = page.items;
+        state.candidate_ref = "";
+        return;
+      }
       do {
         const page = await request(`/diagnostic-sources/${encodeURIComponent(sourceId)}/instance-discoveries`, { method: "POST", body: JSON.stringify({ resource_scope: "HOST", page_size: 100, cursor }) });
         if (ticket !== state.revision || state.source_id !== sourceId) return;

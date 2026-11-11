@@ -77,6 +77,8 @@ SERVICE_TABLES = {
         "KBOT_DQ_AUDIT",
     },
     "aiops_agent": {
+        "KBOT_OPS_EXADATA_INVENTORY",
+        "KBOT_OPS_EXADATA_REPORT",
         "KBOT_OPS_TARGET",
         "KBOT_OPS_TARGET_FACT",
         "KBOT_OPS_POLICY",
@@ -534,6 +536,14 @@ def main() -> int:
             encoding="utf-8"
         )
     )
+    version_view = re.search(
+        r"CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS(.*?)FROM DUAL;",
+        aiops_sql, re.DOTALL,
+    )
+    if (version_view is None
+        or f"{aiops_manifest['schema_version']} AS SCHEMA_VERSION" not in version_view[1]
+        or f"'{aiops_manifest['contract_version']}' AS CONTRACT_VERSION".upper() not in version_view[1]):
+        errors.append("AIOps 规范版本视图与 Manifest 不一致")
     expected_deferred_count = len(
         aiops_manifest.get("deferred_foreign_keys") or ()
     )

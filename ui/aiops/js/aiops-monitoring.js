@@ -185,7 +185,7 @@
   function renderFreshness() {
     const view = state.view;
     document.getElementById("monitoring-freshness").textContent = shell.fmt(latestSampleAt());
-    document.getElementById("monitoring-profile-name").textContent = sourceById()?.source_type === "OEM" ? "OEM 关键指标总览" : profileById()?.display_name || "统一总览";
+    document.getElementById("monitoring-profile-name").textContent = sourceById()?.source_type === "OEM" ? (state.instances.find(item => item.instance_id === state.selected[0])?.resource_type_key === "EXADATA" ? "Exadata OEM 专用指标" : "OEM 关键指标总览") : profileById()?.display_name || "统一总览";
     document.getElementById("refresh-monitoring").disabled = !canQuery();
     updateDiagnosisLink();
   }
@@ -237,7 +237,7 @@
     document.getElementById("monitoring-source").disabled = !state.sources.length;
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
-    document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview";
+    document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview" || state.instances.find(item => item.instance_id === state.selected[0])?.resource_type_key === "EXADATA";
     const isOEM = sourceById()?.source_type === "OEM";
     document.querySelector('#monitoring-baseline option[value="1d"]').hidden = isOEM;
     document.querySelectorAll('#monitoring-refresh-interval option[value="15"],#monitoring-refresh-interval option[value="30"]').forEach(option => { option.hidden = isOEM; });
@@ -332,7 +332,7 @@
       const refresh = document.getElementById("monitoring-refresh-interval");
       if (Number(refresh.value) > 0 && Number(refresh.value) < 60) { refresh.value = "0"; scheduleRefresh(); }
       state.profiles = []; state.profileId = "oem-native";
-      document.getElementById("monitoring-profile-name").textContent = "OEM 关键指标总览";
+      document.getElementById("monitoring-profile-name").textContent = resource?.resource_type_key === "EXADATA" ? "Exadata OEM 专用指标" : "OEM 关键指标总览";
       return;
     }
     const profiles = await KBotAIOpsAuth.request(
@@ -362,7 +362,9 @@
         const root = document.createElement("section"); root.id = "monitoring-native";
         root.className = "oem-overview"; root.setAttribute("aria-label", "OEM 关键指标总览");
         document.getElementById("monitoring-result").prepend(root);
-        state.nativeView = new KBotAIOpsOEMMetrics(root, { sourceId: state.sourceId, instanceId: state.selected[0], window: state.window,
+        const resource = state.instances.find(item => item.instance_id === state.selected[0]);
+        const MetricsView = resource?.resource_type_key === "EXADATA" ? KBotAIOpsExadataMetrics : KBotAIOpsOEMMetrics;
+        state.nativeView = new MetricsView(root, { systemId: resource?.business_system_id || state.systemId, sourceId: state.sourceId, instanceId: state.selected[0], window: state.window,
           baseline: state.baseline, sourceName: sourceById().display_name, instanceName: state.instances.find(item => item.instance_id === state.selected[0])?.display_name || "" });
       }
       return;

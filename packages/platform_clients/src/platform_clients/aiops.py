@@ -360,6 +360,26 @@ class _BaseAIOpsClient:
 class AIOpsManagementClient(_BaseAIOpsClient):
     """Main API 的管理、用户命令和 Direct Run Client。"""
 
+    async def discover_exadata(self, source_id: UUID, *, auth_context: AuthContext):
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/exadata/sources/{source_id}/discoveries",
+            payload={}, auth_context=auth_context)
+
+    async def exadata_view(self, system_id: UUID, resource_id: UUID, source_id: UUID, payload: dict, *, auth_context: AuthContext):
+        return await self._json("POST",
+            f"{INTERNAL_API_V1}/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/view",
+            payload=payload, auth_context=auth_context)
+
+    async def diagnose_exadata(self, system_id: UUID, resource_id: UUID, source_id: UUID, payload: dict, *,
+                               idempotency_key: str, auth_context: AuthContext):
+        return await self._json("POST",
+            f"{INTERNAL_API_V1}/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/diagnoses",
+            payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
+
+    async def get_exadata_report(self, system_id: UUID, resource_id: UUID, source_id: UUID, report_id: UUID, *, auth_context: AuthContext):
+        return await self._json("GET",
+            f"{INTERNAL_API_V1}/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/reports/{report_id}",
+            auth_context=auth_context)
+
     _CONFIG = f"{INTERNAL_API_V1}/aiops/config"
     _MONITORING = f"{INTERNAL_API_V1}/aiops/monitoring"
 

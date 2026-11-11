@@ -1,10 +1,10 @@
 # AIOps Agent Oracle Schema
 
-本轮规范为 Schema 57（`aiops-oracle-v57-resource-monitoring`），统一使用资源监控绑定表。
-不提供已有数据迁移或回填；旧 Schema 不能直接运行新版代码，部署前须单独安排切换。
-下文历史升级仅用于对应版本，不能直接升级到 57；保留配置的重建也只适用于同版表结构。
+本轮规范为 Schema 60（`aiops-oracle-v60-exadata-oem`），新增 Exadata 确认成员与资源诊断报告。
+不提供旧数据的通用迁移或回填；旧 Schema 不能直接运行新版代码，部署前须单独安排切换。
+下文历史升级仅用于对应版本，不能直接升级到 60；保留配置的重建也只适用于同版表结构。
 
-本目录当前拥有 AIOps 服务的 78 张表和 10 个只读视图，按以下顺序在空 Schema
+本目录当前拥有 AIOps 服务的 102 张表和 10 个只读视图，按以下顺序在空 Schema
 一次性执行：
 
 1. `001_ops_roots.sql`：Target、Policy、Agent Binding、Monitor Source；
@@ -23,7 +23,15 @@
     `../bootstrap/aiops/resource_pool.sql` 单独初始化基础设施策略：默认全局8、Target2、
     来源4、清理宽限30秒。规范 DDL 不混入种子数据；部署初始化、升级和生成重建工件
     均接通此初始化步骤，幂等保留已有额度，不随 Worker/Executor 进程数相乘。
-    手工执行上述十三份规范 DDL 后，还须执行该资源池初始化 SQL；不需要重置管理员。
+    手工执行全部十五份规范 DDL 后，还须执行该资源池初始化 SQL；不需要重置管理员。
+14. `014_ops_knowledge_ingestion.sql`：应用自有知识入库及相关对象。
+15. `015_ops_exadata.sql`：Exadata 整机确认成员快照与独立只读诊断报告；不改数据库任务。
+
+仅在完整且匹配的 Schema 59 基线上，可于停机备份后执行
+`../operations/apply_aiops_schema_60.sql`，新增上述两表并更新版本视图，不回填既有绑定。
+脚本在创建前检查版本，但版本号不能代替完整 Schema 验收；旧 Schema 57 或其他漂移环境
+不能直接执行它。Oracle DDL 隐式提交，若中断应保持停机、核查已创建对象后安排恢复，
+不能假设自动回滚或盲目重跑。本次开发未执行该脚本。
 
 从 Schema 50 升级时执行 `../operations/apply_aiops_schema_51.sql`。升级仅新增两表、
 三个非唯一索引、初始配额行和版本视图，不修改既有运行、目标权限或业务数据。
@@ -41,22 +49,22 @@
 需要丢弃旧 AIOps 数据并重新部署时，停止 AIOps API、Worker、Scheduler，备份
 需要保留的数据，然后用 KBot Schema 所有者执行
 `../generated/aiops_agent/rebuild_aiops_schema.sql`。它会
-直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再内嵌执行上述十三份规范 DDL，避免
+直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再内嵌执行上述十五份规范 DDL，避免
 维护第二份建表定义。
 
 在 SQL Developer 中打开该文件，确认当前连接是目标 KBot Schema，然后使用
 Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建文件已经内嵌
-全部十三份规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
+全部十五份规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 57 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 60 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系以及 `diagnosis-cases` 固定 KC Collection 位于共享平台/KC 表；用户创建的运维知识库各自拥有独立 KC Collection，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 53 / aiops-oracle-v53-report-artifact-sources`，再启动 AIOps
-服务并检查 `/ready`。
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 60 / aiops-oracle-v60-exadata-oem`，再启动 AIOps
+服务并检查 `/readyz`。Schema 验收由部署脚本负责，不放入 readiness。
 
 `schema_manifest.json` 是部署与 Entity 对齐的机器可读契约。版本、列和约束只在
 部署/验收脚本中校验；应用启动、readiness 和业务请求不得探测自身 Schema，
@@ -78,8 +86,8 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 仅删除旧固定知识问答 Agent 的 Domain 绑定与知识库关联表，不读取、迁移或覆盖
 `KBOT_OPS_AGENT_VERSION_KNOW_BASE` 中统一 Agent 版本的知识库绑定。
 
-升级失败但必须保留已配置的监控源和运维目标时，改用
-`../generated/aiops_agent/rebuild_aiops_preserve_sources_targets.sql`。该文件同样在
+需要重建且必须保留已配置的监控源和运维目标时，在完整匹配的 Schema 60 基线经备份后使用
+`../generated/aiops_agent/rebuild_aiops_preserve_sources_targets.sql`；它不是跨版本升级或失败后的通用恢复脚本。该文件同样在
 SQL Developer 中使用 Run Script（F5）执行，会保留下列配置数据并重建全部 AIOps
 对象：
 
@@ -87,6 +95,7 @@ SQL Developer 中使用 Run Script（F5）执行，会保留下列配置数据�
 - `KBOT_OPS_TARGET_FACT`：人工确认或发现的目标事实；
 - `KBOT_OPS_DIAGNOSTIC_SOURCE`：监控源、Webhook 和能力配置；
 - `KBOT_OPS_RESOURCE_SOURCE_BINDING`：资源与监控源的定位和能力绑定；
+- `KBOT_OPS_EXADATA_INVENTORY`：Exadata 绑定已确认的成员与摘要；
 - `KBOT_OPS_BUSINESS_SYSTEM`、`KBOT_OPS_MANAGED_RESOURCE` 及资源拓扑表；
 - `KBOT_OPS_RECOVERY_PROFILE`：数据库组件当前及历史恢复目标版本。
 

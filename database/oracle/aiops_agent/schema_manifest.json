@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 59,
-  "contract_version": "aiops-oracle-v58-app-owned-knowledge",
+  "schema_version": 60,
+  "contract_version": "aiops-oracle-v60-exadata-oem",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "130cd878bbdf7905321b015335c4b1b6433a5b7a8fc433d94a227b1085263162"
+      "sha256": "d94357b802a9dd28f1716b76d80d4b4844f6e8d2af82bc43b5aca52a401aeb07"
     },
     {
       "name": "007_ops_agents.sql",
@@ -73,6 +73,11 @@
       "name": "014_ops_knowledge_ingestion.sql",
       "statements": 86,
       "sha256": "bc7345d4e4475433a152da4a7b41effc3fca667814be15b0c59f6ad71549eb70"
+    },
+    {
+      "name": "015_ops_exadata.sql",
+      "statements": 2,
+      "sha256": "bcdcf09a52ee685225e527c7a761aad155f9e3fea9f929a0dc305d587d302139"
     }
   ],
   "tables": [
@@ -175,7 +180,9 @@
     "KBOT_OPS_KNOWLEDGE_SEARCH_UNIT",
     "KBOT_OPS_KNOWLEDGE_UNIT_SOURCE",
     "KBOT_OPS_KNOWLEDGE_VISUAL_ASSET",
-    "KBOT_OPS_KNOWLEDGE_CONFIG"
+    "KBOT_OPS_KNOWLEDGE_CONFIG",
+    "KBOT_OPS_EXADATA_INVENTORY",
+    "KBOT_OPS_EXADATA_REPORT"
   ],
   "views": [
     "KBOT_V_OPS_TARGET",

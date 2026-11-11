@@ -13,6 +13,9 @@ HOST_RESOURCE_TYPES = {"PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"}
 
 async def apply_hardware_monitoring(*, service, uow, scope, resource, mapping, now):
     """候选签名、资源归属、Provider 重读和乐观锁在同一事务内校验。"""
+    if resource.resource_type_key == "EXADATA":
+        from .exadata_binding import bind_exadata
+        return await bind_exadata(service=service, uow=uow, scope=scope, resource=resource, mapping=mapping, now=now)
     if resource.resource_type_key not in HOST_RESOURCE_TYPES:
         raise validation_failed("主机监控仅支持物理服务器、虚拟机和 OEM 容器主机")
     if mapping.candidate_ref is None:

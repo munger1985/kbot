@@ -69,6 +69,7 @@ from platform_core.contracts.aiops.configuration import (
 
 
 RESOURCE_TYPE_NAMES = {
+    "EXADATA": "Exadata 一体机",
     "DATABASE": "数据库",
     "PHYSICAL_SERVER": "物理服务器",
     "VIRTUAL_MACHINE": "虚拟机",
@@ -84,6 +85,7 @@ RESOURCE_TYPE_NAMES = {
 }
 
 RESOURCE_CODE_PREFIXES = {
+    "EXADATA": "EXA",
     "DATABASE": "DB",
     "PHYSICAL_SERVER": "SRV",
     "VIRTUAL_MACHINE": "SRV",
@@ -99,6 +101,7 @@ RESOURCE_CODE_PREFIXES = {
 }
 
 RELATION_RULES: dict[str, dict[str, tuple[int, int | None]]] = {
+    "USES_EXADATA": {"DATABASE": (1, 1), "EXADATA": (1, 1)},
     "ORACLE_RAC": {"MEMBER": (2, None)},
     "DATA_GUARD": {"PRIMARY": (1, None), "STANDBY": (1, None)},
     "OGG": {"SOURCE": (1, None), "TARGET": (1, None)},
@@ -160,6 +163,11 @@ def _relation_rule_issues(
             limit = f"{minimum}～{maximum}" if maximum is not None else f"至少 {minimum}"
             issues.append(_issue("BLOCKING", "RELATION_ROLE_COUNT_INVALID", f"{relation.relation_type_key} 的 {role} 角色需要{limit}个资源", relation_id=relation.relation_id))
     database_views = [resource_views[item.system_resource_id].resource.database for item in participants if item.system_resource_id in resource_views and resource_views[item.system_resource_id].resource.database is not None]
+    if relation.relation_type_key == "USES_EXADATA":
+        for item in participants:
+            view = resource_views.get(item.system_resource_id)
+            if view is not None and view.resource.resource_type_key != item.participant_role:
+                issues.append(_issue("BLOCKING", "EXADATA_PARTICIPANT_TYPE_INVALID", "USES_EXADATA 必须明确连接数据库与 Exadata 整机", relation_id=relation.relation_id))
     engines = {str(item.db_type) for item in database_views}
     expected_engine = {
         "ORACLE_RAC": "ORACLE",
@@ -963,6 +971,10 @@ class BusinessSystemConfigurationMixin(BusinessSystemDeletionMixin):
                 raise resource_not_found("Business System Resource")
             self._check_version(entity.row_version, expected_version)
             changes = request.model_dump(exclude_unset=True, exclude={"schema_version"})
+            if changes.get("architecture_layer_key") is not None:
+                resource = await uow.business_systems.get_resource_scoped(resource_id=entity.resource_id, **_scope_args(scope))
+                if resource is not None and resource.resource_type_key == "EXADATA" and changes["architecture_layer_key"] != "INFRASTRUCTURE":
+                    raise validation_failed("Exadata 一体机必须位于基础设施层")
             if changes.get("responsibility_group_id") is not None:
                 await self._validate_group(uow=uow, scope=scope, group_id=changes["responsibility_group_id"], label="资源责任覆盖")
             for key, value in changes.items():
@@ -1002,6 +1014,10 @@ class BusinessSystemConfigurationMixin(BusinessSystemDeletionMixin):
         if missing:
             raise validation_failed("资源关系包含不属于当前业务系统的资源")
         rules = RELATION_RULES[relation_type_key]
+        if relation_type_key == "USES_EXADATA":
+            types = {link.system_resource_id: resource.resource_type_key for link, resource, *_ in detail_rows}
+            if any(types[item.system_resource_id] != item.participant_role for item in participants):
+                raise validation_failed("USES_EXADATA 只允许 DATABASE 与 EXADATA 对应角色")
         counts: dict[str, int] = {}
         for item in participants:
             if item.participant_role not in rules:

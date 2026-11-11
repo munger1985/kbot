@@ -93,6 +93,8 @@ class BusinessSystemResourceCommit(AIOpsContract):
 
     @model_validator(mode="after")
     def validate_mode(self) -> "BusinessSystemResourceCommit":
+        if self.resource_type_key == "EXADATA" and self.architecture_layer_key != "INFRASTRUCTURE":
+            raise ValueError("Exadata 一体机必须位于基础设施层")
         if self.resource_type_key == "DATABASE" and self.database is None:
             raise ValueError("新数据库资源必须提交数据库连接配置")
         if self.resource_type_key != "DATABASE" and self.database is not None:
@@ -248,6 +250,13 @@ class BusinessSystemResourceGraphCommit(AIOpsContract):
         if len(relation_ids) != len(set(relation_ids)):
             raise ValueError("草稿关系引用不能重复")
         known = set(draft_ids)
+        resource_types = {item.draft_resource_id: item.resource_type_key for item in self.resources}
+        for relation in self.relations:
+            if relation.relation_type_key == "USES_EXADATA":
+                if sorted(item.participant_role for item in relation.participants) != ["DATABASE", "EXADATA"]:
+                    raise ValueError("USES_EXADATA 需要一个数据库和一个 Exadata 整机")
+                if any(resource_types.get(item.draft_resource_id) != item.participant_role for item in relation.participants):
+                    raise ValueError("USES_EXADATA 参与者类型与角色不一致")
         if any(participant.draft_resource_id not in known for relation in self.relations for participant in relation.participants):
             raise ValueError("资源关系引用了不在当前业务系统草稿中的资源")
         return self

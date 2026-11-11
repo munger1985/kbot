@@ -1,4 +1,5 @@
 """AIOps 服务拥有的 SQLAlchemy Entity。"""
+from .exadata import ExadataInventoryEntity, ExadataReportEntity
 
 from .change import (
     ApprovalTokenEntity,
@@ -83,6 +84,8 @@ from .conversation import (
 )
 
 __all__ = [
+    "ExadataInventoryEntity",
+    "ExadataReportEntity",
     "OperationsKnowledgeConfigurationEntity",
     "OpsOutputJobEntity",
     "OpsOutputJobAttemptEntity",

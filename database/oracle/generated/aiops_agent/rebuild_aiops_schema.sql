@@ -2017,8 +2017,8 @@ CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    59 AS SCHEMA_VERSION,
-    'aiops-oracle-v58-app-owned-knowledge' AS CONTRACT_VERSION
+    60 AS SCHEMA_VERSION,
+    'aiops-oracle-v60-exadata-oem' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -3926,6 +3926,34 @@ CREATE INDEX IX_OPS_K2_17_2 ON KBOT_OPS_KNOWLEDGE_SCOPE_MEMBER (DOMAIN_ID);
 
 -- ===== 结束规范 DDL：014_ops_knowledge_ingestion.sql =====
 
+-- ===== 开始规范 DDL：015_ops_exadata.sql =====
+
+-- Exadata 整机确认成员与资源级只读诊断，不修改既有数据库任务。
+CREATE TABLE KBOT_OPS_EXADATA_INVENTORY (
+    BINDING_ID RAW(16) PRIMARY KEY,
+    INVENTORY_SHA256 VARCHAR2(64 CHAR) NOT NULL,
+    MEMBERS_JSON JSON NOT NULL,
+    CONFIRMED_BY VARCHAR2(256 CHAR) NOT NULL,
+    CONFIRMED_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+    CONSTRAINT FK_OPS_EXA_INV_BIND FOREIGN KEY (BINDING_ID)
+        REFERENCES KBOT_OPS_RESOURCE_SOURCE_BINDING (RESOURCE_SOURCE_BINDING_ID)
+);
+
+CREATE TABLE KBOT_OPS_EXADATA_REPORT (
+    REPORT_ID RAW(16) PRIMARY KEY,
+    RESOURCE_ID RAW(16) NOT NULL,
+    BINDING_ID RAW(16) NOT NULL,
+    REPORT_JSON JSON NOT NULL,
+    CREATED_BY VARCHAR2(256 CHAR) NOT NULL,
+    CREATED_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+    CONSTRAINT FK_OPS_EXA_REP_RESOURCE FOREIGN KEY (RESOURCE_ID)
+        REFERENCES KBOT_OPS_MANAGED_RESOURCE (RESOURCE_ID),
+    CONSTRAINT FK_OPS_EXA_REP_BIND FOREIGN KEY (BINDING_ID)
+        REFERENCES KBOT_OPS_RESOURCE_SOURCE_BINDING (RESOURCE_SOURCE_BINDING_ID)
+);
+
+-- ===== 结束规范 DDL：015_ops_exadata.sql =====
+
 -- 仅初始化缺失的基础设施策略，不覆盖已有额度，不初始化管理员或业务数据。
 MERGE INTO KBOT_OPS_RESOURCE_POOL pool
 USING (SELECT 'READONLY' AS pool_key FROM DUAL) seed
@@ -4066,7 +4094,9 @@ BEGIN
           'KBOT_OPS_KNOWLEDGE_SEARCH_UNIT',
           'KBOT_OPS_KNOWLEDGE_UNIT_SOURCE',
           'KBOT_OPS_KNOWLEDGE_VISUAL_ASSET',
-          'KBOT_OPS_KNOWLEDGE_CONFIG'
+          'KBOT_OPS_KNOWLEDGE_CONFIG',
+          'KBOT_OPS_EXADATA_INVENTORY',
+          'KBOT_OPS_EXADATA_REPORT'
       )) expected
      WHERE NOT EXISTS (
             SELECT 1
@@ -4216,7 +4246,7 @@ BEGIN
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
-    IF l_table_count <> 100 OR l_view_count <> 10 THEN
+    IF l_table_count <> 102 OR l_view_count <> 10 THEN
         raise_application_error(
             -20001,
             'AIOps 对象数量错误：表=' || l_table_count || '，视图=' || l_view_count
@@ -4242,7 +4272,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 59 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 60 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -4255,8 +4285,8 @@ BEGIN
         raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 59
-       OR l_contract_version <> 'aiops-oracle-v58-app-owned-knowledge' THEN
+       OR l_schema_version <> 60
+       OR l_contract_version <> 'aiops-oracle-v60-exadata-oem' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -4265,8 +4295,8 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：100 张表、10 个视图，Schema Version '
-        || '59，合同 aiops-oracle-v58-app-owned-knowledge。'
+        '验证通过：102 张表、10 个视图，Schema Version '
+        || '60，合同 aiops-oracle-v60-exadata-oem。'
     );
 END;
 /

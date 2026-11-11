@@ -90,3 +90,26 @@ release({ host_items: [{ candidate_ref: 'stale', locator_key: 'first' }], has_mo
 await pending;
 assert.equal(host.hardware.candidates.length, 0);
 console.log('通过：独立主机发现分页、草稿引用刷新、映射版本、显式多数据库关系、存储与网络关系及过期响应隔离。');
+
+
+// Exadata 使用独立发现与显式关系，不把整机并入普通主机集合。
+const exadata = hardware.create('EXADATA', 'INFRASTRUCTURE', 'ops', uuid);
+exadata.display_name = '测试 Exadata';
+exadata.hardware.source_id = 'oem';
+assert.ok(hardware.hardwareTypes.has('EXADATA'));
+assert.ok(!hardware.hostTypes.has('EXADATA'));
+assert.deepEqual(copy(hardware.relationSpec(exadata)), ['USES_EXADATA', 'DATABASE', 'EXADATA']);
+const exaRelations = hardware.setLinked(exadata, ['db1'], [...resources, exadata], relations, uuid);
+assert.equal(exaRelations.length, relations.length + 1);
+assert.ok(exaRelations.some(row => row.relation_type_key === 'USES_EXADATA'));
+assert.deepEqual(copy(hardware.linked(exadata, exaRelations)), ['db1']);
+let exaPath;
+await hardware.discover(exadata, async path => {
+  exaPath = path;
+  return { items: [{ candidate_ref: 'machine-ref', locator_key: 'machine', members: [{ target_id: 'cell' }] }] };
+});
+assert.ok(exaPath.endsWith('/exadata-discoveries'));
+assert.equal(exadata.hardware.candidates[0].candidate_ref, 'machine-ref');
+assert.equal(exadata.hardware.candidate_ref, '');
+assert.equal(exadata.hardware.candidates[0].members[0].target_id, 'cell');
+console.log('通过：Exadata 独立发现、成员确认、类型隔离及 USES_EXADATA 关系。');

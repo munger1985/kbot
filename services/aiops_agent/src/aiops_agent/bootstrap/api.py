@@ -36,6 +36,8 @@ from aiops_agent.adapters.diagnostic_sources.payload_store import (
     LocalSignalPayloadStore,
 )
 from aiops_agent.api.management import router as management_router
+from aiops_agent.api.exadata import router as exadata_router
+from aiops_agent.application.exadata import ExadataOEMService
 from aiops_agent.api.monitoring import (
     router as monitoring_router,
     target_router as target_monitoring_router,
@@ -349,6 +351,7 @@ def create_aiops_api(
             conversation_upload_store=conversation_upload_store,
         )
         app.state.diagnostic_source_registry = diagnostic_source_registry
+        app.state.exadata_service = ExadataOEMService(app.state.configuration_service)
         app.state.diagnostic_source_secret_store = secret_store
         app.state.metric_catalog = metric_catalog
         app.state.aiops_runtime_service = AIOpsRuntimeService(
@@ -447,6 +450,7 @@ def create_aiops_api(
         )
     )
     app.include_router(management_router)
+    app.include_router(exadata_router)
     app.include_router(monitoring_router)
     app.include_router(target_monitoring_router)
     app.include_router(agent_router)
