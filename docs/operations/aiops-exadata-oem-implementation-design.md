@@ -256,4 +256,22 @@ Ammolite 已用其部署进程的配置及现用托管 OEM 凭据，分别严格
 - 新增两端相同的 `test_exadata_chat.py`，覆盖目录和参数合同、授权交集、具体编码取数、公开资源复核、来源隔离、组件隔离、精度/单位/真零/空值/旧值、多维度、预算、历史和诊断选集不可扩展等边界。Ammolite 既有普通监控测试替身仅补充实际 TurnPlan 必有的空 `steps`，未改变原断言或普通监控实现。
 - 本项限定回归为 KBot 12 个文件 **251 passed + 25 subtests passed**，Ammolite 11 个文件 **253 passed + 25 subtests passed**，其中两端各新增 30 项专项测试；覆盖既有普通 OEM、资源监控、Turn 路由、共享资源和巡检范围，两端架构边界检查通过。不是全仓测试或线上聊天端到端验收声明。
 - 在 kbotdev 使用现行模型及数据库中激活的 `turn_router@1.0.0`，只传入待验收参数合同进行实际模型调用：温度映射到 `Cell_Metric.temperature`，CPU 利用率映射到 `Cell_Metric.cpu_utilization`，普通数据库总览保持空参数 `{}`。当时沿用的真实授权摘要只有数据库/容器/虚拟机，模型仍保留 Exadata 意图供服务端拒绝，没有改查普通数据库。这是模型参数合同验证，不是新代码上线或聊天页面端到端验收。
-- 本轮不执行 DDL、不同步 Prompt 数据库、不修改 Agent/业务系统/OEM 绑定，也不拉取线上代码或重启服务。代码发布后，当前测试 Agent 仍需经明确授权加入模拟 Exadata 业务系统，才可实际返回其温度；未授权时应返回清楚的范围提示。
+- 实现提交阶段未执行 DDL、未同步 Prompt 数据库、未修改 Agent/业务系统/OEM 绑定，也未拉取线上代码或重启服务。实际读取温度必须已有模拟 Exadata 系统授权；用户随后确认部署，执行及验收见 10.7。
+
+### 10.7 聊天修复部署与线上验收（2026-11-11）
+
+用户明确同意同步到 kbotdev，且只重启两端 AIOps Worker。KBot 功能提交为 `4d385a78aa36e084ed490be147f154c3df8f980c`，Ammolite 为 `1449904f03725c694b9735e3a3e8a2c25090db94`；分别在原分支精确 fetch 并 fast-forward，没有合入本地其他未提交修改。
+
+- 北京时间 21:04、21:05 分别完成 KBot、Ammolite Worker 优雅退出和启动，无强杀。各 Worker 的数据库、4 个任务执行组件、reconciler、outbox、retention、output-jobs readiness 连续三次成功；稍后再次检查两端 Worker、AIOps API、Main API 均 200/ready。其余 **49 个基线进程的 PID 和启动时间不变**，没有重启 API、前端、Scheduler 或 Executor。
+- `.env` 和实际 TOML 配置 Hash 前后相同，原未跟踪配置备份保留。没有执行 DDL、初始化、Prompt 同步、权限更新或绑定修改。旧代码、配置摘要、进程基线、重启结果和验收记录保存在远端私有目录 `/home/ubuntu/aiops-exadata-chat-20261111-rr5zna1r`，不包含登录令牌或进程环境转储。
+- 验收前通过正常会话只读查询发现，现行“OEM 测试用 Agent”已经同时授权测试数据库和模拟 Exadata 系统，与原失败轮的授权快照不同；本次没有修改该授权。使用正常会话、公共聊天 API 和独立验收会话，实际执行结果如下。
+
+| 验收问题与范围 | 结果 | 证据 |
+| --- | --- | --- |
+| 已授权 Agent：“Exadata cell温度是多少” | `COMPLETED`；只读取 `oracle_exadata.Cell_Metric.temperature`，一次查询；回答模拟 Cell 原值 `32.0`、北京时间 `20:57:00` 采样、OEM 未返回单位，不输出数据库总览 | Turn `01a1cab6-b0b0-7130-99f8-e4ee433df12b`；公共 Exadata 页面 view API 的值、时间、单位及响应摘要均一致 |
+| 未授权 Exadata 的现有 Agent：同一温度问题 | 范围 `DENIED`、Turn `PARTIAL`，明确“当前 Agent 授权范围内没有匹配的 Exadata 资源”，无指标读数、不改查其他数据库 | Turn `01a1cab7-71ef-7307-b273-2e47a832b82f` |
+| 原 OEM Agent：“查看测试数据库（OEM监控）的当前数据库监控总览” | `COMPLETED`；步骤参数仍为 `{}`，只解析原数据库业务系统并返回原 Oracle 实时总览；原数据仍为 `NO_DATA`，没有宣称修复该既有数据问题 | Turn `01a1cab7-7204-76d8-9eb2-bcb9cf6b718c` |
+
+两端当前在线 development-logs API 已核对：KBot 有上述温度轮的模型路由及新 Worker 启动事件，Ammolite 在重启后继续完成 `database.scope`、`database.diagnostic`、`workload.snapshot.collect` 和 Outbox 投递。日志中的退出码 143/signal 15 对应本次明确授权的 SIGTERM。以上为 **KBot 公共聊天 API 端到端验收**，不是聊天浏览器页面验收；Ammolite 已部署并验证进程/readiness，但仍缺正常 App 会话及模拟系统绑定，不将其健康检查或本地回归冒充线上指标聊天端到端通过。模拟原值不是物理 Exadata 的实测温度，未补写单位或推断健康阈值。
+
+待排查观察：KBot 在线日志在北京时间 21:05:49、21:06:48 各出现一次“Conversation Turn 排队提升失败 / ORA-00060”。上述三个验收 Turn 均已到达预期终态，但不能据此宣称队列无异常；本次未修改队列并发逻辑，也未把该日志归因为本次 Exadata 变更。Ammolite 本次查询的部署后 ERROR 事件仅有授权重启的 SIGTERM 记录。
