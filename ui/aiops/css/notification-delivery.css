@@ -1,5 +1,6 @@
 /* 通知渠道与投递复用现有 Portal 语义样式和主题变量。 */
 .delivery-page { display: grid; gap: 20px; min-width: 0; }
+.delivery-page[hidden] { display: none !important; }
 .delivery-page .section-toolbar { margin-bottom: 0; }
 .delivery-page .toolbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .delivery-channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }

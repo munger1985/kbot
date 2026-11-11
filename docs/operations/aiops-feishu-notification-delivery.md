@@ -4,6 +4,8 @@
 
 ## 1. 架构与代码入口
 
+2026-11-11 权限修正：KBot 没有租户管理员，通知渠道、绑定治理、投递记录和重试由 AIOps 当前有效 `app_admin` 管理，不要求账号另有 `platform:*` 权限。仅使用受信 AIOps 会话与服务端现查成员角色；普通用户、业务管理员、其他 App 管理员及机器主体不能进入治理页面或调用治理接口。菜单与页面入口采用相同的角色门禁，无权直接访问时在加载治理内容前返回运维总览；“我的通知设置”和个人安全任务入口保持独立。配置仍全局一份，授权读取当前 App/Domain 快照不增加配置的 Domain 分区，也不新增数据库权限或账号授权。Ammolite 保留租户治理能力，不能把 KBot 的 `app_admin` 规则照搬过去。
+
 采用平台通知模块与独立外部 Worker，复用 Main API 代码／镜像。不新增飞书 HTTP 微服务，不在 API lifespan 启动外发循环，不引入 Redis 或消息中间件。
 
 - 入口：`python -m main_api.entrypoints.external_notification_worker`。

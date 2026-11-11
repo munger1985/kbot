@@ -17,6 +17,11 @@
     "notification-delivery": "aiops:use", "notification-channels": "aiops:use", "notification-settings": "aiops:use", users: "aiops:member_manage",
     "api-clients": "aiops:api_key_manage",
   };
+  const notificationAdminPages = new Set(["notification-channels", "notification-delivery"]);
+  function canVisitPage(page, access) {
+    return (access.permissions || []).includes(pagePermissions[page])
+      && (!notificationAdminPages.has(page) || (access.roles || []).includes("app_admin"));
+  }
   const pinnedPages = [["chat", "Agent 工作台", "agents"]];
   const navigationGroups = [
     ["operations-work", "运维工作", "data", [
@@ -117,10 +122,9 @@
     };
     const selectedPage = directoryAliases[current] || current;
     const currentNavigation = detailParents[current] || selectedPage;
-    const permissions = new Set(access.permissions || []);
-    const visiblePinned = pinnedPages.filter(([id]) => permissions.has(pagePermissions[id]));
+    const visiblePinned = pinnedPages.filter(([id]) => canVisitPage(id, access));
     const groups = navigationGroups.map(([key, name, groupIcon, pages]) => {
-      const visible = pages.filter(([id]) => permissions.has(pagePermissions[id]));
+      const visible = pages.filter(([id]) => canVisitPage(id, access));
       return visible.length ? { key, name, groupIcon, pages: visible } : null;
     }).filter(Boolean);
     const activeGroupKey = groups.find((group) => group.pages.some(([id]) => id === currentNavigation))?.key || "";
@@ -137,7 +141,7 @@
         return group ? renderGroup(group) : "";
       }
       const [id, label, itemIcon] = section.page;
-      if (!permissions.has(pagePermissions[id])) return "";
+      if (!canVisitPage(id, access)) return "";
       const active = id === currentNavigation;
       return `<section class="business-nav-direct" aria-label="${label}"><a class="nav-item business-nav-item${active ? " business-route-active" : ""}" href="./${id}.html" ${id === selectedPage ? 'aria-current="page"' : active ? 'aria-current="location"' : ""}><span class="nav-item-icon">${icon(itemIcon)}</span><span class="nav-item-label">${label}</span></a></section>`;
     }).join("");
@@ -223,13 +227,14 @@
       enforceDrawerClosePolicy();
       const access = await KBotAIOpsAuth.request("/api/v1/apps/aiops/access");
       const current = document.body.dataset.page;
-      if (!new Set(access.permissions || []).has(pagePermissions[current])) {
+      if (!canVisitPage(current, access)) {
         location.replace("./dashboard.html");
         return null;
       }
       // 与 Portal 一样把壳层限制在 App 容器内；body 上的模态框不继承侧栏控件规格。
       document.body.insertAdjacentHTML("afterbegin", `<div id="ops-app-shell" class="business-app-shell business-app-aiops">${shellMarkup(access)}</div>`);
       mountPage();
+      if (notificationAdminPages.has(current)) document.querySelector("main.ops-main").hidden = false;
       bindNavigationGroups();
       bindShellActions();
       // 通知沿用共享顶栏能力；加载失败不阻断 App，保留明确的降级提示。

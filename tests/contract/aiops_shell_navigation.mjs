@@ -11,7 +11,7 @@ const permissions = [
   "aiops:agent_manage", "aiops:plan_manage", "aiops:api_key_manage",
 ];
 
-function setup(page, allowed = permissions, domain = { domain_id: 87, domain_name: "生产运维空间" }) {
+function setup(page, allowed = permissions, domain = { domain_id: 87, domain_name: "生产运维空间" }, roles = []) {
   const document = {
     body: { dataset: { page } },
     querySelectorAll: () => [],
@@ -19,7 +19,7 @@ function setup(page, allowed = permissions, domain = { domain_id: 87, domain_nam
   const context = { document, addEventListener() {} };
   // 只在隔离 VM 暴露真实函数，生产脚本不增加测试入口。
   runInNewContext(source.replace("globalThis.KBotAIOpsShell = {", "globalThis.navigationContract = { shellMarkup, bindNavigationGroups }; globalThis.KBotAIOpsShell = {"), context);
-  const markup = context.navigationContract.shellMarkup({ permissions: allowed, ...domain });
+  const markup = context.navigationContract.shellMarkup({ permissions: allowed, roles, ...domain });
   const sections = [...markup.matchAll(/<section class="business-nav-group ([^"]+)" data-group-key="([^"]+)" data-current="(true|false)">([\s\S]*?)<\/section>/g)];
   const groups = sections.map(([, classes, key, current, content]) => {
     const classNames = new Set(classes.split(" "));
@@ -153,7 +153,7 @@ test("报告中心独立位于运维工作与知识资产之间，报告详情�
 });
 
 test("配置与治理保留原七项并追加通知入口，知识内容入口使用独立名称", () => {
-  const {markup} = setup("chat");
+  const {markup} = setup("chat", permissions, undefined, ["app_admin"]);
   const configuration = markup.split('data-group-key="configuration-governance"')[1].split('</section>')[0];
   const actual = [...configuration.matchAll(/href="\.\/([^".]+)\.html"[\s\S]*?class="nav-item-label">([^<]+)</g)].map(([,page,label]) => [page,label]);
   assert.deepEqual(actual, [["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"], ["notification-channels", "通知渠道"], ["notification-delivery", "通知投递"]]);
@@ -162,7 +162,7 @@ test("配置与治理保留原七项并追加通知入口，知识内容入口�
 });
 
 test("固定入口与组内链接都保留源模板的图标结构，当前主题决定可见性", () => {
-  const app = setup("chat");
+  const app = setup("chat", permissions, undefined, ["app_admin"]);
   const links = [...app.markup.matchAll(/<a class="nav-item business-nav-item[^>]*>([\s\S]*?)<\/a>/g)];
   assert.equal(links.length, 18);
   for (const [, content] of links) {
@@ -171,11 +171,18 @@ test("固定入口与组内链接都保留源模板的图标结构，当前主�
   }
 });
 
-test("通知入口遵循使用权限，用户管理仅对成员管理员开放", () => {
-  const viewer = setup("chat", ["aiops:use"]);
-  assert.match(viewer.markup, /href="\.\/notification-channels\.html"/);
-  assert.match(viewer.markup, /href="\.\/notification-delivery\.html"/);
-  assert.doesNotMatch(viewer.markup, /href="\.\/users\.html"/);
+test("通知治理入口仅对 AIOps 应用管理员开放，个人通知设置不受影响", () => {
+  for (const roles of [[], ["app_user"], ["app_manager"], ["platform_admin"]]) {
+    const viewer = setup("chat", ["aiops:use"], undefined, roles);
+    assert.doesNotMatch(viewer.markup, /href="\.\/notification-channels\.html"/);
+    assert.doesNotMatch(viewer.markup, /href="\.\/notification-delivery\.html"/);
+    assert.match(viewer.markup, /href="\.\/notification-settings\.html"/);
+    assert.doesNotMatch(viewer.markup, /href="\.\/users\.html"/);
+  }
+  const admin = setup("chat", ["aiops:use"], undefined, ["app_admin"]);
+  assert.match(admin.markup, /href="\.\/notification-channels\.html"/);
+  assert.match(admin.markup, /href="\.\/notification-delivery\.html"/);
+  assert.doesNotMatch(setup("chat", [], undefined, ["app_admin"]).markup, /href="\.\/notification-delivery\.html"/);
   const manager = setup("users", ["aiops:member_manage"]);
   assert.match(manager.markup, /href="\.\/users\.html" aria-current="page"/);
   assert.doesNotMatch(manager.markup, /href="\.\/notification-delivery\.html"/);
