@@ -1,6 +1,6 @@
 # Exadata＋OEM 专用监控与诊断实施设计
 
-日期：2026-11-11。状态：已部署 kbotdev 并无损补齐 Exadata 两表；KBot 正常绑定、真实 OEM 专用 API、浏览器最新值/历史验收通过。Ammolite 的现用 OEM 凭据读取通过，尚缺正常应用登录，未完成绑定和浏览器验收。最新记录见 10.3。
+日期：2026-11-11。状态：已部署 kbotdev 并无损补齐 Exadata 两表；两端均已正常创建模拟系统、绑定现有 OEM，并通过真实公共 API 和浏览器最新值/历史验收。Ammolite Agent 列表及业务系统选择器也已在正常会话下验收，既有 Agent 授权未改；最新记录见 10.8。
 
 ## 1. 目标与不变边界
 
@@ -275,3 +275,13 @@ Ammolite 已用其部署进程的配置及现用托管 OEM 凭据，分别严格
 两端当前在线 development-logs API 已核对：KBot 有上述温度轮的模型路由及新 Worker 启动事件，Ammolite 在重启后继续完成 `database.scope`、`database.diagnostic`、`workload.snapshot.collect` 和 Outbox 投递。日志中的退出码 143/signal 15 对应本次明确授权的 SIGTERM。以上为 **KBot 公共聊天 API 端到端验收**，不是聊天浏览器页面验收；Ammolite 已部署并验证进程/readiness，但仍缺正常 App 会话及模拟系统绑定，不将其健康检查或本地回归冒充线上指标聊天端到端通过。模拟原值不是物理 Exadata 的实测温度，未补写单位或推断健康阈值。
 
 待排查观察：KBot 在线日志在北京时间 21:05:49、21:06:48 各出现一次“Conversation Turn 排队提升失败 / ORA-00060”。上述三个验收 Turn 均已到达预期终态，但不能据此宣称队列无异常；本次未修改队列并发逻辑，也未把该日志归因为本次 Exadata 变更。Ammolite 本次查询的部署后 ERROR 事件仅有授权重启的 SIGTERM 记录。
+
+### 10.8 Ammolite 模拟系统与正常登录页面验收（2026-11-11）
+
+用户提供测试账号后，经标准 SSO 与 AIOps BUSINESS 会话，在 `aiops-default` 通过公共发现及原子创建接口建立 `Exadata OEM 模拟联调（SIM）`，环境 DEV、硬件 `SIM - Exadata DBM01`、监控源为现有 `OEM24ai`，确认 `AIOPS_SIM_EXADATA_DBM01` 及其 Grid/Cell。系统 ID `01a1cad9-2904-7892-8428-fc333bd1f7ec`，资源 ID `01a1cad9-2906-7c00-baa6-1306ba23b359`；没有复制 KBot 主键、凭据或业务表行。
+
+Chromium 加载已部署 Portal，无静态资源替换和 API mock：Agent 页显示现有 `Cyber DBA`，新建向导可选择原有系统及模拟系统（共 5 个），选中后取消，未保存 Agent。监控页实际显示 overview 5 张卡、Cell 快照 12 张卡，Cell HISTORY 12 张卡（10 张数值图、570 条采样）；CPU `48.3%`、内存 `64.43%`、温度原值 `32.0`（单位为空），采样时间北京时间 `21:42:00`，DOM 原值/时间与实际响应一致，三列无横向溢出，无 pageerror 或失败请求。
+
+原有 4 个系统详情、Agent 列表/授权和 OEM 来源均经公共 API 复核不变。本次没有修改现有 Agent 授权、DDL、Prompt、后端代码、模拟容器或服务进程；尚未验收 Ammolite 聊天或生成新的诊断报告。模拟采样、OEM 留存分辨率、文本历史不支持和阈值未验证等边界保持可见，不解释为物理设备实测或健康结论。
+
+本轮配置与浏览器证据、目录故障修复和部署记录详见 [Agent 目录故障隔离与 Ammolite 定向修复](aiops-agent-catalog-isolation.md)。历史章节中的“缺正常会话/未创建”均为当时状态，不是当前交付状态。

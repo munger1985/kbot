@@ -46,8 +46,20 @@ python scripts/deployment/init_postgresql.py --align-aiops-knowledge-base-config
 - Ammolite 在线 Vue 模块 HTTP 200，包含新目录状态及重试逻辑；KBot `/ui/aiops/agents.html` 与 `/ui/aiops/js/aiops-agents.js` 均 HTTP 200，响应 Hash 与已部署文件一致。
 - 52 个基线进程 PID/启动时间全部不变，两端 `.env` 和 TOML 配置 Hash 不变。两端 Main、AIOps API、Worker 共 6 个实际 readiness 均 HTTP 200；本轮没有重启任何服务。
 
-仍未取得正常 Ammolite 应用会话，未宣称完成登录后列表/选择器的线上浏览器验收，也未创建模拟系统。用户需正常登录配合；不得把文件可达、仓储读取或 readiness 当成页面完整验收。
+此时尚未取得正常 Ammolite 应用会话，未宣称完成登录后列表/选择器的线上浏览器验收，也未创建模拟系统。用户随后提供测试账号，经正常登录完成的实际验收见下节。
 
 ## Exadata 模拟系统
 
 现有 Ammolite `OEM24ai` 已 ENABLED/CONNECTED，沿用标准托管凭据及真实 OEM 中的 `AIOPS_SIM_EXADATA_DBM01/GRID01/CELL01`，无需新模拟容器。必须通过正常应用会话的公共发现/业务系统 API 创建独立模拟系统、EXADATA 硬件和来源绑定；不复制 KBot 主键、绑定行或加密凭据，不修改现有 Agent 授权。若没有正常会话，明确报告该部分未完成，不伪造 SSO、重置密码、直接写业务表或把“代码已部署”说成“模拟系统已配置”。
+
+### 正常登录后的实际验收（2026-11-11 21:43—21:45，UTC+8）
+
+用户提供测试账号后，通过标准 SSO 密码登录、Bootstrap 和指定 Tenant/App/Domain 的 BUSINESS 会话进入 AIOps 默认空间。没有签发伪造 Token、借用 KBot 会话、重置密码或直接写业务表；凭据不写入仓库、文档或诊断输出。
+
+- 正常公共 API 确认原有 1 个 `Cyber DBA`、4 个已上线业务系统、1 个可读取知识库。通过现有 `OEM24ai` 发现唯一 SIM DB Machine 及其 Grid/Cell，以服务端候选引用原子创建并上线 `Exadata OEM 模拟联调（SIM）`，硬件为 `SIM - Exadata DBM01`；使用现有 `dba team`，环境为 DEV，描述/属性明确为合成联调数据。
+- 系统 ID `01a1cad9-2904-7892-8428-fc333bd1f7ec`、EXADATA 资源 ID `01a1cad9-2906-7c00-baa6-1306ba23b359`、绑定 ID `01a1cad9-2940-783f-b096-b200570920d7`。均为 Ammolite 新身份，不复制 KBot 主键；监控目录为 READY，只读诊断就绪度仍诚实显示 PARTIAL。
+- Chromium 经 SSH 隧道加载已部署 Portal，使用正常 Cookie 会话，无静态资源替换、无 API 路由 mock。Agent 管理页实际显示 `Cyber DBA`；新建向导中 5 个业务系统均可选，成功选中原 OEM 系统和新模拟系统后取消，未保存 Agent 或变更授权。
+- 实时监控页面实际显示整机 5 张快照卡、Cell 12 张快照卡；Cell 历史 12 张卡、10 张数值图、570 条真实 OEM 返回的模拟采样。CPU `48.3%`、内存 `64.43%`、温度原值 `32.0`（OEM 原单位为空），采样时间为北京时间 `21:42:00`；DOM 原值和采集时间与响应一致。1600 宽度三列且无横向溢出，无 pageerror 或失败响应。
+- 通过公共 API 复核原有 4 个系统的完整详情及 Agent 列表/授权均未改变；OEM 来源完整响应前后一致，未修改任何来源配置。没有为聊天自动授权新系统，没有新增模拟容器、执行 DDL、同步 Prompt 或重启服务。
+
+远端私有验收目录为 `/home/ubuntu/ammolite-exadata-sim-20261111-5e8119hr`，本地浏览器截图/响应/结果位于 `/tmp/ammolite-exadata-verify-4Ncin4`；会话仅存私有目录，不提交凭据或会话。指标仍是 OEM 中的合成值，不代表物理设备实测、秒级采集或健康阈值已验证。本轮未生成新的诊断报告，也未验收 Ammolite 聊天。
