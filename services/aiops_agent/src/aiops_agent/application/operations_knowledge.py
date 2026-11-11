@@ -1566,6 +1566,22 @@ class OperationsKnowledgeService:
             metadata=metadata, idempotency_key=idempotency_key,
             asset_id=asset_id, expected_asset_row_version=expected_asset_row_version)
 
+    def _manual_collection_configuration(self, base):
+        """在写入对象前校验配置，并在登记事务内再次检查冻结 Profile。"""
+        stored = base.configuration_json
+        models = stored.get("models") if isinstance(stored, dict) else None
+        required = {"parser_ocr", "parser_llm", "retrieval_llm", "embedding"}
+        if not isinstance(models, dict) or any(not models.get(role) for role in required):
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_COLLECTION_MODELS_REQUIRED",
+                message="运维知识库尚未完成模型配置，请先到运维知识库管理中编辑并保存模型后再上传",
+                status_code=409,
+            )
+        configuration = self._documents.configuration(models)
+        if configuration != stored:
+            raise self._state_conflict("知识库 Profile 已变化，请显式更新配置后上传")
+        return configuration
+
     async def _register_manual_documents(self, *, domain_id, knowledge_base_id, context,
             title, documents, metadata, idempotency_key, asset_id=None, expected_asset_row_version=None):
         """对象写入在事务外；同库行锁保护幂等、业务登记和摄取任务的原子性。"""
@@ -1575,6 +1591,15 @@ class OperationsKnowledgeService:
         access = self._documents.access(context)
         if str(access.domain_id) != str(domain_id):
             raise self._state_conflict("上传 Domain 与可信上下文不一致")
+        async with self._uow_factory() as uow:
+            base = await uow.operations_knowledge.get_knowledge_base(domain_id=domain_id,
+                knowledge_base_id=knowledge_base_id)
+            if base is None or base.status != "ACTIVE":
+                raise self._knowledge_base_not_found()
+            existing = await uow.operations_knowledge.find_upload_request(domain_id=domain_id,
+                knowledge_base_id=knowledge_base_id, request_key=idempotency_key)
+            if existing is None:
+                self._manual_collection_configuration(base)
         staged = []
         for document in documents:
             staged.append(await self._documents.stage(file_name=document["file_name"],
@@ -1596,9 +1621,7 @@ class OperationsKnowledgeService:
                 if existing[2].content_hash != digest:
                     raise self._state_conflict("同一幂等键不能用于不同文件或业务元数据")
                 return {"asset": _asset_view(existing[0]), "version": _version_view(existing[1]), "replayed": True}
-            configuration = self._documents.configuration(dict(base.configuration_json["models"]))
-            if configuration != base.configuration_json:
-                raise self._state_conflict("知识库 Profile 已变化，请显式更新配置后上传")
+            configuration = self._manual_collection_configuration(base)
             asset = None
             if asset_id is not None:
                 asset = await uow.operations_knowledge.get_asset(domain_id=domain_id, asset_id=asset_id, for_update=True)

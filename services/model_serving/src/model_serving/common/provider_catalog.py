@@ -28,11 +28,15 @@ _LLM_PARAMS = (
     "presence_penalty", "timeout", "compartment_id", "config_file", "oci_auth",
 )
 _EMBEDDING_PARAMS = (
+    "model_revision", "processor_revision", "input_template",
     "embedding_dimension", "model_path", "device", "max_tokens", "timeout",
     "compartment_id", "config_file", "oci_auth", "batch_size", "normalize",
 )
 _VLM_PARAMS = ("max_tokens", "temperature", *_COMMON_REMOTE)
-_VISUAL_PARAMS = ("model_path", "device", "dimension", *_COMMON_REMOTE)
+_VISUAL_PARAMS = (
+    "model_path", "device", "dimension", "model_revision", "processor_revision",
+    "input_template", "retrieval_directions", "max_representation_elements", *_COMMON_REMOTE,
+)
 _OCR_LOCAL_PARAMS = (
     "model_path", "languages", "device", "num_threads", "timeout_seconds",
 )

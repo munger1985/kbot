@@ -1,6 +1,7 @@
 """知识基础能力的正式服务配置和受控默认预算。"""
 
 from pydantic import BaseModel, ConfigDict, Field
+from knowledge_algorithms.contracts.errors import require
 from knowledge_algorithms.contracts.retrieval import RetrievalProfile, ChannelSpec
 from knowledge_algorithms.contracts.wire import decode
 from knowledge_algorithms.parsing.contracts import ParseProfile, LayoutProfile
@@ -21,11 +22,16 @@ class KnowledgeFoundationConfig(BaseModel):
     payload_images: int = Field(default=8, ge=0, le=64)
     payload_bytes: int = Field(default=16777216, ge=65536)
     representations: list[dict] = Field(default_factory=list, max_length=8)
+    served_model_names: dict[str, str] = Field(default_factory=dict)
     poll_seconds: float = Field(default=2.0, ge=0.1, le=10)
     lease_seconds: int = Field(default=360, ge=15, le=600)
 
     def profiles(self):
         specs = tuple(decode(RepresentationSpec, value) for value in self.representations)
+        require(set(self.served_model_names) == {spec.model_ref for spec in specs}
+                and all(name == name.strip() and bool(name) and len(name) <= 128
+                        for name in self.served_model_names.values()),
+                "表示空间必须显式绑定模型 UUID 与 Model Serving 的 served_model_name")
         parse = ParseProfile("app-parse/v1", "knowledge-algorithms/v1", ("zh", "en"),
             self.max_input_bytes, self.max_pages, self.max_units, self.max_input_bytes,
             1048576, 64, self.parse_timeout_seconds, 0, (), .05, .8, False, LayoutProfile(.8, .05))

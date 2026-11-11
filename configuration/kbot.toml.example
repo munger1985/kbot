@@ -95,6 +95,7 @@ coalesce_seconds = 0
 # representations = [] # 仅填写已准入的 RepresentationSpec；详见知识发布说明。
 # [knowledge.aiops]
 # representations = [] # AIOps 自有空间，不与知识检索 App 共用索引或文档。
+# served_model_names = {} # 键为表示空间的 model_ref UUID，值为模型目录中的 served_model_name。
 # [knowledge.runtime]
 # payload_tokens = 24000
 # payload_images = 8

@@ -108,6 +108,20 @@ def _model(*, status=1, category=1, model_params=None):
 
 
 class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
+    def test_representation_metadata_is_editable_without_allowing_unknown_params(self):
+        metadata = {"model_revision": "checkpoint", "processor_revision": "processor-hash",
+            "input_template": "plain"}
+        for category, params in (
+            (2, {"embedding_dimension": 2048, **metadata}),
+            (3, {"model_path": "/synthetic/model", "dimension": 128, **metadata,
+                 "retrieval_directions": ["TEXT_TO_IMAGE", "IMAGE_TO_IMAGE"]}),
+        ):
+            values = {"category": category, "provider": "api_qwen" if category == 2 else "local_qwen",
+                "api_endpoint": "https://example.invalid/v1", "api_key": "synthetic", "model_params": params}
+            validate_provider_config(values)
+            with self.assertRaises(ValueError):
+                validate_provider_config({**values, "model_params": {**params, "unknown_param": True}})
+
     async def test_create_persists_requested_active_status(self):
         repository = _Repository({})
         service = ModelRegistryService(

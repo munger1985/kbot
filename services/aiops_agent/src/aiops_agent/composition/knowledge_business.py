@@ -40,7 +40,8 @@ def install_business_knowledge(app, *, settings, uow_factory, caller_service=Non
     visual = NativeRepresentationClient(base_url=settings.clients.model_visual.base_url, caller_service=caller,
         audience=settings.clients.model_visual.audience, service_scopes=("model.inference",))
     specs = projection.representations
-    bindings = {spec.space_id: {"model_ref": spec.model_ref, "wire_model_field": "served_model_name"} for spec in specs}
+    bindings = {spec.space_id: {"model_ref": spec.model_ref,
+        "served_model_name": configuration.served_model_names[spec.model_ref]} for spec in specs}
     def gateway(access, *, image_reader):
         return KnowledgeModelGateway(visual_client=visual, dense_client=dense,
             auth_context=scope_context(access, caller=caller, operation="model.inference"),

@@ -13,6 +13,7 @@ from knowledge_algorithms.contracts.content import ContentNode
 from platform_core.identity import uuid7
 from ..domain.knowledge_ingestion import OWNER
 from ..domain.knowledge_retrieval import RetrievalAccess
+from .errors import AIOpsApplicationError
 
 
 class OperationsDocuments:
@@ -36,7 +37,12 @@ class OperationsDocuments:
         requested = {str(value) for role, value in models.items()
                      if role in {"embedding", "visual_embedding"}}
         configured = {str(spec.model_ref) for spec in specs}
-        require(requested == configured, "知识模型与服务配置的表示空间不匹配；请显式配置维度、方向及模型")
+        if requested != configured:
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_PROFILE_MISMATCH",
+                message="所选向量模型与 AIOps 服务端表示空间不匹配，请由管理员配置模型、维度、版本和检索方向后重试",
+                status_code=409,
+            )
         return {"models": {key: str(value) for key, value in models.items()},
                 "profile_ref": fingerprint(encode(self.pipeline.profile))}
 
