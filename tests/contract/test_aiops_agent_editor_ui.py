@@ -14,6 +14,15 @@ MAIN_API = ROOT / "services" / "main_api" / "src" / "main_api" / "api" / "aiops_
 
 
 class AIOpsAgentEditorUiTest(unittest.TestCase):
+    def test_agent_editor_uses_shared_right_drawer_positioning(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        styles = (ROOT / "ui/aiops/css/alignment.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="reference-drawer agent-editor-panel"', page)
+        positioning = styles.split("dialog.reference-drawer {", 1)[1].split("}", 1)[0]
+        self.assertIn("position: fixed", positioning)
+        self.assertIn("inset: 0 0 0 auto", positioning)
+
     def test_scope_change_note_explains_revocation_without_transferring_authorization(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("移出范围的授权将撤销，不会转授给新资源", script)

@@ -8,6 +8,18 @@ STYLES = (ROOT / ("ui/aiops/css/ammolite-shared.css" if IS_KBOT else "apps/porta
 SOURCE = (ROOT / ("ui/aiops/js/aiops-report-templates.js" if IS_KBOT else "apps/portal-web/src/features/aiops/management/AIOpsReportTemplatesView.vue")).read_text(encoding="utf-8")
 
 
+def test_editor_and_detail_open_inside_page_shell_at_top():
+    if IS_KBOT:
+        mounted = SOURCE.split("shell.ready.then(async () => {", 1)[1]
+        assert 'document.querySelector("main.aiops-template-page").parentElement' in mounted
+        assert 'document.getElementById("daily-template-editor"), detailRoot' in mounted
+        assert mounted.index("content.append(view)") < mounted.index('document.getElementById("create-inspection-template").onclick')
+        assert 'view.classList.add("platform-home-page", "aiops-page", "page-shell")' in mounted
+    else:
+        editor = (ROOT / "apps/portal-web/src/features/aiops/management/DailyInspectionTemplateEditor.vue").read_text(encoding="utf-8")
+        assert "onMounted(() => window.scrollTo(0,0))" in editor
+
+
 def test_catalog_facts_have_complete_grid_lines_and_full_width_odd_tail():
     assert ".management-catalog-card dl {" in STYLES
     rules = STYLES.split(".management-catalog-card dl {", 1)[1].split("}", 1)[0]

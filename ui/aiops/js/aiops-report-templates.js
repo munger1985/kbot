@@ -324,6 +324,12 @@ import {selectedTopics} from "./daily-template-model.js?v=20261103_5";
     };
   }
   shell.ready.then(async () => {
+    // 编辑与详情是目录的同级视图，必须在壳层挂载后进入同一内容区。
+    const content = document.querySelector("main.aiops-template-page").parentElement;
+    for (const view of [document.getElementById("daily-template-editor"), detailRoot]) {
+      content.append(view);
+      view.classList.add("platform-home-page", "aiops-page", "page-shell");
+    }
     document.getElementById("template-search").oninput = () => { renderInspectionTemplates(); renderSessionTemplates(); };
     document.getElementById("refresh-templates").onclick = loadTemplates;
     document.getElementById("create-inspection-template").onclick = () => openEditor("inspection");

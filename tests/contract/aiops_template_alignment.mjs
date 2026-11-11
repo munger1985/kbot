@@ -38,6 +38,10 @@ export async function verifyInspectionTemplateEditor({kbot,reference,mode,width,
     await page.evaluate(()=>{fixtureRequests=[];globalThis.fixtureTemplateWrites=false;globalThis.fixtureTemplateDraft=null;});
     const editor=editorFor(page);
     await editor.waitFor();
+    for (const selector of ['h1','.daily-editor-steps']) {
+      const box=await editor.locator(selector).boundingBox();
+      assert.ok(box && box.y>=0 && box.y+box.height<=page.viewportSize().height,'模板编辑标题和步骤必须直接显示在首屏，不依赖控件自动滚动');
+    }
     assert.equal(await editor.evaluate(node=>Boolean(node.closest('dialog,[role="dialog"]'))),false,'巡检模板必须使用正式全页编辑器');
     assert.equal(await editor.locator('[data-editor-tab]').count(),3);
     await editor.locator('[data-topic="CAPACITY"]').click();
