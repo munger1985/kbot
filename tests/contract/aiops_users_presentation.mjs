@@ -103,13 +103,17 @@ try {
             else assert.ok(action.y>=Math.max(identity.y+identity.height, state.y+state.height)+11, '窄屏按钮必须换行');
           }
           await page.screenshot({path:resolve(artifacts, `users-${width}.png`), fullPage:true});
+          assert.equal(await page.locator('#user-form').isVisible(), false, '进入页面只能显示已有用户，不显示新建表单');
+          await page.getByRole('button', {name:'新建用户', exact:true}).click();
+          assert.equal(await page.locator('#user-create-drawer').isVisible(), true);
           await page.locator('#user-id').fill('fixture-new-user');
           await page.locator('#user-display-name').fill('隔离新用户');
           await page.locator('#user-password').fill('Isolated-Password-123!');
           await page.locator('#user-role').selectOption('app_user');
           await page.locator('#user-feishu-open-id').fill('ou_new_fixture');
-          await page.getByRole('button', {name:'保存用户', exact:true}).click();
-          await page.waitForFunction(()=>document.getElementById('user-status').textContent.includes('用户已保存'));
+          await page.getByRole('button', {name:'创建用户', exact:true}).click();
+          await page.waitForFunction(()=>document.getElementById('user-status').textContent.includes('用户已创建'));
+          await page.locator('#user-create-drawer').waitFor({state:'hidden'});
           assert.deepEqual(await page.evaluate(()=>fixtureWrites), [{path:'/api/v1/apps/aiops/members', method:'POST', body:{
             display_name:'隔离新用户', feishu_open_id:'ou_new_fixture', user_id:'fixture-new-user', password:'Isolated-Password-123!',
             must_change_password:true, role_bindings:[{role_code:'app_user', scope_mode:'SELECTED_DOMAINS', domain_ids:[12]}],

@@ -1,7 +1,9 @@
 /* 用户目录沿用公共列表、状态标签和行操作规格，不影响其他管理页面。 */
 .user-management-page { display: grid; gap: 20px; min-width: 0; }
 .user-management-page > .ops-head, .user-management-page > .ops-panel { margin: 0; }
-.user-management-page > .ops-panel { scroll-margin-top: 84px; }
+.user-management-page > .admin-drawer-backdrop { width: auto; }
+.user-management-page .user-page-actions, .user-management-page .user-list-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.user-management-page .user-list-actions { justify-self: end; }
 .user-management-page > [role="status"] { margin: 0; color: var(--muted); font-size: var(--type-supporting); }
 .user-management-page > [role="status"]:empty { display: none; }
 .user-management-page .user-list { margin: 0; padding: 0; list-style: none; }
@@ -10,7 +12,18 @@
 .user-management-page .user-list-identity { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
 .user-management-page .user-list-name { color: var(--ink); font-size: var(--type-table); font-weight: 600; }
 .user-management-page .user-list-id { margin: 0; color: var(--muted); font-family: var(--font-data); font-size: var(--type-supporting); }
-.user-management-page .user-list-row > .row-action { justify-self: end; }
+.user-create-drawer > .admin-drawer-body { padding: 24px 28px; }
+.user-create-drawer .user-create-form { gap: 22px 16px; }
+.user-create-drawer .field-help, .user-create-drawer .user-create-help { margin: 0; color: var(--muted); font-size: var(--type-supporting); line-height: 1.65; }
+.user-create-drawer .user-create-help summary { width: fit-content; color: var(--accent-strong); font-weight: 600; cursor: pointer; }
+.user-create-drawer .user-create-help ol { display: grid; gap: 12px; padding-inline-start: 1.5em; }
+.user-create-drawer .user-create-help p { overflow-wrap: anywhere; }
+.user-create-drawer [role="status"] { margin: 0 0 18px; color: var(--danger); font-size: var(--type-supporting); }
+.user-create-drawer [role="status"]:empty { display: none; }
+@media (max-width: 680px) {
+  .user-create-drawer > .admin-drawer-body { padding: 20px 18px; }
+  .user-create-drawer .ops-field.span-6 { grid-column: span 12; }
+}
 /* 用户详情沿用 Ammolite 的概览、独立身份表单与折叠帮助，不复制租户治理能力。 */
 .user-detail-page [hidden] { display: none !important; }
 .user-detail-page .member-detail-heading { display: flex; justify-content: flex-start; }
@@ -41,5 +54,5 @@
 }
 @media (max-width: 640px) {
   .user-management-page .user-list-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
-  .user-management-page .user-list-row > .row-action { grid-column: 1 / -1; justify-self: start; }
+  .user-management-page .user-list-actions { grid-column: 1 / -1; justify-self: start; }
 }
