@@ -116,7 +116,7 @@ def test_cache_still_rechecks_binding_inventory_current_value_and_scope():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("failure", ["truncated", "unit", "dimensions", "provider", "no_data"])
+@pytest.mark.parametrize("failure", ["truncated", "unit", "dimensions", "provider", "no_data", "window_unsupported"])
 def test_bad_baseline_never_produces_comparison_or_removes_current_evidence(failure):
     async def run():
         service, adapter, args = setup_service()
@@ -126,9 +126,17 @@ def test_bad_baseline_never_produces_comparison_or_removes_current_evidence(fail
         if failure == "dimensions": summary["series"][0]["dimensions"] = {"unverified": "a"}
         if failure == "provider": adapter.exadata_baseline.side_effect = DiagnosticSourceAdapterError("SOURCE_PROVIDER_ERROR", "测试")
         if failure == "no_data": summary["series"] = ()
+        if failure == "window_unsupported":
+            args["query"] = args["query"].model_copy(update={"period": "1m"})
+            adapter.exadata_baseline.side_effect = DiagnosticSourceAdapterError(
+                "SOURCE_BASELINE_WINDOW_UNSUPPORTED", "原厂历史窗口上限")
         result = await service.baseline(**args)
         assert result.baseline.unavailable_reason and not result.baseline.series and not result.comparisons
         assert result.current_samples[0].value == "15"
+        if failure == "window_unsupported":
+            assert "最多支持 7 天" in result.baseline.unavailable_reason
+            assert "30 天" in result.baseline.unavailable_reason
+            assert "可重试" not in result.baseline.unavailable_reason
     asyncio.run(run())
 
 

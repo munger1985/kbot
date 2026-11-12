@@ -1,6 +1,7 @@
 {
   "version": "exadata-baseline-v1",
   "rest_partition_policy": "FIXED_MAX_SIX_DAYS_SHARED_BYTE_BUDGET_HALF_OPEN",
+  "emcli_history_max_days": 7,
   "repository_unit_codes": ["PERCENTAGE", "IOSEC", "MBPS", "BPS", "KBPS", "MILLISECREQUEST", "GB"],
   "metric_codes": [
     "oracle_exadata.Cell_Metric.temperature",

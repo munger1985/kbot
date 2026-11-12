@@ -60,7 +60,10 @@ class ExadataBaselineMixin:
                 except (DiagnosticSourceAdapterError, TimeoutError) as exc:
                     code = getattr(exc, "code", "SOURCE_TIMEOUT")
                     result = MonitoringNativeBaseline(period=query.period, start=request.window_start, end=now,
-                        unavailable_reason=f"OEM 历史基线读取未完成（{code}）；当前快照不受影响，可重试。")
+                        unavailable_reason=(
+                            "OEM 原厂 EMCLI 此读取通道最多支持 7 天历史，无法计算 30 天均值；未以 7 天替代。"
+                            if code == "SOURCE_BASELINE_WINDOW_UNSUPPORTED" else
+                            f"OEM 历史基线读取未完成（{code}）；当前快照不受影响，可重试。"))
             await self._validate_live_inventory(adapter, frozen)
         current, _ = await self._snapshot(scope, system_id, resource_id, source_id)
         if current != frozen:

@@ -458,7 +458,7 @@ def test_editing_exadata_transport_preserves_independently_managed_standard_mapp
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("days", [7, 30])
+@pytest.mark.parametrize("days", [7])
 def test_baseline_cli_fixed_days_and_audited_metric_only(tmp_path, days):
     async def run():
         client = OEMEMCLIClient(executable=sys.executable, session_root=tmp_path / "sessions")
@@ -475,12 +475,17 @@ def test_baseline_cli_fixed_days_and_audited_metric_only(tmp_path, days):
                 await client.read(context(), TARGET, definition("FlashCache_Metric/default_hits"),
                                   history=True, max_bytes=262144, baseline_days=days)
             assert client._run.await_count == 1
+            with pytest.raises(DiagnosticSourceAdapterError) as error:
+                await client.read(context(), TARGET, definition(), history=True,
+                                  max_bytes=262144, baseline_days=30)
+            assert error.value.code == "SOURCE_BASELINE_WINDOW_UNSUPPORTED"
+            assert client._run.await_count == 1
         finally:
             await client.aclose()
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("days", [7, 30])
+@pytest.mark.parametrize("days", [7])
 def test_keyed_emcli_baseline_preserves_sample_intervals_and_dimension_means(days):
     async def run():
         metric = definition()

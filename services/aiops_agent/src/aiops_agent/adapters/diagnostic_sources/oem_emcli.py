@@ -204,6 +204,9 @@ class OEMEMCLIClient:
         if baseline_days is not None and (not history or type(baseline_days) is not int
                 or baseline_days not in (7, 30) or not definition.get("baseline_supported")):
             fail("SOURCE_QUERY_INVALID")
+        # 原厂 get_metric_data 文档限制最多七天；不能用七天冒充月基线。
+        if baseline_days == 30:
+            fail("SOURCE_BASELINE_WINDOW_UNSUPPORTED")
         group, column = definition["selector"].split("/")
         arguments = ["get_metric_data", "-target_type=" + definition["target_type"], "-target_name=" + name,
                      "-metric_name=" + group, "-metric_column=" + column, "-json"]
