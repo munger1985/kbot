@@ -687,3 +687,9 @@ Agent 验收额外发现：KBot 路由只按当前指标数分配预算，导致
 KBot 正常 OEM 测试用 Agent 的真实新会话已 **COMPLETED**：分析准确选中 Cell CPU/内存指标，返回各自当前值、七天留存均值、差值/相对偏离及下一步只读排查建议，证据中保存实际基线与计算，没有创建数据库 ops_run_id。私有验收证据 /tmp/exadata-analysis-kbot-tENheK。两端最新部署后的 Main API/AIOps 在线日志 API 复核无新增 ERROR；按真实 applied.json 时间过滤，确认分页覆盖检查起点，不以历史错误数量当作新部署错误。
 
 Ammolite 监控页真实周/月比较及磁盘周比较通过，Agent 路由准确识别 ACTIVE_DIAGNOSIS 与 EXADATA，但 Cyber DBA 的授权系统列表不含 01a1cad9-2904-7892-8428-fc333bd1f7ec，正常拒绝 EXADATA_RESOURCE_SCOPE_EMPTY；未绕过或自动修改授权，因此不能声明 Ammolite Agent 端到端分析已验收。需要管理员明确授权该模拟系统后再验收。本轮没有补造一个月历史，也未完成第 10.16 节尚未接入的 DB Server/ILOM/PDU 模拟设备及交换机成员关系；不把代码目录支持冒充现场设备已采集。
+
+#### 10.17.7 Ammolite 经明确批准补充 Agent 授权与验收
+
+用户明确批准后，通过正常管理员 BUSINESS 会话及管理 PATCH，仅向 Ammolite Cyber DBA（01a12b8e-e34e-7644-8fd8-ed3bf650c790）追加业务系统“Exadata OEM 模拟联调（SIM）”（01a1cad9-2904-7892-8428-fc333bd1f7ec）。更新前核实系统属于当前空间、含已配置监控的 EXADATA 资源；使用 expected_row_version=5 乐观锁创建正常配置版本 5，row_version=6，仍为 ACTIVE。业务系统从三个增加为四个；逐项复核原有系统、能力、模型、执行策略、知识策略及动作授权均未变化，没有新增执行权限，也没有修改 KBot 授权。正常业务 Agent 目录已读到新版本。私有前后证据 /tmp/exadata-grant-ammolite-0PUacE，不提交会话。
+
+授权后的 Ammolite 真实新会话 01a1ce4d-6e69-7138-b6ec-15f1b4c074ab 已 **COMPLETED**，无 evidence_gaps，无数据库 ops_run_id；CPU/内存各保存当前值及 1195 条实际留存采样基线，返回相对偏离 -31.08%/-6.46%、证据引用和只读排查建议。真实诊断页面已渲染分析、偏离和建议，无 pageerror；私有证据 /tmp/exadata-analysis-ammolite-qR8NNh。本节解除上一节的 Ammolite Agent 授权验收缺口，不改变原厂带维度月历史限制或硬件模拟设备尚未接入的说明。此为在线配置生效，无代码、DDL 或服务重启；在线 Main API/AIOps 日志复核无新增 ERROR。
