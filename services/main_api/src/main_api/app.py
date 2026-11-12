@@ -500,6 +500,19 @@ def create_main_api_app(
                 title="下游服务认证失败",
                 detail="AIOps 内部认证失败",
             )
+        if (getattr(request.scope.get("endpoint"), "__name__", None) in {
+                "list_monitoring_native_metrics", "query_monitoring_native_metric"}
+                and exc.code in {"SOURCE_PROVIDER_ERROR", "SOURCE_UNREACHABLE",
+                    "SOURCE_RESULT_TRUNCATED", "SOURCE_RATE_LIMITED", "SOURCE_COLLECTION_CHANGED"}):
+            return _problem_response(
+                request=request, status_code=exc.status_code, code=exc.code,
+                title="OEM 指标读取失败",
+                detail={"SOURCE_PROVIDER_ERROR": "OEM 服务端查询失败；不是网络不可达或无数据",
+                    "SOURCE_UNREACHABLE": "OEM 连接失败或超时",
+                    "SOURCE_RESULT_TRUNCATED": "OEM 响应超出读取预算",
+                    "SOURCE_RATE_LIMITED": "OEM 指标读取被限流",
+                    "SOURCE_COLLECTION_CHANGED": "OEM 分页期间采集快照发生变化，请重新查询"}[exc.code],
+            )
         if exc.status_code >= 500:
             return _problem_response(
                 request=request,

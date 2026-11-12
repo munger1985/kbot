@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+import pytest
 
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from main_api.api import ops
 from main_api import app as main_app
-from platform_clients.aiops import AIOpsManagementClient
+from platform_clients.aiops import AIOpsManagementClient, AIOpsClientError
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.identity import uuid7
 
@@ -23,6 +24,24 @@ def route(name):
 
 def endpoint(name, source, instance):
     return route(name).path.replace("{domain_code}", "test").replace("{source_id}", str(source)).replace("{instance_id}", str(instance))
+
+
+@pytest.mark.parametrize("code", ["SOURCE_PROVIDER_ERROR", "SOURCE_UNREACHABLE", "SOURCE_RESULT_TRUNCATED",
+    "SOURCE_RATE_LIMITED", "SOURCE_COLLECTION_CHANGED"])
+def test_only_oem_native_routes_preserve_source_failure_classification(code):
+    factory = getattr(main_app, "create_ammolite_main_api_app", None) or main_app.create_main_api_app
+    app = factory(enable_access_log=False)
+    handler = app.exception_handlers[AIOpsClientError]
+    error = AIOpsClientError(status_code=502, code=code, message="来源错误原文不应直接暴露")
+    for endpoint in (ops.list_monitoring_native_metrics, ops.query_monitoring_native_metric):
+        request = Request({"type": "http", "method": "GET", "path": "/test", "headers": [], "endpoint": endpoint})
+        response = asyncio.run(handler(request, error))
+        payload = json.loads(response.body)
+        assert response.status_code == 502 and payload["code"] == code
+        assert "来源错误原文" not in payload["detail"]
+    request = Request({"type": "http", "method": "GET", "path": "/test", "headers": []})
+    response = asyncio.run(handler(request, error))
+    assert response.status_code == 503 and json.loads(response.body)["code"] == "AIOPS_UNAVAILABLE"
 
 
 def test_native_routes_reject_unauthenticated_requests():
