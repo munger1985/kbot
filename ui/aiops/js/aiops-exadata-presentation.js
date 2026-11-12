@@ -9,6 +9,7 @@ exports.exadataRaw = exadataRaw;
 exports.exadataQuality = exadataQuality;
 exports.exadataDimensions = exadataDimensions;
 exports.buildExadataCards = buildExadataCards;
+exports.exadataStatusItems = exadataStatusItems;
 exports.exadataChartOption = exadataChartOption;
 const labels = {
     'CellSrv_Status_Metric/Status': 'Cell 服务状态',
@@ -52,8 +53,9 @@ function buildExadataCards(view) {
             const metricSelector = selector || definition?.selector || metricCode;
             card = { key, componentId, metricCode, selector: metricSelector,
                 componentName: view.members.find(member => member.target_id === componentId)?.display_name || componentId,
-                title: labels[metricSelector] || definition?.display_name || metricSelector,
-                unit, numeric: nativeType === 'NUMBER', samples: [], series: [], gaps: [], quality: '', tone: '',
+                title: labels[metricSelector] || definition?.status?.display_name || definition?.display_name || metricSelector,
+                status: definition?.status || null,
+                unit, numeric: nativeType === 'NUMBER' && !definition?.status, samples: [], series: [], gaps: [], quality: '', tone: '',
                 value: '无数据', valueUnit: '', observedAt: null, percent: null };
             groups.set(key, card);
         }
@@ -92,7 +94,7 @@ function buildExadataCards(view) {
                     : readError ? '读取错误'
                         : !hasValue ? card.gaps.some(gap => gap.code === 'SOURCE_METRIC_HISTORY_UNSUPPORTED') ? '历史不支持' : '无有效数据'
                             : latest.some(item => item.quality === 'EMPTY' || item.value === null || item.value === '' || (card.numeric && exadataNumeric(item.value) === null)) ? '部分缺失'
-                                : card.gaps.length ? '部分采样' : card.numeric ? '已采样' : '原始状态';
+                                : card.gaps.length ? '部分采样' : '已采样';
         card.tone = ['旧快照', '采样截断', '部分缺失', '部分采样', 'OEM 服务错误', '读取错误'].includes(card.quality) ? 'warning' : hasValue ? 'observed' : 'empty';
         card.value = readError ? '读取失败' : latest.length > 1 ? `${latest.length} 个维度` : latest[0]?.quality === 'EMPTY' ? '无数据' : exadataRaw(latest[0]?.value ?? null);
         card.valueUnit = latest.length === 1 && card.unit && card.unit !== 'n/a' ? card.unit : '';
@@ -101,6 +103,25 @@ function buildExadataCards(view) {
         card.percent = view.query_mode === 'LATEST_SNAPSHOT' && card.numeric && card.unit === '%' && value !== null && value >= 0 && value <= 100 ? value : null;
     }
     return [...groups.values()];
+}
+// 每个维度独立显示；旧值、截断、缺值及读取失败都不能显示绿色可用。
+function exadataStatusItems(card) {
+    if (!card.status)
+        return [];
+    if (!card.series.length)
+        return [{ key: card.key, dimension: '', label: card.value === '读取失败' ? '读取失败' : card.quality === '历史不支持' ? '历史不支持' : '无数据', tone: 'unknown', quality: card.quality, observedAt: null }];
+    return card.series.map(series => {
+        const sample = series.latest;
+        const raw = sample.value?.trim() ?? '';
+        const entry = Object.entries(card.status.values).find(([value]) => value.toLowerCase() === raw.toLowerCase())?.[1];
+        const missing = sample.quality === 'EMPTY' || !raw;
+        const valid = sample.quality === 'OBSERVED' && !card.gaps.length && !missing;
+        return { key: series.key, dimension: series.label === '无维度' ? '' : series.label,
+            label: missing ? '无数据' : valid ? entry?.label || '未知' : '未知',
+            tone: valid ? entry?.tone || 'unknown' : 'unknown',
+            quality: missing ? '无有效数据' : !entry ? '未识别状态' : sample.quality !== 'OBSERVED' ? exadataQuality(sample.quality) : card.gaps.length ? '部分采样' : '已采样',
+            observedAt: sample.observed_at };
+    });
 }
 // 图表仅作数值近似绘制，卡片及原始表格保留精确文本；空值不补零、不连线。
 function exadataChartOption(card, colors) {

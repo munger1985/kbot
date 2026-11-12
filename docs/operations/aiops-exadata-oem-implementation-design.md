@@ -520,3 +520,39 @@ Ammolite 正常公共页面重现 5 张卡、0 条采样：三个服务状态与
 部署后 Ammolite 正常浏览器概览为 **5 卡/5 采样**，CPU=46.23%、内存=63.74%、三个状态均保留 STRING 1；无指标级错误及页面异常。证据目录 /tmp/ammolite-exadata-overview-IKPIwp。两端随后重新完整执行本轮指定页面验证：概览 **5 卡/5 采样**、Cell **12 卡/12 采样**、磁盘首页 **12 卡/24 采样**、Flash 与 IORM 首页各 **12 卡/12 采样**、容量首页 **7 卡/18 采样**；磁盘一小时历史各 **1152 条非空采样、12 个真实 ECharts canvas**。各查询无指标级读取错误、无 pageerror；采样数随 OEM 实际留存窗口变化，不要求固定等于此前的 1248。最终私有证据目录为 /tmp/exadata-ammolite-current-nHzVBW 与 /tmp/exadata-kbot-current-ULAlQj，包含实际公共 API 响应及页面截图，会话文件不提交。以上仍是指定场景首页和历史首页，不是全部 267 项覆盖。
 
 交换机端口 TargetComponent 的可靠身份目录、应用发现和公共绑定仍未完成；本轮未更改共享 DBM 成员或两端业务绑定。不能因概览恢复就宣称整机全部 267 项或交换机页面已完成。
+
+### 10.14 全目录可用性与运行状态展示（2026-11-12）
+
+#### 10.14.1 审核范围与证据
+
+重新逐项核对 267 项审核定义、真实归档的 definition DESCRIPTION/UNIT 和 latest VALUE，不按 STRING 类型、IS_STATEFUL=1 或名称包含 available 就判为可用性。最终状态目录共 **16 项**，均保持原厂采集类型及原始值：
+
+| 状态组 | 项数 | 页面语义与边界 |
+| --- | ---: | --- |
+| CellSrv / MS / RS | 3 | 服务可用性：1 可用、0 不可用、2 未知 |
+| 磁盘 status | 1 | normal 显示正常；未审核的其他编码显示未知 |
+| 服务器/交换机 ComponentState | 2 | OK 显示正常；空值不视为正常 |
+| Cell LED | 1 | off 未点亮、on 已点亮；不表示服务可用性 |
+| 服务器/交换机 AdministrationState、以太网 AdminStatus | 3 | up 已启用、down 已禁用、testing 测试中；管理禁用不判硬件故障 |
+| 服务器/交换机 OperStatus、以太网 OperStatus | 3 | 已连接、未连接或具体原因；保留未插光模块、链路未连接的差别 |
+| 以太网 PortStatusError | 1 | Normal 正常、Available 空闲可用、Not Present 未安装；Available 不等于链路已连接 |
+| 服务器/交换机 OperStatusDown | 2 | BOOLEAN 掉线事件：0 未触发、1 已触发；不是当前 up/down，也不是可用率 |
+
+三项服务编码另经现场只读检查 Oracle `oracle.sysman.xa.agent.plugin_24.1.1.0.0/scripts/exadata/oracle_exadata_cellsrv_status.pl` 的 `handle_end` 核实：running→1、stopped→0、其他→2。该验证没有修改 OEM、Agent 或模拟器。真实导出中端口 OperStatus 为 down 时 OperStatusDown 仍可能为 0，因此不能把后者的 0 翻译为“端口可用”。
+
+Cell 名称、Flash 类型、SpeedUnits、ErrorDetail、ASM 容量/数量等 STRING 列不是状态；FlashLog 的 unavailable buffer 跳过写次数仍是数值指标。尤其 ComponentState/ErrorDetail 的真实值可能是温度文本或监控缺失说明，不能按状态字典转码。未知编码不按任意非零、字符串包含 OK 等猜测。
+
+#### 10.14.2 实现合同与展示
+
+- 新增独立 `resources/exadata_oem/status.v1.json`，按精确 metric_code 关联审核分类、中文标签、展示色调及证据来源。目录加载器验证全部状态合同、拒绝未知/重复引用，并将字典纳入 catalog_sha256。状态字典随 `ExadataMetricDefinition.status` 返回并冻结到报告证据，不改原厂 native_value_type、单位、采集值或时间。
+- 两端统一通过该元数据分派：状态采用独立紧凑行，显示组件、完整维度、中文状态和采集时间；不使用数值大卡、百分比进度或折线，不求均值/最值，也不生成可用率。每个磁盘、端口和硬件组件分别显示，不以一个状态冒充整机。
+- CPU、内存、IO、容量及普通文本继续沿用原有卡片。概览从五张大卡改为“三项服务状态＋两张数值卡”。分页读取范围和查询数量不变，状态计数与卡片计数分列。
+- 原始编码、完整维度、采集质量及读取错误保留在可展开证据中。无数据、过旧、截断、未知编码及来源错误显示未知/无数据/读取失败，不显示绿色可用。字符串历史仍明确不支持，不回退当前快照。
+- 只读诊断跳过数值型状态（OperStatusDown）的 Decimal 最小/最大观察范围；报告整体仍为 INCONCLUSIVE，不把组件状态翻译提升为整机健康或故障根因结论。
+- 修改仅限 EXADATA＋OEM 专用目录、合同、监控展示和上述状态范围排除；普通 OEM、非 Exadata、非 OEM 及既有数据库诊断不变。无 DDL、数据回填、模拟值重写或成员/授权变更。
+
+#### 10.14.3 验证与部署边界
+
+两仓各 7 个定向测试文件 **196 passed**，覆盖全目录状态合同、原始采样保真、非状态文本隔离、数值型事件不参加范围计算、状态定义随报告冻结及原有专用读取/授权隔离。两端生产组件浏览器合同通过，覆盖全部 16 项状态和 1920/1440/1000/780/390 响应式布局；状态不使用大卡、未知/旧值不显示绿色，并保留原有数值历史 ECharts、分页、来源错误及证据精度验证。Ammolite typecheck/生产 build、两仓架构边界及 KBot 展示脚本语法检查通过；build 仍有既有大 chunk 提示。未跑全仓测试。
+
+此节为源码实施设计与本地验证记录，不表示已部署到 kbotdev；线上部署及服务重启须单独确认。

@@ -231,6 +231,33 @@ def test_readonly_diagnosis_persisted_without_database_target(exadata_lab):
     asyncio.run(run())
 
 
+def test_diagnosis_freezes_state_dictionary_and_never_ranges_boolean_state(exadata_lab):
+    f = exadata_lab
+    async def run():
+        await publish_exadata(f)
+        view = await f.exadata.collect(**args(f))
+        service = next(item for item in view.definitions if item.selector == "CellSrv_Status_Metric/Status")
+        assert service.status.values["1"].label == "可用"
+        sample = view.samples[0]
+        event_code = "oracle_si_network_port_switch.NetworkPortPerformance.OperStatusDown"
+        event = load_catalog()[2][event_code]
+        view = view.model_copy(update={
+            "definitions": (*view.definitions, type(service).model_validate(event)),
+            "samples": (sample.model_copy(update={"metric_code": event_code,
+                "selector": event["selector"], "value": "0", "native_value_type": "NUMBER",
+                "unit": "BOOLEAN", "quality": "OBSERVED"}),),
+        })
+        f.exadata.collect = AsyncMock(return_value=view)
+        report = await f.exadata.diagnose(**args(f), idempotency_key="state-dictionary-report")
+        assert not any(item.code == "OBSERVED_RANGE_IN_PAGE" for item in report.findings)
+        saved = await f.exadata.get_report(scope=f.scope, system_id=f.system_id, resource_id=f.resource_id,
+            source_id=f.source_id, report_id=report.report_id)
+        assert saved.evidence.definitions[0].status == view.definitions[0].status
+        assert saved.evidence.definitions[-1].status.category == "EVENT"
+        assert saved.evidence.samples[0].value == "0"
+    asyncio.run(run())
+
+
 def test_query_contract_has_no_target_guid_url_or_sql():
     with pytest.raises(ValidationError):
         ExadataQuery(target_id=CELL)

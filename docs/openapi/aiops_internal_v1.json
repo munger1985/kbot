@@ -7043,6 +7043,17 @@
             "title": "Semantics",
             "type": "string"
           },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExadataStatusDefinition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "target_type": {
             "title": "Target Type",
             "type": "string"
@@ -7268,6 +7279,70 @@
           "response_sha256"
         ],
         "title": "ExadataSample",
+        "type": "object"
+      },
+      "ExadataStatusDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "AVAILABILITY",
+              "ADMINISTRATIVE",
+              "INDICATOR",
+              "EVENT"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "provenance": {
+            "title": "Provenance",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ExadataStatusValue"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "category",
+          "display_name",
+          "values",
+          "provenance"
+        ],
+        "title": "ExadataStatusDefinition",
+        "type": "object"
+      },
+      "ExadataStatusValue": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "tone": {
+            "enum": [
+              "success",
+              "danger",
+              "warning",
+              "neutral",
+              "unknown"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "tone"
+        ],
+        "title": "ExadataStatusValue",
         "type": "object"
       },
       "ExadataView": {

@@ -1,0 +1,131 @@
+{
+  "version": "exadata-status-v1",
+  "groups": [
+    {
+      "metric_codes": [
+        "oracle_exadata.CellSrv_Status_Metric.Status",
+        "oracle_exadata.CellSrv_Status_Metric.msStatus",
+        "oracle_exadata.CellSrv_Status_Metric.rsStatus"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "服务可用性",
+        "values": {
+          "1": { "label": "可用", "tone": "success" },
+          "0": { "label": "不可用", "tone": "danger" },
+          "2": { "label": "未知", "tone": "unknown" }
+        },
+        "provenance": "Oracle oracle.sysman.xa.agent.plugin_24.1.1.0.0 scripts/exadata/oracle_exadata_cellsrv_status.pl handle_end: running=1, stopped=0, other=2; read-only verified 2026-11-12."
+      }
+    },
+    {
+      "metric_codes": ["oracle_exadata.Exadata_Disk_Status_Metric.status"],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "磁盘状态",
+        "values": { "normal": { "label": "正常", "tone": "success" } },
+        "provenance": "OEM export 2026-11-10 metric_current.csv: 48 normal samples. Only the observed normal token is translated; other tokens remain unknown."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_hw_component_server.ComponentState.ComponentState",
+        "oracle_si_hw_component_switch.ComponentState.ComponentState"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "硬件组件状态",
+        "values": { "OK": { "label": "正常", "tone": "success" } },
+        "provenance": "OEM export 2026-11-10: ComponentState description The Component State; server 82 OK and 3 empty, switch 12 OK. Empty values do not mean OK."
+      }
+    },
+    {
+      "metric_codes": ["oracle_exadata.Cell_Metric.led_status"],
+      "status": {
+        "category": "INDICATOR",
+        "display_name": "指示灯状态",
+        "values": {
+          "off": { "label": "未点亮", "tone": "neutral" },
+          "on": { "label": "已点亮", "tone": "neutral" }
+        },
+        "provenance": "OEM export 2026-11-10 Cell_Metric/led_status: off. LED on/off describes the indicator, not service availability."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_network_port_server.NetworkPortPerformance.AdministrationState",
+        "oracle_si_network_port_switch.NetworkPortPerformance.AdministrationState",
+        "oracle_si_network_port_switch.SwitchEthPortsMonitor.AdminStatus"
+      ],
+      "status": {
+        "category": "ADMINISTRATIVE",
+        "display_name": "端口管理状态",
+        "values": {
+          "up": { "label": "已启用", "tone": "neutral" },
+          "down": { "label": "已禁用", "tone": "neutral" },
+          "testing": { "label": "测试中", "tone": "warning" }
+        },
+        "provenance": "OEM export 2026-11-10 AdministrationState description: Administrative State. UP, DOWN, TESTING, etc.; AdminStatus samples up. Disabled is administrative intent, not a fault diagnosis."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_network_port_server.NetworkPortPerformance.OperStatus",
+        "oracle_si_network_port_switch.NetworkPortPerformance.OperStatus"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "端口运行状态",
+        "values": {
+          "up": { "label": "已连接", "tone": "success" },
+          "down": { "label": "未连接", "tone": "warning" },
+          "testing": { "label": "测试中", "tone": "warning" },
+          "unconnected": { "label": "未连接", "tone": "neutral" },
+          "unknown": { "label": "未知", "tone": "unknown" }
+        },
+        "provenance": "OEM export 2026-11-10 OperStatus description: Operational status of the port. UNKNOWN, UP, DOWN, TESTING, UNCONNECTED, etc. Link down alone does not prove a hardware fault."
+      }
+    },
+    {
+      "metric_codes": ["oracle_si_network_port_switch.SwitchEthPortsMonitor.OperStatus"],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "以太网端口运行状态",
+        "values": {
+          "up": { "label": "已连接", "tone": "success" },
+          "down (XCVR not inserted)": { "label": "未插入光模块", "tone": "neutral" },
+          "down (Link not connected)": { "label": "链路未连接", "tone": "warning" }
+        },
+        "provenance": "OEM export 2026-11-10 SwitchEthPortsMonitor/OperStatus: up=42, down (XCVR not inserted)=52, down (Link not connected)=32. Reasons are preserved, not collapsed into a generic failure."
+      }
+    },
+    {
+      "metric_codes": ["oracle_si_network_port_switch.SwitchEthPortsMonitor.PortStatusError"],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "以太网端口状态",
+        "values": {
+          "Normal": { "label": "正常", "tone": "success" },
+          "Available": { "label": "空闲可用", "tone": "neutral" },
+          "Not Present": { "label": "未安装", "tone": "neutral" }
+        },
+        "provenance": "OEM export 2026-11-10 PortStatusError: Normal=42, Available=32, Not Present=52. Available is not evidence of an operationally connected link."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_network_port_server.NetworkPortPerformance.OperStatusDown",
+        "oracle_si_network_port_switch.NetworkPortPerformance.OperStatusDown"
+      ],
+      "status": {
+        "category": "EVENT",
+        "display_name": "端口掉线事件",
+        "values": {
+          "0": { "label": "未触发", "tone": "neutral" },
+          "1": { "label": "已触发", "tone": "warning" }
+        },
+        "provenance": "OEM export 2026-11-10 definition OperStatusDown: Port status became down, unit BOOLEAN. Snapshot has 0 even for OperStatus=down. This is an event flag, never a current-up or availability value."
+      }
+    }
+  ]
+}

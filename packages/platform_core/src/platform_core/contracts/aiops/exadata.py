@@ -57,6 +57,18 @@ class ExadataGap(ExadataModel):
     detail: str
 
 
+class ExadataStatusValue(ExadataModel):
+    label: str
+    tone: Literal["success", "danger", "warning", "neutral", "unknown"]
+
+
+class ExadataStatusDefinition(ExadataModel):
+    category: Literal["AVAILABILITY", "ADMINISTRATIVE", "INDICATOR", "EVENT"]
+    display_name: str
+    values: dict[str, ExadataStatusValue]
+    provenance: str
+
+
 class ExadataMetricDefinition(ExadataModel):
     code: str
     target_type: str
@@ -72,6 +84,7 @@ class ExadataMetricDefinition(ExadataModel):
     freshness_policy: str
     max_age_seconds: int
     threshold_policy: str
+    status: ExadataStatusDefinition | None = None
 
 
 class ExadataView(ExadataModel):

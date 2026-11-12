@@ -28,7 +28,13 @@ assert.equal(read(resolve(kbot, 'ui/aiops/css/aiops-exadata-metrics.css')), read
 
 const member = (id, name) => ({ target_id: id, target_type: 'oracle_exadata', display_name: name })
 const members = [member('cell-a', 'SIM CELL A'), member('cell-b', 'SIM CELL B')]
-const metric = (selector, type = 'NUMBER') => ({ code: `oracle_exadata.${selector.replace('/', '.')}`, selector, display_name: selector, native_value_type: type })
+const statusCatalog = JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem/status.v1.json')))
+assert.deepEqual(JSON.parse(read(resolve(kbot, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem/status.v1.json'))), statusCatalog, '两端状态审核目录一致')
+const statusesByCode = new Map(statusCatalog.groups.flatMap(group => group.metric_codes.map(code => [code, group.status])))
+const metric = (selector, type = 'NUMBER', target = 'oracle_exadata') => {
+  const code = `${target}.${selector.replace('/', '.')}`
+  return { code, selector, display_name: selector, native_value_type: type, status: statusesByCode.get(code) || null }
+}
 const cpu = metric('Cell_Metric/cpu_utilization'), memory = metric('Cell_Metric/memory_utilization')
 const status = ['Status', 'msStatus', 'rsStatus'].map(name => metric(`CellSrv_Status_Metric/${name}`, 'STRING'))
 const sample = (definition, value, overrides = {}) => ({ component_id: 'cell-a', metric_code: definition.code, selector: definition.selector, observed_at: '2026-11-11T12:00:00Z', value, dimensions: {}, unit: '%', native_value_type: definition.native_value_type, quality: 'OBSERVED', ...overrides })
@@ -37,7 +43,8 @@ const cards = api.buildExadataCards(overview)
 assert.equal(cards.length, 5)
 assert.equal(cards[3].value, '27.210000000000001', '原始精度不得被图表数值转换覆盖')
 assert.equal(cards[4].value, '0'); assert.equal(cards[4].percent, 0, '真零值必须可展示')
-assert.equal(cards[0].quality, '原始状态'); assert.equal(cards[0].value, '1', '未知状态字典不得把 1 翻译为正常')
+assert.equal(cards[0].quality, '已采样'); assert.equal(cards[0].value, '1', '翻译状态仍保留原始采样')
+assert.equal(api.exadataStatusItems(cards[0])[0].label, '可用')
 const palette = { accent: 'blue', info: 'cyan', muted: 'gray', line: 'gray', surface: 'white', ink: 'black' }
 for (const value of [null, '', ' ', 'NaN', 'Infinity', '0x10', 'false']) assert.equal(api.exadataNumeric(value), null)
 assert.equal(api.exadataNumeric('1.2e-3'), 0.0012)
@@ -58,6 +65,36 @@ assert.equal(option.series[0].connectNulls, false)
 assert.equal(option.series[0].markLine, undefined, '未验证阈值不画健康分界线')
 assert.ok(!option.tooltip.formatter([{ seriesName: '<img onerror=alert(1)>', data: { raw: '<script>', at: 'now' } }]).includes('<img'))
 assert.equal(api.exadataChartOption(cards[0], palette).series.length, 0, '字符串状态不能转换成数值时序')
+assert.equal(statusesByCode.size, 16, '全部状态类指标纳入审核，而不只是三个服务')
+const reviewed = JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem/metrics.v1.json'))).metrics
+for (const [code, statusDefinition] of statusesByCode) {
+  const definition = { ...reviewed.find(item => item.code === code), status: statusDefinition }
+  assert.ok(definition.selector, `${code} 必须属于真实指标目录`)
+  for (const [raw, expected] of Object.entries(statusDefinition.values)) {
+    const card = api.buildExadataCards({ ...overview, definitions: [definition], samples: [sample(definition, raw)], gaps: [] })[0]
+    assert.equal(card.numeric, false, `${code} 即使原厂为 NUMBER 也不能当数值图表`)
+    assert.equal(api.exadataStatusItems(card)[0].label, expected.label)
+    assert.equal(api.exadataStatusItems(card)[0].tone, expected.tone)
+    assert.equal(api.exadataChartOption(card, palette).series.length, 0)
+    for (const quality of ['STALE', 'TRUNCATED', 'EMPTY']) {
+      const stale = api.buildExadataCards({ ...overview, definitions: [definition], samples: [sample(definition, raw, { quality })], gaps: [] })[0]
+      assert.equal(api.exadataStatusItems(stale)[0].tone, 'unknown', `${code}/${quality} 不得显示为可用`)
+    }
+  }
+  for (const raw of ['unreviewed', '', null]) {
+    const card = api.buildExadataCards({ ...overview, definitions: [definition], samples: [sample(definition, raw)], gaps: [] })[0]
+    assert.equal(api.exadataStatusItems(card)[0].tone, 'unknown')
+  }
+}
+for (const definition of reviewed.filter(item => !statusesByCode.has(item.code))) {
+  const card = api.buildExadataCards({ ...overview, definitions: [definition], samples: [sample(definition, '1')], gaps: [] })[0]
+  assert.equal(card.status, null, `${definition.code} 不因名称包含状态字样或类型是 STRING 而变成可用性`)
+}
+const mixedStates = api.buildExadataCards({ ...overview, samples: [sample(status[0], '1', { dimensions: { disk: 'a' } }), sample(status[0], '0', { dimensions: { disk: 'b' } }), sample(status[0], '2', { component_id: 'cell-b' })], gaps: [] })
+assert.deepEqual(clone(api.exadataStatusItems(mixedStates[0]).map(item => item.label)), ['可用', '不可用'])
+assert.equal(api.exadataStatusItems(mixedStates[1])[0].label, '未知')
+const stateReadError = api.buildExadataCards({ ...overview, samples: [], gaps: [{ component_id: 'cell-a', metric_code: status[0].code, code: 'SOURCE_PROVIDER_ERROR', detail: '错误' }] })[0]
+assert.equal(api.exadataStatusItems(stateReadError)[0].label, '读取失败')
 for (const [quality, expected] of [['STALE', '旧快照'], ['TRUNCATED', '采样截断'], ['EMPTY', '无有效数据']]) assert.equal(api.buildExadataCards({ ...overview, samples: [sample(cpu, quality === 'EMPTY' ? null : '1', { quality })] })[0].quality, expected)
 const empty = api.buildExadataCards({ ...overview, samples: [], gaps: [{ component_id: 'cell-a', metric_code: cpu.code, code: 'NO_DATA', detail: '无采样' }] })
 assert.equal(empty.length, 1, '只为明确失败查询建空卡，不为未查询组件猜测卡片')
@@ -100,7 +137,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [], calls = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('https://fonts.**', route => route.abort())
-  let fail = false, unavailable = false, providerError = false
+  let fail = false, unavailable = false, providerError = false, stateFixture = false
   await page.route('**/api/v1/apps/aiops/**', async route => {
     const request = route.request(), body = request.postDataJSON(); calls.push({ body, headers: request.headers(), url: request.url() })
     if (!request.headers()['content-type']?.includes('application/json')) return route.fulfill({ status: 422, json: { detail: '请求体必须为 JSON' } })
@@ -117,6 +154,11 @@ try {
       result.samples = definitions.flatMap(item => [sample(item, '8.25'), sample(item, null, { observed_at: '2026-11-11T12:00:30Z', quality: 'EMPTY' }), sample(item, '13.75', { observed_at: '2026-11-11T12:01:00Z' })])
       result.gaps.push(...status.map(item => ({ component_id: 'cell-a', metric_code: item.code, code: 'SOURCE_METRIC_HISTORY_UNSUPPORTED', detail: '字符串历史不支持' })))
     }
+    if (stateFixture) {
+      result.definitions = reviewed.filter(item => statusesByCode.has(item.code)).map(item => ({ ...item, status: statusesByCode.get(item.code) }))
+      result.samples = result.definitions.map(item => sample(item, Object.keys(item.status.values)[0], { unit: 'n/a', dimensions: Object.fromEntries(item.keys.map(key => [key, `${key}-A`])) }))
+      result.gaps = []; result.total_queries = 16; result.next_offset = null
+    }
     if (unavailable) { result.samples = []; result.gaps.push({ component_id: 'cell-a', metric_code: cpu.code, code: 'NO_DATA', detail: '无采样，不按零值显示' }) }
     if (providerError) { result.samples = []; result.gaps = [{ component_id: 'cell-a', metric_code: cpu.code, code: 'SOURCE_PROVIDER_ERROR', detail: 'OEM 服务端 HTTP 5xx' }] }
     result.query_mode = body.mode
@@ -124,14 +166,19 @@ try {
     return route.fulfill({ json: result })
   })
   await page.goto(`${origin}/__exadata-fixture`, { waitUntil: 'networkidle' })
-  await expect(page.locator('.exadata-metric-card')).toHaveCount(5)
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(2)
+  await expect(page.locator('.exadata-status-row')).toHaveCount(3)
+  await expect(page.locator('.exadata-status-value')).toHaveText(['可用', '可用', '可用'])
+  await expect(page.locator('.exadata-status-panel .exadata-card-value')).toHaveCount(0)
+  assert.ok(await page.locator('.exadata-status-row').first().evaluate(node => node.getBoundingClientRect().height < 100), '状态采用紧凑行，不使用大卡片')
   await expect(page.locator('.exadata-percent')).toHaveCount(2)
   await expect(page.locator('.exadata-chart')).toHaveCount(0)
   await expect(page.locator('.exadata-boundary')).toHaveCount(0)
   await expect(page.locator('.exadata-oem')).not.toContainText('不把采集成功视为健康')
   await expect(page.locator('.exadata-evidence[open]')).toHaveCount(0)
-  await expect(page.locator('.exadata-card-value strong').nth(3)).toHaveText('27.210000000000001')
-  await expect(page.locator('.exadata-card-value strong').nth(4)).toHaveText('0')
+  await expect(page.locator('.exadata-card-value strong').nth(0)).toHaveText('27.210000000000001')
+  await expect(page.locator('.exadata-card-value strong').nth(1)).toHaveText('0')
+  await expect(page.locator('.exadata-status-value.state-success')).toHaveCount(3)
   await expect(page.locator('.status-success')).toHaveCount(0)
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-latest.png`), fullPage: true })
   const cpuCard = page.locator(`[data-metric-code="${cpu.code}"]`)
@@ -156,13 +203,15 @@ try {
   await expect(page.locator('.exadata-oem')).not.toContainText('OEM 留存分辨率；不推断精确增量或跨组件均值。')
   await expect(page.locator('.exadata-oem')).not.toContainText('不把采集成功视为健康')
   await expect(page.locator('.exadata-percent')).toHaveCount(0)
-  await expect(page.locator('.exadata-metric-card')).toHaveCount(5)
-  await expect(page.locator('.exadata-metric-card').filter({ hasText: '历史不支持' })).toHaveCount(3)
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(2)
+  await expect(page.locator('.exadata-status-row')).toHaveCount(3)
+  await expect(page.locator('.exadata-status-value')).toHaveText(['历史不支持', '历史不支持', '历史不支持'])
+  await expect(page.locator('.exadata-status-value.state-success')).toHaveCount(0)
   const chart = await cpuCard.locator('.exadata-chart').evaluate(node => ({ width: node.clientWidth, height: node.clientHeight }))
   assert.ok(chart.width > 200 && chart.height >= 128)
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-history.png`), fullPage: true })
   await page.locator('[data-scene]').selectOption('cell')
-  await expect(page.locator('.exadata-metric-card')).toHaveCount(12)
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(9)
   await expect(page.locator('.exadata-chart canvas')).toHaveCount(9)
   await page.locator('[data-next]').click(); await expect(page.locator('[data-next]')).toBeDisabled()
   assert.equal(calls.at(-1).body.offset, 12)
@@ -172,8 +221,24 @@ try {
   await page.locator('[data-diagnose]').click(); await expect(page.locator('.exadata-report')).toContainText('不能判定健康')
   assert.ok(calls.at(-1).headers['idempotency-key'])
   unavailable = true; await page.locator('[data-refresh]').click()
-  await expect(page.locator('.exadata-card-value strong').filter({ hasText: '无数据' })).toHaveCount(4)
+  await expect(page.locator('.exadata-card-value strong').filter({ hasText: '无数据' })).toHaveCount(1)
   await expect(page.locator('.exadata-percent')).toHaveCount(0)
+  unavailable = false; stateFixture = true
+  await page.locator('[data-mode]').selectOption('LATEST_SNAPSHOT')
+  await expect(page.locator('.exadata-status-item')).toHaveCount(16)
+  await expect(page.locator('.exadata-status-row')).toHaveCount(16)
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(0)
+  await expect(page.locator('.exadata-status-panel')).toContainText('端口掉线事件')
+  await expect(page.locator('.exadata-status-panel')).toContainText('未触发')
+  await expect(page.locator('.exadata-status-panel')).toContainText('未点亮')
+  await expect(page.locator('.exadata-status-panel')).toContainText('PortId=PortId-A')
+  await expect(page.locator('.exadata-status-panel')).toContainText('ComponentId=ComponentId-A')
+  for (const width of [390, 780, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1), `全部状态在宽度 ${width} 不得横向溢出`)
+  }
+  await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-all-states.png`), fullPage: true })
+  stateFixture = false
   providerError = true; unavailable = false; await page.locator('[data-refresh]').click()
   await expect(page.locator('.exadata-metric-card')).toHaveCount(1)
   await expect(page.locator('.exadata-metric-card')).toContainText('OEM 服务错误')
@@ -182,6 +247,7 @@ try {
   fail = true; await page.locator('[data-refresh]').click()
   await expect(page.locator('[role="alert"]')).toContainText('模拟来源读取失败')
   await expect(page.locator('.exadata-metric-card')).toHaveCount(0)
+  await expect(page.locator('.exadata-status-row')).toHaveCount(0)
   assert.ok(calls.every(call => call.headers['content-type']?.includes('application/json')), `使用原有请求封装的 JSON 合同：${JSON.stringify(calls.map(call => ({url:call.url,type:call.headers['content-type']})))}`)
   assert.deepEqual(errors, [])
   await page.close()

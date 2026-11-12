@@ -155,7 +155,7 @@ class ExadataOEMService:
         current, _ = await self._snapshot(scope, system_id, resource_id, source_id)
         if current != frozen:
             raise state_conflict("采集期间资源、来源或绑定版本变化，请重试")
-        gaps.append(ExadataGap(code="THRESHOLDS_UNVERIFIED", detail="未读取可验证的 OEM 在线阈值及状态字典，不自动判健康"))
+        gaps.append(ExadataGap(code="THRESHOLDS_UNVERIFIED", detail="未读取可验证的 OEM 在线阈值；仅按已审核字典解释组件状态，不据此判整机健康"))
         if query.mode == "LATEST_SNAPSHOT":
             gaps.append(ExadataGap(code="HISTORY_UNAVAILABLE", detail="本次仅为最新快照，不生成趋势、增量或跨组件均值"))
         else:
@@ -185,7 +185,8 @@ class ExadataOEMService:
                     detail="采样为空、过旧或截断，不能据此证明健康"))
         groups = {}
         for index, sample in enumerate(view.samples):
-            if sample.native_value_type == "NUMBER" and sample.quality == "OBSERVED" and sample.unit:
+            if (sample.native_value_type == "NUMBER" and sample.quality == "OBSERVED" and sample.unit
+                    and not self.metrics[sample.metric_code].get("status")):
                 groups.setdefault((sample.metric_code, sample.unit), []).append((Decimal(sample.value), index))
         for (code, unit), values in groups.items():
             low, high = min(values), max(values)
