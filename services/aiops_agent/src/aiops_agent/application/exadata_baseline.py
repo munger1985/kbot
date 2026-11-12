@@ -10,6 +10,17 @@ from aiops_agent.ports.exadata import ExadataMetricRead
 from .errors import validation_failed, state_conflict
 from .monitoring_oem_overview import baseline_series
 from .exadata_analysis import comparisons
+from .exadata_catalog import guid_rest_key_alternatives
+
+
+def baseline_dimensions_match(definition, latest, series):
+    """GUID提升键可省略，但快照、历史及缓存必须采用同一种维度表示。"""
+    allowed = {frozenset(definition["keys"]),
+        *(frozenset(keys) for keys in guid_rest_key_alternatives(definition, definition["target_type"]))}
+    current = {frozenset(labels) for labels in latest["dimensions"]}
+    historical = {frozenset(item["dimensions"]) for item in series}
+    return (len(current) <= 1 and len(historical) <= 1 and (current | historical) <= allowed
+        and (not current or not historical or current == historical))
 
 
 class ExadataBaselineMixin:
@@ -40,15 +51,17 @@ class ExadataBaselineMixin:
                     "STALE" if (datetime.now(UTC)-when).total_seconds() > definition["max_age_seconds"] else "OBSERVED")
                 for (when, value), labels in zip(latest["points"], latest["dimensions"], strict=True))
             cached = self._baseline_cache.get(key)
-            if cached and cached[0] > now and cached[1] == frozen and cached[3] == latest["unit"]:
+            if (cached and cached[0] > now and cached[1] == frozen and cached[3] == latest["unit"]
+                    and baseline_dimensions_match(definition, latest,
+                        ({"dimensions": row.dimensions} for row in cached[2].series))):
                 result = cached[2]
             else:
                 try:
                     # 失败只影响基线；不吞掉最终成员或绑定变化错误。
                     async with asyncio.timeout(30):
                         summary = await adapter.exadata_baseline(request, definition, member["target_type"])
-                    if summary["unit"] != latest["unit"] or any(set(item["dimensions"]) != set(definition["keys"])
-                            for item in summary["series"]):
+                    if summary["unit"] != latest["unit"] or not baseline_dimensions_match(
+                            definition, latest, summary["series"]):
                         raise DiagnosticSourceAdapterError("SOURCE_METADATA_CHANGED", "OEM 基线元数据发生变化")
                     result = MonitoringNativeBaseline(period=query.period, start=request.window_start, end=now,
                         series=baseline_series(summary), truncated=summary["truncated"], response_sha256=summary["response_sha256"],

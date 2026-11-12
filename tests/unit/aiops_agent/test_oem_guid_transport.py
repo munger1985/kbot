@@ -14,6 +14,8 @@ from tests.unit.aiops_agent.test_oem_capability_closure import native_emcli_adap
 from tests.unit.aiops_agent.test_monitoring_oem_native import native_lab
 from tests.unit.aiops_agent.test_business_system_publication_lifecycle import lab
 from platform_core.contracts.aiops.monitoring_native import MonitoringNativeQuery
+from platform_core.contracts.aiops.exadata import ExadataBaselineQuery
+from tests.unit.aiops_agent.test_exadata_baseline_analysis import setup_service
 
 GUID = "b" * 32
 GROUPS = [
@@ -188,3 +190,49 @@ def test_native_baseline_with_insufficient_remaining_bytes_does_not_call_provide
         native_value_type="NUMBER"), "1w", 0))
     assert not result.series and "剩余字节不足" in result.unavailable_reason
     actual.query_native_metric.assert_not_awaited()
+
+
+@pytest.mark.parametrize("latest_keys,history_keys,accepted", [
+    ({}, {}, True),
+    ({"ComponentId": "phase1"}, {"ComponentId": "phase1"}, True),
+    ({}, {"ComponentId": "phase1"}, False),
+    ({"ComponentId": "phase1"}, {}, False),
+    ({}, {"unexpected": "phase1"}, False),
+])
+def test_pdu_application_baseline_requires_consistent_reviewed_transport_dimensions(latest_keys, history_keys, accepted):
+    service, value, args = setup_service()
+    frozen = service._snapshot.return_value[0]
+    frozen["inventory"]["members"][0]["target_type"] = "oracle_si_hw_component_pdu"
+    args["query"] = ExadataBaselineQuery(component_id=GUID,
+        metric_code="oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseVoltage")
+    value.exadata_latest.return_value.update(points=((datetime.now(UTC), "230.0"),),
+        dimensions=(latest_keys,), unit="VOLT")
+    value.exadata_baseline.return_value.update(
+        series=({"dimensions": history_keys, "total": "460", "sample_count": 2},), unit="VOLT")
+    result = asyncio.run(service.baseline(**args))
+    assert bool(result.comparisons) is accepted
+    assert bool(result.baseline.series) is accepted
+    assert result.current_samples[0].value == "230.0"
+    if accepted:
+        assert result.baseline.series[0].average == "230"
+    else:
+        assert "SOURCE_METADATA_CHANGED" in result.baseline.unavailable_reason
+
+
+def test_pdu_baseline_cache_cannot_reuse_a_different_key_representation():
+    service, value, args = setup_service()
+    service._snapshot.return_value[0]["inventory"]["members"][0]["target_type"] = "oracle_si_hw_component_pdu"
+    args["query"] = ExadataBaselineQuery(component_id=GUID,
+        metric_code="oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseVoltage")
+    value.exadata_latest.return_value.update(points=((datetime.now(UTC), "230.0"),),
+        dimensions=({},), unit="VOLT")
+    value.exadata_baseline.return_value.update(
+        series=({"dimensions": {}, "total": "460", "sample_count": 2},), unit="VOLT")
+    first = asyncio.run(service.baseline(**args))
+    assert first.comparisons
+    value.exadata_latest.return_value["dimensions"] = ({"ComponentId": "phase1"},)
+    value.exadata_baseline.return_value["series"] = (
+        {"dimensions": {"ComponentId": "phase1"}, "total": "460", "sample_count": 2},)
+    second = asyncio.run(service.baseline(**args))
+    assert second.comparisons and value.exadata_baseline.await_count == 2
+    assert second.baseline.series[0].dimensions == {"ComponentId": "phase1"}
