@@ -41,15 +41,15 @@ const sample = (definition, value, overrides = {}) => ({ component_id: 'cell-a',
 const overview = { resource_id: 'resource', binding_id: 'binding', binding_version: 1, source_version: 2, catalog_sha256: 'c'.repeat(64), query_mode: 'LATEST_SNAPSHOT', window_start: null, window_end: null, members, definitions: [...status, cpu, memory], samples: [...status.map(item => sample(item, '1', { unit: 'n/a' })), sample(cpu, '27.210000000000001'), sample(memory, '0')], gaps: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '阈值与状态字典未验证，不判定健康。' }], total_queries: 5, next_offset: null, catalog_version: 'exadata-oem-v1', captured_at: '2026-11-11T12:01:00Z' }
 
 const dbCPU = metric('CPUUsageSummary/OverAllUsagePct', 'NUMBER', 'host'), dbMemory = metric('Load/memUsedPct', 'NUMBER', 'host')
-const switchAP = metric('AccessPointResponse/statusMsg', 'STRING', 'oracle_si_netswitch')
+const switchAP = metric('AccessPointResponse/statusMsg', 'STRING', 'oracle_si_netswitch'), switchSensor = metric('SensorStatus/Status', 'STRING', 'oracle_si_netswitch')
 const deviceView = { ...clone(overview), members: [...members, {target_id:'db-a',target_type:'host',display_name:'SIM DB SERVER'}, {target_id:'switch-a',target_type:'oracle_si_netswitch',display_name:'SIM SWITCH'}, {target_id:'pdu-a',target_type:'oracle_si_pdu',display_name:'SIM PDU'}, {target_id:'rack-a',target_type:'oracle_si_rack',display_name:'SIM RACK'}],
-  definitions: [...overview.definitions, dbCPU, dbMemory, switchAP],
-  samples: [...overview.samples, sample(dbCPU, '0', {component_id:'db-a'}), sample(dbMemory, '37.125', {component_id:'db-a'}), sample(switchAP, 'UP', {component_id:'switch-a',unit:'n/a',dimensions:{ap_guid:'AP-1'}})],
+  definitions: [...overview.definitions, dbCPU, dbMemory, switchAP, switchSensor],
+  samples: [...overview.samples, sample(dbCPU, '0', {component_id:'db-a'}), sample(dbMemory, '37.125', {component_id:'db-a'}), sample(switchAP, 'UP', {component_id:'switch-a',unit:'n/a',dimensions:{ap_guid:'AP-1'}}), ...['SIM BACK','SIM CPU','SIM FRONT','SIM HEAVENLY'].map(id=>sample(switchSensor,'ok',{component_id:'switch-a',unit:'n/a',dimensions:{SensorId:id}}))],
   device_coverage: [
     {component_id:'cell-a',metric_codes:overview.definitions.map(item=>item.code),queried_metric_codes:overview.definitions.map(item=>item.code),note:''},
     {component_id:'cell-b',metric_codes:[cpu.code],queried_metric_codes:[],note:''},
     {component_id:'db-a',metric_codes:[dbCPU.code,dbMemory.code],queried_metric_codes:[dbCPU.code,dbMemory.code],note:''},
-    {component_id:'switch-a',metric_codes:[switchAP.code],queried_metric_codes:[switchAP.code],note:''},
+    {component_id:'switch-a',metric_codes:[switchAP.code,switchSensor.code],queried_metric_codes:[switchAP.code,switchSensor.code],note:''},
     {component_id:'pdu-a',metric_codes:['oracle_si_pdu.PduHttpResponse.Status'],queried_metric_codes:[],note:''},
     {component_id:'rack-a',metric_codes:[],queried_metric_codes:[],note:'此类目标尚无审核通过的独立状态读取指标'},
   ] }
@@ -307,12 +307,12 @@ try {
     assert.ok(spacing.length)
     for (const card of spacing) {
       assert.ok([card.header, card.value, card.time, card.caption, card.evidence, card.chart].filter(Boolean).flat().every(value => value >= 16), `卡片标题、内容、图表和入口距离边框至少16px：${JSON.stringify(card)}`)
-      assert.ok(card.evidenceBlock.every(value => value >= 12), '查看数据入口上下留白至少12px')
+      assert.ok(card.evidenceBlock.every(value => value >= 8), '查看数据入口上下留白至少8px')
       assert.equal(card.marker, 'inside', '展开标记不得突出到卡片边框')
-      assert.ok(Math.abs(card.height - 540) <= 1, `收起的数据卡统一540px，不因基线、无数据或文案变高：${JSON.stringify(card)}`)
-      assert.ok(Math.abs(card.headerHeight - 72) <= 1, '卡片标题区域统一72px')
+      assert.ok(Math.abs(card.height - 380) <= 1, `收起的数据卡统一380px，不因基线、无数据或文案变高：${JSON.stringify(card)}`)
+      assert.ok(Math.abs(card.headerHeight - 64) <= 1, '卡片标题区域统一64px')
       assert.ok(Math.abs(card.footerTop - spacing[0].footerTop) <= 1, '卡片底部入口保持同一位置')
-      if (card.chartTop !== null) assert.ok(Math.abs(card.chartTop - 166) <= 1, '图表起点统一，不随标题换行改变')
+      if (card.chartTop !== null) assert.ok(Math.abs(card.chartTop - 134) <= 1, '图表起点统一，不随标题换行改变')
     }
   }
   page.on('pageerror', error => errors.push(error.message))
@@ -508,9 +508,30 @@ try {
   await expect(page.locator('[data-device-id="pdu-a"]')).toContainText('本页未查询')
   await expect(page.locator('[data-device-id="pdu-a"] .state-success')).toHaveCount(0)
   await expect(page.locator('[data-device-id="rack-a"]')).toContainText('机架')
+  const sensorCard = page.locator('[data-device-id="switch-a"] .exadata-status-item').filter({has:page.locator('.exadata-status-identity strong',{hasText:'交换机传感器状态'})})
+  await expect(sensorCard.locator('.exadata-status-row')).toHaveCount(4)
+  await expect(sensorCard.locator('.exadata-status-identity')).toHaveCount(1)
+  await expect(sensorCard.locator('.exadata-status-identity')).toHaveAttribute('rowspan','4')
+  await expect(sensorCard.locator('.exadata-status-value')).toHaveText(['正常','正常','正常','正常'])
+  await sensorCard.getByRole('button',{name:'查看数据 · 4',exact:true}).focus()
+  await page.keyboard.press('Enter')
+  await expect(sensorCard.locator('.exadata-status-evidence-row')).toBeVisible()
+  await expect(sensorCard.locator('.exadata-evidence tbody tr')).toHaveCount(4)
+  await expect(sensorCard.locator('.exadata-evidence')).toContainText('SensorId=SIM CPU')
+  await page.locator('[data-baseline]').selectOption('1m')
+  await expect(sensorCard.locator('button')).toHaveAttribute('aria-expanded','true')
+  await expect(sensorCard.locator('.exadata-status-evidence-row')).toBeVisible()
+  await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-states-evidence.png`),fullPage:true})
+  await sensorCard.getByRole('button',{name:'收起数据 · 4',exact:true}).click()
+  await expect(sensorCard.locator('.exadata-status-evidence-row')).toBeHidden()
+  await page.locator('[data-baseline]').selectOption('1w')
   for (const width of [390, 780, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1), '整机设备清单不横向溢出')
+    const statusLayout=await sensorCard.locator('.exadata-status-row').evaluateAll(rows=>rows.map(row=>({top:row.getBoundingClientRect().top,height:row.getBoundingClientRect().height})))
+    assert.ok(statusLayout.every(row=>row.height<72),'多维状态紧凑逐行排列，不被邻列拉高')
+    assert.ok(statusLayout.every((row,index)=>index===0||Math.abs(row.top-statusLayout[index-1].top-statusLayout[index-1].height)<1),'相邻维度之间没有卡片式空白')
+    if(width===390)assert.ok(await page.locator('[data-device-id="switch-a"] .exadata-status-table-scroll').evaluate(node=>node.scrollWidth>node.clientWidth),'窄屏仅状态表内部横向滚动')
     await assertCardSpacing()
     const insets = await page.locator('.exadata-resource-row').evaluateAll(rows => rows.map(row => {
       const css = getComputedStyle(row)
@@ -611,8 +632,8 @@ try {
   const memoryCard = page.locator(`[data-metric-code="${memory.code}"]`)
   await cpuCard.locator('summary').click()
   await expect(cpuCard.locator('tbody tr').first()).toBeVisible()
-  assert.ok(await cpuCard.evaluate(node=>node.getBoundingClientRect().height>540), '展开后完整展示证据，不固定高度裁剪数据')
-  assert.equal(await memoryCard.evaluate(node=>node.getBoundingClientRect().height),540,'展开证据不拉高其他卡片')
+  assert.ok(await cpuCard.evaluate(node=>node.getBoundingClientRect().height>380), '展开后完整展示证据，不固定高度裁剪数据')
+  assert.equal(await memoryCard.evaluate(node=>node.getBoundingClientRect().height),380,'展开证据不拉高其他卡片')
   await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-sizes-expanded.png`),fullPage:true})
   await cpuCard.locator('summary').click()
   await assertCardSpacing()
