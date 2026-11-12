@@ -12,6 +12,7 @@ from loguru import logger
 
 from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.exadata_chat import ExadataChatReader, exadata_parameters
+from aiops_agent.application.oracle_service_chat import OracleServiceChatReader, oracle_service_parameters
 from aiops_agent.application.alert_query import (
     AlertQueryParameters, TERMINAL_SIGNAL_STATUSES, signal_status_label,
 )
@@ -512,6 +513,7 @@ class MonitoringQueryAdapter:
     def __init__(self, *, monitoring_service, exadata_service=None) -> None:
         self._monitoring = monitoring_service
         self._exadata = ExadataChatReader(monitoring_service=monitoring_service, exadata_service=exadata_service)
+        self._oracle_service = OracleServiceChatReader(monitoring_service)
 
     async def execute(
         self,
@@ -521,6 +523,16 @@ class MonitoringQueryAdapter:
         scope: ScopeResolutionV1,
         internal_scope: dict[str, Any],
     ) -> CapabilityResult:
+        parameters = oracle_service_parameters(plan)
+        if parameters is not None:
+            allowed = {(str(item.business_system_id), str(item.resource_id)) for item in scope.resources}
+            selected = [item for item in internal_scope.get('resource_catalog', ())
+                if (str(item['business_system_id']), str(item['resource_id'])) in allowed]
+            result = await self._oracle_service.read(parameters=parameters, plan=plan, resources=selected,
+                scope=_scope(internal_scope), analyze=capability == AIOpsCapability.ACTIVE_DIAGNOSIS)
+            evidence = tuple({'source_kind': 'MONITORING', 'label': f'C{index}', **item}
+                for index, item in enumerate(result.evidence, 1))
+            return CapabilityResult(capability, result.gap_code is None, result.markdown, result.gap_code, evidence)
         parameters = exadata_parameters(plan)
         resources = internal_scope.get("resource_catalog", ())
         if parameters is not None or resources and all(item.get("resource_type_key") == "EXADATA" for item in resources):

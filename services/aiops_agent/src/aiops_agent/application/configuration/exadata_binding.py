@@ -31,7 +31,9 @@ async def bind_exadata(*, service, uow, scope, resource, mapping, now):
     if value.get("candidate_kind") != "EXADATA" or value.get("source_version") != int(source.row_version):
         raise state_conflict("Exadata 候选类型或来源版本已变化，请重新发现")
     try:
-        root, members, digest = await adapter.exadata_inventory(value.get("root_id", ""))
+        manifest = [item.model_dump() for item in getattr(mapping, "component_manifest", ())]
+        root, members, digest = await adapter.exadata_inventory(value.get("root_id", ""),
+            **({"component_manifest": manifest} if manifest else {}))
     except DiagnosticSourceAdapterError as exc:
         raise AIOpsApplicationError(code=exc.code, message="保存前无法复核 OEM Exadata 整机与成员",
             status_code=502, retryable=exc.retryable) from exc
@@ -66,7 +68,7 @@ async def bind_exadata(*, service, uow, scope, resource, mapping, now):
     binding.updated_by, binding.updated_at, binding.health_status = scope.actor_id, now, "UNKNOWN"
     await uow.flush()
     await uow.exadata.save_inventory(binding.resource_source_binding_id, digest,
-        {"root": root, "members": members}, scope.actor_id, now)
+        {"root": root, "members": members, **({"component_manifest": manifest} if manifest else {})}, scope.actor_id, now)
     await add_configuration_event(uow=uow, scope=scope, aggregate_type="RESOURCE_SOURCE_BINDING",
         aggregate_id=binding.resource_source_binding_id, event_type="EXADATA_MEMBERS_CONFIRMED",
         row_version=int(binding.row_version), details={"resource_id": str(resource.resource_id), "member_count": len(members)})

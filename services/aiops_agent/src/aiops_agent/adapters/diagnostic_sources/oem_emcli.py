@@ -47,7 +47,7 @@ class OEMEMCLIClient:
         self._processes = set()
         self._closed = False
 
-    def _session(self, context):
+    def _session(self, context, *, prefix="exadata"):
         if self._closed:
             fail("SOURCE_EMCLI_UNAVAILABLE")
         username = context.credentials.get("username")
@@ -63,9 +63,9 @@ class OEMEMCLIClient:
             if entry.expires_at <= now and not entry.lock.locked():
                 entry.directory.cleanup()
                 del self._sessions[key]
-        identity = json.dumps([str(context.source_id), context.config_version, context.endpoint,
-            context.config.get("exadata_emcli_certificate_sha256"),
-            context.config.get("exadata_emcli_timezone"), username, password])
+        identity = json.dumps([str(context.source_id), context.config_version, context.endpoint, prefix,
+            context.config.get(prefix + "_emcli_certificate_sha256"),
+            context.config.get(prefix + "_emcli_timezone"), username, password])
         key = hmac.digest(self._pepper, identity.encode(), "sha256")
         if key in self._sessions:
             self._sessions.move_to_end(key)
@@ -151,13 +151,13 @@ class OEMEMCLIClient:
         finally:
             self._processes.discard(process)
 
-    async def _initialize(self, entry, context):
+    async def _initialize(self, entry, context, *, prefix="exadata"):
         endpoint = context.endpoint.rstrip("/").removesuffix("/api")
         parsed = urlparse(endpoint)
         if (not endpoint.endswith("/em") or parsed.scheme != "https" or not parsed.hostname
                 or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment):
             fail("SOURCE_ENDPOINT_INVALID")
-        pin = context.config.get("exadata_emcli_certificate_sha256", "")
+        pin = context.config.get(prefix + "_emcli_certificate_sha256", "")
         if not isinstance(pin, str) or len(pin) != 64 or any(c not in "0123456789abcdef" for c in pin):
             fail("SOURCE_TLS_PIN_REQUIRED")
         # 此连接不发送账号信息；只有固定叶证书指纹匹配后才允许原厂客户端接受证书。
@@ -212,10 +212,31 @@ class OEMEMCLIClient:
                      "-metric_name=" + group, "-metric_column=" + column, "-json"]
         if history:
             arguments.append("-last_n_days=" + str(baseline_days or 1))
-        entry = self._session(context)
+        return await self._read(context, arguments, max_bytes=max_bytes)
+
+    async def read_native(self, context, target, definition, *, history, max_bytes, days):
+        """仅接受在线元数据复核后的普通原生指标，独立使用普通 OEM 的证书设置。"""
+        from .oem_native import parse_metric_selector
+        if (context.config.get("native_metric_transport") != "EMCLI" or not history
+                or definition.get("native_value_type") != "NUMBER"
+                or definition.get("target_type") != target.get("targetType")
+                or target.get("targetType") not in {"host", "oracle_database", "oracle_pdb",
+                    "rac_database", "osm_cluster", "osm_instance", "oracle_listener"}
+                or type(days) is not int or not 1 <= days <= 7):
+            fail("SOURCE_QUERY_INVALID")
+        name = target.get("targetName")
+        if not isinstance(name, str) or not 1 <= len(name) <= 256 or any(c in name for c in "\r\n\0"):
+            fail("SOURCE_TARGET_MISMATCH")
+        group, column = parse_metric_selector(definition["selector"])
+        arguments = ["get_metric_data", "-target_type=" + target["targetType"], "-target_name=" + name,
+            "-metric_name=" + group, "-metric_column=" + column, "-last_n_days=" + str(days), "-json"]
+        return await self._read(context, arguments, max_bytes=max_bytes, prefix="native")
+
+    async def _read(self, context, arguments, *, max_bytes, prefix="exadata"):
+        entry = self._session(context, **({"prefix": prefix} if prefix != "exadata" else {}))
         async with entry.lock:
             try:
-                await self._initialize(entry, context)
+                await self._initialize(entry, context, **({"prefix": prefix} if prefix != "exadata" else {}))
                 body = await self._run(entry, arguments, max_bytes=max_bytes)
                 value = json.loads(body, parse_float=str)
                 if not isinstance(value, dict):

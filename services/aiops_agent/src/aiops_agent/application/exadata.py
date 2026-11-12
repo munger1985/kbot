@@ -26,11 +26,15 @@ class ExadataOEMService(ExadataBaselineMixin):
         self.version, self.digest, self.metrics, self.profiles, self.diagnosis_profiles = load_catalog()
         self._baseline_cache = {}
 
-    async def discover(self, *, scope, source_id):
+    async def discover(self, *, scope, source_id, request=None):
         async with self.configuration._uow_factory() as uow:
             source, adapter = await exadata_source(self.configuration, uow, scope, source_id)
             version = int(source.row_version)
-            rows = await adapter.discover_exadata()
+            manifest = tuple(item.model_dump() for item in request.component_manifest) if request else ()
+            if manifest and not request.root_id:
+                raise validation_failed("导入组件清单必须指定已经选择的整机 GUID")
+            rows = ([await adapter.exadata_inventory(request.root_id, component_manifest=manifest)]
+                    if request and request.root_id else await adapter.discover_exadata())
             items = []
             for root, members, digest in rows:
                 token = self.configuration._instance_candidate_refs.encode(source_id=source_id,
@@ -75,7 +79,9 @@ class ExadataOEMService(ExadataBaselineMixin):
             return await self._freeze(uow, scope, system_id, resource_id, source_id)
 
     async def _validate_live_inventory(self, adapter, frozen):
-        _, _, digest = await adapter.exadata_inventory(frozen["root_id"])
+        manifest = frozen["inventory"].get("component_manifest", ())
+        _, _, digest = await adapter.exadata_inventory(frozen["root_id"],
+            **({"component_manifest": manifest} if manifest else {}))
         if digest != frozen["inventory_sha256"]:
             raise state_conflict("OEM 整机成员已变化，必须重新发现并确认")
 
@@ -180,7 +186,7 @@ class ExadataOEMService(ExadataBaselineMixin):
             gaps.append(ExadataGap(code="HISTORY_UNAVAILABLE", detail="本次仅为最新快照，不生成趋势、增量或跨组件均值"))
         else:
             gaps.append(ExadataGap(code="HISTORY_RESOLUTION_PROVIDER_MANAGED", detail="OEM 按实际留存选择原始/小时/日聚合；不据此推断精确增量或原始执行明细，文本状态不回退快照"))
-        gaps.append(ExadataGap(code="MEMBERSHIP_SCOPE", detail="成员仅含 OEM 显式包含及 GUID 复核的直接组件、Grid 下 Cell，以及已确认 ILOM 的反向 host deployed_on；不按同 Agent 或 hosted_by 推断归属"))
+        gaps.append(ExadataGap(code="MEMBERSHIP_SCOPE", detail="成员仅含已确认的 OEM 关系与管理员显式导入的组件清单；导入组件逐次核验 GUID/类型/名称，归属来源分别保留，不按同 Agent 或 hosted_by 推断"))
         return ExadataView(resource_id=resource_id, binding_id=frozen["binding_id"],
             binding_version=frozen["binding_version"], source_version=frozen["source_version"],
             catalog_version=self.version, catalog_sha256=self.digest, captured_at=datetime.now(UTC),

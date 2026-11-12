@@ -1,0 +1,765 @@
+{
+  "version": "oracle-services-v1",
+  "provenance": "OEM export 2026-11-10 metric_definitions.csv; source-independent semantics; unsupported provider metrics require explicit mappings and collector support.",
+  "metrics": [
+    {
+      "code": "asm.free_mb",
+      "resource_type": "ORACLE_ASM",
+      "title": "可用物理容量",
+      "semantics": "GAUGE",
+      "unit": "MB",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "可用物理容量；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "DiskGroup_Usage/free_mb",
+          "native_value_type": "NUMBER",
+          "native_unit": "MB",
+          "dimensions": {
+            "dg_name": "diskgroup"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.total_mb",
+      "resource_type": "ORACLE_ASM",
+      "title": "物理总容量",
+      "semantics": "GAUGE",
+      "unit": "MB",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "物理总容量；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "DiskGroup_Usage/total_mb",
+          "native_value_type": "NUMBER",
+          "native_unit": "MB",
+          "dimensions": {
+            "dg_name": "diskgroup"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.usable_file_mb",
+      "resource_type": "ORACLE_ASM",
+      "title": "考虑冗余后可用容量",
+      "semantics": "GAUGE",
+      "unit": "MB",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "考虑冗余后可用容量；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "DiskGroup_Usage/usable_file_mb",
+          "native_value_type": "NUMBER",
+          "native_unit": "MB",
+          "dimensions": {
+            "dg_name": "diskgroup"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.usable_total_mb",
+      "resource_type": "ORACLE_ASM",
+      "title": "考虑冗余后总容量",
+      "semantics": "GAUGE",
+      "unit": "MB",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "考虑冗余后总容量；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "DiskGroup_Usage/usable_total_mb",
+          "native_value_type": "NUMBER",
+          "native_unit": "MB",
+          "dimensions": {
+            "dg_name": "diskgroup"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.used_percent",
+      "resource_type": "ORACLE_ASM",
+      "title": "物理容量使用率",
+      "semantics": "GAUGE",
+      "unit": "%",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "物理容量使用率；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "DiskGroup_Usage/percent_used",
+          "native_value_type": "NUMBER",
+          "native_unit": "%",
+          "dimensions": {
+            "dg_name": "diskgroup"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.safe_used_percent",
+      "resource_type": "ORACLE_ASM",
+      "title": "安全容量使用率",
+      "semantics": "GAUGE",
+      "unit": "%",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "安全容量使用率；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "DiskGroup_Usage/safe_percent_used",
+          "native_value_type": "NUMBER",
+          "native_unit": "%",
+          "dimensions": {
+            "dg_name": "diskgroup"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.disk_mode",
+      "resource_type": "ORACLE_ASM",
+      "title": "ASM 磁盘模式",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [
+        "diskgroup",
+        "disk"
+      ],
+      "max_age_seconds": 1800,
+      "description": "ASM 磁盘模式；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "disk_status/mode_status",
+          "native_value_type": "STRING",
+          "native_unit": "n/a",
+          "dimensions": {
+            "dg_name": "diskgroup",
+            "disk_name": "disk"
+          },
+          "state_values": {
+            "ONLINE": {
+              "label": "在线",
+              "tone": "success"
+            },
+            "OFFLINE": {
+              "label": "离线",
+              "tone": "danger"
+            }
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.rebalancing",
+      "resource_type": "ORACLE_ASM",
+      "title": "磁盘组重平衡",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "磁盘组重平衡；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "diskgroup_imbalance/rebalInProgress",
+          "native_value_type": "STRING",
+          "native_unit": "n/a",
+          "dimensions": {
+            "diskGroup": "diskgroup"
+          },
+          "state_values": {
+            "No": {
+              "label": "未进行",
+              "tone": "neutral"
+            },
+            "Yes": {
+              "label": "进行中",
+              "tone": "warning"
+            }
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.resyncing",
+      "resource_type": "ORACLE_ASM",
+      "title": "磁盘组重新同步",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "磁盘组重新同步；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "diskgroup_imbalance/resyncInProgress",
+          "native_value_type": "STRING",
+          "native_unit": "n/a",
+          "dimensions": {
+            "diskGroup": "diskgroup"
+          },
+          "state_values": {
+            "No": {
+              "label": "未进行",
+              "tone": "neutral"
+            },
+            "Yes": {
+              "label": "进行中",
+              "tone": "warning"
+            }
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.imbalance_percent",
+      "resource_type": "ORACLE_ASM",
+      "title": "磁盘组不均衡度",
+      "semantics": "GAUGE",
+      "unit": "%",
+      "dimensions": [
+        "diskgroup"
+      ],
+      "max_age_seconds": 1800,
+      "description": "磁盘组不均衡度；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "diskgroup_imbalance/imbalance",
+          "native_value_type": "NUMBER",
+          "native_unit": "%",
+          "dimensions": {
+            "diskGroup": "diskgroup"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.reads_total",
+      "resource_type": "ORACLE_ASM",
+      "title": "累计读请求",
+      "semantics": "COUNTER",
+      "unit": "count",
+      "dimensions": [
+        "diskgroup",
+        "inst_id"
+      ],
+      "max_age_seconds": 1800,
+      "description": "累计读请求；仅分析同来源和相同完整维度的有效采样。累计原值，不自动换算速率或求均值。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "Instance_Diskgroup_Performance/reads",
+          "native_value_type": "NUMBER",
+          "native_unit": "n/a",
+          "dimensions": {
+            "dg_name": "diskgroup",
+            "inst_id": "inst_id"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.writes_total",
+      "resource_type": "ORACLE_ASM",
+      "title": "累计写请求",
+      "semantics": "COUNTER",
+      "unit": "count",
+      "dimensions": [
+        "diskgroup",
+        "inst_id"
+      ],
+      "max_age_seconds": 1800,
+      "description": "累计写请求；仅分析同来源和相同完整维度的有效采样。累计原值，不自动换算速率或求均值。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "Instance_Diskgroup_Performance/writes",
+          "native_value_type": "NUMBER",
+          "native_unit": "n/a",
+          "dimensions": {
+            "dg_name": "diskgroup",
+            "inst_id": "inst_id"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.read_mb_total",
+      "resource_type": "ORACLE_ASM",
+      "title": "累计读取容量",
+      "semantics": "COUNTER",
+      "unit": "MB",
+      "dimensions": [
+        "diskgroup",
+        "inst_id"
+      ],
+      "max_age_seconds": 1800,
+      "description": "累计读取容量；仅分析同来源和相同完整维度的有效采样。累计原值，不自动换算速率或求均值。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "Instance_Diskgroup_Performance/bytes_read",
+          "native_value_type": "NUMBER",
+          "native_unit": "MB",
+          "dimensions": {
+            "dg_name": "diskgroup",
+            "inst_id": "inst_id"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.written_mb_total",
+      "resource_type": "ORACLE_ASM",
+      "title": "累计写入容量",
+      "semantics": "COUNTER",
+      "unit": "MB",
+      "dimensions": [
+        "diskgroup",
+        "inst_id"
+      ],
+      "max_age_seconds": 1800,
+      "description": "累计写入容量；仅分析同来源和相同完整维度的有效采样。累计原值，不自动换算速率或求均值。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "Instance_Diskgroup_Performance/bytes_written",
+          "native_value_type": "NUMBER",
+          "native_unit": "MB",
+          "dimensions": {
+            "dg_name": "diskgroup",
+            "inst_id": "inst_id"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.read_time_ms_total",
+      "resource_type": "ORACLE_ASM",
+      "title": "累计读取时间",
+      "semantics": "COUNTER",
+      "unit": "ms",
+      "dimensions": [
+        "diskgroup",
+        "inst_id"
+      ],
+      "max_age_seconds": 1800,
+      "description": "累计读取时间；仅分析同来源和相同完整维度的有效采样。累计原值，不自动换算速率或求均值。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "Instance_Diskgroup_Performance/read_time",
+          "native_value_type": "NUMBER",
+          "native_unit": "ms",
+          "dimensions": {
+            "dg_name": "diskgroup",
+            "inst_id": "inst_id"
+          }
+        }
+      }
+    },
+    {
+      "code": "asm.write_time_ms_total",
+      "resource_type": "ORACLE_ASM",
+      "title": "累计写入时间",
+      "semantics": "COUNTER",
+      "unit": "ms",
+      "dimensions": [
+        "diskgroup",
+        "inst_id"
+      ],
+      "max_age_seconds": 1800,
+      "description": "累计写入时间；仅分析同来源和相同完整维度的有效采样。累计原值，不自动换算速率或求均值。",
+      "oem": {
+        "target_type": "osm_cluster",
+        "mapping": {
+          "metric_name": "Instance_Diskgroup_Performance/write_time",
+          "native_value_type": "NUMBER",
+          "native_unit": "ms",
+          "dimensions": {
+            "dg_name": "diskgroup",
+            "inst_id": "inst_id"
+          }
+        }
+      }
+    },
+    {
+      "code": "rac.clusterware",
+      "resource_type": "ORACLE_RAC",
+      "title": "Clusterware 状态",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [],
+      "max_age_seconds": 1800,
+      "description": "Clusterware 状态；仅分析同来源和相同完整维度的有效采样。",
+      "oem": null
+    },
+    {
+      "code": "rac.instances",
+      "resource_type": "ORACLE_RAC",
+      "title": "实例状态",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [
+        "instance"
+      ],
+      "max_age_seconds": 1800,
+      "description": "实例状态；仅分析同来源和相同完整维度的有效采样。",
+      "oem": null
+    },
+    {
+      "code": "rac.service_status",
+      "resource_type": "ORACLE_RAC",
+      "title": "RAC 服务状态",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [
+        "service"
+      ],
+      "max_age_seconds": 1800,
+      "description": "RAC 服务状态；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "rac_database",
+        "mapping": {
+          "metric_name": "db_service_status_new/serviceStatus",
+          "native_value_type": "STRING",
+          "native_unit": "n/a",
+          "dimensions": {
+            "serviceName": "service"
+          },
+          "state_values": {
+            "Up": {
+              "label": "可用",
+              "tone": "success"
+            },
+            "Up With Warning": {
+              "label": "可用但有警告",
+              "tone": "warning"
+            },
+            "Down": {
+              "label": "不可用",
+              "tone": "danger"
+            }
+          }
+        }
+      }
+    },
+    {
+      "code": "rac.running_instances",
+      "resource_type": "ORACLE_RAC",
+      "title": "服务运行实例",
+      "semantics": "PROPERTY",
+      "unit": "text",
+      "dimensions": [
+        "service"
+      ],
+      "max_age_seconds": 1800,
+      "description": "服务运行实例；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "rac_database",
+        "mapping": {
+          "metric_name": "db_service_status_new/runInstList",
+          "native_value_type": "STRING",
+          "native_unit": "n/a",
+          "dimensions": {
+            "serviceName": "service"
+          }
+        }
+      }
+    },
+    {
+      "code": "rac.preferred_instances",
+      "resource_type": "ORACLE_RAC",
+      "title": "服务首选实例",
+      "semantics": "PROPERTY",
+      "unit": "text",
+      "dimensions": [
+        "service"
+      ],
+      "max_age_seconds": 1800,
+      "description": "服务首选实例；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "rac_database",
+        "mapping": {
+          "metric_name": "db_service_status_new/prefInstList",
+          "native_value_type": "STRING",
+          "native_unit": "n/a",
+          "dimensions": {
+            "serviceName": "service"
+          }
+        }
+      }
+    },
+    {
+      "code": "rac.response_ms",
+      "resource_type": "ORACLE_RAC",
+      "title": "服务平均响应时间",
+      "semantics": "GAUGE",
+      "unit": "ms",
+      "dimensions": [
+        "database",
+        "service"
+      ],
+      "max_age_seconds": 1800,
+      "description": "服务平均响应时间；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "rac_database",
+        "mapping": {
+          "metric_name": "service_performance/avg_response_time",
+          "native_value_type": "NUMBER",
+          "native_unit": "ms",
+          "dimensions": {
+            "dbname": "database",
+            "name": "service"
+          }
+        }
+      }
+    },
+    {
+      "code": "rac.response_max_ms",
+      "resource_type": "ORACLE_RAC",
+      "title": "服务最大响应时间",
+      "semantics": "GAUGE",
+      "unit": "ms",
+      "dimensions": [
+        "database",
+        "service"
+      ],
+      "max_age_seconds": 1800,
+      "description": "服务最大响应时间；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "rac_database",
+        "mapping": {
+          "metric_name": "service_performance/max_response_time",
+          "native_value_type": "NUMBER",
+          "native_unit": "ms",
+          "dimensions": {
+            "dbname": "database",
+            "name": "service"
+          }
+        }
+      }
+    },
+    {
+      "code": "rac.response_min_ms",
+      "resource_type": "ORACLE_RAC",
+      "title": "服务最小响应时间",
+      "semantics": "GAUGE",
+      "unit": "ms",
+      "dimensions": [
+        "database",
+        "service"
+      ],
+      "max_age_seconds": 1800,
+      "description": "服务最小响应时间；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "rac_database",
+        "mapping": {
+          "metric_name": "service_performance/min_response_time",
+          "native_value_type": "NUMBER",
+          "native_unit": "ms",
+          "dimensions": {
+            "dbname": "database",
+            "name": "service"
+          }
+        }
+      }
+    },
+    {
+      "code": "rac.cpu_percent",
+      "resource_type": "ORACLE_RAC",
+      "title": "服务 CPU 负载",
+      "semantics": "GAUGE",
+      "unit": "%",
+      "dimensions": [
+        "database",
+        "service"
+      ],
+      "max_age_seconds": 1800,
+      "description": "服务 CPU 负载；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "rac_database",
+        "mapping": {
+          "metric_name": "service_performance/cpuload",
+          "native_value_type": "NUMBER",
+          "native_unit": "%",
+          "dimensions": {
+            "dbname": "database",
+            "name": "service"
+          }
+        }
+      }
+    },
+    {
+      "code": "listener.availability",
+      "resource_type": "ORACLE_LISTENER",
+      "title": "Listener 服务可用性",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [],
+      "max_age_seconds": 1800,
+      "description": "Listener 服务可用性；仅分析同来源和相同完整维度的有效采样，不以 TCP 可达代替服务状态。",
+      "oem": {
+        "target_type": "oracle_listener",
+        "mapping": {
+          "metric_name": "Response/Status",
+          "native_value_type": "NUMBER",
+          "native_unit": "n/a",
+          "dimensions": {},
+          "state_values": {
+            "1": {
+              "label": "可用",
+              "tone": "success"
+            },
+            "0": {
+              "label": "不可用",
+              "tone": "danger"
+            }
+          }
+        }
+      }
+    },
+    {
+      "code": "listener.tcp_reachable",
+      "resource_type": "ORACLE_LISTENER",
+      "title": "Listener TCP 可达",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [],
+      "max_age_seconds": 1800,
+      "description": "Listener TCP 可达；仅分析同来源和相同完整维度的有效采样。",
+      "oem": null
+    },
+    {
+      "code": "listener.process",
+      "resource_type": "ORACLE_LISTENER",
+      "title": "Listener 进程状态",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [],
+      "max_age_seconds": 1800,
+      "description": "Listener 进程状态；仅分析同来源和相同完整维度的有效采样。",
+      "oem": null
+    },
+    {
+      "code": "listener.tns_ping_ms",
+      "resource_type": "ORACLE_LISTENER",
+      "title": "TNS Ping 响应时间",
+      "semantics": "GAUGE",
+      "unit": "ms",
+      "dimensions": [],
+      "max_age_seconds": 1800,
+      "description": "TNS Ping 响应时间；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "oracle_listener",
+        "mapping": {
+          "metric_name": "Response/tnsPing",
+          "native_value_type": "NUMBER",
+          "native_unit": "ms",
+          "dimensions": {}
+        }
+      }
+    },
+    {
+      "code": "listener.established_per_minute",
+      "resource_type": "ORACLE_LISTENER",
+      "title": "每分钟已建立连接",
+      "semantics": "GAUGE",
+      "unit": "operations/min",
+      "dimensions": [],
+      "max_age_seconds": 1800,
+      "description": "每分钟已建立连接；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "oracle_listener",
+        "mapping": {
+          "metric_name": "Load/estConns",
+          "native_value_type": "NUMBER",
+          "native_unit": "per minute",
+          "dimensions": {}
+        }
+      }
+    },
+    {
+      "code": "listener.refused_per_minute",
+      "resource_type": "ORACLE_LISTENER",
+      "title": "每分钟拒绝连接",
+      "semantics": "GAUGE",
+      "unit": "operations/min",
+      "dimensions": [],
+      "max_age_seconds": 1800,
+      "description": "每分钟拒绝连接；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "oracle_listener",
+        "mapping": {
+          "metric_name": "Load/refConns",
+          "native_value_type": "NUMBER",
+          "native_unit": "per minute",
+          "dimensions": {}
+        }
+      }
+    },
+    {
+      "code": "listener.registered_services",
+      "resource_type": "ORACLE_LISTENER",
+      "title": "Listener SID 配置列表",
+      "semantics": "PROPERTY",
+      "unit": "text",
+      "dimensions": [],
+      "max_age_seconds": 1800,
+      "description": "Listener SID 配置列表；仅分析同来源和相同完整维度的有效采样。",
+      "oem": {
+        "target_type": "oracle_listener",
+        "mapping": {
+          "metric_name": "General%20Status/sidList",
+          "native_value_type": "STRING",
+          "native_unit": "n/a",
+          "dimensions": {}
+        }
+      }
+    },
+    {
+      "code": "listener.registration",
+      "resource_type": "ORACLE_LISTENER",
+      "title": "Listener 动态服务注册状态",
+      "semantics": "STATE",
+      "unit": "state",
+      "dimensions": [
+        "service"
+      ],
+      "max_age_seconds": 1800,
+      "description": "Listener 动态服务注册状态；仅分析同来源和相同完整维度的有效采样。",
+      "oem": null
+    }
+  ]
+}

@@ -15,6 +15,22 @@ class ExadataMember(ExadataModel):
     target_id: str = Field(pattern=r"^[0-9a-f]{32}$")
     target_type: str = Field(min_length=1, max_length=64)
     display_name: str = Field(min_length=1, max_length=256)
+    parent_target_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    membership_origin: Literal["OEM_ASSOCIATION", "IMPORT_CONFIRMED"] = "OEM_ASSOCIATION"
+    evidence_ref: str | None = Field(default=None, max_length=256)
+
+
+class ExadataComponentImport(ExadataModel):
+    target_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    target_type: str = Field(min_length=1, max_length=64)
+    display_name: str = Field(min_length=1, max_length=256)
+    parent_target_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    evidence_ref: str = Field(min_length=1, max_length=256)
+
+
+class ExadataDiscoveryRequest(ExadataModel):
+    root_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    component_manifest: tuple[ExadataComponentImport, ...] = Field(default=(), max_length=64)
 
 
 class ExadataCandidate(ExadataModel):

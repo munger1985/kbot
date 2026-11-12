@@ -169,7 +169,8 @@ class DiagnosticSourceAdapterCatalog:
     ) -> dict[str, object]:
         allowed_fields = {
             "LOKI": {"tenant_id"},
-            "OEM": {"standard_metric_mappings", "exadata_metric_transport", "exadata_emcli_timezone", "exadata_emcli_certificate_sha256"},
+            "OEM": {"standard_metric_mappings", "exadata_metric_transport", "exadata_emcli_timezone", "exadata_emcli_certificate_sha256",
+                    "native_metric_transport", "native_emcli_timezone", "native_emcli_certificate_sha256"},
         }.get(source_type, set())
         unsupported = sorted(set(config) - allowed_fields)
         if unsupported:
@@ -194,20 +195,21 @@ class DiagnosticSourceAdapterCatalog:
                 raise ValueError(f"{name} 格式无效")
             normalized[name] = value
         if source_type == "OEM":
-            mode = normalized.get("exadata_metric_transport", "OEM_REST")
-            if mode not in {"OEM_REST", "EMCLI"}:
-                raise ValueError("Exadata 指标通道必须为 OEM_REST 或 EMCLI")
-            if mode == "EMCLI":
-                zone = normalized.get("exadata_emcli_timezone")
-                pin = normalized.get("exadata_emcli_certificate_sha256", "")
-                if not zone:
-                    raise ValueError("EMCLI 必须指定 OEM 指标时间的时区")
-                try:
-                    ZoneInfo(zone)
-                except (ZoneInfoNotFoundError, ValueError):
-                    raise ValueError("OEM 指标时区无效") from None
-                if len(pin) != 64 or any(c not in "0123456789abcdef" for c in pin):
-                    raise ValueError("EMCLI 必须指定小写 SHA256 叶证书指纹")
+            for prefix in ("exadata", "native"):
+                mode = normalized.get(prefix + "_metric_transport", "OEM_REST")
+                if mode not in {"OEM_REST", "EMCLI"}:
+                    raise ValueError("OEM 指标通道必须为 OEM_REST 或 EMCLI")
+                if mode == "EMCLI":
+                    zone = normalized.get(prefix + "_emcli_timezone")
+                    pin = normalized.get(prefix + "_emcli_certificate_sha256", "")
+                    if not zone:
+                        raise ValueError("EMCLI 必须指定 OEM 指标时间的时区")
+                    try:
+                        ZoneInfo(zone)
+                    except (ZoneInfoNotFoundError, ValueError):
+                        raise ValueError("OEM 指标时区无效") from None
+                    if len(pin) != 64 or any(c not in "0123456789abcdef" for c in pin):
+                        raise ValueError("EMCLI 必须指定小写 SHA256 叶证书指纹")
         if source_type == "ALERTMANAGER":
             normalized["target_label"] = "target_key"
         return normalized

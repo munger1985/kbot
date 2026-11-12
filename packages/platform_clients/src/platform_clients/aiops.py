@@ -360,9 +360,9 @@ class _BaseAIOpsClient:
 class AIOpsManagementClient(_BaseAIOpsClient):
     """Main API 的管理、用户命令和 Direct Run Client。"""
 
-    async def discover_exadata(self, source_id: UUID, *, auth_context: AuthContext):
+    async def discover_exadata(self, source_id: UUID, *, auth_context: AuthContext, payload: dict | None = None):
         return await self._json("POST", f"{INTERNAL_API_V1}/aiops/exadata/sources/{source_id}/discoveries",
-            payload={}, auth_context=auth_context)
+            payload=payload or {}, auth_context=auth_context)
 
     async def exadata_view(self, system_id: UUID, resource_id: UUID, source_id: UUID, payload: dict, *, auth_context: AuthContext):
         return await self._json("POST",

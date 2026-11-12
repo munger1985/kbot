@@ -59,6 +59,11 @@ def values_at(stamp):
         "FC_IO_RQ_W_POPULATE_SEC": 500,
     }
     result.extend(("FLASHCACHE", "sim_flashcache", key, value) for key, value in flash.items())
+    # XA原厂XRMEM集合读取这三个对象；只补原生协议，不直接写OEM指标。
+    # 这三列及DB/PDB_FC_BY_ALLOCATED由原厂直通为MB，不能像字节计数器一样输入bytes。
+    result.append(("XRMEMCACHE", "sim_xrmemcache", "XRM_BY_ALLOCATED", 64 * 1024))
+    result.append(("IORM_DATABASE", "simdb", "DB_XRM_BY_ALLOCATED", 32 * 1024))
+    result.append(("IORM_PLUGGABLE_DATABASE", "simdb.simpdb", "PDB_XRM_BY_ALLOCATED", 16 * 1024))
     flashlog = {
         "FL_ACTUAL_OUTLIERS": elapsed, "FL_PREVENTED_OUTLIERS": elapsed * 3,
         "FL_BY_KEEP": 1024 ** 3, "FL_DISK_IO_ERRS": 0,
@@ -90,7 +95,7 @@ def values_at(stamp):
             "FD_IO_UTIL": 7 * scale, "FD_IO_BY_SEC": 64 * scale,
             "FD_IO_WT_LG_RQ": 0.4, "FD_IO_WT_SM_RQ": 0.2,
             "FD_IO_TM": elapsed * scale * 300, "FD_IO_TM_RQ": 0.5,
-            "FD_IO_TM_SM_RQ": 0.3, "FC_BY_ALLOCATED": scale * 128 * 1024 ** 3,
+            "FD_IO_TM_SM_RQ": 0.3, "FC_BY_ALLOCATED": scale * 128 * 1024,
         }
         result.extend((kind, name, prefix + "_" + key, value) for key, value in iorm.items())
     # 原厂互联脚本要求 HOST_INTERCONNECT 的 Cumulative 计数器，而非 CELL 的 HCA 速率。
@@ -124,7 +129,7 @@ def render(command, now=None):
                                   "ossStartTimestamp": str(EPOCH * 1000),
                                   "iormResetTimestamp": str(EPOCH * 1000)})
     for statement in statements:
-        match = re.fullmatch(r"list\s+(cell|celldisk|physicaldisk|flashcache|griddisk|metriccurrent|metrichistory)(?:\s+(.*))?",
+        match = re.fullmatch(r"list\s+(cell|celldisk|physicaldisk|flashcache|griddisk|topcpu|metriccurrent|metrichistory)(?:\s+(.*))?",
                              statement, re.IGNORECASE)
         if not match:
             return fault("SIM-002: 模拟器不支持此命令；仅允许只读 LIST 子集")
@@ -161,6 +166,16 @@ def render(command, now=None):
                 elif tail and tail.lower() != "detail":
                     return fault("SIM-006: 未实现的磁盘查询条件")
                 element(root, kind, fields)
+        elif kind == 'topcpu':
+            # XA原厂脚本只使用有界百分比、incarnation和sequence请求。
+            if not re.fullmatch(r'\d{1,3}\s*,\s*\d{1,20}\s*,\s*\d{1,20}\s+detail', tail, re.IGNORECASE):
+                return fault('SIM-014: 未实现的Top CPU查询')
+            top = ET.SubElement(root, 'topcpu')
+            sequence = max(1, (now-EPOCH)//60)
+            for name, value in {'incarnation': 1, 'beginSequence': max(0, sequence-1),
+                    'endSequence': sequence, 'samples': 1000}.items():
+                ET.SubElement(top, name).text = str(value)
+            element(top, 'topcpu', {'dbName': 'SIMDB', 'sqlID': 's1m0000000001', 'samples': 120})
         elif kind in ("flashcache", "griddisk"):
             fields = ({"name": "sim_flashcache", "status": "normal", "size": "2048G",
                        "cellDisk": DISKS[1][0]} if kind == "flashcache" else
@@ -175,6 +190,12 @@ def render(command, now=None):
             elif tail and tail.lower() != "detail":
                 return fault("SIM-013: 未实现的容量查询条件")
             element(root, kind, fields)
+            if kind == 'griddisk':
+                sparse = {**fields, 'name': 'SIMSPARSE_' + DISKS[0][0], 'asmName': 'SIMSPARSE01',
+                    'asmDiskGroupName': 'SIMSPARSE', 'sparse': 'TRUE', 'size': '1024G', 'virtualSize': '4096G'}
+                if tail.lower().startswith('attributes '):
+                    sparse = {name: sparse[name] for name in names}
+                element(root, kind, sparse)
         else:
             stamps = [now]
             requested = None

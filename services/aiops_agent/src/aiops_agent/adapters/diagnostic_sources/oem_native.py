@@ -226,6 +226,12 @@ class OEMNativeMetrics:
         unit = item.get("unitDisplayName")
         if unit is not None and (not isinstance(unit, str) or len(unit) > 64):
             _fail()
+        if (self.context.config.get("native_metric_transport", "OEM_REST") == "EMCLI" and key_names
+                and _expected_keys is None and not _resource_samples):
+            from .oem_native_emcli import query_native_emcli
+            return await query_native_emcli(self, request, target=target, target_hash=target_hash,
+                metadata_hash=metadata_hash, metric_name=metric_name, unit=unit, keys=key_names,
+                limit=limit, summary_only=_summary_only)
         lower = request.window_start - timedelta(microseconds=request.window_start.microsecond % 1000)
         upper = request.window_end + timedelta(microseconds=(-request.window_end.microsecond) % 1000)
         def stamp(value):

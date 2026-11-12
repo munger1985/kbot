@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from .configuration import SourceBindingCreate, SourceBindingView, TargetCreate, TargetEndpoint
 from .workload import WorkloadPolicy
+from .exadata import ExadataComponentImport
 from .types import AIOpsContract, CursorPage, DatabaseType, JsonObject, PUBLIC_SCHEMA_VERSION, UUIDv7, UtcDatetime
 
 
@@ -58,6 +59,7 @@ class ResourceMonitoringInput(AIOpsContract):
 
     source_id: UUIDv7
     candidate_ref: str | None = Field(default=None, min_length=1, max_length=8192)
+    component_manifest: tuple["ExadataComponentImport", ...] = Field(default=(), max_length=64)
     source_binding: SourceBindingCreate | None = None
 
     @model_validator(mode="after")

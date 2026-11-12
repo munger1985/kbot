@@ -10,7 +10,7 @@
       this.root = root; this.key = `${this.sourceId}:${this.instanceId}`;
       this.base = `/api/v1/apps/aiops/monitoring/sources/${encodeURIComponent(this.sourceId)}/resources/${encodeURIComponent(this.instanceId)}`;
       this.charts = new Map(); this.observers = new Map();
-      root.innerHTML = `<header class="oem-overview-heading"><div><h2>OEM 关键指标总览</h2><p>围绕可用性、性能压力和容量风险展示。来源：${esc(this.sourceName)}</p></div><button class="secondary-button" type="button" data-more aria-haspopup="dialog">更多指标</button></header><p data-overview-note></p><p data-overview-status role="status"></p><div class="monitoring-panels oem-overview-panels"></div>`;
+      root.innerHTML = `<header class="oem-overview-heading"><div><h2>${this.service ? "Oracle 服务监控" : "OEM 关键指标总览"}</h2><p>围绕可用性、性能压力和容量风险展示。来源：${esc(this.sourceName)}</p></div><button ${this.service ? "hidden" : ""} class="secondary-button" type="button" data-more aria-haspopup="dialog">更多指标</button></header><p data-overview-note></p><p data-overview-status role="status"></p><div class="monitoring-panels oem-overview-panels"></div>`;
       root.onclick = event => {
         if (event.target.closest("[data-more]")) this.openMore();
         if (event.target.closest("[data-retry-overview]")) void this.load();
@@ -28,13 +28,13 @@
       const active = new AbortController(); this.controller = active; this.results = new Map();
       const status = this.root.querySelector("[data-overview-status]");
       status.textContent = "正在更新关键指标…";
-      this.root.querySelector("[data-overview-note]").textContent = `基线：${this.baselineLabel()}有效采样均值；按相同维度比较，OEM 留存粒度与覆盖率限制请见数据详情。未配置阈值不代表健康。`;
+      this.root.querySelector("[data-overview-note]").textContent = `基线：${this.baselineLabel()}有效采样均值；按相同维度比较，${this.service ? "所选来源" : "OEM"}留存粒度与覆盖率限制请见数据详情。未配置阈值不代表健康。`;
       try {
         const catalog = await KBotAIOpsAuth.request(`${this.base}/metrics?limit=1`, { signal: active.signal });
         if (active.signal.aborted) return;
         this.specs = catalog.overview_panels;
         this.root.querySelector(".oem-overview-panels").innerHTML = this.specs.map(spec => `<div data-oem-panel="${esc(spec.panel_id)}"></div>`).join("");
-        this.specs.forEach(spec => this.renderPanel(spec, null, spec.metric ? "正在读取 OEM 采样…" : spec.unavailable_reason));
+        this.specs.forEach(spec => this.renderPanel(spec, null, spec.metric ? this.service ? "正在读取服务采样…" : "正在读取 OEM 采样…" : spec.unavailable_reason));
         const queue = this.specs.filter(spec => spec.metric);
         let cursor = 0;
         const worker = async () => {
@@ -46,18 +46,35 @@
                   baseline: spec.baseline_supported ? this.baseline : null }) });
               if (!active.signal.aborted) this.renderPanel(spec, samples);
             } catch (failure) {
-              if (!active.signal.aborted) this.renderPanel(spec, null, failure.message || "OEM 采样读取失败");
+              if (!active.signal.aborted) this.renderPanel(spec, null, failure.message || (this.service ? "服务采样读取失败" : "OEM 采样读取失败"));
             }
           }
         };
         await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
         if (!active.signal.aborted) status.textContent = catalog.truncated ? "来源目录读取被截断，部分总览指标可能未发现。" : "关键指标查询完成；采集成功不等于资源健康。";
       } catch (failure) {
-        if (!active.signal.aborted) status.innerHTML = `${esc(failure.message || "OEM 总览读取失败")} <button class="secondary-button" data-retry-overview>重试总览</button>`;
+        if (!active.signal.aborted) status.innerHTML = `${esc(failure.message || (this.service ? "服务总览读取失败" : "OEM 总览读取失败"))} <button class="secondary-button" data-retry-overview>重试总览</button>`;
       }
     }
     renderPanel(spec, samples, failure) {
       this.results.set(spec.panel_id, { spec, samples, failure });
+      if (this.service && ["STATE", "PROPERTY"].includes(spec.semantics)) {
+        const latest = new Map();
+        for (const point of samples?.points || []) {
+          const key = identity(point.dimensions);
+          if (!latest.has(key) || latest.get(key).observed_at < point.observed_at) latest.set(key, point);
+        }
+        const node = [...this.root.querySelectorAll("[data-oem-panel]")].find(item => item.dataset.oemPanel === spec.panel_id);
+        const rows = [...latest.values()].map(point => {
+          const raw = point.value ?? "";
+          const canonical = globalThis.KBotAIOpsExadataPresentation.exadataStatusKey;
+          const state = spec.metric?.state_values?.[raw] || (spec.metric?.native_value_type === "NUMBER" && canonical(raw, 'NUMBER') !== null ? Object.entries(spec.metric?.state_values || {}).find(([key]) => canonical(key, 'NUMBER') === canonical(raw, 'NUMBER'))?.[1] : null);
+          const value = !point.current_eligible ? "当前不可判定" : spec.semantics === "PROPERTY" ? raw : state?.label || "未知状态";
+          return `<tr><td>${esc(label(point.dimensions))}</td><td>${esc(value)}</td><td>${esc(KBotAIOpsShell.fmt(point.observed_at))}</td></tr>`;
+        }).join("");
+        node.innerHTML = `<section class="oem-service-state"><header><strong>${esc(spec.title)}</strong><button class="row-action" data-oem-data="${esc(spec.panel_id)}" aria-haspopup="dialog">查看数据</button></header><p>${esc(failure || spec.unavailable_reason)}</p><table><tbody>${rows || '<tr><td>无采样</td></tr>'}</tbody></table></section>`;
+        return;
+      }
       const groups = new Map();
       (samples?.points || []).forEach(point => { const key = identity(point.dimensions); groups.set(key, [...(groups.get(key) || []), point]); });
       (samples?.baseline?.series || []).forEach(series => { const key = identity(series.dimensions); if (!groups.has(key)) groups.set(key, []); });
@@ -71,7 +88,7 @@
       const series = [...groups].map(([key, values]) => {
         const historical = samples?.baseline?.series.find(item => identity(item.dimensions) === key);
         const dimensions = values[0]?.dimensions || historical?.dimensions || {};
-        return { series_key: key, source_id: this.sourceId, source_display_name: this.sourceName, source_type: "OEM",
+        return { series_key: key, source_id: this.sourceId, source_display_name: this.sourceName, source_type: this.sourceType || "OEM",
           instance_id: this.instanceId, instance_display_name: this.instanceName, dimensions: { ...dimensions, __metric_label: label(dimensions) },
           coverage_ratio: null, points: values.sort((a, b) => a.observed_at.localeCompare(b.observed_at)).map(point => ({ observed_at: point.observed_at,
             value: numeric ? number(point.value) : null, raw_value: point.value, current_eligible: point.current_eligible,
@@ -91,7 +108,7 @@
       const chartApi = KBotAIOpsOEMPresentation, kind = chartApi.oemChartKind(chartPanel);
       const body = kind === "state" && snapshots.length ? `<div class="oem-snapshot-list">${stale ? "<p>快照超期或采集时效未核验，当前状态未知。</p>" : ""}${snapshots.slice(0, 5).map(item => ({ ...item.points.at(-1), dimensions: Object.fromEntries(Object.entries(item.dimensions).filter(([key]) => !key.startsWith("__"))) })).map(point => `<div><span>${esc(label(point.dimensions))}</span><strong>${point.raw_value === null ? "—（来源空值）" : esc(point.raw_value)} ${esc(spec.metric.unit)}</strong></div>`).join("")}${snapshots.length > 5 ? `<p>其余 ${snapshots.length - 5} 个维度请查看数据。</p>` : ""}</div>` : kind !== "state" && series.some(item => item.points.some(point => point.value !== null)) ? `<div class="monitoring-chart-canvas" data-chart-kind="${kind}" role="img"></div><p class="oem-chart-caption">${esc(chartApi.oemChartCaption(chartPanel))}</p>` : '<p class="monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</p>';
       const node = [...this.root.querySelectorAll("[data-oem-panel]")].find(item => item.dataset.oemPanel === spec.panel_id);
-      node.innerHTML = `<article class="monitoring-panel is-native ${hasData ? "" : "tone-none"}"><header><div><h2>${esc(spec.title)}</h2><p title="${esc(messages.join("；"))}">${esc(messages[0] || "OEM 原生采样，未配置健康阈值")}</p></div><div class="monitoring-panel-actions"><span class="status-pill">${samples?.truncated ? "结果截断" : stale ? "当前值不可用" : hasData ? "已采样" : "暂无数据"}</span><button class="row-action" data-oem-data="${esc(spec.panel_id)}" aria-haspopup="dialog">查看数据</button></div></header><div class="monitoring-current-value"><strong>${esc(current)} ${numeric ? esc(spec.metric?.unit === "n/a" ? "" : spec.metric?.unit) : ""}</strong><span>${esc(latest ? KBotAIOpsShell.fmt(latest.observed_at) : "当前值")}</span></div>${spec.baseline_supported ? `<div class="monitoring-baseline" title="${esc(samples?.baseline?.note)}"><span>${esc(this.baselineLabel())}采样均值 <strong>${average === null || average === undefined ? "无有效基线" : esc(average.toLocaleString("zh-CN", { maximumFractionDigits: 2 }))}</strong>${baselineCandidate?.baseline?.sample_count ? `<small> · ${baselineCandidate.baseline.sample_count} 条</small>` : ""}</span><b>${esc(delta)}</b></div>` : ""}${body}<footer><span>单位 ${esc(spec.metric?.unit || "未声明")}</span><span>覆盖率未知（OEM 留存采样）</span></footer></article>`;
+      node.innerHTML = `<article class="monitoring-panel is-native ${hasData ? "" : "tone-none"}"><header><div><h2>${esc(spec.title)}</h2><p title="${esc(messages.join("；"))}">${esc(messages[0] || (this.service ? "服务原生采样，未配置健康阈值" : "OEM 原生采样，未配置健康阈值"))}</p></div><div class="monitoring-panel-actions"><span class="status-pill">${samples?.truncated ? "结果截断" : stale ? "当前值不可用" : hasData ? "已采样" : "暂无数据"}</span><button class="row-action" data-oem-data="${esc(spec.panel_id)}" aria-haspopup="dialog">查看数据</button></div></header><div class="monitoring-current-value"><strong>${esc(current)} ${numeric ? esc(spec.metric?.unit === "n/a" ? "" : spec.metric?.unit) : ""}</strong><span>${esc(latest ? KBotAIOpsShell.fmt(latest.observed_at) : "当前值")}</span></div>${spec.baseline_supported ? `<div class="monitoring-baseline" title="${esc(samples?.baseline?.note)}"><span>${esc(this.baselineLabel())}采样均值 <strong>${average === null || average === undefined ? "无有效基线" : esc(average.toLocaleString("zh-CN", { maximumFractionDigits: 2 }))}</strong>${baselineCandidate?.baseline?.sample_count ? `<small> · ${baselineCandidate.baseline.sample_count} 条</small>` : ""}</span><b>${esc(delta)}</b></div>` : ""}${body}<footer><span>单位 ${esc(spec.metric?.unit || "未声明")}</span><span>覆盖率未知（${this.service ? "所选来源" : "OEM 留存采样"}）</span></footer></article>`;
       const canvas = node.querySelector(".monitoring-chart-canvas");
       this.charts.get(spec.panel_id)?.dispose(); this.observers.get(spec.panel_id)?.disconnect();
       if (canvas && globalThis.echarts) {

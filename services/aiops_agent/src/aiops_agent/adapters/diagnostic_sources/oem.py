@@ -6,9 +6,10 @@ from .oem_events import OEMEvents
 from .oem_standard import OEMStandardMetrics
 from .oem_discovery import OEMInstanceDiscovery
 from .oem_exadata import OEMExadata
+from .oracle_services import OracleServiceMetrics
 
 
-class OEMAdapter(OEMExadata, OEMInstanceDiscovery, OEMEvents, OEMStandardMetrics, OEMNativeMetrics, BaseDiagnosticSourceAdapter):
+class OEMAdapter(OracleServiceMetrics, OEMExadata, OEMInstanceDiscovery, OEMEvents, OEMStandardMetrics, OEMNativeMetrics, BaseDiagnosticSourceAdapter):
     def __init__(self, *, exadata_emcli_client=None, **kwargs):
         super().__init__(**kwargs)
         self._exadata_emcli_client = exadata_emcli_client

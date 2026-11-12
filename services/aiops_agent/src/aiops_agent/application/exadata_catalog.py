@@ -13,8 +13,14 @@ def load_catalog():
     metrics = json.loads(raw)
     devices_raw = root.joinpath("device_metrics.v1.json").read_bytes()
     metrics["metrics"].extend(json.loads(devices_raw)["metrics"])
+    extended_raw = root.joinpath("extended_metrics.v1.json").read_bytes()
+    extended = json.loads(extended_raw)["metrics"]
+    metrics["metrics"].extend(extended)
     monitoring = json.loads(root.joinpath("monitoring_profiles.v1.json").read_text())
     diagnosis = json.loads(root.joinpath("diagnosis_profiles.v1.json").read_text())
+    for profile in (*monitoring["profiles"], *diagnosis["profiles"]):
+        profile["metric_codes"].extend(item["code"] for item in extended
+            if item["scene"] == profile["id"] and item["code"] not in profile["metric_codes"])
     status_raw = root.joinpath("status.v1.json").read_bytes()
     statuses = json.loads(status_raw)
     by_code = {item["code"]: item for item in metrics["metrics"]}
@@ -35,11 +41,11 @@ def load_catalog():
     units = set(baseline["repository_unit_codes"])
     for code, definition in by_code.items():
         definition["baseline_supported"] = bool(definition["native_value_type"] == "NUMBER"
-            and definition["semantics"] != "CUMULATIVE"
+            and definition["semantics"] not in {"CUMULATIVE", "PROPERTY", "WINDOW_STATISTIC"}
             and not definition.get("status") and (code in baseline["metric_codes"]
                 or bool(definition["repository_unit_codes"]) and set(definition["repository_unit_codes"]) <= units))
     for profile in (*monitoring["profiles"], *diagnosis["profiles"]):
         if any(code not in by_code for code in profile["metric_codes"]):
             raise ValueError("Exadata 场景引用了未登记指标")
-    digest = hashlib.sha256(raw + devices_raw + status_raw + baseline_raw + json.dumps([monitoring, diagnosis], sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(raw + devices_raw + extended_raw + status_raw + baseline_raw + json.dumps([monitoring, diagnosis], sort_keys=True).encode()).hexdigest()
     return metrics["version"], digest, by_code, monitoring["profiles"], diagnosis["profiles"]

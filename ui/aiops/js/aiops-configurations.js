@@ -42,6 +42,13 @@
     const type = form.elements.source_type.value, oem = type === "OEM";document.getElementById("source-token-field").hidden = oem;
     ["username","password"].forEach(key => {document.getElementById(`source-oem-${key}-field`).hidden = !oem;});document.getElementById("source-tenant-field").hidden = type !== "LOKI";
     document.getElementById("source-exadata-transport-field").hidden = !oem;
+    document.getElementById("source-native-transport-field").hidden = !oem;
+    const serviceNative = oem && form.elements.native_metric_transport.value === "EMCLI";
+    for (const [field,name] of [["timezone","native_emcli_timezone"],["pin","native_emcli_certificate_sha256"]]) {
+      document.getElementById(`source-native-${field}-field`).hidden = !serviceNative;
+      form.elements[name].required = serviceNative;
+      form.elements[name].disabled = !serviceNative;
+    }
     document.getElementById("source-standard-mappings-field").hidden = !oem;
     const native = oem && form.elements.exadata_metric_transport.value === "EMCLI";
     for (const [field,name] of [["timezone","exadata_emcli_timezone"],["pin","exadata_emcli_certificate_sha256"]]) {
@@ -55,6 +62,9 @@
     state.editing = item;form.reset();form.elements.display_name.value = item?.display_name || "";form.elements.source_type.value = item?.source_type || "PROMETHEUS";form.elements.endpoint.value = item?.endpoint || "";
     form.elements.loki_tenant_id.value = item?.config?.tenant_id || "";
     form.elements.exadata_metric_transport.value = item?.config?.exadata_metric_transport || "OEM_REST";
+    form.elements.native_metric_transport.value = item?.config?.native_metric_transport || "OEM_REST";
+    form.elements.native_emcli_timezone.value = item?.config?.native_emcli_timezone || "UTC";
+    form.elements.native_emcli_certificate_sha256.value = item?.config?.native_emcli_certificate_sha256 || "";
     form.elements.standard_metric_mappings.value = JSON.stringify(item?.config?.standard_metric_mappings || {}, null, 2);
     form.elements.exadata_emcli_timezone.value = item?.config?.exadata_emcli_timezone || "UTC";
     form.elements.exadata_emcli_certificate_sha256.value = item?.config?.exadata_emcli_certificate_sha256 || "";
@@ -77,7 +87,8 @@
       let mappings;
       try { mappings = JSON.parse(value("standard_metric_mappings") || "{}"); } catch { throw new Error("OEM 标准指标映射必须是 JSON 对象"); }
       if (!mappings || Array.isArray(mappings) || typeof mappings !== "object") throw new Error("OEM 标准指标映射必须是 JSON 对象");
-      config = {standard_metric_mappings:mappings, exadata_metric_transport:value("exadata_metric_transport"),
+      config = {standard_metric_mappings:mappings, native_metric_transport:value("native_metric_transport"),
+      ...(value("native_metric_transport") === "EMCLI" ? {native_emcli_timezone:value("native_emcli_timezone"),native_emcli_certificate_sha256:value("native_emcli_certificate_sha256")} : {}), exadata_metric_transport:value("exadata_metric_transport"),
       ...(value("exadata_metric_transport") === "EMCLI" ? {exadata_emcli_timezone:value("exadata_emcli_timezone"),exadata_emcli_certificate_sha256:value("exadata_emcli_certificate_sha256")} : {})};
     }
     return {display_name:value("display_name"),...(!state.editing ? {source_type:type} : {}),endpoint:value("endpoint") || undefined,...(credentials ? {credentials} : {}),config};
@@ -150,6 +161,7 @@
   shell.ready.then(async access => {
     state.manage = rows(access.permissions).includes("aiops:diagnostic_source_manage");document.getElementById("source-search").oninput = event => {state.search = event.target.value;renderCatalog();};document.getElementById("refresh-sources").onclick = () => {state.attempts = 0;load();};form.onsubmit = save;form.elements.source_type.onchange = renderType;
     form.elements.exadata_metric_transport.onchange = renderType;
+    form.elements.native_metric_transport.onchange = renderType;
     drawer.querySelectorAll("[data-close-source]").forEach(button => {button.onclick = closeSource;});drawer.addEventListener("cancel",event => {event.preventDefault();closeSource();});drawer.addEventListener("close",closeSource);
     document.getElementById("source-catalog").onclick = event => {
       if (event.target.closest("#create-diagnostic-source")) {if (!state.manage || state.busy) return;showError();fillForm();return;}

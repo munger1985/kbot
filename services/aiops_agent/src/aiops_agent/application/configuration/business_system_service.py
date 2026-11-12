@@ -69,6 +69,9 @@ from platform_core.contracts.aiops.configuration import (
 
 
 RESOURCE_TYPE_NAMES = {
+    "ORACLE_ASM": "Oracle ASM 服务",
+    "ORACLE_RAC": "Oracle RAC 服务",
+    "ORACLE_LISTENER": "Oracle Listener",
     "EXADATA": "Exadata 一体机",
     "DATABASE": "数据库",
     "PHYSICAL_SERVER": "物理服务器",
@@ -85,6 +88,9 @@ RESOURCE_TYPE_NAMES = {
 }
 
 RESOURCE_CODE_PREFIXES = {
+    "ORACLE_ASM": "ASM",
+    "ORACLE_RAC": "RAC",
+    "ORACLE_LISTENER": "LSN",
     "EXADATA": "EXA",
     "DATABASE": "DB",
     "PHYSICAL_SERVER": "SRV",

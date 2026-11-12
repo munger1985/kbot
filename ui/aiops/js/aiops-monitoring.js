@@ -149,6 +149,7 @@
       .filter((series) => series.instance_id === instanceId)
       .map((series) => latestPoint(series)?.observed_at).filter(Boolean).sort().at(-1) || null;
   }
+  function isOracleService() { return ["ORACLE_ASM", "ORACLE_RAC", "ORACLE_LISTENER"].includes(state.instances.find(item => item.instance_id === state.selected[0])?.resource_type_key); }
   function canQuery() {
     return sourceById()?.monitoring_readiness === "READY" && state.profileId && state.selected.length === 1;
   }
@@ -332,7 +333,7 @@
       state.profileId = "";
       return;
     }
-    if (sourceById()?.source_type === "OEM") {
+    if (sourceById()?.source_type === "OEM" || isOracleService()) {
       if (state.baseline === "1d") state.baseline = "1w";
       const refresh = document.getElementById("monitoring-refresh-interval");
       if (Number(refresh.value) > 0 && Number(refresh.value) < 60) { refresh.value = "0"; scheduleRefresh(); }
@@ -353,7 +354,7 @@
   }
   async function loadView() {
     if (!canQuery()) return;
-    if (sourceById()?.source_type === "OEM") {
+    if (sourceById()?.source_type === "OEM" || isOracleService()) {
       document.getElementById("monitoring-result").hidden = false;
       document.getElementById("monitoring-gate").hidden = true;
       document.getElementById("monitoring-panels").hidden = true;
@@ -369,7 +370,7 @@
         document.getElementById("monitoring-result").prepend(root);
         const resource = state.instances.find(item => item.instance_id === state.selected[0]);
         const MetricsView = resource?.resource_type_key === "EXADATA" ? KBotAIOpsExadataMetrics : KBotAIOpsOEMMetrics;
-        state.nativeView = new MetricsView(root, { systemId: resource?.business_system_id || state.systemId, sourceId: state.sourceId, instanceId: state.selected[0], window: state.window,
+        state.nativeView = new MetricsView(root, { service: isOracleService(), sourceType: sourceById().source_type, systemId: resource?.business_system_id || state.systemId, sourceId: state.sourceId, instanceId: state.selected[0], window: state.window,
           baseline: state.baseline, sourceName: sourceById().display_name, instanceName: state.instances.find(item => item.instance_id === state.selected[0])?.display_name || "",
           controlsRoot: resource?.resource_type_key === "EXADATA" ? document.getElementById("monitoring-exadata-controls") : null });
       }

@@ -19,6 +19,7 @@ from aiops_agent.ports.diagnostic_source import (
 from platform_core.contracts.aiops.monitoring_native import (
     MonitoringNativeBaseline, MonitoringNativeCatalog, MonitoringNativeMetric, MonitoringNativePoint, MonitoringNativeSamples,
 )
+from platform_core.contracts.aiops.oracle_services import ORACLE_SERVICE_TYPES
 
 
 def public_metric(entry):
@@ -50,6 +51,8 @@ class NativeMonitoringService:
         self._monitoring = monitoring
         self._catalog_cache = {}
         self._baseline_cache = {}
+        from .oracle_service_monitoring import OracleServiceMonitoring
+        self.oracle = OracleServiceMonitoring(self)
         self._defaults = json.loads(files("aiops_agent.resources").joinpath("monitoring/oem_native.v1.json").read_text(encoding="utf-8"))["defaults"]
 
     async def _binding(self, scope, source_id, instance_id):
@@ -63,10 +66,11 @@ class NativeMonitoringService:
                     continue
                 if target is not None and target.status != "ENABLED":
                     continue
-                if resource.resource_type_key not in {"DATABASE", "PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"}:
+                service_resource = resource.resource_type_key in ORACLE_SERVICE_TYPES
+                if not service_resource and resource.resource_type_key not in {"DATABASE", "PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"}:
                     continue
                 source = await self._monitoring._source(uow, scope.domain_id, source_id)
-                if source.source_type != "OEM" or getattr(source, "tenant_id", None) != getattr(scope, "tenant_id", None):
+                if source.source_type not in ({"OEM", "PROMETHEUS", "ZABBIX"} if service_resource else {"OEM"}) or getattr(source, "tenant_id", None) != getattr(scope, "tenant_id", None):
                     raise resource_not_found("OEM Monitoring Resource")
                 if source.status != "ENABLED" or source.connectivity_status != "CONNECTED":
                     raise AIOpsApplicationError(code="MONITORING_SOURCE_NOT_READY", message="OEM 监控源未启用或尚未连接", status_code=409)
@@ -88,7 +92,9 @@ class NativeMonitoringService:
                     "target_type": (binding.source_locator_json or {}).get("target_type"),
                     "capability_scope": capability_scope, "query_budget": budget,
                     "max_response_bytes": min(1048576, self._monitoring._max_response_bytes, max_bytes),
-                    "scope": "DATABASE" if resource.resource_type_key == "DATABASE" else "HOST",
+                    "scope": resource.resource_type_key if service_resource else "DATABASE" if resource.resource_type_key == "DATABASE" else "HOST",
+                    **({"source_locator": dict(binding.source_locator_json or {}),
+                        "mapping_overrides": dict(binding.mapping_overrides_json or {})} if service_resource else {}),
                 }
         raise resource_not_found("OEM Monitoring Resource")
 
@@ -102,7 +108,7 @@ class NativeMonitoringService:
             if "value" in credentials:
                 credentials["token"] = credentials["value"]
         return self._monitoring._diagnostic_source_registry.create(DiagnosticSourceContext(
-            source_id=source["source_id"], source_type="OEM", adapter_id=source["adapter_id"],
+            source_id=source["source_id"], source_type=source["source_type"], adapter_id=source["adapter_id"],
             adapter_version=source["adapter_version"], config_version=source["config_version"],
             endpoint=source["endpoint"], credentials=credentials,
             declared_capabilities=source["declared_capabilities"], config=source["config"],
@@ -133,6 +139,12 @@ class NativeMonitoringService:
 
     async def catalog(self, *, scope, source_id, instance_id, search="", offset=0, limit=100):
         frozen = await self._binding(scope, source_id, instance_id)
+        if frozen['scope'] in ORACLE_SERVICE_TYPES:
+            try:
+                return await self.oracle.catalog(scope=scope, source_id=source_id, instance_id=instance_id,
+                    frozen=frozen, search=search, offset=offset, limit=limit)
+            except (DiagnosticSourceAdapterError, ClientError, TimeoutError, LookupError) as exc:
+                self._raise_provider(exc)
         try:
             entries, truncated, revision = await self._catalog(scope, source_id, instance_id, frozen)
         except (DiagnosticSourceAdapterError, ClientError, TimeoutError, LookupError) as exc:
@@ -159,6 +171,11 @@ class NativeMonitoringService:
 
     async def samples(self, *, scope, source_id, instance_id, query):
         frozen = await self._binding(scope, source_id, instance_id)
+        if frozen['scope'] in ORACLE_SERVICE_TYPES:
+            try:
+                return await self.oracle.samples(scope=scope, source_id=source_id, instance_id=instance_id, frozen=frozen, query=query)
+            except (DiagnosticSourceAdapterError, ClientError, TimeoutError, LookupError) as exc:
+                self._raise_provider(exc)
         window = resolve_monitoring_window(query.window, now=datetime.now(UTC))
         try:
             entries, _, _ = await self._catalog(scope, source_id, instance_id, frozen)

@@ -16,6 +16,15 @@ from .oem_latest import query_latest
 from .oem_exadata_inventory import verified_members
 from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
 
+_GUID_COMPONENT_TYPES = frozenset({'oracle_si_hw_component_pdu', 'oracle_si_hw_component_server',
+    'oracle_si_hw_component_switch', 'oracle_si_network_port_server', 'oracle_si_network_port_switch'})
+
+
+def use_emcli(context, definition, target_type):
+    """子组件仅有可核验的 GUID 接口，不送入原厂不支持的同名目标 CLI。"""
+    return (context.config.get('exadata_metric_transport', 'OEM_REST') == 'EMCLI'
+        and bool(definition['keys']) and target_type not in _GUID_COMPONENT_TYPES)
+
 
 def inventory_digest(root, members):
     return hashlib.sha256(json.dumps({"root": root, "members": members},
@@ -52,7 +61,7 @@ def exadata_metric_read(operation):
 
 class OEMExadata:
     @exadata_read
-    async def exadata_inventory(self, root_id):
+    async def exadata_inventory(self, root_id, *, component_manifest=()):
         if not re.fullmatch(r"[0-9a-f]{32}", root_id):
             target_error("SOURCE_TARGET_LOCATOR_INVALID")
         self._remaining_response_bytes = 4 * 1024 * 1024
@@ -62,6 +71,9 @@ class OEMExadata:
             if root["targetType"] != "oracle_dbmachine":
                 target_error("SOURCE_TARGET_MISMATCH")
             ordered = await verified_members(self, root)
+            if component_manifest:
+                from .oem_exadata_components import confirm_components
+                ordered = await confirm_components(self, ordered, component_manifest)
             identity = {"target_id": root_id, "target_type": "oracle_dbmachine",
                 "display_name": root["targetName"]}
             return identity, ordered, inventory_digest(identity, ordered)
@@ -95,7 +107,7 @@ class OEMExadata:
             from .oem_exadata_availability import query_availability
             return await query_availability(self, request, definition, target_type)
         # 原厂 EMCLI 不支持部分无维度计算列；按审核键结构固定分流，不做错误回退。
-        if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI" and definition["keys"]:
+        if use_emcli(self.context, definition, target_type):
             from .oem_exadata_emcli import query_emcli
             return await query_emcli(self, request, definition, target_type, history=False)
         return await query_latest(self, request, metric_name=definition["selector"], limit=256,
@@ -110,7 +122,7 @@ class OEMExadata:
             target_error("SOURCE_METRIC_HISTORY_UNSUPPORTED")
         if definition["native_value_type"] != "NUMBER":
             target_error("SOURCE_METRIC_HISTORY_UNSUPPORTED")
-        if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI" and definition["keys"]:
+        if use_emcli(self.context, definition, target_type):
             from .oem_exadata_emcli import query_emcli
             return await query_emcli(self, request, definition, target_type, history=True)
         return await self.query_native_metric(request, metric_name=definition["selector"], limit=256,
@@ -126,7 +138,7 @@ class OEMExadata:
         if (request.window_start is None or request.window_end is None or request.window_start.tzinfo is None
                 or request.window_end.tzinfo is None or request.window_end-request.window_start != timedelta(days=request.baseline_days)):
             target_error("SOURCE_QUERY_INVALID")
-        if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI" and definition["keys"]:
+        if use_emcli(self.context, definition, target_type):
             from .oem_exadata_emcli import query_emcli
             return await query_emcli(self, request, definition, target_type, history=True, baseline=True)
         # OEM 按请求跨度切换留存层；计算列长窗可能没有聚合值。固定分片而非失败回退，

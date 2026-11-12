@@ -63,17 +63,25 @@ def exadata_parameters(plan) -> dict[str, Any] | None:
 
 
 def exadata_parameter_contract(*, diagnosis=False) -> dict[str, Any]:
+    from .oracle_service_chat import OracleServiceChatQuery
+    from .oracle_service_catalog import service_metrics
     version, digest, metrics, profiles, _ = load_catalog()
     executable = {code for profile in profiles for code in profile["metric_codes"]}
     return {
         "parameters_schema": {"oneOf": [
             ({"title": "现有非 Exadata 诊断参数", "type": "object", "not": {"required": ["resource_type_key"],
-                "properties": {"resource_type_key": {"const": "EXADATA"}}}} if diagnosis else
+                "properties": {"resource_type_key": {"enum": ["EXADATA", "ORACLE_ASM", "ORACLE_RAC", "ORACLE_LISTENER"]}}}} if diagnosis else
              {"title": "现有非 Exadata 监控", "type": "object", "properties": {
                 "window": {"type": "string", "enum": ["15m", "1h", "6h", "24h"]}}, "additionalProperties": False}),
             ExadataChatQuery.model_json_schema(),
+            OracleServiceChatQuery.model_json_schema(),
         ]},
         "policy": (
+            "ASM、RAC、Listener 使用各自 ORACLE_ASM/ORACLE_RAC/ORACLE_LISTENER 资源分支，"
+            "从 oracle_service_metric_catalog 选择对应编码，OEM/Prometheus/Zabbix 使用相同服务语义。"
+            "服务资源不等于数据库连接或 Exadata 成员；只有授权目录中的独立服务资源可以执行。"
+            "服务指标查询用 MONITORING_QUERY，分析变化或诊断用 ACTIVE_DIAGNOSIS，只读取证、不创建变更。"
+            "服务未映射或未采样必须保留缺口，不能用数据库在线或TCP可达代替Clusterware、进程、服务注册。"
             "首先按用户实际所问资源选择 oneOf 分支，不能因输入包含 Exadata 目录就选择 Exadata。"
             "普通数据库、主机或非 Exadata 概览保持现有参数：返回空对象 {} 或仅提供 window，"
             "不得设置 resource_type_key=EXADATA。只有所问资源确实是 EXADATA 时使用专用分支。"
@@ -99,6 +107,8 @@ def exadata_parameter_contract(*, diagnosis=False) -> dict[str, Any]:
             "近期追问应保留上轮明确的资源和指标意图，但重新检查当轮授权。"
         ),
         "catalog_version": version,
+        "oracle_service_metric_catalog": [{key: item[key] for key in ('code', 'resource_type', 'title', 'semantics', 'dimensions')}
+            for item in service_metrics().values()],
         "execution_costs": {"current_per_component_metric": 1, "baseline_per_component_metric": 2,
                             "max_live_queries": 24, "max_total_seconds": 55},
         "catalog_sha256": digest,

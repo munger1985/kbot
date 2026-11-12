@@ -85,11 +85,12 @@ async def read(f, *, query=None, plan=None, resources=None):
 
 def test_router_contract_uses_all_real_definitions_not_keyword_rules():
     contract = exadata_parameter_contract()
-    assert len(contract["metric_catalog"]) == 290
+    assert len(contract["metric_catalog"]) == 345
     definition = next(item for item in contract["metric_catalog"] if item["code"] == TEMP)
     assert definition["display_name"] == "Exadata Temperature Reading"
     assert "temperature_lower" not in definition["code"]
-    normal, exadata = contract["parameters_schema"]["oneOf"]
+    normal, exadata, service = contract["parameters_schema"]["oneOf"]
+    assert service['properties']['resource_type_key']['enum'] == ['ORACLE_ASM', 'ORACLE_RAC', 'ORACLE_LISTENER']
     assert "resource_type_key" not in normal["properties"]
     assert exadata["properties"]["resource_type_key"]["const"] == "EXADATA"
     assert contract["execution_costs"] == {

@@ -36,6 +36,7 @@ from aiops_agent.ports.diagnostic_source import (
 )
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
+from .oracle_services import OracleServiceMetrics
 from .pagination import SourcePageRow, read_source_pages
 
 
@@ -49,7 +50,7 @@ _SEVERITY = {
 }
 
 
-class ZabbixAdapter(BaseDiagnosticSourceAdapter):
+class ZabbixAdapter(OracleServiceMetrics, BaseDiagnosticSourceAdapter):
     _HISTORY_TYPES = {
         "FLOAT": 0,
         "CHARACTER": 1,
@@ -148,7 +149,8 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
             warnings=("Item 元数据已读取；数值存储类型不证明 counter/gauge 语义，目录不证明请求窗口有采样。",),
         )
 
-    async def query_native_metric(self, request: NativeMetricQueryRequest, *, metric_name, limit, allow_text=False):
+    async def query_native_metric(self, request: NativeMetricQueryRequest, *, metric_name, limit, allow_text=False,
+            _service_summary_only=False):
         """精确重验 Host/Item；文本日志需额外授权，不猜单位或自动改用趋势聚合。"""
         self._remaining_response_bytes = request.max_response_bytes
         if not isinstance(metric_name, str) or not 0 < len(metric_name) <= 256 or any(ord(char) < 32 for char in metric_name):
@@ -187,7 +189,7 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
                 "itemids": [item["itemid"]], "time_from": frontier,
                 "time_till": int(request.window_end.timestamp()), "sortfield": ["clock", "ns"],
                 "sortorder": "ASC", "limit": fetch_limit,
-            }, max_bytes=request.max_response_bytes // 2 // pages)
+            }, max_bytes=request.max_response_bytes // 2 // (1 if _service_summary_only else pages))
             if not isinstance(history, list) or len(history) > fetch_limit:
                 raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "历史响应格式无效")
             rows = []
@@ -223,6 +225,37 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
                     content_hash=hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest(),
                     value=(stamp, value, metadata), include=start_ns <= clock * 1000000000 + nanoseconds <= end_ns))
             return rows, digest
+        if _service_summary_only:
+            if not numeric:
+                raise DiagnosticSourceAdapterError('SOURCE_METRIC_TYPE_MISMATCH', '服务基线只允许数值 Item')
+            from decimal import localcontext
+            frontier, seen, hashes, total, count, exhausted = int(request.window_start.timestamp()), {}, [], Decimal(0), 0, False
+            # 独立服务基线最多16页；共享字节预算仍由 _response_json 跨页扣减。
+            for _ in range(16):
+                rows, digest = await fetch_history(frontier, 1000)
+                hashes.append(digest)
+                if len({row.identity for row in rows}) != len(rows) or any(row.position < frontier for row in rows):
+                    raise DiagnosticSourceAdapterError('SOURCE_RESPONSE_INVALID', '服务基线分页边界或身份无效')
+                if any(row.identity in seen and seen[row.identity] != row.content_hash for row in rows):
+                    raise DiagnosticSourceAdapterError('SOURCE_PAGE_CHANGED', '服务基线重叠边界发生变化')
+                fresh = [row for row in rows if row.identity not in seen]
+                with localcontext() as context:
+                    context.prec = 4096
+                    for row in fresh:
+                        stamp, value, metadata = row.value
+                        if start_ns <= row.position*1000000000+metadata.nanoseconds < end_ns:
+                            total += Decimal(value)
+                            count += 1
+                        seen[row.identity] = row.content_hash
+                if len(rows) < 1000:
+                    exhausted = True
+                    break
+                if not fresh:
+                    break
+                frontier = max(row.position for row in rows)
+            return {'series': ({'dimensions': {}, 'total': str(total), 'sample_count': count},) if count else (),
+                'unit': (str(item.get('units') or '')[:64] or None), 'truncated': not exhausted,
+                'response_sha256': hashlib.sha256(':'.join((host_hash, item_hash, *hashes)).encode()).hexdigest()}
         summary = None
         if pagination is not None:
             values, summary = await read_source_pages(fetch_page=fetch_history, pagination=pagination,

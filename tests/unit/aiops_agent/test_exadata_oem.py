@@ -81,7 +81,7 @@ def args(f, **query):
 
 def test_catalog_is_independent_and_preserves_audited_semantics():
     version, digest, metrics, profiles, diagnoses = load_catalog()
-    assert version == "exadata-oem-v1" and len(digest) == 64 and len(metrics) == 292
+    assert version == "exadata-oem-v1" and len(digest) == 64 and len(metrics) == 347
     by_selector = {item["selector"]: item for item in metrics.values()}
     assert by_selector["Aggregated_HardNFlashDisk_Metric/avg_cd_io_load"]["keys"] == ["celldisk_type"]
     assert next(item for item in metrics.values() if item["selector"].startswith("HostInterConnect_Statistics/"))["keys"] == ["name", "cell_Id"]

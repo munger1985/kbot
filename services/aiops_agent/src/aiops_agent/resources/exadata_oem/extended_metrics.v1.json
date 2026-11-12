@@ -1,0 +1,1071 @@
+{
+  "version": "exadata-extended-v1",
+  "provenance": "OEM 2026-11-10 metric_definitions.csv / metric_current.csv; 42 Cell selectors (38 nonempty, 4 empty-only) and 13 PDU module/phase selectors; no synthetic values.",
+  "metrics": [
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.avg_cd_io_load",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/avg_cd_io_load",
+      "display_name": "Average CellDisk IO Load",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.avg_cd_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/avg_cd_read_iops",
+      "display_name": "Average CellDisk Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.avg_cd_read_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/avg_cd_read_latency",
+      "display_name": "Average CellDisk Read Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.avg_cd_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/avg_cd_read_throughput",
+      "display_name": "Average CellDisk Read Throughput ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.avg_cd_write_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/avg_cd_write_iops",
+      "display_name": "Average CellDisk Write IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.avg_cd_write_latency",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/avg_cd_write_latency",
+      "display_name": "Average CellDisk Write Response Time",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MILLISECREQUEST"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.avg_cd_write_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/avg_cd_write_throughput",
+      "display_name": "Average CellDisk Write Throughput ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.max_cd_io_load",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/max_cd_io_load",
+      "display_name": "Maximum CellDisk IO Load",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.sum_cd_io_load",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/sum_cd_io_load",
+      "display_name": "Total CellDisk IO Load",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.sum_cd_read_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/sum_cd_read_iops",
+      "display_name": "Total CellDisk Read IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.sum_cd_read_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/sum_cd_read_throughput",
+      "display_name": "Total CellDisk Read Throughput ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.sum_cd_write_iops",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/sum_cd_write_iops",
+      "display_name": "Total CellDisk Write IOPS",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "IOSEC"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_CellDisk_Metric.sum_cd_write_throughput",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_CellDisk_Metric/sum_cd_write_throughput",
+      "display_name": "Total CellDisk Write Throughput ",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MBPS"
+      ],
+      "keys": [],
+      "scene": "disk",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_Exadata_Sparse_Diskgroup_Capacity_Metric.count",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_Exadata_Sparse_Diskgroup_Capacity_Metric/count",
+      "display_name": "Count",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "asminstance",
+        "diskgroup"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_Exadata_Sparse_Diskgroup_Capacity_Metric.size",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_Exadata_Sparse_Diskgroup_Capacity_Metric/size",
+      "display_name": "Size (GB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "GB"
+      ],
+      "keys": [
+        "asminstance",
+        "diskgroup"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Aggregated_Exadata_Sparse_Diskgroup_Capacity_Metric.virtualSize",
+      "target_type": "oracle_exadata",
+      "selector": "Aggregated_Exadata_Sparse_Diskgroup_Capacity_Metric/virtualSize",
+      "display_name": "Virtual Size (GB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "GB"
+      ],
+      "keys": [
+        "asminstance",
+        "diskgroup"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exa_Storage_Type.configuredDisksCount",
+      "target_type": "oracle_exadata",
+      "selector": "Exa_Storage_Type/configuredDisksCount",
+      "display_name": "Number of cell disks",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "physicalDiskType"
+      ],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exa_Storage_Type.flashType",
+      "target_type": "oracle_exadata",
+      "selector": "Exa_Storage_Type/flashType",
+      "display_name": "Flash Type",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "physicalDiskType"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exa_Storage_Type.physicalDisksCount",
+      "target_type": "oracle_exadata",
+      "selector": "Exa_Storage_Type/physicalDisksCount",
+      "display_name": "Number of physical disks",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "physicalDiskType"
+      ],
+      "scene": "cell",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exadata_XRM_IORM_DB_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Exadata_XRM_IORM_DB_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "capacity",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exadata_XRM_IORM_DB_Metric.db_xrm_by_allocated",
+      "target_type": "oracle_exadata",
+      "selector": "Exadata_XRM_IORM_DB_Metric/db_xrm_by_allocated",
+      "display_name": "Size (MB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exadata_XRM_IORM_PDB_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Exadata_XRM_IORM_PDB_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "capacity",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exadata_XRM_IORM_PDB_Metric.pdb_xrm_by_allocated",
+      "target_type": "oracle_exadata",
+      "selector": "Exadata_XRM_IORM_PDB_Metric/pdb_xrm_by_allocated",
+      "display_name": "Size (MB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exadata_XRM_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Exadata_XRM_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "capacity",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Exadata_XRM_Metric.xrm_by_allocated",
+      "target_type": "oracle_exadata",
+      "selector": "Exadata_XRM_Metric/xrm_by_allocated",
+      "display_name": "Size (MB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MB"
+      ],
+      "keys": [],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.FlashCache_Metric.keep_hits_rate",
+      "target_type": "oracle_exadata",
+      "selector": "FlashCache_Metric/keep_hits_rate",
+      "display_name": "Keep Hits (%)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "flash",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Cache_IORM_DB_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Cache_IORM_DB_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Cache_IORM_DB_Metric.db_fc_by_allocated",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Cache_IORM_DB_Metric/db_fc_by_allocated",
+      "display_name": "Size (MB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Cache_IORM_PDB_Metric.cell_name",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Cache_IORM_PDB_Metric/cell_name",
+      "display_name": "Cell Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        " "
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Flash_Cache_IORM_PDB_Metric.pdb_fc_by_allocated",
+      "target_type": "oracle_exadata",
+      "selector": "Flash_Cache_IORM_PDB_Metric/pdb_fc_by_allocated",
+      "display_name": "Size (MB)",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "MB"
+      ],
+      "keys": [
+        "object_name"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Response.MSStatus",
+      "target_type": "oracle_exadata",
+      "selector": "Response/MSStatus",
+      "display_name": "MS Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Response.MSTargetDownReason",
+      "target_type": "oracle_exadata",
+      "selector": "Response/MSTargetDownReason",
+      "display_name": "Target Down Reason",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Response.MgmtNetworkPingStatus",
+      "target_type": "oracle_exadata",
+      "selector": "Response/MgmtNetworkPingStatus",
+      "display_name": "Mgmt Network Ping Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Response.Status",
+      "target_type": "oracle_exadata",
+      "selector": "Response/Status",
+      "display_name": "Response Status",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Top_CPU_Activity.Activity",
+      "target_type": "oracle_exadata",
+      "selector": "Top_CPU_Activity/Activity",
+      "display_name": "Activity(%)",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [
+        "SequenceId"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Top_CPU_Activity.BeginSequence",
+      "target_type": "oracle_exadata",
+      "selector": "Top_CPU_Activity/BeginSequence",
+      "display_name": "Begin Sequence",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SequenceId"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Top_CPU_Activity.DBName",
+      "target_type": "oracle_exadata",
+      "selector": "Top_CPU_Activity/DBName",
+      "display_name": "Database Name",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SequenceId"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Top_CPU_Activity.EndSequence",
+      "target_type": "oracle_exadata",
+      "selector": "Top_CPU_Activity/EndSequence",
+      "display_name": "End Sequence",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SequenceId"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Top_CPU_Activity.Incarnation",
+      "target_type": "oracle_exadata",
+      "selector": "Top_CPU_Activity/Incarnation",
+      "display_name": "Incarnation",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SequenceId"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Top_CPU_Activity.Samples",
+      "target_type": "oracle_exadata",
+      "selector": "Top_CPU_Activity/Samples",
+      "display_name": "Samples",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SequenceId"
+      ],
+      "scene": "cell",
+      "semantics": "WINDOW_STATISTIC",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Top_CPU_Activity.SqlId",
+      "target_type": "oracle_exadata",
+      "selector": "Top_CPU_Activity/SqlId",
+      "display_name": "SQL ID",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SequenceId"
+      ],
+      "scene": "cell",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_exadata.Top_CPU_Activity.TotalSamples",
+      "target_type": "oracle_exadata",
+      "selector": "Top_CPU_Activity/TotalSamples",
+      "display_name": "Total Samples",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SequenceId"
+      ],
+      "scene": "cell",
+      "semantics": "WINDOW_STATISTIC",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseActivePower",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModulePhaseStatus/ModulePhaseActivePower",
+      "display_name": "PDU Module Phase Active Power",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "WATT"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseAmp",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModulePhaseStatus/ModulePhaseAmp",
+      "display_name": "Current Ampere Consumption on The Phase",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "AMP"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseApparentPower",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModulePhaseStatus/ModulePhaseApparentPower",
+      "display_name": "PDU Module Phase Apparent Power",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "VOLT-AMPERE"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseEnergy",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModulePhaseStatus/ModulePhaseEnergy",
+      "display_name": "PDU Module Phase Energy",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "KWH"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "CUMULATIVE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseThresholdValue",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModulePhaseStatus/ModulePhaseThresholdValue",
+      "display_name": "PDU Module Phase Hardware Threshold Overrun Level",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseVoltage",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModulePhaseStatus/ModulePhaseVoltage",
+      "display_name": "PDU Module Phase Voltage",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "VOLT"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModulePhaseStatus.PduModuleNumber",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModulePhaseStatus/PduModuleNumber",
+      "display_name": "PDU Module Number",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModulePhaseStatus.PduModulePhaseNumber",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModulePhaseStatus/PduModulePhaseNumber",
+      "display_name": "PDU Module Phase Number",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModuleStatus.OutOfBalanceAmpLevel",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModuleStatus/OutOfBalanceAmpLevel",
+      "display_name": "PDU Module Out of Balance Ampere Level",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "AMP"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModuleStatus.OutOfBalanceThresholdValue",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModuleStatus/OutOfBalanceThresholdValue",
+      "display_name": "PDU Module Out of Balance Threshold Overrun Level",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModuleStatus.PduModuleNumber",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModuleStatus/PduModuleNumber",
+      "display_name": "PDU Module Number",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "PROPERTY",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModuleStatus.TotalInputActivePower",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModuleStatus/TotalInputActivePower",
+      "display_name": "Current Active Power for the module",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "WATT"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_hw_component_pdu.PduModuleStatus.TotalInputEnergy",
+      "target_type": "oracle_si_hw_component_pdu",
+      "selector": "PduModuleStatus/TotalInputEnergy",
+      "display_name": "Current Energy for the module",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "KWH"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "capacity",
+      "semantics": "CUMULATIVE",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    }
+  ]
+}

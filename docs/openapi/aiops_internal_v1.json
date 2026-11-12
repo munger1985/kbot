@@ -7170,6 +7170,39 @@
             "title": "Display Name",
             "type": "string"
           },
+          "evidence_ref": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Ref"
+          },
+          "membership_origin": {
+            "default": "OEM_ASSOCIATION",
+            "enum": [
+              "OEM_ASSOCIATION",
+              "IMPORT_CONFIRMED"
+            ],
+            "title": "Membership Origin",
+            "type": "string"
+          },
+          "parent_target_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Target Id"
+          },
           "target_id": {
             "pattern": "^[0-9a-f]{32}$",
             "title": "Target Id",
@@ -11668,6 +11701,28 @@
             "title": "Query Supported",
             "type": "boolean"
           },
+          "semantics": {
+            "default": "UNKNOWN",
+            "enum": [
+              "GAUGE",
+              "COUNTER",
+              "STATE",
+              "PROPERTY",
+              "UNKNOWN"
+            ],
+            "title": "Semantics",
+            "type": "string"
+          },
+          "state_values": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "State Values",
+            "type": "object"
+          },
           "unit": {
             "anyOf": [
               {
@@ -11732,6 +11787,18 @@
               "DESC"
             ],
             "title": "Ranking",
+            "type": "string"
+          },
+          "semantics": {
+            "default": "UNKNOWN",
+            "enum": [
+              "GAUGE",
+              "COUNTER",
+              "STATE",
+              "PROPERTY",
+              "UNKNOWN"
+            ],
+            "title": "Semantics",
             "type": "string"
           },
           "title": {
@@ -16870,6 +16937,15 @@
             ],
             "title": "Candidate Ref"
           },
+          "component_manifest": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExadataComponentImport"
+            },
+            "maxItems": 64,
+            "title": "Component Manifest",
+            "type": "array"
+          },
           "source_binding": {
             "anyOf": [
               {
@@ -16932,6 +17008,15 @@
               }
             ],
             "title": "Candidate Ref"
+          },
+          "component_manifest": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExadataComponentImport"
+            },
+            "maxItems": 64,
+            "title": "Component Manifest",
+            "type": "array"
           },
           "source_binding": {
             "anyOf": [
@@ -23157,6 +23242,76 @@
           }
         },
         "title": "WorkloadPolicy",
+        "type": "object"
+      },
+      "ExadataDiscoveryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "component_manifest": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExadataComponentImport"
+            },
+            "maxItems": 64,
+            "title": "Component Manifest",
+            "type": "array"
+          },
+          "root_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Id"
+          }
+        },
+        "title": "ExadataDiscoveryRequest",
+        "type": "object"
+      },
+      "ExadataComponentImport": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "evidence_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Evidence Ref",
+            "type": "string"
+          },
+          "parent_target_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Parent Target Id",
+            "type": "string"
+          },
+          "target_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_type",
+          "display_name",
+          "parent_target_id",
+          "evidence_ref"
+        ],
+        "title": "ExadataComponentImport",
         "type": "object"
       }
     }
@@ -29522,45 +29677,57 @@
     },
     "/internal/v1/aiops/exadata/sources/{source_id}/discoveries": {
       "post": {
+        "tags": [
+          "Exadata OEM"
+        ],
+        "summary": "Discover",
         "operationId": "discover_internal_v1_aiops_exadata_sources__source_id__discoveries_post",
         "parameters": [
           {
-            "in": "path",
             "name": "source_id",
+            "in": "path",
             "required": true,
             "schema": {
+              "type": "string",
               "format": "uuid",
-              "title": "Source Id",
-              "type": "string"
+              "title": "Source Id"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExadataDiscoveryRequest",
+                "default": {
+                  "component_manifest": []
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ExadataDiscovery"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
           },
           "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            },
-            "description": "Validation Error"
+            }
           }
-        },
-        "summary": "Discover",
-        "tags": [
-          "Exadata OEM"
-        ]
+        }
       }
     },
     "/internal/v1/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/baselines": {

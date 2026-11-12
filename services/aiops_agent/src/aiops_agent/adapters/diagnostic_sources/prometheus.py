@@ -28,13 +28,14 @@ from aiops_agent.contracts.evidence import DiscoveredMetric, MetricDiscoveryResu
 from aiops_agent.domain.evidence.metric_time import prometheus_timestamp
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
+from .oracle_services import OracleServiceMetrics
 
 
 def _escape_prometheus_label(value: str) -> str:
     return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
 
-class PrometheusAdapter(BaseDiagnosticSourceAdapter):
+class PrometheusAdapter(OracleServiceMetrics, BaseDiagnosticSourceAdapter):
     _minimum_complete_coverage_ratio = 0.8
     _DISCOVERY_SERIES = {
         "ORACLE": ("oracledb_up", "oracle", "target_key"),

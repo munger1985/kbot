@@ -7,13 +7,13 @@ from platform_core.contracts.aiops.exadata import ExadataMetricDefinition
 def test_all_reviewed_status_metrics_have_typed_dictionary_and_provenance():
     _, _, metrics, _, _ = load_catalog()
     statuses = {code: item for code, item in metrics.items() if item.get("status")}
-    assert len(statuses) == 35
+    assert len(statuses) == 38
     for item in metrics.values():
         definition = ExadataMetricDefinition.model_validate(item)
         if definition.status:
             assert definition.status.provenance
             assert definition.status.values or definition.code in {
-                "oracle_si_server_map.SystemStatus.OSStatus"}
+                "oracle_si_server_map.SystemStatus.OSStatus", "oracle_exadata.Response.Status"}
     for name in ("Status", "msStatus", "rsStatus"):
         status = statuses[f"oracle_exadata.CellSrv_Status_Metric.{name}"]["status"]
         assert status["values"]["1"] == {"label": "可用", "tone": "success"}

@@ -17,6 +17,7 @@ from aiops_agent.application.conversation_starters import (
 )
 from aiops_agent.application.turn_replay import pending_diagnosis_dispatch
 from aiops_agent.application.alert_query import AlertQueryParameters
+from aiops_agent.application.oracle_service_chat import oracle_service_parameters, select_oracle_service_systems
 from aiops_agent.application.exadata_chat import (
     exadata_parameters, exadata_parameter_contract, select_exadata_systems,
 )
@@ -1500,6 +1501,21 @@ class TurnPlannerService:
                 True,
             )
             return scope, internal, None
+        service_parameters = oracle_service_parameters(plan)
+        if service_parameters is not None:
+            try:
+                selected = select_oracle_service_systems(systems, service_parameters)
+            except ValueError:
+                selected = []
+            if not selected:
+                return (ScopeResolutionV1(status=ScopeResolutionStatus.DENIED, scope_type=ScopeType.RESOURCE_SET,
+                    resolution_basis=('NO_AUTHORIZED_ORACLE_SERVICE_RESOURCE',), authorization_snapshot_hash=authorization_hash),
+                    {'execution_targets': []}, None)
+            scope, internal = self._resolved_scope(selected, '', authorization_hash, ('AUTHORIZED_ORACLE_SERVICE_SCOPE',), False)
+            if scope.status == ScopeResolutionStatus.RESOLVED:
+                scope = scope.model_copy(update={'scope_type': ScopeType.RESOURCE if len(scope.resources) == 1 else ScopeType.RESOURCE_SET,
+                    'resolution_basis': ('AUTHORIZED_ORACLE_SERVICE_SCOPE',), 'confidence': 1.0})
+            return scope, internal, None
         parameters = exadata_parameters(plan)
         if parameters is not None:
             try:
@@ -1840,16 +1856,17 @@ class TurnPlannerService:
         internal_scope: dict[str, Any],
     ) -> dict:
         if scope.status == ScopeResolutionStatus.DENIED:
+            service_denied = 'NO_AUTHORIZED_ORACLE_SERVICE_RESOURCE' in scope.resolution_basis
             exadata_denied = "NO_AUTHORIZED_EXADATA_RESOURCE" in scope.resolution_basis
             invalid_exadata = "EXADATA_QUERY_INVALID" in scope.resolution_basis
             return await self._complete_without_run(
                 uow,
                 turn,
-                ("当前 Agent 授权范围内没有匹配的 Exadata 资源。请选择已授权该资源的 Agent；未改查其他数据库总览。"
+                ('当前 Agent 授权范围内没有匹配的 ASM、RAC 或 Listener 服务资源；请先绑定服务并授权业务系统，未改查数据库总览。' if service_denied else "当前 Agent 授权范围内没有匹配的 Exadata 资源。请选择已授权该资源的 Agent；未改查其他数据库总览。"
                  if exadata_denied else "Exadata 指标或筛选条件未能准确解析，请明确所问指标和资源；未改查数据库总览。"
                  if invalid_exadata else "当前 Agent 授权范围内没有满足本轮能力要求的有效资源。"),
                 "PARTIAL",
-                ("EXADATA_RESOURCE_SCOPE_EMPTY" if exadata_denied else "EXADATA_QUERY_INVALID" if invalid_exadata else "NO_ELIGIBLE_RESOURCE",),
+                ('ORACLE_SERVICE_SCOPE_EMPTY' if service_denied else "EXADATA_RESOURCE_SCOPE_EMPTY" if exadata_denied else "EXADATA_QUERY_INVALID" if invalid_exadata else "NO_ELIGIBLE_RESOURCE",),
             )
         capability_invocation = dict(
             dict(turn.orchestration_internal_json or {}).get("capability_invocation")
@@ -1879,7 +1896,7 @@ class TurnPlannerService:
         capabilities = tuple(
             AIOpsCapability(item) for item in plan.requested_capabilities
         )
-        if AIOpsCapability.ACTIVE_DIAGNOSIS in capabilities and exadata_parameters(plan) is None:
+        if AIOpsCapability.ACTIVE_DIAGNOSIS in capabilities and exadata_parameters(plan) is None and oracle_service_parameters(plan) is None:
             ready = [
                 item
                 for item in internal_scope.get("execution_targets", [])

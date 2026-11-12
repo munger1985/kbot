@@ -17,6 +17,22 @@ spec.loader.exec_module(sim)
 
 
 class CellSimulatorTests(unittest.TestCase):
+    def test_xrmem_and_sparse_capacity_are_native_distinct_objects(self):
+        root = ET.fromstring(sim.render("list metriccurrent XRM_BY_ALLOCATED where objectType='XRMEMCACHE'"))
+        rows = root.findall('metriccurrent')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].findtext('objectType'), 'XRMEMCACHE')
+        groups = ET.fromstring(sim.render('list griddisk detail')).findall('griddisk')
+        self.assertEqual([row.findtext('sparse') for row in groups], ['FALSE', 'TRUE'])
+        self.assertEqual(groups[1].findtext('virtualSize'), '4096G')
+
+    def test_topcpu_has_plugin_header_and_synthetic_sql_evidence_not_a_counter(self):
+        root = ET.fromstring(sim.render('list topcpu 5, 0, 0 detail', now=1800000000))
+        self.assertEqual(root.findtext('topcpu/samples'), '1000')
+        self.assertEqual(root.findtext('topcpu/topcpu/dbName'), 'SIMDB')
+        self.assertEqual(root.findtext('topcpu/topcpu/samples'), '120')
+        self.assertEqual(ET.fromstring(sim.render('list topcpu unlimited')).tag, 'fault')
+
     def test_native_status_field_order(self):
         root = ET.fromstring(sim.render("list cell attributes cellsrvStatus, msStatus, rsStatus"))
         self.assertEqual([(item.tag, item.text) for item in root.find("cell")],

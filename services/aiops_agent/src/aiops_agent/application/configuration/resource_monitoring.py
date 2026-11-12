@@ -13,6 +13,12 @@ HOST_RESOURCE_TYPES = {"PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER"}
 
 async def apply_hardware_monitoring(*, service, uow, scope, resource, mapping, now):
     """候选签名、资源归属、Provider 重读和乐观锁在同一事务内校验。"""
+    from platform_core.contracts.aiops.oracle_services import ORACLE_SERVICE_TYPES
+    if resource.resource_type_key in ORACLE_SERVICE_TYPES:
+        from .oracle_service_binding import bind_oracle_service
+        return await bind_oracle_service(service=service, uow=uow, scope=scope, resource=resource, mapping=mapping, now=now)
+    if mapping.component_manifest and resource.resource_type_key != 'EXADATA':
+        raise validation_failed('只有 Exadata 整机可以导入组件清单')
     if resource.resource_type_key == "EXADATA":
         from .exadata_binding import bind_exadata
         return await bind_exadata(service=service, uow=uow, scope=scope, resource=resource, mapping=mapping, now=now)

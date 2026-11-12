@@ -110,7 +110,7 @@ def test_duplicates_count_mismatch_and_wrong_order_are_not_silently_accepted(pay
 
 
 @pytest.mark.parametrize("status,code", [(302, "SOURCE_RESPONSE_INVALID"), (401, "SOURCE_AUTH_FAILED"),
-    (429, "SOURCE_RATE_LIMITED"), (503, "SOURCE_UNREACHABLE")])
+    (429, "SOURCE_RATE_LIMITED"), (503, "SOURCE_PROVIDER_ERROR")])
 def test_http_failures_and_redirects_never_claim_empty_success(status, code):
     value, calls = events_adapter(statuses=[200, status])
     result = asyncio.run(value.query_events(event_request()))

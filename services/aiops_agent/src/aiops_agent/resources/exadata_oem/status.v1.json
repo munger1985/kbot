@@ -2,6 +2,30 @@
   "version": "exadata-status-v1",
   "groups": [
     {
+      "metric_codes": ["oracle_exadata.Response.MSStatus"],
+      "status": {
+        "category": "AVAILABILITY", "display_name": "管理服务器响应状态",
+        "values": {"RUNNING": {"label": "运行中", "tone": "success"}, "DOWN": {"label": "已停止", "tone": "danger"}, "UNKNOWN": {"label": "未知", "tone": "unknown"}},
+        "provenance": "Oracle XA24.1.1 oracle_exadata_response.pl lines 145-147,195-204: running maps RUNNING, other service states DOWN; unreachable management status UNKNOWN. This does not prove cell service health."
+      }
+    },
+    {
+      "metric_codes": ["oracle_exadata.Response.MgmtNetworkPingStatus"],
+      "status": {
+        "category": "AVAILABILITY", "display_name": "管理网络 Ping 状态",
+        "values": {"SUCCESS": {"label": "可达", "tone": "success"}, "FAILED": {"label": "不可达", "tone": "danger"}},
+        "provenance": "Oracle XA24.1.1 oracle_exadata_response.pl lines 147,204 emits FAILED/SUCCESS. Management network reachability is not whole device availability."
+      }
+    },
+    {
+      "metric_codes": ["oracle_exadata.Response.Status"],
+      "status": {
+        "category": "AVAILABILITY", "display_name": "Cell 综合响应状态",
+        "values": {"1": {"label": "可响应", "tone": "success"}, "0": {"label": "不可响应", "tone": "danger"}},
+        "provenance": "Oracle XA24.1.1 oracle_exadata_response.pl lines 147,195-204 emits 1 for running management server and 0 for down or unreachable. Management response only, not entire cell hardware or storage health; STRING tokens kept exact."
+      }
+    },
+    {
       "metric_codes": [
         "host.OEMTarget.status"
       ],

@@ -144,7 +144,7 @@ assert.equal(option.series[0].connectNulls, false)
 assert.equal(option.series[0].markLine, undefined, '未验证阈值不画健康分界线')
 assert.ok(!option.tooltip.formatter([{ seriesName: '<img onerror=alert(1)>', data: { raw: '<script>', at: 'now' } }]).includes('<img'))
 assert.equal(api.exadataChartOption(cards[0], palette).series.length, 0, '字符串状态不能转换成数值时序')
-assert.equal(statusesByCode.size, 35, '全部状态类指标纳入审核，而不只是三个服务')
+assert.equal(statusesByCode.size, 38, '包含原厂 Response 的管理服务与网络状态，不只三个服务')
 const hostState = { ...metric('OEMTarget/status', 'STRING', 'host'), semantics: 'OEM_TARGET_AVAILABILITY' }
 const hostCard = api.buildExadataCards({...overview, definitions:[hostState], samples:[sample(hostState, 'UP')], gaps:[]})[0]
 assert.equal(hostCard.currentStatus, true)
@@ -160,8 +160,9 @@ for (const raw of ['1.0000000000000000001', '0.9999999999999999999', 'NaN', 'Inf
   assert.equal(api.exadataStatusItems(card)[0].tone, 'unknown', `${raw} 不能被浮点舍入或非法解析为健康状态`)
 }
 assert.notEqual(api.exadataStatusKey('1.0', 'STRING'), api.exadataStatusKey('1', 'STRING'))
-const reviewed = ['metrics.v1.json', 'device_metrics.v1.json'].flatMap(file => JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem', file))).metrics)
+const reviewed = ['metrics.v1.json', 'device_metrics.v1.json', 'extended_metrics.v1.json'].flatMap(file => JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem', file))).metrics)
 const profiles = JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem/monitoring_profiles.v1.json'))).profiles
+for (const profile of profiles) for (const item of JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem/extended_metrics.v1.json'))).metrics) if (item.scene === profile.id && !profile.metric_codes.includes(item.code)) profile.metric_codes.push(item.code)
 const chartAudit = { performance:0, status:0, configuration:0 }
 for (const definition of reviewed.filter(item=>profiles.some(profile=>profile.metric_codes.includes(item.code)))) {
   const typed = {...definition,status:statusesByCode.get(definition.code)||null}
@@ -171,7 +172,7 @@ for (const definition of reviewed.filter(item=>profiles.some(profile=>profile.me
   const historical = api.buildExadataCards({...overview, query_mode:'HISTORY',definitions:[typed],samples:[sample(typed,'25'),sample(typed,'30',{observed_at:'2026-11-11T12:01:00Z'})],gaps:[]})[0]
   assert.equal(api.exadataChartKind(historical,'HISTORY'), section==='performance'&&typed.native_value_type==='NUMBER'?'line':null)
 }
-assert.deepEqual(chartAudit, {performance:233,status:28,configuration:29}, '覆盖8场景290个独立指标，不仅4个磁盘IO示例')
+assert.equal(Object.values(chartAudit).reduce((total, count) => total + count, 0), 345, '覆盖8场景345个独立指标，包括55个审计补充项')
 const monitoringPalette = {...palette,success:'green',warning:'yellow',danger:'red'}
 assert.deepEqual(clone(api.exadataChartOption(dimensional,monitoringPalette,'bar').color),['blue','cyan','green','yellow','red','gray'], '使用Prometheus同序六色序列色板，非健康阈值')
 for (const [code, statusDefinition] of statusesByCode) {

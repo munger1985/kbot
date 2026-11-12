@@ -106,6 +106,8 @@ function exadataSceneMembers(members, scene) {
 }
 // 按审核目录中的准确选择器分组，不从名称模糊推断健康或单位。
 function exadataCardSection(card) {
+    if (['PROPERTY', 'WINDOW_STATISTIC'].includes(card.semantics || ''))
+        return 'configuration';
     if (card.status && ['AVAILABILITY', 'EVENT'].includes(card.status.category))
         return 'status';
     if (['Aggregated_Exadata_Diskgroup_Capacity_Metric/count', 'Aggregated_Exadata_Diskgroup_Capacity_Metric/size'].includes(card.selector))
@@ -211,7 +213,7 @@ function buildExadataCards(view) {
         if (!card) {
             const definition = definitions.get(metricCode);
             const metricSelector = selector || definition?.selector || metricCode;
-            card = { key, componentId, metricCode, selector: metricSelector,
+            card = { key, componentId, metricCode, selector: metricSelector, semantics: definition?.semantics,
                 componentName: view.members.find(member => member.target_id === componentId)?.display_name || componentId,
                 title: labels[metricSelector] || definition?.status?.display_name || definition?.display_name || metricSelector,
                 status: definition?.status || null, currentStatus: definition?.semantics === 'OEM_TARGET_AVAILABILITY',

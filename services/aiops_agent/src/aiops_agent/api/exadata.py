@@ -7,7 +7,7 @@ from aiops_agent.application.configuration import ConfigurationScope
 from aiops_agent.application.exadata import ExadataOEMService
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
 from aiops_agent.application.errors import AIOpsApplicationError
-from platform_core.contracts.aiops.exadata import ExadataDiscovery, ExadataQuery, ExadataView, ExadataReport, ExadataBaselineQuery, ExadataBaseline
+from platform_core.contracts.aiops.exadata import ExadataDiscovery, ExadataDiscoveryRequest, ExadataQuery, ExadataView, ExadataReport, ExadataBaselineQuery, ExadataBaseline
 
 router = APIRouter(prefix="/internal/v1/aiops/exadata", tags=["Exadata OEM"])
 
@@ -43,8 +43,8 @@ async def read(operation):
 
 
 @router.post("/sources/{source_id}/discoveries", response_model=ExadataDiscovery)
-async def discover(source_id: UUID, service: Service, scope: ManageScope):
-    return await read(service.discover(scope=scope, source_id=source_id))
+async def discover(source_id: UUID, service: Service, scope: ManageScope, body: ExadataDiscoveryRequest = ExadataDiscoveryRequest()):
+    return await read(service.discover(scope=scope, source_id=source_id, request=body))
 
 
 @router.post("/systems/{system_id}/resources/{resource_id}/sources/{source_id}/view", response_model=ExadataView)

@@ -24,6 +24,8 @@ class MonitoringNativeMetric(_Contract):
     query_supported: bool
     latest_supported: bool = False
     current_max_age_seconds: int | None = Field(default=None, gt=0)
+    semantics: Literal["GAUGE", "COUNTER", "STATE", "PROPERTY", "UNKNOWN"] = "UNKNOWN"
+    state_values: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class MonitoringNativePanel(_Contract):
@@ -35,6 +37,7 @@ class MonitoringNativePanel(_Contract):
     unavailable_reason: str | None = None
     baseline_supported: bool = False
     ranking: Literal["ASC", "DESC"] = "DESC"
+    semantics: Literal["GAUGE", "COUNTER", "STATE", "PROPERTY", "UNKNOWN"] = "UNKNOWN"
 
 
 class MonitoringNativeCatalog(_Contract):

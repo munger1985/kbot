@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from platform_core.http_cache import NoStoreAPIRoute
-from platform_core.contracts.aiops.exadata import ExadataDiscovery, ExadataQuery, ExadataView, ExadataReport, ExadataBaselineQuery, ExadataBaseline
+from platform_core.contracts.aiops.exadata import ExadataDiscovery, ExadataDiscoveryRequest, ExadataQuery, ExadataView, ExadataReport, ExadataBaselineQuery, ExadataBaseline
 from platform_core.contracts.aiops.report_filters import ReportCategory
 from platform_core.contracts.aiops.types import ReportType
 from platform_core.contracts.aiops.monitoring_native import (
@@ -2397,8 +2397,8 @@ async def disable_inspection_plan(
     )
 
 @router.post("/diagnostic-sources/{source_id}/exadata-discoveries", response_model=ExadataDiscovery)
-async def discover_exadata(source_id: UUID, request: Request):
-    return await _client(request).discover_exadata(source_id, auth_context=request.state.auth_context)
+async def discover_exadata(source_id: UUID, request: Request, body: ExadataDiscoveryRequest = ExadataDiscoveryRequest()):
+    return await _client(request).discover_exadata(source_id, payload=body.model_dump(mode="json"), auth_context=request.state.auth_context)
 
 
 @router.post("/business-systems/{system_id}/exadata/{resource_id}/sources/{source_id}/view", response_model=ExadataView)
