@@ -11,7 +11,7 @@ from aiohttp import ClientError
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
 from aiops_agent.application.errors import AIOpsApplicationError, resource_not_found, validation_failed
 from aiops_agent.application.monitoring_snapshot import freeze_source_config
-from aiops_agent.application.monitoring_oem_overview import baseline_series, overview_panels
+from aiops_agent.application.monitoring_oem_overview import baseline_series, overview_panels, freshness_seconds
 from aiops_agent.monitoring import resolve_monitoring_baseline_window, resolve_monitoring_window
 from aiops_agent.ports.diagnostic_source import (
     DiagnosticSourceContext, MetricsDiscoveryRequest, NativeMetricQueryRequest,
@@ -29,6 +29,18 @@ def public_metric(entry):
         dimensions=entry.label_names, query_supported=entry.query_supported,
         latest_supported=entry.native_value_type in {"NUMBER", "STRING"},
     )
+
+
+def public_points(points, dimensions, *, captured_at, max_age, truncated, latest):
+    """历史有效值可画趋势，但只有新鲜且完整的末次值能作当前比较。"""
+    result = []
+    for (when, value), labels in zip(points, dimensions, strict=True):
+        empty = value is None or not value.strip()
+        fresh = max_age is not None and timedelta(0) <= captured_at - when <= timedelta(seconds=max_age)
+        quality = "TRUNCATED" if truncated else "EMPTY" if empty else "STALE" if latest and not fresh else "OBSERVED"
+        result.append(MonitoringNativePoint(observed_at=when, value=value, dimensions=labels,
+            quality=quality, current_eligible=bool(fresh and not empty and not truncated)))
+    return tuple(result)
 
 
 class NativeMonitoringService:
@@ -126,12 +138,15 @@ class NativeMonitoringService:
         except (DiagnosticSourceAdapterError, ClientError, TimeoutError, LookupError) as exc:
             self._raise_provider(exc)
         await self._unchanged(scope, source_id, instance_id, frozen)
-        metrics = sorted((public_metric(entry) for entry in entries), key=lambda entry: entry.name)
+        metrics = sorted((self._metric(entry, frozen) for entry in entries), key=lambda entry: entry.name)
         query = search.strip().casefold()
         filtered = [entry for entry in metrics if not query or query in f"{entry.name} {entry.display_name} {entry.group}".casefold()]
         default_metric = next((entry for preferred in self._defaults[frozen["scope"]] for entry in metrics
             if entry.name == preferred["name"] and entry.unit == preferred["unit"]
             and entry.native_value_type == preferred["native_value_type"] and entry.query_supported), None)
+        panels = overview_panels(frozen["scope"], metrics, target_type=frozen["target_type"])
+        if frozen["target_type"] == "oracle_pdb":
+            default_metric = next((panel.metric for panel in panels if panel.metric and panel.metric.query_supported), None)
         return self._response(MonitoringNativeCatalog(
             source_id=source_id, instance_id=instance_id, entries=tuple(filtered[offset:offset+limit]),
             default_metric=default_metric,
@@ -139,7 +154,7 @@ class NativeMonitoringService:
             truncated=truncated, revision=revision,
             warnings=("目录来自该资源实际安装的 OEM 插件；目录可见不代表窗口内已有采样。",
                       "数值指标支持历史时序；数值与文本指标另可读取最近采集快照，快照不代表历史覆盖。"),
-            overview_panels=overview_panels(frozen["scope"], metrics),
+            overview_panels=panels,
         ), frozen)
 
     async def samples(self, *, scope, source_id, instance_id, query):
@@ -171,16 +186,18 @@ class NativeMonitoringService:
                 await self._unchanged(scope, source_id, instance_id, frozen)
                 baseline = await self._baseline(adapter, native_request, frozen, entry, query.baseline, deadline)
                 await self._unchanged(scope, source_id, instance_id, frozen)
+                metric = self._metric(entry, frozen)
                 return self._response(MonitoringNativeSamples(
-                    source_id=source_id, instance_id=instance_id, metric=public_metric(entry),
+                    source_id=source_id, instance_id=instance_id, metric=metric,
                     window_start=None, window_end=None, captured_at=latest["captured_at"],
-                    points=tuple(MonitoringNativePoint(observed_at=when, value=value, dimensions=labels)
-                        for (when, value), labels in zip(latest["points"], latest["dimensions"], strict=True)),
+                    points=public_points(latest["points"], latest["dimensions"], captured_at=latest["captured_at"],
+                        max_age=metric.current_max_age_seconds, truncated=latest["truncated"], latest=True),
                     truncated=latest["truncated"], response_sha256=latest["response_sha256"],
                     query_mode="LATEST", history_resolution="LATEST_SNAPSHOT",
                     baseline=baseline,
                     warnings=("这是 OEM 最近一次采集快照，不受所选历史时间窗约束；请核对采集时间，不视为实时或完整历史。",
-                        "原始文本、空值及单位不转换为健康结论，不以快照替代历史查询。")), frozen)
+                        "原始文本、空值及单位不转换为健康结论，不以快照替代历史查询。",
+                        "当前比较采用已审核总览的保守时效策略，不代表 OEM 在线采集调度；未审核时效的指标仅保留原始采样。")), frozen)
             async with asyncio.timeout(adapter._timeout.total):
                 samples = await adapter.query_native_metric(native_request,
                     metric_name=query.metric_name, limit=1000, _paginate=True,
@@ -193,16 +210,24 @@ class NativeMonitoringService:
         except (DiagnosticSourceAdapterError, ClientError, TimeoutError, LookupError) as exc:
             self._raise_provider(exc)
         await self._unchanged(scope, source_id, instance_id, frozen)
+        metric = self._metric(entry, frozen)
         return self._response(MonitoringNativeSamples(
-            source_id=source_id, instance_id=instance_id, metric=public_metric(entry),
+            source_id=source_id, instance_id=instance_id, metric=metric,
             window_start=window.start, window_end=window.end, captured_at=samples.captured_at,
-            points=tuple(MonitoringNativePoint(observed_at=when, value=value, dimensions=dimensions)
-                for (when, value), dimensions in zip(samples.points, samples.sample_dimensions, strict=True)),
+            points=public_points(samples.points, samples.sample_dimensions, captured_at=samples.captured_at,
+                max_age=metric.current_max_age_seconds, truncated=samples.truncated, latest=False),
             truncated=samples.truncated, response_sha256=samples.response_sha256,
             baseline=baseline,
             warnings=("OEM 自动选择原始、小时或日聚合；采样覆盖率未知，不推断 counter/gauge 或自动换算速率。",
-                      "窗口无采样表示暂无数据，不代表资源宕机；缺失值不补零。"),
+                      "窗口无采样表示暂无数据，不代表资源宕机；缺失值不补零。",
+                      "历史趋势保留原采样；仅完整且符合审核时效的末次值参与当前比较。"),
         ), frozen)
+
+    @staticmethod
+    def _metric(entry, frozen):
+        metric = public_metric(entry)
+        return metric.model_copy(update={"current_max_age_seconds": freshness_seconds(
+            frozen["scope"], metric, target_type=frozen["target_type"])})
 
     async def _baseline(self, adapter, request, frozen, entry, period, deadline):
         if period is None or entry.native_value_type != "NUMBER":
@@ -246,7 +271,8 @@ class NativeMonitoringService:
         code = getattr(exc, "code", "SOURCE_UNREACHABLE" if isinstance(exc, (ClientError, TimeoutError)) else "SOURCE_CAPABILITY_FORBIDDEN")
         message = {
             "SOURCE_AUTH_FAILED": "OEM 拒绝指标读取，请检查来源账号权限；这不代表被监控资源宕机",
-            "SOURCE_UNREACHABLE": "OEM 服务返回错误或暂时不可达，无法取得本次采样；可重试或检查 OEM 服务日志",
+            "SOURCE_UNREACHABLE": "OEM 连接失败或超时，无法取得本次采样；请检查服务连接",
+            "SOURCE_PROVIDER_ERROR": "OEM 服务端查询失败（HTTP 5xx）；不是网络不可达或无数据，请检查 OEM 服务日志",
             "SOURCE_RESULT_TRUNCATED": "OEM 响应超出读取字节预算，无法将本次结果视为完整采样",
             "SOURCE_RATE_LIMITED": "OEM 指标读取触发限流，请稍后重试",
             "SOURCE_COLLECTION_CHANGED": "OEM 最近采集快照在分页期间发生变化，请重新读取",

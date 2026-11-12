@@ -23,6 +23,7 @@ class MonitoringNativeMetric(_Contract):
     dimensions: tuple[str, ...] = ()
     query_supported: bool
     latest_supported: bool = False
+    current_max_age_seconds: int | None = Field(default=None, gt=0)
 
 
 class MonitoringNativePanel(_Contract):
@@ -60,6 +61,8 @@ class MonitoringNativePoint(_Contract):
     observed_at: datetime
     value: str | None
     dimensions: dict[str, str]
+    quality: Literal["OBSERVED", "EMPTY", "STALE", "TRUNCATED"] = "OBSERVED"
+    current_eligible: bool = False
 
 
 class MonitoringNativeBaselineSeries(_Contract):

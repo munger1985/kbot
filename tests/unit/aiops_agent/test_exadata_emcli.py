@@ -419,7 +419,11 @@ def test_online_metadata_type_and_keys_must_match_before_cli_read():
     asyncio.run(run())
 
 
-def test_editing_exadata_transport_preserves_independently_managed_standard_mappings():
+@pytest.mark.parametrize("submitted", [None, {}, {"db.storage.used": {
+    "target_type": "oracle_database", "metric_group": "Filesystems", "metric_name": "size",
+    "native_unit": "MB", "unit": "bytes", "value_kind": "GAUGE", "scale": "1048576",
+    "dimensions": {"mountPoint": "mount_point"}, "filters": {}}}])
+def test_editing_exadata_transport_preserves_or_explicitly_updates_standard_mappings(submitted):
     from aiops_agent.application.configuration.diagnostic_source_service import DiagnosticSourceConfigurationMixin
     from platform_core.contracts.aiops import DiagnosticSourcePatch
 
@@ -450,8 +454,9 @@ def test_editing_exadata_transport_preserves_independently_managed_standard_mapp
             result = await service.patch_diagnostic_source(scope=SimpleNamespace(domain_id=87, actor_id="SIM_ACTOR"),
                 source_id="SIM_SOURCE", expected_version=3, request=DiagnosticSourcePatch(config={
                     "exadata_metric_transport": "EMCLI", "exadata_emcli_timezone": "UTC",
-                    "exadata_emcli_certificate_sha256": "a" * 64}))
-        assert result.config_json["standard_metric_mappings"] == mappings
+                    "exadata_emcli_certificate_sha256": "a" * 64,
+                    **({"standard_metric_mappings": submitted} if submitted is not None else {})}))
+        assert result.config_json["standard_metric_mappings"] == (mappings if submitted is None else submitted)
         assert result.config_json["exadata_metric_transport"] == "EMCLI"
         assert result.status == "DISABLED" and result.connectivity_version == 2
         uow.commit.assert_awaited_once()

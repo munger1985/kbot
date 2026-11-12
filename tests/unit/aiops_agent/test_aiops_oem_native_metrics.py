@@ -225,7 +225,7 @@ def test_history_native_pagination_is_explicitly_unsupported_and_does_not_execut
 
 
 @pytest.mark.parametrize("status,code", [(302,"SOURCE_RESPONSE_INVALID"),(401,"SOURCE_AUTH_FAILED"),
-    (403,"SOURCE_AUTH_FAILED"),(404,"SOURCE_QUERY_UNSUPPORTED"),(429,"SOURCE_RATE_LIMITED"),(503,"SOURCE_UNREACHABLE")])
+    (403,"SOURCE_AUTH_FAILED"),(404,"SOURCE_QUERY_UNSUPPORTED"),(429,"SOURCE_RATE_LIMITED"),(503,"SOURCE_PROVIDER_ERROR")])
 def test_official_endpoint_errors_are_not_empty_success_and_auth_cannot_redirect(status, code):
     value, calls = adapter({},statuses=[status])
     with pytest.raises(DiagnosticSourceAdapterError) as error:

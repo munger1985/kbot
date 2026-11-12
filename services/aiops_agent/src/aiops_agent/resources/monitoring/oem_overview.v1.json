@@ -1,6 +1,7 @@
 {
   "version": "1.0.0",
-  "description": "OEM 关键指标总览；2026-11-05 按真实 host/oracle_database 目录审核，名称、类型、单位及维度必须精确匹配。不声明跨来源等价或未经配置的健康阈值。",
+  "current_freshness_seconds": {"HOST": 7200, "DATABASE": 1800, "PDB": 1800},
+  "description": "OEM 关键指标总览；2026-11-12 依据真实 host/oracle_database/oracle_pdb 定义及原厂 REST 显示单位审核。名称、类型、单位及维度必须精确匹配。时效是保守展示策略，不冒充 OEM 调度；不声明未经配置的健康阈值。",
   "profiles": {
     "HOST": [
       {
@@ -45,6 +46,53 @@
         "panel_id": "oem.host.network", "title": "网络总吞吐量",
         "description": "所有网络接口合计 I/O 速率，保留 OEM 的 MB per second 单位，不混同链路利用率。",
         "metric": {"name": "NetworkSummary/totalNetworkThroughPutRate", "native_value_type": "NUMBER", "unit": "MB per second", "dimensions": []}
+      }
+    ],
+    "PDB": [
+      {
+        "panel_id": "oem.pdb.status", "title": "PDB 运行状态",
+        "description": "仅读取当前 PDB 的 Response/State；OPEN 等原始状态不替代宿主数据库或主机状态。",
+        "mode": "LATEST", "baseline": false,
+        "metric": {"name": "Response/State", "native_value_type": "STRING", "unit": null, "dimensions": []}
+      },
+      {
+        "panel_id": "oem.pdb.cpu_sessions", "title": "PDB CPU 活跃会话",
+        "description": "当前 PDB 的 CPU 活跃会话分项；不冒充整体 AAS，不与其他 PDB 合并。",
+        "metric": {"name": "waitcnt/cpu_active_sessions", "native_value_type": "NUMBER", "unit": "n/a", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.pdb.io_sessions", "title": "PDB I/O 活跃会话",
+        "description": "当前 PDB 的 I/O 活跃会话分项，不表示物理读写速率。",
+        "metric": {"name": "waitcnt/io_active_sessions", "native_value_type": "NUMBER", "unit": "n/a", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.pdb.other_sessions", "title": "PDB 其他活跃会话",
+        "description": "当前 PDB 的其他活跃会话分项，不与 CPU/I/O 分项自动构造整体平均。",
+        "metric": {"name": "waitcnt/other_active_sessions", "native_value_type": "NUMBER", "unit": "n/a", "dimensions": []}
+      },
+      {
+        "panel_id": "oem.pdb.tablespaces", "title": "PDB 表空间使用率",
+        "description": "按当前 PDB 表空间 name 保留原生使用比例，不跨表空间平均。",
+        "mode": "LATEST",
+        "metric": {"name": "problemTbsp/pctUsed", "native_value_type": "NUMBER", "unit": "%", "dimensions": ["name"]}
+      },
+      {
+        "panel_id": "oem.pdb.temp", "title": "PDB 临时表空间使用率",
+        "description": "按当前 PDB 的临时表空间分别读取，不以其他 PDB 容量填补。",
+        "mode": "LATEST",
+        "metric": {"name": "problemTbspTemp/pctUsed", "native_value_type": "NUMBER", "unit": "%", "dimensions": ["name"]}
+      },
+      {
+        "panel_id": "oem.pdb.allocated", "title": "PDB 表空间已分配容量",
+        "description": "按表空间读取 spaceAllocated 原值，单位 MB；不是剩余容量或最大可扩展容量。",
+        "mode": "LATEST",
+        "metric": {"name": "tbspAllocation/spaceAllocated", "native_value_type": "NUMBER", "unit": "MB", "dimensions": ["name"]}
+      },
+      {
+        "panel_id": "oem.pdb.used", "title": "PDB 表空间已用容量",
+        "description": "按表空间读取 spaceUsed 原值，单位 MB；不跨表空间或 PDB 求和。",
+        "mode": "LATEST",
+        "metric": {"name": "tbspAllocation/spaceUsed", "native_value_type": "NUMBER", "unit": "MB", "dimensions": ["name"]}
       }
     ],
     "DATABASE": [

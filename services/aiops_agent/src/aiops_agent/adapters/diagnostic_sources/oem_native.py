@@ -107,6 +107,9 @@ class OEMNativeMetrics:
             self._native_api() + suffix, headers=headers, auth=auth, params=params,
             timeout=self._timeout, allow_redirects=False,
         ) as response:
+            if response.status >= 500:
+                raise DiagnosticSourceAdapterError("SOURCE_PROVIDER_ERROR",
+                    "OEM 服务端返回 HTTP 5xx；不是来源无采样或网络不可达", retryable=True)
             if response.status not in {200, 401, 403, 429} and response.status < 500:
                 _fail("SOURCE_QUERY_UNSUPPORTED" if response.status == 404 else "SOURCE_RESPONSE_INVALID")
             return await self._response_json(response, max_bytes=max_bytes)

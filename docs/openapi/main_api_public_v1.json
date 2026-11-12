@@ -14218,6 +14218,18 @@
       "MonitoringNativeMetric": {
         "additionalProperties": false,
         "properties": {
+          "current_max_age_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Max Age Seconds"
+          },
           "dimensions": {
             "default": [],
             "items": {
@@ -14344,6 +14356,11 @@
       "MonitoringNativePoint": {
         "additionalProperties": false,
         "properties": {
+          "current_eligible": {
+            "default": false,
+            "title": "Current Eligible",
+            "type": "boolean"
+          },
           "dimensions": {
             "additionalProperties": {
               "type": "string"
@@ -14354,6 +14371,17 @@
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
+            "type": "string"
+          },
+          "quality": {
+            "default": "OBSERVED",
+            "enum": [
+              "OBSERVED",
+              "EMPTY",
+              "STALE",
+              "TRUNCATED"
+            ],
+            "title": "Quality",
             "type": "string"
           },
           "value": {

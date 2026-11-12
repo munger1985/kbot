@@ -169,7 +169,7 @@ class DiagnosticSourceAdapterCatalog:
     ) -> dict[str, object]:
         allowed_fields = {
             "LOKI": {"tenant_id"},
-            "OEM": {"exadata_metric_transport", "exadata_emcli_timezone", "exadata_emcli_certificate_sha256"},
+            "OEM": {"standard_metric_mappings", "exadata_metric_transport", "exadata_emcli_timezone", "exadata_emcli_certificate_sha256"},
         }.get(source_type, set())
         unsupported = sorted(set(config) - allowed_fields)
         if unsupported:
@@ -179,6 +179,10 @@ class DiagnosticSourceAdapterCatalog:
         normalized: dict[str, object] = {}
         for name in allowed_fields:
             if name not in config:
+                continue
+            if source_type == "OEM" and name == "standard_metric_mappings":
+                from .oem_standard import normalize_oem_config
+                normalized.update(normalize_oem_config({name: config[name]}))
                 continue
             value = config[name]
             if not isinstance(value, str):

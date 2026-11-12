@@ -1489,7 +1489,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -1509,7 +1509,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -1789,7 +1789,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -1829,7 +1829,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -1889,7 +1889,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -2049,7 +2049,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -2089,7 +2089,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -2149,7 +2149,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -2169,7 +2169,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -2189,7 +2189,7 @@
         "object_name"
       ],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -2261,7 +2261,7 @@
       ],
       "keys": [],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -2315,7 +2315,7 @@
       ],
       "keys": [],
       "scene": "flash",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -2759,7 +2759,7 @@
         "object_name"
       ],
       "scene": "iorm",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -3286,7 +3286,7 @@
         "object_name"
       ],
       "scene": "iorm",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -3366,7 +3366,7 @@
         "object_name"
       ],
       "scene": "iorm",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
@@ -3426,7 +3426,7 @@
         "object_name"
       ],
       "scene": "iorm",
-      "semantics": "SNAPSHOT",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",

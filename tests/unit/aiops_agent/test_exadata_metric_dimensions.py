@@ -82,9 +82,9 @@ def test_transport_failures_remain_source_unreachable(mode, error):
     assert exc.value.code == "SOURCE_UNREACHABLE"
 
 
-def test_ordinary_oem_http_failure_retains_original_contract():
+def test_ordinary_oem_http_failure_is_not_reported_as_a_network_failure():
     value, _ = adapter(TARGET, metadata(DEFINITION["keys"]), {}, statuses=[200, 200, 500])
     with pytest.raises(DiagnosticSourceAdapterError) as exc:
         asyncio.run(value.query_native_metric(request(source_locator_key=CELL),
             metric_name=DEFINITION["selector"], limit=10))
-    assert exc.value.code == "SOURCE_UNREACHABLE"
+    assert exc.value.code == "SOURCE_PROVIDER_ERROR"

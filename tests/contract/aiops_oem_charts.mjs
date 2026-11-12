@@ -23,7 +23,7 @@ const definition = 'services/aiops_agent/src/aiops_agent/resources/monitoring/oe
 const catalog = JSON.parse(read(resolve(ammolite, definition)))
 assert.deepEqual(JSON.parse(read(resolve(kbot, definition))), catalog)
 const specs = Object.values(catalog.profiles).flat().map(spec => ({ ...spec, mode: spec.mode || 'HISTORY', ranking: spec.ranking || 'DESC', baseline_supported: spec.metric?.native_value_type === 'NUMBER' && spec.baseline !== false }))
-assert.equal(specs.length, 16)
+assert.equal(specs.length, 24)
 const palette = { accent: 'blue', info: 'cyan', success: 'green', warning: 'orange', danger: 'red', muted: 'gray', surface: 'white', ink: 'black', line: 'gray' }
 const points = [{ observed_at: '2026-11-12T00:00:00Z', value: 21, raw_value: '21', quality: 'GOOD' }, { observed_at: '2026-11-12T00:15:00Z', value: null, raw_value: null, quality: 'GOOD' }, { observed_at: '2026-11-12T00:30:00Z', value: 42.125, raw_value: '42.125000000000000001', quality: 'GOOD' }]
 const series = { series_key: 'a', dimensions: {}, points, baseline: { average: 37.954293984962406, sample_count: 7, period: '1w' } }
@@ -78,18 +78,18 @@ const browser = await chromium.launch({ headless: true, executablePath: process.
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [], calls = []
   page.on('pageerror', error => errors.push(error.message)); await page.route('https://fonts.**', route => route.abort())
-  let missing = false
+  let missing = false, stale = false, truncated = false
   await page.route('**/api/v1/apps/aiops/**', async route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: { overview_panels: specs, discovered_count: 15, truncated: false } })
     const body = route.request().postDataJSON(); calls.push(body)
     const spec = specs.find(spec => spec.metric?.name === body.metric_name), metric = spec.metric
     const count = metric.dimensions.length && metric.name !== 'Recovery_Area/Free_Space' ? 2 : 1
     const rows = Array.from({ length: count }, (_, index) => ({ dimensions: Object.fromEntries(metric.dimensions.map(key => [key, `${key}-${index}`])), average: body.baseline === '1m' ? '30.5' : '37.954293984962406015', sample_count: 7 }))
-    const points = rows.flatMap((row, index) => (body.mode === 'LATEST' ? [2] : [0, 1, 2]).map(step => ({ observed_at: `2026-11-12T00:${['00', '15', '30'][step]}:00Z`, dimensions: row.dimensions, value: missing && body.metric_name === 'Load/memUsedPct' && step === 2 ? null : metric.native_value_type === 'STRING' ? 'OPEN' : step === 1 ? null : `${index + 42.125}` })))
-    return route.fulfill({ json: { points, query_mode: body.mode, truncated: false, warnings: [], baseline: body.baseline ? { period: body.baseline, start: '2026-10-12T00:00:00Z', end: '2026-11-12T00:30:00Z', note: '留存采样均值', unavailable_reason: null, series: rows } : null } })
+    const points = rows.flatMap((row, index) => (body.mode === 'LATEST' ? [2] : [0, 1, 2]).map(step => ({ observed_at: `2026-11-12T00:${['00', '15', '30'][step]}:00Z`, dimensions: row.dimensions, value: missing && body.metric_name === 'Load/memUsedPct' && step === 2 ? null : metric.native_value_type === 'STRING' ? 'OPEN' : step === 1 ? null : `${index + 42.125}`, quality: truncated ? 'TRUNCATED' : stale && body.mode === 'LATEST' ? 'STALE' : 'OBSERVED', current_eligible: !stale && !truncated })))
+    return route.fulfill({ json: { points, query_mode: body.mode, truncated, warnings: [], baseline: body.baseline ? { period: body.baseline, start: '2026-10-12T00:00:00Z', end: '2026-11-12T00:30:00Z', note: '留存采样均值', unavailable_reason: null, series: rows } : null } })
   })
   await page.goto(origin + '/__oem-fixture', { waitUntil: 'networkidle' })
-  await expect(page.locator('.monitoring-panel')).toHaveCount(16)
+  await expect(page.locator('.monitoring-panel')).toHaveCount(24)
   const card = title => page.locator('.monitoring-panel').filter({ has: page.locator('header h2', { hasText: title }) })
   const cpu = card('CPU 使用率'), memory = card('内存使用率')
   for (const target of [cpu, memory]) {
@@ -113,6 +113,14 @@ try {
   await expect.poll(() => cpu.locator('.monitoring-chart-canvas').evaluate(node => window.fixtureOption(node)?.series[0].markLine.data[0].yAxis)).toBe(30.5)
   missing = true; await page.evaluate(() => window.fixtureSetBaseline('1w'))
   await expect(memory.locator('.monitoring-current-value strong')).toHaveText(/^—(?:\s*%)?$/)
+  stale = true; await page.evaluate(() => window.fixtureSetBaseline('1m'))
+  await expect(cpu.locator('.monitoring-current-value strong')).toHaveText(/^—(?:\s*%)?$/)
+  await expect(cpu.locator('.monitoring-baseline')).not.toContainText('当前高')
+  await expect(cpu.locator('[data-chart-kind="line"] canvas')).toHaveCount(1, '旧历史仍可作为历史趋势，不作为当前值')
+  truncated = true; await page.evaluate(() => window.fixtureSetBaseline('1w'))
+  await expect(cpu.locator('.monitoring-current-value strong')).toHaveText(/^—(?:\s*%)?$/)
+  await expect(cpu.locator('.monitoring-baseline')).not.toContainText('当前高')
+  stale = false; truncated = false; await page.evaluate(() => window.fixtureSetBaseline('1m'))
   for (const width of [1920, 1440, 780, 390]) {
     await page.setViewportSize({ width, height: 1000 })
     const overflow = await page.evaluate(() => ({ width: document.documentElement.scrollWidth - innerWidth, nodes: [...document.querySelectorAll('section,article,p,header,div')].filter(node => node.getBoundingClientRect().right > innerWidth + 1).slice(0, 10).map(node => ({ class: node.className, right: node.getBoundingClientRect().right, text: node.textContent.slice(0, 50) })) }))

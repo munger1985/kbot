@@ -64,7 +64,8 @@ class OEMStandardMetrics:
         observations, gaps = [], []
         self._remaining_response_bytes = request.max_response_bytes
         try:
-            config = normalize_oem_config(self.context.config)
+            from .registry import DiagnosticSourceAdapterCatalog
+            config = DiagnosticSourceAdapterCatalog.normalize_config(source_type="OEM", config=self.context.config)
         except (ValueError, DiagnosticSourceAdapterError):
             return MetricsEvidenceResult(gaps=(self._gap(request, metric_code=None,
                 code="SOURCE_CONFIG_INVALID", detail="OEM标准指标映射无法核验"),))

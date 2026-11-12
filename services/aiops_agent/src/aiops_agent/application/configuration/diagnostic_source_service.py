@@ -486,8 +486,9 @@ class DiagnosticSourceConfigurationMixin:
                     source_type=entity.source_type,
                     config=fields["config_json"],
                 )
-                if entity.source_type == "OEM" and "standard_metric_mappings" in (entity.config_json or {}):
-                    # 标准指标映射由独立映射用例维护；编辑专用通道不能覆盖它。
+                if (entity.source_type == "OEM" and "standard_metric_mappings" not in fields["config_json"]
+                        and "standard_metric_mappings" in (entity.config_json or {})):
+                    # 未提交映射时保留；显式提交新映射或空字典时按本次审核配置更新。
                     fields["config_json"]["standard_metric_mappings"] = entity.config_json["standard_metric_mappings"]
             self._validate_diagnostic_source_adapter(
                 source_type=entity.source_type,

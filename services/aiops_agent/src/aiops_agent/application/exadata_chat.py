@@ -42,9 +42,10 @@ class ExadataChatQuery(BaseModel):
             raise ValueError("只有具体指标查询可以携带指标编码")
         if len(set(self.metric_codes)) != len(self.metric_codes):
             raise ValueError("指标编码不能重复")
-        metrics = load_catalog()[2]
-        if any(code not in metrics for code in self.metric_codes):
-            raise ValueError("指标不在真实 OEM Exadata 审核目录中")
+        _, _, metrics, profiles, _ = load_catalog()
+        executable = {code for profile in profiles for code in profile["metric_codes"]}
+        if any(code not in metrics or code not in executable for code in self.metric_codes):
+            raise ValueError("指标不在可执行 OEM Exadata 审核场景中")
         return self
 
 
@@ -62,7 +63,8 @@ def exadata_parameters(plan) -> dict[str, Any] | None:
 
 
 def exadata_parameter_contract(*, diagnosis=False) -> dict[str, Any]:
-    version, digest, metrics, _, _ = load_catalog()
+    version, digest, metrics, profiles, _ = load_catalog()
+    executable = {code for profile in profiles for code in profile["metric_codes"]}
     return {
         "parameters_schema": {"oneOf": [
             ({"title": "现有非 Exadata 诊断参数", "type": "object", "not": {"required": ["resource_type_key"],
@@ -102,7 +104,7 @@ def exadata_parameter_contract(*, diagnosis=False) -> dict[str, Any]:
         "catalog_sha256": digest,
         "metric_catalog": [{key: item[key] for key in
                             ("code", "display_name", "target_type", "scene", "semantics", "baseline_supported")}
-                           for item in metrics.values()],
+                           for item in metrics.values() if item["code"] in executable],
     }
 
 

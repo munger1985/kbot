@@ -85,7 +85,7 @@ async def read(f, *, query=None, plan=None, resources=None):
 
 def test_router_contract_uses_all_real_definitions_not_keyword_rules():
     contract = exadata_parameter_contract()
-    assert len(contract["metric_catalog"]) == 292
+    assert len(contract["metric_catalog"]) == 290
     definition = next(item for item in contract["metric_catalog"] if item["code"] == TEMP)
     assert definition["display_name"] == "Exadata Temperature Reading"
     assert "temperature_lower" not in definition["code"]

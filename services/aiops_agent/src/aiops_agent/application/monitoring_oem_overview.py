@@ -9,9 +9,10 @@ from platform_core.contracts.aiops.monitoring_native import (
 )
 
 
-def overview_panels(scope, metrics):
+def overview_panels(scope, metrics, *, target_type=None):
+    profile_key = "PDB" if scope == "DATABASE" and target_type == "oracle_pdb" else scope
     profile = json.loads(files("aiops_agent.resources").joinpath(
-        "monitoring/oem_overview.v1.json").read_text(encoding="utf-8"))["profiles"][scope]
+        "monitoring/oem_overview.v1.json").read_text(encoding="utf-8"))["profiles"][profile_key]
     indexed = {metric.name: metric for metric in metrics}
     panels = []
     for definition in profile:
@@ -32,6 +33,17 @@ def overview_panels(scope, metrics):
             ranking=definition.get("ranking", "DESC"),
             mode=definition.get("mode", "HISTORY"), unavailable_reason=reason))
     return tuple(panels)
+
+
+def freshness_seconds(scope, metric, *, target_type=None):
+    """审核展示时效，不冒充 OEM 在线采集调度；未审核指标不参与当前比较。"""
+    panels = overview_panels(scope, [metric], target_type=target_type)
+    if not any(panel.metric is not None for panel in panels):
+        return None
+    profile_key = "PDB" if scope == "DATABASE" and target_type == "oracle_pdb" else scope
+    policy = json.loads(files("aiops_agent.resources").joinpath(
+        "monitoring/oem_overview.v1.json").read_text(encoding="utf-8"))
+    return policy["current_freshness_seconds"][profile_key]
 
 
 def baseline_series(summary):

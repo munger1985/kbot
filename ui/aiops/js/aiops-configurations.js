@@ -42,6 +42,7 @@
     const type = form.elements.source_type.value, oem = type === "OEM";document.getElementById("source-token-field").hidden = oem;
     ["username","password"].forEach(key => {document.getElementById(`source-oem-${key}-field`).hidden = !oem;});document.getElementById("source-tenant-field").hidden = type !== "LOKI";
     document.getElementById("source-exadata-transport-field").hidden = !oem;
+    document.getElementById("source-standard-mappings-field").hidden = !oem;
     const native = oem && form.elements.exadata_metric_transport.value === "EMCLI";
     for (const [field,name] of [["timezone","exadata_emcli_timezone"],["pin","exadata_emcli_certificate_sha256"]]) {
       document.getElementById(`source-exadata-${field}-field`).hidden = !native;
@@ -54,6 +55,7 @@
     state.editing = item;form.reset();form.elements.display_name.value = item?.display_name || "";form.elements.source_type.value = item?.source_type || "PROMETHEUS";form.elements.endpoint.value = item?.endpoint || "";
     form.elements.loki_tenant_id.value = item?.config?.tenant_id || "";
     form.elements.exadata_metric_transport.value = item?.config?.exadata_metric_transport || "OEM_REST";
+    form.elements.standard_metric_mappings.value = JSON.stringify(item?.config?.standard_metric_mappings || {}, null, 2);
     form.elements.exadata_emcli_timezone.value = item?.config?.exadata_emcli_timezone || "UTC";
     form.elements.exadata_emcli_certificate_sha256.value = item?.config?.exadata_emcli_certificate_sha256 || "";
     document.getElementById("diagnostic-source-dialog-title").textContent = item ? "编辑监控源" : "新增监控源";renderType();syncBusy();if (!drawer.open) drawer.showModal();drawer.scrollTop = 0;renderCatalog();
@@ -71,8 +73,13 @@
     else if (value("access_token")) credentials = {token:value("access_token")};
     let config = {};
     if (type === "LOKI" && value("loki_tenant_id")) config = {tenant_id:value("loki_tenant_id")};
-    if (type === "OEM") config = {exadata_metric_transport:value("exadata_metric_transport"),
+    if (type === "OEM") {
+      let mappings;
+      try { mappings = JSON.parse(value("standard_metric_mappings") || "{}"); } catch { throw new Error("OEM 标准指标映射必须是 JSON 对象"); }
+      if (!mappings || Array.isArray(mappings) || typeof mappings !== "object") throw new Error("OEM 标准指标映射必须是 JSON 对象");
+      config = {standard_metric_mappings:mappings, exadata_metric_transport:value("exadata_metric_transport"),
       ...(value("exadata_metric_transport") === "EMCLI" ? {exadata_emcli_timezone:value("exadata_emcli_timezone"),exadata_emcli_certificate_sha256:value("exadata_emcli_certificate_sha256")} : {})};
+    }
     return {display_name:value("display_name"),...(!state.editing ? {source_type:type} : {}),endpoint:value("endpoint") || undefined,...(credentials ? {credentials} : {}),config};
   }
   async function save(event) {
