@@ -47,7 +47,8 @@ def test_permissions_explicitly_registered(name, method, permission):
             for policy in APP_AUTHORIZATION_POLICIES.values())
 
 
-def test_proxy_rejects_injected_locator_and_preserves_trusted_context():
+@pytest.mark.parametrize("scene", ["disk", "dbserver"])
+def test_proxy_rejects_injected_locator_and_preserves_trusted_context(scene):
     system, resource, source, binding = (uuid7() for _ in range(4))
     trusted = AuthContext(principal_kind=PrincipalKind.PORTAL, client_id="test-client", api_key_id="test-key",
         request_id="exadata-http", trace_id="exadata-http", app_id="aiops", domain_id=str(uuid7()),
@@ -66,11 +67,11 @@ def test_proxy_rejects_injected_locator_and_preserves_trusted_context():
     with patch.object(ops, "_client", return_value=downstream):
         client = TestClient(app)
         endpoint = path("get_exadata_view", system, resource, source)
-        response = client.post(endpoint, json={"scene": "disk"})
+        response = client.post(endpoint, json={"scene": scene})
         assert response.status_code == 200, response.text
         assert response.headers["cache-control"] == "no-store"
         downstream.exadata_view.assert_awaited_once_with(system, resource, source,
-            {"mode": "LATEST_SNAPSHOT", "window_minutes": 60, "scene": "disk", "component_id": None, "offset": 0, "limit": 12}, auth_context=trusted)
+            {"mode": "LATEST_SNAPSHOT", "window_minutes": 60, "scene": scene, "component_id": None, "offset": 0, "limit": 12}, auth_context=trusted)
         downstream.exadata_view.reset_mock()
         for body in ({"source_locator_key": "untrusted"}, {"target_id": str(uuid7())}, {"sql": "select 1"},
                      {"limit": 25}, {"component_id": "../other"}):

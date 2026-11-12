@@ -150,6 +150,37 @@ for (const code of ['SOURCE_RESPONSE_INVALID', 'SOURCE_AUTH_FAILED', 'SOURCE_EMC
 }
 assert.deepEqual(clone(other.KBotAIOpsExadataPresentation.buildExadataCards(overview)), clone(context.exports.buildExadataCards(overview)), '两端纯展示输出一致')
 
+for (const definition of [cpu, status[0]]) {
+  const unsupported = api.buildExadataCards({...overview, samples:[], gaps:[{component_id:'cell-a', metric_code:definition.code, code:'SOURCE_QUERY_UNSUPPORTED', detail:'原厂查询不支持'}]})[0]
+  assert.equal(unsupported.value, '不支持读取')
+  assert.equal(unsupported.quality, '不支持读取')
+  assert.equal(unsupported.tone, 'empty')
+  if (unsupported.status) assert.equal(api.exadataStatusItems(unsupported)[0].label, '不支持读取')
+}
+assert.equal(api.exadataGapLabel('SOURCE_QUERY_UNSUPPORTED'), '不支持读取')
+assert.equal(api.exadataGapLabel('SOURCE_PROVIDER_ERROR'), '查询失败')
+assert.equal(api.exadataCardSection(cards[3]), 'performance')
+assert.equal(api.exadataCardSection(cards[0]), 'status')
+for (const selector of ['Cell_Metric/temperature_lower','Cell_Metric/temperature_upper','Cell_Metric/cl_iorm_boost','Cell_Metric/iorm_mode']) {
+  assert.equal(api.exadataCardSection(api.buildExadataCards({...overview, definitions:[metric(selector)], samples:[sample(metric(selector), '32')], gaps:[]})[0]), 'configuration')
+}
+assert.equal(api.exadataDeviceGroup('oracle_si_rack'), 'assets')
+assert.equal(api.exadataDeviceGroup('host'), 'nodes')
+assert.equal(api.exadataDeviceGroup('oracle_si_pdu'), 'equipment')
+assert.deepEqual(clone(api.exadataSceneMembers(deviceView.members,'dbserver').map(item=>item.target_id)),['db-a'])
+assert.equal(api.exadataDeviceScene('host'), 'dbserver')
+assert.equal(api.exadataDeviceScene('oracle_exadata'), 'cell')
+assert.equal(api.exadataHasTrend(cards[3]), false, '单点不得生成趋势')
+assert.equal(api.exadataHasTrend(nullLatest), false, '一个有效点加空值不构成趋势')
+for (const selector of ['Aggregated_Exadata_Diskgroup_Capacity_Metric/count', 'Aggregated_Exadata_Diskgroup_Capacity_Metric/size']) {
+  const definition = metric(selector, 'STRING')
+  const card = api.buildExadataCards({...overview, definitions:[definition], samples:[sample(definition, '9007199254740993')], gaps:[]})[0]
+  assert.equal(api.exadataCardSection(card), 'performance', '真实 ASM 字符串容量保留容量卡')
+  assert.equal(card.numeric, false, '不因布局强改原厂类型')
+}
+const incomplete = api.buildExadataCards({...overview,samples:[],gaps:[{component_id:'cell-a',metric_code:cpu.code,code:'COLLECTION_TIMEOUT',detail:'未完成查询'}]})[0]
+assert.equal(incomplete.value, '未完成查询', '预算超时不是 OEM 空采样')
+
 const artifacts = mkdtempSync(resolve(tmpdir(), 'aiops-exadata-cards-'))
 const staticFiles = Object.fromEntries(['aiops-auth.js', 'aiops-exadata-presentation.js', 'aiops-exadata-metrics.js'].map(name => [`/__kbot/${name}`, resolve(kbot, 'ui/aiops/js', name)]))
 for (const name of ['aiops.css', 'ammolite-shared.css', 'reference-monitoring.css', 'alignment.css', 'aiops-exadata-metrics.css']) staticFiles[`/__kbot/${name}`] = resolve(kbot, 'ui/aiops/css', name)
@@ -267,7 +298,7 @@ try {
   const chart = await cpuCard.locator('.exadata-chart').evaluate(node => ({ width: node.clientWidth, height: node.clientHeight }))
   assert.ok(chart.width > 200 && chart.height >= 128)
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-history.png`), fullPage: true })
-  await page.locator('[data-scene]').selectOption('cell')
+  await page.locator('[data-scene-id="cell"]').click()
   await expect(page.locator('.exadata-metric-card')).toHaveCount(9)
   await expect(page.locator('.exadata-chart canvas')).toHaveCount(9)
   await page.locator('[data-next]').click(); await expect(page.locator('[data-next]')).toBeDisabled()
@@ -287,7 +318,7 @@ try {
   await expect(page.locator('.exadata-metric-card')).toHaveCount(0)
   await expect(page.locator('.exadata-status-panel')).toContainText('端口掉线事件')
   await expect(page.locator('.exadata-status-panel')).toContainText('未触发')
-  await expect(page.locator('.exadata-status-panel')).toContainText('未点亮')
+  await expect(page.locator('.exadata-oem')).toContainText('未点亮')
   await expect(page.locator('.exadata-status-panel')).toContainText('PortId=PortId-A')
   await expect(page.locator('.exadata-status-panel')).toContainText('ComponentId=ComponentId-A')
   for (const width of [390, 780, 1440]) {
@@ -297,21 +328,38 @@ try {
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-all-states.png`), fullPage: true })
   stateFixture = false; devicesFixture = true
   await page.locator('[data-component]').selectOption('')
-  await page.locator('[data-scene]').selectOption('overview')
+  await page.locator('[data-scene-id="overview"]').click()
   await expect(page.locator('[data-device-id]')).toHaveCount(6)
   await expect(page.locator('[data-device-id="db-a"]')).toContainText('DB Server')
   await expect(page.locator('[data-device-id="db-a"]')).toContainText('37.125')
   await expect(page.locator('[data-device-id="switch-a"]')).toContainText('可达')
   await expect(page.locator('[data-device-id="pdu-a"]')).toContainText('本页未查询')
   await expect(page.locator('[data-device-id="pdu-a"] .state-success')).toHaveCount(0)
-  await expect(page.locator('[data-device-id="rack-a"]')).toContainText('尚无审核')
+  await expect(page.locator('[data-device-id="rack-a"]')).toContainText('机架')
   for (const width of [390, 780, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1), '整机设备清单不横向溢出')
   }
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-devices.png`), fullPage: true })
+  await page.evaluate(() => document.documentElement.dataset.theme = 'dark')
+  await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-devices-dark.png`), fullPage: true })
+  await page.locator('.exadata-assets > summary').click()
+  await expect(page.locator('[data-device-id="rack-a"]')).toBeVisible()
+  await page.locator('.exadata-assets > summary').click()
+  await page.evaluate(() => document.documentElement.dataset.theme = 'light')
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(0)
+  await expect(page.locator('[data-device-group="nodes"]')).toContainText('SIM DB SERVER')
+  await expect(page.locator('[data-device-group="equipment"]')).toContainText('SIM SWITCH')
+  await expect(page.locator('.exadata-assets')).not.toHaveAttribute('open', '')
+  assert.equal(await page.locator('[data-resource-code="' + dbMemory.code + '"]').count(), 1, '概览只呈现一次节点内存')
+  await page.locator('[data-device="db-a"]').click()
+  await expect(page.locator('.exadata-detail')).toContainText('SIM DB SERVER')
+  assert.equal(calls.at(-1).body.scene, 'dbserver')
+  assert.equal(calls.at(-1).body.component_id, 'db-a')
+  await page.locator('[data-scene-id="overview"]').click()
   await page.locator('[data-device="switch-a"]').click()
-  await expect(page.locator('[data-device-id]')).toHaveCount(1)
+  await expect(page.locator('.exadata-detail')).toContainText('SIM SWITCH')
+  await expect(page.locator('[data-device-id]')).toHaveCount(0)
   assert.equal(calls.at(-1).body.component_id, 'switch-a')
   assert.equal(calls.at(-1).body.offset, 0)
   devicesFixture = false

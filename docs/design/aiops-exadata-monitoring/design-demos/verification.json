@@ -1,0 +1,77 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "name": "direction-a-type-sections",
+      "width": 1440,
+      "height": 1000,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    },
+    {
+      "name": "direction-a-type-sections",
+      "width": 768,
+      "height": 1024,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    },
+    {
+      "name": "direction-a-type-sections",
+      "width": 390,
+      "height": 844,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    },
+    {
+      "name": "direction-b-device-focus",
+      "width": 1440,
+      "height": 1000,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    },
+    {
+      "name": "direction-b-device-focus",
+      "width": 768,
+      "height": 1024,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    },
+    {
+      "name": "direction-b-device-focus",
+      "width": 390,
+      "height": 844,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    },
+    {
+      "name": "direction-c-observation-matrix",
+      "width": 1440,
+      "height": 1000,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    },
+    {
+      "name": "direction-c-observation-matrix",
+      "width": 768,
+      "height": 1024,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    },
+    {
+      "name": "direction-c-observation-matrix",
+      "width": 390,
+      "height": 844,
+      "pageerrors": 0,
+      "remoteRequests": 0,
+      "interactions": "passed"
+    }
+  ]
+}

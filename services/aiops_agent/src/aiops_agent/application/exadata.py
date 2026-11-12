@@ -142,6 +142,8 @@ class ExadataOEMService(ExadataBaselineMixin):
                                     metric_code=definition["code"], detail=(
                                         "OEM 原厂指标接口读取失败；不是 OEM 返回空采样"
                                         if exc.code == "SOURCE_PROVIDER_ERROR" else
+                                        "OEM 此目标的原厂查询接口不支持该读取；保留原始错误码，不视为设备故障"
+                                        if exc.code == "SOURCE_QUERY_UNSUPPORTED" else
                                         "OEM 指标读取失败或在线元数据与审核定义不匹配")))
                                 continue
                             if not result["points"]:

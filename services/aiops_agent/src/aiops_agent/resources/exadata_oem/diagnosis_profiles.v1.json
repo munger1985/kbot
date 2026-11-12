@@ -30,19 +30,36 @@
       ]
     },
     {
+      "id": "dbserver",
+      "display_name": "DB Server 资源与服务",
+      "metric_codes": [
+        "host.CPUUsageSummary.OverAllUsagePct",
+        "host.Load.memUsedPct",
+        "host.Response.Status",
+        "oracle_si_server_map.SystemStatus.HealthStatus",
+        "oracle_si_server_map.AccessPointResponse.statusMsg",
+        "oracle_si_server_map.SystemStatus.PowerStatus",
+        "oracle_si_server_map.SystemStatus.OSStatus",
+        "oracle_si_server_map.ComponentState.ComponentState"
+      ]
+    },
+    {
       "id": "cell",
       "display_name": "Cell 资源",
       "metric_codes": [
-        "oracle_exadata.Cell_Metric.cell_name",
-        "oracle_exadata.Cell_Metric.cl_iorm_boost",
-        "oracle_exadata.Cell_Metric.cl_runq",
+        "oracle_exadata.CellSrv_Status_Metric.Status",
+        "oracle_exadata.CellSrv_Status_Metric.msStatus",
+        "oracle_exadata.CellSrv_Status_Metric.rsStatus",
         "oracle_exadata.Cell_Metric.cpu_utilization",
-        "oracle_exadata.Cell_Metric.iorm_mode",
-        "oracle_exadata.Cell_Metric.led_status",
         "oracle_exadata.Cell_Metric.memory_utilization",
+        "oracle_exadata.Cell_Metric.cl_runq",
         "oracle_exadata.Cell_Metric.network_received",
         "oracle_exadata.Cell_Metric.network_sent",
         "oracle_exadata.Cell_Metric.temperature",
+        "oracle_exadata.Cell_Metric.cell_name",
+        "oracle_exadata.Cell_Metric.cl_iorm_boost",
+        "oracle_exadata.Cell_Metric.iorm_mode",
+        "oracle_exadata.Cell_Metric.led_status",
         "oracle_exadata.Cell_Metric.temperature_lower",
         "oracle_exadata.Cell_Metric.temperature_upper"
       ]
@@ -250,6 +267,8 @@
       "id": "network",
       "display_name": "互联与交换机",
       "metric_codes": [
+        "oracle_si_netswitch.AccessPointResponse.statusMsg",
+        "oracle_si_netswitch.ComponentState.ComponentState",
         "oracle_exadata.HostInterConnect_Statistics.c_mb_dropped",
         "oracle_exadata.HostInterConnect_Statistics.c_mb_rdma_dropped",
         "oracle_exadata.HostInterConnect_Statistics.c_mb_received",

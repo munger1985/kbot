@@ -4386,6 +4386,7 @@
             "default": "overview",
             "enum": [
               "overview",
+              "dbserver",
               "cell",
               "disk",
               "flash",

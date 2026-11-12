@@ -307,7 +307,10 @@ def test_report_numeric_observations_reference_raw_evidence_without_threshold_in
     f.adapter.exadata_latest.return_value["native_value_type"] = "NUMBER"
     async def run():
         await publish_exadata(f)
-        report = await f.exadata.diagnose(**args(f, scene="cell", limit=1), idempotency_key="range-test")
+        cpu_offset = next(index for index, code in enumerate(next(
+            profile for profile in f.exadata.profiles if profile["id"] == "cell")["metric_codes"])
+            if code == "oracle_exadata.Cell_Metric.cpu_utilization")
+        report = await f.exadata.diagnose(**args(f, scene="cell", offset=cpu_offset, limit=1), idempotency_key="range-test")
         finding = next(item for item in report.findings if item.code == "OBSERVED_RANGE_IN_PAGE")
         assert finding.severity == "INCONCLUSIVE" and finding.evidence_indexes == (0,)
         assert "9007199254740993.123456789" in finding.detail

@@ -3,10 +3,18 @@
   const exports = {};
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.exadataScenes = void 0;
 exports.exadataBaselineKey = exadataBaselineKey;
+exports.exadataBaselineSummary = exadataBaselineSummary;
 exports.exadataBaselineLines = exadataBaselineLines;
 exports.exadataNumeric = exadataNumeric;
 exports.exadataUnit = exadataUnit;
+exports.exadataDeviceGroup = exadataDeviceGroup;
+exports.exadataDeviceScene = exadataDeviceScene;
+exports.exadataSceneMembers = exadataSceneMembers;
+exports.exadataCardSection = exadataCardSection;
+exports.exadataHasTrend = exadataHasTrend;
+exports.exadataGapLabel = exadataGapLabel;
 exports.exadataRaw = exadataRaw;
 exports.exadataQuality = exadataQuality;
 exports.exadataDimensions = exadataDimensions;
@@ -17,6 +25,20 @@ exports.exadataStatusKey = exadataStatusKey;
 exports.exadataStatusItems = exadataStatusItems;
 exports.exadataChartOption = exadataChartOption;
 function exadataBaselineKey(card) { return JSON.stringify([card.componentId, card.metricCode]); }
+function exadataBaselineSummary(result, period) {
+    if (!period)
+        return '';
+    if (!result)
+        return '历史均值读取中…';
+    if (typeof result === 'string' || result.baseline.unavailable_reason)
+        return '均值暂不可用 · 查看证据';
+    if (!result.comparisons.length)
+        return '暂无可比维度';
+    if (result.comparisons.length > 1)
+        return result.comparisons.length + ' 个维度分别比较 · 查看证据';
+    const item = result.comparisons[0];
+    return `${period === '1w' ? '7 天' : '30 天'}均值 ${item.average} ${result.unit || ''} · ${item.deviation_percent === null ? '零均值，偏离不可定义' : '偏离 ' + item.deviation_percent + '%'}`;
+}
 function exadataBaselineLines(result, period) {
     if (!period)
         return [];
@@ -31,6 +53,8 @@ function exadataBaselineLines(result, period) {
     return result.comparisons.map(item => `${exadataDimensions(item.dimensions)} · ${period === '1w' ? '7 天' : '30 天'}留存均值 ${item.average} ${result.unit || ''}（${item.sample_count} 条）；比较采样 ${item.current}；差值 ${item.difference} ${result.unit === '%' ? '个百分点' : result.unit || ''}；${item.deviation_percent === null ? '均值为零，相对偏离不可定义' : `偏离 ${item.deviation_percent}%`}；比较采样时间 ${item.observed_at}`);
 }
 const labels = {
+    'CPUUsageSummary/OverAllUsagePct': 'CPU 使用率',
+    'Load/memUsedPct': '内存使用率',
     'CellSrv_Status_Metric/Status': 'Cell 服务状态',
     'CellSrv_Status_Metric/msStatus': '管理服务状态',
     'CellSrv_Status_Metric/rsStatus': '重启服务状态',
@@ -42,7 +66,7 @@ const labels = {
     'Cell_Metric/iorm_mode': '磁盘 I/O 目标',
     'Cell_Metric/led_status': '指示灯状态',
     'Cell_Metric/network_received': '网络接收速率',
-    'Cell_Metric/network_transmitted': '网络发送速率',
+    'Cell_Metric/network_sent': '网络发送速率',
     'Cell_Metric/temperature': 'Cell 温度',
     'Cell_Metric/temperature_lower': '温度下限原始值',
     'Cell_Metric/temperature_upper': '温度上限原始值',
@@ -54,6 +78,48 @@ function exadataNumeric(value) {
     return Number.isFinite(numeric) ? numeric : null;
 }
 function exadataUnit(unit) { return unit || 'OEM 未声明单位'; }
+exports.exadataScenes = [['overview', '整机概览'], ['dbserver', 'DB Server'], ['cell', 'Cell'], ['disk', '磁盘 IO'], ['flash', 'Flash / Smart IO'], ['iorm', 'IORM'], ['network', '互联设备'], ['capacity', '容量']];
+function exadataDeviceGroup(type) {
+    if (['oracle_dbmachine', 'oracle_exadata_grid', 'oracle_si_rack'].includes(type))
+        return 'assets';
+    return ['host', 'oracle_exadata', 'oracle_si_server_map'].includes(type) ? 'nodes' : 'equipment';
+}
+function exadataDeviceScene(type) {
+    return type === 'host' || type === 'oracle_si_server_map' ? 'dbserver' : type === 'oracle_exadata' ? 'cell' : ['oracle_si_netswitch', 'oracle_si_network_port_switch', 'oracle_si_network_port_server'].includes(type) ? 'network' : 'overview';
+}
+function exadataSceneMembers(members, scene) {
+    return members.filter(member => exadataDeviceGroup(member.target_type) !== 'assets' && (scene === 'overview'
+        || scene === 'dbserver' && ['host', 'oracle_si_server_map'].includes(member.target_type)
+        || ['cell', 'disk', 'flash', 'iorm'].includes(scene) && member.target_type === 'oracle_exadata'
+        || scene === 'network' && ['oracle_exadata', 'oracle_si_netswitch', 'oracle_si_network_port_server', 'oracle_si_network_port_switch'].includes(member.target_type)
+        || scene === 'capacity'));
+}
+// 按审核目录中的准确选择器分组，不从名称模糊推断健康或单位。
+function exadataCardSection(card) {
+    if (card.status && ['AVAILABILITY', 'EVENT'].includes(card.status.category))
+        return 'status';
+    if (['Aggregated_Exadata_Diskgroup_Capacity_Metric/count', 'Aggregated_Exadata_Diskgroup_Capacity_Metric/size'].includes(card.selector))
+        return 'performance';
+    if (card.status || !card.numeric || ['Cell_Metric/cl_iorm_boost', 'Cell_Metric/iorm_mode', 'Cell_Metric/temperature_lower', 'Cell_Metric/temperature_upper'].includes(card.selector))
+        return 'configuration';
+    return 'performance';
+}
+function exadataHasTrend(card) {
+    return card.numeric && card.series.some(series => new Set(series.samples.filter(sample => sample.quality !== 'EMPTY' && exadataNumeric(sample.value) !== null).map(sample => sample.observed_at)).size > 1);
+}
+function exadataGapLabel(code) {
+    if (['SOURCE_QUERY_UNSUPPORTED', 'SOURCE_METRIC_HISTORY_UNSUPPORTED'].includes(code))
+        return '不支持读取';
+    if (['NO_DATA', 'EMPTY'].includes(code))
+        return '未采样';
+    if (code === 'STALE')
+        return '采样过期';
+    if (['COLLECTION_TIMEOUT', 'QUERY_PAGE_PARTIAL'].includes(code))
+        return '未完成查询';
+    if (code.startsWith('SOURCE_'))
+        return code === 'SOURCE_TRUNCATED' ? '采样截断' : '查询失败';
+    return '采集说明';
+}
 function exadataRaw(value) { return value === null || value === '' ? '无数据' : value; }
 function exadataQuality(value) {
     return { OBSERVED: '已采样', EMPTY: '来源空值', STALE: '旧快照', TRUNCATED: '采样截断' }[value] || value;
@@ -73,6 +139,9 @@ function buildExadataDevices(view) {
         const remaining = coverage.metric_codes.length - coverage.queried_metric_codes.length;
         return { member, typeLabel: types[member.target_type] || member.target_type, states, resources,
             note: !coverage.metric_codes.length ? coverage.note : remaining ? `另 ${remaining} 项指标本页未查询，可查看设备指标` : '' };
+    }).sort((a, b) => {
+        const order = { host: 0, oracle_si_server_map: 1, oracle_exadata: 2, oracle_si_netswitch: 3, oracle_si_pdu: 4 };
+        return (order[a.member.target_type] ?? 5) - (order[b.member.target_type] ?? 5) || a.member.display_name.localeCompare(b.member.display_name);
     });
 }
 function exadataOverviewNotes(view) {
@@ -126,16 +195,20 @@ function buildExadataCards(view) {
         const latest = card.series.map(item => item.latest);
         const hasValue = latest.some(item => item.quality !== 'EMPTY' && (card.numeric ? exadataNumeric(item.value) !== null : item.value !== null && item.value !== ''));
         const providerError = !hasValue && card.gaps.some(gap => gap.code === 'SOURCE_PROVIDER_ERROR');
-        const readError = !hasValue && card.gaps.some(gap => gap.code.startsWith('SOURCE_') && !['SOURCE_METRIC_HISTORY_UNSUPPORTED', 'SOURCE_TRUNCATED'].includes(gap.code));
+        const unsupported = !hasValue && card.gaps.some(gap => gap.code === 'SOURCE_QUERY_UNSUPPORTED');
+        const incomplete = !hasValue && card.gaps.some(gap => gap.code === 'COLLECTION_TIMEOUT');
+        const readError = !hasValue && card.gaps.some(gap => (gap.code.startsWith('SOURCE_') && !['SOURCE_QUERY_UNSUPPORTED', 'SOURCE_METRIC_HISTORY_UNSUPPORTED', 'SOURCE_TRUNCATED'].includes(gap.code)));
         card.quality = card.samples.some(item => item.quality === 'TRUNCATED') ? '采样截断'
             : latest.some(item => item.quality === 'STALE') ? '旧快照'
                 : providerError ? 'OEM 服务错误'
                     : readError ? '读取错误'
-                        : !hasValue ? card.gaps.some(gap => gap.code === 'SOURCE_METRIC_HISTORY_UNSUPPORTED') ? '历史不支持' : '无有效数据'
-                            : latest.some(item => item.quality === 'EMPTY' || item.value === null || item.value === '' || (card.numeric && exadataNumeric(item.value) === null)) ? '部分缺失'
-                                : card.gaps.length ? '部分采样' : '已采样';
+                        : unsupported ? '不支持读取'
+                            : incomplete ? '查询超时'
+                                : !hasValue ? card.gaps.some(gap => gap.code === 'SOURCE_METRIC_HISTORY_UNSUPPORTED') ? '历史不支持' : '无有效数据'
+                                    : latest.some(item => item.quality === 'EMPTY' || item.value === null || item.value === '' || (card.numeric && exadataNumeric(item.value) === null)) ? '部分缺失'
+                                        : card.gaps.length ? '部分采样' : '已采样';
         card.tone = ['旧快照', '采样截断', '部分缺失', '部分采样', 'OEM 服务错误', '读取错误'].includes(card.quality) ? 'warning' : hasValue ? 'observed' : 'empty';
-        card.value = readError ? '读取失败' : latest.length > 1 ? `${latest.length} 个维度` : latest[0]?.quality === 'EMPTY' ? '无数据' : exadataRaw(latest[0]?.value ?? null);
+        card.value = readError ? '读取失败' : unsupported ? '不支持读取' : incomplete ? '未完成查询' : latest.length > 1 ? `${latest.length} 个维度` : latest[0]?.quality === 'EMPTY' ? '无数据' : exadataRaw(latest[0]?.value ?? null);
         card.valueUnit = latest.length === 1 && card.unit && card.unit !== 'n/a' ? card.unit : '';
         card.observedAt = [...latest].sort((a, b) => Date.parse(b.observed_at) - Date.parse(a.observed_at))[0]?.observed_at || null;
         const value = latest.length === 1 && latest[0].quality !== 'EMPTY' ? exadataNumeric(latest[0].value) : null;
@@ -166,7 +239,7 @@ function exadataStatusItems(card) {
     if (!card.status)
         return [];
     if (!card.series.length)
-        return [{ key: card.key, dimension: '', label: card.value === '读取失败' ? '读取失败' : card.quality === '历史不支持' ? '历史不支持' : '无数据', tone: 'unknown', quality: card.quality, observedAt: null }];
+        return [{ key: card.key, dimension: '', label: ['读取失败', '不支持读取', '未完成查询'].includes(card.value) ? card.value : card.quality === '历史不支持' ? '历史不支持' : '无数据', tone: 'unknown', quality: card.quality, observedAt: null }];
     return card.series.map(series => {
         const sample = series.latest;
         const raw = sample.value?.trim() ?? '';

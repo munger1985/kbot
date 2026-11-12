@@ -735,3 +735,27 @@ Ammolite 的 Cyber DBA 保持原四个业务系统授权，正常新会话对 DB
 KBot OEM 测试用 Agent 使用完整组件名 `aiops-exadata-monitor.lab`、`AIOPS_SIM_EXADATA_PDU01` 的真实新会话同样 **COMPLETED**，三个指标、基线偏离和只读建议均通过验收，无数据库 ops_run_id；证据 `/tmp/exadata-analysis-kbot-hKXBKw/`。但此前仅称“DB Server/PDU”的自然语言问题出现路由错误：模型将设备类型填入 `component_names`，严格成员匹配拒绝并返回 `EXADATA_QUERY_UNAVAILABLE`；证据 `/tmp/exadata-analysis-kbot-Xc6yO5/`。因此只能确认完整组件名的端到端分析成功，不能将此复测当作泛类型路由问题已修复；本轮没有通过关键词映射、模糊组件匹配或放宽授权掩盖问题。
 
 通过当前在线 development logs API，按本次 `applied.json` 时间过滤并确认分页覆盖起点：两端 Main API 未发现新增 ERROR；Ammolite AIOps 在 2026-11-12 06:17:39 UTC 有一条 Conversation Turn 排队提升的 PostgreSQL `DeadlockDetectedError`，KBot 复测后在 06:19:50 UTC 同样记录排队提升的 Oracle `ORA-00060`。两者均为队列事务死锁，不是 OEM 指标读取错误；上述硬件分析已完成，但本轮未修复或宣称消除该独立并发问题。日志核查与会话证据分别记录，不用 readiness 或监控页成功代替 Agent 验收。
+
+### 10.19 A 整机首页＋B 设备详情（2026-11-12）
+
+用户已确认组合方向，原话与三版 HTML/截图见 docs/design/aiops-exadata-monitoring/direction-approved.md。仅作用于 EXADATA＋OEM；两端共用展示语义与 CSS，非 Exadata、普通 OEM、Prometheus、数据库诊断与 Agent 授权不变。
+
+#### 10.19.1 页面与合同
+
+- 八个场景页签：整机概览、DB Server、Cell、磁盘 IO、Flash / Smart IO、IORM、互联设备、容量。新增 dbserver 为正式 ExadataQuery 枚举，监控/只读诊断目录同时登记准确的 host 与 oracle_si_server_map 指标；不靠名称筛选，仍受已确认成员、GUID、绑定版本与分页约束。
+- A 概览分“节点资源与服务”“互联与供电设备”。DB Server 与 Cell 按节点显示 CPU/内存、采样时间及可展开的均值/证据，不再重复大卡。服务状态紧凑并列，管理可达和硬件健康分开；DBM/Grid/Rack 折叠为资产结构，不逐项铺长说明。
+- B 详情提供设备目录、返回整机和真实场景切换。服务/可用性、性能/容量、配置/标识分层；指示灯、IORM 模式与温度上下限收起。真实 ASM 字符串容量仍显示容量卡，不强改原生类型；OEM 温度没单位时不加摄氏度。
+- Cell 首页覆盖三服务、CPU/内存、运行队列、网络和温度；剩余配置可下一页读取。概览24项、其他12项，30秒采集/55秒总预算不扩大；页面和只读诊断选集一致。
+- 保留7天/30天均值、维度隔离、精确文本、证据、历史与取消竞态保护。同维度至少两个有效不同时点才绘制趋势；单点不造曲线。KBot 基线刷新保留展开与焦点；Ammolite 换资源清空旧设备筛选。
+
+#### 10.19.2 缺口与未覆盖部分
+
+按 gap.code 区分 SOURCE_QUERY_UNSUPPORTED（不支持读取）、原厂5xx/认证/解析等查询失败、COLLECTION_TIMEOUT（未完成查询）、NO_DATA（无采样）及过期值。原始代码、组件、指标与证据保留，缺口折叠但不删除；不将管理可达视为硬件健康。
+
+本轮独立原厂 EMCLI 复查固定 SIM 交换机 ComponentState 返回空对象，没有硬件采样。导出中有效 ComponentState 主要在 oracle_si_hw_component_server / oracle_si_hw_component_switch；提供的 target_associations.csv 没有这些子组件的归属记录。现有 SIM 缺乏可复核的硬件子组件身份、传感器与端口状态，不能从名称、同 Agent 或父管理 UP 推断，也不编 GUID、不写 OEM 内部表。本轮修复不支持被误报“读取失败”及页面结构，未宣称完成这些硬件健康采集。
+
+原厂带维度月历史限制、DB Server Response 无采样以及前节的 Agent 泛类型路由/Conversation 排队死锁仍独立存在；不改 Prompt、队列、授权、绑定或设备注册。部署范围限因合同/目录变化受影响的 Main API、AIOps API/Worker，不重启 OEM、数据库或无关服务。
+
+#### 10.19.3 本地验证
+
+两仓相同定向回归各419项通过，另有13项子测试：覆盖 Exadata、公开合同、普通 OEM 原生指标和监控精度；两仓生产前端组件合同通过五种宽度（1920/1440/1000/780/390）、明暗主题、展开资产结构、DB Server/交换机详情跳转、真实零值/精度、状态字典、配置分层、分页、均值周期切换竞态和错误保留。Ammolite typecheck/生产 build、两端架构边界与 diff-check 通过；build 保留既有大 chunk 提示。独立硬件采样仍未取得，不将本地 fixture 浏览器检查代替线上取证。

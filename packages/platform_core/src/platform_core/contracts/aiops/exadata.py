@@ -32,7 +32,7 @@ class ExadataDiscovery(ExadataModel):
 class ExadataQuery(ExadataModel):
     mode: Literal["LATEST_SNAPSHOT", "HISTORY"] = "LATEST_SNAPSHOT"
     window_minutes: int = Field(default=60, ge=1, le=60)
-    scene: Literal["overview", "cell", "disk", "flash", "iorm", "network", "capacity"] = "overview"
+    scene: Literal["overview", "dbserver", "cell", "disk", "flash", "iorm", "network", "capacity"] = "overview"
     component_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
     offset: int = Field(default=0, ge=0, le=10000)
     limit: int = Field(default=12, ge=1, le=24)
