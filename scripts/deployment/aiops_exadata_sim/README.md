@@ -1,6 +1,6 @@
 # Exadata → 真实 OEM 调试夹具
 
-本目录只在隔离实验环境模拟 CellCLI。OEM 使用未修改的 XA 插件采集、上传并保存指标，AIOps 仍访问真实 OEM REST，不直读模拟器，不写 OEM 内部表。
+本目录只在隔离实验环境模拟 CellCLI 与只读 SNMP 交换机。OEM 使用未修改的 XA/SI 插件采集、上传并保存指标，AIOps 仍访问真实 OEM REST，不直读模拟器，不写 OEM 内部表。
 
 全部名称含 SIM，全部数值是合成数据。字段映射依据真实 OEM 导出目录及 XA 24.1.1 原厂采集脚本；不包含客户主机、凭据或真实业务值，也不承诺覆盖目录全部 267 项。
 
@@ -42,6 +42,40 @@ sudo python3 update_cellcli.py --source ./cell_simulator.py --expected-sha256 �
 
 本次最终源码 SHA256 为 f59daf83690ba1066b59aa8cbaa98ecb7b5f197dcbb0993c6278af2117999bea。只对独立 SIM Agent 手工执行过的有效集合名称为 Exadata_Performance_Metrics_All、Exadata_IORM_Performance_Metrics_All、Exadata_Capacity_Metrics、Filesystem_Utilization_Metrics；必须等待成功后再上传，不能使用子指标组名称或把失败命令当作成功。
 
+
+## 剩余三项与交换机模拟（2026-11-12 续）
+
+本节及[实施设计 10.11](../../../docs/operations/aiops-exadata-oem-implementation-design.md#1011-三项剩余问题的原厂证据交换机模拟与后续边界2026-11-12)是当前复核结果，替代上述“应用未部署”“状态/ASM 上送留存不明”的旧状态：
+
+- 两端应用修复已按用户确认部署，只重启两个 AIOps API；Ammolite 正常会话浏览器已显示五场景首页卡片。带维度历史仍准确显示 OEM 读取失败，不是历史已修复；没有宣称 KBot 本轮浏览器也验收通过。
+- OEM 原厂 get_metric_data 已能读到两块磁盘 normal、SIMDATA01/SIMDATA 的 size=8192/count=1，以及聚合磁盘多个历史采样。REST 对纯 STRING 带键组错误使用数值键集合过滤，历史维度键 DISTINCT 子查询又存在排序错误。不能再把这三组归因于模拟器没有上传，不能改原厂 STRING 为 NUMBER 或用最新值替代历史。
+- 新增只读 SNMP 交换机 aiops-exadata-switch-sim，仅实验网 172.22.0.9:1161/UDP，无宿主端口；两个 100Gbps SIM Ethernet 端口、PFC priority 0..7，原始累计值由原厂 SI 计算 rate/Delta。机箱序列号等身份明确含 SIM，没有复制客户身份、GUID 或业务快照。
+- 原厂 SI 插件已在独立 Agent 部署 Success；原厂 SNMP AP 注册后，AIOPS_SIM_EXADATA_SWITCH01 已在 OEM get_targets 中为 Up。端口配置、性能、PFC 手动采集及上传成功，但尚未把这些结果等同于 OEM REST 全部值、自动采集调度或页面验收。
+- 独立原厂管理员 REST 已核对 PfcIfPriorityEntryMetric/latestData：16 行、64 个非空值、两个端口与 priority 0..7；未使用现用应用监控账号验收。NetworkPortPerformance 只有 Agent 本地两行性能值，父交换机对应 REST 为 404；NetworkPortsTargetComponent 单项仍报 Empty snmp response，原厂所需 VTP VLAN/FDB 等附加配置 MIB 尚未模拟。PfcIfEntryMetric 本地单项也未成功，因此不声明端口组件或全部 PFC 已覆盖。
+- 真实导出的 138 个交换机端口是 3 个父交换机下的组件，不是独立 Target。现有 AIOps 尚需原厂组件身份支持；未伪造端口目标，也未把交换机加入现有 DBM 而破坏两端已确认的 inventory digest。
+- 完成页面读取还需原厂补丁，或另行明确批准仅为 Exadata 增加原厂 EMCLI 只读通道和组件发现。当前应用读取方式、授权、业务绑定均未改，普通监控诊断不动。
+
+### 仅首次创建交换机
+
+既有模拟交换机和注册记录不可重复执行以下命令。确认独立 SIM Agent 的 oracle.sysman.si:24.1.1.0.0 原厂部署为 Success，再把本目录三个交换机脚本置于现场部署目录：
+
+```bash
+sudo python3 deploy_switch.py
+sudo python3 register_switch.py
+```
+
+注册器检查固定容器身份、网络、源码 SHA、同名目标和已有提交记录；失败保留现场，不使用 force。SNMPVersion 必须 v2c，原厂实际 monitoring_cred 为单数；通过原厂 argfile 的临时 0600 文件传凭据，不放进进程参数，完成后删除临时文件。容器 private community 保留在 state/exadata-sim-switch-snmp，不输出或提交。receipt 中 command_accepted=true 仅证明命令成功，inventory_verified 仍为 false，不能作为 DBM 成员或页面覆盖凭证。
+
+已对新 AP 成功手动执行的集合为 Response、_Capability_、correlation_identifier、oracle_si_net_port_config、oracle_si_net_port_perf、oracle_si_switch_pfc；原厂命令格式：
+
+```bash
+emctl control agent runCollection AIOPS_SIM_EXADATA_SWITCH01_SNMP:oracle_si_switch_cisco_ios_snmp oracle_si_net_port_perf
+emctl upload agent
+```
+
+仅在独立 SIM Agent 以原厂要求的用户执行，先等待采集完成再上传；不适用于既有数据库 Agent。本轮经原厂 preview 后，仅对新交换机启用 oracle_si_switch_pfc 的五分钟周期；OMS 命令成功、Agent 专属 collection XML 已核对，尚未验收连续自动采样。其他默认禁用集合没有一并开启或提高频率。当前交换机源码 SHA256 为 5916b7c0ca1b305ac3c21f13a19bebcb881f620cf3ceaadd57310f2b849e6efa。只重启过新交换机容器；源码备份及各次预检失败记录留在其私有 state，旧目标、卷和数据未删除。
+
+定向测试两端各 28 passed + 13 subtests passed，两端架构边界通过。没有扩大为整机或全部指标覆盖声明。
 
 ## 仅在相同实验环境部署
 

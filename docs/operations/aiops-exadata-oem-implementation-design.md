@@ -379,3 +379,62 @@ OEM 历史错误的反证与服务器证据：
 - 两端真实生产组件/ECharts 卡片浏览器合同通过 1920/1440/1000/780/390 宽度；包含提示删除、上游故障卡片不补零/不画图、原有精度与维度隔离检查。
 - Ammolite Portal typecheck、生产 build 及两端架构边界检查通过；build 保留既有大 chunk 告警。没有执行全仓测试或 DDL。
 - 本轮模拟器已原位在线更新；应用代码和前端未在线拉取、部署或重启。真实证据保存在 kbotdev 私有目录 exadata-scenes-audit-20261112-blncunzf，会话及凭据文件不得输出或提交。
+
+### 10.11 三项剩余问题的原厂证据、交换机模拟与后续边界（2026-11-12）
+
+本节替代第 10.10 节中的“尚未部署应用”及“状态/ASM 上送留存原因未明”两项旧结论；不代表全部指标已能在页面读取。本轮继续限定真实 OEM、原厂插件及 SIM 目标，不修改 Oracle 二进制、内部表或指标类型，不把快照伪装成历史。
+
+#### 10.11.1 已批准的应用部署与页面复核
+
+两端已在 kbotdev 精确 fast-forward：Ammolite dev 至 6b1e5df096c4b9b1041ef466bceb2eee041cca90，KBot kbot4.1.1 至 050c1c248a044b6df156fb17e954ae42b38c436e。按此前用户确认，只重启两端 AIOps API：Ammolite 19130 的 /ready 与 KBot 18110 的 /ready 均 200；其余 48 个基线进程及配置 Hash 不变。没有 DDL、Prompt、授权或业务绑定修改。备份及 receipt 保留于 kbotdev 私有目录 /home/ubuntu/aiops-exadata-repair-20261112-oexnsi8c。
+
+Ammolite 使用正常 BUSINESS 会话与已部署生产组件、真实公共 API/OEM，无响应 mock：磁盘、Flash、IORM、互联、容量首页分别有 24、12、12、7、16 条非空样本；对应 12、12、12、7、7 张卡。磁盘历史首页 12 张卡准确显示 SOURCE_PROVIDER_ERROR/读取失败，不补零、不以快照代替历史；无 pageerror，顶部指定提示已删除。证据目录 /tmp/exadata-online-deploy-wPjuMP。这是首页验收，不是逐页全量、全部组件或历史修复声明。Ammolite 业务链接必须带 domainId；不带时返回首页是路由上下文缺失，不能归因为鉴权故障。KBot 本轮未获得可用正常登录会话，未再次验收其浏览器页面。
+
+#### 10.11.2 真实导出重新核对
+
+重新完整读取用户 README，并按支持引号跨行的 CSV 解析原始压缩包：
+
+- 定义仍为 88,680 条。oracle_si_network_port_switch 定义 17,940 条，归属于 138 个端口组件和 3 个父交换机；这 138 个端口 GUID 均不在 targets.csv 的 50 个独立目标内。
+- 因此端口是原厂 TargetComponent，不是可人为注册成独立 Target 的同名对象。后续必须维护父交换机、原生组件 GUID、PortId/其他维度及授权关系，不能制造 Target GUID 或仅靠名称推断成员。
+- 原始归档只有最新快照，没有历史时序。模拟历史必须由新采样经原厂 Agent 上传并由 OEM 留存，不能把客户导出的快照复制成过去的曲线。
+- 不复制客户主机、IP、业务值或 GUID 入模拟系统；所有身份含 SIM，指标组、列名、类型、维度及单位仍以真实目录和现场原厂元数据为准。
+
+#### 10.11.3 状态/ASM 不是“未入库”，历史不是“缺少模拟采样”
+
+使用原厂 get_metric_data -json，独立于 AIOps REST 读取 OEM 已留存数据：
+
+| 指标 | 原厂 EMCLI 留存证据 | 同一来源 OEM REST |
+| --- | --- | --- |
+| Exadata_Disk_Status_Metric/status | CD_00_sim_cell01、FD_00_sim_cell01 两个维度均有 normal | latestData items 仍为空 |
+| Aggregated_Exadata_Diskgroup_Capacity_Metric | SIMDATA01/SIMDATA 的 size=8192、count=1；原厂类型均为 STRING | latestData items 仍为空 |
+| Aggregated_HardNFlashDisk_Metric/avg_cd_io_load | 最近一天 HardDisk/FlashDisk 多个历史采样可由原厂命令读取 | metricTimeSeries 返回 500，OMS 为 ORA-01791 |
+
+这证明相应模拟数据已经经过原厂上传和留存，不能再把 REST 空结果归因为模拟器没造数据。STRING/stateful 不得改成 NUMBER 来迁就接口；不能从组标签擅自补单位或把正常文本当作整机健康。
+
+只读核对现场原厂 MetricValueRepositoryImpl 的查询构造后，确认两种独立问题：
+
+1. 历史维度键子查询 SELECT DISTINCT metric_key_value，却按未投影的 KEY_PART_1..7 排序并分页，触发 ORA-01791；显式 sort 或 key 过滤不消除该子查询。无维度 CPU 历史仍可读。
+2. latestData 虽为 STRING 选择 gc_metric_latest，却对带键组无条件以 GC_METRIC_VALUES_LATEST 的数值键集合过滤；纯 STRING 组因而被过滤为空。get_metric_data 可读与 REST 空结果并存，不代表上传丢失。
+
+未私改原厂 jar、视图、metadata 或接口响应，也没有新增任意 SQL/Shell 代理。继续增加模拟数值不能修复上述 REST 查询逻辑。
+
+#### 10.11.4 隔离交换机模拟
+
+新增 switch_simulator.py、deploy_switch.py、register_switch.py，与两仓同名测试同步。仅在 aiopsdb 既有隔离实验网络创建 aiops-exadata-switch-sim（172.22.0.9:1161/UDP，无宿主端口发布），只读容器、非 root UID、cap-drop ALL、独立随机私有 community。
+
+- MIB-II/IF-MIB 两个 100Gbps SIM Ethernet 端口；ENTITY-MIB 明确 SIM 的机箱、型号及序列号，用于原厂相关性身份。CISCO-PFC-EXT-MIB 提供两个端口、priority 0..7 的原始计数。速率、Delta 由原厂 SI 计算，不在 AIOps 或模拟器内伪造。
+- 使用独立 SIM Agent 的 oracle.sysman.si 24.1.1.0.0，原厂部署状态 Success；不修改原厂插件。原厂 add_target 经 SNMP Access Point 创建 AIOPS_SIM_EXADATA_SWITCH01，OEM get_targets 已独立核对为 Up，Agent 中 AP 存在。
+- 现场原厂实际选项为 monitoring_cred 单数；帮助文本的复数写法不生效。input_file 标签不替换这个选项内的凭据，故使用原厂 argfile 与临时 0600 文件，community 不进入进程参数或输出，结束删除临时文件。SNMPVersion 使用 v2c，不使用 2c。
+- 已对新 AP 成功执行 Response、_Capability_、correlation_identifier、oracle_si_net_port_config、oracle_si_net_port_perf、oracle_si_switch_pfc 的手动采集及上传。首次 PFC 遍历到模拟 MIB 尾部的失败已保留；补充标准 SNMP 引擎标量后重新采集成功。原厂命令成功不等于 OEM 最新值或 AIOps 页面已验收。
+- 独立验证结果：原厂 Agent 的 NetworkPortPerformance 确实返回两个端口，接收速率分别为 126000000、127000000，发送速率 96000000、97000000；这些是原厂按原始计数计算的值，不能冒充已从 OEM 仓库读到。原厂管理员只读 REST 已读到新交换机 PfcIfPriorityEntryMetric/latestData 的 16 行、64 个非空值，维度为 PortId/Priority。这是 OEM 传输与留存验证，不是现用 AIOps 监控账号授权或页面验收。
+- 原厂 modify_collection_schedule 经 preview 核对后，仅对新交换机的 oracle_si_switch_pfc 启用原厂五分钟周期；OMS 返回成功，独立 Agent 的目标专属 collection XML 已核对 IntervalSchedule=5 Min，未使用 force。只是调度配置落地，尚不声明连续自动采样验收；其他新交换机集合没有提高频率或一并开启。
+- 端口组件配置仍不完整：runCollection 返回成功后，单独 getmetric NetworkPortsTargetComponent 仍报 Empty snmp response；只读核对原厂 Cisco 实现发现其端口配置还依赖 VTP VLAN/FDB 等额外 MIB，当前夹具未覆盖。父交换机 NetworkPortPerformance REST 返回 404，不应以 Agent 本地性能值冒充 OEM 组件已建成或页面已读到；PfcIfEntryMetric 的本地单项调用也未成功，不声明完整 PFC 组覆盖。
+- 只为本轮新建交换机容器加载源码重启；没有重启 OEM、既有数据库 Agent、CellCLI 或 SIM Monitor Agent。各失败注册记录和源码备份均保留，没有 force、删除重建目标或卷。
+- 交换机尚未加入现有 DBM 成员，避免两端绑定的 live inventory digest 突变而导致原有监控 409。后续应通过正常发现/确认接口同步两端绑定，不能直接写业务表或构造用户身份。
+- 当前 AIOps 发现只展开独立 Target，没有完成原厂 TargetComponent 端口身份支持。不能宣称新增容器或交换机 Up 就已让页面显示交换机端口指标。
+
+#### 10.11.5 需要另行确认的接入修复
+
+若要让以上原厂已留存值进入页面，需要选择原厂修复补丁，或明确批准仅为 Exadata 增加原厂 EMCLI 只读指标通道；不是继续补模拟数据即可实现。拟议只读通道必须限制审核指标、目标及组件身份，保留原厂采样时间/值类型/维度/单位，区分快照与数值历史、设置输出及时间预算，沿用资源授权和绑定前后复核，不接受任意命令、SQL、路径或模型拼接参数。普通 OEM、非 Exadata 及非 OEM 的监控诊断路径不动。此接入改造尚未实施，不能作为已交付能力。
+
+两端模拟器与定向安全测试各 28 passed + 13 subtests passed，两端架构边界检查通过；没有执行全仓测试或 DDL。当前补充提交只包含隔离交换机部署工件、测试和本节文档，不改变应用读取通道、授权或既有绑定。
