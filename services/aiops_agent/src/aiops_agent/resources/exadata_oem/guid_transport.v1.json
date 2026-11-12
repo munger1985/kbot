@@ -1,0 +1,13 @@
+{
+  "version": "exadata-guid-transport-v1",
+  "provenance": "OEM export 8c6c9b7e55903eaeed3cc46551ca3be2b36f939a94d34fd8f7edd858c8e02c6f: component definitions retain ComponentId/PortId, current samples have blank key values; GUID REST metadata represents promoted target identity without those keys.",
+  "promoted_groups": [
+    {"target_type": "oracle_si_hw_component_pdu", "group": "PduModulePhaseStatus", "repository_keys": ["ComponentId"]},
+    {"target_type": "oracle_si_hw_component_pdu", "group": "PduModuleStatus", "repository_keys": ["ComponentId"]},
+    {"target_type": "oracle_si_hw_component_server", "group": "ComponentState", "repository_keys": ["ComponentId"]},
+    {"target_type": "oracle_si_hw_component_switch", "group": "ComponentState", "repository_keys": ["ComponentId"]},
+    {"target_type": "oracle_si_network_port_server", "group": "NetworkPortPerformance", "repository_keys": ["PortId"]},
+    {"target_type": "oracle_si_network_port_switch", "group": "NetworkPortPerformance", "repository_keys": ["PortId"]},
+    {"target_type": "oracle_si_network_port_switch", "group": "SwitchEthPortsMonitor", "repository_keys": ["PortId"]}
+  ]
+}

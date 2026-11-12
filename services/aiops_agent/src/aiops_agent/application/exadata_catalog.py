@@ -36,6 +36,12 @@ def load_catalog():
             by_code[code]["status"] = status
     baseline_raw = root.joinpath("baseline.v1.json").read_bytes()
     baseline = json.loads(baseline_raw)
+    transport_raw = root.joinpath("guid_transport.v1.json").read_bytes()
+    for rule in json.loads(transport_raw)["promoted_groups"]:
+        matching = [item for item in by_code.values() if item["target_type"] == rule["target_type"]
+            and item["selector"].split("/")[0] == rule["group"]]
+        if not matching or any(item["keys"] != rule["repository_keys"] for item in matching):
+            raise ValueError("Exadata GUID 通道规则与审核维度不一致")
     if any(code not in by_code for code in baseline["metric_codes"]):
         raise ValueError("Exadata 基线引用未知指标")
     units = set(baseline["repository_unit_codes"])
@@ -47,5 +53,16 @@ def load_catalog():
     for profile in (*monitoring["profiles"], *diagnosis["profiles"]):
         if any(code not in by_code for code in profile["metric_codes"]):
             raise ValueError("Exadata 场景引用了未登记指标")
-    digest = hashlib.sha256(raw + devices_raw + extended_raw + status_raw + baseline_raw + json.dumps([monitoring, diagnosis], sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(raw + devices_raw + extended_raw + status_raw + baseline_raw + transport_raw + json.dumps([monitoring, diagnosis], sort_keys=True).encode()).hexdigest()
     return metrics["version"], digest, by_code, monitoring["profiles"], diagnosis["profiles"]
+
+
+def guid_rest_key_alternatives(definition, target_type):
+    """仅审核过的独立 GUID 子目标允许原厂省略已提升为目标身份的键。"""
+    root = files("aiops_agent").joinpath("resources/exadata_oem")
+    for rule in json.loads(root.joinpath("guid_transport.v1.json").read_bytes())["promoted_groups"]:
+        if (target_type == rule["target_type"]
+                and definition["selector"].split("/")[0] == rule["group"]
+                and definition["keys"] == rule["repository_keys"]):
+            return ((),)
+    return ()

@@ -14,6 +14,7 @@ from .base import DiagnosticSourceAdapterError
 from .oem_target_identity import normalize_target, target_error
 from .oem_latest import query_latest
 from .oem_exadata_inventory import verified_members
+from aiops_agent.application.exadata_catalog import guid_rest_key_alternatives
 from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
 
 _GUID_COMPONENT_TYPES = frozenset({'oracle_si_hw_component_pdu', 'oracle_si_hw_component_server',
@@ -112,6 +113,7 @@ class OEMExadata:
             return await query_emcli(self, request, definition, target_type, history=False)
         return await query_latest(self, request, metric_name=definition["selector"], limit=256,
             expected_target_type=target_type, expected_keys=tuple(definition["keys"]),
+            alternate_key_sets=guid_rest_key_alternatives(definition, target_type),
             expected_value_type=definition["native_value_type"], allow_empty_number=True)
 
     @exadata_metric_read
@@ -127,6 +129,7 @@ class OEMExadata:
             return await query_emcli(self, request, definition, target_type, history=True)
         return await self.query_native_metric(request, metric_name=definition["selector"], limit=256,
             _expected_target_type=target_type, _expected_keys=tuple(definition["keys"]),
+            _alternate_key_sets=guid_rest_key_alternatives(definition, target_type),
             _paginate=True, _resource_samples=True)
 
     @exadata_metric_read
@@ -150,7 +153,8 @@ class OEMExadata:
             upper = min(lower + timedelta(days=6), request.window_end)
             summary = await self.query_native_metric(replace(request, window_start=lower, window_end=upper),
                 metric_name=definition["selector"], limit=1000, _expected_target_type=target_type,
-                _expected_keys=tuple(definition["keys"]), _paginate=True, _summary_only=True, _shared_budget=True)
+                _expected_keys=tuple(definition["keys"]), _alternate_key_sets=guid_rest_key_alternatives(definition, target_type),
+                _paginate=True, _summary_only=True, _shared_budget=True)
             if hashes and summary["unit"] != unit:
                 target_error("SOURCE_METADATA_CHANGED")
             unit = summary["unit"]

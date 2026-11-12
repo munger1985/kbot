@@ -9,7 +9,8 @@ from .oem_native import _fail, _hash, _name, parse_metric_selector
 
 
 async def query_latest(adapter, request, *, metric_name, limit=1000, expected_target_type=None,
-                       expected_keys=None, expected_value_type=None, allow_empty_number=False):
+                       expected_keys=None, expected_value_type=None, allow_empty_number=False,
+                       alternate_key_sets=()):
     if type(limit) is not int or not 1 <= limit <= 1000:
         _fail("SOURCE_QUERY_INVALID")
     group, metric = parse_metric_selector(metric_name)
@@ -38,7 +39,8 @@ async def query_latest(adapter, request, *, metric_name, limit=1000, expected_ta
     if len(set(names)) != len(names):
         _fail()
     # Exadata 目录约束维度身份；OEM 元数据的字段顺序不代表维度身份。
-    if expected_keys is not None and set(names) != set(expected_keys):
+    if expected_keys is not None and not any(set(names) == set(keys)
+            for keys in (expected_keys, *alternate_key_sets)):
         _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
     if expected_value_type is not None and native_type != expected_value_type:
         _fail("SOURCE_METRIC_TYPE_MISMATCH")
@@ -67,6 +69,9 @@ async def query_latest(adapter, request, *, metric_name, limit=1000, expected_ta
         max_pages=16, validate_payload=validate_page)
     points, dimensions, seen = [], [], set()
     for row in rows:
+        if expected_keys is not None and any(row.get(name) not in (None, "", " ")
+                for name in set(expected_keys) - set(names)):
+            _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
         labels = {}
         for name in names:
             value = row.get(name)

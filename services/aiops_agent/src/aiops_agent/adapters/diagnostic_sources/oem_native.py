@@ -188,7 +188,8 @@ class OEMNativeMetrics:
 
     async def query_native_metric(self, request, *, metric_name, limit, allow_text=False,
                                   _expected_target_type=None, _shared_budget=False, _paginate=False,
-                                  _summary_only=False, _resource_samples=False, _expected_keys=None):
+                                  _summary_only=False, _resource_samples=False, _expected_keys=None,
+                                  _alternate_key_sets=()):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             _fail("SOURCE_CAPABILITY_FORBIDDEN")
         group, metric = parse_metric_selector(metric_name)
@@ -221,7 +222,8 @@ class OEMNativeMetrics:
         if len(set(key_names)) != len(key_names):
             _fail()
         # 仅 Exadata 专用调用提供期望维度；按名称校验，不依赖 OEM 返回顺序。
-        if _expected_keys is not None and set(key_names) != set(_expected_keys):
+        if _expected_keys is not None and not any(set(key_names) == set(keys)
+                for keys in (_expected_keys, *_alternate_key_sets)):
             _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
         unit = item.get("unitDisplayName")
         if unit is not None and (not isinstance(unit, str) or len(unit) > 64):

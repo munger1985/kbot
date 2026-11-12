@@ -6,6 +6,7 @@ from math import ceil
 from aiops_agent.contracts.evidence import NativeMetricSamples
 from .oem_exadata_emcli import parse_values
 from .oem_native import _fail, _hash
+from .base import DiagnosticSourceAdapterError
 
 
 async def query_native_emcli(adapter, request, *, target, target_hash, metadata_hash,
@@ -22,8 +23,16 @@ async def query_native_emcli(adapter, request, *, target, target_hash, metadata_
     definition = {"target_type": target["targetType"], "selector": metric_name,
         "native_value_type": "NUMBER", "keys": list(keys)}
     days = min(7, max(1, ceil(age / 86400)))
-    payload, digest = await client.read_native(adapter.context, target, definition,
-        history=True, max_bytes=request.max_response_bytes // 2, days=days)
+    try:
+        # 身份与元数据已按实际字节扣减；使用剩余预算，不再固定浪费一半。
+        payload, digest = await client.read_native(adapter.context, target, definition,
+            history=True, max_bytes=min(request.max_response_bytes,
+                adapter._remaining_response_bytes), days=days)
+    except DiagnosticSourceAdapterError as exc:
+        if exc.code == "SOURCE_RESPONSE_TOO_LARGE":
+            raise DiagnosticSourceAdapterError("SOURCE_RESULT_TRUNCATED",
+                "原厂 EMCLI 只能读取最近整天的全部维度，结果超过冻结字节预算；未返回部分历史或均值") from exc
+        raise
     captured = datetime.now(UTC)
     points, dimensions, truncated = parse_values(payload, target=target, definition=definition,
         timezone=adapter.context.config["native_emcli_timezone"], captured_at=captured,
