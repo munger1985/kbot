@@ -67,6 +67,12 @@ assert.equal(providerFailure.value, '读取失败', '上游服务错误不能冒
 assert.equal(providerFailure.quality, 'OEM 服务错误')
 assert.equal(providerFailure.percent, null)
 assert.equal(providerFailure.tone, 'warning')
+for (const code of ['SOURCE_RESPONSE_INVALID', 'SOURCE_AUTH_FAILED', 'SOURCE_EMCLI_UNAVAILABLE', 'SOURCE_EMCLI_TIMEOUT', 'SOURCE_BUSY']) {
+  const failed = api.buildExadataCards({ ...overview, samples: [], gaps: [{ component_id: 'cell-a', metric_code: cpu.code, code, detail: '测试来源读取错误' }] })[0]
+  assert.equal(failed.value, '读取失败', `${code} 不能冒充 OEM 空采样`)
+  assert.equal(failed.quality, '读取错误')
+  assert.equal(failed.percent, null)
+}
 assert.deepEqual(clone(other.KBotAIOpsExadataPresentation.buildExadataCards(overview)), clone(context.exports.buildExadataCards(overview)), '两端纯展示输出一致')
 
 const artifacts = mkdtempSync(resolve(tmpdir(), 'aiops-exadata-cards-'))

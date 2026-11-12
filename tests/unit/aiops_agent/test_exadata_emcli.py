@@ -33,7 +33,8 @@ def payload(value="9007199254740993.123456789", *, selector=None):
     metric = definition(selector) if selector else definition()
     group, column = metric["selector"].split("/")
     return {"Entity Type": TARGET["targetType"], "Entity Name": TARGET["targetName"],
-        "Metric Group Name": group, **{f"keyColumn_{i}_name": name for i, name in enumerate(metric["keys"], 1)},
+        "Metric Group Name": group, "isKeyBased": bool(metric["keys"]),
+        **{f"keyColumn_{i}_name": name for i, name in enumerate(metric["keys"], 1)},
         "data_columns": [{"Metric Column Name": column, "keyValues": [{
             **{f"key{i}": "SIM_" + name for i, name in enumerate(metric["keys"], 1)},
             "values": [{"First Collection Time": "2026-11-12 02:50:00",
@@ -49,6 +50,40 @@ def test_native_precision_dimensions_and_retained_timestamp_not_expanded():
     points, dimensions, truncated = parsed(start=NOW-timedelta(hours=1), end=NOW)
     assert points == ((NOW-timedelta(minutes=5), "9007199254740993.123456789"),)
     assert dimensions == ({"celldisk_type": "SIM_celldisk_type"},) and not truncated
+
+
+@pytest.mark.parametrize("selector,value", [("CellSrv_Status_Metric/Status", "1"),
+    ("CellSrv_Status_Metric/msStatus", "1"), ("CellSrv_Status_Metric/rsStatus", "1"),
+    ("Cell_Metric/memory_utilization", "63.74")])
+def test_native_dimensionless_values_are_direct_not_key_values(selector, value):
+    metric = definition(selector)
+    body = payload(value, selector=selector)
+    column = body["data_columns"][0]
+    column["values"] = column.pop("keyValues")[0]["values"]
+    points, dimensions, truncated = parse_values(body, target=TARGET, definition=metric,
+        timezone="UTC", captured_at=NOW)
+    assert points == ((NOW-timedelta(minutes=5), value),)
+    assert dimensions == ({},) and not truncated
+    points, dimensions, _ = parse_values(body, target=TARGET, definition=metric,
+        timezone="UTC", captured_at=NOW, start=NOW-timedelta(hours=1), end=NOW)
+    assert points == ((NOW-timedelta(minutes=5), value),) and dimensions == ({},)
+
+
+@pytest.mark.parametrize("key_based", [False, None, "true", 1])
+def test_native_key_based_flag_must_match_audited_dimensions(key_based):
+    body = payload()
+    body["isKeyBased"] = key_based
+    with pytest.raises(DiagnosticSourceAdapterError) as error:
+        parsed(body)
+    assert error.value.code == "SOURCE_METRIC_DIMENSION_MISMATCH"
+
+
+def test_native_keyed_and_dimensionless_shapes_cannot_be_mixed():
+    body = payload()
+    body["data_columns"][0]["values"] = []
+    with pytest.raises(DiagnosticSourceAdapterError) as error:
+        parsed(body)
+    assert error.value.code == "SOURCE_RESPONSE_INVALID"
 
 
 @pytest.mark.parametrize("value", ["0", "", None])
@@ -340,6 +375,32 @@ def test_emcli_is_opt_in_and_missing_dependency_never_falls_back():
                 await value.exadata_latest(request, definition(), "oracle_exadata")
             assert error.value.code == "SOURCE_EMCLI_UNAVAILABLE"
             assert rest.await_count == 1
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("selector", ["Cell_Metric/cpu_utilization", "Cell_Metric/memory_utilization",
+    "CellSrv_Status_Metric/Status", "CellSrv_Status_Metric/msStatus", "CellSrv_Status_Metric/rsStatus"])
+def test_emcli_mode_routes_dimensionless_metrics_to_native_rest_without_failure_fallback(selector):
+    async def run():
+        value, _ = adapter()
+        value.context = value.context.model_copy(update={"config": {"exadata_metric_transport": "EMCLI"}})
+        metric = definition(selector)
+        request = ExadataMetricRead(source_locator_key="b" * 32)
+        with patch("aiops_agent.adapters.diagnostic_sources.oem_exadata.query_latest", new_callable=AsyncMock) as rest, \
+                patch("aiops_agent.adapters.diagnostic_sources.oem_exadata_emcli.query_emcli", new_callable=AsyncMock) as native:
+            await value.exadata_latest(request, metric, "oracle_exadata")
+            rest.assert_awaited_once()
+            native.assert_not_awaited()
+            rest.side_effect = DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "测试原厂错误")
+            with pytest.raises(DiagnosticSourceAdapterError):
+                await value.exadata_latest(request, metric, "oracle_exadata")
+            native.assert_not_awaited()
+        if metric["native_value_type"] == "NUMBER":
+            with patch.object(value, "query_native_metric", new_callable=AsyncMock) as rest, \
+                    patch("aiops_agent.adapters.diagnostic_sources.oem_exadata_emcli.query_emcli", new_callable=AsyncMock) as native:
+                await value.exadata_history(request, metric, "oracle_exadata")
+                rest.assert_awaited_once()
+                native.assert_not_awaited()
     asyncio.run(run())
 
 

@@ -20,6 +20,8 @@ def parse_values(payload, *, target, definition, timezone, captured_at, start=No
     if (any(not isinstance(name, str) for name in names) or len({name for _, name in active}) != len(active)
             or {name for _, name in active} != set(definition["keys"])):
         _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
+    if type(payload.get("isKeyBased")) is not bool or payload["isKeyBased"] != bool(active):
+        _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
     zone = ZoneInfo(timezone)
 
     def stamp(raw):
@@ -44,7 +46,14 @@ def parse_values(payload, *, target, definition, timezone, captured_at, start=No
     for item in columns:
         if not isinstance(item, dict) or item.get("Metric Column Name") != column:
             _fail("SOURCE_METRIC_MISMATCH")
-        rows = item.get("keyValues")
+        if active:
+            if "values" in item:
+                _fail("SOURCE_RESPONSE_INVALID")
+            rows = item.get("keyValues")
+        else:
+            if "keyValues" in item:
+                _fail("SOURCE_RESPONSE_INVALID")
+            rows = [item]
         if not isinstance(rows, list) or len(rows) > 4096:
             _fail("SOURCE_RESPONSE_INVALID")
         for row in rows:

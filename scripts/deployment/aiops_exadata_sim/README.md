@@ -80,6 +80,8 @@ emctl upload agent
 
 ## Exadata 原厂 EMCLI 通道与当前验收（2026-11-12）
 
+最新概览修订见[实施设计 10.13](../../../docs/operations/aiops-exadata-oem-implementation-design.md#1013-概览无采样回归修复与-kbot-正常配置2026-11-12)：EMCLI 显式启用后，带维度指标使用 EMCLI，无维度指标固定沿用原厂 REST；不是失败后切换。原厂 EMCLI 的无维度直接 values 形态也已补齐严格解析。普通 OEM、非 Exadata、非 OEM 不受影响。KBot 已通过用户提供的正常账号在公共表单配置并启用来源，不再属于缺少正常会话的状态。两端正常浏览器重新验证概览 5 卡/5 采样、Cell 12 卡/12 采样、磁盘首页 12 卡/24 采样、Flash 与 IORM 各 12 卡/12 采样、容量 7 卡/18 采样；磁盘一小时历史各 1152 采样/12 个真实 canvas，无指标级错误和 pageerror。两仓各 265 个定向测试通过；交换机组件发现/绑定仍未完成，前文 KBot 未验收等结论仅为历史阶段记录。
+
 本节及[实施设计 10.12](../../../docs/operations/aiops-exadata-oem-implementation-design.md#1012-exadata-专用原厂-emcli-读取通道实施设计2026-11-12)为最新状态，替代前文历史阶段的“尚未实施 EMCLI”“磁盘状态/ASM 无可用应用通道”“NetworkPortsTargetComponent 仍为空”结论，不代表剩余交换机工作已交付。
 
 ### 依赖安装与来源配置

@@ -491,3 +491,32 @@ Ammolite 使用正常 BUSINESS 会话和公共 API 保存 EMCLI/UTC/已核对证
 #### 10.12.4 本轮验证
 
 两仓分别执行 EMCLI、Exadata OEM、成员发现、交换机 SNMP、普通 OEM 原生/标准指标、来源连接、资源监控共 8 个定向文件，**各 251 passed**；包含专用通道显式启用、普通 REST 不降级、原始精度/状态/空值/时间、严格身份/类型/维度、证书指纹、超时/取消/输出预算、会话隔离、私有 native bindings、VLAN context 和标准指标映射保留。两端架构边界检查通过；Ammolite Portal 生产 build 通过（保留既有 chunk 体积提示），KBot 配置 JS 语法及真实 OEM 来源表单脚本合同通过，隐藏的未完成指纹字段不会阻塞其他来源表单。未运行全仓测试，未执行 Schema 变更。交换机公共绑定及 KBot 正常页面验收不在通过项内。
+
+### 10.13 概览无采样回归修复与 KBot 正常配置（2026-11-12）
+
+本节为最新实施状态，修订第 10.12 节中“EMCLI 模式全部专用指标直接走 EMCLI”与“KBot 缺少正常登录会话”的结论。此前磁盘等分页验证不能证明概览可用；本轮按用户贴出的概览逐项复现后修复，没有把旧验收当作当前正常的证明。
+
+#### 10.13.1 复现与根因
+
+Ammolite 正常公共页面重现 5 张卡、0 条采样：三个服务状态与内存返回 SOURCE_RESPONSE_INVALID，CPU 返回 SOURCE_PROVIDER_ERROR。
+
+- 原厂 get_metric_data 的无维度响应是 isKeyBased=false，data_columns[].values 直接保存采样；旧解析器只接受 data_columns[].keyValues[].values，因此把已存在的服务状态与内存误判为无效响应。旧测试夹具也统一使用带键形态，未覆盖此原厂差异。
+- 对同一来源账号、同一 Cell，原厂 EMCLI 对 CPU 返回退出码 220：This metric column is not a data column。与此同时原厂 REST 对概览全部五项正常返回，包含 CPU=46.23%、内存=63.74% 和三个原始状态 1。这不是没有模拟采样，也不是来源未启用或两个应用相互抢占登录的已证实问题。
+- 页面仅将 SOURCE_PROVIDER_ERROR 显示为读取失败，其他来源错误会落成“无数据/无有效数据”，掩盖了来源错误与 OEM 真正空采样的差别。
+
+#### 10.13.2 两端同步修复
+
+1. Exadata 在来源显式启用 EMCLI 时，按审核目录的维度键结构固定分流：带维度指标使用 EMCLI；无维度指标沿用原厂 REST。latest/history 同样处理。不是按 CPU 名称或环境写特例，不接受模型生成路由，也不在请求失败后自动切换。OEM_REST 默认模式、普通 OEM、非 Exadata 和非 OEM 路径不变。
+2. EMCLI 解析器完整区分原厂 isKeyBased=false 的直接 values 与 true 的 keyValues，核验布尔标志与审核键集合一致；混合或不一致形态仍拒绝。原值、STRING、原厂采样时间、空值和维度不变，不通过关闭校验制造采样。
+3. 两端指标卡把响应无效、鉴权失败、EMCLI 不可用/超时等来源错误明确显示为“读取失败/读取错误”，不再冒充无数据；真正 NO_DATA 与文本历史不支持仍保留原语义。不把原厂非零退出码一律描述为 HTTP 5xx，原始错误和凭据仍不返回页面。
+4. 用户提供 KBot 当前测试账号后，已正常页面登录，使用现有来源编辑表单启用 EMCLI、UTC 与现场再次核对的叶证书 pin，经过原有公共连接预检及启用流程；普通标准指标映射前后完整一致。密码仅经关闭回显的 stdin 进入测试进程内存，没有写入脚本、仓库、命令行或文档，没有伪造身份、重置账号或直接写业务绑定表。
+
+#### 10.13.3 部署、验证与保留边界
+
+两仓各 8 个定向测试文件 **265 passed**；新增原厂无维度形态、isKeyBased 一致性、混合形态拒绝、无维度固定 REST 路由及不故障回退。两端真实生产组件/ECharts 浏览器合同在 1920/1440/1000/780/390 宽度通过，新增多类来源错误不能冒充空采样断言。两端架构边界检查、Ammolite Portal typecheck/生产 build、KBot 展示 JS 语法检查通过；build 仅保留既有大 chunk 提示。未跑全仓测试，没有 DDL。
+
+仅定向部署两仓各三个专用后端文件与各自专用展示脚本，共 8 个文件。部署前逐文件核旧 Hash 并备份，现场记录为 kbotdev 的 /home/ubuntu/aiops-overview-repair-n2ydlwth；只重启两端 AIOps API/Worker，四个进程 /ready 均为 200，没有重启 OEM、Agent、模拟器、Executor、Main API 或 Portal。
+
+部署后 Ammolite 正常浏览器概览为 **5 卡/5 采样**，CPU=46.23%、内存=63.74%、三个状态均保留 STRING 1；无指标级错误及页面异常。证据目录 /tmp/ammolite-exadata-overview-IKPIwp。两端随后重新完整执行本轮指定页面验证：概览 **5 卡/5 采样**、Cell **12 卡/12 采样**、磁盘首页 **12 卡/24 采样**、Flash 与 IORM 首页各 **12 卡/12 采样**、容量首页 **7 卡/18 采样**；磁盘一小时历史各 **1152 条非空采样、12 个真实 ECharts canvas**。各查询无指标级读取错误、无 pageerror；采样数随 OEM 实际留存窗口变化，不要求固定等于此前的 1248。最终私有证据目录为 /tmp/exadata-ammolite-current-nHzVBW 与 /tmp/exadata-kbot-current-ULAlQj，包含实际公共 API 响应及页面截图，会话文件不提交。以上仍是指定场景首页和历史首页，不是全部 267 项覆盖。
+
+交换机端口 TargetComponent 的可靠身份目录、应用发现和公共绑定仍未完成；本轮未更改共享 DBM 成员或两端业务绑定。不能因概览恢复就宣称整机全部 267 项或交换机页面已完成。
