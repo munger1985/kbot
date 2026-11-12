@@ -7,12 +7,13 @@ from platform_core.contracts.aiops.exadata import ExadataMetricDefinition
 def test_all_reviewed_status_metrics_have_typed_dictionary_and_provenance():
     _, _, metrics, _, _ = load_catalog()
     statuses = {code: item for code, item in metrics.items() if item.get("status")}
-    assert len(statuses) == 16
+    assert len(statuses) == 26
     for item in metrics.values():
         definition = ExadataMetricDefinition.model_validate(item)
         if definition.status:
             assert definition.status.provenance
-            assert definition.status.values
+            assert definition.status.values or definition.code in {
+                "host.Response.Status", "oracle_si_server_map.SystemStatus.OSStatus"}
     for name in ("Status", "msStatus", "rsStatus"):
         status = statuses[f"oracle_exadata.CellSrv_Status_Metric.{name}"]["status"]
         assert status["values"]["1"] == {"label": "可用", "tone": "success"}
@@ -57,3 +58,23 @@ def test_state_definitions_are_frozen_in_view_and_unknown_tokens_are_not_invente
     assert disk.model_dump(mode="json")["status"]["values"]["normal"]["label"] == "正常"
     assert "0" not in disk.status.values and "1" not in disk.status.values
     assert "future-failure-code" not in disk.status.values
+
+
+def test_device_states_keep_response_power_os_and_hardware_semantics_separate():
+    metrics = load_catalog()[2]
+    pdu = metrics["oracle_si_pdu.PduHttpResponse.Status"]["status"]
+    assert pdu["values"]["1"] == {"label": "可达", "tone": "success"}
+    assert pdu["values"]["0"]["label"] == "不可达"
+    assert "pdu_metrics.xmlp" in pdu["provenance"]
+    for typ in ("oracle_si_netswitch", "oracle_si_server_map"):
+        ap = metrics[f"{typ}.AccessPointResponse.statusMsg"]
+        assert ap["keys"] == ["ap_guid"]
+        assert ap["status"]["values"]["UP"]["label"] == "可达"
+    power = metrics["oracle_si_server_map.SystemStatus.PowerStatus"]["status"]
+    assert power["category"] == "ADMINISTRATIVE" and power["values"]["On"]["tone"] == "neutral"
+    assert not metrics["oracle_si_server_map.SystemStatus.OSStatus"]["status"]["values"]
+    assert not metrics["host.Response.Status"]["status"]["values"]
+    for code in ("host.CPUUsageSummary.OverAllUsagePct", "host.Load.memUsedPct"):
+        item = metrics[code]
+        assert item["native_value_type"] == "NUMBER" and item["keys"] == []
+        assert item["repository_unit_codes"] == ["PERCENTAGE"] and item["unit_conversion"] == "NONE"

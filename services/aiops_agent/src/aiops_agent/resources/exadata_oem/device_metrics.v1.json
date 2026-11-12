@@ -1,0 +1,232 @@
+{
+  "version": "exadata-devices-v1",
+  "provenance": "OEM export 2026-11-10 metric_definitions.csv; host CPUUsageSummary/OverAllUsagePct, Load/memUsedPct, SI access point, SystemStatus and PDU response; missing samples are not absence of metric.",
+  "metrics": [
+    {
+      "code": "host.CPUUsageSummary.OverAllUsagePct",
+      "target_type": "host",
+      "selector": "CPUUsageSummary/OverAllUsagePct",
+      "display_name": "DB Server CPU 使用率",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "host.Load.memUsedPct",
+      "target_type": "host",
+      "selector": "Load/memUsedPct",
+      "display_name": "DB Server 内存使用率",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "PERCENTAGE"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "host.Response.Status",
+      "target_type": "host",
+      "selector": "Response/Status",
+      "display_name": "DB Server 响应状态",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.AccessPointResponse.statusMsg",
+      "target_type": "oracle_si_netswitch",
+      "selector": "AccessPointResponse/statusMsg",
+      "display_name": "交换机管理访问点可达性",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ap_guid"
+      ],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.ComponentState.ComponentState",
+      "target_type": "oracle_si_netswitch",
+      "selector": "ComponentState/ComponentState",
+      "display_name": "交换机硬件组件状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_server_map.AccessPointResponse.statusMsg",
+      "target_type": "oracle_si_server_map",
+      "selector": "AccessPointResponse/statusMsg",
+      "display_name": "服务器管理访问点可达性",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ap_guid"
+      ],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_server_map.ComponentState.ComponentState",
+      "target_type": "oracle_si_server_map",
+      "selector": "ComponentState/ComponentState",
+      "display_name": "服务器硬件组件状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_server_map.SystemStatus.HealthStatus",
+      "target_type": "oracle_si_server_map",
+      "selector": "SystemStatus/HealthStatus",
+      "display_name": "服务器硬件健康状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_server_map.SystemStatus.PowerStatus",
+      "target_type": "oracle_si_server_map",
+      "selector": "SystemStatus/PowerStatus",
+      "display_name": "服务器电源状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_server_map.SystemStatus.OSStatus",
+      "target_type": "oracle_si_server_map",
+      "selector": "SystemStatus/OSStatus",
+      "display_name": "服务器操作系统状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_pdu.PduHttpResponse.Status",
+      "target_type": "oracle_si_pdu",
+      "selector": "PduHttpResponse/Status",
+      "display_name": "PDU HTTP 响应状态",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_pdu.ComponentState.ComponentState",
+      "target_type": "oracle_si_pdu",
+      "selector": "ComponentState/ComponentState",
+      "display_name": "PDU 硬件组件状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "ComponentId"
+      ],
+      "scene": "overview",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    }
+  ]
+}

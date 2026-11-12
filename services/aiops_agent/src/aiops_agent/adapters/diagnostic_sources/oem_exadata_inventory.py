@@ -11,7 +11,7 @@ ASSOCIATION_COLUMNS = frozenset({"TARGET_NAME", "TARGET_TYPE", "ASSOC_TYPE",
 DATA_SERVICE = "/websvcs/restful/emws/core/v0/list/dataservice"
 
 
-async def associations(adapter, parent):
+async def associations(adapter, parent, *, deployed_hosts=False):
     """资源、关联方向和过滤字段均固定；不接受 SQL、响应地址或任意资源名。"""
     credentials = adapter.context.credentials
     username, password = credentials.get("username"), credentials.get("password")
@@ -21,8 +21,11 @@ async def associations(adapter, parent):
     # 只在固定搜索语法内编码 OEM 返回的身份；绝不将其拼到 URL 路径或 SQL。
     name = parent["targetName"].replace("'", "''")
     kind = parent["targetType"]
-    params = {"name": "TargetAssociations", "search":
-        f"TARGET_NAME='{name}',TARGET_TYPE='{kind}',ASSOC_TYPE='internal_contains'"}
+    if deployed_hosts and kind != "oracle_si_server_map":
+        target_error("SOURCE_EXADATA_MEMBERS_UNVERIFIED")
+    search = (f"ASSOC_TARGET_NAME='{name}',ASSOC_TARGET_TYPE='{kind}',TARGET_TYPE='host',ASSOC_TYPE='deployed_on'"
+              if deployed_hosts else f"TARGET_NAME='{name}',TARGET_TYPE='{kind}',ASSOC_TYPE='internal_contains'")
+    params = {"name": "TargetAssociations", "search": search}
     async with adapter._session.get(
         adapter._native_api().removesuffix("/api") + DATA_SERVICE, params=params, auth=auth,
         headers={} if auth else adapter._headers(), timeout=adapter._timeout, allow_redirects=False,
@@ -43,10 +46,14 @@ async def associations(adapter, parent):
     for row in rows:
         if not isinstance(row, dict) or set(row) != ASSOCIATION_COLUMNS:
             target_error()
-        if (row["TARGET_NAME"], row["TARGET_TYPE"], row["ASSOC_TYPE"]) != (
-                parent["targetName"], kind, "internal_contains"):
+        actual = ((row["ASSOC_TARGET_NAME"], row["ASSOC_TARGET_TYPE"], row["TARGET_TYPE"], row["ASSOC_TYPE"])
+                  if deployed_hosts else (row["TARGET_NAME"], row["TARGET_TYPE"], row["ASSOC_TYPE"]))
+        expected = ((parent["targetName"], kind, "host", "deployed_on") if deployed_hosts
+                    else (parent["targetName"], kind, "internal_contains"))
+        if actual != expected:
             target_error("SOURCE_TARGET_MISMATCH")
-        identity = (target_text(row["ASSOC_TARGET_NAME"]), target_text(row["ASSOC_TARGET_TYPE"], 64))
+        identity = ((target_text(row["TARGET_NAME"]), "host") if deployed_hosts else
+                    (target_text(row["ASSOC_TARGET_NAME"]), target_text(row["ASSOC_TARGET_TYPE"], 64)))
         if identity in seen:
             target_error("SOURCE_ITEM_AMBIGUOUS")
         seen.add(identity)
@@ -72,8 +79,8 @@ async def resolve_member(adapter, name, kind):
 
 
 async def verified_members(adapter, root):
-    """只展开根与直接 Grid；重复、环、其他整机根及不完整组件目录全部拒绝。"""
-    members, parents = {}, [root]
+    """只展开根、直接 Grid 和已确认 ILOM 的反向 host deployed_on；不使用 hosted_by。"""
+    members, parents, servers = {}, [root], []
     for parent in parents:
         for name, kind in await associations(adapter, parent):
             if (kind == "oracle_dbmachine" or
@@ -88,6 +95,26 @@ async def verified_members(adapter, root):
             members[guid] = {"target_id": guid, "target_type": kind, "display_name": name}
             if kind == "oracle_exadata_grid":
                 parents.append(item)
+            elif kind == "oracle_si_server_map":
+                servers.append(item)
+    host_owners = set()
+    for server in servers:
+        hosts = await associations(adapter, server, deployed_hosts=True)
+        if len(hosts) > 1:
+            target_error("SOURCE_EXADATA_MEMBERS_UNVERIFIED")
+        for name, kind in hosts:
+            item = await resolve_member(adapter, name, kind)
+            guid = item["targetId"]
+            if guid in host_owners or guid == root["targetId"]:
+                target_error("SOURCE_ITEM_AMBIGUOUS")
+            host_owners.add(guid)
+            if guid in members:
+                if members[guid] != {"target_id": guid, "target_type": kind, "display_name": name}:
+                    target_error("SOURCE_TARGET_MISMATCH")
+                continue
+            if len(members) >= 128:
+                target_error("SOURCE_DISCOVERY_LIMIT")
+            members[guid] = {"target_id": guid, "target_type": kind, "display_name": name}
     if not any(member["target_type"] == "oracle_exadata" for member in members.values()):
         target_error("SOURCE_EXADATA_MEMBERS_UNVERIFIED")
     return sorted(members.values(), key=lambda item: item["target_id"])

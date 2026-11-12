@@ -8,6 +8,8 @@ exports.exadataUnit = exadataUnit;
 exports.exadataRaw = exadataRaw;
 exports.exadataQuality = exadataQuality;
 exports.exadataDimensions = exadataDimensions;
+exports.buildExadataDevices = buildExadataDevices;
+exports.exadataOverviewNotes = exadataOverviewNotes;
 exports.buildExadataCards = buildExadataCards;
 exports.exadataStatusItems = exadataStatusItems;
 exports.exadataChartOption = exadataChartOption;
@@ -41,6 +43,25 @@ function exadataQuality(value) {
 }
 function exadataDimensions(dimensions) {
     return Object.entries(dimensions).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join(' · ') || '无维度';
+}
+// 整机清单不受指标分页隐藏；只呈现此页实际证据，不把未查询设备涂绿。
+function buildExadataDevices(view) {
+    const cards = buildExadataCards(view);
+    const types = { host: 'DB Server', oracle_exadata: 'Cell', oracle_si_netswitch: '交换机', oracle_si_server_map: '服务器硬件 / ILOM', oracle_si_pdu: 'PDU', oracle_si_rack: '机架', oracle_dbmachine: '整机', oracle_exadata_grid: '存储网格', oracle_si_hw_component_server: '服务器硬件组件', oracle_si_hw_component_switch: '交换机硬件组件', oracle_si_network_port_server: '服务器端口', oracle_si_network_port_switch: '交换机端口' };
+    return (view.device_coverage || []).map(coverage => {
+        const member = view.members.find(item => item.target_id === coverage.component_id);
+        const componentCards = cards.filter(card => card.componentId === coverage.component_id);
+        const states = componentCards.filter(card => card.status).flatMap(card => exadataStatusItems(card).map(item => ({ key: `${card.key}:${item.key}`, title: `${card.title}${item.dimension ? ` · ${item.dimension}` : ''}`, label: item.label, tone: item.tone })));
+        const resources = componentCards.filter(card => !card.status).map(card => ({ key: card.key, title: card.title, value: `${card.value}${card.valueUnit ? ` ${card.valueUnit}` : ''} · ${card.quality}` }));
+        const remaining = coverage.metric_codes.length - coverage.queried_metric_codes.length;
+        return { member, typeLabel: types[member.target_type] || member.target_type, states, resources,
+            note: !coverage.metric_codes.length ? coverage.note : remaining ? `另 ${remaining} 项指标本页未查询，可查看设备指标` : '' };
+    });
+}
+function exadataOverviewNotes(view) {
+    return [['host', 'DB Server'], ['oracle_si_netswitch', '交换机'], ['oracle_si_pdu', 'PDU']]
+        .filter(([type]) => !view.members.some(member => member.target_type === type))
+        .map(([, label]) => `当前已确认成员不含 ${label}；无法展示其状态${label === 'DB Server' ? '及 CPU/内存' : ''}，请检查 OEM 设备发现与整机成员确认。`);
 }
 function buildExadataCards(view) {
     const groups = new Map();

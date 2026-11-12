@@ -107,6 +107,15 @@ class ExadataOEMService:
             components = matched
         selected = [self.metrics[code] for code in codes]
         reads = [(item, metric) for metric in selected for item in components if item["target_type"] == metric["target_type"]]
+        coverage = []
+        if query.scene == "overview":
+            for member in components:
+                applicable = [metric["code"] for metric in selected if metric["target_type"] == member["target_type"]]
+                coverage.append({"component_id": member["target_id"], "metric_codes": applicable,
+                    "queried_metric_codes": [metric["code"] for item, metric in reads[query.offset:query.offset + query.limit]
+                                             if item["target_id"] == member["target_id"]],
+                    "note": ("指标按实际查询分页展示；未查询不等于无数据" if applicable else
+                             "此类目标尚无审核通过的独立状态读取指标，不以其他设备状态代替")})
         if not reads:
             gaps.append(ExadataGap(code="NO_APPLICABLE_METRICS", detail="此场景没有与已确认组件类型匹配的审核指标"))
         if query.offset > len(reads):
@@ -148,6 +157,12 @@ class ExadataOEMService:
                                     metric_code=definition["code"], detail="组件维度超出读取预算，不得视为完整覆盖"))
                 except TimeoutError:
                     gaps.append(ExadataGap(code="COLLECTION_TIMEOUT", detail="采集达到 30 秒预算，部分指标尚未读取"))
+                    completed = {(sample.component_id, sample.metric_code) for sample in samples}
+                    completed.update((gap.component_id, gap.metric_code) for gap in gaps if gap.metric_code)
+                    for member, definition in reads[query.offset:end]:
+                        if (member["target_id"], definition["code"]) not in completed:
+                            gaps.append(ExadataGap(code="COLLECTION_TIMEOUT", component_id=member["target_id"],
+                                metric_code=definition["code"], detail="此指标未在采集预算内完成，不是 OEM 返回空采样"))
                 await self._validate_live_inventory(adapter, frozen)
         except TimeoutError as exc:
             raise AIOpsApplicationError(code="EXADATA_IDENTITY_TIMEOUT", message="整机身份复核超时，拒绝返回未核验数据",
@@ -160,7 +175,7 @@ class ExadataOEMService:
             gaps.append(ExadataGap(code="HISTORY_UNAVAILABLE", detail="本次仅为最新快照，不生成趋势、增量或跨组件均值"))
         else:
             gaps.append(ExadataGap(code="HISTORY_RESOLUTION_PROVIDER_MANAGED", detail="OEM 按实际留存选择原始/小时/日聚合；不据此推断精确增量或原始执行明细，文本状态不回退快照"))
-        gaps.append(ExadataGap(code="MEMBERSHIP_SCOPE", detail="成员仅含 OEM 显式包含关系及 GUID 目录复核的整机直接组件和 Grid 下 Cell；不推断其他间接组件归属"))
+        gaps.append(ExadataGap(code="MEMBERSHIP_SCOPE", detail="成员仅含 OEM 显式包含及 GUID 复核的直接组件、Grid 下 Cell，以及已确认 ILOM 的反向 host deployed_on；不按同 Agent 或 hosted_by 推断归属"))
         return ExadataView(resource_id=resource_id, binding_id=frozen["binding_id"],
             binding_version=frozen["binding_version"], source_version=frozen["source_version"],
             catalog_version=self.version, catalog_sha256=self.digest, captured_at=datetime.now(UTC),
@@ -168,6 +183,7 @@ class ExadataOEMService:
             query_mode=query.mode, window_start=window_start, window_end=window_end,
             history_resolution="PROVIDER_MANAGED" if query.mode == "HISTORY" else None,
             samples=tuple(samples), definitions=tuple({metric["code"]: metric for _, metric in reads[query.offset:end]}.values()),
+            device_coverage=tuple(coverage),
             gaps=tuple(gaps), partial=True, total_queries=len(reads), next_offset=next_offset)
 
     async def diagnose(self, *, scope, system_id, resource_id, source_id, query, idempotency_key):

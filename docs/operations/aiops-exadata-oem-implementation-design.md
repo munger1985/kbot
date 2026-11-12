@@ -591,3 +591,44 @@ Ammolite 旧 Main API（PID 3349583）在停止监听后仍保留退出等待，
 KBot 首次完整复核在切回磁盘准备读取历史时出现一次网络层 `Failed to fetch`，未收到该请求的 HTTP 响应；没有将它当作 OEM 无数据。随后单独复核概览、磁盘及历史成功。相关原始证据保留在本地私有 `/tmp/exadata-status-kbot-yN9EjV`（首次场景与跨页状态）、`/tmp/exadata-status-kbot-9JddYR`（最终历史复核）及 `/tmp/exadata-status-ammolite-g4eGi0`（Ammolite 完整复核），不提交会话或凭据。
 
 这些是已有确认 Cell 范围内的实际页面验收。全目录 16 项状态字典和不误判的语义由两端本地合同测试覆盖；服务器/交换机硬件和端口组件尚未具备可靠应用绑定，不能把本次状态展示上线宣称为它们已经在线采集或全部 267 项实测覆盖。
+
+### 10.16 整机设备概览与 DB Server 节点资源（2026-11-12）
+
+本节替代“overview 仅含 Cell 五项”的选集设计，不修改普通 OEM、非 Exadata、非 OEM 监控与诊断。
+
+#### 10.16.1 真实导出审核
+
+原目录 267 项保持原样，新增 `device_metrics.v1.json` 的 12 项设备指标，合并目录为 **279 项、26 项状态定义**，共同纳入 catalog_sha256。无原厂元数据或状态编码证据的值不补造。
+
+| 设备 | 真实指标 | 解释与真实导出采样 |
+| --- | --- | --- |
+| DB Server / host | CPUUsageSummary/OverAllUsagePct、Load/memUsedPct | 原生百分比，分别逐节点显示；不以运行队列代替 CPU，不乘 100，不跨节点求均值 |
+| DB Server / host | Response/Status | NUMBER 定义存在，导出没有最新采样；编码字典未验证，非空编码也保持未知，不等于没有该指标 |
+| 交换机 / oracle_si_netswitch | AccessPointResponse/statusMsg | ap_guid 维度，12 条 UP；仅翻译为管理访问点可达，不冒充交换机所有链路健康 |
+| 服务器硬件 / oracle_si_server_map | AccessPointResponse/statusMsg、SystemStatus/HealthStatus | 6 条 UP、2 条 OK；分别表示管理访问点可达和硬件健康，不代表数据库可用 |
+| 服务器硬件 / oracle_si_server_map | SystemStatus/PowerStatus、SystemStatus/OSStatus | On 为已开机（中性色）；OSStatus 两条为空，不据电源状态推断 OS 可用 |
+| PDU / oracle_si_pdu | PduHttpResponse/Status | 导出两条 1；现场只读核对原厂 SI 插件 pdu_metrics.xmlp：1 为 HTTP responding、0 为不响应，展示可达/不可达，不表示供电健康 |
+| 交换机、服务器硬件、PDU | ComponentState/ComponentState | ComponentId 维度定义存在，父设备导出无最新样本；保留独立硬件状态，不把无样本当成无指标 |
+
+目录已有的硬件子组件状态、服务器/交换机端口运行状态也加入 overview；只对已确认成员进行查询，不因目录有目标类型而自行扩大整机范围。机架导出只有位置配置；整机与 Grid 的 Response 为 OEM 合成类型，不能强行当 NUMBER/STRING 最新值读取。这些已确认目标仍出现在设备清单，明确当前没有审核通过的独立状态读取，不借用 Cell 状态。
+
+#### 10.16.2 DB Server 的明确归属
+
+真实导出的 DB Machine 没有直接 host 包含边，但有 `DB Machine --internal_contains--> oracle_si_server_map <--deployed_on-- host`。只对已确认的直接 ILOM 查询反向 deployed_on，固定来源类型 host、目标 ILOM 的精确名称/类型、关系类型和方向，再按名称/类型查唯一 GUID 并 detail 复核。
+
+不使用 hosted_by、同一个 Agent、IP 或名称前缀推断 DB Server。Grid 下仍只允许 Cell；截断、错误方向、忽略过滤、多个 host 指向同一 ILOM、同一 host 归属多个 ILOM等全部拒绝。ILOM 没有 deployed_on 时不编造 host。总成员 128、响应大小和时间预算保持不变。新增已证明成员会改变 inventory digest，旧绑定必须经正常发现与确认刷新，不能后台静默扩大授权范围。
+
+#### 10.16.3 页面与只读诊断合同
+
+- 场景改名“整机设备概览”。新增 `ExadataView.device_coverage`：逐设备返回审核指标、当前页计划查询指标和覆盖说明；保留全部已确认设备，包括此页未查询和没有已审核状态读法的设备。
+- 最新概览优先列出 host 和 Cell 的逐节点 CPU/内存，再读取服务、管理可达性、硬件、电源、OS 和端口状态。页面 overview 每页 24 次（合同既有上限），其他场景继续每页 12；30 秒取数、55 秒总预算保持不变。
+- 设备清单按节点归组紧凑状态行，保留实际时间、维度和原始证据；CPU/内存继续指标卡。未覆盖的设备显示“本页未查询”，可点“查看设备指标”重置分页并精确过滤，不能显示假绿色或当作 OEM 无采样。
+- 未确认的 DB Server、交换机或 PDU 明确提示检查 OEM 设备发现与整机成员确认；不凭缺失成员断定 OEM 没有此类设备或指标。无样本、来源空值、读取失败、采样过旧、未知编码继续分别处理。
+- 采集超时为当前页每个未完成指标生成明确缺口，防止设备指标静默消失；只读诊断冻结设备覆盖范围与状态字典。数值型响应状态也排除数值范围计算，仍不生成整机健康结论。
+- 新字段默认空数组只用于读取历史已冻结报告，不回查或补写历史证据；没有持久化模型变更、DDL、回填或普通监控双路径。
+
+#### 10.16.4 实施与现场边界
+
+两仓同步实施目录、成员解析、监控及报告合同、设备列表和指标卡、API 快照与回归测试。现场当前模拟整机已确认范围仅含 Grid 和 Cell；另有独立模拟交换机，但未纳入整机。DB Server、ILOM、PDU 的模拟与整机关联尚未补建，不能宣称新设备已在线采集。上述模拟扩展、正常重新发现确认绑定和上线验收应单独记录，不以本地 fixture 代替真实 OEM 页面证据。
+
+本地验证：两仓各 7 个 Exadata 定向文件 208 passed，另各 5 个普通 OEM/资源监控回归文件 153 passed；两端生产组件浏览器合同覆盖全部 26 项状态、全设备清单、DB Server 零值、未查询设备不涂绿、按设备过滤和响应式布局。Ammolite typecheck/生产 build、两仓架构边界和 OpenAPI 快照校验通过；build 保留既有大 chunk 提示。未跑全仓测试，尚未部署本节新增功能，也没有修改现场 OEM 目标、成员或应用绑定。

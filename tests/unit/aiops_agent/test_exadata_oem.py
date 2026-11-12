@@ -81,7 +81,7 @@ def args(f, **query):
 
 def test_catalog_is_independent_and_preserves_audited_semantics():
     version, digest, metrics, profiles, diagnoses = load_catalog()
-    assert version == "exadata-oem-v1" and len(digest) == 64 and len(metrics) == 267
+    assert version == "exadata-oem-v1" and len(digest) == 64 and len(metrics) == 279
     by_selector = {item["selector"]: item for item in metrics.values()}
     assert by_selector["Aggregated_HardNFlashDisk_Metric/avg_cd_io_load"]["keys"] == ["celldisk_type"]
     assert next(item for item in metrics.values() if item["selector"].startswith("HostInterConnect_Statistics/"))["keys"] == ["name", "cell_Id"]
@@ -336,6 +336,52 @@ def test_no_data_response_remains_a_gap(exadata_lab):
         await publish_exadata(f)
         result = await f.exadata.collect(**args(f))
         assert not result.samples and any(g.code == "NO_DATA" for g in result.gaps)
+    asyncio.run(run())
+
+
+def test_overview_lists_all_confirmed_devices_without_faking_unqueried_states(exadata_lab):
+    f = exadata_lab
+    extra = [{"target_id": char * 32, "target_type": kind, "display_name": label} for char, kind, label in (
+        ("c", "host", "测试 DB Server"), ("d", "oracle_si_netswitch", "测试交换机"),
+        ("e", "oracle_si_server_map", "测试 ILOM"), ("f", "oracle_si_pdu", "测试 PDU"),
+        ("1", "oracle_si_rack", "测试机架"))]
+    members = [*MEMBERS, *extra]
+    digest = inventory_digest(ROOT_ID, members)
+    f.adapter.exadata_inventory.return_value = (ROOT_ID, members, digest)
+    f.adapter.discover_exadata.return_value = [(ROOT_ID, members, digest)]
+    async def run():
+        await publish_exadata(f)
+        view = await f.exadata.collect(**args(f, limit=4))
+        assert len(view.device_coverage) == 7 and len(view.members) == 7
+        assert len(view.samples) == 4 and f.adapter.exadata_latest.await_count == 4
+        selectors = {definition.code for definition in view.definitions}
+        assert selectors == {"host.CPUUsageSummary.OverAllUsagePct", "host.Load.memUsedPct",
+                             "oracle_exadata.Cell_Metric.cpu_utilization", "oracle_exadata.Cell_Metric.memory_utilization"}
+        coverage = {item.component_id: item for item in view.device_coverage}
+        assert coverage["d" * 32].metric_codes and not coverage["d" * 32].queried_metric_codes
+        assert not coverage["1" * 32].metric_codes
+        assert not any(gap.code == "NO_DATA" for gap in view.gaps)
+        scoped = await f.exadata.collect(**args(f, component_id="d" * 32))
+        assert len(scoped.device_coverage) == 1
+        assert all(sample.component_id == "d" * 32 for sample in scoped.samples)
+        assert {item.code for item in scoped.definitions} == {
+            "oracle_si_netswitch.AccessPointResponse.statusMsg", "oracle_si_netswitch.ComponentState.ComponentState"}
+        report = await f.exadata.diagnose(**args(f, limit=4), idempotency_key="device-coverage-report")
+        saved = await f.exadata.get_report(scope=f.scope, system_id=f.system_id, resource_id=f.resource_id,
+            source_id=f.source_id, report_id=report.report_id)
+        assert saved.evidence.device_coverage == report.evidence.device_coverage
+    asyncio.run(run())
+
+
+def test_timeout_marks_each_unfinished_query_not_as_empty_oem_sample(exadata_lab):
+    f = exadata_lab
+    f.adapter.exadata_latest.side_effect = TimeoutError()
+    async def run():
+        await publish_exadata(f)
+        view = await f.exadata.collect(**args(f))
+        assert not view.samples
+        assert len([gap for gap in view.gaps if gap.code == "COLLECTION_TIMEOUT" and gap.metric_code]) == view.total_queries
+        assert not any(gap.code == "NO_DATA" for gap in view.gaps)
     asyncio.run(run())
 
 

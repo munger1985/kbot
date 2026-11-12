@@ -70,3 +70,8 @@
 @media(max-width:820px) { .exadata-oem .exadata-metric-grid,.exadata-oem .exadata-toolbar { grid-template-columns:minmax(0,1fr); }.exadata-oem .exadata-heading { flex-wrap:wrap; }.exadata-oem .exadata-toolbar .exadata-actions { grid-column:auto; } }
 @media(max-width:820px) { .exadata-oem .exadata-status-row { grid-template-columns:minmax(0,1fr) auto; }.exadata-oem .exadata-status-time { grid-column:1/-1; display:flex; flex-wrap:wrap; text-align:left; } }
 @media(prefers-reduced-motion:reduce) { .exadata-oem .exadata-metric-card,.exadata-oem .exadata-metric-card:hover { transform:none; transition:none; } }
+.exadata-oem .exadata-device { min-width:0; border-top:1px solid var(--line); }
+.exadata-oem .exadata-device > header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--space-2,8px); padding:var(--form-label-control-gap); }
+.exadata-oem .exadata-device h4 { margin:0; color:var(--ink); overflow-wrap:anywhere; font-size:var(--type-table); }
+.exadata-oem .exadata-device header span { color:var(--muted); font-size:var(--type-meta); }
+.exadata-oem .exadata-device-hint,.exadata-oem .exadata-device-resource { margin:0; padding:var(--space-2,8px) var(--form-label-control-gap); color:var(--muted); font-size:var(--type-meta); overflow-wrap:anywhere; }

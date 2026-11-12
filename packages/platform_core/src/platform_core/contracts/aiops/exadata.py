@@ -87,6 +87,13 @@ class ExadataMetricDefinition(ExadataModel):
     status: ExadataStatusDefinition | None = None
 
 
+class ExadataDeviceCoverage(ExadataModel):
+    component_id: str
+    metric_codes: tuple[str, ...]
+    queried_metric_codes: tuple[str, ...]
+    note: str
+
+
 class ExadataView(ExadataModel):
     resource_id: UUID
     binding_id: UUID
@@ -103,6 +110,7 @@ class ExadataView(ExadataModel):
     members: tuple[ExadataMember, ...]
     samples: tuple[ExadataSample, ...]
     definitions: tuple[ExadataMetricDefinition, ...]
+    device_coverage: tuple[ExadataDeviceCoverage, ...] = ()
     gaps: tuple[ExadataGap, ...]
     partial: bool
     total_queries: int

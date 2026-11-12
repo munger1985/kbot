@@ -7240,6 +7240,41 @@
         "title": "ExadataCandidate",
         "type": "object"
       },
+      "ExadataDeviceCoverage": {
+        "additionalProperties": false,
+        "properties": {
+          "component_id": {
+            "title": "Component Id",
+            "type": "string"
+          },
+          "metric_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Metric Codes",
+            "type": "array"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "queried_metric_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Queried Metric Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "component_id",
+          "metric_codes",
+          "queried_metric_codes",
+          "note"
+        ],
+        "title": "ExadataDeviceCoverage",
+        "type": "object"
+      },
       "ExadataDiscovery": {
         "additionalProperties": false,
         "properties": {
@@ -7457,8 +7492,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "target_type": {
             "title": "Target Type",
@@ -7781,6 +7815,14 @@
               "$ref": "#/components/schemas/ExadataMetricDefinition"
             },
             "title": "Definitions",
+            "type": "array"
+          },
+          "device_coverage": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExadataDeviceCoverage"
+            },
+            "title": "Device Coverage",
             "type": "array"
           },
           "gaps": {

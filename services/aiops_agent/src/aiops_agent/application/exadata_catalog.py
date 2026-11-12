@@ -11,6 +11,8 @@ def load_catalog():
     root = files("aiops_agent").joinpath("resources/exadata_oem")
     raw = root.joinpath("metrics.v1.json").read_bytes()
     metrics = json.loads(raw)
+    devices_raw = root.joinpath("device_metrics.v1.json").read_bytes()
+    metrics["metrics"].extend(json.loads(devices_raw)["metrics"])
     monitoring = json.loads(root.joinpath("monitoring_profiles.v1.json").read_text())
     diagnosis = json.loads(root.joinpath("diagnosis_profiles.v1.json").read_text())
     status_raw = root.joinpath("status.v1.json").read_bytes()
@@ -29,5 +31,5 @@ def load_catalog():
     for profile in (*monitoring["profiles"], *diagnosis["profiles"]):
         if any(code not in by_code for code in profile["metric_codes"]):
             raise ValueError("Exadata 场景引用了未登记指标")
-    digest = hashlib.sha256(raw + status_raw + json.dumps([monitoring, diagnosis], sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(raw + devices_raw + status_raw + json.dumps([monitoring, diagnosis], sort_keys=True).encode()).hexdigest()
     return metrics["version"], digest, by_code, monitoring["profiles"], diagnosis["profiles"]

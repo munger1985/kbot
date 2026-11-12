@@ -49,6 +49,73 @@ def test_verified_tree_preserves_grid_and_cell_and_uses_only_fixed_get_endpoints
     assert calls[2][1]["params"] == {"name": "测试 Grid", "typeName": "oracle_exadata_grid", "limit": 2}
 
 
+def deployed_host_rows(**changes):
+    return {"columnNames": sorted(ASSOCIATION_COLUMNS), "exceedsMaxRows": False, "data": [{
+        "TARGET_NAME": "测试 DB Server", "TARGET_TYPE": "host", "ASSOC_TYPE": "deployed_on",
+        "ASSOC_TARGET_NAME": "测试 ILOM", "ASSOC_TARGET_TYPE": "oracle_si_server_map", **changes}]}
+
+
+def server_payloads():
+    server = target("d" * 32, "测试 ILOM", "oracle_si_server_map")
+    return [ROOT_ROW, association_rows(("测试整机", "oracle_dbmachine", "测试 Cell", "oracle_exadata"),
+            ("测试整机", "oracle_dbmachine", "测试 ILOM", "oracle_si_server_map")),
+            collection([CELL_ROW]), CELL_ROW, collection([server]), server]
+
+
+def test_db_server_requires_confirmed_ilom_and_explicit_reverse_deployed_on():
+    host = target("e" * 32, "测试 DB Server", "host")
+    value, calls = adapter(*server_payloads(), deployed_host_rows(), collection([host]), host)
+    _, members, _ = asyncio.run(value.exadata_inventory(ROOT))
+    assert any(row["target_id"] == "e" * 32 and row["target_type"] == "host" for row in members)
+    params = next(kw["params"] for url, kw in calls if url.endswith(DATA_SERVICE) and "deployed_on" in kw["params"]["search"])
+    assert params["search"] == "ASSOC_TARGET_NAME='测试 ILOM',ASSOC_TARGET_TYPE='oracle_si_server_map',TARGET_TYPE='host',ASSOC_TYPE='deployed_on'"
+    assert calls[-2][1]["params"] == {"name": "测试 DB Server", "typeName": "host", "limit": 2}
+
+
+@pytest.mark.parametrize("changes", [
+    {"ASSOC_TYPE": "hosted_by"}, {"ASSOC_TYPE": "internal_contains"},
+    {"TARGET_TYPE": "oracle_database"}, {"ASSOC_TARGET_NAME": "其他 ILOM"},
+    {"ASSOC_TARGET_TYPE": "oracle_si_netswitch"},
+])
+def test_wrong_reverse_direction_type_or_filter_never_adds_db_server(changes):
+    value, calls = adapter(*server_payloads(), deployed_host_rows(**changes))
+    with pytest.raises(DiagnosticSourceAdapterError):
+        asyncio.run(value.exadata_inventory(ROOT))
+    assert len(calls) == 7
+
+
+def test_ilom_without_deployed_host_is_not_agent_host_or_missing_inventory():
+    payload = deployed_host_rows()
+    payload["data"] = []
+    value, _ = adapter(*server_payloads(), payload)
+    _, members, _ = asyncio.run(value.exadata_inventory(ROOT))
+    assert not any(row["target_type"] == "host" for row in members)
+
+
+def test_ambiguous_multiple_hosts_on_one_ilom_fails_closed():
+    payload = deployed_host_rows()
+    payload["data"].append({**payload["data"][0], "TARGET_NAME": "其他主机"})
+    value, _ = adapter(*server_payloads(), payload)
+    with pytest.raises(DiagnosticSourceAdapterError):
+        asyncio.run(value.exadata_inventory(ROOT))
+
+
+def test_same_host_cannot_be_owned_by_two_confirmed_iloms():
+    first = target("d" * 32, "测试 ILOM", "oracle_si_server_map")
+    second = target("f" * 32, "其他 ILOM", "oracle_si_server_map")
+    host = target("e" * 32, "测试 DB Server", "host")
+    value, _ = adapter(ROOT_ROW, association_rows(
+        ("测试整机", "oracle_dbmachine", "测试 Cell", "oracle_exadata"),
+        ("测试整机", "oracle_dbmachine", "测试 ILOM", "oracle_si_server_map"),
+        ("测试整机", "oracle_dbmachine", "其他 ILOM", "oracle_si_server_map")),
+        collection([CELL_ROW]), CELL_ROW, collection([first]), first, collection([second]), second,
+        deployed_host_rows(), collection([host]), host,
+        deployed_host_rows(ASSOC_TARGET_NAME="其他 ILOM"), collection([host]), host)
+    with pytest.raises(DiagnosticSourceAdapterError) as error:
+        asyncio.run(value.exadata_inventory(ROOT))
+    assert error.value.code == "SOURCE_ITEM_AMBIGUOUS"
+
+
 @pytest.mark.parametrize("change", [
     {"exceedsMaxRows": True}, {"exceedsMaxRows": "false"}, {"exceedsMaxRows": 0},
     {"columnNames": ["TARGET_NAME"]}, {"columnNames": ["TARGET_NAME"] * 5},

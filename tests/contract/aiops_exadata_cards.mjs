@@ -39,6 +39,33 @@ const cpu = metric('Cell_Metric/cpu_utilization'), memory = metric('Cell_Metric/
 const status = ['Status', 'msStatus', 'rsStatus'].map(name => metric(`CellSrv_Status_Metric/${name}`, 'STRING'))
 const sample = (definition, value, overrides = {}) => ({ component_id: 'cell-a', metric_code: definition.code, selector: definition.selector, observed_at: '2026-11-11T12:00:00Z', value, dimensions: {}, unit: '%', native_value_type: definition.native_value_type, quality: 'OBSERVED', ...overrides })
 const overview = { query_mode: 'LATEST_SNAPSHOT', window_start: null, window_end: null, members, definitions: [...status, cpu, memory], samples: [...status.map(item => sample(item, '1', { unit: 'n/a' })), sample(cpu, '27.210000000000001'), sample(memory, '0')], gaps: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '阈值与状态字典未验证，不判定健康。' }], total_queries: 5, next_offset: null, catalog_version: 'exadata-oem-v1', captured_at: '2026-11-11T12:01:00Z' }
+
+const dbCPU = metric('CPUUsageSummary/OverAllUsagePct', 'NUMBER', 'host'), dbMemory = metric('Load/memUsedPct', 'NUMBER', 'host')
+const switchAP = metric('AccessPointResponse/statusMsg', 'STRING', 'oracle_si_netswitch')
+const deviceView = { ...clone(overview), members: [...members, {target_id:'db-a',target_type:'host',display_name:'SIM DB SERVER'}, {target_id:'switch-a',target_type:'oracle_si_netswitch',display_name:'SIM SWITCH'}, {target_id:'pdu-a',target_type:'oracle_si_pdu',display_name:'SIM PDU'}, {target_id:'rack-a',target_type:'oracle_si_rack',display_name:'SIM RACK'}],
+  definitions: [...overview.definitions, dbCPU, dbMemory, switchAP],
+  samples: [...overview.samples, sample(dbCPU, '0', {component_id:'db-a'}), sample(dbMemory, '37.125', {component_id:'db-a'}), sample(switchAP, 'UP', {component_id:'switch-a',unit:'n/a',dimensions:{ap_guid:'AP-1'}})],
+  device_coverage: [
+    {component_id:'cell-a',metric_codes:overview.definitions.map(item=>item.code),queried_metric_codes:overview.definitions.map(item=>item.code),note:''},
+    {component_id:'cell-b',metric_codes:[cpu.code],queried_metric_codes:[],note:''},
+    {component_id:'db-a',metric_codes:[dbCPU.code,dbMemory.code],queried_metric_codes:[dbCPU.code,dbMemory.code],note:''},
+    {component_id:'switch-a',metric_codes:[switchAP.code],queried_metric_codes:[switchAP.code],note:''},
+    {component_id:'pdu-a',metric_codes:['oracle_si_pdu.PduHttpResponse.Status'],queried_metric_codes:[],note:''},
+    {component_id:'rack-a',metric_codes:[],queried_metric_codes:[],note:'此类目标尚无审核通过的独立状态读取指标'},
+  ] }
+const deviceRows = api.buildExadataDevices(deviceView)
+assert.equal(deviceRows.length, 6, '指标分页不能隐藏已确认设备')
+assert.equal(deviceRows.find(item=>item.member.target_id==='db-a').typeLabel, 'DB Server')
+assert.ok(deviceRows.find(item=>item.member.target_id==='db-a').resources.some(item=>item.value.startsWith('0 %')), 'DB Server CPU 零值保留')
+assert.equal(deviceRows.find(item=>item.member.target_id==='switch-a').states[0].label, '可达')
+assert.equal(deviceRows.find(item=>item.member.target_id==='pdu-a').states.length, 0, '未查询不伪造健康或无采样')
+assert.ok(deviceRows.find(item=>item.member.target_id==='pdu-a').note.includes('本页未查询'))
+assert.ok(deviceRows.find(item=>item.member.target_id==='rack-a').note.includes('尚无审核'))
+assert.equal(api.buildExadataDevices(overview).length, 0, '冻结旧报告不补造覆盖范围')
+assert.equal(api.exadataOverviewNotes(deviceView).length, 0)
+assert.ok(api.exadataOverviewNotes(overview).some(note => note.includes('DB Server') && note.includes('CPU/内存')))
+assert.ok(api.exadataOverviewNotes(overview).some(note => note.includes('交换机')))
+
 const cards = api.buildExadataCards(overview)
 assert.equal(cards.length, 5)
 assert.equal(cards[3].value, '27.210000000000001', '原始精度不得被图表数值转换覆盖')
@@ -65,8 +92,8 @@ assert.equal(option.series[0].connectNulls, false)
 assert.equal(option.series[0].markLine, undefined, '未验证阈值不画健康分界线')
 assert.ok(!option.tooltip.formatter([{ seriesName: '<img onerror=alert(1)>', data: { raw: '<script>', at: 'now' } }]).includes('<img'))
 assert.equal(api.exadataChartOption(cards[0], palette).series.length, 0, '字符串状态不能转换成数值时序')
-assert.equal(statusesByCode.size, 16, '全部状态类指标纳入审核，而不只是三个服务')
-const reviewed = JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem/metrics.v1.json'))).metrics
+assert.equal(statusesByCode.size, 26, '全部状态类指标纳入审核，而不只是三个服务')
+const reviewed = ['metrics.v1.json', 'device_metrics.v1.json'].flatMap(file => JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem', file))).metrics)
 for (const [code, statusDefinition] of statusesByCode) {
   const definition = { ...reviewed.find(item => item.code === code), status: statusDefinition }
   assert.ok(definition.selector, `${code} 必须属于真实指标目录`)
@@ -137,7 +164,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [], calls = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('https://fonts.**', route => route.abort())
-  let fail = false, unavailable = false, providerError = false, stateFixture = false
+  let fail = false, unavailable = false, providerError = false, stateFixture = false, devicesFixture = false
   await page.route('**/api/v1/apps/aiops/**', async route => {
     const request = route.request(), body = request.postDataJSON(); calls.push({ body, headers: request.headers(), url: request.url() })
     if (!request.headers()['content-type']?.includes('application/json')) return route.fulfill({ status: 422, json: { detail: '请求体必须为 JSON' } })
@@ -156,8 +183,15 @@ try {
     }
     if (stateFixture) {
       result.definitions = reviewed.filter(item => statusesByCode.has(item.code)).map(item => ({ ...item, status: statusesByCode.get(item.code) }))
-      result.samples = result.definitions.map(item => sample(item, Object.keys(item.status.values)[0], { unit: 'n/a', dimensions: Object.fromEntries(item.keys.map(key => [key, `${key}-A`])) }))
-      result.gaps = []; result.total_queries = 16; result.next_offset = null
+      result.samples = result.definitions.map(item => sample(item, Object.keys(item.status.values)[0] || 'unreviewed', { unit: 'n/a', dimensions: Object.fromEntries(item.keys.map(key => [key, `${key}-A`])) }))
+      result.gaps = []; result.total_queries = 26; result.next_offset = null
+    }
+    if (devicesFixture) {
+      result = clone(deviceView)
+      if (body.component_id) {
+        result.samples = result.samples.filter(item=>item.component_id===body.component_id)
+        result.device_coverage = result.device_coverage.filter(item=>item.component_id===body.component_id)
+      }
     }
     if (unavailable) { result.samples = []; result.gaps.push({ component_id: 'cell-a', metric_code: cpu.code, code: 'NO_DATA', detail: '无采样，不按零值显示' }) }
     if (providerError) { result.samples = []; result.gaps = [{ component_id: 'cell-a', metric_code: cpu.code, code: 'SOURCE_PROVIDER_ERROR', detail: 'OEM 服务端 HTTP 5xx' }] }
@@ -225,8 +259,8 @@ try {
   await expect(page.locator('.exadata-percent')).toHaveCount(0)
   unavailable = false; stateFixture = true
   await page.locator('[data-mode]').selectOption('LATEST_SNAPSHOT')
-  await expect(page.locator('.exadata-status-item')).toHaveCount(16)
-  await expect(page.locator('.exadata-status-row')).toHaveCount(16)
+  await expect(page.locator('.exadata-status-item')).toHaveCount(26)
+  await expect(page.locator('.exadata-status-row')).toHaveCount(26)
   await expect(page.locator('.exadata-metric-card')).toHaveCount(0)
   await expect(page.locator('.exadata-status-panel')).toContainText('端口掉线事件')
   await expect(page.locator('.exadata-status-panel')).toContainText('未触发')
@@ -238,7 +272,26 @@ try {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1), `全部状态在宽度 ${width} 不得横向溢出`)
   }
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-all-states.png`), fullPage: true })
-  stateFixture = false
+  stateFixture = false; devicesFixture = true
+  await page.locator('[data-component]').selectOption('')
+  await page.locator('[data-scene]').selectOption('overview')
+  await expect(page.locator('[data-device-id]')).toHaveCount(6)
+  await expect(page.locator('[data-device-id="db-a"]')).toContainText('DB Server')
+  await expect(page.locator('[data-device-id="db-a"]')).toContainText('37.125')
+  await expect(page.locator('[data-device-id="switch-a"]')).toContainText('可达')
+  await expect(page.locator('[data-device-id="pdu-a"]')).toContainText('本页未查询')
+  await expect(page.locator('[data-device-id="pdu-a"] .state-success')).toHaveCount(0)
+  await expect(page.locator('[data-device-id="rack-a"]')).toContainText('尚无审核')
+  for (const width of [390, 780, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1), '整机设备清单不横向溢出')
+  }
+  await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-devices.png`), fullPage: true })
+  await page.locator('[data-device="switch-a"]').click()
+  await expect(page.locator('[data-device-id]')).toHaveCount(1)
+  assert.equal(calls.at(-1).body.component_id, 'switch-a')
+  assert.equal(calls.at(-1).body.offset, 0)
+  devicesFixture = false
   providerError = true; unavailable = false; await page.locator('[data-refresh]').click()
   await expect(page.locator('.exadata-metric-card')).toHaveCount(1)
   await expect(page.locator('.exadata-metric-card')).toContainText('OEM 服务错误')

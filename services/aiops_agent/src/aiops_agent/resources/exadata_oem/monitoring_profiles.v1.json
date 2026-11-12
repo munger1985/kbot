@@ -3,13 +3,30 @@
   "profiles": [
     {
       "id": "overview",
-      "display_name": "整机与 Cell 状态",
+      "display_name": "整机设备状态与节点资源",
       "metric_codes": [
+        "host.CPUUsageSummary.OverAllUsagePct",
+        "host.Load.memUsedPct",
+        "oracle_exadata.Cell_Metric.cpu_utilization",
+        "oracle_exadata.Cell_Metric.memory_utilization",
         "oracle_exadata.CellSrv_Status_Metric.Status",
+        "host.Response.Status",
+        "oracle_si_netswitch.AccessPointResponse.statusMsg",
+        "oracle_si_pdu.PduHttpResponse.Status",
+        "oracle_si_server_map.SystemStatus.HealthStatus",
+        "oracle_si_server_map.AccessPointResponse.statusMsg",
         "oracle_exadata.CellSrv_Status_Metric.msStatus",
         "oracle_exadata.CellSrv_Status_Metric.rsStatus",
-        "oracle_exadata.Cell_Metric.cpu_utilization",
-        "oracle_exadata.Cell_Metric.memory_utilization"
+        "oracle_si_server_map.SystemStatus.PowerStatus",
+        "oracle_si_server_map.SystemStatus.OSStatus",
+        "oracle_si_netswitch.ComponentState.ComponentState",
+        "oracle_si_server_map.ComponentState.ComponentState",
+        "oracle_si_pdu.ComponentState.ComponentState",
+        "oracle_si_hw_component_server.ComponentState.ComponentState",
+        "oracle_si_hw_component_switch.ComponentState.ComponentState",
+        "oracle_si_network_port_server.NetworkPortPerformance.OperStatus",
+        "oracle_si_network_port_switch.NetworkPortPerformance.OperStatus",
+        "oracle_si_network_port_switch.SwitchEthPortsMonitor.OperStatus"
       ]
     },
     {

@@ -2,6 +2,52 @@
   "version": "exadata-status-v1",
   "groups": [
     {
+      "metric_codes": ["host.Response.Status"],
+      "status": {
+        "category": "AVAILABILITY", "display_name": "设备响应状态", "values": {},
+        "provenance": "OEM export 2026-11-10: NUMBER Response/Status for host (no samples). Numeric response dictionary not verified; all nonempty codes remain unknown, never inferred from collection success."
+      }
+    },
+    {
+      "metric_codes": ["oracle_si_pdu.PduHttpResponse.Status"],
+      "status": {
+        "category": "AVAILABILITY", "display_name": "PDU HTTP 响应状态",
+        "values": {"1": {"label": "可达", "tone": "success"}, "0": {"label": "不可达", "tone": "danger"}},
+        "provenance": "Oracle oracle.sysman.si.agent.plugin_24.1.1.0.0 metadata/pdu_hw/pdu_metrics.xmlp PduHttpResponse: Value of 1 if the HTTP is responding, otherwise 0. Read-only verified 2026-11-12. HTTP responding is not power distribution health."
+      }
+    },
+    {
+      "metric_codes": ["oracle_si_netswitch.AccessPointResponse.statusMsg", "oracle_si_server_map.AccessPointResponse.statusMsg"],
+      "status": {
+        "category": "AVAILABILITY", "display_name": "管理访问点可达性",
+        "values": {"UP": {"label": "可达", "tone": "success"}},
+        "provenance": "OEM export 2026-11-10: switch 12 UP, server map 6 UP; keyed by ap_guid. UP only establishes that management access point, not device-wide or OS availability."
+      }
+    },
+    {
+      "metric_codes": ["oracle_si_server_map.SystemStatus.HealthStatus"],
+      "status": {
+        "category": "AVAILABILITY", "display_name": "服务器硬件健康状态",
+        "values": {"OK": {"label": "正常", "tone": "success"}},
+        "provenance": "OEM export 2026-11-10 SystemStatus/HealthStatus: two OK samples. Hardware health is not OS or database availability."
+      }
+    },
+    {
+      "metric_codes": ["oracle_si_server_map.SystemStatus.PowerStatus"],
+      "status": {
+        "category": "ADMINISTRATIVE", "display_name": "服务器电源状态",
+        "values": {"On": {"label": "已开机", "tone": "neutral"}},
+        "provenance": "OEM export 2026-11-10 SystemStatus/PowerStatus: two On samples. Powered on does not establish OS availability; other tokens unverified."
+      }
+    },
+    {
+      "metric_codes": ["oracle_si_server_map.SystemStatus.OSStatus"],
+      "status": {
+        "category": "AVAILABILITY", "display_name": "服务器操作系统状态", "values": {},
+        "provenance": "OEM export 2026-11-10 SystemStatus/OSStatus: two empty samples. Metric exists but no status dictionary is verified; empty is no data, all other tokens unknown."
+      }
+    },
+    {
       "metric_codes": [
         "oracle_exadata.CellSrv_Status_Metric.Status",
         "oracle_exadata.CellSrv_Status_Metric.msStatus",
@@ -29,6 +75,9 @@
     },
     {
       "metric_codes": [
+        "oracle_si_netswitch.ComponentState.ComponentState",
+        "oracle_si_server_map.ComponentState.ComponentState",
+        "oracle_si_pdu.ComponentState.ComponentState",
         "oracle_si_hw_component_server.ComponentState.ComponentState",
         "oracle_si_hw_component_switch.ComponentState.ComponentState"
       ],
@@ -36,7 +85,7 @@
         "category": "AVAILABILITY",
         "display_name": "硬件组件状态",
         "values": { "OK": { "label": "正常", "tone": "success" } },
-        "provenance": "OEM export 2026-11-10: ComponentState description The Component State; server 82 OK and 3 empty, switch 12 OK. Empty values do not mean OK."
+        "provenance": "OEM export 2026-11-10: shared SI ComponentState definition The Component State, ComponentId key; server subcomponents 82 OK and 3 empty, switch subcomponents 12 OK. Parent netswitch/server_map/PDU definitions have no latest samples; no sample is not no metric or OK."
       }
     },
     {
