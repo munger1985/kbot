@@ -296,7 +296,9 @@ try {
         return [parseFloat(css.paddingLeft), parseFloat(css.paddingRight)]
       }
       const evidence = card.querySelector(':scope > .exadata-evidence'), css = getComputedStyle(evidence)
-      return { header: padding(':scope > header'), value: padding('.exadata-card-value'), time: padding('.exadata-card-time'),
+      return { height: rect.height, headerHeight: card.querySelector('header').getBoundingClientRect().height,
+        chartTop: chart ? chart.top - rect.top : null, footerTop: evidence.getBoundingClientRect().top - rect.top,
+        header: padding(':scope > header'), value: padding('.exadata-card-value'), time: padding('.exadata-card-time'),
         caption: card.querySelector('.exadata-chart-caption') ? padding('.exadata-chart-caption') : null,
         evidence: padding(':scope > .exadata-evidence'), evidenceBlock: [parseFloat(css.paddingTop), parseFloat(css.paddingBottom)],
         marker: getComputedStyle(evidence.querySelector('summary')).listStylePosition,
@@ -307,17 +309,22 @@ try {
       assert.ok([card.header, card.value, card.time, card.caption, card.evidence, card.chart].filter(Boolean).flat().every(value => value >= 16), `卡片标题、内容、图表和入口距离边框至少16px：${JSON.stringify(card)}`)
       assert.ok(card.evidenceBlock.every(value => value >= 12), '查看数据入口上下留白至少12px')
       assert.equal(card.marker, 'inside', '展开标记不得突出到卡片边框')
+      assert.ok(Math.abs(card.height - 540) <= 1, `收起的数据卡统一540px，不因基线、无数据或文案变高：${JSON.stringify(card)}`)
+      assert.ok(Math.abs(card.headerHeight - 72) <= 1, '卡片标题区域统一72px')
+      assert.ok(Math.abs(card.footerTop - spacing[0].footerTop) <= 1, '卡片底部入口保持同一位置')
+      if (card.chartTop !== null) assert.ok(Math.abs(card.chartTop - 166) <= 1, '图表起点统一，不随标题换行改变')
     }
   }
   page.on('pageerror', error => errors.push(error.message))
   await page.route('https://fonts.**', route => route.abort())
   let fail = false, unavailable = false, providerError = false, stateFixture = false, devicesFixture = false, baselineFixture = false, baselineFailure = false, slowWeek = false
-  let historyFailure = false, historyIdentityMismatch = false
+  let historyFailure = false, historyIdentityMismatch = false, sizingFixture = false
+  const longMetric = { ...metric('Fixture_Metric/long_title'), display_name: 'Average CellDisk Large Read Throughput - ' + '原厂长标题 '.repeat(10) }
   await page.route('**/api/v1/apps/aiops/**', async route => {
     const request = route.request(), body = request.postDataJSON(); calls.push({ body, headers: request.headers(), url: request.url() })
     if (!request.headers()['content-type']?.includes('application/json')) return route.fulfill({ status: 422, json: { detail: '请求体必须为 JSON' } })
     if (fail) return route.fulfill({ status: 502, json: { detail: '模拟来源读取失败' } })
-    if (body.mode === 'HISTORY' && historyFailure) return route.fulfill({ status: 502, json: { detail: '模拟历史读取失败' } })
+    if (body.mode === 'HISTORY' && historyFailure) return route.fulfill({ status: 502, json: { detail: '模拟历史读取失败' + (sizingFixture ? '，长错误说明不应改变图表或卡片高度'.repeat(15) : '') } })
     if (request.url().endsWith('/baselines')) {
       if (baselineFailure) return route.fulfill({ status: 502, json: { detail: '模拟历史均值失败，当前采样保留' } })
       if (slowWeek && body.period === '1w') await new Promise(resolve => setTimeout(resolve, 400))
@@ -361,6 +368,11 @@ try {
     if (baselineFixture) {
       Object.assign(result, { binding_id: 'binding', binding_version: 1, source_version: 2, catalog_sha256: 'c'.repeat(64) })
       result.definitions = result.definitions.map(item => ({ ...item, baseline_supported: [cpu.code, memory.code].includes(item.code) }))
+    }
+    if (sizingFixture) {
+      result.definitions = [...result.definitions.map(item => ({ ...item, baseline_supported: item.code === cpu.code })), longMetric]
+      result.samples = [...result.samples.filter(item => item.metric_code !== memory.code), sample(longMetric, '42', { unit: 'MB per second' })]
+      result.gaps.push({ component_id: 'cell-a', metric_code: memory.code, code: 'NO_DATA', detail: '真实采样缺失，保留完整说明。'.repeat(24) })
     }
     if (request.url().endsWith('/diagnoses')) result = { report_id: 'fixture-report', status: 'INCONCLUSIVE', evidence: result, findings: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '不能判定健康' }] }
     if (body.mode === 'HISTORY' && historyIdentityMismatch) result.binding_version = 99
@@ -429,6 +441,9 @@ try {
     }
     for (const width of [390,1440]) {
       await page.setViewportSize({width,height:1000})
+      await assertCardSpacing()
+      const widths = await page.locator('.exadata-metric-card').evaluateAll(cards => cards.map(card => card.getBoundingClientRect().width))
+      assert.ok(Math.max(...widths) - Math.min(...widths) <= 1, '同一网格的卡片等宽')
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth<=1), `${scene} 图表不横向溢出`)
     }
     await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-${scene}-charts.png`),fullPage:true})
@@ -566,6 +581,32 @@ try {
   await expect(cpuCard.locator('tbody tr').first().locator('td')).toHaveCount(5)
   await expect(cpuCard.locator('tbody tr').first().locator('td').first()).toHaveText('当前快照')
   await expect(cpuCard.locator('tbody tr').nth(1).locator('td').first()).toHaveText('历史采样')
+  sizingFixture = true; historyFailure = true; baselineFailure = false
+  await page.locator('[data-refresh]').click()
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(3)
+  await expect(cpuCard.locator('.exadata-chart-caption')).toContainText('长错误说明')
+  await expect(cpuCard.locator('.exadata-chart-caption')).toHaveAttribute('title', /长错误说明/)
+  await expect(page.locator(`[data-metric-code="${longMetric.code}"] h3`)).toHaveAttribute('title', longMetric.display_name)
+  for (const width of [1920,1440,1000,780,390]) {
+    await page.setViewportSize({width,height:1000})
+    await assertCardSpacing()
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth<=1), '长标题、无数据和长错误说明不溢出')
+  }
+  await page.locator('[data-baseline]').selectOption('')
+  await assertCardSpacing()
+  await page.setViewportSize({width:1440,height:1000})
+  await page.locator('[data-baseline]').selectOption('1w')
+  await expect(cpuCard.locator('.exadata-baseline-summary')).toContainText('7 天均值')
+  await assertCardSpacing()
+  const memoryCard = page.locator(`[data-metric-code="${memory.code}"]`)
+  await cpuCard.locator('summary').click()
+  await expect(cpuCard.locator('tbody tr').first()).toBeVisible()
+  assert.ok(await cpuCard.evaluate(node=>node.getBoundingClientRect().height>540), '展开后完整展示证据，不固定高度裁剪数据')
+  assert.equal(await memoryCard.evaluate(node=>node.getBoundingClientRect().height),540,'展开证据不拉高其他卡片')
+  await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-sizes-expanded.png`),fullPage:true})
+  await cpuCard.locator('summary').click()
+  await assertCardSpacing()
+  await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-sizes.png`),fullPage:true})
   assert.ok(calls.every(call => call.headers['content-type']?.includes('application/json')), `使用原有请求封装的 JSON 合同：${JSON.stringify(calls.map(call => ({url:call.url,type:call.headers['content-type']})))}`)
   assert.deepEqual(errors, [])
   await page.close()

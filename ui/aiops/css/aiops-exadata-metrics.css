@@ -1,5 +1,5 @@
 /* 仅作用于 Exadata OEM 组件；复用监控页令牌、卡片网格和共享按钮。 */
-.exadata-oem { --exadata-card-inset:var(--space-4,16px); --exadata-card-gap:var(--space-3,12px); min-width:0; display:grid; gap:var(--form-label-control-gap); }
+.exadata-oem { --exadata-card-inset:var(--space-4,16px); --exadata-card-gap:var(--space-3,12px); --exadata-card-height:540px; min-width:0; display:grid; gap:var(--form-label-control-gap); }
 .exadata-oem .exadata-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:var(--form-label-control-gap); padding:var(--form-label-control-gap); }
 .exadata-oem .exadata-heading h2 { margin:0; color:var(--ink); font-size:var(--type-section-title); }
 .exadata-oem .exadata-heading p { margin:0; color:var(--muted); font-size:var(--type-supporting); }
@@ -26,21 +26,25 @@
 .exadata-oem .exadata-status-time { text-align:right; }
 .exadata-oem .exadata-status-item .exadata-evidence { border-top:0; }
 .exadata-oem .exadata-status-item code { overflow-wrap:anywhere; }
-.exadata-oem .exadata-metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--exadata-card-inset); align-items:stretch; }
-.exadata-oem .exadata-metric-card { display:flex; flex-direction:column; height:auto; min-width:0; min-height:300px; overflow:hidden; border:1px solid var(--line); border-top:2px solid var(--accent); border-radius:var(--radius); background:var(--surface); box-shadow:var(--card-shadow); transition:box-shadow .16s ease,transform .16s ease; }
+.exadata-oem .exadata-metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--exadata-card-inset); align-items:start; }
+/* 收起时统一骨架；无基线仍保留该行，无数据占用图表区域，展开证据只增高当前卡片。 */
+.exadata-oem .exadata-metric-card { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:72px 56px 24px minmax(180px,1fr) 56px 72px auto; height:var(--exadata-card-height); min-width:0; min-height:var(--exadata-card-height); overflow:hidden; border:1px solid var(--line); border-top:2px solid var(--accent); border-radius:var(--radius); background:var(--surface); box-shadow:var(--card-shadow); transition:box-shadow .16s ease,transform .16s ease; }
+.exadata-oem .exadata-metric-card:has(> .exadata-evidence[open]) { height:auto; }
 .exadata-oem .exadata-metric-card:hover { box-shadow:var(--card-shadow-hover); transform:translateY(var(--card-hover-offset)); }
 .exadata-oem .exadata-metric-card.tone-warning { border-top-color:var(--warning); }
 .exadata-oem .exadata-metric-card.tone-empty { border-top:2px dashed var(--muted); }
 /* 明确覆盖共享监控网格的紧凑头部，仅为 Exadata 卡片统一内容起线。 */
-.exadata-oem .exadata-metric-card.monitoring-panel.is-native > header { display:flex; justify-content:space-between; align-items:flex-start; min-height:64px; gap:var(--space-2,8px); padding:var(--exadata-card-gap) var(--exadata-card-inset); border-bottom:1px solid var(--line); background:var(--surface-subtle); }
-.exadata-oem .exadata-metric-card > header > div { min-width:0; }
-.exadata-oem .exadata-metric-card h3 { margin:0; font-size:var(--type-table); color:var(--ink); overflow-wrap:anywhere; }
+.exadata-oem .exadata-metric-card.monitoring-panel.is-native > header { grid-row:1; display:flex; justify-content:space-between; align-items:flex-start; min-height:0; gap:var(--space-2,8px); padding:var(--exadata-card-gap) var(--exadata-card-inset); border-bottom:1px solid var(--line); background:var(--surface-subtle); }
+.exadata-oem .exadata-metric-card > header > div { min-width:0; flex:1; }
+.exadata-oem .exadata-metric-card > header > .status-pill { flex-shrink:0; }
+.exadata-oem .exadata-metric-card h3 { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--type-table); color:var(--ink); }
 .exadata-oem .exadata-metric-card header p { max-width:100%; margin:var(--space-1,4px) 0 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:var(--type-meta); }
-.exadata-oem .exadata-card-value { display:flex; align-items:baseline; gap:var(--space-2,8px); padding:var(--exadata-card-inset) var(--exadata-card-inset) var(--space-1,4px); min-width:0; }
+.exadata-oem .exadata-card-value { grid-row:2; display:flex; align-items:baseline; gap:var(--space-2,8px); padding:var(--exadata-card-inset) var(--exadata-card-inset) var(--space-1,4px); min-width:0; min-height:0; }
 .exadata-oem .exadata-card-value strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink); font:600 28px/1.3 var(--font-data); }
-.exadata-oem .exadata-card-value span { color:var(--muted); font-size:var(--type-supporting); overflow-wrap:anywhere; }
-.exadata-oem .exadata-card-time { margin:0; padding:0 var(--exadata-card-inset); color:var(--muted); font-size:var(--type-meta); line-height:1.6; overflow-wrap:anywhere; }
-.exadata-oem .exadata-snapshot { flex:1; padding:var(--exadata-card-gap) var(--exadata-card-inset); color:var(--muted); font-size:var(--type-meta); }
+.exadata-oem .exadata-card-value span { max-width:50%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:var(--type-supporting); }
+.exadata-oem .exadata-card-time { grid-row:3; min-width:0; margin:0; padding:0 var(--exadata-card-inset); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:var(--type-meta); line-height:1.6; }
+.exadata-oem .exadata-snapshot { grid-row:4/7; min-height:0; overflow:auto; padding:var(--exadata-card-gap) var(--exadata-card-inset); color:var(--muted); font-size:var(--type-meta); }
+.exadata-oem .exadata-metric-card:has(> .exadata-baseline-summary) > .exadata-snapshot { grid-row-end:6; }
 .exadata-oem .exadata-snapshot p { margin:var(--space-2,8px) 0 0; }
 .exadata-oem .exadata-percent { margin:var(--form-label-control-gap) 0; }
 .exadata-oem .exadata-percent > div { height:8px; overflow:hidden; border-radius:var(--radius); background:var(--accent-soft); }
@@ -49,10 +53,11 @@
 .exadata-oem .exadata-dimensions > div { display:flex; justify-content:space-between; gap:var(--space-2,8px); padding:var(--space-1,4px) 0; border-bottom:1px solid var(--line); }
 .exadata-oem .exadata-dimensions span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .exadata-oem .exadata-dimensions strong { overflow-wrap:anywhere; color:var(--ink); }
-.exadata-oem .exadata-chart { width:auto; height:180px; min-height:180px; flex-shrink:0; margin:var(--exadata-card-gap) var(--exadata-card-inset) 0; }
-.exadata-oem .exadata-chart-caption { margin:0; padding:var(--space-2,8px) var(--exadata-card-inset); color:var(--muted); font-size:var(--type-meta); line-height:1.6; overflow-wrap:anywhere; }
-.exadata-oem .exadata-metric-card > .exadata-baseline-summary { margin:var(--space-1,4px) var(--exadata-card-inset) var(--exadata-card-gap); padding:var(--space-2,8px) var(--exadata-card-gap); border:1px solid var(--line); border-radius:var(--radius); background:var(--surface-subtle); line-height:1.6; }
-.exadata-oem .exadata-metric-card > .exadata-evidence { margin-top:auto; padding:var(--exadata-card-gap) var(--exadata-card-inset); }
+.exadata-oem .exadata-chart { grid-row:4; width:auto; height:auto; min-width:0; min-height:180px; margin:var(--exadata-card-gap) var(--exadata-card-inset) 0; }
+.exadata-oem .exadata-chart-caption { grid-row:5; min-width:0; margin:0; padding:var(--space-2,8px) var(--exadata-card-inset); overflow:hidden; color:var(--muted); font-size:var(--type-meta); line-height:1.6; overflow-wrap:anywhere; }
+.exadata-oem .exadata-chart-caption > span,.exadata-oem .exadata-baseline-summary > span { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.exadata-oem .exadata-metric-card > .exadata-baseline-summary { grid-row:6; min-height:0; margin:var(--space-1,4px) var(--exadata-card-inset) var(--exadata-card-gap); padding:var(--space-2,8px) var(--exadata-card-gap); overflow:hidden; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface-subtle); line-height:1.6; }
+.exadata-oem .exadata-metric-card > .exadata-evidence { grid-row:7; min-width:0; margin-top:0; padding:var(--exadata-card-gap) var(--exadata-card-inset); }
 .exadata-oem .exadata-metric-card > .exadata-evidence > summary { display:list-item; list-style-position:inside; min-height:var(--space-6,24px); line-height:1.6; }
 .exadata-oem .exadata-resource:has(> .exadata-metric-card) { display:flex; padding:0; border:0; }
 .exadata-oem .exadata-resource > .exadata-metric-card { flex:1; }
@@ -93,7 +98,7 @@
 .exadata-oem .exadata-overview,.exadata-oem .exadata-detail { display:grid; gap:var(--form-label-control-gap); min-width:0; align-content:start; }
 .exadata-oem .exadata-status-panel > h3 { display:flex; justify-content:space-between; padding:var(--form-label-control-gap); }
 .exadata-oem .exadata-status-panel > h3 span { color:var(--muted); font-family:var(--font-data); }
-.exadata-oem .exadata-resource-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:0 var(--exadata-card-inset) var(--exadata-card-inset); gap:var(--exadata-card-inset); }
+.exadata-oem .exadata-resource-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; padding:0 var(--exadata-card-inset) var(--exadata-card-inset); gap:var(--exadata-card-inset); }
 .exadata-oem .exadata-resource { min-width:0; border:1px solid var(--line); padding:var(--form-label-control-gap); border-radius:var(--radius); }
 .exadata-oem .exadata-resource > div:first-child { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:var(--space-2,8px); }
 .exadata-oem .exadata-resource strong { color:var(--ink); font-family:var(--font-data); overflow-wrap:anywhere; }
