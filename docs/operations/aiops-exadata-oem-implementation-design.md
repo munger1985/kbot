@@ -800,3 +800,15 @@ enable_hardware_telemetry.py 通过原厂全部 preview 后，只启用固定父
 两仓各599项定向单元/公开HTTP合同测试通过，另13项子测试；包含普通OEM与非Exadata回归。两端生产页面组件合同均通过1920/1440/1000/780/390五种宽度、状态字典、维度隔离、证据与基线竞态测试；新增当前可用性明确显示状态取证语义。Ammolite typecheck、生产build及两仓架构边界通过；build仅保留既有大chunk提示。无DDL、Prompt或授权变更。
 
 原厂父目标最新快照另已核验两个PowerSupplyStatus状态及PDU累计能耗；父目标原厂调度修改自动将SNMP子访问点传感器间隔改为5分钟，已只读检查生成的集合XML确认，无手工改写。原始调度和失败尝试记录保留，不把此前失败的命令当成功。
+
+#### 10.20.5 推送、部署和真实验收
+
+实现已分别推送并部署：KBot 68150e09cf9e5746193ef97b579feb431c8cb87f、Ammolite 4437d649210099bb4d470f545eb8a56a8ca46341。定向快进28/27个相关文件，仅重启两端AIOps API/Worker共4个进程；readiness全部200，47个无关进程与配置摘要未变。Main API、Portal、OMS、数据库和专用Agent未重启。应用备份与核验记录 /home/ubuntu/aiops-exadata-health-20261112-ioRHbfbo/。
+
+两端正常账号、真实页面及公共view/diagnoses验收一致：7个成员、17项查询、27条采样，指标级gap为0；保留阈值/最新快照/成员范围三条说明，不当作指标错误。DB Server可用性UP、CPU4.46%及内存正常读取；CPU原厂采样仍为07:05:38 UTC，不改采样时间，按小时采集新鲜度判断为有效。交换机4个SensorId状态ok、2个Name电源状态admin:on;oper:on，并保留原始读数/单位；PDU功率1828.0 watt、能耗1304.6 KWH。页面没有读取失败/不支持读取的状态项，DB Server详情明确显示状态取证时间。
+
+真实只读报告分别为01a1cea9-53f9-79fc-87e2-95abc6d72574和01a1cea9-e234-733a-9250-3076bd85d6de；各有27条冻结证据、23条状态/证据观察，含DB Server、逐传感器、逐电源的审核状态解释与样本索引，不宣称整机健康。PDU功率7天/30天均值接口均成功；Ammolite当时仅2条实际留存采样、均值1827.5 watt，两窗口相同不代表具备完整三十天历史。累计能耗不生成均值。
+
+两端390/768/1440真实在线布局无横向溢出，pageerror=0；互联详情有传感器/电源采样。私有验收与截图 /tmp/exadata-health-online-kbot-zAciwy/、/tmp/exadata-health-online-ammolite-0yIfJc/，登录会话和原始响应不提交。未伪造PDU硬件健康、Cisco原厂未实现的整机汇总或ILOM设备；这些边界不因页面采样恢复而消失。此前独立的泛类型对话路由/队列死锁不在本次修复范围。
+
+验收后通过当前在线development logs API，以本次applied.json时间为起点复查两端Main API/AIOps四组ERROR事件；分页均覆盖起点，无新增ERROR。再次核验4服务就绪、47个无关进程与配置摘要未变化；不以历史错误总量或readiness代替本次功能验收。
