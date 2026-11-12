@@ -127,7 +127,10 @@ class ExadataOEMService:
                                     window_start=window_start, window_end=window_end), definition, member["target_type"])
                             except DiagnosticSourceAdapterError as exc:
                                 gaps.append(ExadataGap(code=exc.code, component_id=member["target_id"],
-                                    metric_code=definition["code"], detail="OEM 指标读取失败或在线元数据与审核定义不匹配"))
+                                    metric_code=definition["code"], detail=(
+                                        "OEM 服务端返回 HTTP 5xx，指标读取失败；不是 OEM 返回空采样"
+                                        if exc.code == "SOURCE_PROVIDER_ERROR" else
+                                        "OEM 指标读取失败或在线元数据与审核定义不匹配")))
                                 continue
                             if not result["points"]:
                                 gaps.append(ExadataGap(code="NO_DATA", component_id=member["target_id"],

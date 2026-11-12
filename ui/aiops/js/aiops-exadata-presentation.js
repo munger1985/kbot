@@ -84,13 +84,15 @@ function buildExadataCards(view) {
         });
         const latest = card.series.map(item => item.latest);
         const hasValue = latest.some(item => item.quality !== 'EMPTY' && (card.numeric ? exadataNumeric(item.value) !== null : item.value !== null && item.value !== ''));
+        const providerError = !hasValue && card.gaps.some(gap => gap.code === 'SOURCE_PROVIDER_ERROR');
         card.quality = card.samples.some(item => item.quality === 'TRUNCATED') ? '采样截断'
             : latest.some(item => item.quality === 'STALE') ? '旧快照'
-                : !hasValue ? card.gaps.some(gap => gap.code === 'SOURCE_METRIC_HISTORY_UNSUPPORTED') ? '历史不支持' : '无有效数据'
-                    : latest.some(item => item.quality === 'EMPTY' || item.value === null || item.value === '' || (card.numeric && exadataNumeric(item.value) === null)) ? '部分缺失'
-                        : card.gaps.length ? '部分采样' : card.numeric ? '已采样' : '原始状态';
-        card.tone = ['旧快照', '采样截断', '部分缺失', '部分采样'].includes(card.quality) ? 'warning' : hasValue ? 'observed' : 'empty';
-        card.value = latest.length > 1 ? `${latest.length} 个维度` : latest[0]?.quality === 'EMPTY' ? '无数据' : exadataRaw(latest[0]?.value ?? null);
+                : providerError ? 'OEM 服务错误'
+                    : !hasValue ? card.gaps.some(gap => gap.code === 'SOURCE_METRIC_HISTORY_UNSUPPORTED') ? '历史不支持' : '无有效数据'
+                        : latest.some(item => item.quality === 'EMPTY' || item.value === null || item.value === '' || (card.numeric && exadataNumeric(item.value) === null)) ? '部分缺失'
+                            : card.gaps.length ? '部分采样' : card.numeric ? '已采样' : '原始状态';
+        card.tone = ['旧快照', '采样截断', '部分缺失', '部分采样', 'OEM 服务错误'].includes(card.quality) ? 'warning' : hasValue ? 'observed' : 'empty';
+        card.value = providerError ? '读取失败' : latest.length > 1 ? `${latest.length} 个维度` : latest[0]?.quality === 'EMPTY' ? '无数据' : exadataRaw(latest[0]?.value ?? null);
         card.valueUnit = latest.length === 1 && card.unit && card.unit !== 'n/a' ? card.unit : '';
         card.observedAt = [...latest].sort((a, b) => Date.parse(b.observed_at) - Date.parse(a.observed_at))[0]?.observed_at || null;
         const value = latest.length === 1 && latest[0].quality !== 'EMPTY' ? exadataNumeric(latest[0].value) : null;

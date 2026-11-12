@@ -37,7 +37,8 @@ async def query_latest(adapter, request, *, metric_name, limit=1000, expected_ta
     names = tuple(_name(key.get("name")) for key in keys)
     if len(set(names)) != len(names):
         _fail()
-    if expected_keys is not None and names != expected_keys:
+    # Exadata 目录约束维度身份；OEM 元数据的字段顺序不代表维度身份。
+    if expected_keys is not None and set(names) != set(expected_keys):
         _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
     if expected_value_type is not None and native_type != expected_value_type:
         _fail("SOURCE_METRIC_TYPE_MISMATCH")

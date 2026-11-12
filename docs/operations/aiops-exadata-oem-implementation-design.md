@@ -285,3 +285,97 @@ Chromium 加载已部署 Portal，无静态资源替换和 API mock：Agent 页�
 原有 4 个系统详情、Agent 列表/授权和 OEM 来源均经公共 API 复核不变。本次没有修改现有 Agent 授权、DDL、Prompt、后端代码、模拟容器或服务进程；尚未验收 Ammolite 聊天或生成新的诊断报告。模拟采样、OEM 留存分辨率、文本历史不支持和阈值未验证等边界保持可见，不解释为物理设备实测或健康结论。
 
 本轮配置与浏览器证据、目录故障修复和部署记录详见 [Agent 目录故障隔离与 Ammolite 定向修复](aiops-agent-catalog-isolation.md)。历史章节中的“缺正常会话/未创建”均为当时状态，不是当前交付状态。
+
+### 10.9 场景无数据只读排查与顶部提示删除（2026-11-12）
+
+用户要求删除顶部整段 OEM 留存分辨率/阈值提示，并先确认磁盘 IO、Flash IO、IORM、互联交换机场景无数据的来源。本轮删除两端专用组件在最新快照与历史模式下的顶部提示及其未使用样式；第 10.4 节所述“始终保留”该顶部提示的要求由本节替代。保留“数据质量与采集边界”折叠区、每项样本质量和原始证据，不改变后台阈值、状态字典或诊断结论。
+
+#### 10.9.1 在线证据与归因
+
+使用 Ammolite 正常 BUSINESS 会话、现有模拟业务系统及托管 OEM 来源，通过公共 view API 复现；再用同一来源托管凭据只读核对真实 OEM 原始元数据、latestData、metricTimeSeries、现场模拟器代码与 OMS 日志。没有 mock 指标响应，没有直写 OEM 仓库或业务表。
+
+| 场景 | 最新快照证据 | 历史证据与归因 |
+| --- | --- | --- |
+| 磁盘 IO | 公共接口首页 12 项、24 条非空样本；原始组全量与现行目录比对，53 项中 52 项有值，合计 104 个指标/维度值，缺磁盘状态项 | 首页 12 项均报 SOURCE_UNREACHABLE；直接读取聚合磁盘历史接口返回 HTTP 500，不是全部磁盘数据未采集 |
+| Flash IO | 公共接口首页 12 条非空样本；原始组全量与现行目录比对，56 项中 41 项有值，15 项无值 | 首页 11 项 SOURCE_UNREACHABLE，另 1 项文本历史不支持；FlashCache 数值历史原始请求返回 HTTP 500；FlashLog 原始快照组为空 |
+| IORM | 公共接口首页为空；6 个 IORM 原始组均为空，当前 Cell 适用 72 项均无样本 | Flash Disk IORM CG 数值历史原始请求也返回 HTTP 500。最新值缺失主要是模拟覆盖不足，不能以该历史错误解释全部快照缺失 |
+| 互联/交换机 | HostInterConnect_Statistics 原始组为空，当前 Cell 适用 7 项无样本；已确认成员只有 DB Machine → Grid → Cell，没有交换机/端口目标 | HostInterConnect 数值历史原始请求返回 HTTP 500；交换机缺少目标与指标覆盖，不能用 Cell 的 HCA 吞吐冒充交换机指标 |
+| 容量 | 两个 Aggregated 容量组为空；Filesystem_Utilization_Metric 实有 5 行，但其两项目录指标被拒绝 | OEM 维度名顺序为 cell_Id/name，目录为 name/cell_Id；适配器按 tuple 顺序比较，返回 SOURCE_METRIC_DIMENSION_MISMATCH。这是独立的采集适配问题，不是这两项在 OEM 中没有数据 |
+
+表中全量快照统计来自已读取的组级原始数据与目录比对，不等同于逐页公共 API/浏览器全场景验收；适用项以当前已确认 Cell 为范围，不代表整机 267 项或交换机已覆盖。未将非空数值等同于健康或物理设备实测。
+
+OEM 历史错误的反证与服务器证据：
+
+- 同一来源、同一时段，Cell_Metric/cpu_utilization 的 metricTimeSeries 返回 HTTP 200；聚合磁盘 avg_cd_io_load、FlashCache fc_read_iops、HostInterConnect c_mb_received、Flash Disk IORM CG cg_fd_io_by_sec 的原始请求返回 HTTP 500，响应 code 为 InternalServiceError。
+- 真实 OEM 容器 OMS 日志 /opt/oem/gc_inst/em/EMGC_OMS1/sysman/log/emoms.log 在 2026-11-12 01:43:08 UTC 连续记录 MetricsTimeSeriesRestController / MetricValueRepositoryImpl.getMetricTimeSeriesList 的 ORA-01791: not a SELECTed expression。因此当前失败发生于 OEM REST 后端 SQL，不是主机网络不通，也不能简单归结为 AIOps 未发起采集。尚未验证 OEM 补丁或请求规避方案。
+- 现有 BaseDiagnosticSourceAdapter._response_json 把上游 HTTP >=500 统一转成 SOURCE_UNREACHABLE，页面缺口未区分 OEM 内部 SQL 失败与连接失败；本轮没有修改这个共享错误映射。
+
+原始快照组覆盖复核：
+
+- 有行：CellSrv_Status_Metric 1、Cell_Metric 1、Aggregated_HardNFlashDisk_Metric 2、CellDisk_Metric 2、FlashCache_Metric 1、SmartIO_Metric 1、Filesystem_Utilization_Metric 5。
+- 空组：Exadata_Disk_Status_Metric、FlashLog_Metric、Flash_Disk_IORM_CG_Metric、Flash_Disk_IORM_DB_Metric、Flash_Disk_IORM_PDB_Metric、IORMDB_Metric、IORM_CONSUMER_GROUP_Metric、IORM_PDB_Metric、HostInterConnect_Statistics、Aggregated_Exadata_Capacity_Metric、Aggregated_Exadata_Diskgroup_Capacity_Metric；均未返回下一页链接。
+- 现场 CellCLI 模拟器的 values_at 提供 CELL 6 项、两块 CELLDISK 各 14 项、FLASHCACHE 6 项、SMARTIO 4 项；有 IORM_MODE 和 HCA 吞吐不代表提供 DB/PDB/consumer-group IORM 指标或完整互联组。没有交换机/端口模拟目标。
+- 现场模拟器文件与仓库文件 Hash 不同，values_at 主体相同；本轮按现场实际文件核验，未覆盖、对齐或重启模拟器，不把仓库文件存在当作现场已部署证明。
+
+#### 10.9.2 修改、验证与未实施边界
+
+- 两端真实生产组件/ECharts 的 aiops_exadata_cards.mjs 浏览器合同通过，新增最新快照/历史均不显示指定顶部提示的断言；原有布局、分页、精度、维度隔离和质量展示合同保持通过。
+- Ammolite Portal typecheck、生产 build 与 KBot 专用 JS 语法检查通过；生产 build 仍有既有大 chunk 告警。
+- 本轮仅修改专用前端、回归测试及本节文档。尚未修复维度顺序比较、修改历史请求或错误映射、扩充模拟器、改变 OEM 配置，也未改变 Agent 授权、业务绑定、数据库、普通 OEM/非 Exadata/非 OEM 监控诊断。
+- 本轮未拉取线上代码、部署前端或重启任何服务。在线证据保存在 kbotdev 私有诊断目录 exadata-scenes-audit-20261112-blncunzf；包含正常会话的私有文件不得提交或输出。
+- 后续如获授权，分开处理：维度名称集合与按名取值的严格身份验证、OEM 历史接口错误及准确展示、原厂字段驱动的 IORM/互联/交换机模拟覆盖；不得补零、伪造 OEM 返回或关闭维度校验来制造“有数据”。
+
+### 10.10 场景无数据修复与覆盖复核（2026-11-12）
+
+本节是用户确认“修复”后的实施记录，承接第 10.9 节诊断；不是所有历史查询、交换机或整机目录均已恢复的声明。普通 OEM、非 Exadata 与非 OEM 的监控诊断路径保持不变，没有修改数据库模型、Schema、授权或业务系统绑定。
+
+#### 10.10.1 应用修改
+
+- 专用 latest/history 接口按维度名称集合核验元数据，不再把 OEM 返回的字段排列顺序当作维度身份；按名称取值，仍严格拒绝缺失、额外、重名及错误维度，不合并不同组件或维度。
+- 仅 Exadata 指标读取入口把 OEM HTTP 5xx 区分为 SOURCE_PROVIDER_ERROR，页面明确显示“读取失败 / OEM 服务错误”，不再归为“无数据”。实际网络异常仍为 SOURCE_UNREACHABLE；普通 OEM 和整机成员发现的错误合同不变。不展示上游原始报错或凭据。
+- 删除两端最新快照及历史模式顶部指定提示；保留数据质量折叠区和原始证据，不改变状态字典、阈值或诊断结论边界。
+- 没有把 latest 快照冒充历史、补零或改写 OEM 返回值。当前带维度历史仍可能读取失败，准确展示故障不等于恢复历史。
+
+#### 10.10.2 模拟器补全与在线更新
+
+依据 XA 24.1.1 原厂采集脚本扩充 CellCLI 只读输出，不修改原厂插件、不写 OEM 内部表：
+
+- 增补 FlashCache 请求/字节累计及写入字段、14 项 FlashLog 原生字段。
+- 分别输出 IORM_DATABASE、IORM_PLUGGABLE_DATABASE、IORM_CONSUMER_GROUP，各 24 个原生字段，由原厂插件生成磁盘/Flash IORM 六组指标；不使用 IORM_MODE 代替 DB/PDB/消费组 IO。
+- 补充 HOST_INTERCONNECT 六个累计计数器、固定计数器起点和 XML context 时间字段；适配原厂解析器所需的 collectionTime 字段顺序，不用 CELL 的 HCA 速率替代互联统计。
+- 修复 objectType 正则不接受下划线的问题。旧 Filesystem 5 行混入磁盘/Cache 等其他对象数值，不可用作文件系统利用率；新采样严格只有 / 和 /opt/oracle 两个文件系统维度。
+- 补充 FlashCache/GridDisk 容量属性，磁盘容量使用原厂解析器支持的 G 单位，防止 T 单位被错误解析为近零；合成原值由真实插件计算后上传。
+- 所有数值仍为 SIM 调试数据，未知命令和属性仍显式 fault，不代表物理设备实测或健康。
+
+现场只更新 aiops-exadata-cellcli-sim 唯一只读 bind mount 的源码。新增 update_cellcli.py 要求核对旧 SHA256、验证容器及固定路径、备份并保留绑定 inode，容器内摘要匹配才成功；失败恢复原内容，不重启容器。本次最终源码 SHA256 为 f59daf83690ba1066b59aa8cbaa98ecb7b5f197dcbb0993c6278af2117999bea；两次备份保留在 aiopsdb 的 /opt/aiops-oem-lab/state/exadata-sim-update-qx1j9wm_ 和 exadata-sim-update-br2dds8e。
+
+只对独立 SIM Agent 成功执行 Exadata_Performance_Metrics_All、Exadata_IORM_Performance_Metrics_All、Exadata_Capacity_Metrics、Filesystem_Utilization_Metrics 的原厂 runCollection 和上传；没有重启 OEM、CellCLI 或既有数据库 Agent。性能/状态原已是一分钟调度；IORM 仍按原厂 15 分钟、容量 1 小时、Filesystem 24 小时调度。本次提高频率的请求被原厂警告拒绝，未使用 -force，因此不能声称所有新增组已一分钟自动刷新。
+
+#### 10.10.3 真实 OEM 最新快照结果
+
+更新后读取真实 OEM latestData 全组，与当前审核目录逐项比对：
+
+| 场景 | 当前 Cell 适用目录项 | 有值目录项 | 指标/维度值数量 |
+| --- | ---: | ---: | ---: |
+| 概览 | 5 | 5 | 5 |
+| Cell | 12 | 12 | 12 |
+| 磁盘 IO | 53 | 52 | 104 |
+| Flash IO | 56 | 56 | 56 |
+| IORM | 72 | 72 | 72 |
+| Cell 互联 | 7 | 7 | 7 |
+| 容量 | 7 | 5 | 16 |
+
+这些是单个已发现 Cell 的 raw 组级快照统计，不是 267 项整机覆盖，也不是公共 API 逐页或浏览器全场景验收。文件系统样本已替换为两个正确维度；分别在 Ammolite 与 KBot 的运行环境和现用托管来源下，以修复版适配器的临时只读进程从真实 OEM 读取聚合磁盘、FlashCache、FlashLog、IORM、Cell 互联、容量和 Filesystem 八项代表指标，均有值且具名维度一致。互联接收速率原值 128、DB IORM 吞吐原值 72、Flash Disk 消费组吞吐原值 64；不擅自改单位、跨维度平均或补趋势。临时进程验证不代表线上应用代码已部署。
+
+#### 10.10.4 尚未恢复的边界
+
+1. **带维度历史**：OEM metricTimeSeries 对磁盘、FlashCache、IORM、HostInterConnect 等请求仍返回 HTTP 500；OMS 记录 ORA-01791: not a SELECTed expression。无维度 CPU 历史可读。已核对官方参数 sort、维度 key_ 过滤、目标 GUID/名称、分页及时间窗口，均未找到已验证的规避方式；尚未安装或验证原厂补丁。不能通过写 OEM 仓库、私改原厂二进制或替换成快照声称修复。
+2. **交换机**：当前仍无交换机/端口模拟目标及正式成员，Cell 互联最新值已补齐不等于交换机指标已恢复。
+3. **磁盘状态与 ASM 容量**：Agent 原厂 getmetric 可返回两块正常磁盘、SIMDATA 的 size/count，但 OEM latestData 的 Exadata_Disk_Status_Metric/status 和 Aggregated_Exadata_Diskgroup_Capacity_Metric/count,size 仍为空；尚未查明上送/留存原因，不以 Agent 本地结果冒充 OEM 已留存。
+
+#### 10.10.5 回归与交付边界
+
+- 两端分别执行维度/HTTP 故障、模拟器、Exadata OEM/成员发现/聊天、普通 OEM 原生/标准指标及监控、Exadata HTTP 合同，共 10 个测试文件，各 292 passed + 13 subtests passed。
+- 两端真实生产组件/ECharts 卡片浏览器合同通过 1920/1440/1000/780/390 宽度；包含提示删除、上游故障卡片不补零/不画图、原有精度与维度隔离检查。
+- Ammolite Portal typecheck、生产 build 及两端架构边界检查通过；build 保留既有大 chunk 告警。没有执行全仓测试或 DDL。
+- 本轮模拟器已原位在线更新；应用代码和前端未在线拉取、部署或重启。真实证据保存在 kbotdev 私有目录 exadata-scenes-audit-20261112-blncunzf，会话及凭据文件不得输出或提交。

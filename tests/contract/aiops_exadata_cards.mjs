@@ -62,6 +62,11 @@ for (const [quality, expected] of [['STALE', '旧快照'], ['TRUNCATED', '采样
 const empty = api.buildExadataCards({ ...overview, samples: [], gaps: [{ component_id: 'cell-a', metric_code: cpu.code, code: 'NO_DATA', detail: '无采样' }] })
 assert.equal(empty.length, 1, '只为明确失败查询建空卡，不为未查询组件猜测卡片')
 assert.equal(empty[0].percent, null)
+const providerFailure = api.buildExadataCards({ ...overview, samples: [], gaps: [{ component_id: 'cell-a', metric_code: cpu.code, code: 'SOURCE_PROVIDER_ERROR', detail: 'OEM 服务端 HTTP 5xx' }] })[0]
+assert.equal(providerFailure.value, '读取失败', '上游服务错误不能冒充无采样')
+assert.equal(providerFailure.quality, 'OEM 服务错误')
+assert.equal(providerFailure.percent, null)
+assert.equal(providerFailure.tone, 'warning')
 assert.deepEqual(clone(other.KBotAIOpsExadataPresentation.buildExadataCards(overview)), clone(context.exports.buildExadataCards(overview)), '两端纯展示输出一致')
 
 const artifacts = mkdtempSync(resolve(tmpdir(), 'aiops-exadata-cards-'))
@@ -89,7 +94,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [], calls = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('https://fonts.**', route => route.abort())
-  let fail = false, unavailable = false
+  let fail = false, unavailable = false, providerError = false
   await page.route('**/api/v1/apps/aiops/**', async route => {
     const request = route.request(), body = request.postDataJSON(); calls.push({ body, headers: request.headers(), url: request.url() })
     if (!request.headers()['content-type']?.includes('application/json')) return route.fulfill({ status: 422, json: { detail: '请求体必须为 JSON' } })
@@ -107,6 +112,7 @@ try {
       result.gaps.push(...status.map(item => ({ component_id: 'cell-a', metric_code: item.code, code: 'SOURCE_METRIC_HISTORY_UNSUPPORTED', detail: '字符串历史不支持' })))
     }
     if (unavailable) { result.samples = []; result.gaps.push({ component_id: 'cell-a', metric_code: cpu.code, code: 'NO_DATA', detail: '无采样，不按零值显示' }) }
+    if (providerError) { result.samples = []; result.gaps = [{ component_id: 'cell-a', metric_code: cpu.code, code: 'SOURCE_PROVIDER_ERROR', detail: 'OEM 服务端 HTTP 5xx' }] }
     result.query_mode = body.mode
     if (request.url().endsWith('/diagnoses')) result = { report_id: 'fixture-report', status: 'INCONCLUSIVE', evidence: result, findings: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '不能判定健康' }] }
     return route.fulfill({ json: result })
@@ -115,6 +121,8 @@ try {
   await expect(page.locator('.exadata-metric-card')).toHaveCount(5)
   await expect(page.locator('.exadata-percent')).toHaveCount(2)
   await expect(page.locator('.exadata-chart')).toHaveCount(0)
+  await expect(page.locator('.exadata-boundary')).toHaveCount(0)
+  await expect(page.locator('.exadata-oem')).not.toContainText('不把采集成功视为健康')
   await expect(page.locator('.exadata-evidence[open]')).toHaveCount(0)
   await expect(page.locator('.exadata-card-value strong').nth(3)).toHaveText('27.210000000000001')
   await expect(page.locator('.exadata-card-value strong').nth(4)).toHaveText('0')
@@ -138,6 +146,9 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.locator('[data-mode]').selectOption('HISTORY')
   await expect(page.locator('.exadata-chart canvas')).toHaveCount(2)
+  await expect(page.locator('.exadata-boundary')).toHaveCount(0)
+  await expect(page.locator('.exadata-oem')).not.toContainText('OEM 留存分辨率；不推断精确增量或跨组件均值。')
+  await expect(page.locator('.exadata-oem')).not.toContainText('不把采集成功视为健康')
   await expect(page.locator('.exadata-percent')).toHaveCount(0)
   await expect(page.locator('.exadata-metric-card')).toHaveCount(5)
   await expect(page.locator('.exadata-metric-card').filter({ hasText: '历史不支持' })).toHaveCount(3)
@@ -157,6 +168,11 @@ try {
   unavailable = true; await page.locator('[data-refresh]').click()
   await expect(page.locator('.exadata-card-value strong').filter({ hasText: '无数据' })).toHaveCount(4)
   await expect(page.locator('.exadata-percent')).toHaveCount(0)
+  providerError = true; unavailable = false; await page.locator('[data-refresh]').click()
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(1)
+  await expect(page.locator('.exadata-metric-card')).toContainText('OEM 服务错误')
+  await expect(page.locator('.exadata-card-value strong')).toHaveText('读取失败')
+  await expect(page.locator('.exadata-chart')).toHaveCount(0)
   fail = true; await page.locator('[data-refresh]').click()
   await expect(page.locator('[role="alert"]')).toContainText('模拟来源读取失败')
   await expect(page.locator('.exadata-metric-card')).toHaveCount(0)

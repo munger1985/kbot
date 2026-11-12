@@ -217,7 +217,8 @@ class OEMNativeMetrics:
         key_names = tuple(_name(key.get("name")) for key in keys)
         if len(set(key_names)) != len(key_names):
             _fail()
-        if _expected_keys is not None and key_names != _expected_keys:
+        # 仅 Exadata 专用调用提供期望维度；按名称校验，不依赖 OEM 返回顺序。
+        if _expected_keys is not None and set(key_names) != set(_expected_keys):
             _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
         unit = item.get("unitDisplayName")
         if unit is not None and (not isinstance(unit, str) or len(unit) > 64):

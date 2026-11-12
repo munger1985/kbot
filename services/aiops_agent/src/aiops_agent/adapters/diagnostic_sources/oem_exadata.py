@@ -32,6 +32,21 @@ def exadata_read(operation):
     return guarded
 
 
+def exadata_metric_read(operation):
+    """仅区分专用指标查询的 HTTP 5xx；成员发现及普通 OEM 的错误合同不变。"""
+    @wraps(operation)
+    async def guarded(*args, **kwargs):
+        try:
+            return await operation(*args, **kwargs)
+        except DiagnosticSourceAdapterError as exc:
+            # 原生读取仅将 HTTP 5xx 转成此码；网络异常交给外层 exadata_read。
+            if exc.code == "SOURCE_UNREACHABLE":
+                raise DiagnosticSourceAdapterError("SOURCE_PROVIDER_ERROR",
+                    "OEM 服务端返回 HTTP 5xx，读取失败；不能解释为没有采样", retryable=True) from exc
+            raise
+    return exadata_read(guarded)
+
+
 class OEMExadata:
     @exadata_read
     async def exadata_inventory(self, root_id):
@@ -69,7 +84,7 @@ class OEMExadata:
                 result.append(await self.exadata_inventory(guid))
             return result
 
-    @exadata_read
+    @exadata_metric_read
     async def exadata_latest(self, request, definition, target_type):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             target_error("SOURCE_CAPABILITY_FORBIDDEN")
@@ -77,7 +92,7 @@ class OEMExadata:
             expected_target_type=target_type, expected_keys=tuple(definition["keys"]),
             expected_value_type=definition["native_value_type"], allow_empty_number=True)
 
-    @exadata_read
+    @exadata_metric_read
     async def exadata_history(self, request, definition, target_type):
         if definition["native_value_type"] != "NUMBER":
             target_error("SOURCE_METRIC_HISTORY_UNSUPPORTED")

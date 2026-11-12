@@ -9,7 +9,6 @@
 .exadata-oem .exadata-toolbar .field-label { color:var(--muted); font-size:var(--type-meta); }
 .exadata-oem .exadata-toolbar select { width:100%; min-width:0; }
 .exadata-oem .exadata-actions { display:flex; flex-wrap:wrap; gap:var(--space-2,8px); align-items:center; }
-.exadata-oem .exadata-boundary { margin:0; padding:var(--space-2,8px) var(--form-label-control-gap); border-left:3px solid var(--warning); border-radius:var(--radius); background:var(--warning-soft); color:var(--muted); font-size:var(--type-meta); }
 .exadata-oem .exadata-result-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:var(--form-label-control-gap); }
 .exadata-oem .exadata-result-bar p { margin:0; color:var(--ink); font-size:var(--type-supporting); }
 .exadata-oem .exadata-result-bar small { display:block; color:var(--muted); font-size:var(--type-meta); }
