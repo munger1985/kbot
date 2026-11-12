@@ -80,6 +80,9 @@ def exadata_parameter_contract(*, diagnosis=False) -> dict[str, Any]:
             "只询问指标读数使用 MONITORING_QUERY；要求分析、诊断、定位异常或解释变化使用 ACTIVE_DIAGNOSIS，"
             "Exadata 分支仅基于 OEM 指标只读分析，不运行数据库诊断，不创建变更动作。"
             "可用 baseline_period=1w/1m 选择7天/30天均值比较；主动分析默认7天，明确不比较则设null。"
+            "规划 budget.max_live_queries 时须按 execution_costs 计入当前取数和基线，"
+            "不能只按所选指标数分配预算。例如单组件CPU和内存均需比较时至少分配6次；"
+            "组件数量尚不确定时预留读取预算，上限24次，超限保留缺口，不扩大授权范围。"
             "基线窗口与 HISTORY 取样窗口独立，询问均值比较不把time_range扩为7/30天历史。"
             "区分当前读数、上限、下限、累计量和速率；未询问的阈值不附带查询。"
             "找不到对应指标使用 UNRESOLVED；只有明确要求概览才用 OVERVIEW。"
@@ -93,6 +96,8 @@ def exadata_parameter_contract(*, diagnosis=False) -> dict[str, Any]:
             "近期追问应保留上轮明确的资源和指标意图，但重新检查当轮授权。"
         ),
         "catalog_version": version,
+        "execution_costs": {"current_per_component_metric": 1, "baseline_per_component_metric": 2,
+                            "max_live_queries": 24, "max_total_seconds": 55},
         "catalog_sha256": digest,
         "metric_catalog": [{key: item[key] for key in
                             ("code", "display_name", "target_type", "scene", "semantics", "baseline_supported")}

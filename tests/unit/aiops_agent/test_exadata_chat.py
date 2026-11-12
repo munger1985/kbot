@@ -92,6 +92,9 @@ def test_router_contract_uses_all_real_definitions_not_keyword_rules():
     normal, exadata = contract["parameters_schema"]["oneOf"]
     assert "resource_type_key" not in normal["properties"]
     assert exadata["properties"]["resource_type_key"]["const"] == "EXADATA"
+    assert contract["execution_costs"] == {
+        "current_per_component_metric": 1, "baseline_per_component_metric": 2,
+        "max_live_queries": 24, "max_total_seconds": 55}
 
 
 @pytest.mark.parametrize("changes", [
