@@ -128,10 +128,30 @@ class SwitchSimulatorTests(unittest.TestCase):
         self.assertEqual(rows[0][1], (2, b"\x03"))
         self.assertEqual(rows[1][1], (4, b"SIM-EXADATA-SWITCH-0001"))
 
+    def test_vtp_has_only_one_explicit_sim_ethernet_vlan(self):
+        status, rows = decoded(sim.response(packet(0xA0, [
+            "1.3.6.1.4.1.9.9.46.1.3.1.1.2.1.1",
+            "1.3.6.1.4.1.9.9.46.1.3.1.1.3.1.1",
+            "1.3.6.1.4.1.9.9.46.1.3.1.1.4.1.1",
+            "1.3.6.1.4.1.9.9.46.1.3.1.1.17.1.1",
+            "1.3.6.1.4.1.9.9.46.1.3.1.1.7.1.1"]), COMMUNITY))
+        self.assertEqual(status, 0)
+        self.assertEqual([value for _, value in rows],
+                         [(2, b"\x01"), (2, b"\x01"), (4, b"SIM_VLAN1"), (4, b"\x00"), (0x80, b"")])
+
     def test_wrong_community_unsupported_versions_and_oversize_are_rejected(self):
         for request in (packet(0xA0, ["1.3.6.1.2.1.1.5.0"], community=b"public"),
                         packet(0xA0, [], version=3), b"x" * (sim.MAX_PACKET + 1)):
             self.assertIsNone(sim.response(request, COMMUNITY))
+
+    def test_vlan_context_requires_same_secret_and_only_declared_vlan(self):
+        for wrong in (b"public@1", COMMUNITY + b"@2", COMMUNITY + b"@01", COMMUNITY + b"@1@1"):
+            self.assertIsNone(sim.response(packet(0xA0, ["1.3.6.1.2.1.1.5.0"], community=wrong), COMMUNITY))
+        response = sim.response(packet(0xA0, ["1.3.6.1.2.1.1.5.0"], community=COMMUNITY+b"@1"), COMMUNITY)
+        self.assertEqual(sim.fields(sim.read_tlv(response)[1])[1], (4, COMMUNITY+b"@1"))
+        # FDB 没有远端邻居，不捏造 MAC 地址或拓扑。
+        _, rows = decoded(sim.response(packet(0xA0, ["1.3.6.1.2.1.17.4.3.1.1.1"], community=COMMUNITY+b"@1"), COMMUNITY))
+        self.assertEqual(rows[0][1], (0x80, b""))
 
     def test_set_cannot_mutate_mib(self):
         before = sim.mib(sim.EPOCH + 100)

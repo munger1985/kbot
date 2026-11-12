@@ -253,7 +253,11 @@ def create_aiops_api(
         )
         # 资源目录和签名配置完成校验后再创建网络会话。
         client_session = aiohttp.ClientSession()
+        from aiops_agent.adapters.diagnostic_sources.oem_emcli import OEMEMCLIClient
+        exadata_emcli_client = OEMEMCLIClient(executable="/opt/aiops/emcli/emcli",
+            session_root=Path(resolved.monitoring.payload_store_root).parent / "aiops-emcli-sessions")
         diagnostic_source_registry = DiagnosticSourceAdapterRegistry(
+            exadata_emcli_client=exadata_emcli_client,
             session=client_session,
             catalog=diagnostic_source_catalog,
             request_timeout_seconds=(
@@ -391,6 +395,7 @@ def create_aiops_api(
         try:
             yield
         finally:
+            await exadata_emcli_client.aclose()
             await client_session.close()
             await runtime.close()
             logger.info("AIOps API 资源已释放")

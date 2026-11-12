@@ -438,3 +438,56 @@ Ammolite 使用正常 BUSINESS 会话与已部署生产组件、真实公共 API
 若要让以上原厂已留存值进入页面，需要选择原厂修复补丁，或明确批准仅为 Exadata 增加原厂 EMCLI 只读指标通道；不是继续补模拟数据即可实现。拟议只读通道必须限制审核指标、目标及组件身份，保留原厂采样时间/值类型/维度/单位，区分快照与数值历史、设置输出及时间预算，沿用资源授权和绑定前后复核，不接受任意命令、SQL、路径或模型拼接参数。普通 OEM、非 Exadata 及非 OEM 的监控诊断路径不动。此接入改造尚未实施，不能作为已交付能力。
 
 两端模拟器与定向安全测试各 28 passed + 13 subtests passed，两端架构边界检查通过；没有执行全仓测试或 DDL。当前补充提交只包含隔离交换机部署工件、测试和本节文档，不改变应用读取通道、授权或既有绑定。
+
+### 10.12 Exadata 专用原厂 EMCLI 读取通道实施设计（2026-11-12）
+
+用户明确同意本节方案。只扩展 Exadata 专用入口；普通 OEM/非 Exadata/非 OEM 的查询和诊断仍走既有代码，不新增通用 Shell/SQL 服务，不修改 OEM 二进制或内部表。
+
+- 原厂 EMCLI 客户端部署在应用服务器，运行文件路径/JVM/私有会话目录属于服务端技术依赖，不接受页面或模型提供的程序路径、参数或命令。OEM Endpoint、账号和密码仍只来自 AIOps App 内现有监控来源及托管凭据。
+- OEM 来源新增显式 Exadata 读取方式 OEM_REST/EMCLI，默认保留 OEM_REST；选择 EMCLI 时要求配置已核对的 OEM CLI 时间区。没有异常自动切换，也不把 EMCLI 失败伪装成无数据或返回旧缓存。
+- 每次读取仍由现有资源授权、来源绑定及采集前后成员/版本复核控制。EMCLI 使用同一来源账号，不借用 SYSMAN。只读取审核指标目录中匹配目标类型的组/列，独立核验原厂目标名称、类型、组名、键名和返回列；账号无权限、客户端缺失、超时、截断及格式错误分别失败关闭。
+- 客户端使用无 Shell 的参数数组启动原厂程序，密码只经标准输入；隔离私有会话、限制会话数量和有效期，凭据变化不复用旧会话。原始错误、凭据和会话文件不进入日志或响应。进程超时/取消/输出超预算时回收本次子进程。
+- 默认最新值调用原厂 get_metric_data -json，历史仅 NUMBER 使用原厂 -last_n_days=1 后严格裁剪到请求窗口，不增加未来点、扩展状态区间或生成缺失采样。使用经确认的时区解析原厂时间，保留十进制文本/STRING/真零/空值和不同维度，不改单位、不跨组件聚合，文本历史仍不支持。证据 Hash 来源于实际原厂响应。
+- 补齐原厂交换机配置所需的最小只读 MIB，使端口组件由 SI 原厂采集生成。组件发现必须来自原厂可验证的父子元数据，明确区分 Target 与 TargetComponent，保持原生 GUID 和父目标授权链；不制造端口 Target，不按名称猜关系。
+- 两端同步维护合同、实现、部署工件、测试和来源配置 UI。无需为来源 JSON 配置新增业务表；若组件身份合同需要字段，规范合同和保存的成员快照同步更新，不增加兼容路由或双写。
+- 部署前备份源代码/配置/进程及原有绑定。仅定向重启需要加载新代码的 AIOps API/Worker；加入新交换机成员后通过正常公共发现/确认流程重绑，两端都完成确认后再验收页面。不伪造登录身份，不直接写绑定表，不影响原有业务系统。
+
+#### 10.12.1 已实施的读取合同与安全边界
+
+- 新增 oem_emcli.py 有界原厂客户端与 oem_exadata_emcli.py 严格响应解析，仅 Exadata latest/history 在来源显式选择 EMCLI 时使用；未选择时保持 OEM_REST，不进行错误自动降级。普通 OEM 标准指标、其他硬件和非 OEM 读取不切换。
+- 来源配置新增 exadata_metric_transport、exadata_emcli_timezone、exadata_emcli_certificate_sha256，要求有效 IANA 时区与 64 位小写 SHA256 叶证书指纹。两端来源表单均可配置；编辑仍保留由独立用例维护的 standard_metric_mappings，既有连接预检/启用流程不变。
+- 原厂客户端固定安装位置 /opt/aiops/emcli/emcli；API/Worker 各持有单一执行器，关闭时回收子进程与私有会话。每次读取（含缓存会话）先通过不携带凭据的 TLS 连接核对证书指纹，指纹不符不发送监控凭据。未使用 trustall、nocertvalidate 或全局 JVM 安全降级。
+- 会话目录 0700，最多 4 个缓存会话、TTL 300 秒，HMAC 缓存键包含来源/版本/Endpoint/凭据/时区/证书指纹；子进程过滤平台环境，密码只经 stdin，超时/取消/输出超限回收独立进程组，异常不返回原厂原始错误。
+- 原厂 setup 已建立认证会话，不再重复 login。针对 Java 21 默认 PKCS12 与原厂空密码证书库的差异，只在本子进程设置 keystore.type=JKS。原厂 setup/sync 必须写 bindings，因此每个私有会话仅从可信安装目录复制 jar、emcli、version.txt，不复制其他来源 bindings、cookie 或凭据；不要求应用用户写共享安装目录。已按实际 ubuntu UID/GID 验证，不以 root 成功代替应用运行用户验证。
+- 专用读取预算为 2 MiB，native stdout 占其一半；每指标最多 256 点并明确标注截断。保留原厂末次采样时间、十进制文本、STRING、真零、空值、单位和全部具名维度；不展开 First/Last 区间，不推算增量，不跨组件平均。文本状态不读取历史；数值历史仅原厂 last_n_days=1 后裁剪至用户不超过一小时的窗口。无效时间/JSON、TLS 超时均转为受控来源错误，不泄漏原始响应。
+
+#### 10.12.2 定向部署与公共页面验收
+
+已从现有 OEM 取得原厂 24.1.0.0.0 advanced kit，核对 SHA256 后安装至 kbotdev 的 /opt/aiops/emcli；没有下载第三方客户端或覆盖原厂 jar。部署前备份代码、Hash 与进程，记录位于 kbotdev 私有目录 /home/ubuntu/aiops-emcli-deploy-0xud9qyx。仅重启 Ammolite/KBot 两个 AIOps API 和两个 Worker，没有重启 Executor、Main API、Portal、OEM、既有数据库 Agent 或 CellCLI。两端 API 19130/18110、Worker 19132/18112 的 /ready 均已复核为 200；近期 KBot 在线日志有正常任务完成。未执行 DDL 或直接写业务绑定表。
+
+Ammolite 使用正常 BUSINESS 会话和公共 API 保存 EMCLI/UTC/已核对证书指纹，经连接预检后启用来源；原有标准指标映射前后完整一致。没有借用管理员读取应用指标或伪造登录身份。真实浏览器结果：
+
+| 项目 | 已验证结果 |
+| --- | --- |
+| 磁盘 IO 首页 | 12 张卡、24 条非空样本 |
+| Flash 首页 | 12 张卡、12 条非空样本 |
+| IORM 首页 | 12 张卡、12 条非空样本 |
+| 容量首页 | 7 张卡、18 条非空样本，包含 ASM size/count |
+| 磁盘状态 | 正常页面翻至第五页，两块磁盘均为 STRING normal，object_name 分别保留 |
+| 磁盘一小时历史 | 首次验收 1248 条采样，无 SOURCE_PROVIDER_ERROR；另等图表完成后核对 12 个真实 ECharts canvas，无页面异常 |
+
+这些是指定场景/分页的验收，不代表全部 267 项或交换机端口已接入。历史由 OEM 实际留存采样构成，不是导出快照回填。原厂 REST 的 ORA-01791 与 STRING 过滤问题本身未打补丁；EMCLI 为经用户同意的专用读取路径。浏览器证据保留于本地私有 /tmp/aiops-emcli-public-6zJPEP、/tmp/exadata-history-render-J4RMTS、/tmp/exadata-disk-status-WvANPc；最终异常处理修订定向部署重启后再次通过 12 个历史 canvas 验证，证据为 /tmp/exadata-history-render-KsBdjM。会话文件不提交。
+
+#### 10.12.3 交换机新进展与尚未交付边界
+
+- 补齐原厂 Cisco 配置读取需要的最小 VTP VLAN1 状态、Ethernet 类型、MTU、SAID、TypeExt BITS 和 SVI。仅同一私有 community 或其唯一 @1 VLAN context 可读取，错误 secret 和其他 VLAN context 均拒绝；不填造 TokenRing/FDDI、MAC 邻居或拓扑。现场最终 switch_simulator.py SHA256 为 dd324522157a0408fd1eb1527e31480d64f239bc4093a79ef055d100c92b8a04。
+- 独立 Agent 的原厂 NetworkPortsTargetComponent 已从此前 Empty snmp response 恢复，返回 Ethernet1/1、Ethernet1/2 两行真实 SI 识别的 SIM 配置；随后仅对此新 AP 执行 oracle_si_net_port_config 和 upload，原厂均成功。各次源码更新先核旧摘要、留备份，只重启新增交换机容器。
+- 现用 Ammolite 来源监控账号最初无新交换机权限，已仅为该目标授 VIEW_TARGET，未授管理员/全主机权限。随后同一来源账号核对父目标 REST 身份，并通过原厂 EMCLI 读到 PfcIfPriorityEntryMetric/DeltaNumRequests 的 16 个 PortId/Priority 采样；不是仅管理员可读的证明。
+- **仍未完成端口 TargetComponent 的可靠身份目录与应用合同**：原厂 get_targets 的独立目标目录未列出端口组件；TargetAssociations/父目标 associates 没有给出可用的组件身份。组件不能伪装成独立 Target，不能生成或猜测 GUID。因此尚不宣称端口性能或交换机页面已修复。
+- **交换机尚未加入共享 DBM，也未更改两端业务绑定**。加入成员会改变 inventory digest；需两端均通过正常公共发现/确认流程重绑。当前 KBot 没有可用正常会话，用户此前提供的同名账号登录返回 401，未猜测密码、重置账号、构造用户 token 或直接写绑定表。
+- **KBot 代码与来源配置 UI 已部署，但 OEM 来源仍保持 OEM_REST，尚未启用/验收 EMCLI 页面**。不能把 Ammolite 的页面成功等同于 KBot 也已恢复。继续需要 KBot 当前可用的正常登录账号或由用户在页面完成来源配置；同时还需解决原厂端口组件目录，二者是独立剩余事项。
+- 后续以 KBot 实际运行用户和现用托管 OEM 凭据只读复核，新交换机 GUID/名称/类型也已核验通过；没有额外为 KBot 授管理员权限。该检查仍不等于应用来源已切换或业务成员已确认。
+
+#### 10.12.4 本轮验证
+
+两仓分别执行 EMCLI、Exadata OEM、成员发现、交换机 SNMP、普通 OEM 原生/标准指标、来源连接、资源监控共 8 个定向文件，**各 251 passed**；包含专用通道显式启用、普通 REST 不降级、原始精度/状态/空值/时间、严格身份/类型/维度、证书指纹、超时/取消/输出预算、会话隔离、私有 native bindings、VLAN context 和标准指标映射保留。两端架构边界检查通过；Ammolite Portal 生产 build 通过（保留既有 chunk 体积提示），KBot 配置 JS 语法及真实 OEM 来源表单脚本合同通过，隐藏的未完成指纹字段不会阻塞其他来源表单。未运行全仓测试，未执行 Schema 变更。交换机公共绑定及 KBot 正常页面验收不在通过项内。

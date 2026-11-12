@@ -212,7 +212,11 @@ def create_aiops_worker_probe(
         )
         # 本地资源校验失败时不应提前创建网络会话。
         client_session = aiohttp.ClientSession()
+        from aiops_agent.adapters.diagnostic_sources.oem_emcli import OEMEMCLIClient
+        exadata_emcli_client = OEMEMCLIClient(executable="/opt/aiops/emcli/emcli",
+            session_root=Path(resolved.monitoring.payload_store_root).parent / "aiops-emcli-sessions")
         diagnostic_source_registry = DiagnosticSourceAdapterRegistry(
+            exadata_emcli_client=exadata_emcli_client,
             session=client_session,
             request_timeout_seconds=(
                 resolved.monitoring.provider_timeout_seconds
@@ -510,6 +514,7 @@ def create_aiops_worker_probe(
             await asyncio.gather(
                 *background_tasks.values(), return_exceptions=True
             )
+            await exadata_emcli_client.aclose()
             await client_session.close()
             await runtime.close()
             logger.info("AIOps Worker 资源已释放")

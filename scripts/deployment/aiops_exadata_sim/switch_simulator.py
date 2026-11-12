@@ -121,6 +121,13 @@ def mib(now):
         14: text("SIM"), 15: text("SIM"), 16: integer(2)}
     for column, value in chassis.items():
         put(f"1.3.6.1.2.1.47.1.1.1.1.{column}.1", value)
+    # 原厂端口配置采集要求 VTP VLAN 目录。只声明一个明确 SIM 的以太网 VLAN；
+    # 不捏造 TokenRing/FDDI 属性、远端邻居、传感器或额外性能值。
+    vlan = {2: integer(1), 3: integer(1), 4: text("SIM_VLAN1"),
+            5: integer(9000), 6: integer(100001, 0x42),
+            17: tlv(4, b"\x00"), 18: integer(0)}  # 无 VTP 扩展功能、无 SVI 接口。
+    for column, value in vlan.items():
+        put(f"1.3.6.1.4.1.9.9.46.1.3.1.1.{column}.1.1", value)
     # 提供真实的后继 MIB 标量，让原厂表遍历可越过 PFC 子树正常结束。
     # 这些是协议身份，不是以零值填充未知硬件指标。
     put("1.3.6.1.6.3.10.2.1.1.0", tlv(4, bytes([128, 0, 0, 9, 4]) + b"SIM-EXADATA-SWITCH-0001"))
@@ -173,7 +180,10 @@ def response(packet, community, *, now=None):
     if len(message) != 3 or message[0][0] != 2 or message[1][0] != 4:
         raise ValueError("SNMP 消息字段无效")
     version = int.from_bytes(message[0][1], "big", signed=True)
-    if version not in (0, 1) or not hmac.compare_digest(message[1][1], community):
+    wire_community = message[1][1]
+    authenticated = hmac.compare_digest(wire_community, community)
+    vlan_context = hmac.compare_digest(wire_community, community + b"@1")
+    if version not in (0, 1) or not (authenticated or vlan_context):
         return None
     operation, raw = message[2]
     if operation not in (0xA0, 0xA1, 0xA3, 0xA5) or (version == 0 and operation == 0xA5):
@@ -224,7 +234,7 @@ def response(packet, community, *, now=None):
     if status and version == 0:
         values = [tlv(0x30, oid(key) + tlv(5, b"")) for key in bindings]
     result = tlv(0xA2, tlv(2, pdu[0][1]) + integer(status) + integer(error_index) + tlv(0x30, b"".join(values)))
-    return tlv(0x30, integer(version) + tlv(4, community) + result)
+    return tlv(0x30, integer(version) + tlv(4, wire_community) + result)
 
 
 def main():

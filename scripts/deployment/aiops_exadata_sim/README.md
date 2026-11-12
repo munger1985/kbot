@@ -1,6 +1,6 @@
 # Exadata → 真实 OEM 调试夹具
 
-本目录只在隔离实验环境模拟 CellCLI 与只读 SNMP 交换机。OEM 使用未修改的 XA/SI 插件采集、上传并保存指标，AIOps 仍访问真实 OEM REST，不直读模拟器，不写 OEM 内部表。
+本目录只在隔离实验环境模拟 CellCLI 与只读 SNMP 交换机。OEM 使用未修改的 XA/SI 插件采集、上传并保存指标，AIOps 访问真实 OEM REST 或显式启用的 Exadata 原厂 EMCLI 通道，不直读模拟器，不写 OEM 内部表。
 
 全部名称含 SIM，全部数值是合成数据。字段映射依据真实 OEM 导出目录及 XA 24.1.1 原厂采集脚本；不包含客户主机、凭据或真实业务值，也不承诺覆盖目录全部 267 项。
 
@@ -76,6 +76,34 @@ emctl upload agent
 仅在独立 SIM Agent 以原厂要求的用户执行，先等待采集完成再上传；不适用于既有数据库 Agent。本轮经原厂 preview 后，仅对新交换机启用 oracle_si_switch_pfc 的五分钟周期；OMS 命令成功、Agent 专属 collection XML 已核对，尚未验收连续自动采样。其他默认禁用集合没有一并开启或提高频率。当前交换机源码 SHA256 为 5916b7c0ca1b305ac3c21f13a19bebcb881f620cf3ceaadd57310f2b849e6efa。只重启过新交换机容器；源码备份及各次预检失败记录留在其私有 state，旧目标、卷和数据未删除。
 
 定向测试两端各 28 passed + 13 subtests passed，两端架构边界通过。没有扩大为整机或全部指标覆盖声明。
+
+
+## Exadata 原厂 EMCLI 通道与当前验收（2026-11-12）
+
+本节及[实施设计 10.12](../../../docs/operations/aiops-exadata-oem-implementation-design.md#1012-exadata-专用原厂-emcli-读取通道实施设计2026-11-12)为最新状态，替代前文历史阶段的“尚未实施 EMCLI”“磁盘状态/ASM 无可用应用通道”“NetworkPortsTargetComponent 仍为空”结论，不代表剩余交换机工作已交付。
+
+### 依赖安装与来源配置
+
+在应用服务器取得经运维核对的原厂 advanced kit 和 SHA256；本工件不下载或分发 Oracle 软件。仅首次安装执行：
+
+```bash
+sudo python3 install_emcli.py --kit /absolute/path/emcliadvancedkit.jar --sha256 经核对的64位小写摘要
+```
+
+安装器核对摘要和客户端 version，固定目标 /opt/aiops/emcli，已有目录拒绝覆盖，失败保留现场。需可用 JVM；本环境以 Java 21 验证。客户端只读共享安装，API/Worker 在 payload_store_root 同级的 aiops-emcli-sessions 建立 0700 私有会话，运行用户须有该父目录创建权限；必须以应用实际 UID/GID 验证，不用 root 读取成功代替验收。每会话仅复制可信 jar/launcher/version.txt，原厂 setup 写私有 bindings，不复制共享或其他来源 cookie/凭据。只对该子进程使用 JKS，禁止全局 TLS 降级。
+
+在 AIOps 的 OEM 来源编辑页选择“原厂 EMCLI（只读）”，填写经核对的 OEM 指标 IANA 时区与叶证书 SHA256 指纹，再通过原有连接预检及启用流程。每次指标读取先核对 pin，不符不发凭据。来源继续沿用原有 Endpoint 与托管账号；标准指标映射保持不变。默认 OEM_REST，**仅 Exadata** 的最新快照/数值历史按显式选择切换，不自动故障降级，普通 OEM/非 Exadata/非 OEM 不变。
+
+专用每指标响应预算 2 MiB，原厂 stdout 不超过其中一半；最多 256 点，超出明确截断。数值历史读取原厂一天留存后裁剪为请求的一小时以内窗口；原始时间、STRING/NUMBER、单位和维度均保留，不展开状态区间、补点或使用导出快照造历史。
+
+### 已验证与剩余边界
+
+- 两端代码/配置 UI 已定向部署，仅重启各 AIOps API/Worker；四个 /ready 均 200，未运行 DDL。Ammolite 正常公共流程已开启 EMCLI，标准映射前后相同。
+- Ammolite 真实浏览器：磁盘首页 12 卡/24 非空样本，Flash 与 IORM 首页分别 12 卡/12 非空样本，容量 7 卡/18 非空样本，含 ASM size/count；第五页两磁盘 STRING normal，维度独立。磁盘一小时历史首次读取 1248 样本，另等实际绘图完成核对 12 个 canvas，无页面异常。不是全部目录/分页验收。
+- 新交换机补最小 VTP 后，原厂 NetworkPortsTargetComponent 已返回两个 SIM Ethernet 端口。现用 Ammolite 监控账号获仅该交换机的 VIEW_TARGET 后，经原厂 EMCLI 读到 16 个 PFC PortId/Priority 样本。最终交换机源码 SHA256 为 dd324522157a0408fd1eb1527e31480d64f239bc4093a79ef055d100c92b8a04，只重启新增交换机容器。
+- **未完成**：原厂端口 TargetComponent 的可靠身份目录、应用发现/合同与公共绑定；交换机没有加入共享 DBM，以免两端 inventory digest 突变破坏旧绑定。没有伪造 GUID、独立端口 Target、MAC 邻居或业务授权。
+- **KBot 未验收**：代码和表单已部署，但现用来源仍是 OEM_REST，缺可用正常登录会话开启并验收；同名账号曾返回 401，未猜密码、重置或绕过鉴权。必须两端正常发现/确认后再改变共享 DBM 成员。
+- 两仓本轮 8 个定向测试文件各 251 passed，架构边界检查通过，Portal build/KBot JS 语法检查通过；没有全仓测试或交换机页面成功声明。详细部署备份和私有证据位置见设计文档。
 
 ## 仅在相同实验环境部署
 

@@ -88,14 +88,22 @@ class OEMExadata:
     async def exadata_latest(self, request, definition, target_type):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             target_error("SOURCE_CAPABILITY_FORBIDDEN")
+        if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI":
+            from .oem_exadata_emcli import query_emcli
+            return await query_emcli(self, request, definition, target_type, history=False)
         return await query_latest(self, request, metric_name=definition["selector"], limit=256,
             expected_target_type=target_type, expected_keys=tuple(definition["keys"]),
             expected_value_type=definition["native_value_type"], allow_empty_number=True)
 
     @exadata_metric_read
     async def exadata_history(self, request, definition, target_type):
+        if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
+            target_error("SOURCE_CAPABILITY_FORBIDDEN")
         if definition["native_value_type"] != "NUMBER":
             target_error("SOURCE_METRIC_HISTORY_UNSUPPORTED")
+        if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI":
+            from .oem_exadata_emcli import query_emcli
+            return await query_emcli(self, request, definition, target_type, history=True)
         return await self.query_native_metric(request, metric_name=definition["selector"], limit=256,
             _expected_target_type=target_type, _expected_keys=tuple(definition["keys"]),
             _paginate=True, _resource_samples=True)

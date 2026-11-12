@@ -7,7 +7,7 @@ from datetime import datetime
 @dataclass(frozen=True)
 class ExadataMetricRead:
     source_locator_key: str
-    max_response_bytes: int = 262144
+    max_response_bytes: int = 2 * 1024 * 1024
     window_start: datetime | None = None
     window_end: datetime | None = None
     pagination: None = None

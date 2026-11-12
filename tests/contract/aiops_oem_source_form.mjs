@@ -16,6 +16,7 @@ const form = node('diagnostic-source-form');
 form.elements = Object.fromEntries(Object.entries({
   source_type: 'OEM', display_name: '实验 OEM', endpoint: 'https://oem.example/em/api',
   source_username: 'reader', source_password: 'fixture-only', access_token: '', loki_tenant_id: '',
+  exadata_metric_transport: 'OEM_REST', exadata_emcli_timezone: 'UTC', exadata_emcli_certificate_sha256: '',
 }).map(([name, value]) => [name, { value }]));
 const context = {
   document: { body: { dataset: { page: 'diagnostic-sources' } }, getElementById: node },
@@ -30,15 +31,32 @@ assert.ok(!node('source-endpoint-help').textContent.includes('GUID'));
 const created = JSON.parse(JSON.stringify(context.formTest.payload()));
 assert.deepEqual(created, {
   display_name: '实验 OEM', source_type: 'OEM', endpoint: 'https://oem.example/em/api',
-  credentials: { username: 'reader', password: 'fixture-only' }, config: {},
+  credentials: { username: 'reader', password: 'fixture-only' }, config: { exadata_metric_transport: 'OEM_REST' },
 });
 context.formTest.edit({ source_id: 'existing', config: { standard_metric_mappings: { preserved: true } } });
 form.elements.source_username.value = '';
 form.elements.source_password.value = '';
 const edited = context.formTest.payload();
-assert.equal(edited.config, undefined);
+assert.equal(edited.config.exadata_metric_transport, 'OEM_REST');
+assert.equal(edited.config.standard_metric_mappings, undefined, '既有映射由后端保留，表单不能覆盖');
 assert.equal(edited.credentials, undefined);
 assert.equal(edited.source_type, undefined);
 form.elements.source_username.value = 'reader';
 assert.throws(() => context.formTest.payload(), /同时填写/);
-console.log('通过：OEM 新建仅服务连接、无 GUID/指标 JSON，编辑保留受管凭据及既有映射。');
+form.elements.source_username.value = '';
+form.elements.exadata_metric_transport.value = 'EMCLI';
+form.elements.exadata_emcli_certificate_sha256.value = 'a'.repeat(64);
+context.formTest.renderType();
+const native = context.formTest.payload();
+assert.equal(native.config.exadata_metric_transport, 'EMCLI');
+assert.equal(native.config.exadata_emcli_timezone, 'UTC');
+assert.equal(native.config.exadata_emcli_certificate_sha256, 'a'.repeat(64));
+assert.equal(form.elements.exadata_emcli_certificate_sha256.required, true);
+assert.equal(form.elements.exadata_emcli_certificate_sha256.disabled, false);
+form.elements.source_type.value = 'PROMETHEUS';
+form.elements.exadata_emcli_certificate_sha256.value = 'unfinished-pin';
+context.formTest.renderType();
+assert.equal(form.elements.exadata_emcli_certificate_sha256.required, false);
+assert.equal(form.elements.exadata_emcli_certificate_sha256.disabled, true, '隐藏的未完成指纹不阻止其他来源表单');
+assert.deepEqual(JSON.parse(JSON.stringify(context.formTest.payload().config)), {});
+console.log('通过：OEM 默认 REST、显式 Exadata EMCLI、受管凭据/映射保留，非 OEM 表单不受隐藏字段影响。');

@@ -41,11 +41,21 @@
   function renderType() {
     const type = form.elements.source_type.value, oem = type === "OEM";document.getElementById("source-token-field").hidden = oem;
     ["username","password"].forEach(key => {document.getElementById(`source-oem-${key}-field`).hidden = !oem;});document.getElementById("source-tenant-field").hidden = type !== "LOKI";
+    document.getElementById("source-exadata-transport-field").hidden = !oem;
+    const native = oem && form.elements.exadata_metric_transport.value === "EMCLI";
+    for (const [field,name] of [["timezone","exadata_emcli_timezone"],["pin","exadata_emcli_certificate_sha256"]]) {
+      document.getElementById(`source-exadata-${field}-field`).hidden = !native;
+      form.elements[name].required = native;
+      form.elements[name].disabled = !native;
+    }
     document.getElementById("source-endpoint-help").textContent = oem ? "OEM 官方 API 地址，例如 https://oem.example.com/em/api。这里只接入 OEM 服务，具体数据库在业务系统中选择。" : "填写监控源的根地址，例如 https://monitor.example.com。";
   }
   function fillForm(item = null) {
     state.editing = item;form.reset();form.elements.display_name.value = item?.display_name || "";form.elements.source_type.value = item?.source_type || "PROMETHEUS";form.elements.endpoint.value = item?.endpoint || "";
     form.elements.loki_tenant_id.value = item?.config?.tenant_id || "";
+    form.elements.exadata_metric_transport.value = item?.config?.exadata_metric_transport || "OEM_REST";
+    form.elements.exadata_emcli_timezone.value = item?.config?.exadata_emcli_timezone || "UTC";
+    form.elements.exadata_emcli_certificate_sha256.value = item?.config?.exadata_emcli_certificate_sha256 || "";
     document.getElementById("diagnostic-source-dialog-title").textContent = item ? "编辑监控源" : "新增监控源";renderType();syncBusy();if (!drawer.open) drawer.showModal();drawer.scrollTop = 0;renderCatalog();
   }
   function closeSource() {if (state.busy) return;++state.opening;if (drawer.open) drawer.close();state.editing = null;form.reset();showError();renderCatalog();}
@@ -61,7 +71,9 @@
     else if (value("access_token")) credentials = {token:value("access_token")};
     let config = {};
     if (type === "LOKI" && value("loki_tenant_id")) config = {tenant_id:value("loki_tenant_id")};
-    return {display_name:value("display_name"),...(!state.editing ? {source_type:type} : {}),endpoint:value("endpoint") || undefined,...(credentials ? {credentials} : {}),...(type === "OEM" && state.editing ? {} : {config})};
+    if (type === "OEM") config = {exadata_metric_transport:value("exadata_metric_transport"),
+      ...(value("exadata_metric_transport") === "EMCLI" ? {exadata_emcli_timezone:value("exadata_emcli_timezone"),exadata_emcli_certificate_sha256:value("exadata_emcli_certificate_sha256")} : {})};
+    return {display_name:value("display_name"),...(!state.editing ? {source_type:type} : {}),endpoint:value("endpoint") || undefined,...(credentials ? {credentials} : {}),config};
   }
   async function save(event) {
     event.preventDefault();if (state.busy || !state.manage) return;let body;try {body = payload();} catch (error) {showError(error.message);shell.toast(error.message);return;}
@@ -130,6 +142,7 @@
   function closeMenus() {document.querySelectorAll(".management-catalog-menu").forEach(menu => {menu.hidden = true;});document.querySelectorAll(".management-catalog-more").forEach(button => button.setAttribute("aria-expanded","false"));}
   shell.ready.then(async access => {
     state.manage = rows(access.permissions).includes("aiops:diagnostic_source_manage");document.getElementById("source-search").oninput = event => {state.search = event.target.value;renderCatalog();};document.getElementById("refresh-sources").onclick = () => {state.attempts = 0;load();};form.onsubmit = save;form.elements.source_type.onchange = renderType;
+    form.elements.exadata_metric_transport.onchange = renderType;
     drawer.querySelectorAll("[data-close-source]").forEach(button => {button.onclick = closeSource;});drawer.addEventListener("cancel",event => {event.preventDefault();closeSource();});drawer.addEventListener("close",closeSource);
     document.getElementById("source-catalog").onclick = event => {
       if (event.target.closest("#create-diagnostic-source")) {if (!state.manage || state.busy) return;showError();fillForm();return;}
