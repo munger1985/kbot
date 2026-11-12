@@ -5,12 +5,12 @@
 ## 展示规则
 
 - 整机概览、DB Server、Cell、磁盘 IO、Flash / Smart IO、IORM、互联设备、容量均复用相同展示决策；原有状态行保留。
-- 最新快照：各维度独立柱状对比；CPU、内存、文件系统/容量使用率在单维、原生百分比、0–100%时用使用/未使用环图。不把其他百分比、IO负载、平均值、速率当作可加总的饼图扇区。
+- 最新快照：各维度独立柱状对比；文件系统/容量使用率在单维、原生百分比、0–100%时用使用/未使用环图。CPU、内存单独补读过去1小时真实历史，使用折线及7天/30天均值虚线；缺历史不复制快照生成趋势。不把其他百分比、IO负载、平均值、速率当作可加总的饼图扇区。
 - 历史：同设备、同指标、同原生单位、相同完整维度独立折线，至少2个有效时间点；缺值不补零、不跨空值连线，不把最新快照复制成趋势。
 - 柱图完整保留维度，超过6个提供滚动；零值保留，空值无柱。数值只用于近似绘制，原始十进制文本不变；不推断阈值、健康、跨组件均值或精确计数增量。
 - 卡片默认只显示名称、设备、质量、当前值、时间、图表、精简均值摘要与一个“查看数据”入口；原厂选择器、单位、完整采样/维度/质量、缺口、均值对比窗口及两位小数的明细均在该入口内。
 - 使用Prometheus卡片的surface/surface-subtle、line、accent及六色序列色板，tooltip使用surface-raised/line-strong；环图剩余部分用accent-soft。序列颜色不代表健康，错误/过期通过质量标签区别，配置/状态不强行数值化。
-- 只改Exadata OEM展示，不改其他来源页面、查询请求、授权、目录、OEM模拟器、诊断与数据库。
+- 本表只覆盖Exadata OEM展示；普通OEM总览见[OEM图表审核](aiops-oem-chart-audit.md)。非OEM页面、授权、目录、OEM模拟器、诊断与数据库不变；CPU/内存通过既有历史接口补读，不新增服务端合同。
 
 ## 审核范围
 
@@ -81,10 +81,10 @@
 | `oracle_exadata.Cell_Metric.cell_name` | cell | STRING | 配置/原始值 | 不生成数值历史 | 配置、标识、阈值或指示值，折叠查看 |
 | `oracle_exadata.Cell_Metric.cl_iorm_boost` | cell | NUMBER | 配置/原始值 | 不生成数值历史 | 配置、标识、阈值或指示值，折叠查看 |
 | `oracle_exadata.Cell_Metric.cl_runq` | cell | NUMBER | 维度柱图 | 折线（至少2个有效时间点） | 原生数值逐维度比较；单位原样，不推导速率或健康 |
-| `oracle_exadata.Cell_Metric.cpu_utilization` | overview, cell | NUMBER | 占用环图 | 折线（至少2个有效时间点） | 仅单维且0–100%；多维或越界改柱图；未使用=100−使用 |
+| `oracle_exadata.Cell_Metric.cpu_utilization` | overview, cell | NUMBER | 过去1小时真实折线＋均值虚线 | 折线＋均值虚线 | 同Cell同维度；单点仅画点，空值断开；不复制快照 |
 | `oracle_exadata.Cell_Metric.iorm_mode` | cell | NUMBER | 配置/原始值 | 不生成数值历史 | 配置、标识、阈值或指示值，折叠查看 |
 | `oracle_exadata.Cell_Metric.led_status` | cell | STRING | 配置/原始值 | 不生成数值历史 | 配置、标识、阈值或指示值，折叠查看 |
-| `oracle_exadata.Cell_Metric.memory_utilization` | overview, cell | NUMBER | 占用环图 | 折线（至少2个有效时间点） | 仅单维且0–100%；多维或越界改柱图；未使用=100−使用 |
+| `oracle_exadata.Cell_Metric.memory_utilization` | overview, cell | NUMBER | 过去1小时真实折线＋均值虚线 | 折线＋均值虚线 | 同Cell同维度；单点仅画点，空值断开；不复制快照 |
 | `oracle_exadata.Cell_Metric.network_received` | cell | NUMBER | 维度柱图 | 折线（至少2个有效时间点） | 原生数值逐维度比较；单位原样，不推导速率或健康 |
 | `oracle_exadata.Cell_Metric.network_sent` | cell | NUMBER | 维度柱图 | 折线（至少2个有效时间点） | 原生数值逐维度比较；单位原样，不推导速率或健康 |
 | `oracle_exadata.Cell_Metric.temperature` | cell | NUMBER | 维度柱图 | 折线（至少2个有效时间点） | 原生数值逐维度比较；单位原样，不推导速率或健康 |
@@ -285,8 +285,8 @@
 | `oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentErrorsIn` | network | NUMBER | 维度柱图 | 折线（至少2个有效时间点） | 原生数值逐维度比较；单位原样，不推导速率或健康 |
 | `oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentErrorsOut` | network | NUMBER | 维度柱图 | 折线（至少2个有效时间点） | 原生数值逐维度比较；单位原样，不推导速率或健康 |
 | `oracle_si_network_port_switch.SwitchEthPortsMonitor.PortStatusError` | network | STRING | 紧凑状态 | 不生成数值历史 | 按审核字典逐维度显示，不绘数值图 |
-| `host.CPUUsageSummary.OverAllUsagePct` | overview, dbserver | NUMBER | 占用环图 | 折线（至少2个有效时间点） | 仅单维且0–100%；多维或越界改柱图；未使用=100−使用 |
-| `host.Load.memUsedPct` | overview, dbserver | NUMBER | 占用环图 | 折线（至少2个有效时间点） | 仅单维且0–100%；多维或越界改柱图；未使用=100−使用 |
+| `host.CPUUsageSummary.OverAllUsagePct` | overview, dbserver | NUMBER | 过去1小时真实折线＋均值虚线 | 折线＋均值虚线 | 同DB Server同维度；单点仅画点，空值断开 |
+| `host.Load.memUsedPct` | overview, dbserver | NUMBER | 过去1小时真实折线＋均值虚线 | 折线＋均值虚线 | 同DB Server同维度；单点仅画点，空值断开 |
 | `host.OEMTarget.status` | overview, dbserver | STRING | 紧凑状态 | 不生成数值历史 | 按审核字典逐维度显示，不绘数值图 |
 | `oracle_si_netswitch.AccessPointResponse.statusMsg` | overview, network | STRING | 紧凑状态 | 不生成数值历史 | 按审核字典逐维度显示，不绘数值图 |
 | `oracle_si_server_map.AccessPointResponse.statusMsg` | overview, dbserver | STRING | 紧凑状态 | 不生成数值历史 | 按审核字典逐维度显示，不绘数值图 |

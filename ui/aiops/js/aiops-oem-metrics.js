@@ -3,7 +3,7 @@
   const esc = value => KBotAIOpsShell.escape(String(value ?? ""));
   const identity = dimensions => JSON.stringify(Object.entries(dimensions).sort(([a], [b]) => a.localeCompare(b)));
   const label = dimensions => Object.entries(dimensions).map(([key, value]) => `${key}=${value}`).join(" · ") || "资源整体";
-  const number = value => value !== null && Number.isFinite(Number(value)) ? Number(value) : null;
+  const number = value => value !== null && !(typeof value === "string" && value.trim() === "") && Number.isFinite(Number(value)) ? Number(value) : null;
   class OEMMetrics {
     constructor(root, options) {
       Object.assign(this, options);
@@ -86,14 +86,18 @@
       const delta = !candidate && average !== null && average !== undefined ? "无当前采样，暂不比较" : difference === null ? "无有效基线" : difference === 0 ? "当前与基线持平" : `当前${difference > 0 ? "高" : "低"} ${Math.abs(difference).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}${unit === "percent" ? " 个百分点" : ` ${spec.metric.unit || ""}`}`;
       const hasData = Boolean(latest && latest.value !== null);
       const snapshots = series.filter(item => item.points.length);
-      const body = spec.mode === "LATEST" && snapshots.length ? `<div class="oem-snapshot-list">${stale ? "<p>快照早于所选窗口，当前状态未知。</p>" : ""}<p>最近采集快照，不代表历史趋势。</p>${snapshots.slice(0, 5).map(item => ({ ...item.points.at(-1), dimensions: Object.fromEntries(Object.entries(item.dimensions).filter(([key]) => !key.startsWith("__"))) })).map(point => `<div><span>${esc(label(point.dimensions))}</span><strong>${point.raw_value === null ? "—（来源空值）" : esc(point.raw_value)} ${esc(spec.metric.unit)}</strong></div>`).join("")}${snapshots.length > 5 ? `<p>其余 ${snapshots.length - 5} 个维度请查看数据。</p>` : ""}</div>` : hasData ? '<div class="monitoring-chart-canvas" role="img"></div>' : '<p class="monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</p>';
+      const chartPanel = { title: spec.title, metric_code: spec.metric?.name || spec.panel_id, unit, series, native: { mode: spec.mode, ranking: spec.ranking } };
+      const chartApi = KBotAIOpsOEMPresentation, kind = chartApi.oemChartKind(chartPanel);
+      const body = kind === "state" && snapshots.length ? `<div class="oem-snapshot-list">${stale ? "<p>快照早于所选窗口，当前状态未知。</p>" : ""}${snapshots.slice(0, 5).map(item => ({ ...item.points.at(-1), dimensions: Object.fromEntries(Object.entries(item.dimensions).filter(([key]) => !key.startsWith("__"))) })).map(point => `<div><span>${esc(label(point.dimensions))}</span><strong>${point.raw_value === null ? "—（来源空值）" : esc(point.raw_value)} ${esc(spec.metric.unit)}</strong></div>`).join("")}${snapshots.length > 5 ? `<p>其余 ${snapshots.length - 5} 个维度请查看数据。</p>` : ""}</div>` : kind !== "state" && series.some(item => item.points.some(point => point.value !== null)) ? `<div class="monitoring-chart-canvas" data-chart-kind="${kind}" role="img"></div><p class="oem-chart-caption">${esc(chartApi.oemChartCaption(chartPanel))}</p>` : '<p class="monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</p>';
       const node = [...this.root.querySelectorAll("[data-oem-panel]")].find(item => item.dataset.oemPanel === spec.panel_id);
       node.innerHTML = `<article class="monitoring-panel is-native ${hasData ? "" : "tone-none"}"><header><div><h2>${esc(spec.title)}</h2><p title="${esc(messages.join("；"))}">${esc(messages[0] || "OEM 原生采样，未配置健康阈值")}</p></div><div class="monitoring-panel-actions"><span class="status-pill">${stale ? "旧快照" : hasData ? "已采样" : "暂无数据"}</span><button class="row-action" data-oem-data="${esc(spec.panel_id)}" aria-haspopup="dialog">查看数据</button></div></header><div class="monitoring-current-value"><strong>${esc(current)} ${numeric ? esc(spec.metric?.unit === "n/a" ? "" : spec.metric?.unit) : ""}</strong><span>${esc(latest ? KBotAIOpsShell.fmt(latest.observed_at) : "当前值")}</span></div>${spec.baseline_supported ? `<div class="monitoring-baseline" title="${esc(samples?.baseline?.note)}"><span>${esc(this.baselineLabel())}采样均值 <strong>${average === null || average === undefined ? "无有效基线" : esc(average.toLocaleString("zh-CN", { maximumFractionDigits: 2 }))}</strong>${baselineCandidate?.baseline?.sample_count ? `<small> · ${baselineCandidate.baseline.sample_count} 条</small>` : ""}</span><b>${esc(delta)}</b></div>` : ""}${body}<footer><span>单位 ${esc(spec.metric?.unit || "未声明")}</span><span>覆盖率未知（OEM 留存采样）</span></footer></article>`;
       const canvas = node.querySelector(".monitoring-chart-canvas");
-      if (canvas && globalThis.echarts && globalThis.KBotAIOpsMonitoringChartOption) {
-        canvas.setAttribute("aria-label", `${spec.title}趋势图`);
+      this.charts.get(spec.panel_id)?.dispose(); this.observers.get(spec.panel_id)?.disconnect();
+      if (canvas && globalThis.echarts) {
+        canvas.setAttribute("aria-label", `${spec.title} · ${chartApi.oemChartCaption(chartPanel)}`);
         const chart = echarts.init(canvas);
-        chart.setOption(KBotAIOpsMonitoringChartOption({ title: spec.title, visualization: "TIME_SERIES", unit, series, native: true }), true);
+        const css = getComputedStyle(this.root);
+        chart.setOption(chartApi.oemChartOption(chartPanel, Object.fromEntries(["accent", "info", "success", "warning", "danger", "muted", "ink", "line", "surface", "surfaceRaised", "lineStrong", "lineSubtle", "accentSoft"].map(name => [name, css.getPropertyValue("--" + name.replace(/[A-Z]/g, letter => "-" + letter.toLowerCase())).trim()])), this.baselineLabel()), true);
         const observer = new ResizeObserver(() => chart.resize()); observer.observe(canvas);
         this.charts.set(spec.panel_id, chart); this.observers.set(spec.panel_id, observer);
       }

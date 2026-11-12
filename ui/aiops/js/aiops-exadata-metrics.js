@@ -16,7 +16,31 @@
       this.refresh();
     }
     clearCharts() { this.observers.forEach(observer => observer.disconnect()); this.observers = []; this.charts.forEach(chart => chart.dispose()); this.charts = []; }
-    dispose() { this.disposed = true; this.controller?.abort(); this.baselineController?.abort(); this.clearCharts(); }
+    dispose() { this.disposed = true; this.controller?.abort(); this.baselineController?.abort(); this.trendController?.abort(); this.clearCharts(); }
+    async loadTrend(view) {
+      const api = KBotAIOpsExadataPresentation;
+      if (view.query_mode !== "LATEST_SNAPSHOT" || !buildExadataCards(view).some(api.exadataTrendMetric)) return;
+      const controller = new AbortController(); this.trendController = controller;
+      try {
+        const result = await KBotAIOpsAuth.request(this.base + "/view", { method: "POST", signal: controller.signal,
+          body: JSON.stringify({ mode: "HISTORY", window_minutes: 60, scene: this.scene, component_id: this.component || null, offset: this.offset, limit: this.scene === "overview" ? 24 : 12 }) });
+        if (controller.signal.aborted || this.disposed || this.view !== view) return;
+        this.trend = api.exadataViewMatches(view, result) ? result : "资源或目录已变化，请刷新后读取趋势。";
+      } catch (error) {
+        if (controller.signal.aborted || this.disposed) return;
+        this.trend = error.message || "历史趋势读取失败，当前快照保留。";
+      }
+      this.render();
+    }
+    chartCard(card) { return this.view.query_mode === "LATEST_SNAPSHOT" && KBotAIOpsExadataPresentation.exadataTrendMetric(card) ? KBotAIOpsExadataPresentation.exadataTrendCard(card, this.trend) : card; }
+    trendNote(card) {
+      if (this.view.query_mode !== "LATEST_SNAPSHOT" || !KBotAIOpsExadataPresentation.exadataTrendMetric(card)) return "";
+      if (this.trend === undefined) return "正在读取过去 1 小时真实历史采样…";
+      if (typeof this.trend === "string") return "历史趋势读取失败：" + this.trend;
+      const gap = this.trend.gaps.find(item => item.component_id === card.componentId && item.metric_code === card.metricCode);
+      const count = this.chartCard(card).samples.length;
+      return gap?.detail || (!count ? "过去 1 小时无历史采样，未用快照补造趋势。" : count === 1 ? "过去 1 小时仅 1 个采样，显示采样点。" : "过去 1 小时真实采样");
+    }
     async loadBaselines() {
       this.baselineController?.abort(); const controller = new AbortController(); this.baselineController = controller;
       this.baselines = {};
@@ -56,6 +80,7 @@
       if (this.disposed) return;
       this.controller?.abort(); const controller = new AbortController(); this.controller = controller;
       this.baselineController?.abort(); this.baselines = {};
+      this.trendController?.abort(); this.trend = undefined;
       this.loading = true; this.view = null; this.report = null;
       this.render(this.mode === "HISTORY" ? "正在读取 OEM 数值历史…" : "正在读取 OEM 最新快照…");
       try {
@@ -66,24 +91,26 @@
         });
         if (this.disposed || controller.signal.aborted) return;
         this.view = diagnosis ? result.evidence : result; this.members = this.view.members;
-        this.report = diagnosis ? result : null; this.loading = false; this.render(); void this.loadBaselines();
+        this.report = diagnosis ? result : null; this.loading = false; this.render(); void this.loadBaselines(); void this.loadTrend(this.view);
       } catch (error) {
         if (!controller.signal.aborted && !this.disposed) { this.loading = false; this.render(error.message || "Exadata 查询失败", true); }
       }
     }
     renderCard(card, index) {
       const history = this.view.query_mode === "HISTORY";
+      const evidence = [...card.samples.map(sample => ({ ...sample, evidenceKind: history ? "历史采样" : "当前快照" })),
+        ...(!history && KBotAIOpsExadataPresentation.exadataTrendMetric(card) ? this.chartCard(card).samples.map(sample => ({ ...sample, evidenceKind: "历史采样" })) : [])];
       const chart = KBotAIOpsExadataPresentation.exadataChartKind(card, this.view.query_mode);
       return `<article class="monitoring-panel is-native exadata-metric-card tone-${esc(card.tone)}" data-metric-code="${esc(card.metricCode)}" data-component-id="${esc(card.componentId)}">
         <header><div><h3 title="${esc(card.title)}">${esc(card.title)}</h3><p title="${esc(card.componentName)}">${esc(card.componentName)}</p></div><span class="status-pill ${card.tone === "warning" ? "status-warning" : "status-muted"}">${esc(card.quality)}</span></header>
         <div class="exadata-card-value"><strong title="${esc(card.value)}">${esc(card.value)}</strong><span>${esc(card.valueUnit)}</span></div>
         <p class="exadata-card-time" title="${esc(card.observedAt)}">${history ? "窗口末次采样" : "采集时间"} · ${esc(fmt(card.observedAt))}</p>
-        ${chart ? `<div class="exadata-chart" data-chart="${esc(card.key)}" data-chart-kind="${chart}" role="img" aria-label="${esc(card.title)} · ${esc(KBotAIOpsExadataPresentation.exadataChartLabel(chart))}；空值不补零"></div><p class="exadata-chart-caption">${esc(KBotAIOpsExadataPresentation.exadataChartLabel(chart))} · ${esc(exadataUnit(card.unit))}</p>` : `<div class="exadata-snapshot">
+        ${chart ? `<div class="exadata-chart" data-chart="${esc(card.key)}" data-chart-kind="${chart}" role="img" aria-label="${esc(card.title)} · ${esc(KBotAIOpsExadataPresentation.exadataChartLabel(chart))}；空值不补零"></div><p class="exadata-chart-caption">${esc(this.trendNote(card) || KBotAIOpsExadataPresentation.exadataChartLabel(chart))} · ${esc(exadataUnit(card.unit))}</p>` : `<div class="exadata-snapshot">
           ${card.percent !== null ? `<div class="exadata-percent" role="img" aria-label="原生百分比 ${esc(card.value)}%，不代表健康阈值"><div><i style="width:${card.percent}%"></i></div><p><span>0%</span><span>100%</span></p></div>` : ""}
           ${card.series.length > 1 ? `<div class="exadata-dimensions">${card.series.slice(0, 4).map(series => `<div><span title="${esc(series.label)}">${esc(series.label)}</span><strong>${esc(exadataRaw(series.latest.value))} ${esc(card.valueUnit)}</strong></div>`).join("")}</div>${card.series.length > 4 ? `<p>另 ${card.series.length - 4} 个维度请查看数据。</p>` : ""}` : ""}
           <p>${esc(card.gaps[0]?.detail || (history ? "当前指标没有可绘制的数值历史，不回退快照。" : card.numeric ? "最新采集快照，不生成历史趋势。" : "最新采集值。"))}</p></div>`}
         ${this.baselinePeriod && card.baselineSupported ? `<p class="exadata-baseline-summary">${esc(exadataBaselineSummary(this.baselines[exadataBaselineKey(card)], this.baselinePeriod))}</p>` : ""}
-        <details class="exadata-evidence"><summary>查看数据 · ${card.samples.length} 条</summary><p><code>${esc(card.selector)}</code> · 单位 ${esc(exadataUnit(card.unit))}</p>${this.renderBaseline(card)}<p>图表仅为数值近似；原始值、维度、质量与实际采集时间如下。未验证阈值，不判定健康。</p><div class="exadata-table-scroll"><table><thead><tr><th>采集时间</th><th>原始值</th><th>维度</th><th>质量</th></tr></thead><tbody>${card.samples.map(sample => `<tr><td title="${esc(sample.observed_at)}">${esc(fmt(sample.observed_at))}</td><td>${esc(exadataRaw(sample.value))} · ${esc(exadataUnit(sample.unit))}</td><td>${esc(exadataDimensions(sample.dimensions))}</td><td>${esc(exadataQuality(sample.quality))}</td></tr>`).join("")}</tbody></table></div>${card.gaps.map(gap => `<p>${esc(gap.code)} · ${esc(gap.detail)}</p>`).join("")}</details>
+        <details class="exadata-evidence"><summary>查看数据 · ${evidence.length} 条</summary><p><code>${esc(card.selector)}</code> · 单位 ${esc(exadataUnit(card.unit))}</p>${this.renderBaseline(card)}<p>图表仅为数值近似；原始值、维度、质量与实际采集时间如下。未验证阈值，不判定健康。</p><div class="exadata-table-scroll"><table><thead><tr><th>取证类型</th><th>采集时间</th><th>原始值</th><th>维度</th><th>质量</th></tr></thead><tbody>${card.samples.map(sample => `<tr><td title="${esc(sample.observed_at)}">${esc(fmt(sample.observed_at))}</td><td>${esc(exadataRaw(sample.value))} · ${esc(exadataUnit(sample.unit))}</td><td>${esc(exadataDimensions(sample.dimensions))}</td><td>${esc(exadataQuality(sample.quality))}</td></tr>`).join("")}</tbody></table></div>${card.gaps.map(gap => `<p>${esc(gap.code)} · ${esc(gap.detail)}</p>`).join("")}</details>
       </article>`;
     }
     renderStatus(card) {
@@ -164,7 +191,8 @@
         if (!globalThis.echarts) { node.textContent = "图表引擎不可用，请查看原始数据。"; return; }
         const css = getComputedStyle(this.root), color = name => css.getPropertyValue(`--${name}`).trim();
         const chart = echarts.init(node);
-        chart.setOption(exadataChartOption(cards.find(card => card.key === node.dataset.chart), Object.fromEntries(["accent", "info", "success", "warning", "danger", "muted", "line", "surface", "ink", "surfaceRaised", "lineStrong", "lineSubtle", "faint", "accentSoft"].map(name => [name, color(name.replace(/[A-Z]/g, letter => "-" + letter.toLowerCase()))])), node.dataset.chartKind));
+        const card = cards.find(card => card.key === node.dataset.chart);
+        chart.setOption(exadataChartOption(this.chartCard(card), Object.fromEntries(["accent", "info", "success", "warning", "danger", "muted", "line", "surface", "ink", "surfaceRaised", "lineStrong", "lineSubtle", "faint", "accentSoft"].map(name => [name, color(name.replace(/[A-Z]/g, letter => "-" + letter.toLowerCase()))])), node.dataset.chartKind, this.baselines[exadataBaselineKey(card)], this.baselinePeriod));
         const observer = new ResizeObserver(() => chart.resize()); observer.observe(node);
         this.charts.push(chart); this.observers.push(observer);
       });

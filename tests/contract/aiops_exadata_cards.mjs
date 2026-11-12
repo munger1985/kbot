@@ -38,7 +38,7 @@ const metric = (selector, type = 'NUMBER', target = 'oracle_exadata') => {
 const cpu = metric('Cell_Metric/cpu_utilization'), memory = metric('Cell_Metric/memory_utilization')
 const status = ['Status', 'msStatus', 'rsStatus'].map(name => metric(`CellSrv_Status_Metric/${name}`, 'STRING'))
 const sample = (definition, value, overrides = {}) => ({ component_id: 'cell-a', metric_code: definition.code, selector: definition.selector, observed_at: '2026-11-11T12:00:00Z', value, dimensions: {}, unit: '%', native_value_type: definition.native_value_type, quality: 'OBSERVED', ...overrides })
-const overview = { query_mode: 'LATEST_SNAPSHOT', window_start: null, window_end: null, members, definitions: [...status, cpu, memory], samples: [...status.map(item => sample(item, '1', { unit: 'n/a' })), sample(cpu, '27.210000000000001'), sample(memory, '0')], gaps: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '阈值与状态字典未验证，不判定健康。' }], total_queries: 5, next_offset: null, catalog_version: 'exadata-oem-v1', captured_at: '2026-11-11T12:01:00Z' }
+const overview = { resource_id: 'resource', binding_id: 'binding', binding_version: 1, source_version: 2, catalog_sha256: 'c'.repeat(64), query_mode: 'LATEST_SNAPSHOT', window_start: null, window_end: null, members, definitions: [...status, cpu, memory], samples: [...status.map(item => sample(item, '1', { unit: 'n/a' })), sample(cpu, '27.210000000000001'), sample(memory, '0')], gaps: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '阈值与状态字典未验证，不判定健康。' }], total_queries: 5, next_offset: null, catalog_version: 'exadata-oem-v1', captured_at: '2026-11-11T12:01:00Z' }
 
 const dbCPU = metric('CPUUsageSummary/OverAllUsagePct', 'NUMBER', 'host'), dbMemory = metric('Load/memUsedPct', 'NUMBER', 'host')
 const switchAP = metric('AccessPointResponse/statusMsg', 'STRING', 'oracle_si_netswitch')
@@ -75,9 +75,9 @@ assert.equal(api.exadataStatusItems(cards[0])[0].label, '可用')
 const palette = { accent: 'blue', info: 'cyan', muted: 'gray', line: 'gray', surface: 'white', ink: 'black' }
 for (const value of [null, '', ' ', 'NaN', 'Infinity', '0x10', 'false']) assert.equal(api.exadataNumeric(value), null)
 assert.equal(api.exadataNumeric('1.2e-3'), 0.0012)
-assert.equal(api.exadataChartKind(cards[3], 'LATEST_SNAPSHOT'), 'donut')
-assert.equal(api.exadataChartKind(cards[4], 'LATEST_SNAPSHOT'), 'donut', '真实零值也绘制占用环图')
-const ring = api.exadataChartOption(cards[4], palette, 'donut')
+assert.equal(api.exadataChartKind(cards[3], 'LATEST_SNAPSHOT'), 'line', 'CPU 默认显示真实历史趋势')
+assert.equal(api.exadataChartKind(cards[4], 'LATEST_SNAPSHOT'), 'line', '内存真实零值显示为趋势采样点')
+const ring = api.exadataChartOption({ ...cards[4], selector: 'Filesystem_Utilization_Metric/utilization' }, palette, 'donut')
 assert.equal(ring.series[0].type, 'pie')
 assert.deepEqual(clone(ring.series[0].data.map(item => item.value)), [0, 100])
 assert.equal(ring.series[0].data[1].derived, true, '未使用部分标为计算值，不伪造OEM采样')
@@ -85,6 +85,24 @@ const preciseBaseline = { unit: '%', baseline: { unavailable_reason: null }, com
   average: '37.95429398496240601503759398496240601504', deviation_percent: '3.914460945120556658462827400372799012244',
   current: '39.44', difference: '1.48570601503759398496240601503759398496', sample_count: 7, observed_at: overview.captured_at }] }
 const originalBaseline = JSON.stringify(preciseBaseline)
+const historyView = { ...overview, query_mode: 'HISTORY', samples: [sample(cpu, '8'), sample(cpu, null, { observed_at: '2026-11-11T12:00:30Z', quality: 'EMPTY' }), sample(cpu, '13', { observed_at: '2026-11-11T12:01:00Z' })] }
+const trendCard = api.exadataTrendCard(cards[3], historyView)
+assert.equal(trendCard.value, cards[3].value, '历史趋势不覆盖当前快照摘要')
+assert.deepEqual(clone(api.exadataChartOption(trendCard, palette).series[0].data.map(item => item.value[1])), [8, null, 13], '只使用OEM真实历史，不复制最新快照')
+assert.equal(api.exadataTrendCard(cards[3], undefined).samples.length, 0)
+assert.equal(api.exadataTrendCard(cards[3], '失败').samples.length, 0)
+assert.equal(api.exadataTrendCard({ ...cards[3], unit: 'ms' }, historyView).samples.length, 0, '趋势单位不匹配不得合并')
+assert.ok(api.exadataViewMatches(overview, historyView))
+assert.equal(api.exadataViewMatches(overview, { ...historyView, binding_version: 2 }), false)
+const trendBaseline = { ...preciseBaseline, component_id: cards[3].componentId, metric_code: cards[3].metricCode, baseline: { unavailable_reason: null, period: '1w' } }
+const trendOption = api.exadataChartOption(trendCard, palette, 'line', trendBaseline, '1w')
+assert.equal(trendOption.series[0].markLine.data[0].yAxis, Number(preciseBaseline.comparisons[0].average))
+assert.equal(trendOption.series[0].markLine.label.formatter, '7 天均值 37.95')
+assert.equal(trendOption.series[0].markLine.data[0].lineStyle.type, 'dashed')
+for (const other of [{ ...trendBaseline, unit: 'ms' }, { ...trendBaseline, component_id: 'cell-b' }, { ...trendBaseline, comparisons: [{ ...trendBaseline.comparisons[0], dimensions: { other: 'a' } }] }]) {
+  assert.equal(api.exadataChartOption(trendCard, palette, 'line', other, '1w').series[0].markLine, undefined, '基线严格匹配组件、指标、单位及完整维度')
+}
+assert.equal(api.exadataChartOption(trendCard, palette, 'line', trendBaseline, '1m').series[0].markLine, undefined, '切换周期不保留旧基准线')
 assert.equal(api.exadataBaselineSummary(preciseBaseline, '1w'), '7 天均值 37.95 % · 偏离 3.91%')
 assert.equal(api.exadataBaselineSummary(preciseBaseline, '1m'), '30 天均值 37.95 % · 偏离 3.91%')
 assert.ok(api.exadataBaselineLines(preciseBaseline, '1w')[0].includes('留存均值 37.95 %'))
@@ -104,7 +122,7 @@ assert.equal(dimensional.series.length, 2)
 assert.equal(dimensional.value, '2 个维度', '多维度不求和、不以最大值冒充整机值')
 assert.equal(dimensional.percent, null)
 assert.equal(api.exadataChartOption(dimensional, palette).series.length, 2)
-assert.equal(api.exadataChartKind(dimensional, 'LATEST_SNAPSHOT'), 'bar', '多个维度百分比不求和绘成饼图')
+assert.equal(api.exadataChartKind(dimensional, 'LATEST_SNAPSHOT'), 'line', 'CPU 多维各自成线，不求和绘成饼图')
 const bars = api.exadataChartOption(dimensional, palette, 'bar')
 assert.equal(bars.series[0].type, 'bar')
 assert.deepEqual(clone(bars.series[0].data.map(item => item.value)), [2, 9])
@@ -273,10 +291,12 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   await page.route('https://fonts.**', route => route.abort())
   let fail = false, unavailable = false, providerError = false, stateFixture = false, devicesFixture = false, baselineFixture = false, baselineFailure = false, slowWeek = false
+  let historyFailure = false, historyIdentityMismatch = false
   await page.route('**/api/v1/apps/aiops/**', async route => {
     const request = route.request(), body = request.postDataJSON(); calls.push({ body, headers: request.headers(), url: request.url() })
     if (!request.headers()['content-type']?.includes('application/json')) return route.fulfill({ status: 422, json: { detail: '请求体必须为 JSON' } })
     if (fail) return route.fulfill({ status: 502, json: { detail: '模拟来源读取失败' } })
+    if (body.mode === 'HISTORY' && historyFailure) return route.fulfill({ status: 502, json: { detail: '模拟历史读取失败' } })
     if (request.url().endsWith('/baselines')) {
       if (baselineFailure) return route.fulfill({ status: 502, json: { detail: '模拟历史均值失败，当前采样保留' } })
       if (slowWeek && body.period === '1w') await new Promise(resolve => setTimeout(resolve, 400))
@@ -322,6 +342,7 @@ try {
       result.definitions = result.definitions.map(item => ({ ...item, baseline_supported: [cpu.code, memory.code].includes(item.code) }))
     }
     if (request.url().endsWith('/diagnoses')) result = { report_id: 'fixture-report', status: 'INCONCLUSIVE', evidence: result, findings: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '不能判定健康' }] }
+    if (body.mode === 'HISTORY' && historyIdentityMismatch) result.binding_version = 99
     return route.fulfill({ json: result })
   })
   await page.goto(`${origin}/__exadata-fixture`, { waitUntil: 'networkidle' })
@@ -331,7 +352,7 @@ try {
   await expect(page.locator('.exadata-status-panel .exadata-card-value')).toHaveCount(0)
   assert.ok(await page.locator('.exadata-status-row').first().evaluate(node => node.getBoundingClientRect().height < 100), '状态采用紧凑行，不使用大卡片')
   await expect(page.locator('.exadata-percent')).toHaveCount(0)
-  await expect(page.locator('.exadata-chart[data-chart-kind="donut"] canvas')).toHaveCount(2)
+  await expect(page.locator('.exadata-chart[data-chart-kind="line"] canvas')).toHaveCount(2)
   await expect(page.locator('.exadata-boundary')).toHaveCount(0)
   await expect(page.locator('.exadata-oem')).not.toContainText('不把采集成功视为健康')
   await expect(page.locator('.exadata-evidence[open]')).toHaveCount(0)
@@ -341,7 +362,7 @@ try {
   await expect(page.locator('.status-success')).toHaveCount(0)
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-latest.png`), fullPage: true })
   const cpuCard = page.locator(`[data-metric-code="${cpu.code}"]`)
-  await cpuCard.locator('summary').click(); await expect(cpuCard.locator('tbody tr')).toBeVisible()
+  await cpuCard.locator('summary').click(); await expect(cpuCard.locator('tbody tr').first()).toBeVisible()
   await expect(cpuCard.locator('tbody')).toContainText('27.210000000000001')
   await cpuCard.locator('summary').click()
   for (const [width, columns] of [[1920, 4], [1440, 3], [1000, 2], [780, 1], [390, 1]]) {
@@ -452,7 +473,7 @@ try {
   await page.locator('.exadata-assets > summary').click()
   await page.evaluate(() => document.documentElement.dataset.theme = 'light')
   await expect(page.locator('.exadata-metric-card')).toHaveCount(4)
-  await expect(page.locator('.exadata-chart[data-chart-kind="donut"] canvas')).toHaveCount(4)
+  await expect(page.locator('.exadata-chart[data-chart-kind="line"] canvas')).toHaveCount(4)
   await expect(page.locator('[data-device-group="nodes"]')).toContainText('SIM DB SERVER')
   await expect(page.locator('[data-device-group="equipment"]')).toContainText('SIM SWITCH')
   await expect(page.locator('.exadata-assets')).not.toHaveAttribute('open', '')
@@ -501,6 +522,18 @@ try {
   await expect(cpuCard.locator('.exadata-card-value strong')).toHaveText('27.210000000000001')
   await page.locator('[data-baseline]').selectOption('')
   await expect(page.locator('.exadata-baseline')).toHaveCount(0)
+  historyFailure = true
+  await page.locator('[data-refresh]').click()
+  await expect(cpuCard.locator('.exadata-chart-caption')).toContainText('历史趋势读取失败')
+  await expect(cpuCard.locator('.exadata-card-value strong')).toHaveText('27.210000000000001')
+  await expect(cpuCard.locator('.exadata-evidence > summary')).toContainText('1 条')
+  historyFailure = false; historyIdentityMismatch = true
+  await page.locator('[data-refresh]').click()
+  await expect(cpuCard.locator('.exadata-chart-caption')).toContainText('资源或目录已变化')
+  await expect(cpuCard.locator('.exadata-evidence > summary')).toContainText('1 条')
+  historyIdentityMismatch = false
+  await page.locator('[data-refresh]').click()
+  await expect(cpuCard.locator('.exadata-evidence > summary')).toContainText('4 条')
   assert.ok(calls.every(call => call.headers['content-type']?.includes('application/json')), `使用原有请求封装的 JSON 合同：${JSON.stringify(calls.map(call => ({url:call.url,type:call.headers['content-type']})))}`)
   assert.deepEqual(errors, [])
   await page.close()

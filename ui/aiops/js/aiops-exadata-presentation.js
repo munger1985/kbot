@@ -14,6 +14,9 @@ exports.exadataDeviceScene = exadataDeviceScene;
 exports.exadataSceneMembers = exadataSceneMembers;
 exports.exadataCardSection = exadataCardSection;
 exports.exadataHasTrend = exadataHasTrend;
+exports.exadataTrendMetric = exadataTrendMetric;
+exports.exadataTrendCard = exadataTrendCard;
+exports.exadataViewMatches = exadataViewMatches;
 exports.exadataChartKind = exadataChartKind;
 exports.exadataChartLabel = exadataChartLabel;
 exports.exadataGapLabel = exadataGapLabel;
@@ -118,15 +121,40 @@ function exadataHasTrend(card) {
 function exadataChartable(card) {
     return !card.status && exadataCardSection(card) === 'performance' && (card.numeric || ['Aggregated_Exadata_Diskgroup_Capacity_Metric/count', 'Aggregated_Exadata_Diskgroup_Capacity_Metric/size'].includes(card.selector));
 }
+function exadataTrendMetric(card) {
+    return ['CPUUsageSummary/OverAllUsagePct', 'Load/memUsedPct', 'Cell_Metric/cpu_utilization', 'Cell_Metric/memory_utilization'].includes(card.selector) && card.numeric && !card.status;
+}
+// 趋势与当前快照分开取证；历史失败、空数据或单位不符时不复制快照拼出曲线。
+function exadataTrendCard(card, history) {
+    const samples = history && typeof history !== 'string' && history.query_mode === 'HISTORY'
+        ? history.samples.filter(sample => sample.component_id === card.componentId && sample.metric_code === card.metricCode && sample.unit === card.unit && sample.native_value_type === 'NUMBER') : [];
+    const groups = new Map();
+    for (const sample of samples) {
+        const key = JSON.stringify(Object.entries(sample.dimensions).sort(([a], [b]) => a.localeCompare(b)));
+        groups.set(key, [...(groups.get(key) || []), sample]);
+    }
+    const series = [...groups].map(([key, points]) => {
+        const sorted = [...points].sort((a, b) => Date.parse(a.observed_at) - Date.parse(b.observed_at));
+        return { key, label: exadataDimensions(sorted[0].dimensions), samples: sorted, latest: sorted.at(-1) };
+    });
+    return { ...card, samples, series };
+}
+function exadataViewMatches(left, right) {
+    const identity = ['resource_id', 'binding_id', 'binding_version', 'source_version', 'catalog_sha256'];
+    const a = left, b = right;
+    return identity.every(key => a[key] !== undefined && a[key] === b[key]);
+}
 function exadataChartKind(card, mode) {
     if (!exadataChartable(card))
         return null;
+    if (exadataTrendMetric(card))
+        return card.series.some(series => series.samples.some(sample => sample.quality !== 'EMPTY' && exadataNumeric(sample.value) !== null)) ? 'line' : null;
     if (mode === 'HISTORY')
         return exadataHasTrend(card) ? 'line' : null;
     if (mode !== 'LATEST_SNAPSHOT' || !card.series.some(series => series.latest.quality !== 'EMPTY' && exadataNumeric(series.latest.value) !== null))
         return null;
     // 仅占整体的使用率允许补出未使用部分；IO负载、效率、错误率等不套用占用语义。
-    const occupancy = ['CPUUsageSummary/OverAllUsagePct', 'Load/memUsedPct', 'Cell_Metric/cpu_utilization', 'Cell_Metric/memory_utilization', 'Filesystem_Utilization_Metric/utilization', 'Aggregated_Exadata_Capacity_Metric/Usage'];
+    const occupancy = ['Filesystem_Utilization_Metric/utilization', 'Aggregated_Exadata_Capacity_Metric/Usage'];
     return card.percent !== null && occupancy.includes(card.selector) ? 'donut' : 'bar';
 }
 function exadataChartLabel(kind) {
@@ -280,7 +308,14 @@ function exadataStatusItems(card) {
     });
 }
 // 图表仅作数值近似绘制，卡片及原始表格保留精确文本；空值不补零、不连线。
-function exadataChartOption(card, colors, kind = 'line') {
+function exadataChartOption(card, colors, kind = 'line', baseline, period = '') {
+    const baselineAverage = (series) => {
+        if (!period || !baseline || typeof baseline === 'string' || baseline.baseline.unavailable_reason || baseline.baseline.period !== period || baseline.unit !== card.unit || baseline.component_id !== card.componentId || baseline.metric_code !== card.metricCode)
+            return null;
+        const matches = baseline.comparisons.filter(item => JSON.stringify(Object.entries(item.dimensions).sort(([a], [b]) => a.localeCompare(b))) === series.key);
+        return matches.length === 1 && matches[0].sample_count > 0 ? exadataNumeric(matches[0].average) : null;
+    };
+    const trendValues = card.series.flatMap(series => [...series.samples.flatMap(sample => sample.quality === 'EMPTY' || exadataNumeric(sample.value) === null ? [] : [exadataNumeric(sample.value)]), ...(baselineAverage(series) === null ? [] : [baselineAverage(series)])]);
     const escape = (value) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
     const palette = [colors.accent, colors.info, colors.success, colors.warning, colors.danger, colors.muted].filter(Boolean);
     const tooltip = { confine: true, backgroundColor: colors.surfaceRaised || colors.surface, borderColor: colors.lineStrong || colors.line, textStyle: { color: colors.ink } };
@@ -318,11 +353,17 @@ function exadataChartOption(card, colors, kind = 'line') {
                 return entries.map(entry => `${escape(entry.data?.at)}<br>${escape(entry.seriesName)}：${escape(exadataRaw(entry.data?.raw ?? null))} ${escape(exadataUnit(card.unit))}`).join('<br>');
             } },
         xAxis: { type: 'time', axisLabel: { color: colors.muted, fontSize: 10, hideOverlap: true }, axisLine: { lineStyle: { color: colors.line } }, splitLine: { show: false } },
-        yAxis: { type: 'value', scale: true, axisLabel: { color: colors.muted, fontSize: 10, formatter: chartNumber }, splitLine: { lineStyle: { color: colors.lineSubtle || colors.line, opacity: .62 } } },
-        series: exadataChartable(card) ? card.series.map(series => ({
+        yAxis: { type: 'value', scale: true, ...(exadataTrendMetric(card) ? { min: Math.min(0, ...trendValues), max: Math.max(100, ...trendValues) } : {}), axisLabel: { color: colors.muted, fontSize: 10, formatter: chartNumber }, splitLine: { lineStyle: { color: colors.lineSubtle || colors.line, opacity: .62 } } },
+        series: exadataChartable(card) ? card.series.map((series, index) => ({
             name: series.label, type: 'line', connectNulls: false, showSymbol: true, symbolSize: 4,
             lineStyle: { width: 2 }, areaStyle: card.series.length === 1 ? { opacity: 0.06 } : undefined,
             data: series.samples.map(sample => ({ value: [sample.observed_at, sample.quality === 'EMPTY' ? null : exadataNumeric(sample.value)], raw: sample.value, at: sample.observed_at })),
+            markLine: (() => {
+                const average = baselineAverage(series);
+                return average === null ? undefined : { silent: true, symbol: 'none',
+                    label: { show: true, position: 'insideEndTop', color: colors.muted, fontSize: 10, formatter: `${period === '1w' ? '7 天' : '30 天'}均值 ${chartNumber(average)}` },
+                    data: [{ yAxis: average, name: `${period === '1w' ? '7 天' : '30 天'}均值`, lineStyle: { type: 'dashed', color: palette[index % palette.length] } }] };
+            })(),
         })) : [],
     };
 }
