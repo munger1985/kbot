@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
+from .monitoring_native import MonitoringNativeBaseline
 
 
 class ExadataModel(BaseModel):
@@ -85,6 +86,38 @@ class ExadataMetricDefinition(ExadataModel):
     max_age_seconds: int
     threshold_policy: str
     status: ExadataStatusDefinition | None = None
+    baseline_supported: bool = False
+
+
+class ExadataBaselineQuery(ExadataModel):
+    component_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    metric_code: str = Field(min_length=3, max_length=256)
+    period: Literal["1w", "1m"] = "1w"
+
+
+class ExadataComparison(ExadataModel):
+    dimensions: dict[str, str]
+    observed_at: datetime
+    current: str
+    average: str
+    sample_count: int
+    difference: str
+    deviation_percent: str | None
+
+
+class ExadataBaseline(ExadataModel):
+    resource_id: UUID
+    component_id: str
+    metric_code: str
+    binding_id: UUID
+    binding_version: int
+    source_version: int
+    catalog_sha256: str
+    captured_at: datetime
+    unit: str | None
+    baseline: MonitoringNativeBaseline
+    current_samples: tuple[ExadataSample, ...] = ()
+    comparisons: tuple[ExadataComparison, ...] = ()
 
 
 class ExadataDeviceCoverage(ExadataModel):

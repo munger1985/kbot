@@ -28,8 +28,17 @@ def load_catalog():
                 raise ValueError("Exadata 状态目录引用未知或重复的指标")
             reviewed.add(code)
             by_code[code]["status"] = status
+    baseline_raw = root.joinpath("baseline.v1.json").read_bytes()
+    baseline = json.loads(baseline_raw)
+    if any(code not in by_code for code in baseline["metric_codes"]):
+        raise ValueError("Exadata 基线引用未知指标")
+    units = set(baseline["repository_unit_codes"])
+    for code, definition in by_code.items():
+        definition["baseline_supported"] = bool(definition["native_value_type"] == "NUMBER"
+            and not definition.get("status") and (code in baseline["metric_codes"]
+                or bool(definition["repository_unit_codes"]) and set(definition["repository_unit_codes"]) <= units))
     for profile in (*monitoring["profiles"], *diagnosis["profiles"]):
         if any(code not in by_code for code in profile["metric_codes"]):
             raise ValueError("Exadata 场景引用了未登记指标")
-    digest = hashlib.sha256(raw + devices_raw + status_raw + json.dumps([monitoring, diagnosis], sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(raw + devices_raw + status_raw + baseline_raw + json.dumps([monitoring, diagnosis], sort_keys=True).encode()).hexdigest()
     return metrics["version"], digest, by_code, monitoring["profiles"], diagnosis["profiles"]

@@ -439,6 +439,9 @@ def create_aiops_worker_probe(
                         AIOpsCapability.MONITORING_QUERY: MonitoringQueryAdapter(
                             monitoring_service=monitoring_service, exadata_service=exadata_service
                         ),
+                        AIOpsCapability.ACTIVE_DIAGNOSIS: MonitoringQueryAdapter(
+                            monitoring_service=monitoring_service, exadata_service=exadata_service
+                        ),
                     },
                 ),
                 turn_planning_service=TurnPlanningService(

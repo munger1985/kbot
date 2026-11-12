@@ -6802,6 +6802,121 @@
         "title": "EvidenceSourceStrategy",
         "type": "string"
       },
+      "ExadataBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/MonitoringNativeBaseline"
+          },
+          "binding_id": {
+            "format": "uuid",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "catalog_sha256": {
+            "title": "Catalog Sha256",
+            "type": "string"
+          },
+          "comparisons": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExadataComparison"
+            },
+            "title": "Comparisons",
+            "type": "array"
+          },
+          "component_id": {
+            "title": "Component Id",
+            "type": "string"
+          },
+          "current_samples": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExadataSample"
+            },
+            "title": "Current Samples",
+            "type": "array"
+          },
+          "metric_code": {
+            "title": "Metric Code",
+            "type": "string"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "source_version": {
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "resource_id",
+          "component_id",
+          "metric_code",
+          "binding_id",
+          "binding_version",
+          "source_version",
+          "catalog_sha256",
+          "captured_at",
+          "unit",
+          "baseline"
+        ],
+        "title": "ExadataBaseline",
+        "type": "object"
+      },
+      "ExadataBaselineQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "component_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Component Id",
+            "type": "string"
+          },
+          "metric_code": {
+            "maxLength": 256,
+            "minLength": 3,
+            "title": "Metric Code",
+            "type": "string"
+          },
+          "period": {
+            "default": "1w",
+            "enum": [
+              "1w",
+              "1m"
+            ],
+            "title": "Period",
+            "type": "string"
+          }
+        },
+        "required": [
+          "component_id",
+          "metric_code"
+        ],
+        "title": "ExadataBaselineQuery",
+        "type": "object"
+      },
       "ExadataCandidate": {
         "additionalProperties": false,
         "properties": {
@@ -6832,6 +6947,61 @@
           "members"
         ],
         "title": "ExadataCandidate",
+        "type": "object"
+      },
+      "ExadataComparison": {
+        "additionalProperties": false,
+        "properties": {
+          "average": {
+            "title": "Average",
+            "type": "string"
+          },
+          "current": {
+            "title": "Current",
+            "type": "string"
+          },
+          "deviation_percent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deviation Percent"
+          },
+          "difference": {
+            "title": "Difference",
+            "type": "string"
+          },
+          "dimensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "object"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dimensions",
+          "observed_at",
+          "current",
+          "average",
+          "sample_count",
+          "difference",
+          "deviation_percent"
+        ],
+        "title": "ExadataComparison",
         "type": "object"
       },
       "ExadataDeviceCoverage": {
@@ -7027,6 +7197,11 @@
             "const": "NONE",
             "title": "Aggregation",
             "type": "string"
+          },
+          "baseline_supported": {
+            "default": false,
+            "title": "Baseline Supported",
+            "type": "boolean"
           },
           "code": {
             "title": "Code",
@@ -29354,6 +29529,79 @@
           }
         },
         "summary": "Discover",
+        "tags": [
+          "Exadata OEM"
+        ]
+      }
+    },
+    "/internal/v1/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/baselines": {
+      "post": {
+        "operationId": "baseline_internal_v1_aiops_exadata_systems__system_id__resources__resource_id__sources__source_id__baselines_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "system_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "System Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExadataBaselineQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExadataBaseline"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Baseline",
         "tags": [
           "Exadata OEM"
         ]

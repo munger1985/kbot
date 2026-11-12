@@ -375,6 +375,11 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             f"{INTERNAL_API_V1}/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/diagnoses",
             payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
 
+    async def exadata_baseline(self, system_id: UUID, resource_id: UUID, source_id: UUID, payload: dict, *, auth_context: AuthContext):
+        return await self._json("POST",
+            f"{INTERNAL_API_V1}/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/baselines",
+            payload=payload, auth_context=auth_context)
+
     async def get_exadata_report(self, system_id: UUID, resource_id: UUID, source_id: UUID, report_id: UUID, *, auth_context: AuthContext):
         return await self._json("GET",
             f"{INTERNAL_API_V1}/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/reports/{report_id}",

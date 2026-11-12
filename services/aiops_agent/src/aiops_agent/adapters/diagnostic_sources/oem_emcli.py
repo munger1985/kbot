@@ -192,7 +192,7 @@ class OEMEMCLIClient:
         # setup 已认证并建立会话；noautologin 只禁止保存明文登录凭据。
         entry.initialized = True
 
-    async def read(self, context, target, definition, *, history, max_bytes):
+    async def read(self, context, target, definition, *, history, max_bytes, baseline_days=None):
         audited = load_catalog()[2].get(definition.get("code"))
         if audited != definition or target["targetType"] != definition["target_type"]:
             fail("SOURCE_QUERY_INVALID")
@@ -201,11 +201,14 @@ class OEMEMCLIClient:
             fail("SOURCE_TARGET_MISMATCH")
         if history and definition["native_value_type"] != "NUMBER":
             fail("SOURCE_METRIC_HISTORY_UNSUPPORTED")
+        if baseline_days is not None and (not history or type(baseline_days) is not int
+                or baseline_days not in (7, 30) or not definition.get("baseline_supported")):
+            fail("SOURCE_QUERY_INVALID")
         group, column = definition["selector"].split("/")
         arguments = ["get_metric_data", "-target_type=" + definition["target_type"], "-target_name=" + name,
                      "-metric_name=" + group, "-metric_column=" + column, "-json"]
         if history:
-            arguments.append("-last_n_days=1")
+            arguments.append("-last_n_days=" + str(baseline_days or 1))
         entry = self._session(context)
         async with entry.lock:
             try:

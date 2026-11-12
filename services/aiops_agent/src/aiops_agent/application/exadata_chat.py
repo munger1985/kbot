@@ -11,10 +11,11 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from platform_core.contracts.aiops import AIOpsCapability
-from platform_core.contracts.aiops.exadata import ExadataQuery
+from platform_core.contracts.aiops.exadata import ExadataQuery, ExadataBaselineQuery
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
 from aiops_agent.application.exadata_catalog import load_catalog
+from aiops_agent.application.exadata_analysis import analyze_view, baseline_observations
 
 
 class ExadataChatQuery(BaseModel):
@@ -30,6 +31,7 @@ class ExadataChatQuery(BaseModel):
     component_names: tuple[str, ...] = Field(default=(), max_length=8)
     source_name: str | None = Field(default=None, max_length=256)
     mode: Literal["LATEST_SNAPSHOT", "HISTORY"] = "LATEST_SNAPSHOT"
+    baseline_period: Literal["1w", "1m"] | None = None
 
     @model_validator(mode="after")
     def validate_metrics(self):
@@ -47,7 +49,8 @@ class ExadataChatQuery(BaseModel):
 
 def exadata_parameters(plan) -> dict[str, Any] | None:
     """只识别路由器的结构化类型，不检查用户文本关键词。"""
-    steps = [step for step in plan.steps if step.capability == AIOpsCapability.MONITORING_QUERY]
+    steps = [step for step in plan.steps if step.capability in {
+        AIOpsCapability.MONITORING_QUERY, AIOpsCapability.ACTIVE_DIAGNOSIS}]
     queries = [dict(step.parameters) for step in steps if step.parameters.get("resource_type_key") == "EXADATA"]
     if not queries:
         return None
@@ -57,12 +60,14 @@ def exadata_parameters(plan) -> dict[str, Any] | None:
     return queries[0]
 
 
-def exadata_parameter_contract() -> dict[str, Any]:
+def exadata_parameter_contract(*, diagnosis=False) -> dict[str, Any]:
     version, digest, metrics, _, _ = load_catalog()
     return {
         "parameters_schema": {"oneOf": [
-            {"title": "现有非 Exadata 监控", "type": "object", "properties": {
-                "window": {"type": "string", "enum": ["15m", "1h", "6h", "24h"]}}, "additionalProperties": False},
+            ({"title": "现有非 Exadata 诊断参数", "type": "object", "not": {"required": ["resource_type_key"],
+                "properties": {"resource_type_key": {"const": "EXADATA"}}}} if diagnosis else
+             {"title": "现有非 Exadata 监控", "type": "object", "properties": {
+                "window": {"type": "string", "enum": ["15m", "1h", "6h", "24h"]}}, "additionalProperties": False}),
             ExadataChatQuery.model_json_schema(),
         ]},
         "policy": (
@@ -71,7 +76,11 @@ def exadata_parameter_contract() -> dict[str, Any]:
             "不得设置 resource_type_key=EXADATA。只有所问资源确实是 EXADATA 时使用专用分支。"
             "用户询问 Exadata 具体指标时必须设置 resource_type_key=EXADATA、query_kind=METRIC，"
             "从 metric_catalog 按语义选择准确的 metric_codes，不得替换成数据库总览。"
-            "同一问题所问的多个 Exadata 指标放入同一个 MONITORING_QUERY 步骤的 metric_codes，不拆成多个同能力步骤。"
+            "同一问题所问的多个 Exadata 指标放入同一个步骤的 metric_codes，不拆成多个同能力步骤。"
+            "只询问指标读数使用 MONITORING_QUERY；要求分析、诊断、定位异常或解释变化使用 ACTIVE_DIAGNOSIS，"
+            "Exadata 分支仅基于 OEM 指标只读分析，不运行数据库诊断，不创建变更动作。"
+            "可用 baseline_period=1w/1m 选择7天/30天均值比较；主动分析默认7天，明确不比较则设null。"
+            "基线窗口与 HISTORY 取样窗口独立，询问均值比较不把time_range扩为7/30天历史。"
             "区分当前读数、上限、下限、累计量和速率；未询问的阈值不附带查询。"
             "找不到对应指标使用 UNRESOLVED；只有明确要求概览才用 OVERVIEW。"
             "即使 authorized_business_systems 没有 EXADATA，也保留用户的 EXADATA 类型意图，"
@@ -86,7 +95,7 @@ def exadata_parameter_contract() -> dict[str, Any]:
         "catalog_version": version,
         "catalog_sha256": digest,
         "metric_catalog": [{key: item[key] for key in
-                            ("code", "display_name", "target_type", "scene", "semantics")}
+                            ("code", "display_name", "target_type", "scene", "semantics", "baseline_supported")}
                            for item in metrics.values()],
     }
 
@@ -147,7 +156,7 @@ class ExadataChatReader:
         self._monitoring = monitoring_service
         self._exadata = exadata_service
 
-    async def read(self, *, parameters, plan, resources, scope):
+    async def read(self, *, parameters, plan, resources, scope, analyze=False):
         try:
             query = ExadataChatQuery.model_validate(parameters)
         except ValueError:
@@ -176,7 +185,7 @@ class ExadataChatReader:
         groups = {}
         for code in codes:
             groups.setdefault(metrics[code]["scene"], []).append(code)
-        evidence, lines, gaps = [], ["### Exadata 指标查询"], []
+        evidence, lines, gaps = [], ["### Exadata 指标分析" if analyze else "### Exadata 指标查询"], []
         deadline = asyncio.get_running_loop().time() + min(plan.budget.timeout_seconds, 55)
 
         def remaining_seconds():
@@ -219,6 +228,13 @@ class ExadataChatReader:
                                      "business_system_id": str(resource["business_system_id"]),
                                      "source_id": str(source.source_id), "summary": summary,
                                      "snapshot": view.model_dump(mode="json")})
+                    if analyze:
+                        findings = analyze_view(view)
+                        evidence[-1]["snapshot"]["analysis_findings"] = [item.model_dump(mode="json") for item in findings]
+                        for finding in findings:
+                            lines.append(f"  - 分析 [C{index}]：{_text(finding.detail)}")
+                        if any(item.severity == "WARNING" for item in findings):
+                            lines.append("  - 已定位上述组件状态异常；尚不足以确定整机故障或数据库根因。")
                     bad_gaps = [gap for gap in view.gaps if gap.code not in {
                         "THRESHOLDS_UNVERIFIED", "HISTORY_UNAVAILABLE", "MEMBERSHIP_SCOPE",
                         "HISTORY_RESOLUTION_PROVIDER_MANAGED"}]
@@ -229,11 +245,53 @@ class ExadataChatReader:
                         component = f"{_text(member_names.get(gap.component_id, gap.component_id))} · " if gap.component_id else ""
                         metric = f"`{gap.metric_code}` · " if gap.metric_code else ""
                         lines.append(f"  - 采集缺口：{component}{metric}{_text(gap.code)}；{_text(gap.detail)}")
+            period = query.baseline_period
+            if analyze and "baseline_period" not in query.model_fields_set:
+                period = "1w"
+            # 先采集所有已选当前指标，再以剩余预算比较基线，避免历史读取挤占具体指标。
+            if period:
+                for index, item in enumerate(evidence, 1):
+                    snapshot = item["snapshot"]
+                    pairs = list(dict.fromkeys((sample["component_id"], sample["metric_code"])
+                        for sample in snapshot["samples"] if metrics[sample["metric_code"]].get("baseline_supported")))
+                    snapshot["analysis_baselines"] = []
+                    for component_id, code in pairs:
+                        if remaining < 2:
+                            gaps.append("EXADATA_QUERY_BUDGET_EXCEEDED")
+                            break
+                        remaining -= 2
+                        try:
+                            result = await asyncio.wait_for(self._exadata.baseline(scope=scope,
+                                system_id=UUID(item["business_system_id"]), resource_id=UUID(item["resource_id"]),
+                                source_id=UUID(item["source_id"]), query=ExadataBaselineQuery(
+                                    component_id=component_id, metric_code=code, period=period)), remaining_seconds())
+                            snapshot["analysis_baselines"].append(result.model_dump(mode="json"))
+                            name = next(member["display_name"] for member in snapshot["members"] if member["target_id"] == component_id)
+                            lines.append(f"  - {_text(name)} · {_text(metrics[code]['display_name'])} · {'7天' if period == '1w' else '30天'}窗口 [C{index}]：")
+                            lines.extend(f"    - {_text(line)}" for line in baseline_observations(result))
+                            if result.baseline.unavailable_reason or not result.comparisons:
+                                gaps.append("EXADATA_BASELINE_UNAVAILABLE")
+                        except (AIOpsApplicationError, DiagnosticSourceAdapterError, TimeoutError):
+                            lines.append(f"  - `{code}` 历史均值比较未完成；当前采样证据保留 [C{index}]。")
+                            gaps.append("EXADATA_BASELINE_UNAVAILABLE")
         except (AIOpsApplicationError, DiagnosticSourceAdapterError, TimeoutError) as exc:
             message = exc.message if isinstance(exc, AIOpsApplicationError) else "OEM 读取或成员复核失败，请稍后重试"
             lines.append(f"- Exadata 专用查询未完成：{_text(message)}；未回退数据库总览。")
             gaps.append("EXADATA_QUERY_UNAVAILABLE")
-        lines.append("单位仅采用 OEM 返回值；未验证阈值或状态字典，不据此判定硬件健康。")
+        if analyze:
+            scenes = {metrics[code]["scene"] for code in codes}
+            suggestions = {"overview": "检查异常设备的 OEM 事件及服务日志，区分管理可达性、硬件健康和数据库可用性",
+                "cell": "在相同时段核对 CPU、内存、运行队列与 IO 负载，确认变化是否伴随资源压力",
+                "disk": "同一 Cell/磁盘类型核对 IOPS、吞吐、利用率与单请求延迟，避免将负载增加直接判断为磁盘故障",
+                "flash": "核对 Flash 命中率、Flash/磁盘吞吐与读写延迟，确认缓存命中变化是否伴随 IO 等待",
+                "iorm": "按数据库、PDB 或消费组核对等待与吞吐，确认限流策略和资源竞争，不跨消费组平均",
+                "network": "按接口核对吞吐、丢弃/重传与端口状态，并检查同时间原厂事件",
+                "capacity": "按磁盘组或设备核对容量与使用比例，结合增长历史评估余量，不将容量值等同故障"}
+            lines.append("下一步只读排查：")
+            lines.extend(f"- {suggestions[scene]}。" for scene in sorted(scenes) if scene in suggestions)
+        lines.append("单位采用 OEM 原始单位；状态按已审核字典解释，未知编码不判定可用性。")
+        if query.baseline_period or analyze:
+            lines.append("历史均值为窗口内实际留存采样的算术平均，覆盖率未知；不跨组件/维度合并，不补造历史。")
         if query.mode == "HISTORY":
             lines.append("历史分辨率由 OEM 留存策略决定；各组件/维度分别列示末次采样和采样数，不合并求均值。")
         if "EXADATA_QUERY_BUDGET_EXCEEDED" in gaps:
@@ -254,7 +312,14 @@ class ExadataChatReader:
             # 同一时间的末条为空时也不得从前条回填。
             latest = max(reversed(samples), key=lambda sample: sample.observed_at)
             value = "无读数" if latest.value in (None, "") else _text(latest.value)
+            status = definitions[code].status
+            if status and latest.value not in (None, ""):
+                entry = next((item for raw, item in status.values.items()
+                              if raw.casefold() == latest.value.strip().casefold()), None)
+                value = entry.label if entry and latest.quality == "OBSERVED" else "未知"
             unit_text = f" {_text(unit)}" if unit and unit.strip() else "（OEM 未返回单位）"
+            if status:
+                unit_text = ""
             dimension_text = f"；维度：{_text(json.dumps(dict(dimensions), ensure_ascii=False))}" if dimensions else ""
             quality = {"OBSERVED": "已采集", "EMPTY": "末次采样为空", "STALE": "旧采样，非当前有效值", "TRUNCATED": "来源数据截断"}[latest.quality]
             lines.append(f"  - {_text(members.get(component, component))} · {_text(definitions[code].display_name)}"

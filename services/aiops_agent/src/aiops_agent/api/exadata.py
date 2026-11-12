@@ -7,7 +7,7 @@ from aiops_agent.application.configuration import ConfigurationScope
 from aiops_agent.application.exadata import ExadataOEMService
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
 from aiops_agent.application.errors import AIOpsApplicationError
-from platform_core.contracts.aiops.exadata import ExadataDiscovery, ExadataQuery, ExadataView, ExadataReport
+from platform_core.contracts.aiops.exadata import ExadataDiscovery, ExadataQuery, ExadataView, ExadataReport, ExadataBaselineQuery, ExadataBaseline
 
 router = APIRouter(prefix="/internal/v1/aiops/exadata", tags=["Exadata OEM"])
 
@@ -57,6 +57,11 @@ async def diagnose(system_id: UUID, resource_id: UUID, source_id: UUID, body: Ex
                    scope: RunScope, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")]):
     return await read(service.diagnose(scope=scope, system_id=system_id, resource_id=resource_id,
         source_id=source_id, query=body, idempotency_key=idempotency_key))
+
+
+@router.post("/systems/{system_id}/resources/{resource_id}/sources/{source_id}/baselines", response_model=ExadataBaseline)
+async def baseline(system_id: UUID, resource_id: UUID, source_id: UUID, body: ExadataBaselineQuery, service: Service, scope: RunScope):
+    return await read(service.baseline(scope=scope, system_id=system_id, resource_id=resource_id, source_id=source_id, query=body))
 
 
 @router.get("/systems/{system_id}/resources/{resource_id}/sources/{source_id}/reports/{report_id}", response_model=ExadataReport)

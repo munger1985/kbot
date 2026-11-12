@@ -1325,6 +1325,8 @@ class TurnPlannerService:
                 "allowed_capabilities": list(context["capabilities"]),
                 "capability_parameter_contracts": {
                     "MONITORING_QUERY": exadata_parameter_contract(),
+                    "ACTIVE_DIAGNOSIS": {**{key: value for key, value in exadata_parameter_contract(diagnosis=True).items()
+                        if key != "metric_catalog"}, "metric_catalog_ref": "MONITORING_QUERY.metric_catalog"},
                     "ALERT_QUERY": {
                         "parameters_schema": AlertQueryParameters.model_json_schema(),
                         "policy": "查询当前健康或当前告警使用CURRENT，默认仅最近1小时观测且未恢复/未关闭的入库告警；不混入旧记录。用户明确查历史、已恢复或指定过去时段时使用HISTORY，默认最近24小时。用户指定的时间统一填入time_range，可按status/severity筛选；不得因会话历史存在旧告警就改为历史查询。入库信号不是实时重查，RESOLVED表示告警恢复，不是人工处置完成。",
@@ -1430,6 +1432,13 @@ class TurnPlannerService:
                     self._conversation_starter_catalog.version
                 ),
                 "eligible_capabilities": list(candidates),
+                **({"resource_scope_policy": "eligible_capabilities 仅为数据库功能。所问对象是 Exadata 硬件、Cell、DB Server 主机或交换机设备指标分析时必须 NO_MATCH，交由通用路由的 Exadata 专用能力；不得改为数据库诊断。",
+                    "authorized_exadata_resources": [
+                        {"system_name": system["display_name"], "resource_name": resource["display_name"]}
+                        for system in context.get("systems", ()) for resource in system.get("resources", ())
+                        if resource.get("resource_type_key") == "EXADATA"]}
+                   if any(resource.get("resource_type_key") == "EXADATA"
+                          for system in context.get("systems", ()) for resource in system.get("resources", ())) else {}),
             },
             deadline=datetime.fromisoformat(context["deadline_at"]) if context.get("deadline_at") else None,
             idempotency_key=(
@@ -1503,7 +1512,7 @@ class TurnPlannerService:
                     scope_type=ScopeType.RESOURCE_SET, resolution_basis=(reason,),
                     authorization_snapshot_hash=authorization_hash), {"execution_targets": []}, None)
             scope, internal = self._resolved_scope(selected, "", authorization_hash,
-                ("AUTHORIZED_EXADATA_SCOPE",), AIOpsCapability.ACTIVE_DIAGNOSIS in requested)
+                ("AUTHORIZED_EXADATA_SCOPE",), False)
             if scope.status == ScopeResolutionStatus.RESOLVED:
                 scope = scope.model_copy(update={"scope_type": ScopeType.RESOURCE if len(scope.resources) == 1 else ScopeType.RESOURCE_SET,
                     "resolution_basis": ("AUTHORIZED_EXADATA_SCOPE",), "confidence": 1.0})
@@ -1870,7 +1879,7 @@ class TurnPlannerService:
         capabilities = tuple(
             AIOpsCapability(item) for item in plan.requested_capabilities
         )
-        if AIOpsCapability.ACTIVE_DIAGNOSIS in capabilities:
+        if AIOpsCapability.ACTIVE_DIAGNOSIS in capabilities and exadata_parameters(plan) is None:
             ready = [
                 item
                 for item in internal_scope.get("execution_targets", [])

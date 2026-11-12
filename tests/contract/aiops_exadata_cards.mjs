@@ -164,11 +164,19 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [], calls = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('https://fonts.**', route => route.abort())
-  let fail = false, unavailable = false, providerError = false, stateFixture = false, devicesFixture = false
+  let fail = false, unavailable = false, providerError = false, stateFixture = false, devicesFixture = false, baselineFixture = false, baselineFailure = false, slowWeek = false
   await page.route('**/api/v1/apps/aiops/**', async route => {
     const request = route.request(), body = request.postDataJSON(); calls.push({ body, headers: request.headers(), url: request.url() })
     if (!request.headers()['content-type']?.includes('application/json')) return route.fulfill({ status: 422, json: { detail: '请求体必须为 JSON' } })
     if (fail) return route.fulfill({ status: 502, json: { detail: '模拟来源读取失败' } })
+    if (request.url().endsWith('/baselines')) {
+      if (baselineFailure) return route.fulfill({ status: 502, json: { detail: '模拟历史均值失败，当前采样保留' } })
+      if (slowWeek && body.period === '1w') await new Promise(resolve => setTimeout(resolve, 400))
+      const memory = body.metric_code.endsWith('memory_utilization')
+      return route.fulfill({ json: { component_id: body.component_id, metric_code: body.metric_code, binding_id: 'binding', binding_version: 1, source_version: 2, catalog_sha256: 'c'.repeat(64), unit: '%', captured_at: overview.captured_at,
+        baseline: { period: body.period, start: '2026-10-12T12:00:00Z', end: overview.captured_at, unavailable_reason: null, note: '留存均值' },
+        comparisons: [{ dimensions: {}, observed_at: overview.samples[3].observed_at, current: memory ? '0' : '27.210000000000001', average: memory ? '0' : '20', sample_count: 7, difference: memory ? '0' : '7.210000000000001', deviation_percent: memory ? null : '36.050000000000005' }] } })
+    }
     let result = clone(overview)
     if (body.scene === 'cell') {
       result.definitions = [...overview.definitions, ...Array.from({ length: 7 }, (_, index) => metric(`Cell_Metric/fixture_${index}`))]
@@ -196,6 +204,10 @@ try {
     if (unavailable) { result.samples = []; result.gaps.push({ component_id: 'cell-a', metric_code: cpu.code, code: 'NO_DATA', detail: '无采样，不按零值显示' }) }
     if (providerError) { result.samples = []; result.gaps = [{ component_id: 'cell-a', metric_code: cpu.code, code: 'SOURCE_PROVIDER_ERROR', detail: 'OEM 服务端 HTTP 5xx' }] }
     result.query_mode = body.mode
+    if (baselineFixture) {
+      Object.assign(result, { binding_id: 'binding', binding_version: 1, source_version: 2, catalog_sha256: 'c'.repeat(64) })
+      result.definitions = result.definitions.map(item => ({ ...item, baseline_supported: [cpu.code, memory.code].includes(item.code) }))
+    }
     if (request.url().endsWith('/diagnoses')) result = { report_id: 'fixture-report', status: 'INCONCLUSIVE', evidence: result, findings: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '不能判定健康' }] }
     return route.fulfill({ json: result })
   })
@@ -301,6 +313,29 @@ try {
   await expect(page.locator('[role="alert"]')).toContainText('模拟来源读取失败')
   await expect(page.locator('.exadata-metric-card')).toHaveCount(0)
   await expect(page.locator('.exadata-status-row')).toHaveCount(0)
+  fail = false; providerError = false; baselineFixture = true
+  await page.locator('[data-component]').selectOption('')
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(2)
+  await expect(page.locator('.exadata-baseline')).toHaveCount(2)
+  await expect(cpuCard.locator('.exadata-baseline')).toContainText('7 天留存均值 20')
+  await expect(cpuCard.locator('.exadata-baseline')).toContainText('36.050000000000005%')
+  await expect(page.locator(`[data-metric-code="${memory.code}"] .exadata-baseline`)).toContainText('均值为零，相对偏离不可定义')
+  assert.ok(calls.filter(call => call.url.endsWith('/baselines')).every(call => [cpu.code, memory.code].includes(call.body.metric_code)), '状态不读取历史均值')
+  await page.locator('[data-baseline]').selectOption('1m')
+  await expect(cpuCard.locator('.exadata-baseline')).toContainText('30 天留存均值')
+  await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-baseline.png`), fullPage: true })
+  slowWeek = true
+  await page.locator('[data-baseline]').selectOption('1w')
+  await page.locator('[data-baseline]').selectOption('1m')
+  await expect(cpuCard.locator('.exadata-baseline')).toContainText('30 天留存均值')
+  await page.waitForTimeout(500)
+  await expect(cpuCard.locator('.exadata-baseline')).not.toContainText('7 天留存均值')
+  baselineFailure = true
+  await page.locator('[data-baseline]').selectOption('1w')
+  await expect(cpuCard.locator('.exadata-baseline')).toContainText('模拟历史均值失败')
+  await expect(cpuCard.locator('.exadata-card-value strong')).toHaveText('27.210000000000001')
+  await page.locator('[data-baseline]').selectOption('')
+  await expect(page.locator('.exadata-baseline')).toHaveCount(0)
   assert.ok(calls.every(call => call.headers['content-type']?.includes('application/json')), `使用原有请求封装的 JSON 合同：${JSON.stringify(calls.map(call => ({url:call.url,type:call.headers['content-type']})))}`)
   assert.deepEqual(errors, [])
   await page.close()

@@ -529,7 +529,8 @@ class MonitoringQueryAdapter:
             selected = [item for item in resources
                         if (str(item["business_system_id"]), str(item["resource_id"])) in allowed]
             result = await self._exadata.read(parameters=parameters or {"resource_type_key": "EXADATA", "query_kind": "UNRESOLVED"},
-                plan=plan, resources=selected, scope=_scope(internal_scope))
+                plan=plan, resources=selected, scope=_scope(internal_scope),
+                analyze=capability == AIOpsCapability.ACTIVE_DIAGNOSIS)
             evidence = tuple({"source_kind": "MONITORING", "label": f"C{index}", **item}
                              for index, item in enumerate(result.evidence, 1))
             return CapabilityResult(capability, result.gap_code is None, result.markdown, result.gap_code, evidence)

@@ -1,14 +1,14 @@
 """核验原厂 EMCLI 指标身份、具名维度和原始时间；不生成模拟历史。"""
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from .oem_native import _fail, _hash, parse_metric_selector
 
 
-def parse_values(payload, *, target, definition, timezone, captured_at, start=None, end=None, limit=256):
+def parse_values(payload, *, target, definition, timezone, captured_at, start=None, end=None, limit=256, strict_history=False):
     if payload == {}:
         return (), (), False
     group, column = parse_metric_selector(definition["selector"])
@@ -88,6 +88,8 @@ def parse_values(payload, *, target, definition, timezone, captured_at, start=No
                         _fail("SOURCE_RESPONSE_INVALID")
                 if start is not None:
                     if start <= last <= end:
+                        if strict_history and (identity, last) in values:
+                            _fail("SOURCE_ITEM_AMBIGUOUS")
                         values[(identity, last)] = (last, value, labels)
                 elif identity not in latest or last >= latest[identity][0]:
                     # 原厂同一时间末条空值仍是空值，不能回填前一条正常值。
@@ -97,7 +99,7 @@ def parse_values(payload, *, target, definition, timezone, captured_at, start=No
     return tuple((when, value) for when, value, _ in ordered[:limit]), tuple(labels for _, _, labels in ordered[:limit]), len(ordered) > limit
 
 
-async def query_emcli(adapter, request, definition, target_type, *, history):
+async def query_emcli(adapter, request, definition, target_type, *, history, baseline=False):
     client = getattr(adapter, "_exadata_emcli_client", None)
     if client is None:
         _fail("SOURCE_EMCLI_UNAVAILABLE")
@@ -105,9 +107,13 @@ async def query_emcli(adapter, request, definition, target_type, *, history):
         _fail("SOURCE_TARGET_MISMATCH")
     if history and definition["native_value_type"] != "NUMBER":
         _fail("SOURCE_METRIC_HISTORY_UNSUPPORTED")
+    days = request.baseline_days if baseline else None
+    if baseline and (type(days) is not int or days not in (7, 30) or not history
+                     or not definition.get("baseline_supported")):
+        _fail("SOURCE_QUERY_INVALID")
     if history and (request.window_start is None or request.window_end is None
             or request.window_start.tzinfo is None or request.window_end.tzinfo is None
-            or not 0 < (request.window_end - request.window_start).total_seconds() <= 3600):
+            or not 0 < (request.window_end - request.window_start).total_seconds() <= (days * 86400 if baseline else 3600)):
         _fail("SOURCE_QUERY_INVALID")
     adapter._remaining_response_bytes = request.max_response_bytes
     target, target_hash = await adapter._native_target(request)
@@ -133,11 +139,26 @@ async def query_emcli(adapter, request, definition, target_type, *, history):
             or len({key["name"] for key in keys}) != len(keys)
             or {key["name"] for key in keys} != set(definition["keys"])):
         _fail("SOURCE_METRIC_DIMENSION_MISMATCH")
+    options = {"baseline_days": days} if baseline else {}
     payload, digest = await client.read(adapter.context, target, definition, history=history,
-                                       max_bytes=request.max_response_bytes // 2)
+                                       max_bytes=request.max_response_bytes // 2, **options)
     captured_at = datetime.now(UTC)
     points, dimensions, truncated = parse_values(payload, target=target, definition=definition,
         timezone=adapter.context.config["exadata_emcli_timezone"], captured_at=captured_at,
-        start=request.window_start if history else None, end=request.window_end if history else None)
+        start=request.window_start if history else None, end=request.window_end if history else None,
+        limit=10000 if baseline else 256, strict_history=baseline)
+    if baseline:
+        totals = {}
+        with localcontext() as context:
+            context.prec = 4096
+            for (_, value), labels in zip(points, dimensions, strict=True):
+                if value in (None, ""):
+                    continue
+                identity = tuple(sorted(labels.items()))
+                total, count = totals.get(identity, (Decimal(0), 0))
+                totals[identity] = (total + Decimal(value), count + 1)
+        return {"series": tuple({"dimensions": dict(identity), "total": str(total), "sample_count": count}
+                    for identity, (total, count) in totals.items()), "unit": unit, "truncated": truncated,
+                "response_sha256": _hash(target_hash, metadata_hash, digest)}
     return {"points": points, "dimensions": dimensions, "unit": unit, "native_value_type": native_type,
         "captured_at": captured_at, "truncated": truncated, "response_sha256": _hash(target_hash, metadata_hash, digest)}

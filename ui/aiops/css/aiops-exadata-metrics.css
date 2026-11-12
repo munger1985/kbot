@@ -75,3 +75,6 @@
 .exadata-oem .exadata-device h4 { margin:0; color:var(--ink); overflow-wrap:anywhere; font-size:var(--type-table); }
 .exadata-oem .exadata-device header span { color:var(--muted); font-size:var(--type-meta); }
 .exadata-oem .exadata-device-hint,.exadata-oem .exadata-device-resource { margin:0; padding:var(--space-2,8px) var(--form-label-control-gap); color:var(--muted); font-size:var(--type-meta); overflow-wrap:anywhere; }
+.exadata-oem .exadata-baseline { border-top:1px solid var(--line); padding:var(--form-label-control-gap); color:var(--ink); font-size:var(--type-meta); overflow-wrap:anywhere; }
+.exadata-oem .exadata-baseline p { margin:0 0 var(--space-2,8px); }
+.exadata-oem .exadata-baseline small { color:var(--muted); }

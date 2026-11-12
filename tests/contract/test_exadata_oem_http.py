@@ -24,7 +24,7 @@ def path(name, system, resource, source, report=None):
 
 @pytest.mark.parametrize("name,method", [
     ("discover_exadata", "POST"), ("get_exadata_view", "POST"),
-    ("diagnose_exadata", "POST"), ("get_exadata_report", "GET")])
+    ("diagnose_exadata", "POST"), ("get_exadata_baseline", "POST"), ("get_exadata_report", "GET")])
 def test_exadata_public_endpoints_require_authentication(name, method):
     factory = getattr(main_app, "create_ammolite_main_api_app", None) or main_app.create_main_api_app
     app = factory(enable_access_log=False)
@@ -36,6 +36,7 @@ def test_exadata_public_endpoints_require_authentication(name, method):
 @pytest.mark.parametrize("name,method,permission", [
     ("discover_exadata", "POST", "aiops:diagnostic_source_manage"),
     ("get_exadata_view", "POST", "aiops:use"), ("diagnose_exadata", "POST", "aiops:use"),
+    ("get_exadata_baseline", "POST", "aiops:use"),
     ("get_exadata_report", "GET", "aiops:use")])
 def test_permissions_explicitly_registered(name, method, permission):
     if hasattr(ops, "AIOPS_ROUTE_PERMISSIONS"):

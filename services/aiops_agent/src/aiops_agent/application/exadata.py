@@ -16,12 +16,15 @@ from aiops_agent.application.configuration.exadata_binding import exadata_source
 from aiops_agent.application.configuration.common import add_configuration_event
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
 from .exadata_catalog import load_catalog
+from .exadata_baseline import ExadataBaselineMixin
+from .exadata_analysis import analyze_view
 
 
-class ExadataOEMService:
+class ExadataOEMService(ExadataBaselineMixin):
     def __init__(self, configuration):
         self.configuration = configuration
         self.version, self.digest, self.metrics, self.profiles, self.diagnosis_profiles = load_catalog()
+        self._baseline_cache = {}
 
     async def discover(self, *, scope, source_id):
         async with self.configuration._uow_factory() as uow:
@@ -194,6 +197,7 @@ class ExadataOEMService:
             query=query, _diagnosis=True)
         findings = [ExadataFinding(code=gap.code, severity="INCONCLUSIVE", component_id=gap.component_id,
             metric_code=gap.metric_code, detail=gap.detail) for gap in view.gaps]
+        findings.extend(analyze_view(view))
         for index, sample in enumerate(view.samples):
             if sample.quality != "OBSERVED":
                 findings.append(ExadataFinding(code=sample.quality, severity="INCONCLUSIVE",
@@ -209,7 +213,8 @@ class ExadataOEMService:
             findings.append(ExadataFinding(code="OBSERVED_RANGE_IN_PAGE", severity="INCONCLUSIVE", metric_code=code,
                 evidence_indexes=tuple(dict.fromkeys((low[1], high[1]))),
                 detail=f"本页同指标、同原生单位的最小值 {low[0]}，最大值 {high[0]} {unit}；仅定位观察样本，不代表历史变化或故障阈值"))
-        report = ExadataReport(report_id=uuid7(), resource_id=resource_id, status="INCONCLUSIVE",
+        report = ExadataReport(report_id=uuid7(), resource_id=resource_id,
+            status="FINDINGS" if any(item.severity in {"WARNING", "CRITICAL"} for item in findings) else "INCONCLUSIVE",
             findings=tuple(findings), evidence=view, created_at=datetime.now(UTC))
         async def handler(uow, now):
             frozen, _ = await self._freeze(uow, scope, system_id, resource_id, source_id)

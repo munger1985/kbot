@@ -1,0 +1,14 @@
+{
+  "version": "exadata-baseline-v1",
+  "repository_unit_codes": ["PERCENTAGE", "IOSEC", "MBPS", "BPS", "KBPS", "MILLISECREQUEST", "GB"],
+  "metric_codes": [
+    "oracle_exadata.Cell_Metric.temperature",
+    "oracle_exadata.Cell_Metric.cl_runq",
+    "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_io_load",
+    "oracle_exadata.CellDisk_Metric.cd_io_load",
+    "oracle_exadata.IORMDB_Metric.db_io_load",
+    "oracle_exadata.IORM_PDB_Metric.pdb_io_load",
+    "oracle_exadata.HostInterConnect_Statistics.c_rdma_retry_latency"
+  ],
+  "policy": "仅 NUMBER 且非状态，全部原生单位在正向审核集合内，或精确指标编码已审核；累计计数、配置、上下限和未知语义不参与。"
+}

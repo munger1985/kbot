@@ -456,3 +456,52 @@ def test_editing_exadata_transport_preserves_independently_managed_standard_mapp
         assert result.status == "DISABLED" and result.connectivity_version == 2
         uow.commit.assert_awaited_once()
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("days", [7, 30])
+def test_baseline_cli_fixed_days_and_audited_metric_only(tmp_path, days):
+    async def run():
+        client = OEMEMCLIClient(executable=sys.executable, session_root=tmp_path / "sessions")
+        client._initialize = AsyncMock()
+        client._run = AsyncMock(return_value=b"{}")
+        try:
+            await client.read(context(), TARGET, definition(), history=True, max_bytes=262144, baseline_days=days)
+            args = client._run.call_args.args[1]
+            assert "-last_n_days=" + str(days) in args
+            for invalid in [1, 6, 31, True, "7"]:
+                with pytest.raises(DiagnosticSourceAdapterError):
+                    await client.read(context(), TARGET, definition(), history=True, max_bytes=262144, baseline_days=invalid)
+            with pytest.raises(DiagnosticSourceAdapterError):
+                await client.read(context(), TARGET, definition("FlashCache_Metric/default_hits"),
+                                  history=True, max_bytes=262144, baseline_days=days)
+            assert client._run.await_count == 1
+        finally:
+            await client.aclose()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("days", [7, 30])
+def test_keyed_emcli_baseline_preserves_sample_intervals_and_dimension_means(days):
+    async def run():
+        metric = definition()
+        body = payload("10")
+        first = body["data_columns"][0]["keyValues"][0]
+        first["values"].append({"First Collection Time": "2026-11-11 01:00:00",
+            "Last Collection Time": "2026-11-11 01:30:00", "Value": "20"})
+        value, _ = adapter(TARGET, {"name": metric["selector"].split("/")[0],
+            "keys": [{"name": key} for key in metric["keys"]], "metrics": [{"name": "avg_cd_io_load", "dataType": "NUMBER", "unitDisplayName": "%"}]})
+        value.context = value.context.model_copy(update={"config": {"exadata_emcli_timezone": "UTC"}})
+        value._exadata_emcli_client = SimpleNamespace(read=AsyncMock(return_value=(body, "e"*64)))
+        request = ExadataMetricRead(source_locator_key="b"*32, window_start=NOW-timedelta(days=days), window_end=NOW, baseline_days=days)
+        result = await query_emcli(value, request, metric, "oracle_exadata", history=True, baseline=True)
+        assert result["series"][0]["total"] == "30" and result["series"][0]["sample_count"] == 2
+        assert result["series"][0]["dimensions"] == {"celldisk_type": "SIM_celldisk_type"}
+        assert value._exadata_emcli_client.read.call_args.kwargs["baseline_days"] == days
+        with pytest.raises(DiagnosticSourceAdapterError):
+            await query_emcli(value, request, metric, "oracle_exadata", history=True)
+        first["values"].append(first["values"][0])
+        with pytest.raises(DiagnosticSourceAdapterError) as error:
+            parse_values(body, target=TARGET, definition=metric, timezone="UTC", captured_at=NOW,
+                start=request.window_start, end=request.window_end, strict_history=True)
+        assert error.value.code == "SOURCE_ITEM_AMBIGUOUS"
+    asyncio.run(run())

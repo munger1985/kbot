@@ -108,3 +108,16 @@ class OEMExadata:
         return await self.query_native_metric(request, metric_name=definition["selector"], limit=256,
             _expected_target_type=target_type, _expected_keys=tuple(definition["keys"]),
             _paginate=True, _resource_samples=True)
+
+    @exadata_metric_read
+    async def exadata_baseline(self, request, definition, target_type):
+        if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
+            target_error("SOURCE_CAPABILITY_FORBIDDEN")
+        if not definition.get("baseline_supported") or type(request.baseline_days) is not int or request.baseline_days not in (7, 30):
+            target_error("SOURCE_QUERY_INVALID")
+        if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI" and definition["keys"]:
+            from .oem_exadata_emcli import query_emcli
+            return await query_emcli(self, request, definition, target_type, history=True, baseline=True)
+        return await self.query_native_metric(request, metric_name=definition["selector"], limit=1000,
+            _expected_target_type=target_type, _expected_keys=tuple(definition["keys"]),
+            _paginate=True, _summary_only=True)

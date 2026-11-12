@@ -3,6 +3,8 @@
   const exports = {};
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.exadataBaselineKey = exadataBaselineKey;
+exports.exadataBaselineLines = exadataBaselineLines;
 exports.exadataNumeric = exadataNumeric;
 exports.exadataUnit = exadataUnit;
 exports.exadataRaw = exadataRaw;
@@ -13,6 +15,20 @@ exports.exadataOverviewNotes = exadataOverviewNotes;
 exports.buildExadataCards = buildExadataCards;
 exports.exadataStatusItems = exadataStatusItems;
 exports.exadataChartOption = exadataChartOption;
+function exadataBaselineKey(card) { return JSON.stringify([card.componentId, card.metricCode]); }
+function exadataBaselineLines(result, period) {
+    if (!period)
+        return [];
+    if (!result)
+        return ['历史均值读取中…'];
+    if (typeof result === 'string')
+        return [result];
+    if (result.baseline.unavailable_reason)
+        return [result.baseline.unavailable_reason];
+    if (!result.comparisons.length)
+        return ['无匹配的有效当前采样与历史维度，暂不比较。'];
+    return result.comparisons.map(item => `${exadataDimensions(item.dimensions)} · ${period === '1w' ? '7 天' : '30 天'}留存均值 ${item.average} ${result.unit || ''}（${item.sample_count} 条）；比较采样 ${item.current}；差值 ${item.difference} ${result.unit === '%' ? '个百分点' : result.unit || ''}；${item.deviation_percent === null ? '均值为零，相对偏离不可定义' : `偏离 ${item.deviation_percent}%`}；比较采样时间 ${item.observed_at}`);
+}
 const labels = {
     'CellSrv_Status_Metric/Status': 'Cell 服务状态',
     'CellSrv_Status_Metric/msStatus': '管理服务状态',
@@ -77,6 +93,7 @@ function buildExadataCards(view) {
                 title: labels[metricSelector] || definition?.status?.display_name || definition?.display_name || metricSelector,
                 status: definition?.status || null,
                 unit, numeric: nativeType === 'NUMBER' && !definition?.status, samples: [], series: [], gaps: [], quality: '', tone: '',
+                baselineSupported: !!definition?.baseline_supported && !definition?.status,
                 value: '无数据', valueUnit: '', observedAt: null, percent: null };
             groups.set(key, card);
         }
