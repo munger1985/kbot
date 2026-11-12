@@ -679,3 +679,11 @@ Agent 的结构化 Exadata 参数增加 baseline_period；主动分析默认比�
 原厂上限修订后两仓各 13 文件 **387 passed**（移除两个错误的三十天成功假设、增加一个不支持窗口用例）；此前六天分片修复为各 388 passed。架构边界检查通过。KBot 测试显式优先本仓 packages/services 路径，避免公共 cube 环境的 Ammolite editable 包干扰。
 
 Agent 验收额外发现：KBot 路由只按当前指标数分配预算，导致历史比较无剩余预算；现已在专用结构化合同增加当前读取 1 次、基线另计 2 次、单轮最多 24 次/55 秒的成本，要求规划时预留，不在执行器内擅自提高冻结预算。Ammolite Cyber DBA 的三个已授权业务系统不含模拟 Exadata 系统，当前查询按边界拒绝；本轮没有自动扩大 Agent 授权。上述两点的最终验收结果续记，不将监控页成功当作 Agent 端到端成功。
+
+#### 10.17.6 最终代码部署与 Agent 验收
+
+预算合同修复以 KBot f1c6175f、Ammolite 7082a68c 推送部署，仅重启两个 AIOps Worker；两者就绪，49 个无关进程与配置未变。备份 /home/ubuntu/aiops-exadata-routing-20261112-hzEFFy。最终代码再次运行两仓相同 13 文件，均 **387 passed**。
+
+KBot 正常 OEM 测试用 Agent 的真实新会话已 **COMPLETED**：分析准确选中 Cell CPU/内存指标，返回各自当前值、七天留存均值、差值/相对偏离及下一步只读排查建议，证据中保存实际基线与计算，没有创建数据库 ops_run_id。私有验收证据 /tmp/exadata-analysis-kbot-tENheK。两端最新部署后的 Main API/AIOps 在线日志 API 复核无新增 ERROR；按真实 applied.json 时间过滤，确认分页覆盖检查起点，不以历史错误数量当作新部署错误。
+
+Ammolite 监控页真实周/月比较及磁盘周比较通过，Agent 路由准确识别 ACTIVE_DIAGNOSIS 与 EXADATA，但 Cyber DBA 的授权系统列表不含 01a1cad9-2904-7892-8428-fc333bd1f7ec，正常拒绝 EXADATA_RESOURCE_SCOPE_EMPTY；未绕过或自动修改授权，因此不能声明 Ammolite Agent 端到端分析已验收。需要管理员明确授权该模拟系统后再验收。本轮没有补造一个月历史，也未完成第 10.16 节尚未接入的 DB Server/ILOM/PDU 模拟设备及交换机成员关系；不把代码目录支持冒充现场设备已采集。
