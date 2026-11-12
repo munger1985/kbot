@@ -734,4 +734,4 @@ Ammolite 的 Cyber DBA 保持原四个业务系统授权，正常新会话对 DB
 
 KBot OEM 测试用 Agent 使用完整组件名 `aiops-exadata-monitor.lab`、`AIOPS_SIM_EXADATA_PDU01` 的真实新会话同样 **COMPLETED**，三个指标、基线偏离和只读建议均通过验收，无数据库 ops_run_id；证据 `/tmp/exadata-analysis-kbot-hKXBKw/`。但此前仅称“DB Server/PDU”的自然语言问题出现路由错误：模型将设备类型填入 `component_names`，严格成员匹配拒绝并返回 `EXADATA_QUERY_UNAVAILABLE`；证据 `/tmp/exadata-analysis-kbot-Xc6yO5/`。因此只能确认完整组件名的端到端分析成功，不能将此复测当作泛类型路由问题已修复；本轮没有通过关键词映射、模糊组件匹配或放宽授权掩盖问题。
 
-通过当前在线 development logs API，按本次 `applied.json` 时间过滤并确认分页覆盖起点：KBot Main API/AIOps、Ammolite Main API 未发现新增 ERROR；Ammolite AIOps 在 2026-11-12 06:17:39 UTC 有一条 Conversation Turn 排队提升的 PostgreSQL `DeadlockDetectedError`。它是队列事务错误，不是 OEM 指标读取错误；上述硬件分析已完成，但本轮未修复或宣称消除该独立并发问题。日志核查与会话证据分别记录，不用 readiness 或监控页成功代替 Agent 验收。
+通过当前在线 development logs API，按本次 `applied.json` 时间过滤并确认分页覆盖起点：两端 Main API 未发现新增 ERROR；Ammolite AIOps 在 2026-11-12 06:17:39 UTC 有一条 Conversation Turn 排队提升的 PostgreSQL `DeadlockDetectedError`，KBot 复测后在 06:19:50 UTC 同样记录排队提升的 Oracle `ORA-00060`。两者均为队列事务死锁，不是 OEM 指标读取错误；上述硬件分析已完成，但本轮未修复或宣称消除该独立并发问题。日志核查与会话证据分别记录，不用 readiness 或监控页成功代替 Agent 验收。
