@@ -759,3 +759,13 @@ KBot OEM 测试用 Agent 使用完整组件名 `aiops-exadata-monitor.lab`、`AI
 #### 10.19.3 本地验证
 
 两仓相同定向回归各419项通过，另有13项子测试：覆盖 Exadata、公开合同、普通 OEM 原生指标和监控精度；两仓生产前端组件合同通过五种宽度（1920/1440/1000/780/390）、明暗主题、展开资产结构、DB Server/交换机详情跳转、真实零值/精度、状态字典、配置分层、分页、均值周期切换竞态和错误保留。Ammolite typecheck/生产 build、两端架构边界与 diff-check 通过；build 保留既有大 chunk 提示。独立硬件采样仍未取得，不将本地 fixture 浏览器检查代替线上取证。
+
+#### 10.19.4 已推送、部署与真实页面验收
+
+实现提交：Ammolite efbee90e91eb8720a0ddc6f2fbb578ba117d3fe0（dev），KBot bf2832d3262a7c36637f19c9a90500bba077593b（kbot4.1.1），均已推送并在应用机快进部署。备份及前后核对记录：/home/ubuntu/aiops-exadata-ab-20261112-EiJoMe/。仅重启两端 Main API、AIOps API/Worker，共6进程，readiness 均200；45个无关进程和配置摘要未变，无DDL、授权、绑定或OEM变更。Ammolite旧Main API停止监听后，两次正常退出超时；仅结束经PID/命令/启动时间复核的残留进程350640，再按原环境启动，未结束其他进程。
+
+正常业务会话、未替换网络响应的页面验收：两端整机均7个成员、12项查询、9条采样；首页4个CPU/内存简洁资源区，不再重复大卡，结构对象折叠。DB Server详情正确以已确认host为范围，3项查询/2条采样；Cell共15项查询，首页12条、下一页3条，服务/负载/配置分层。磁盘、Flash、IORM、互联、容量当前分页分别有24/12/12/56/18条真实OEM模拟采样；这些是所查分页，不声称其余分页已全部读取。互联总查询13项，交换机ComponentState仍明确“不支持读取”，不误报成查询失败或健康。
+
+DB Server内存7天/30天比较均200，依据253条实际留存采样；两个窗口均值相同不代表具有完整30天覆盖。CPU末次采样2026-11-12 06:05:38 UTC已超过审核新鲜度，保留“旧快照”，不触发当前均值偏离；Response仍无采样。没有补造CPU、硬件健康或月历史。两端390/768/1440在线布局及暗色检查通过，pageerror=0。
+
+KBot私有页面证据：/tmp/exadata-ab-online-kbot-2iUMMK/。Ammolite页面与均值证据：/tmp/exadata-ab-online-ammolite-1OWXqC/，该轮快速切页取消了互联请求，未据此宣称已查询；修正验收脚本为等待匹配的POST响应后，互联单独验收通过，证据/tmp/exadata-ab-online-ammolite-9Vhaua/。会话、凭据与原始响应不提交。上线后通过当前development logs API按applied.json起点检查，四组Main API/AIOps错误日志均覆盖起点且无新增ERROR；这不表示已修复前节独立队列/路由问题。

@@ -1,6 +1,6 @@
 # Exadata OEM 指标与页面重设计
 
-当前状态：用户已确认 A 做整机首页＋B 做设备详情，进入正式实施；实施与部署结果另行记录。
+当前状态：已按用户确认的 A 整机首页＋B 设备详情完成两端实施、推送、部署与真实页面验收；版本、证据及仍存在的采集缺口见[实施记录第10.19节](../../operations/aiops-exadata-oem-implementation-design.md)。
 
 打开 [三版对比](design-demos/index.html)，或分别预览：
 
