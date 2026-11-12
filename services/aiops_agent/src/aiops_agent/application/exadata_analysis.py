@@ -1,6 +1,7 @@
 """只基于冻结的设备状态和同维历史基线分析，不以偏离冒充故障阈值。"""
 
 from decimal import Decimal, localcontext
+from .exadata_status import match_status
 
 from platform_core.contracts.aiops.exadata import ExadataComparison, ExadataFinding
 
@@ -49,8 +50,7 @@ def analyze_view(view):
         if sample.quality != "OBSERVED" or sample.value in (None, ""):
             code, severity, detail = "CURRENT_EVIDENCE_INSUFFICIENT", "INCONCLUSIVE", f"{identity}：当前证据为空、过旧或截断，需核对 OEM 采集时间与采集错误，不能判定可用性。"
         elif definition.status:
-            status = next((value for raw, value in definition.status.values.items()
-                           if raw.casefold() == sample.value.strip().casefold()), None)
+            status = match_status(definition, sample.value)
             if status is None:
                 code, severity, detail = "STATUS_UNKNOWN", "INCONCLUSIVE", f"{identity}：未识别状态，需核对原厂状态字典。"
             else:

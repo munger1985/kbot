@@ -1,6 +1,28 @@
 # Exadata → 真实 OEM 调试夹具
 
-本目录只在隔离实验环境模拟 CellCLI 与只读 SNMP 交换机。OEM 使用未修改的 XA/SI 插件采集、上传并保存指标，AIOps 访问真实 OEM REST 或显式启用的 Exadata 原厂 EMCLI 通道，不直读模拟器，不写 OEM 内部表。
+本目录只在隔离实验环境模拟 CellCLI、只读 SNMP 交换机与 PDU 管理端点。OEM 使用未修改的 XA/SI 插件采集、上传并保存指标，AIOps 访问真实 OEM REST 或显式启用的 Exadata 原厂 EMCLI 通道，不直读模拟器，不写 OEM 内部表。
+
+## DB Server、Rack 与 PDU 当前接入（2026-11-12）
+
+最新模型与验收边界见[设计 10.18](../../../docs/operations/aiops-exadata-oem-implementation-design.md#1018-sim-整机硬件成员补齐与-number-状态匹配2026-11-12)，替代下文历史阶段“交换机未入整机、无 DB Server/PDU”的说明。两端已通过正常登录/发现/确认更新原绑定，整机现含 7 个设备（根、Grid、Cell、专用 SIM host、交换机、PDU、Rack），公共 view 为 12 项查询、9 条采样。DB Server CPU/内存来自专用实验 Agent 的原生 host 指标；不是物理 Exadata 数值。PDU 仅管理可达性，不模拟电流、电压或供电健康。ILOM 与端口组件身份仍未接入，host Response 和父 ComponentState 的缺失不填健康值。
+
+以下只供全新同构实验环境使用；既有现场有成功及失败凭证，不可重复执行。新增 PDU 工件须放在独立目录（现场 `/opt/aiops-oem-lab/exadata-sim-pdu/`），包含 `switch_simulator.py` 协议模块；**不要覆盖运行中交换机的旧 bind mount 源文件**。私有凭据不入参数或日志。
+
+```bash
+sudo python3 deploy_pdu.py
+sudo python3 register_pdu.py
+sudo python3 attach_hardware.py
+sudo python3 register_rack.py create
+sudo python3 register_rack.py members
+sudo python3 register_rack.py system
+sudo python3 enable_switch_response.py
+```
+
+`attach_hardware.py` 只追加专用 SIM host，不把交换机/PDU 无机柜强塞进整机。原厂必须先有 Rack 的 app_composite_contains 关系，才允许加入 DBM；注册器检查原厂 allowed pairs，不手工创建 internal_contains。每步保留 started/result；命令接受不代表样本、派生关系或应用确认成功。须独立核验 get_system_members、TargetAssociations、目标 GUID/detail 和原厂最新采样，再仅授必要 SIM 目标 VIEW_TARGET。原厂派生关系可能稍后才可查询，不用不完整成员签发绑定。
+
+交换机 AccessPointResponse 原厂默认为禁用；调度工件只对固定 SIM 交换机 preview 后启用五分钟周期并提交 collect_metric，不改原厂配置文件。现场独立读到新的 UP（2026-11-12 06:14:02 UTC）。PDU 默认十五分钟集合保留，不擅自提高所有集合频率。管理状态 NUMBER 的 `1.0` 与字典 `1` 按精确十进制等值匹配，原始证据不改写；STRING 和未识别编码不做这种转换。
+
+OEM 新成员改变 inventory digest；两端须遵循正常公开配置门禁，短暂停用**各自 SIM 调试业务系统**、重新发现并选定原整机、确认全部新成员后恢复启用。保留资源/绑定/来源 ID，不写应用绑定表，不改变 Agent 业务系统授权，不改真实业务系统或旧数据库 Agent。
 
 全部名称含 SIM，全部数值是合成数据。字段映射依据真实 OEM 导出目录及 XA 24.1.1 原厂采集脚本；不包含客户主机、凭据或真实业务值，也不承诺覆盖目录全部 267 项。
 

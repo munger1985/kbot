@@ -16,6 +16,7 @@ from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
 from aiops_agent.application.exadata_catalog import load_catalog
 from aiops_agent.application.exadata_analysis import analyze_view, baseline_observations
+from aiops_agent.application.exadata_status import match_status
 
 
 class ExadataChatQuery(BaseModel):
@@ -319,8 +320,7 @@ class ExadataChatReader:
             value = "无读数" if latest.value in (None, "") else _text(latest.value)
             status = definitions[code].status
             if status and latest.value not in (None, ""):
-                entry = next((item for raw, item in status.values.items()
-                              if raw.casefold() == latest.value.strip().casefold()), None)
+                entry = match_status(definitions[code], latest.value)
                 value = entry.label if entry and latest.quality == "OBSERVED" else "未知"
             unit_text = f" {_text(unit)}" if unit and unit.strip() else "（OEM 未返回单位）"
             if status:

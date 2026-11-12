@@ -169,7 +169,7 @@ def mib(now):
     return result
 
 
-def response(packet, community, *, now=None):
+def response(packet, community, *, now=None, data=None):
     """拒绝错误认证、写操作、过大报文及未实现版本，不返回伪造的健康零值。"""
     if not 0 < len(packet) <= MAX_PACKET:
         return None
@@ -199,7 +199,9 @@ def response(packet, community, *, now=None):
         if tag != 0x30 or len(binding) != 2 or binding[0][0] != 6:
             raise ValueError("SNMP varbind 无效")
         bindings.append(decode_oid(binding[0][1]))
-    data = mib(time.time() if now is None else now)
+    # 隔离 PDU 模拟器复用只读协议编码，不借用交换机身份或性能数据。
+    if data is None:
+        data = mib(time.time() if now is None else now)
     ordered = sorted(data)
     values, status, error_index = [], 0, 0
     def append(key, next_key=False):

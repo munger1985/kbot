@@ -13,6 +13,7 @@ exports.exadataDimensions = exadataDimensions;
 exports.buildExadataDevices = buildExadataDevices;
 exports.exadataOverviewNotes = exadataOverviewNotes;
 exports.buildExadataCards = buildExadataCards;
+exports.exadataStatusKey = exadataStatusKey;
 exports.exadataStatusItems = exadataStatusItems;
 exports.exadataChartOption = exadataChartOption;
 function exadataBaselineKey(card) { return JSON.stringify([card.componentId, card.metricCode]); }
@@ -143,6 +144,24 @@ function buildExadataCards(view) {
     return [...groups.values()];
 }
 // 每个维度独立显示；旧值、截断、缺值及读取失败都不能显示绿色可用。
+function exadataStatusKey(value, nativeType) {
+    const raw = value.trim();
+    if (nativeType !== 'NUMBER')
+        return raw.toLowerCase();
+    // 使用十进制系数与指数，不用 Number 将相近但不等值的状态舍入成已审核编码。
+    const parts = /^([+-]?)([0-9]*)(?:\.([0-9]*))?(?:e([+-]?[0-9]{1,6}))?$/i.exec(raw);
+    if (!parts || !(parts[2] || parts[3]))
+        return null;
+    let digits = (parts[2] + (parts[3] || '')).replace(/^0+/, '');
+    if (!digits)
+        return '0';
+    let exponent = BigInt(parts[4] || '0') - BigInt((parts[3] || '').length);
+    while (digits.endsWith('0')) {
+        digits = digits.slice(0, -1);
+        exponent += 1n;
+    }
+    return `${parts[1] === '-' ? '-' : ''}${digits}e${exponent}`;
+}
 function exadataStatusItems(card) {
     if (!card.status)
         return [];
@@ -151,7 +170,8 @@ function exadataStatusItems(card) {
     return card.series.map(series => {
         const sample = series.latest;
         const raw = sample.value?.trim() ?? '';
-        const entry = Object.entries(card.status.values).find(([value]) => value.toLowerCase() === raw.toLowerCase())?.[1];
+        const key = exadataStatusKey(raw, sample.native_value_type);
+        const entry = key === null ? undefined : Object.entries(card.status.values).find(([value]) => exadataStatusKey(value, sample.native_value_type) === key)?.[1];
         const missing = sample.quality === 'EMPTY' || !raw;
         const valid = sample.quality === 'OBSERVED' && !card.gaps.length && !missing;
         return { key: series.key, dimension: series.label === '无维度' ? '' : series.label,

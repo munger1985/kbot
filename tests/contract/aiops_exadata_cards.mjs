@@ -93,6 +93,17 @@ assert.equal(option.series[0].markLine, undefined, '未验证阈值不画健康�
 assert.ok(!option.tooltip.formatter([{ seriesName: '<img onerror=alert(1)>', data: { raw: '<script>', at: 'now' } }]).includes('<img'))
 assert.equal(api.exadataChartOption(cards[0], palette).series.length, 0, '字符串状态不能转换成数值时序')
 assert.equal(statusesByCode.size, 26, '全部状态类指标纳入审核，而不只是三个服务')
+const pduState = metric('PduHttpResponse/Status', 'NUMBER', 'oracle_si_pdu')
+for (const raw of ['1', '1.0', '01.00', '+1.0', '1e0', '10e-1', '.1e1']) {
+  const card = api.buildExadataCards({...overview, definitions:[pduState], samples:[sample(pduState, raw)], gaps:[]})[0]
+  assert.equal(api.exadataStatusItems(card)[0].label, '可达', `NUMBER ${raw} 与审核的 1 精确等值`)
+  assert.equal(card.value, raw, '不改写原始证据值')
+}
+for (const raw of ['1.0000000000000000001', '0.9999999999999999999', 'NaN', 'Infinity', '1_0', '0x1', '１', '1e9999999']) {
+  const card = api.buildExadataCards({...overview, definitions:[pduState], samples:[sample(pduState, raw)], gaps:[]})[0]
+  assert.equal(api.exadataStatusItems(card)[0].tone, 'unknown', `${raw} 不能被浮点舍入或非法解析为健康状态`)
+}
+assert.notEqual(api.exadataStatusKey('1.0', 'STRING'), api.exadataStatusKey('1', 'STRING'))
 const reviewed = ['metrics.v1.json', 'device_metrics.v1.json'].flatMap(file => JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem', file))).metrics)
 for (const [code, statusDefinition] of statusesByCode) {
   const definition = { ...reviewed.find(item => item.code === code), status: statusDefinition }

@@ -693,3 +693,29 @@ Ammolite 监控页真实周/月比较及磁盘周比较通过，Agent 路由准�
 用户明确批准后，通过正常管理员 BUSINESS 会话及管理 PATCH，仅向 Ammolite Cyber DBA（01a12b8e-e34e-7644-8fd8-ed3bf650c790）追加业务系统“Exadata OEM 模拟联调（SIM）”（01a1cad9-2904-7892-8428-fc333bd1f7ec）。更新前核实系统属于当前空间、含已配置监控的 EXADATA 资源；使用 expected_row_version=5 乐观锁创建正常配置版本 5，row_version=6，仍为 ACTIVE。业务系统从三个增加为四个；逐项复核原有系统、能力、模型、执行策略、知识策略及动作授权均未变化，没有新增执行权限，也没有修改 KBot 授权。正常业务 Agent 目录已读到新版本。私有前后证据 /tmp/exadata-grant-ammolite-0PUacE，不提交会话。
 
 授权后的 Ammolite 真实新会话 01a1ce4d-6e69-7138-b6ec-15f1b4c074ab 已 **COMPLETED**，无 evidence_gaps，无数据库 ops_run_id；CPU/内存各保存当前值及 1195 条实际留存采样基线，返回相对偏离 -31.08%/-6.46%、证据引用和只读排查建议。真实诊断页面已渲染分析、偏离和建议，无 pageerror；私有证据 /tmp/exadata-analysis-ammolite-qR8NNh。本节解除上一节的 Ammolite Agent 授权验收缺口，不改变原厂带维度月历史限制或硬件模拟设备尚未接入的说明。此为在线配置生效，无代码、DDL 或服务重启；在线 Main API/AIOps 日志复核无新增 ERROR。
+
+### 10.18 SIM 整机硬件成员补齐与 NUMBER 状态匹配（2026-11-12）
+
+本节替代 10.16.4、10.17 中“DB Server/PDU 未补建、交换机未入整机”的阶段性说明；不代表 ILOM、物理传感器或交换机端口组件已经覆盖。
+
+#### 10.18.1 原厂模型与模拟范围
+
+- 复用隔离专用 Agent 的 `aiops-exadata-monitor.lab:host`，明确作为 SIM DB Server 监测节点，经原厂 `modify_system` 建立 DBM 的直接包含关系。CPU/内存来自原厂 host 的 `CPUUsageSummary/OverAllUsagePct`、`Load/memUsedPct`，是实验环境主机取值，不是物理 Exadata 或客户原始快照，不依据同 Agent 自动推断归属。
+- 现有 `AIOPS_SIM_EXADATA_SWITCH01` 保留原厂 MAP/SNMP AP 身份。原厂拒绝无 Rack 的交换机/PDU 加入 DBM，首次尝试仅 host 成功；完整失败记录保留，没有将返回码 0 当作整批成功。按原厂 SI 元数据创建 `AIOPS_SIM_EXADATA_RACK01:oracle_si_rack`（42U 逻辑实验机柜、EngineeredSystemId 为 SIM DBM），用 `list_allowed_pairs` 验证后，经原厂 `create_assoc app_composite_contains` 建立 Rack→交换机/PDU，再通过 `modify_system` 加入 DBM；没有手工创建 internal_contains 或直接改仓库表。
+- 新增只读非特权容器 `aiops-exadata-pdu-sim`，仅实验网 `172.22.0.10`、HTTP 80/SNMP 1161，不发布宿主端口；私有 community、64 MiB/0.25 CPU/16 PID、只读根文件系统、无 capabilities。SNMP 仅提供明确 SIM 的四个系统身份 OID，使用 RFC 5612 文档 enterprise；未知硬件 OID 返回缺失，SET 被拒绝，不冒充厂商型号或填供电健康零值。
+- 原厂 `oracle_si_pdu` 非 MAP 目标 `AIOPS_SIM_EXADATA_PDU01` 使用私有临时 argfile 纳管；不预设 HttpCommunicationProtocol，让原厂实际 TCP 探测 HTTP 管理端点。已用原厂 getmetric、runCollection、upload 和 get_metric_data 独立读到 `PduHttpResponse/Status=1`；REST 原值为 `1.0`。该指标只表示管理端点可达，不表示配电健康；没有电流/电压、硬件传感器或 ILOM 健康样本。
+- 交换机 `AccessPointResponse` 是原厂默认禁用的 Repository 集合，旧 UP 样本已过期。仅对固定 SIM 交换机通过原厂 preview 后启用 5 分钟周期并提交 collect_metric；未改原厂 XML，也未启用其他未实现集合。独立 get_metric_data 已核验新的 `UP`，末次采集时间为 2026-11-12 06:14:02 UTC，而非依据调度成功宣布恢复。
+
+#### 10.18.2 两端正常确认与边界
+
+只给既有实验 OEM 读取账号追加 host、交换机、PDU、Rack 四个固定目标的 VIEW_TARGET，`grant_all_targets_on_host=no`；未改全局权限或执行授权。原厂 get_system_members 与 TargetAssociations 已确认根的直接 Grid、host、交换机、PDU、Rack，以及 Grid→Cell；应用仍只按官方 internal_contains 及 GUID detail 复核，不遍历 Rack 扩大范围或构造端口 GUID。
+
+KBot 与 Ammolite 均通过正常登录会话、公开发现 API 和带签名的 candidate_ref 重新发现六个成员。遵循产品门禁，仅短暂停用各自 SIM 调试业务系统，使用 `If-Match: "rv-N"` 乐观锁更新既有资源的监控映射，再恢复 ENABLED；系统 row_version 1→3，资源和绑定 1→2，资源 ID/绑定 ID/来源 ID 均保留，拓扑关系及 Agent 授权未变。两端真实公共 view 均已返回 **7 个设备（含整机）、12 项查询、9 条采样**，含 DB Server CPU/内存、PDU HTTP 和交换机 AP；不再缺少这些成员。私有证据 `/tmp/exadata-hardware-ammolite-4ZZhqR`、`/tmp/exadata-hardware-kbot-vYssI3`，不提交会话。
+
+保留的真实缺口：host Response/Status 原厂 NO_DATA；交换机/PDU 的父目标 ComponentState 当前无可用原厂采样，返回不支持；整机/Grid/Rack 没有审核独立状态，不借用 Cell 的绿色状态。ILOM 和可靠端口组件身份仍未补齐。旧采样继续标旧，不能为了页面看绿而改写时间或放宽新鲜度。
+
+#### 10.18.3 数值状态的类型化匹配与验证
+
+真实联调发现 PDU NUMBER 状态经 REST 返回 `1.0`，此前与审核编码文本 `1` 不匹配。专用页面、Agent 指标回答和只读分析统一按原生类型匹配：NUMBER 用精确十进制等值（支持 1、1.0、1e0），STRING 保持文本语义；不使用浮点舍入把相邻未知值解释成正常。原始值、维度、时间和哈希不改写，旧值、截断、缺值仍不能变成可用。该修正只作用于 Exadata 状态，不修改普通 OEM/Prometheus/数据库监控和诊断。
+
+两仓同步模拟器、原厂注册/机柜/调度工件、状态匹配及测试：相同 15 文件各 **426 passed、13 subtests passed**；两端生产组件浏览器合同通过五种宽度，覆盖 PDU 1.0、非法/相邻高精度编码与原始证据保留。Ammolite typecheck/生产 build、两仓架构边界通过，build 仅保留既有大 chunk 提示。代码发布和上线后的页面/Agent 验收续记；上述本地测试不冒充线上恢复。
