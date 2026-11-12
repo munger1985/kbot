@@ -75,6 +75,21 @@ assert.equal(api.exadataStatusItems(cards[0])[0].label, '可用')
 const palette = { accent: 'blue', info: 'cyan', muted: 'gray', line: 'gray', surface: 'white', ink: 'black' }
 for (const value of [null, '', ' ', 'NaN', 'Infinity', '0x10', 'false']) assert.equal(api.exadataNumeric(value), null)
 assert.equal(api.exadataNumeric('1.2e-3'), 0.0012)
+const preciseBaseline = { unit: '%', baseline: { unavailable_reason: null }, comparisons: [{ dimensions: {},
+  average: '37.95429398496240601503759398496240601504', deviation_percent: '3.914460945120556658462827400372799012244',
+  current: '39.44', difference: '1.48570601503759398496240601503759398496', sample_count: 7, observed_at: overview.captured_at }] }
+const originalBaseline = JSON.stringify(preciseBaseline)
+assert.equal(api.exadataBaselineSummary(preciseBaseline, '1w'), '7 天均值 37.95 % · 偏离 3.91%')
+assert.equal(api.exadataBaselineSummary(preciseBaseline, '1m'), '30 天均值 37.95 % · 偏离 3.91%')
+assert.ok(api.exadataBaselineLines(preciseBaseline, '1w')[0].includes('留存均值 37.95 %'))
+assert.ok(api.exadataBaselineLines(preciseBaseline, '1w')[0].includes('差值 1.49 个百分点；偏离 3.91%'))
+assert.equal(JSON.stringify(preciseBaseline), originalBaseline, '只格式化展示，不修改底层精度或原始证据')
+for (const [average, deviation, expected] of [['0', null, '均值 0.00 % · 零均值，偏离不可定义'],
+  ['20', '-3.915', '均值 20.00 % · 偏离 -3.92%'], ['1.2e-3', '1.005', '均值 0.00 % · 偏离 1.01%'],
+  ['NaN', 'Infinity', '均值 无有效数值 % · 偏离 无有效数值%']]) {
+  const result = { ...preciseBaseline, comparisons: [{ ...preciseBaseline.comparisons[0], average, deviation_percent: deviation }] }
+  assert.ok(api.exadataBaselineSummary(result, '1w').endsWith(expected))
+}
 const separated = api.buildExadataCards({ ...overview, samples: [sample(cpu, '1', { dimensions: { disk: 'same', rack: 'a' } }), sample(cpu, '2', { dimensions: { rack: 'a', disk: 'same' }, observed_at: '2026-11-11T12:01:00Z' }), sample(cpu, '3', { component_id: 'cell-b' }), sample(cpu, '4', { unit: 'ms' })], gaps: [] })
 assert.equal(separated.length, 3, '不同 Cell 和原生单位绝不合并')
 assert.equal(separated[0].series.length, 1, '维度键顺序不改变序列身份')
@@ -380,8 +395,9 @@ try {
   await page.locator('[data-component]').selectOption('')
   await expect(page.locator('.exadata-metric-card')).toHaveCount(2)
   await expect(page.locator('.exadata-baseline')).toHaveCount(2)
-  await expect(cpuCard.locator('.exadata-baseline')).toContainText('7 天留存均值 20')
-  await expect(cpuCard.locator('.exadata-baseline')).toContainText('36.050000000000005%')
+  await expect(cpuCard.locator('.exadata-baseline')).toContainText('7 天留存均值 20.00')
+  await expect(cpuCard.locator('.exadata-baseline')).toContainText('偏离 36.05%')
+  await expect(cpuCard.locator('.exadata-baseline')).not.toContainText('36.050000000000005')
   await expect(page.locator(`[data-metric-code="${memory.code}"] .exadata-baseline`)).toContainText('均值为零，相对偏离不可定义')
   assert.ok(calls.filter(call => call.url.endsWith('/baselines')).every(call => [cpu.code, memory.code].includes(call.body.metric_code)), '状态不读取历史均值')
   await page.locator('[data-baseline]').selectOption('1m')

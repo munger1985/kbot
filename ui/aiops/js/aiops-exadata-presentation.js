@@ -25,6 +25,11 @@ exports.exadataStatusKey = exadataStatusKey;
 exports.exadataStatusItems = exadataStatusItems;
 exports.exadataChartOption = exadataChartOption;
 function exadataBaselineKey(card) { return JSON.stringify([card.componentId, card.metricCode]); }
+const baselineNumberFormat = new Intl.NumberFormat('en-US', { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function exadataBaselineNumber(value) {
+    const numeric = exadataNumeric(value);
+    return numeric === null ? '无有效数值' : baselineNumberFormat.format(numeric);
+}
 function exadataBaselineSummary(result, period) {
     if (!period)
         return '';
@@ -37,7 +42,7 @@ function exadataBaselineSummary(result, period) {
     if (result.comparisons.length > 1)
         return result.comparisons.length + ' 个维度分别比较 · 查看证据';
     const item = result.comparisons[0];
-    return `${period === '1w' ? '7 天' : '30 天'}均值 ${item.average} ${result.unit || ''} · ${item.deviation_percent === null ? '零均值，偏离不可定义' : '偏离 ' + item.deviation_percent + '%'}`;
+    return `${period === '1w' ? '7 天' : '30 天'}均值 ${exadataBaselineNumber(item.average)} ${result.unit || ''} · ${item.deviation_percent === null ? '零均值，偏离不可定义' : '偏离 ' + exadataBaselineNumber(item.deviation_percent) + '%'}`;
 }
 function exadataBaselineLines(result, period) {
     if (!period)
@@ -50,7 +55,7 @@ function exadataBaselineLines(result, period) {
         return [result.baseline.unavailable_reason];
     if (!result.comparisons.length)
         return ['无匹配的有效当前采样与历史维度，暂不比较。'];
-    return result.comparisons.map(item => `${exadataDimensions(item.dimensions)} · ${period === '1w' ? '7 天' : '30 天'}留存均值 ${item.average} ${result.unit || ''}（${item.sample_count} 条）；比较采样 ${item.current}；差值 ${item.difference} ${result.unit === '%' ? '个百分点' : result.unit || ''}；${item.deviation_percent === null ? '均值为零，相对偏离不可定义' : `偏离 ${item.deviation_percent}%`}；比较采样时间 ${item.observed_at}`);
+    return result.comparisons.map(item => `${exadataDimensions(item.dimensions)} · ${period === '1w' ? '7 天' : '30 天'}留存均值 ${exadataBaselineNumber(item.average)} ${result.unit || ''}（${item.sample_count} 条）；比较采样 ${exadataBaselineNumber(item.current)}；差值 ${exadataBaselineNumber(item.difference)} ${result.unit === '%' ? '个百分点' : result.unit || ''}；${item.deviation_percent === null ? '均值为零，相对偏离不可定义' : `偏离 ${exadataBaselineNumber(item.deviation_percent)}%`}；比较采样时间 ${item.observed_at}`);
 }
 const labels = {
     'CPUUsageSummary/OverAllUsagePct': 'CPU 使用率',
