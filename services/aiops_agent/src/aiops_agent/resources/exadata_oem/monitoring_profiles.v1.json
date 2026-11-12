@@ -10,7 +10,10 @@
         "oracle_exadata.Cell_Metric.cpu_utilization",
         "oracle_exadata.Cell_Metric.memory_utilization",
         "oracle_exadata.CellSrv_Status_Metric.Status",
-        "host.Response.Status",
+        "host.OEMTarget.status",
+        "oracle_si_netswitch.SwitchStatus.Status",
+        "oracle_si_netswitch.SensorStatus.Status",
+        "oracle_si_netswitch.PowerSupplyStatus.Status",
         "oracle_si_netswitch.AccessPointResponse.statusMsg",
         "oracle_si_pdu.PduHttpResponse.Status",
         "oracle_si_server_map.SystemStatus.HealthStatus",
@@ -19,14 +22,16 @@
         "oracle_exadata.CellSrv_Status_Metric.rsStatus",
         "oracle_si_server_map.SystemStatus.PowerStatus",
         "oracle_si_server_map.SystemStatus.OSStatus",
-        "oracle_si_netswitch.ComponentState.ComponentState",
         "oracle_si_server_map.ComponentState.ComponentState",
-        "oracle_si_pdu.ComponentState.ComponentState",
         "oracle_si_hw_component_server.ComponentState.ComponentState",
         "oracle_si_hw_component_switch.ComponentState.ComponentState",
         "oracle_si_network_port_server.NetworkPortPerformance.OperStatus",
         "oracle_si_network_port_switch.NetworkPortPerformance.OperStatus",
-        "oracle_si_network_port_switch.SwitchEthPortsMonitor.OperStatus"
+        "oracle_si_network_port_switch.SwitchEthPortsMonitor.OperStatus",
+        "oracle_si_netswitch.SensorStatus.Value",
+        "oracle_si_netswitch.SensorStatus.Unit",
+        "oracle_si_pdu.PduSummaryStatus.TotalPduActivePower",
+        "oracle_si_pdu.PduSummaryStatus.TotalPduEnergy"
       ]
     },
     {
@@ -35,7 +40,7 @@
       "metric_codes": [
         "host.CPUUsageSummary.OverAllUsagePct",
         "host.Load.memUsedPct",
-        "host.Response.Status",
+        "host.OEMTarget.status",
         "oracle_si_server_map.SystemStatus.HealthStatus",
         "oracle_si_server_map.AccessPointResponse.statusMsg",
         "oracle_si_server_map.SystemStatus.PowerStatus",
@@ -267,8 +272,12 @@
       "id": "network",
       "display_name": "互联与交换机",
       "metric_codes": [
+        "oracle_si_netswitch.SwitchStatus.Status",
+        "oracle_si_netswitch.SensorStatus.Status",
+        "oracle_si_netswitch.SensorStatus.Value",
+        "oracle_si_netswitch.SensorStatus.Unit",
+        "oracle_si_netswitch.PowerSupplyStatus.Status",
         "oracle_si_netswitch.AccessPointResponse.statusMsg",
-        "oracle_si_netswitch.ComponentState.ComponentState",
         "oracle_exadata.HostInterConnect_Statistics.c_mb_dropped",
         "oracle_exadata.HostInterConnect_Statistics.c_mb_rdma_dropped",
         "oracle_exadata.HostInterConnect_Statistics.c_mb_received",
@@ -328,7 +337,13 @@
         "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentDiscardsOut",
         "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentErrorsIn",
         "oracle_si_network_port_switch.SwitchEthPortsMonitor.PercentErrorsOut",
-        "oracle_si_network_port_switch.SwitchEthPortsMonitor.PortStatusError"
+        "oracle_si_network_port_switch.SwitchEthPortsMonitor.PortStatusError",
+        "oracle_si_netswitch.SwitchSystemStatus.HealthStatus",
+        "oracle_si_netswitch.SwitchSystemStatus.PowerState",
+        "oracle_si_netswitch.SwitchSystemStatus.CoolingState",
+        "oracle_si_netswitch.SwitchSystemStatus.TemperatureState",
+        "oracle_si_netswitch.SwitchSystemStatus.CoolingRedundancy",
+        "oracle_si_netswitch.SwitchSystemStatus.PowerRedundancy"
       ]
     },
     {
@@ -345,7 +360,9 @@
         "oracle_si_hw_component_server.ComponentState.ComponentState",
         "oracle_si_hw_component_server.ComponentState.ErrorDetail",
         "oracle_si_hw_component_switch.ComponentState.ComponentState",
-        "oracle_si_hw_component_switch.ComponentState.ErrorDetail"
+        "oracle_si_hw_component_switch.ComponentState.ErrorDetail",
+        "oracle_si_pdu.PduSummaryStatus.TotalPduActivePower",
+        "oracle_si_pdu.PduSummaryStatus.TotalPduEnergy"
       ]
     }
   ]

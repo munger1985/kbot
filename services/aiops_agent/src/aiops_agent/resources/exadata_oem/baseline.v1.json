@@ -4,6 +4,7 @@
   "emcli_history_max_days": 7,
   "repository_unit_codes": ["PERCENTAGE", "IOSEC", "MBPS", "BPS", "KBPS", "MILLISECREQUEST", "GB"],
   "metric_codes": [
+    "oracle_si_pdu.PduSummaryStatus.TotalPduActivePower",
     "oracle_exadata.Cell_Metric.temperature",
     "oracle_exadata.Cell_Metric.cl_runq",
     "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_io_load",

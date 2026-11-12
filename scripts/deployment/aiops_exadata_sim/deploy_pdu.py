@@ -51,7 +51,7 @@ def main():
         *mounts, "--entrypoint", "/usr/bin/python3.12", "aiops-lab/oem-remote-agent:ol8",
         "-B", "/sim/pdu_simulator.py", "--community-file", "/run/secrets/snmp-community")
     receipt = {"container": NAME, "container_id": container.strip(), "address": ADDRESS,
-               "simulation": True, "published_ports": [], "scope": "MANAGEMENT_REACHABILITY_ONLY",
+               "simulation": True, "published_ports": [], "scope": "MANAGEMENT_AND_POWER_TELEMETRY",
                "source_sha256": {source.name: hashlib.sha256(source.read_bytes()).hexdigest() for source in sources}}
     (STATE / "created.json").write_text(json.dumps(receipt) + "\n")
     print(json.dumps(receipt))

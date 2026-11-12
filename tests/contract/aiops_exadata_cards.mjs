@@ -92,7 +92,11 @@ assert.equal(option.series[0].connectNulls, false)
 assert.equal(option.series[0].markLine, undefined, '未验证阈值不画健康分界线')
 assert.ok(!option.tooltip.formatter([{ seriesName: '<img onerror=alert(1)>', data: { raw: '<script>', at: 'now' } }]).includes('<img'))
 assert.equal(api.exadataChartOption(cards[0], palette).series.length, 0, '字符串状态不能转换成数值时序')
-assert.equal(statusesByCode.size, 26, '全部状态类指标纳入审核，而不只是三个服务')
+assert.equal(statusesByCode.size, 35, '全部状态类指标纳入审核，而不只是三个服务')
+const hostState = { ...metric('OEMTarget/status', 'STRING', 'host'), semantics: 'OEM_TARGET_AVAILABILITY' }
+const hostCard = api.buildExadataCards({...overview, definitions:[hostState], samples:[sample(hostState, 'UP')], gaps:[]})[0]
+assert.equal(hostCard.currentStatus, true)
+assert.equal(api.exadataStatusItems(hostCard)[0].quality, '状态已读取', '当前状态取证不能冒充设备采样')
 const pduState = metric('PduHttpResponse/Status', 'NUMBER', 'oracle_si_pdu')
 for (const raw of ['1', '1.0', '01.00', '+1.0', '1e0', '10e-1', '.1e1']) {
   const card = api.buildExadataCards({...overview, definitions:[pduState], samples:[sample(pduState, raw)], gaps:[]})[0]
@@ -234,7 +238,7 @@ try {
     if (stateFixture) {
       result.definitions = reviewed.filter(item => statusesByCode.has(item.code)).map(item => ({ ...item, status: statusesByCode.get(item.code) }))
       result.samples = result.definitions.map(item => sample(item, Object.keys(item.status.values)[0] || 'unreviewed', { unit: 'n/a', dimensions: Object.fromEntries(item.keys.map(key => [key, `${key}-A`])) }))
-      result.gaps = []; result.total_queries = 26; result.next_offset = null
+      result.gaps = []; result.total_queries = statusesByCode.size; result.next_offset = null
     }
     if (devicesFixture) {
       result = clone(deviceView)
@@ -313,8 +317,8 @@ try {
   await expect(page.locator('.exadata-percent')).toHaveCount(0)
   unavailable = false; stateFixture = true
   await page.locator('[data-mode]').selectOption('LATEST_SNAPSHOT')
-  await expect(page.locator('.exadata-status-item')).toHaveCount(26)
-  await expect(page.locator('.exadata-status-row')).toHaveCount(26)
+  await expect(page.locator('.exadata-status-item')).toHaveCount(statusesByCode.size)
+  await expect(page.locator('.exadata-status-row')).toHaveCount(statusesByCode.size)
   await expect(page.locator('.exadata-metric-card')).toHaveCount(0)
   await expect(page.locator('.exadata-status-panel')).toContainText('端口掉线事件')
   await expect(page.locator('.exadata-status-panel')).toContainText('未触发')

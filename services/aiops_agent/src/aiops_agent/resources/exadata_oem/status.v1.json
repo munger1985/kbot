@@ -2,10 +2,19 @@
   "version": "exadata-status-v1",
   "groups": [
     {
-      "metric_codes": ["host.Response.Status"],
+      "metric_codes": [
+        "host.OEMTarget.status"
+      ],
       "status": {
-        "category": "AVAILABILITY", "display_name": "设备响应状态", "values": {},
-        "provenance": "OEM export 2026-11-10: NUMBER Response/Status for host (no samples). Numeric response dictionary not verified; all nonempty codes remain unknown, never inferred from collection success."
+        "category": "AVAILABILITY",
+        "display_name": "DB Server OEM 可用性",
+        "values": {
+          "UP": {
+            "label": "可用",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM native GET /em/api/targets/{confirmed-guid} status, verified UP on 2026-11-12. Current status observation, not retained Response data or physical hardware health. Unknown tokens remain unknown."
       }
     },
     {
@@ -174,6 +183,150 @@
           "1": { "label": "已触发", "tone": "warning" }
         },
         "provenance": "OEM export 2026-11-10 definition OperStatusDown: Port status became down, unit BOOLEAN. Snapshot has 0 even for OperStatus=down. This is an event flag, never a current-up or availability value."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.SwitchSystemStatus.HealthStatus"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机硬件健康",
+        "values": {
+          "OK": {
+            "label": "正常",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 SwitchSystemStatus/HealthStatus: 3 OK samples. Subsystem state is not database availability."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.SwitchSystemStatus.PowerState"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机供电状态",
+        "values": {
+          "OK": {
+            "label": "正常",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 SwitchSystemStatus/PowerState: 3 OK samples. Subsystem state is not database availability."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.SwitchSystemStatus.CoolingState"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机散热状态",
+        "values": {
+          "OK": {
+            "label": "正常",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 SwitchSystemStatus/CoolingState: 3 OK samples. Subsystem state is not database availability."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.SwitchSystemStatus.TemperatureState"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机温度状态",
+        "values": {
+          "OK": {
+            "label": "正常",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 SwitchSystemStatus/TemperatureState: 3 OK samples. Subsystem state is not database availability."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.SwitchSystemStatus.CoolingRedundancy"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机散热冗余",
+        "values": {
+          "OK": {
+            "label": "正常",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 SwitchSystemStatus/CoolingRedundancy: 3 OK samples. Subsystem state is not database availability."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.SwitchSystemStatus.PowerRedundancy"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机供电冗余",
+        "values": {
+          "OK": {
+            "label": "正常",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 SwitchSystemStatus/PowerRedundancy: 3 OK samples. Subsystem state is not database availability."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.SwitchStatus.Status"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机运行状态",
+        "values": {
+          "up": {
+            "label": "运行中",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 SwitchStatus.Status exact observed tokens. Other values remain unknown."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.SensorStatus.Status"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机传感器状态",
+        "values": {
+          "ok": {
+            "label": "正常",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 SensorStatus.Status exact observed tokens. Other values remain unknown."
+      }
+    },
+    {
+      "metric_codes": [
+        "oracle_si_netswitch.PowerSupplyStatus.Status"
+      ],
+      "status": {
+        "category": "AVAILABILITY",
+        "display_name": "交换机电源模块状态",
+        "values": {
+          "admin:on;oper:on": {
+            "label": "供电正常",
+            "tone": "success"
+          }
+        },
+        "provenance": "OEM export 2026-11-10 PowerSupplyStatus.Status exact observed tokens. Other values remain unknown."
       }
     }
   ]

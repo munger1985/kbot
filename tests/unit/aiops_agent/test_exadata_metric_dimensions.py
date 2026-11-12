@@ -13,7 +13,7 @@ from tests.unit.aiops_agent.test_aiops_oem_native_metrics import adapter, collec
 CELL = "b" * 32
 TARGET = {"targetId": CELL, "targetType": "oracle_exadata", "targetName": "SIM Cell"}
 DEFINITION = {"selector": "Filesystem_Utilization_Metric/utilization",
-              "keys": ["name", "cell_Id"], "native_value_type": "NUMBER"}
+              "keys": ["name", "cell_Id"], "native_value_type": "NUMBER", "semantics": "GAUGE"}
 
 
 def metadata(keys):

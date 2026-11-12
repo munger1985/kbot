@@ -91,6 +91,9 @@ class OEMExadata:
     async def exadata_latest(self, request, definition, target_type):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             target_error("SOURCE_CAPABILITY_FORBIDDEN")
+        if definition["semantics"] == "OEM_TARGET_AVAILABILITY":
+            from .oem_exadata_availability import query_availability
+            return await query_availability(self, request, definition, target_type)
         # 原厂 EMCLI 不支持部分无维度计算列；按审核键结构固定分流，不做错误回退。
         if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI" and definition["keys"]:
             from .oem_exadata_emcli import query_emcli
@@ -103,6 +106,8 @@ class OEMExadata:
     async def exadata_history(self, request, definition, target_type):
         if CAPABILITY_METRIC_QUERY_RANGE not in self.context.declared_capabilities:
             target_error("SOURCE_CAPABILITY_FORBIDDEN")
+        if definition["semantics"] == "OEM_TARGET_AVAILABILITY":
+            target_error("SOURCE_METRIC_HISTORY_UNSUPPORTED")
         if definition["native_value_type"] != "NUMBER":
             target_error("SOURCE_METRIC_HISTORY_UNSUPPORTED")
         if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI" and definition["keys"]:

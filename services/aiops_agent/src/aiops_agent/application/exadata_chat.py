@@ -327,8 +327,12 @@ class ExadataChatReader:
                 unit_text = ""
             dimension_text = f"；维度：{_text(json.dumps(dict(dimensions), ensure_ascii=False))}" if dimensions else ""
             quality = {"OBSERVED": "已采集", "EMPTY": "末次采样为空", "STALE": "旧采样，非当前有效值", "TRUNCATED": "来源数据截断"}[latest.quality]
+            current_status = definitions[code].semantics == "OEM_TARGET_AVAILABILITY"
+            if current_status and latest.quality == "OBSERVED":
+                quality = "当前状态接口取证；设备采样时间未提供"
+            time_label = "状态取证时间" if current_status else "采集时间"
             lines.append(f"  - {_text(members.get(component, component))} · {_text(definitions[code].display_name)}"
-                         f"（`{code}`）：{value}{unit_text}；采集时间 {_time(latest.observed_at)}；{quality}{dimension_text}"
+                         f"（`{code}`）：{value}{unit_text}；{time_label} {_time(latest.observed_at)}；{quality}{dimension_text}"
                          + (f"；窗口采样数 {len(samples)}" if view.query_mode == "HISTORY" else ""))
         for code in codes:
             if not any(sample.metric_code == code for sample in view.samples):

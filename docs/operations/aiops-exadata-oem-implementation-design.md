@@ -769,3 +769,34 @@ KBot OEM 测试用 Agent 使用完整组件名 `aiops-exadata-monitor.lab`、`AI
 DB Server内存7天/30天比较均200，依据253条实际留存采样；两个窗口均值相同不代表具有完整30天覆盖。CPU末次采样2026-11-12 06:05:38 UTC已超过审核新鲜度，保留“旧快照”，不触发当前均值偏离；Response仍无采样。没有补造CPU、硬件健康或月历史。两端390/768/1440在线布局及暗色检查通过，pageerror=0。
 
 KBot私有页面证据：/tmp/exadata-ab-online-kbot-2iUMMK/。Ammolite页面与均值证据：/tmp/exadata-ab-online-ammolite-1OWXqC/，该轮快速切页取消了互联请求，未据此宣称已查询；修正验收脚本为等待匹配的POST响应后，互联单独验收通过，证据/tmp/exadata-ab-online-ammolite-9Vhaua/。会话、凭据与原始响应不提交。上线后通过当前development logs API按applied.json起点检查，四组Main API/AIOps错误日志均覆盖起点且无新增ERROR；这不表示已修复前节独立队列/路由问题。
+### 10.20 原厂硬件遥测与 DB Server 新鲜度修复（2026-11-12）
+
+本节继续 10.19 的 A 整机首页＋B 设备详情，只作用于 EXADATA＋OEM；非 Exadata、普通 OEM、Prometheus、数据库诊断、授权及绑定均不改，不新增 DDL 或 Prompt。
+
+#### 10.20.1 真实导出与原厂现场依据
+
+真实包仍为 targets 50、定义 88680、当前采样 28651、采集设置 2461、阈值 2493、关联 290 条。CSV 按引号跨行规则解析，不以物理行计数。交换机 SwitchSystemStatus 六项各有三条 OK，SwitchStatus/Status 三条 up，SensorStatus/Status 十二条 ok，SensorStatus/Value 十二条温度及相同 SensorId 的 celsius 单位，PowerSupplyStatus/Status 六条 admin:on;oper:on。PDU summary 有功功率 1831/1827 W、累计能耗 1304.6/1339.9 kWh；PDU 父/子 ComponentState 有定义但没有当前健康样本。
+
+固定 SIM 的原厂 Cisco SNMP 驱动不实现 SwitchSystemStatus 汇总（继承空实现），不能因为真实包其他驱动有值就捏造 Cisco 汇总。本次补齐 ENTITY、CISCO-ENTITY-SENSOR、FRU 电源组/状态 MIB，让原厂生成四个明确 SIM 温度传感器与两个电源模块的状态。SNMP 的电源组表必须存在，否则原厂在读取 FRU 之前抛出 Empty snmp response。PDU 采用原厂 Enhanced MIB 识别和 summary OID；名称/序列号保留 SIM。功率/能耗由原厂计算和上传，不写 OEM 内部表、不替换 OEM HTTP 响应、不回放客户历史。
+
+原厂独立 getmetric 已读到四条 ok/celsius/25–43 的温度样本、两个 admin:on;oper:on/1/PS Status 电源、PDU 1827 W 与 1304.6 kWh；runCollection 顺序完成后再 upload，get_metric_data 已确认父交换机 SensorStatus 四条 ok 与 PDU 功率于 2026-11-12 07:24 UTC 入库。此为本次 SIM 采集时间，不是客户原始采样时间。完整应用验收见后续记录。
+
+#### 10.20.2 两端接入与展示/分析合同
+
+- 专用目录 279→292 项，状态目录 26→35 项。监控与只读诊断使用相同场景选集。整机首页优先节点资源、Cell 服务、DB Server OEM 可用性、交换机运行/逐传感器/逐电源状态及管理可达，补 PDU 功率/能耗和传感器原值/单位。互联详情保留原厂各类汇总字段，位于基础传感器/性能之后；不再主动查询没有证据的父交换机/PDU ComponentState。真实子组件定义保留，但不编 GUID 或扩大成员发现。
+- host.Response.Status 替换为 host.OEMTarget.status：仅在已确认 host GUID 及类型严格核验后读取原厂目标详情 status。现场 UP 解释为可用，其余未核实编码保留未知；不把 NO_DATA Response 伪装成普通采样。当前接口时间明确标为“状态取证时间”，不是设备采集时间；历史请求返回不支持，不生成历史或基线。
+- DB Server CPU 原厂 oracle_si_cpu_perf 每60分钟采集，OMS 上传预算15分钟；审核新鲜度75分钟，仅改该专用指标，不改原厂调度或回填时间。测试覆盖31/70分钟有效、75分钟后过期；页面、只读报告、Agent 共用判定。
+- 原始值、单位、维度、时间、来源哈希继续保留。状态按原生类型与审核字典解释，不跨传感器合并。SensorStatus/Value 的原生单位为 n/a，另列 Unit=celsius，不擅自替换整个指标单位。PDU 有功功率允许7天/30天实际留存均值；累计能耗明确 CUMULATIVE，禁止均值/偏离。无历史时仍明确缺口，不补造三十天数据。
+- Agent 能通过相同目录查询、解释新状态并生成只读排查观察；不宣称借此修复此前独立的泛类型路由或 Conversation 队列死锁。PDU 未覆盖电流/电压/硬件健康、ILOM 未部署、Cisco 汇总无原厂实现的边界继续保留。
+
+#### 10.20.3 安全部署工件与现场变更
+
+update_hardware.py 默认仅预检，显式三个现场摘要与 --apply 后，核对固定容器/文件只读绑定、非 root/只读根/无额外能力/无发布端口，备份并保留 inode 更新源码，仅重启交换机/PDU 两个模拟器。初次备份 /opt/aiops-oem-lab/state/exadata-hardware-update-r8h1oad9；补全电源组后的备份 /opt/aiops-oem-lab/state/exadata-hardware-update-7f7349mo。未重启 OEM、数据库、专用 Agent 或其他容器。
+
+enable_hardware_telemetry.py 通过原厂全部 preview 后，只启用固定父交换机三集合（5分钟）及固定 PDU summary（15分钟），记录 /opt/aiops-oem-lab/state/exadata-hardware-collections-vpo4sooh。原厂拒绝对子访问点直接使用 EMCLI 修改集合的首次尝试已保留失败记录，没有修改任何 XML 或使用 force。运行、入库、页面和诊断验收分开记录，不以命令成功代替数据存在。
+
+#### 10.20.4 本地验证
+
+两仓各599项定向单元/公开HTTP合同测试通过，另13项子测试；包含普通OEM与非Exadata回归。两端生产页面组件合同均通过1920/1440/1000/780/390五种宽度、状态字典、维度隔离、证据与基线竞态测试；新增当前可用性明确显示状态取证语义。Ammolite typecheck、生产build及两仓架构边界通过；build仅保留既有大chunk提示。无DDL、Prompt或授权变更。
+
+原厂父目标最新快照另已核验两个PowerSupplyStatus状态及PDU累计能耗；父目标原厂调度修改自动将SNMP子访问点传感器间隔改为5分钟，已只读检查生成的集合XML确认，无手工改写。原始调度和失败尝试记录保留，不把此前失败的命令当成功。

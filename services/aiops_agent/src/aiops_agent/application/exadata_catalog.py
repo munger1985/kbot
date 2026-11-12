@@ -35,6 +35,7 @@ def load_catalog():
     units = set(baseline["repository_unit_codes"])
     for code, definition in by_code.items():
         definition["baseline_supported"] = bool(definition["native_value_type"] == "NUMBER"
+            and definition["semantics"] != "CUMULATIVE"
             and not definition.get("status") and (code in baseline["metric_codes"]
                 or bool(definition["repository_unit_codes"]) and set(definition["repository_unit_codes"]) <= units))
     for profile in (*monitoring["profiles"], *diagnosis["profiles"]):

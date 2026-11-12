@@ -1,6 +1,6 @@
 {
   "version": "exadata-devices-v1",
-  "provenance": "OEM export 2026-11-10 metric_definitions.csv; host CPUUsageSummary/OverAllUsagePct, Load/memUsedPct, SI access point, SystemStatus and PDU response; missing samples are not absence of metric.",
+  "provenance": "OEM export 2026-11-10 metric_definitions.csv; host CPUUsageSummary/OverAllUsagePct, Load/memUsedPct, SI access point, SystemStatus and PDU response; missing samples are not absence of metric.; 2026-11-12 verified target detail status and Response NO_DATA=TRUE; CPU interval 60 Min, OMS upload 15 Min; native SI switch health, sensors and PDU summary metadata.",
   "metrics": [
     {
       "code": "host.CPUUsageSummary.OverAllUsagePct",
@@ -16,8 +16,8 @@
       "semantics": "SNAPSHOT",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
-      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
-      "max_age_seconds": 1800,
+      "freshness_policy": "OEM_60_MIN_COLLECTION_PLUS_15_MIN_UPLOAD",
+      "max_age_seconds": 4500,
       "threshold_policy": "UNVERIFIED"
     },
     {
@@ -39,20 +39,18 @@
       "threshold_policy": "UNVERIFIED"
     },
     {
-      "code": "host.Response.Status",
+      "code": "host.OEMTarget.status",
       "target_type": "host",
-      "selector": "Response/Status",
-      "display_name": "DB Server 响应状态",
-      "native_value_type": "NUMBER",
-      "repository_unit_codes": [
-        "NA"
-      ],
+      "selector": "OEMTarget/status",
+      "display_name": "DB Server OEM 可用性",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [],
       "keys": [],
       "scene": "overview",
-      "semantics": "SNAPSHOT",
+      "semantics": "OEM_TARGET_AVAILABILITY",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
-      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "freshness_policy": "CURRENT_OEM_TARGET_STATUS",
       "max_age_seconds": 1800,
       "threshold_policy": "UNVERIFIED"
     },
@@ -222,6 +220,248 @@
       ],
       "scene": "overview",
       "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SwitchSystemStatus.HealthStatus",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SwitchSystemStatus/HealthStatus",
+      "display_name": "交换机硬件健康",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SwitchSystemStatus.PowerState",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SwitchSystemStatus/PowerState",
+      "display_name": "交换机供电状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SwitchSystemStatus.CoolingState",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SwitchSystemStatus/CoolingState",
+      "display_name": "交换机散热状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SwitchSystemStatus.TemperatureState",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SwitchSystemStatus/TemperatureState",
+      "display_name": "交换机温度状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SwitchSystemStatus.CoolingRedundancy",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SwitchSystemStatus/CoolingRedundancy",
+      "display_name": "交换机散热冗余",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "BOOLEAN"
+      ],
+      "keys": [],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SwitchSystemStatus.PowerRedundancy",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SwitchSystemStatus/PowerRedundancy",
+      "display_name": "交换机供电冗余",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "BOOLEAN"
+      ],
+      "keys": [],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SwitchStatus.Status",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SwitchStatus/Status",
+      "display_name": "交换机运行状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SensorStatus.Status",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SensorStatus/Status",
+      "display_name": "交换机传感器状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SensorId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SensorStatus.Value",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SensorStatus/Value",
+      "display_name": "交换机传感器读数",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SensorId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.SensorStatus.Unit",
+      "target_type": "oracle_si_netswitch",
+      "selector": "SensorStatus/Unit",
+      "display_name": "交换机传感器单位",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "SensorId"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_netswitch.PowerSupplyStatus.Status",
+      "target_type": "oracle_si_netswitch",
+      "selector": "PowerSupplyStatus/Status",
+      "display_name": "交换机电源模块状态",
+      "native_value_type": "STRING",
+      "repository_unit_codes": [
+        "NA"
+      ],
+      "keys": [
+        "Name"
+      ],
+      "scene": "network",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_pdu.PduSummaryStatus.TotalPduActivePower",
+      "target_type": "oracle_si_pdu",
+      "selector": "PduSummaryStatus/TotalPduActivePower",
+      "display_name": "PDU 总有功功率",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "WATT"
+      ],
+      "keys": [],
+      "scene": "capacity",
+      "semantics": "SNAPSHOT",
+      "aggregation": "NONE",
+      "unit_conversion": "NONE",
+      "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",
+      "max_age_seconds": 1800,
+      "threshold_policy": "UNVERIFIED"
+    },
+    {
+      "code": "oracle_si_pdu.PduSummaryStatus.TotalPduEnergy",
+      "target_type": "oracle_si_pdu",
+      "selector": "PduSummaryStatus/TotalPduEnergy",
+      "display_name": "PDU 累计能耗",
+      "native_value_type": "NUMBER",
+      "repository_unit_codes": [
+        "KWH"
+      ],
+      "keys": [],
+      "scene": "capacity",
+      "semantics": "CUMULATIVE",
       "aggregation": "NONE",
       "unit_conversion": "NONE",
       "freshness_policy": "REVIEWED_30_MINUTES_NOT_OEM_SCHEDULE",

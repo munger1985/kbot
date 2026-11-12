@@ -112,7 +112,7 @@ def mib(now):
         put(system + str(column) + ".0", value)
     put("1.3.6.1.2.1.2.1.0", integer(len(PORTS)))
     # 原厂以 ENTITY-MIB 的机箱厂家/型号/序列号生成目标关联身份。
-    # 只有一个明确 SIM 的机箱，不虚构硬件传感器或告警状态。
+    # 明确 SIM 的机箱；设备协议由原厂插件读取，不伪造 OEM 指标或 GUID。
     chassis = {1: integer(1), 2: text("SIM Exadata lab chassis"), 3: oid("0.0"),
         4: integer(0), 5: integer(3), 6: integer(-1),
         7: text("SIM Switch System AIOPS_SIM_EXADATA_SWITCH01"), 8: text("SIM"), 9: text("SIM"),
@@ -121,6 +121,39 @@ def mib(now):
         14: text("SIM"), 15: text("SIM"), 16: integer(2)}
     for column, value in chassis.items():
         put(f"1.3.6.1.2.1.47.1.1.1.1.{column}.1", value)
+    # 对齐真实导出的 SensorId / Name 维度；所有实体身份仍明确为 SIM。
+    # CISCO-ENTITY-SENSOR-MIB：celsius(8)、units(9)、precision=0、ok(1)。
+    for index, (label, temperature) in enumerate((("BACK", 24), ("CPU", 38),
+                                                  ("FRONT", 34), ("Heavenly", 42)), 101):
+        entity = {1: integer(index), 2: text("SIM module-1 " + label), 3: oid("0.0"),
+            4: integer(1), 5: integer(8), 6: integer(index),
+            7: text("SIM module-1 " + label), 8: text("SIM"), 9: text("SIM"),
+            10: text("SIM"), 11: text(f"SIM-TEMP-{index}"), 12: text("SIM"),
+            13: text("SIM sensor"), 14: text("SIM"), 15: text("SIM"), 16: integer(2)}
+        for column, value in entity.items():
+            put(f"1.3.6.1.2.1.47.1.1.1.1.{column}.{index}", value)
+        sensor = {1: integer(8), 2: integer(9), 3: integer(0),
+            4: integer(temperature + (elapsed // 60) % 3), 5: integer(1),
+            6: integer((elapsed * 100) % 2 ** 32, 0x43), 7: integer(6000, 0x42)}
+        for column, value in sensor.items():
+            put(f"1.3.6.1.4.1.9.9.91.1.1.1.1.{column}.{index}", value)
+    # 原厂先读取电源组，再读 FRU；缺前一张表会提前抛 Empty snmp response。
+    power_group = {1: integer(2), 2: text("watts"), 3: integer(800),
+                   4: integer(400), 5: integer(1)}
+    for column, value in power_group.items():
+        put(f"1.3.6.1.4.1.9.9.117.1.1.1.1.{column}.1", value)
+    # 原厂 PowerSupplyStatus 从 FRU 表转换为 admin:on;oper:on。
+    for index in (201, 202):
+        label = f"SIM PowerSupply-{index - 200}"
+        entity = {1: integer(index), 2: text(label), 3: oid("0.0"), 4: integer(1),
+            5: integer(6), 6: integer(index), 7: text(label), 8: text("SIM"),
+            9: text("SIM"), 10: text("SIM"), 11: text(f"SIM-PSU-{index}"),
+            12: text("SIM"), 13: text("SIM PSU"), 14: text("SIM"),
+            15: text("SIM"), 16: integer(1)}
+        for column, value in entity.items():
+            put(f"1.3.6.1.2.1.47.1.1.1.1.{column}.{index}", value)
+        for column, value in {1: 1, 2: 2, 3: 400}.items():
+            put(f"1.3.6.1.4.1.9.9.117.1.1.2.1.{column}.{index}", integer(value))
     # 原厂端口配置采集要求 VTP VLAN 目录。只声明一个明确 SIM 的以太网 VLAN；
     # 不捏造 TokenRing/FDDI 属性、远端邻居、传感器或额外性能值。
     vlan = {2: integer(1), 3: integer(1), 4: text("SIM_VLAN1"),

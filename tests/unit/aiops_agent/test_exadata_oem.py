@@ -81,7 +81,7 @@ def args(f, **query):
 
 def test_catalog_is_independent_and_preserves_audited_semantics():
     version, digest, metrics, profiles, diagnoses = load_catalog()
-    assert version == "exadata-oem-v1" and len(digest) == 64 and len(metrics) == 279
+    assert version == "exadata-oem-v1" and len(digest) == 64 and len(metrics) == 292
     by_selector = {item["selector"]: item for item in metrics.values()}
     assert by_selector["Aggregated_HardNFlashDisk_Metric/avg_cd_io_load"]["keys"] == ["celldisk_type"]
     assert next(item for item in metrics.values() if item["selector"].startswith("HostInterConnect_Statistics/"))["keys"] == ["name", "cell_Id"]
@@ -367,8 +367,8 @@ def test_overview_lists_all_confirmed_devices_without_faking_unqueried_states(ex
         scoped = await f.exadata.collect(**args(f, component_id="d" * 32))
         assert len(scoped.device_coverage) == 1
         assert all(sample.component_id == "d" * 32 for sample in scoped.samples)
-        assert {item.code for item in scoped.definitions} == {
-            "oracle_si_netswitch.AccessPointResponse.statusMsg", "oracle_si_netswitch.ComponentState.ComponentState"}
+        assert "oracle_si_netswitch.SensorStatus.Status" in {item.code for item in scoped.definitions}
+        assert "oracle_si_netswitch.ComponentState.ComponentState" not in {item.code for item in scoped.definitions}
         report = await f.exadata.diagnose(**args(f, limit=4), idempotency_key="device-coverage-report")
         saved = await f.exadata.get_report(scope=f.scope, system_id=f.system_id, resource_id=f.resource_id,
             source_id=f.source_id, report_id=report.report_id)

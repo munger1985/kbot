@@ -161,7 +161,7 @@ function buildExadataCards(view) {
             card = { key, componentId, metricCode, selector: metricSelector,
                 componentName: view.members.find(member => member.target_id === componentId)?.display_name || componentId,
                 title: labels[metricSelector] || definition?.status?.display_name || definition?.display_name || metricSelector,
-                status: definition?.status || null,
+                status: definition?.status || null, currentStatus: definition?.semantics === 'OEM_TARGET_AVAILABILITY',
                 unit, numeric: nativeType === 'NUMBER' && !definition?.status, samples: [], series: [], gaps: [], quality: '', tone: '',
                 baselineSupported: !!definition?.baseline_supported && !definition?.status,
                 value: '无数据', valueUnit: '', observedAt: null, percent: null };
@@ -250,7 +250,7 @@ function exadataStatusItems(card) {
         return { key: series.key, dimension: series.label === '无维度' ? '' : series.label,
             label: missing ? '无数据' : valid ? entry?.label || '未知' : '未知',
             tone: valid ? entry?.tone || 'unknown' : 'unknown',
-            quality: missing ? '无有效数据' : !entry ? '未识别状态' : sample.quality !== 'OBSERVED' ? exadataQuality(sample.quality) : card.gaps.length ? '部分采样' : '已采样',
+            quality: missing ? '无有效数据' : !entry ? '未识别状态' : sample.quality !== 'OBSERVED' ? exadataQuality(sample.quality) : card.gaps.length ? '部分采样' : card.currentStatus ? '状态已读取' : '已采样',
             observedAt: sample.observed_at };
     });
 }

@@ -165,6 +165,30 @@ Cell 属性为 `MgmtIPAddr=172.22.0.8;SupportExacli=0`。采集用独立 ed25519
 
 可手工触发的原厂集合名称是 `Exadata_Status_Metrics_All`、`Exadata_Performance_Metrics_All`、`Response`，不是 `Cell_Metric` 等子指标组名。只能对新 Agent 执行 `emctl control agent runCollection`，等它完成后再 `emctl upload agent`，不能并发把未完成的上传说成成功。
 
+## 硬件遥测补齐（2026-11-12）
+
+本节替代早期“PDU 仅管理可达、交换机不提供传感器”的阶段性范围。所有数据仍明确属于 SIM，取值范围来自真实导出而不是回放客户身份、历史或事件。
+
+- 交换机补 CISCO-ENTITY-SENSOR-MIB：四个温度传感器、`SensorId` 维度、celsius 单位和 ok 状态；补 ENTITY/FRU 电源组与两个 SIM 电源，使原厂生成 `PowerSupplyStatus` 的 `admin:on;oper:on`。电源组表缺失会使原厂在 FRU 读取前提前抛出 Empty snmp response，因此两张表必须同时提供。
+- PDU 提供原厂 Enhanced MIB 驱动的协议识别（`Oracle RMII PDU system` 与企业 OID 2769.1.4）、明确 SIM 的名称/序列号及两项 summary OID。原厂将能耗整数除以10为 kWh；AIOps 不再额外换算。累计能耗不计算均值；有功功率可计算留存均值。
+- 当前 Cisco SNMP 访问点继承原厂空实现的 `getSwitchSystemStatus`，不能提供其他设备驱动的整体健康汇总。首页使用实际传感器/电源状态；汇总字段保留审核目录和互联详情，不拼造健康。真实导出中 PDU ComponentState 也没有当前样本，不填硬件健康。
+
+既有容器用 `update_hardware.py`，默认只预检，提供三个已核对现场 SHA256 后显式 `--apply`。脚本只更新固定三个源码绑定，逐项校验非 root、只读根、无额外能力/发布端口、摘要和 inode，先备份再原位更新，仅重启两只模拟器。PDU 的共享 SNMP codec 必须一起更新。失败恢复源码并保留备份；不重建 OEM 目标，不重启 Agent/OMS。
+
+`enable_hardware_telemetry.py` 默认 preview；`--apply` 先完成所有原厂 preview，再只调整固定 SIM 父交换机三个集合（5分钟）和 PDU summary（15分钟）。对 MAP 子访问点直接调用 EMCLI 修改集合会报 Collection Name not valid，因此只通过原厂父目标操作，之后复核子访问点实际调度。不能修改原厂 XML。调度命令成功不代表已有样本。
+
+需要立即验收时，可在专用监控 Agent 内以 oracle 用户依次执行原厂 `runCollection`：
+
+```text
+AIOPS_SIM_EXADATA_SWITCH01_SNMP:oracle_si_switch_cisco_ios_snmp oracle_si_hw_sensor_status
+AIOPS_SIM_EXADATA_SWITCH01_SNMP:oracle_si_switch_cisco_ios_snmp oracle_si_switch_power_status
+AIOPS_SIM_EXADATA_PDU01:oracle_si_pdu PduSummaryStatusCol
+```
+
+每次完成后才能继续；最后 `emctl upload agent`。再独立检查父目标 `get_metric_data` 和真实 AIOps 公开 view；不以 getmetric 本地读取或 runCollection 完成替代 OMS 最新快照验收。
+
+DB Server 的 Response 集合原厂 `NO_DATA=TRUE`，当前可用性从已确认 host GUID 的目标详情 `status` 读取；取证时间不是设备采样时间，不提供历史或基线。CPU 原厂小时采集加上传预算为75分钟，不能沿用30分钟过期判定；不修改原厂 CPU 调度或回填时间。
+
 ## 只读 smoke
 
 在任一仓库使用该仓库自己的 PYTHONPATH 和 Python 环境，凭据通过已有安全工具的管道传入 JSON `username/password`，不要将明文放在命令行、日志、版本库或示例文件中。

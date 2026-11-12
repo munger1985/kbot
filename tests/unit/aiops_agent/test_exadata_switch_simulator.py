@@ -31,6 +31,15 @@ def decoded(response):
 
 
 class SwitchSimulatorTests(unittest.TestCase):
+    def test_native_power_collection_has_group_table_before_fru_table(self):
+        data = sim.mib(sim.EPOCH)
+        for column in range(1, 6):
+            self.assertIn(tuple(map(int, f"1.3.6.1.4.1.9.9.117.1.1.1.1.{column}.1".split("."))), data)
+        for index in (201, 202):
+            for column, expected in ((1, 1), (2, 2)):
+                raw = data[tuple(map(int, f"1.3.6.1.4.1.9.9.117.1.1.2.1.{column}.{index}".split(".")))]
+                self.assertEqual(int.from_bytes(sim.read_tlv(raw)[1], "big"), expected)
+
     def test_native_registration_uses_access_point_and_exact_credential_option(self):
         registration = importlib.util.spec_from_file_location("switch_registration", path.with_name("register_switch.py"))
         module = importlib.util.module_from_spec(registration)
@@ -127,6 +136,16 @@ class SwitchSimulatorTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(rows[0][1], (2, b"\x03"))
         self.assertEqual(rows[1][1], (4, b"SIM-EXADATA-SWITCH-0001"))
+
+    def test_native_sensor_and_psu_tables_keep_dimensions_and_real_protocol_types(self):
+        data = sim.mib(sim.EPOCH + 120)
+        for index in range(101, 105):
+            for column, expected in ((1, 8), (2, 9), (3, 0), (5, 1)):
+                self.assertEqual(data[(1, 3, 6, 1, 4, 1, 9, 9, 91, 1, 1, 1, 1, column, index)], sim.integer(expected))
+            self.assertIn(b"SIM", data[(1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 7, index)])
+        for index in (201, 202):
+            self.assertEqual(data[(1, 3, 6, 1, 4, 1, 9, 9, 117, 1, 1, 2, 1, 1, index)], sim.integer(1))
+            self.assertEqual(data[(1, 3, 6, 1, 4, 1, 9, 9, 117, 1, 1, 2, 1, 2, index)], sim.integer(2))
 
     def test_vtp_has_only_one_explicit_sim_ethernet_vlan(self):
         status, rows = decoded(sim.response(packet(0xA0, [

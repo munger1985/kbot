@@ -7,13 +7,13 @@ from platform_core.contracts.aiops.exadata import ExadataMetricDefinition
 def test_all_reviewed_status_metrics_have_typed_dictionary_and_provenance():
     _, _, metrics, _, _ = load_catalog()
     statuses = {code: item for code, item in metrics.items() if item.get("status")}
-    assert len(statuses) == 26
+    assert len(statuses) == 35
     for item in metrics.values():
         definition = ExadataMetricDefinition.model_validate(item)
         if definition.status:
             assert definition.status.provenance
             assert definition.status.values or definition.code in {
-                "host.Response.Status", "oracle_si_server_map.SystemStatus.OSStatus"}
+                "oracle_si_server_map.SystemStatus.OSStatus"}
     for name in ("Status", "msStatus", "rsStatus"):
         status = statuses[f"oracle_exadata.CellSrv_Status_Metric.{name}"]["status"]
         assert status["values"]["1"] == {"label": "可用", "tone": "success"}
@@ -73,7 +73,7 @@ def test_device_states_keep_response_power_os_and_hardware_semantics_separate():
     power = metrics["oracle_si_server_map.SystemStatus.PowerStatus"]["status"]
     assert power["category"] == "ADMINISTRATIVE" and power["values"]["On"]["tone"] == "neutral"
     assert not metrics["oracle_si_server_map.SystemStatus.OSStatus"]["status"]["values"]
-    assert not metrics["host.Response.Status"]["status"]["values"]
+    assert metrics["host.OEMTarget.status"]["status"]["values"]["UP"]["label"] == "可用"
     for code in ("host.CPUUsageSummary.OverAllUsagePct", "host.Load.memUsedPct"):
         item = metrics[code]
         assert item["native_value_type"] == "NUMBER" and item["keys"] == []

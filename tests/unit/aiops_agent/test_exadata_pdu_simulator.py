@@ -1,4 +1,4 @@
-"""PDU 只提供管理可达性，不制造供电或硬件健康；部署不影响既有设备。"""
+"""PDU 管理与功率协议明确为 SIM，不把遥测当作硬件健康。"""
 
 from http.client import HTTPConnection
 from http.server import HTTPServer
@@ -35,12 +35,15 @@ def packet(operation, name, community=COMMUNITY):
 
 
 class PduSimulatorTests(unittest.TestCase):
-    def test_identity_is_explicit_sim_not_vendor_identity_or_power_health(self):
+    def test_identity_is_explicit_sim_with_native_protocol_and_power_telemetry(self):
         data = sim.mib()
-        self.assertEqual(len(data), 4)
-        self.assertIn(b"SIM", data[(1, 3, 6, 1, 2, 1, 1, 1, 0)])
-        self.assertEqual(data[(1, 3, 6, 1, 2, 1, 1, 2, 0)], codec.oid("1.3.6.1.4.1.32473.1"))
-        self.assertTrue(all(key[:7] == (1, 3, 6, 1, 2, 1, 1) for key in data))
+        self.assertIn(b"AIOPS_SIM", data[(1, 3, 6, 1, 2, 1, 1, 5, 0)])
+        self.assertEqual(data[(1, 3, 6, 1, 2, 1, 1, 2, 0)], codec.oid("1.3.6.1.4.1.2769.1.4"))
+        self.assertIn(b"SIM", data[(1, 3, 6, 1, 4, 1, 2769, 1, 4, 1, 11, 0)])
+        before, after = sim.mib(sim.STARTED), sim.mib(sim.STARTED + 3600)
+        energy = (1, 3, 6, 1, 4, 1, 2769, 1, 4, 5, 1, 5, 0)
+        self.assertEqual(int.from_bytes(codec.read_tlv(before[energy])[1], "big"), 13046)
+        self.assertGreater(int.from_bytes(codec.read_tlv(after[energy])[1], "big"), 13046)
 
     def test_snmp_rejects_wrong_community_and_set_is_read_only(self):
         self.assertIsNone(sim.response(packet(0xA0, "1.3.6.1.2.1.1.5.0", b"public"), COMMUNITY))
@@ -111,7 +114,7 @@ class PduSimulatorTests(unittest.TestCase):
                 self.assertNotIn(secret, " ".join(run))
                 self.assertEqual((state / "snmp-community").stat().st_mode & 0o777, 0o400)
                 receipt = json.loads((state / "created.json").read_text())
-                self.assertEqual(receipt["scope"], "MANAGEMENT_REACHABILITY_ONLY")
+                self.assertEqual(receipt["scope"], "MANAGEMENT_AND_POWER_TELEMETRY")
                 self.assertEqual(set(receipt["source_sha256"]), {"pdu_simulator.py", "switch_simulator.py"})
                 with self.assertRaises(SystemExit):
                     deployment.main()
