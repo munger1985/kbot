@@ -51,6 +51,43 @@ class PduSimulatorTests(unittest.TestCase):
         pdu = codec.fields(codec.fields(codec.read_tlv(raw)[1])[2][1])
         self.assertEqual(int.from_bytes(pdu[1][1], "big"), 6)
 
+    def test_native_module_phase_indices_scaling_and_totals(self):
+        data = sim.mib(sim.STARTED)
+        def raw(suffix):
+            key = tuple(map(int, ("1.3.6.1.4.1.2769.1.4." + suffix).split(".")))
+            tag, value, end = codec.read_tlv(data[key])
+            self.assertEqual(tag, 2)
+            self.assertEqual(end, len(data[key]))
+            return int.from_bytes(value, "big", signed=True)
+        self.assertEqual(raw("5.2.1.0"), 1)
+        self.assertEqual(raw("5.3.1.0") // raw("5.2.1.0"), 3)
+        self.assertEqual(raw("5.2.2.1.23.1") / 100, 2)
+        self.assertEqual(raw("5.2.2.1.11.1") / 100, .02)
+        self.assertEqual(raw("5.2.2.1.3.1"), raw("5.1.2.0"))
+        for column, summary in ((5, "5.1.2.0"), (10, "5.1.5.0")):
+            self.assertEqual(sum(raw(f"5.3.2.1.{column}.1.{phase}") for phase in (1, 2, 3)), raw(summary))
+        for phase, current in enumerate((2.7, 2.71, 2.72), 1):
+            self.assertEqual(raw(f"5.3.2.1.3.1.{phase}") / 100, current)
+            self.assertEqual(raw(f"5.3.2.1.4.1.{phase}") / 10, 230)
+            self.assertEqual(raw(f"5.3.2.1.23.1.{phase}") / 100, 12)
+            self.assertEqual(raw(f"5.3.2.1.24.1.{phase}") / 100, 14)
+            self.assertLessEqual(raw(f"5.3.2.1.5.1.{phase}"), raw(f"5.3.2.1.6.1.{phase}"))
+
+    def test_scenarios_supply_currents_not_fabricated_oem_status(self):
+        def raw(data, suffix):
+            key = tuple(map(int, ("1.3.6.1.4.1.2769.1.4." + suffix).split(".")))
+            return int.from_bytes(codec.read_tlv(data[key])[1], "big", signed=True)
+        for scenario, current in (("NORMAL", 270), ("WARNING", 1300), ("CRITICAL", 1500), ("DISABLED", 1500)):
+            data = sim.mib(sim.STARTED, scenario)
+            self.assertEqual(raw(data, "5.3.2.1.3.1.1"), current)
+            disabled = scenario == "DISABLED"
+            self.assertEqual(raw(data, "5.3.2.1.23.1.1"), 0 if disabled else 1200)
+            self.assertEqual(raw(data, "5.3.2.1.24.1.1"), 0 if disabled else 1400)
+            self.assertEqual(raw(data, "5.2.2.1.23.1"), 0 if disabled else 200)
+            self.assertEqual(raw(data, "5.1.2.0"), sum(raw(data, f"5.3.2.1.5.1.{i}") for i in (1, 2, 3)))
+        with self.assertRaises(ValueError):
+            sim.mib(scenario="HEALTHY")
+
     def test_unknown_hardware_oid_is_missing_not_healthy_zero(self):
         raw = sim.response(packet(0xA0, "1.3.6.1.4.1.99999.0"), COMMUNITY)
         pdu = codec.fields(codec.fields(codec.read_tlv(raw)[1])[2][1])

@@ -37,7 +37,7 @@ def validate(info, container, target, destination):
         raise RuntimeError("源码必须来自固定路径的唯一只读文件绑定")
 
 
-def update(source, expected, apply=False):
+def update(source, expected, apply=False, pdu_only=False):
     if os.geteuid() != 0 or set(expected) != set(FILES):
         raise RuntimeError("需要 root 及全部三个已核对摘要")
     plan = []
@@ -56,6 +56,9 @@ def update(source, expected, apply=False):
             raise RuntimeError("现场源码漂移，拒绝覆盖")
         compile(payload, name, "exec")
         plan.append((key, container, target, destination, previous, payload, target.stat().st_ino))
+    if pdu_only:
+        plan = [item for item in plan if item[0] == "pdu"]
+    affected = list(dict.fromkeys(item[1] for item in plan))
     receipt = {"applied": False, "updated_at": datetime.now(UTC).isoformat(), "files": {
         key: {"old": digest(previous), "new": digest(payload)}
         for key, _, _, _, previous, payload, _ in plan}}
@@ -76,17 +79,17 @@ def update(source, expected, apply=False):
             live = subprocess.check_output(["docker", "exec", container, "sha256sum", destination], text=True).split()[0]
             if target.stat().st_ino != inode or live != digest(payload):
                 raise RuntimeError("绑定文件更新验证失败")
-        for container in containers:
+        for container in affected:
             subprocess.run(["docker", "restart", "--time", "10", container], check=True, stdout=subprocess.DEVNULL)
             info = json.loads(subprocess.check_output(["docker", "inspect", container], text=True))[0]
             if not info["State"]["Running"]:
                 raise RuntimeError("模拟器未恢复运行")
         receipt["applied"] = True
     except Exception:
-        # 原位恢复备份，只重启本次两个模拟器；保留记录，错误继续向调用者抛出。
+        # 原位恢复备份，只重启本次实际更新的模拟器；保留记录，错误继续抛出。
         for _, _, target, _, previous, _, _ in plan:
             target.write_bytes(previous)
-        for container in containers:
+        for container in affected:
             subprocess.run(["docker", "restart", "--time", "10", container], check=False, stdout=subprocess.DEVNULL)
         raise
     finally:
@@ -101,9 +104,10 @@ def main():
     parser.add_argument("--expected-pdu", required=True)
     parser.add_argument("--expected-pdu-codec", required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--pdu-only", action="store_true", help="仍核对三个摘要，只更新和重启 PDU")
     args = parser.parse_args()
     print(json.dumps(update(args.source, {"switch": args.expected_switch, "pdu": args.expected_pdu,
-        "pdu_codec": args.expected_pdu_codec}, args.apply)))
+        "pdu_codec": args.expected_pdu_codec}, args.apply, args.pdu_only)))
 
 
 if __name__ == "__main__":

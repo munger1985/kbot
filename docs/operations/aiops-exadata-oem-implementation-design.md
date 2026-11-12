@@ -812,3 +812,57 @@ enable_hardware_telemetry.py 通过原厂全部 preview 后，只启用固定父
 两端390/768/1440真实在线布局无横向溢出，pageerror=0；互联详情有传感器/电源采样。私有验收与截图 /tmp/exadata-health-online-kbot-zAciwy/、/tmp/exadata-health-online-ammolite-0yIfJc/，登录会话和原始响应不提交。未伪造PDU硬件健康、Cisco原厂未实现的整机汇总或ILOM设备；这些边界不因页面采样恢复而消失。此前独立的泛类型对话路由/队列死锁不在本次修复范围。
 
 验收后通过当前在线development logs API，以本次applied.json时间为起点复查两端Main API/AIOps四组ERROR事件；分页均覆盖起点，无新增ERROR。再次核验4服务就绪、47个无关进程与配置摘要未变化；不以历史错误总量或readiness代替本次功能验收。
+
+### 10.21 PDU 原厂状态来源与模块三相采样（2026-11-12）
+
+本次范围为原厂来源核实、模拟协议、Agent 采集及 OMS 仓库取证；不改 AIOps 监控/诊断目录、应用授权或绑定，不把仓库采样验收扩大为页面/Agent 功能已接入。非 Exadata、非 OEM 路径不动。
+
+#### 10.21.1 健康状态来源更正
+
+现场 SI 24.1.1.0.0 原厂 `em-siagent-target-pojo.jar` 中，`PduTargetImpl.getComponentState(Properties)` 的全部字节码仅为 `Collections.emptyList(); areturn`，不请求任何健康 OID。此结论来自原厂实现，而不只是当前采样为空。不能承诺“补健康 OID 即可产生 ComponentState”，不得修改原厂 Java/XML、替换 OEM 响应、写内部指标表或把管理可达/功率正常拼成综合硬件健康。
+
+真实导出中，PDU 的 ComponentState、PduModuleStatus、PduModulePhaseStatus 均有定义，但无当前样本；模块/相位集合启用，周期15分钟。原厂真正支持的是 `PduModuleStatus/OutOfBalanceThresholdValue`（相间电流不平衡越限）和 `PduModulePhaseStatus/ModulePhaseThresholdValue`（逐相电流越限等级）。原厂 trap receivelet 仅触发对应集合重新采集，不提供可直接写入的综合健康状态。
+
+模块状态由原厂比较不平衡电流与阈值，输出0/1；逐相状态由原厂比较电流与预警/告警阈值，输出0/1/2。阈值为0代表禁用对应阈值，故状态0不能无条件解释为“硬件健康”。本次原厂配置取证确认模块阈值2 A、逐相预警12 A/告警14 A均非零，因此只能说这些电流阈值本次未越限。阈值数值是 SIM 调试配置，不是客户真实配置或生产推荐值。
+
+#### 10.21.2 原厂 Enhanced MIB 协议
+
+以 `KnuerrV2Driver.getFirstModuleNumber`、`PduEnhancedOids` 和 `EnhancedMibSnmpCommunicatorFactory` 为依据。OID 公共前缀为 `1.3.6.1.4.1.2769.1.4`，OEM 模块号从0起，SNMP 模块索引为模块号加1；相号从1起。
+
+| OID 后缀 | 原厂用途 | 原厂倍率 |
+| --- | --- | --- |
+| `.5.2.1.0` / `.5.3.1.0` | 模块数 / 总相数；相数为总相数除以模块数 | 整数 |
+| `.2.2.0` | 模块 SNMP 配置 | 原值 |
+| `.5.2.2.1.11.1` / `.23.1` | 模块不平衡电流 / 阈值 | 除100，A |
+| `.5.2.2.1.3.1` / `.8.1` | 模块有功功率 / 能耗 | W / 除10，kWh |
+| `.5.3.2.1.3.1.<相>` | 相电流 | 除100，A |
+| `.5.3.2.1.22.1.<相>` / `.23.1.<相>` / `.24.1.<相>` | 相电流信息 / 预警 / 告警阈值 | 除100，A |
+| `.5.3.2.1.4.1.<相>` | 相电压 | 除10，V |
+| `.5.3.2.1.5.1.<相>` / `.6.1.<相>` | 相有功 / 视在功率 | W / VA |
+| `.5.3.2.1.10.1.<相>` | 相能耗 | 除10，kWh |
+
+旧模拟器模块数为0，原厂循环因此不进入模块/相位采集。本次补为1模块×3相；功率及能耗保持相位、模块、summary 合计一致，能耗随本次模拟进程时间累计，不回放客户历史或伪造采样时间。保留明确 SIM 的目标名称/序列号。NORMAL 默认不产生故障；`--scenario` 的 WARNING/CRITICAL/DISABLED 只提供原始电流/阈值，由原厂计算等级，不提供合成 OEM 健康字段。后3种场景本次只有单元协议验证，未声称已在线跑通其告警。
+
+#### 10.21.3 实际采集与仓库结果
+
+原厂 `getmetric` 已确认配置和1条模块、3条相位记录。按顺序执行 `runCollection` 后再 `upload`；另刷新原厂组件、模块、相位与 summary 配置集合，不手工创建子目标或生成 GUID。
+
+只读查询 OEM `MGMT$METRIC_CURRENT` / `GC_METRIC_LATEST` 已确认：
+
+- 模块 `Module 0` 于07:41:21 UTC采样：不平衡电流0.02 A、越限状态0、有功1830 W、能耗1304.6 kWh，以及模块编号；共5条列值。
+- 三相于07:42:24 UTC采样：2.70/2.71/2.72 A、各230 V，越限状态各0，有功608/610/612 W、视在621/623/625 VA、能耗434.9/434.9/434.8 kWh；含模块号和相号，共24条列值。
+- 父 PDU summary 于07:40:07 UTC采样：1830 W、1304.6 kWh两条。以上时间均为2026-11-12 OEM原生采样时间，不是取证时刻。
+
+29条组件列值中包含编号，不声称29个独立物理传感器或29个采样时刻。状态值共4条，语义为负载阈值未越限，而非设备综合健康。
+
+归属另以 `GC_METRIC_LATEST.parent_me_guid` 精确限制为已存在 SIM PDU 的 GUID，核验四个原厂 `entity_guid` 均指向 `oracle_si_pdu / AIOPS_SIM_EXADATA_PDU01`，不靠组件名称推断关系。现场相位组件GUID分别为 `5f754a5f995f2903e063020016ac9edb`、`5f754a5f99602903e063020016ac9edb`、`5f754a5f99612903e063020016ac9edb`；模块为 `5f7407f561f52991e063020016ac662b`。这些仅是本次OEM取证身份，不作为代码常量或应用绑定写入。
+
+关键读取边界：原厂将模块/相位指标重归属到 `oracle_si_hw_component_pdu` 原生组件，组件 GUID 不等于父 PDU GUID；它们也不是 `MGMT$TARGET` 中可按普通目标名称读取的目标。父 PDU 的同名 `get_metric_data` 返回 `{}`，直接以 `Module 0 Phase 1` 和组件类型调用 EMCLI 被拒绝 Invalid target details，均保留为实际失败结果，不以父目标空结果否认组件采样。后续 AIOps 接入必须使用原厂组件身份与父关系证据；不得按名称模糊匹配、编 GUID 或未经确认扩大整机成员/Agent 授权。本次未改应用目录，故不宣称这些新组件指标已在页面或 Agent 诊断中展示。
+
+#### 10.21.4 部署及验证边界
+
+两仓同步模拟器、部署工件、测试和本文档。`update_hardware.py --pdu-only` 仍预检3个现场摘要及隔离边界，只原位更新 PDU 文件并重启该容器，备份为 `/opt/aiops-oem-lab/state/exadata-hardware-update-9t6omefb`。现场新源码 SHA256 为 `1b72fb02f5d7d1dfa4bf75518ffc2253ca92d0516693792ba9c9b092e6781bfc`。`enable_hardware_telemetry.py --pdu-only --apply` 对固定PDU三个集合先全部preview后启用，周期15分钟，记录 `/opt/aiops-oem-lab/state/exadata-hardware-collections-w1hzpzqk`。
+
+PDU重启时间07:39:35 UTC；交换机07:23:26 UTC、专用Agent前日09:43:17 UTC、OMS 11月4日13:01:30 UTC启动时间均未变化。未重启两端AIOps服务，未改应用Schema、Prompt、Agent授权、业务系统/监控绑定。OEM仍有本次范围外的历史配置集合错误，不宣称全部OEM配置或所有硬件均健康。
+
+两仓各603项Exadata/OEM定向单元与公开HTTP合同通过，另13项子测试。新增覆盖原厂OID索引/倍率、模块/相位/summary合计、明确SIM阈值与禁用阈值、私有community、拒绝SNMP写入、未知OID不填健康、PDU定向更新/单容器重启及采集先preview后apply；不是全部仓库或所有告警场景已通过的声明。此次只涉及部署模拟工件与文档，不需要应用服务重启。

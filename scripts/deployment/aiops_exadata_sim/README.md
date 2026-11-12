@@ -2,7 +2,9 @@
 
 本目录只在隔离实验环境模拟 CellCLI、只读 SNMP 交换机与 PDU 管理端点。OEM 使用未修改的 XA/SI 插件采集、上传并保存指标，AIOps 访问真实 OEM REST 或显式启用的 Exadata 原厂 EMCLI 通道，不直读模拟器，不写 OEM 内部表。
 
-## DB Server、Rack 与 PDU 当前接入（2026-11-12）
+最新 PDU 原厂协议和采样边界见下文“PDU 模块/三相协议核验”和[设计 10.21](../../../docs/operations/aiops-exadata-oem-implementation-design.md#1021-pdu-原厂状态来源与模块三相采样2026-11-12)。后文带时间的数量和限制是对应阶段记录，不表示最新能力。
+
+## DB Server、Rack 与 PDU 接入阶段（2026-11-12）
 
 最新模型与验收边界见[设计 10.18](../../../docs/operations/aiops-exadata-oem-implementation-design.md#1018-sim-整机硬件成员补齐与-number-状态匹配2026-11-12)，替代下文历史阶段“交换机未入整机、无 DB Server/PDU”的说明。两端已通过正常登录/发现/确认更新原绑定，整机现含 7 个设备（根、Grid、Cell、专用 SIM host、交换机、PDU、Rack），公共 view 为 12 项查询、9 条采样。DB Server CPU/内存来自专用实验 Agent 的原生 host 指标；不是物理 Exadata 数值。PDU 仅管理可达性，不模拟电流、电压或供电健康。ILOM 与端口组件身份仍未接入，host Response 和父 ComponentState 的缺失不填健康值。
 
@@ -173,9 +175,9 @@ Cell 属性为 `MgmtIPAddr=172.22.0.8;SupportExacli=0`。采集用独立 ed25519
 - PDU 提供原厂 Enhanced MIB 驱动的协议识别（`Oracle RMII PDU system` 与企业 OID 2769.1.4）、明确 SIM 的名称/序列号及两项 summary OID。原厂将能耗整数除以10为 kWh；AIOps 不再额外换算。累计能耗不计算均值；有功功率可计算留存均值。
 - 当前 Cisco SNMP 访问点继承原厂空实现的 `getSwitchSystemStatus`，不能提供其他设备驱动的整体健康汇总。首页使用实际传感器/电源状态；汇总字段保留审核目录和互联详情，不拼造健康。真实导出中 PDU ComponentState 也没有当前样本，不填硬件健康。
 
-既有容器用 `update_hardware.py`，默认只预检，提供三个已核对现场 SHA256 后显式 `--apply`。脚本只更新固定三个源码绑定，逐项校验非 root、只读根、无额外能力/发布端口、摘要和 inode，先备份再原位更新，仅重启两只模拟器。PDU 的共享 SNMP codec 必须一起更新。失败恢复源码并保留备份；不重建 OEM 目标，不重启 Agent/OMS。
+既有容器用 `update_hardware.py`，默认只预检，提供三个已核对现场 SHA256 后显式 `--apply`。脚本只更新固定源码绑定，逐项校验非 root、只读根、无额外能力/发布端口、摘要和 inode，先备份再原位更新。默认更新交换机、PDU 和共享 SNMP codec；`--pdu-only` 仍核对三个摘要，但只更新 PDU 源文件并重启一个 PDU 容器。仅当 codec 变化时才需要默认全量硬件更新。失败恢复本次源码并保留备份；不重建 OEM 目标，不重启 Agent/OMS。
 
-`enable_hardware_telemetry.py` 默认 preview；`--apply` 先完成所有原厂 preview，再只调整固定 SIM 父交换机三个集合（5分钟）和 PDU summary（15分钟）。对 MAP 子访问点直接调用 EMCLI 修改集合会报 Collection Name not valid，因此只通过原厂父目标操作，之后复核子访问点实际调度。不能修改原厂 XML。调度命令成功不代表已有样本。
+`enable_hardware_telemetry.py` 默认 preview；`--apply` 先完成所有原厂 preview，再只调整固定 SIM 父交换机三个集合（5分钟）和 PDU summary/module/phase 三个集合（15分钟）。`--pdu-only` 排除所有交换机操作。对 MAP 子访问点直接调用 EMCLI 修改集合会报 Collection Name not valid，因此只通过原厂父目标操作，之后复核子访问点实际调度。不能修改原厂 XML。调度命令成功不代表已有样本。
 
 需要立即验收时，可在专用监控 Agent 内以 oracle 用户依次执行原厂 `runCollection`：
 
@@ -188,6 +190,28 @@ AIOPS_SIM_EXADATA_PDU01:oracle_si_pdu PduSummaryStatusCol
 每次完成后才能继续；最后 `emctl upload agent`。再独立检查父目标 `get_metric_data` 和真实 AIOps 公开 view；不以 getmetric 本地读取或 runCollection 完成替代 OMS 最新快照验收。
 
 DB Server 的 Response 集合原厂 `NO_DATA=TRUE`，当前可用性从已确认 host GUID 的目标详情 `status` 读取；取证时间不是设备采样时间，不提供历史或基线。CPU 原厂小时采集加上传预算为75分钟，不能沿用30分钟过期判定；不修改原厂 CPU 调度或回填时间。
+
+## PDU 模块/三相协议核验（2026-11-12）
+
+SI 24.1.1.0.0 的 `PduTargetImpl.getComponentState` 固定返回空列表，不读取健康 OID。真实导出虽有 ComponentState 定义，却无相应当前样本；不得伪造 `HEALTHY`，也不能将 HTTP 可达、功率正常当成综合硬件健康。
+
+模拟器从模块数 0 改为 1 个输入模块、3 相，按 `PduEnhancedOids` 与 `EnhancedMibSnmpCommunicatorFactory` 提供模块/相位电流、阈值、电压、功率和能耗。OEM 模块编号是 0，SNMP 表索引是 1；电流及阈值原始值除100，电压和能耗除10。阈值是明确的 SIM 调试配置，不冒充真实设备配置。默认 NORMAL；启动参数 `--scenario` 可选 NORMAL/WARNING/CRITICAL/DISABLED，后者将阈值置零，不能把插件因此计算的 0 解读为硬件健康。不提供远程写入接口，也不自动轮换故障场景；本次线上仅验证 NORMAL。
+
+原厂 `getmetric` 已确认模块阈值2 A、逐相预警12 A/告警14 A，三相2.70/2.71/2.72 A、230 V，模块不平衡0.02 A。原厂计算模块 `OutOfBalanceThresholdValue=0` 和三条 `ModulePhaseThresholdValue=0`，含义是本次启用阈值未越限，不是“整台设备健康”。
+
+首次验收须先在专用 Agent 中依次刷新原厂配置集合，再刷新遥测，最后上传；不手工创建组件或生成 GUID：
+
+```text
+oracle_si_hw_component_config
+oracle_si_pdu_module_config
+oracle_si_pdu_module_phase_config
+oracle_si_pdu_config
+PduModuleStatusCol
+PduModulePhaseStatusCol
+PduSummaryStatusCol
+```
+
+上述集合均针对 `AIOPS_SIM_EXADATA_PDU01:oracle_si_pdu`。OMS 将模块/相位采样归入原生 `oracle_si_hw_component_pdu` 组件，不留在父 PDU 的同名指标下。已只读核验 OEM 仓库存在5条模块列值和24条相位列值（含编号字段），以及父 PDU summary 2条。父目标 EMCLI 查询返回 `{}` 不等于没有这些组件采样；以组件名称直接当普通 target 调用也被原厂拒绝。这次只完成模拟协议、原厂采集和仓库取证，未将新组件绕过发现/授权接入 AIOps 页面，未宣称页面或 Agent 已读取这29条组件列值。具体样本时间和归属证据见设计10.21。
 
 ## 只读 smoke
 

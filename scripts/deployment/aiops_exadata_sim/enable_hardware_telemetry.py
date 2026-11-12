@@ -15,6 +15,8 @@ SCHEDULES = (
     ("oracle_si_netswitch", "AIOPS_SIM_EXADATA_SWITCH01", "oracle_si_switch_power_status", 5),
     ("oracle_si_netswitch", "AIOPS_SIM_EXADATA_SWITCH01", "oracle_si_switch_status", 5),
     ("oracle_si_pdu", "AIOPS_SIM_EXADATA_PDU01", "PduSummaryStatusCol", 15),
+    ("oracle_si_pdu", "AIOPS_SIM_EXADATA_PDU01", "PduModuleStatusCol", 15),
+    ("oracle_si_pdu", "AIOPS_SIM_EXADATA_PDU01", "PduModulePhaseStatusCol", 15),
 )
 
 
@@ -28,6 +30,7 @@ def arguments(item, preview):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--pdu-only", action="store_true", help="只预检/启用固定 PDU 三个集合")
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise SystemExit("需要 root 调用现场私有 CLI")
@@ -36,6 +39,8 @@ def main():
     # 所有集合必须先通过 preview；发生错误不继续应用后续集合，也不使用 force。
     for preview in ((True, False) if args.apply else (True,)):
         for index, item in enumerate(SCHEDULES):
+            if args.pdu_only and item[0] != "oracle_si_pdu":
+                continue
             result = subprocess.run([sys.executable, str(ROOT / "scripts/oem_cli.py"), *arguments(item, preview)],
                 capture_output=True, text=True, timeout=180)
             output = result.stdout + result.stderr
