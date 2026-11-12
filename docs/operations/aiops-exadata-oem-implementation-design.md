@@ -718,4 +718,20 @@ KBot 与 Ammolite 均通过正常登录会话、公开发现 API 和带签名的
 
 真实联调发现 PDU NUMBER 状态经 REST 返回 `1.0`，此前与审核编码文本 `1` 不匹配。专用页面、Agent 指标回答和只读分析统一按原生类型匹配：NUMBER 用精确十进制等值（支持 1、1.0、1e0），STRING 保持文本语义；不使用浮点舍入把相邻未知值解释成正常。原始值、维度、时间和哈希不改写，旧值、截断、缺值仍不能变成可用。该修正只作用于 Exadata 状态，不修改普通 OEM/Prometheus/数据库监控和诊断。
 
-两仓同步模拟器、原厂注册/机柜/调度工件、状态匹配及测试：相同 15 文件各 **426 passed、13 subtests passed**；两端生产组件浏览器合同通过五种宽度，覆盖 PDU 1.0、非法/相邻高精度编码与原始证据保留。Ammolite typecheck/生产 build、两仓架构边界通过，build 仅保留既有大 chunk 提示。代码发布和上线后的页面/Agent 验收续记；上述本地测试不冒充线上恢复。
+两仓同步模拟器、原厂注册/机柜/调度工件、状态匹配及测试：相同 15 文件各 **426 passed、13 subtests passed**；两端生产组件浏览器合同通过五种宽度，覆盖 PDU 1.0、非法/相邻高精度编码与原始证据保留。Ammolite typecheck/生产 build、两仓架构边界通过，build 仅保留既有大 chunk 提示。代码发布和上线后的页面/Agent 验收见后续两节；上述本地测试不冒充线上恢复。
+
+#### 10.18.4 已发布版本、定向部署和真实页面验收
+
+代码已分别提交并推送：KBot `59421d37b0ab4860fe4c3f25de45314192c739db`、Ammolite `e2cd152bda53eec2d70e7a3212cde2749af8c389`。应用机两个仓库已快进至对应版本，仅重启两端 AIOps API/Worker 共四个进程；四服务真实 readiness 均为 200，47 个无关进程及配置摘要保持不变。Main API、Portal 进程、OEM、数据库和既有 Agent 未重启；无 DDL。部署备份和前后核对记录位于 `/home/ubuntu/aiops-exadata-hardware-20261112-EN4OaV/`。
+
+两端均以正常浏览器会话访问真实监控页面，未替换网络响应或构造页面样本，验收结果一致：**7 个设备、4 张数值指标卡、12 项查询、9 条采样**。设备清单包括 DBM、Grid、Cell、DB Server、交换机、PDU、Rack；DB Server 与 Cell 分别显示 CPU/内存，交换机 AP 与 PDU HTTP 显示“可达”，PDU 证据原值仍为 `1.0`。缺少 DB Server/交换机/PDU 成员的三条提示已消失，无浏览器 pageerror。私有页面截图和原始响应分别位于 `/tmp/exadata-hardware-render-ammolite-KZTVc6/`、`/tmp/exadata-hardware-render-kbot-8wb1wE/`，会话不入库、不提交。
+
+这不是所有设备健康的结论：DB Server 的原厂 Response/Status 仍无采样，交换机/PDU 父目标 ComponentState 仍不支持当前读取；页面保留对应缺口。PDU/交换机的管理可达不能替代硬件、电源或端口健康；整机/Grid/Rack 没有审核通过的独立状态读法，不能借用 Cell 状态。ILOM、物理传感器和可靠端口身份未接入，原厂带维度历史最多七天的限制不变。
+
+#### 10.18.5 新硬件指标的 Agent 验收与遗留问题
+
+Ammolite 的 Cyber DBA 保持原四个业务系统授权，正常新会话对 DB Server CPU、内存七天基线和 PDU HTTP 可达性分析已 **COMPLETED**；准确使用 `host.CPUUsageSummary.OverAllUsagePct`、`host.Load.memUsedPct`、`oracle_si_pdu.PduHttpResponse.Status`，包含相对偏离、证据引用和下一步只读排查建议。PDU NUMBER `1.0` 正确解释为“可达”，没有创建数据库 ops_run_id。私有证据 `/tmp/exadata-analysis-ammolite-NSROoq/`。
+
+KBot OEM 测试用 Agent 使用完整组件名 `aiops-exadata-monitor.lab`、`AIOPS_SIM_EXADATA_PDU01` 的真实新会话同样 **COMPLETED**，三个指标、基线偏离和只读建议均通过验收，无数据库 ops_run_id；证据 `/tmp/exadata-analysis-kbot-hKXBKw/`。但此前仅称“DB Server/PDU”的自然语言问题出现路由错误：模型将设备类型填入 `component_names`，严格成员匹配拒绝并返回 `EXADATA_QUERY_UNAVAILABLE`；证据 `/tmp/exadata-analysis-kbot-Xc6yO5/`。因此只能确认完整组件名的端到端分析成功，不能将此复测当作泛类型路由问题已修复；本轮没有通过关键词映射、模糊组件匹配或放宽授权掩盖问题。
+
+通过当前在线 development logs API，按本次 `applied.json` 时间过滤并确认分页覆盖起点：KBot Main API/AIOps、Ammolite Main API 未发现新增 ERROR；Ammolite AIOps 在 2026-11-12 06:17:39 UTC 有一条 Conversation Turn 排队提升的 PostgreSQL `DeadlockDetectedError`。它是队列事务错误，不是 OEM 指标读取错误；上述硬件分析已完成，但本轮未修复或宣称消除该独立并发问题。日志核查与会话证据分别记录，不用 readiness 或监控页成功代替 Agent 验收。
