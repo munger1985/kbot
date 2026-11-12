@@ -75,6 +75,12 @@ assert.equal(api.exadataStatusItems(cards[0])[0].label, '可用')
 const palette = { accent: 'blue', info: 'cyan', muted: 'gray', line: 'gray', surface: 'white', ink: 'black' }
 for (const value of [null, '', ' ', 'NaN', 'Infinity', '0x10', 'false']) assert.equal(api.exadataNumeric(value), null)
 assert.equal(api.exadataNumeric('1.2e-3'), 0.0012)
+assert.equal(api.exadataChartKind(cards[3], 'LATEST_SNAPSHOT'), 'donut')
+assert.equal(api.exadataChartKind(cards[4], 'LATEST_SNAPSHOT'), 'donut', '真实零值也绘制占用环图')
+const ring = api.exadataChartOption(cards[4], palette, 'donut')
+assert.equal(ring.series[0].type, 'pie')
+assert.deepEqual(clone(ring.series[0].data.map(item => item.value)), [0, 100])
+assert.equal(ring.series[0].data[1].derived, true, '未使用部分标为计算值，不伪造OEM采样')
 const preciseBaseline = { unit: '%', baseline: { unavailable_reason: null }, comparisons: [{ dimensions: {},
   average: '37.95429398496240601503759398496240601504', deviation_percent: '3.914460945120556658462827400372799012244',
   current: '39.44', difference: '1.48570601503759398496240601503759398496', sample_count: 7, observed_at: overview.captured_at }] }
@@ -98,6 +104,19 @@ assert.equal(dimensional.series.length, 2)
 assert.equal(dimensional.value, '2 个维度', '多维度不求和、不以最大值冒充整机值')
 assert.equal(dimensional.percent, null)
 assert.equal(api.exadataChartOption(dimensional, palette).series.length, 2)
+assert.equal(api.exadataChartKind(dimensional, 'LATEST_SNAPSHOT'), 'bar', '多个维度百分比不求和绘成饼图')
+const bars = api.exadataChartOption(dimensional, palette, 'bar')
+assert.equal(bars.series[0].type, 'bar')
+assert.deepEqual(clone(bars.series[0].data.map(item => item.value)), [2, 9])
+assert.equal(bars.xAxis.max, undefined, '不将负载等无界数值截断到100')
+assert.ok(!bars.tooltip.formatter({ data: { raw: '<script>', dimension: '<img>', at: '<svg>' } }).includes('<img'))
+const manyDimensions = { ...dimensional, series: Array.from({length:12}, (_, index) => ({ ...dimensional.series[0], label:'disk='+index })) }
+const scrolling = api.exadataChartOption(manyDimensions, palette, 'bar')
+assert.equal(scrolling.series[0].data.length, 12, '柱图不静默截掉第七个以后的维度')
+assert.equal(scrolling.dataZoom.length, 2)
+const missingBar = api.buildExadataCards({ ...overview, samples: [sample(cpu, '0', { dimensions: { disk:'a' } }), sample(cpu, null, { dimensions:{disk:'b'}, quality:'EMPTY' })], gaps:[] })[0]
+assert.deepEqual(clone(api.exadataChartOption(missingBar,palette,'bar').series[0].data.map(item=>item.value)),[0,null], '空维度不补零，真零不丢弃')
+assert.equal(api.exadataChartKind(cards[0], 'LATEST_SNAPSHOT'), null)
 const nullLatest = api.buildExadataCards({ ...overview, query_mode: 'HISTORY', samples: [sample(cpu, '8'), sample(cpu, null, { observed_at: '2026-11-11T12:01:00Z', quality: 'EMPTY' })] })[0]
 assert.equal(nullLatest.value, '无数据', '末次空值不回填旧的非空值')
 assert.equal(nullLatest.percent, null, '历史模式不生成当前百分比仪表')
@@ -124,6 +143,19 @@ for (const raw of ['1.0000000000000000001', '0.9999999999999999999', 'NaN', 'Inf
 }
 assert.notEqual(api.exadataStatusKey('1.0', 'STRING'), api.exadataStatusKey('1', 'STRING'))
 const reviewed = ['metrics.v1.json', 'device_metrics.v1.json'].flatMap(file => JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem', file))).metrics)
+const profiles = JSON.parse(read(resolve(ammolite, 'services/aiops_agent/src/aiops_agent/resources/exadata_oem/monitoring_profiles.v1.json'))).profiles
+const chartAudit = { performance:0, status:0, configuration:0 }
+for (const definition of reviewed.filter(item=>profiles.some(profile=>profile.metric_codes.includes(item.code)))) {
+  const typed = {...definition,status:statusesByCode.get(definition.code)||null}
+  const card = api.buildExadataCards({...overview, definitions:[typed],samples:[sample(typed,'25')],gaps:[]})[0]
+  const section = api.exadataCardSection(card); chartAudit[section]++
+  assert.equal(!!api.exadataChartKind(card,'LATEST_SNAPSHOT'), section==='performance', `${definition.code} 必须有明确图表或非图表决策`)
+  const historical = api.buildExadataCards({...overview, query_mode:'HISTORY',definitions:[typed],samples:[sample(typed,'25'),sample(typed,'30',{observed_at:'2026-11-11T12:01:00Z'})],gaps:[]})[0]
+  assert.equal(api.exadataChartKind(historical,'HISTORY'), section==='performance'&&typed.native_value_type==='NUMBER'?'line':null)
+}
+assert.deepEqual(chartAudit, {performance:233,status:28,configuration:29}, '覆盖8场景290个独立指标，不仅4个磁盘IO示例')
+const monitoringPalette = {...palette,success:'green',warning:'yellow',danger:'red'}
+assert.deepEqual(clone(api.exadataChartOption(dimensional,monitoringPalette,'bar').color),['blue','cyan','green','yellow','red','gray'], '使用Prometheus同序六色序列色板，非健康阈值')
 for (const [code, statusDefinition] of statusesByCode) {
   const definition = { ...reviewed.find(item => item.code === code), status: statusDefinition }
   assert.ok(definition.selector, `${code} 必须属于真实指标目录`)
@@ -196,6 +228,21 @@ for (const selector of ['Aggregated_Exadata_Diskgroup_Capacity_Metric/count', 'A
   const card = api.buildExadataCards({...overview, definitions:[definition], samples:[sample(definition, '9007199254740993')], gaps:[]})[0]
   assert.equal(api.exadataCardSection(card), 'performance', '真实 ASM 字符串容量保留容量卡')
   assert.equal(card.numeric, false, '不因布局强改原厂类型')
+  assert.equal(api.exadataChartKind(card, 'LATEST_SNAPSHOT'), 'bar', '已审核的字符串容量可作近似绘图，原始文本仍保留')
+  assert.equal(card.value, '9007199254740993')
+}
+const sceneFixtures = {
+  dbserver: [[dbCPU, '%', ['27']], [dbMemory, '%', ['57']]],
+  disk: ['avg_cd_io_load', 'avg_cd_io_util', 'avg_cd_large_read_iops', 'avg_cd_large_read_throughput'].map((name,index) => [metric('Aggregated_HardNFlashDisk_Metric/'+name), ['%','%','I/O per second','MB per second'][index], [['2','2'],['24','24'],['360','180'],['96','48']][index], 'celldisk_type', ['FlashDisk','HardDisk']]),
+  flash: [[metric('FlashCache_Metric/default_hits_rate'), '%', ['92']], [metric('FlashCache_Metric/fc_read_throughput'), 'MB per second', ['100','20'], 'object_name', ['flash-a','flash-b']]],
+  iorm: [[metric('IORMDB_Metric/db_iops'), 'I/O per second', ['120','30'], 'db_name', ['ORCL','TEST']], [metric('IORMDB_Metric/db_io_wt_sm_rq'), 'ms', ['0','3'], 'db_name', ['ORCL','TEST']]],
+  network: [[metric('NetworkPortPerformance/InOctetsRate','NUMBER','oracle_si_network_port_switch'), 'bytes per second', ['1024','2048'], 'PortId', ['port-1','port-2']]],
+  capacity: [[metric('Aggregated_Exadata_Capacity_Metric/Usage'), '%', ['42']], [metric('Aggregated_Exadata_Capacity_Metric/size'), 'GB', ['900','300'], 'celldisk_type', ['HardDisk','FlashDisk']], [metric('Aggregated_Exadata_Diskgroup_Capacity_Metric/size','STRING'), 'GB', ['9007199254740993']], [metric('Aggregated_Exadata_Diskgroup_Capacity_Metric/count','STRING'), 'n/a', ['12']]],
+}
+for (const [scene, rows] of Object.entries(sceneFixtures)) for (const [definition,unit,values,dimension,labels] of rows) {
+  const card = api.buildExadataCards({...overview, definitions:[definition],samples:values.map((value,index)=>sample(definition,value,{unit,dimensions:dimension?{[dimension]:labels[index]}:{}})),gaps:[]})[0]
+  assert.ok(api.exadataChartKind(card,'LATEST_SNAPSHOT'), `${scene}/${definition.selector} 应有数值图表`)
+  if (scene === 'disk' || scene === 'iorm') assert.equal(api.exadataChartKind(card,'LATEST_SNAPSHOT'),'bar')
 }
 const incomplete = api.buildExadataCards({...overview,samples:[],gaps:[{component_id:'cell-a',metric_code:cpu.code,code:'COLLECTION_TIMEOUT',detail:'未完成查询'}]})[0]
 assert.equal(incomplete.value, '未完成查询', '预算超时不是 OEM 空采样')
@@ -239,6 +286,12 @@ try {
         comparisons: [{ dimensions: {}, observed_at: overview.samples[3].observed_at, current: memory ? '0' : '27.210000000000001', average: memory ? '0' : '20', sample_count: 7, difference: memory ? '0' : '7.210000000000001', deviation_percent: memory ? null : '36.050000000000005' }] } })
     }
     let result = clone(overview)
+    if (sceneFixtures[body.scene] && !baselineFixture) {
+      const rows = sceneFixtures[body.scene]
+      result.definitions = rows.map(row => row[0])
+      result.samples = rows.flatMap(([definition,unit,values,dimension,labels]) => values.map((value,index)=>sample(definition,value,{unit,dimensions:dimension?{[dimension]:labels[index]}:{}})))
+      result.gaps = []; result.total_queries = rows.length; result.next_offset = null
+    }
     if (body.scene === 'cell') {
       result.definitions = [...overview.definitions, ...Array.from({ length: 7 }, (_, index) => metric(`Cell_Metric/fixture_${index}`))]
       result.samples = [...overview.samples, ...result.definitions.slice(5).map((item, index) => sample(item, `${index + 1}`, { unit: null }))]
@@ -246,8 +299,7 @@ try {
     }
     if (body.component_id) result.samples = result.samples.filter(item => item.component_id === body.component_id)
     if (body.mode === 'HISTORY') {
-      const definitions = result.definitions.filter(item => item.native_value_type === 'NUMBER')
-      result.samples = definitions.flatMap(item => [sample(item, '8.25'), sample(item, null, { observed_at: '2026-11-11T12:00:30Z', quality: 'EMPTY' }), sample(item, '13.75', { observed_at: '2026-11-11T12:01:00Z' })])
+      result.samples = result.samples.filter(item => item.native_value_type === 'NUMBER').flatMap(item => [{...item, value:'8.25'}, {...item, value:null, observed_at:'2026-11-11T12:00:30Z', quality:'EMPTY'}, {...item, value:'13.75', observed_at:'2026-11-11T12:01:00Z'}])
       result.gaps.push(...status.map(item => ({ component_id: 'cell-a', metric_code: item.code, code: 'SOURCE_METRIC_HISTORY_UNSUPPORTED', detail: '字符串历史不支持' })))
     }
     if (stateFixture) {
@@ -263,7 +315,7 @@ try {
       }
     }
     if (unavailable) { result.samples = []; result.gaps.push({ component_id: 'cell-a', metric_code: cpu.code, code: 'NO_DATA', detail: '无采样，不按零值显示' }) }
-    if (providerError) { result.samples = []; result.gaps = [{ component_id: 'cell-a', metric_code: cpu.code, code: 'SOURCE_PROVIDER_ERROR', detail: 'OEM 服务端 HTTP 5xx' }] }
+    if (providerError) { result.definitions = overview.definitions; result.samples = []; result.gaps = [{ component_id: 'cell-a', metric_code: cpu.code, code: 'SOURCE_PROVIDER_ERROR', detail: 'OEM 服务端 HTTP 5xx' }] }
     result.query_mode = body.mode
     if (baselineFixture) {
       Object.assign(result, { binding_id: 'binding', binding_version: 1, source_version: 2, catalog_sha256: 'c'.repeat(64) })
@@ -278,8 +330,8 @@ try {
   await expect(page.locator('.exadata-status-value')).toHaveText(['可用', '可用', '可用'])
   await expect(page.locator('.exadata-status-panel .exadata-card-value')).toHaveCount(0)
   assert.ok(await page.locator('.exadata-status-row').first().evaluate(node => node.getBoundingClientRect().height < 100), '状态采用紧凑行，不使用大卡片')
-  await expect(page.locator('.exadata-percent')).toHaveCount(2)
-  await expect(page.locator('.exadata-chart')).toHaveCount(0)
+  await expect(page.locator('.exadata-percent')).toHaveCount(0)
+  await expect(page.locator('.exadata-chart[data-chart-kind="donut"] canvas')).toHaveCount(2)
   await expect(page.locator('.exadata-boundary')).toHaveCount(0)
   await expect(page.locator('.exadata-oem')).not.toContainText('不把采集成功视为健康')
   await expect(page.locator('.exadata-evidence[open]')).toHaveCount(0)
@@ -317,6 +369,39 @@ try {
   const chart = await cpuCard.locator('.exadata-chart').evaluate(node => ({ width: node.clientWidth, height: node.clientHeight }))
   assert.ok(chart.width > 200 && chart.height >= 128)
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-history.png`), fullPage: true })
+  await page.locator('[data-mode]').selectOption('LATEST_SNAPSHOT')
+  for (const [scene,rows] of Object.entries(sceneFixtures)) {
+    await page.locator(`[data-scene-id="${scene}"]`).click()
+    await expect(page.locator('.exadata-metric-card')).toHaveCount(rows.length)
+    await expect(page.locator('.exadata-chart canvas')).toHaveCount(rows.length)
+    await expect(page.locator('.exadata-metric-card > .exadata-baseline')).toHaveCount(0)
+    await expect(page.locator('.exadata-evidence[open]')).toHaveCount(0)
+    await expect(page.locator('.exadata-metric-card > footer')).toHaveCount(0)
+    if (scene === 'disk') {
+      await expect(page.locator('.exadata-chart[data-chart-kind="bar"]')).toHaveCount(4)
+      await page.locator('.exadata-metric-card summary').nth(2).click()
+      await expect(page.locator('.exadata-metric-card').nth(2).locator('tbody')).toContainText('360')
+      await expect(page.locator('.exadata-metric-card').nth(2).locator('tbody')).toContainText('celldisk_type=FlashDisk')
+      await page.locator('.exadata-metric-card summary').nth(2).click()
+    }
+    for (const width of [390,1440]) {
+      await page.setViewportSize({width,height:1000})
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth<=1), `${scene} 图表不横向溢出`)
+    }
+    await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-${scene}-charts.png`),fullPage:true})
+    if (scene === 'disk') {
+      await page.evaluate(()=>document.documentElement.dataset.theme='dark')
+      await page.locator('[data-refresh]').click()
+      await expect(page.locator('.exadata-chart canvas')).toHaveCount(4)
+      await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-disk-dark.png`),fullPage:true})
+      await page.evaluate(()=>document.documentElement.dataset.theme='light')
+    }
+    await page.locator('[data-mode]').selectOption('HISTORY')
+    const numericCount = rows.filter(row=>row[0].native_value_type==='NUMBER').length
+    await expect(page.locator('.exadata-chart[data-chart-kind="line"] canvas')).toHaveCount(numericCount)
+    await page.locator('[data-mode]').selectOption('LATEST_SNAPSHOT')
+  }
+  await page.locator('[data-mode]').selectOption('HISTORY')
   await page.locator('[data-scene-id="cell"]').click()
   await expect(page.locator('.exadata-metric-card')).toHaveCount(9)
   await expect(page.locator('.exadata-chart canvas')).toHaveCount(9)
@@ -366,7 +451,8 @@ try {
   await expect(page.locator('[data-device-id="rack-a"]')).toBeVisible()
   await page.locator('.exadata-assets > summary').click()
   await page.evaluate(() => document.documentElement.dataset.theme = 'light')
-  await expect(page.locator('.exadata-metric-card')).toHaveCount(0)
+  await expect(page.locator('.exadata-metric-card')).toHaveCount(4)
+  await expect(page.locator('.exadata-chart[data-chart-kind="donut"] canvas')).toHaveCount(4)
   await expect(page.locator('[data-device-group="nodes"]')).toContainText('SIM DB SERVER')
   await expect(page.locator('[data-device-group="equipment"]')).toContainText('SIM SWITCH')
   await expect(page.locator('.exadata-assets')).not.toHaveAttribute('open', '')

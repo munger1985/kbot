@@ -14,6 +14,8 @@ exports.exadataDeviceScene = exadataDeviceScene;
 exports.exadataSceneMembers = exadataSceneMembers;
 exports.exadataCardSection = exadataCardSection;
 exports.exadataHasTrend = exadataHasTrend;
+exports.exadataChartKind = exadataChartKind;
+exports.exadataChartLabel = exadataChartLabel;
 exports.exadataGapLabel = exadataGapLabel;
 exports.exadataRaw = exadataRaw;
 exports.exadataQuality = exadataQuality;
@@ -110,7 +112,25 @@ function exadataCardSection(card) {
     return 'performance';
 }
 function exadataHasTrend(card) {
-    return card.numeric && card.series.some(series => new Set(series.samples.filter(sample => sample.quality !== 'EMPTY' && exadataNumeric(sample.value) !== null).map(sample => sample.observed_at)).size > 1);
+    return card.numeric && exadataChartable(card) && card.series.some(series => new Set(series.samples.filter(sample => sample.quality !== 'EMPTY' && exadataNumeric(sample.value) !== null).map(sample => sample.observed_at)).size > 1);
+}
+// 原厂将这两个容量列声明为字符串；只允许已审核的选择器作数值近似，不改原厂类型。
+function exadataChartable(card) {
+    return !card.status && exadataCardSection(card) === 'performance' && (card.numeric || ['Aggregated_Exadata_Diskgroup_Capacity_Metric/count', 'Aggregated_Exadata_Diskgroup_Capacity_Metric/size'].includes(card.selector));
+}
+function exadataChartKind(card, mode) {
+    if (!exadataChartable(card))
+        return null;
+    if (mode === 'HISTORY')
+        return exadataHasTrend(card) ? 'line' : null;
+    if (mode !== 'LATEST_SNAPSHOT' || !card.series.some(series => series.latest.quality !== 'EMPTY' && exadataNumeric(series.latest.value) !== null))
+        return null;
+    // 仅占整体的使用率允许补出未使用部分；IO负载、效率、错误率等不套用占用语义。
+    const occupancy = ['CPUUsageSummary/OverAllUsagePct', 'Load/memUsedPct', 'Cell_Metric/cpu_utilization', 'Cell_Metric/memory_utilization', 'Filesystem_Utilization_Metric/utilization', 'Aggregated_Exadata_Capacity_Metric/Usage'];
+    return card.percent !== null && occupancy.includes(card.selector) ? 'donut' : 'bar';
+}
+function exadataChartLabel(kind) {
+    return kind === 'line' ? '数值历史 · 各维度独立趋势' : kind === 'donut' ? '最新快照 · 使用 / 未使用' : '最新快照 · 按维度对比';
 }
 function exadataGapLabel(code) {
     if (['SOURCE_QUERY_UNSUPPORTED', 'SOURCE_METRIC_HISTORY_UNSUPPORTED'].includes(code))
@@ -260,21 +280,46 @@ function exadataStatusItems(card) {
     });
 }
 // 图表仅作数值近似绘制，卡片及原始表格保留精确文本；空值不补零、不连线。
-function exadataChartOption(card, colors) {
+function exadataChartOption(card, colors, kind = 'line') {
     const escape = (value) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    const palette = [colors.accent, colors.info, colors.success, colors.warning, colors.danger, colors.muted].filter(Boolean);
+    const tooltip = { confine: true, backgroundColor: colors.surfaceRaised || colors.surface, borderColor: colors.lineStrong || colors.line, textStyle: { color: colors.ink } };
+    const chartNumber = (value) => value === null ? '—' : Math.abs(value) >= 1e12 ? value.toExponential(2) : Math.abs(value) >= 1e4 ? new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(value) : baselineNumberFormat.format(value);
+    const rawTooltip = (entry) => `${escape(entry.data?.at)}<br>${escape(entry.data?.dimension || entry.name)}：${escape(exadataRaw(entry.data?.raw ?? null))} ${escape(exadataUnit(card.unit))}<br>${escape(entry.data?.quality ? exadataQuality(entry.data.quality) : '')}`;
+    const latest = card.series.map(series => ({ name: series.label === '无维度' ? '当前值' : series.label, value: series.latest.quality === 'EMPTY' ? null : exadataNumeric(series.latest.value), raw: series.latest.value, at: series.latest.observed_at, dimension: series.label, quality: series.latest.quality }));
+    if (kind === 'donut' && card.percent !== null && exadataChartKind(card, 'LATEST_SNAPSHOT') === 'donut') {
+        const point = latest[0];
+        return { animation: false, color: [colors.accent, colors.accentSoft || colors.line],
+            tooltip: { ...tooltip, trigger: 'item', formatter: (entry) => entry.data?.derived ? '未使用：100% − OEM 使用率（计算值）' : rawTooltip({ name: card.title, data: point }) },
+            legend: { bottom: 0, textStyle: { color: colors.muted, fontSize: 10 } },
+            series: [{ name: card.title, type: 'pie', radius: ['54%', '76%'], center: ['50%', '44%'], avoidLabelOverlap: true, label: { show: false },
+                    data: [{ ...point, name: '使用', value: card.percent }, { name: '未使用', value: 100 - card.percent, derived: true, itemStyle: { color: colors.accentSoft || colors.line } }] }], };
+    }
+    if (kind === 'bar') {
+        const axisColor = colors.faint || colors.muted;
+        return { animation: false, color: palette,
+            grid: { left: 12, right: latest.length > 6 ? 46 : 38, top: 28, bottom: 24, containLabel: true },
+            tooltip: { ...tooltip, trigger: 'item', formatter: rawTooltip },
+            xAxis: { type: 'value', name: exadataUnit(card.unit), nameLocation: 'middle', nameGap: 18, nameTextStyle: { color: axisColor, fontSize: 10 }, splitNumber: 3, axisLabel: { color: axisColor, fontSize: 10, hideOverlap: true, formatter: chartNumber }, splitLine: { lineStyle: { color: colors.lineSubtle || colors.line, opacity: .62 } } },
+            yAxis: { type: 'category', inverse: true, data: latest.map(item => item.name), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: axisColor, fontSize: 10, width: 100, overflow: 'truncate', formatter: (label) => label.replace(/(^| · )[^=·]+=/g, '$1') } },
+            dataZoom: latest.length > 6 ? [{ type: 'slider', yAxisIndex: 0, filterMode: 'none', startValue: 0, endValue: 5, width: 12, right: 6, showDetail: false }, { type: 'inside', yAxisIndex: 0, filterMode: 'none', startValue: 0, endValue: 5 }] : [],
+            series: exadataChartable(card) ? [{ type: 'bar', name: card.title, barMaxWidth: 22, label: { show: true, position: 'right', color: colors.ink, fontSize: 10, formatter: (entry) => chartNumber(entry.value) },
+                    data: latest.map((item, index) => ({ ...item, itemStyle: { color: palette[index % palette.length], borderRadius: [0, 3, 3, 0] } })) }] : [],
+        };
+    }
     return {
         animation: false,
-        color: [colors.accent, colors.info, colors.muted],
+        color: palette,
         grid: { left: 48, right: 18, top: card.series.length > 1 ? 36 : 16, bottom: 30 },
         legend: { show: card.series.length > 1, type: 'scroll', top: 0, textStyle: { color: colors.muted, fontSize: 10 } },
-        tooltip: { trigger: 'axis', confine: true, backgroundColor: colors.surface, borderColor: colors.line, textStyle: { color: colors.ink },
+        tooltip: { ...tooltip, trigger: 'axis',
             formatter: (params) => {
                 const entries = (Array.isArray(params) ? params : [params]);
                 return entries.map(entry => `${escape(entry.data?.at)}<br>${escape(entry.seriesName)}：${escape(exadataRaw(entry.data?.raw ?? null))} ${escape(exadataUnit(card.unit))}`).join('<br>');
             } },
         xAxis: { type: 'time', axisLabel: { color: colors.muted, fontSize: 10, hideOverlap: true }, axisLine: { lineStyle: { color: colors.line } }, splitLine: { show: false } },
-        yAxis: { type: 'value', scale: true, axisLabel: { color: colors.muted, fontSize: 10 }, splitLine: { lineStyle: { color: colors.line, type: 'dashed' } } },
-        series: card.numeric ? card.series.map(series => ({
+        yAxis: { type: 'value', scale: true, axisLabel: { color: colors.muted, fontSize: 10, formatter: chartNumber }, splitLine: { lineStyle: { color: colors.lineSubtle || colors.line, opacity: .62 } } },
+        series: exadataChartable(card) ? card.series.map(series => ({
             name: series.label, type: 'line', connectNulls: false, showSymbol: true, symbolSize: 4,
             lineStyle: { width: 2 }, areaStyle: card.series.length === 1 ? { opacity: 0.06 } : undefined,
             data: series.samples.map(sample => ({ value: [sample.observed_at, sample.quality === 'EMPTY' ? null : exadataNumeric(sample.value)], raw: sample.value, at: sample.observed_at })),

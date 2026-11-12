@@ -73,18 +73,17 @@
     }
     renderCard(card, index) {
       const history = this.view.query_mode === "HISTORY";
-      const chart = history && exadataHasTrend(card);
+      const chart = KBotAIOpsExadataPresentation.exadataChartKind(card, this.view.query_mode);
       return `<article class="monitoring-panel is-native exadata-metric-card tone-${esc(card.tone)}" data-metric-code="${esc(card.metricCode)}" data-component-id="${esc(card.componentId)}">
         <header><div><h3 title="${esc(card.title)}">${esc(card.title)}</h3><p title="${esc(card.componentName)}">${esc(card.componentName)}</p></div><span class="status-pill ${card.tone === "warning" ? "status-warning" : "status-muted"}">${esc(card.quality)}</span></header>
         <div class="exadata-card-value"><strong title="${esc(card.value)}">${esc(card.value)}</strong><span>${esc(card.valueUnit)}</span></div>
         <p class="exadata-card-time" title="${esc(card.observedAt)}">${history ? "窗口末次采样" : "采集时间"} · ${esc(fmt(card.observedAt))}</p>
-        ${chart ? `<div class="exadata-chart" data-chart="${index}" role="img" aria-label="${esc(card.title)}数值历史；不同维度分列，空值不补零"></div>` : `<div class="exadata-snapshot">
+        ${chart ? `<div class="exadata-chart" data-chart="${esc(card.key)}" data-chart-kind="${chart}" role="img" aria-label="${esc(card.title)} · ${esc(KBotAIOpsExadataPresentation.exadataChartLabel(chart))}；空值不补零"></div><p class="exadata-chart-caption">${esc(KBotAIOpsExadataPresentation.exadataChartLabel(chart))} · ${esc(exadataUnit(card.unit))}</p>` : `<div class="exadata-snapshot">
           ${card.percent !== null ? `<div class="exadata-percent" role="img" aria-label="原生百分比 ${esc(card.value)}%，不代表健康阈值"><div><i style="width:${card.percent}%"></i></div><p><span>0%</span><span>100%</span></p></div>` : ""}
           ${card.series.length > 1 ? `<div class="exadata-dimensions">${card.series.slice(0, 4).map(series => `<div><span title="${esc(series.label)}">${esc(series.label)}</span><strong>${esc(exadataRaw(series.latest.value))} ${esc(card.valueUnit)}</strong></div>`).join("")}</div>${card.series.length > 4 ? `<p>另 ${card.series.length - 4} 个维度请查看数据。</p>` : ""}` : ""}
           <p>${esc(card.gaps[0]?.detail || (history ? "当前指标没有可绘制的数值历史，不回退快照。" : card.numeric ? "最新采集快照，不生成历史趋势。" : "最新采集值。"))}</p></div>`}
-        <footer><code title="${esc(card.selector)}">${esc(card.selector)}</code><span>单位 ${esc(exadataUnit(card.unit))}</span></footer>
-        ${this.renderBaseline(card)}
-        <details class="exadata-evidence"><summary>查看数据 · ${card.samples.length} 条</summary><p>图表仅为数值近似；原始值、维度、质量与实际采集时间如下。未验证阈值，不判定健康。</p><div class="exadata-table-scroll"><table><thead><tr><th>采集时间</th><th>原始值</th><th>维度</th><th>质量</th></tr></thead><tbody>${card.samples.map(sample => `<tr><td title="${esc(sample.observed_at)}">${esc(fmt(sample.observed_at))}</td><td>${esc(exadataRaw(sample.value))} · ${esc(exadataUnit(sample.unit))}</td><td>${esc(exadataDimensions(sample.dimensions))}</td><td>${esc(exadataQuality(sample.quality))}</td></tr>`).join("")}</tbody></table></div>${card.gaps.map(gap => `<p>${esc(gap.code)} · ${esc(gap.detail)}</p>`).join("")}</details>
+        ${this.baselinePeriod && card.baselineSupported ? `<p class="exadata-baseline-summary">${esc(exadataBaselineSummary(this.baselines[exadataBaselineKey(card)], this.baselinePeriod))}</p>` : ""}
+        <details class="exadata-evidence"><summary>查看数据 · ${card.samples.length} 条</summary><p><code>${esc(card.selector)}</code> · 单位 ${esc(exadataUnit(card.unit))}</p>${this.renderBaseline(card)}<p>图表仅为数值近似；原始值、维度、质量与实际采集时间如下。未验证阈值，不判定健康。</p><div class="exadata-table-scroll"><table><thead><tr><th>采集时间</th><th>原始值</th><th>维度</th><th>质量</th></tr></thead><tbody>${card.samples.map(sample => `<tr><td title="${esc(sample.observed_at)}">${esc(fmt(sample.observed_at))}</td><td>${esc(exadataRaw(sample.value))} · ${esc(exadataUnit(sample.unit))}</td><td>${esc(exadataDimensions(sample.dimensions))}</td><td>${esc(exadataQuality(sample.quality))}</td></tr>`).join("")}</tbody></table></div>${card.gaps.map(gap => `<p>${esc(gap.code)} · ${esc(gap.detail)}</p>`).join("")}</details>
       </article>`;
     }
     renderStatus(card) {
@@ -105,9 +104,7 @@
       this.offset = 0; this.load(false);
     }
     renderResource(card) {
-      return `<section class="exadata-resource" data-resource-code="${esc(card.metricCode)}"><div><span>${esc(card.title)}</span><strong>${esc(card.value)} ${esc(card.valueUnit)}</strong></div>
-        ${card.percent !== null ? `<div class="exadata-resource-meter" role="img" aria-label="${esc(card.title)} ${esc(card.value)}%"><i style="width:${card.percent}%"></i></div>` : ""}
-        <small>${esc(card.quality)} · ${esc(fmt(card.observedAt))}</small>${card.baselineSupported && this.baselinePeriod ? `<p class="exadata-baseline-summary">${esc(exadataBaselineSummary(this.baselines[exadataBaselineKey(card)], this.baselinePeriod))}</p>` : ""}<details class="exadata-evidence"><summary>均值与证据</summary>${this.renderBaseline(card)}<code>${esc(card.selector)}</code><div class="exadata-table-scroll"><table><thead><tr><th>采集时间</th><th>原始值</th><th>维度</th><th>质量</th></tr></thead><tbody>${card.samples.map(sample => `<tr><td>${esc(fmt(sample.observed_at))}</td><td>${esc(exadataRaw(sample.value))}</td><td>${esc(exadataDimensions(sample.dimensions))}</td><td>${esc(sample.quality)}</td></tr>`).join("")}</tbody></table></div>${card.gaps.map(gap => `<p>${esc(gap.code)} · ${esc(gap.detail)}</p>`).join("")}</details></section>`;
+      return `<section class="exadata-resource" data-resource-code="${esc(card.metricCode)}">${this.renderCard(card)}</section>`;
     }
     renderDevices(view, cards) {
       const devices = buildExadataDevices(view), assets = devices.filter(device => exadataDeviceGroup(device.member.target_type) === "assets");
@@ -167,7 +164,7 @@
         if (!globalThis.echarts) { node.textContent = "图表引擎不可用，请查看原始数据。"; return; }
         const css = getComputedStyle(this.root), color = name => css.getPropertyValue(`--${name}`).trim();
         const chart = echarts.init(node);
-        chart.setOption(exadataChartOption(metrics[Number(node.dataset.chart)], Object.fromEntries(["accent", "info", "muted", "line", "surface", "ink"].map(name => [name, color(name)]))));
+        chart.setOption(exadataChartOption(cards.find(card => card.key === node.dataset.chart), Object.fromEntries(["accent", "info", "success", "warning", "danger", "muted", "line", "surface", "ink", "surfaceRaised", "lineStrong", "lineSubtle", "faint", "accentSoft"].map(name => [name, color(name.replace(/[A-Z]/g, letter => "-" + letter.toLowerCase()))])), node.dataset.chartKind));
         const observer = new ResizeObserver(() => chart.resize()); observer.observe(node);
         this.charts.push(chart); this.observers.push(observer);
       });
