@@ -191,7 +191,7 @@ class NativeMonitoringService:
             native_request = NativeMetricQueryRequest(
                 action_id="a0", target_id=str(instance_id), binding_id=str(frozen["binding_id"]),
                 source_locator_key=frozen["locator"], window_start=window.start, window_end=window.end,
-                trace_id=scope.trace_id, max_response_bytes=frozen["max_response_bytes"] // (2 if query.baseline else 1))
+                trace_id=scope.trace_id, max_response_bytes=frozen["max_response_bytes"])
             if query.mode == "LATEST":
                 async with asyncio.timeout(adapter._timeout.total):
                     latest = await adapter.query_latest_metric(native_request, metric_name=query.metric_name,
@@ -255,10 +255,15 @@ class NativeMonitoringService:
         cached = self._baseline_cache.get(key)
         if cached and cached[0] > now and cached[1] == frozen:
             return cached[2]
+        remaining = adapter._remaining_response_bytes
+        if remaining < 1024:
+            return MonitoringNativeBaseline(period=period, start=window.start, end=window.end,
+                unavailable_reason="当前采样已使用本次读取预算，剩余字节不足以读取完整基线；当前趋势保留。")
         try:
             async with asyncio.timeout(max(0, deadline - asyncio.get_running_loop().time())):
                 summary = await adapter.query_native_metric(
-                    request.model_copy(update={"window_start": window.start, "window_end": window.end}),
+                    request.model_copy(update={"window_start": window.start, "window_end": window.end,
+                        "max_response_bytes": min(request.max_response_bytes, remaining)}),
                     metric_name=entry.name, limit=1000, _paginate=True, _summary_only=True,
                     _expected_target_type=frozen["target_type"])
             if summary["unit"] != entry.unit or any(set(series["dimensions"]) != set(entry.label_names)
@@ -269,9 +274,12 @@ class NativeMonitoringService:
                 series=baseline_series(summary), truncated=summary["truncated"],
                 unavailable_reason="历史结果已截断，不生成不完整基线。" if summary["truncated"] else
                     None if summary["series"] else "基线窗口内暂无有效采样。")
-        except (DiagnosticSourceAdapterError, ClientError, TimeoutError, LookupError):
+        except (DiagnosticSourceAdapterError, ClientError, TimeoutError, LookupError) as exc:
             return MonitoringNativeBaseline(period=period, start=window.start, end=window.end,
-                unavailable_reason="OEM 历史基线读取失败；当前采样不受影响，可重试。")
+                unavailable_reason={
+                    "SOURCE_RESULT_TRUNCATED": "OEM 完整基线超过本次剩余读取预算；不计算部分均值，当前趋势保留。",
+                    "SOURCE_HISTORY_WINDOW_UNSUPPORTED": "原厂 EMCLI 历史最多支持最近7天；不能用短窗口冒充所选基线。",
+                }.get(getattr(exc, "code", ""), "OEM 历史基线读取失败；当前采样不受影响，可重试。"))
         if len(self._baseline_cache) >= 64:
             self._baseline_cache.clear()
         self._baseline_cache[key] = (now + timedelta(minutes=5), frozen, result)

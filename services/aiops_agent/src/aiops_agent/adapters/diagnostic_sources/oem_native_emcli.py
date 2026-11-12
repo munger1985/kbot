@@ -25,7 +25,7 @@ async def query_native_emcli(adapter, request, *, target, target_hash, metadata_
     days = min(7, max(1, ceil(age / 86400)))
     try:
         # 身份与元数据已按实际字节扣减；使用剩余预算，不再固定浪费一半。
-        payload, digest = await client.read_native(adapter.context, target, definition,
+        payload, digest, consumed_bytes = await client.read_native(adapter.context, target, definition,
             history=True, max_bytes=min(request.max_response_bytes,
                 adapter._remaining_response_bytes), days=days)
     except DiagnosticSourceAdapterError as exc:
@@ -33,6 +33,10 @@ async def query_native_emcli(adapter, request, *, target, target_hash, metadata_
             raise DiagnosticSourceAdapterError("SOURCE_RESULT_TRUNCATED",
                 "原厂 EMCLI 只能读取最近整天的全部维度，结果超过冻结字节预算；未返回部分历史或均值") from exc
         raise
+    if (type(consumed_bytes) is not int or consumed_bytes < 0
+            or consumed_bytes > adapter._remaining_response_bytes):
+        _fail("SOURCE_RESPONSE_INVALID")
+    adapter._remaining_response_bytes -= consumed_bytes
     captured = datetime.now(UTC)
     points, dimensions, truncated = parse_values(payload, target=target, definition=definition,
         timezone=adapter.context.config["native_emcli_timezone"], captured_at=captured,

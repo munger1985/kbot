@@ -5,6 +5,12 @@
   "repository_unit_codes": ["PERCENTAGE", "IOSEC", "MBPS", "BPS", "KBPS", "MILLISECREQUEST", "GB"],
   "metric_codes": [
     "oracle_si_pdu.PduSummaryStatus.TotalPduActivePower",
+    "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseActivePower",
+    "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseAmp",
+    "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseApparentPower",
+    "oracle_si_hw_component_pdu.PduModulePhaseStatus.ModulePhaseVoltage",
+    "oracle_si_hw_component_pdu.PduModuleStatus.OutOfBalanceAmpLevel",
+    "oracle_si_hw_component_pdu.PduModuleStatus.TotalInputActivePower",
     "oracle_exadata.Cell_Metric.temperature",
     "oracle_exadata.Cell_Metric.cl_runq",
     "oracle_exadata.Aggregated_HardNFlashDisk_Metric.sum_cd_io_load",

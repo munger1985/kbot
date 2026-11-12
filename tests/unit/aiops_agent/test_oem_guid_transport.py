@@ -8,8 +8,12 @@ import pytest
 
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
 from aiops_agent.application.exadata_catalog import load_catalog, guid_rest_key_alternatives
+from aiops_agent.ports.exadata import ExadataMetricRead
 from tests.unit.aiops_agent.test_aiops_oem_native_metrics import adapter, collection, request
 from tests.unit.aiops_agent.test_oem_capability_closure import native_emcli_adapter, NOW
+from tests.unit.aiops_agent.test_monitoring_oem_native import native_lab
+from tests.unit.aiops_agent.test_business_system_publication_lifecycle import lab
+from platform_core.contracts.aiops.monitoring_native import MonitoringNativeQuery
 
 GUID = "b" * 32
 GROUPS = [
@@ -64,8 +68,8 @@ def test_guid_component_retains_real_transport_keys_without_fabrication(kind, gr
         value.query_native_metric = AsyncMock(return_value={
             "series": ({"dimensions": {}, "total": "230.0", "sample_count": 1},),
             "unit": "V", "truncated": False, "response_sha256": "a"*64})
-        req = req.model_copy(update={"baseline_days": 7,
-            "window_start": req.window_end-timedelta(days=7)})
+        req = ExadataMetricRead(source_locator_key=GUID, max_response_bytes=req.max_response_bytes,
+            baseline_days=7, window_start=req.window_end-timedelta(days=7), window_end=req.window_end)
         if not definition["baseline_supported"]:
             with pytest.raises(DiagnosticSourceAdapterError) as caught:
                 asyncio.run(value.exadata_baseline(req, definition, kind))
@@ -118,6 +122,15 @@ def test_only_explicit_audited_groups_get_alternative_and_repository_catalog_sta
             assert guid_rest_key_alternatives(definition, definition["target_type"]) == ()
 
 
+def test_pdu_physical_gauges_support_baseline_but_energy_identifiers_and_thresholds_do_not():
+    pdu = [definition for definition in load_catalog()[2].values()
+        if definition["target_type"] == "oracle_si_hw_component_pdu"]
+    supported = {definition["selector"] for definition in pdu if definition["baseline_supported"]}
+    assert supported == {"PduModulePhaseStatus/" + name for name in
+        ("ModulePhaseActivePower", "ModulePhaseAmp", "ModulePhaseApparentPower", "ModulePhaseVoltage")} | {
+        "PduModuleStatus/OutOfBalanceAmpLevel", "PduModuleStatus/TotalInputActivePower"}
+
+
 @pytest.mark.parametrize("upstream,expected", [
     ("SOURCE_RESPONSE_TOO_LARGE", "SOURCE_RESULT_TRUNCATED"),
     ("SOURCE_EMCLI_TIMEOUT", "SOURCE_EMCLI_TIMEOUT"),
@@ -142,4 +155,36 @@ def test_native_emcli_uses_only_actual_remaining_budget_not_a_fixed_half_or_expa
         clock.now.return_value = NOW
         asyncio.run(value.query_native_metric(req, metric_name="Filesystems/size", limit=1000))
     budget = value._exadata_emcli_client.read_native.call_args.kwargs["max_bytes"]
-    assert req.max_response_bytes // 2 < budget == value._remaining_response_bytes < req.max_response_bytes
+    assert req.max_response_bytes // 2 < budget == value._remaining_response_bytes + 4096 < req.max_response_bytes
+
+
+def test_native_baseline_budget_failure_keeps_current_and_never_doubles_budget(lab):
+    service, instance_id, _ = native_lab(lab)
+    actual = service._diagnostic_source_registry.create(None)
+    original = actual.query_native_metric
+    requests = []
+    async def read(req, **options):
+        requests.append(req)
+        if options.get("_summary_only"):
+            assert req.max_response_bytes == actual._remaining_response_bytes
+            raise DiagnosticSourceAdapterError("SOURCE_RESULT_TRUNCATED", "基线超过剩余预算")
+        return await original(req, **options)
+    actual.query_native_metric = read
+    result = asyncio.run(service.native.samples(scope=lab.scope, source_id=lab.source_id,
+        instance_id=instance_id, query=MonitoringNativeQuery(metric_name="Filesystems/size", baseline="1w")))
+    assert result.points[0].value == "90071992547409931"
+    assert result.baseline.unavailable_reason and not result.baseline.series
+    assert len(requests) == 2
+    frozen = asyncio.run(service.native._binding(lab.scope, lab.source_id, instance_id))
+    assert requests[0].max_response_bytes == frozen["max_response_bytes"]
+    assert 1024 <= requests[1].max_response_bytes < requests[0].max_response_bytes
+
+
+def test_native_baseline_with_insufficient_remaining_bytes_does_not_call_provider(lab):
+    service, _, _ = native_lab(lab)
+    actual = NS(_remaining_response_bytes=512, query_native_metric=AsyncMock())
+    frozen = {"binding_id": "test"}
+    result = asyncio.run(service.native._baseline(actual, request(), frozen, NS(name="Filesystems/size",
+        native_value_type="NUMBER"), "1w", 0))
+    assert not result.series and "剩余字节不足" in result.unavailable_reason
+    actual.query_native_metric.assert_not_awaited()

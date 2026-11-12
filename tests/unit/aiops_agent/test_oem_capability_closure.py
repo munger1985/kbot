@@ -86,7 +86,7 @@ def native_body(value='12.50'):
 def native_emcli_adapter():
     value, _ = adapter({'targetName': 'mes-db', 'targetType': 'oracle_database'}, metadata())
     value.context = value.context.model_copy(update={'config': {'native_metric_transport': 'EMCLI', 'native_emcli_timezone': 'UTC'}})
-    value._exadata_emcli_client = NS(read_native=AsyncMock(return_value=(native_body(), 'a'*64)))
+    value._exadata_emcli_client = NS(read_native=AsyncMock(return_value=(native_body(), 'a'*64, 4096)))
     return value
 
 

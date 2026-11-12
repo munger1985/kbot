@@ -230,9 +230,9 @@ class OEMEMCLIClient:
         group, column = parse_metric_selector(definition["selector"])
         arguments = ["get_metric_data", "-target_type=" + target["targetType"], "-target_name=" + name,
             "-metric_name=" + group, "-metric_column=" + column, "-last_n_days=" + str(days), "-json"]
-        return await self._read(context, arguments, max_bytes=max_bytes, prefix="native")
+        return await self._read(context, arguments, max_bytes=max_bytes, prefix="native", include_bytes=True)
 
-    async def _read(self, context, arguments, *, max_bytes, prefix="exadata"):
+    async def _read(self, context, arguments, *, max_bytes, prefix="exadata", include_bytes=False):
         entry = self._session(context, **({"prefix": prefix} if prefix != "exadata" else {}))
         async with entry.lock:
             try:
@@ -241,7 +241,8 @@ class OEMEMCLIClient:
                 value = json.loads(body, parse_float=str)
                 if not isinstance(value, dict):
                     fail("SOURCE_RESPONSE_INVALID")
-                return value, hashlib.sha256(body).hexdigest()
+                result = value, hashlib.sha256(body).hexdigest()
+                return (*result, len(body)) if include_bytes else result
             except TimeoutError:
                 entry.initialized = False
                 fail("SOURCE_EMCLI_TIMEOUT")
