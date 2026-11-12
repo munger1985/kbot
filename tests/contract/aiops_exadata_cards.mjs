@@ -534,6 +534,10 @@ try {
   historyIdentityMismatch = false
   await page.locator('[data-refresh]').click()
   await expect(cpuCard.locator('.exadata-evidence > summary')).toContainText('4 条')
+  await expect(cpuCard.locator('tbody tr')).toHaveCount(4)
+  await expect(cpuCard.locator('tbody tr').first().locator('td')).toHaveCount(5)
+  await expect(cpuCard.locator('tbody tr').first().locator('td').first()).toHaveText('当前快照')
+  await expect(cpuCard.locator('tbody tr').nth(1).locator('td').first()).toHaveText('历史采样')
   assert.ok(calls.every(call => call.headers['content-type']?.includes('application/json')), `使用原有请求封装的 JSON 合同：${JSON.stringify(calls.map(call => ({url:call.url,type:call.headers['content-type']})))}`)
   assert.deepEqual(errors, [])
   await page.close()
