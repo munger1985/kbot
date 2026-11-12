@@ -53,11 +53,17 @@ def test_registry_supports_oem_management_discovery_without_metric_configuration
 
 @pytest.mark.parametrize("config", [
     {"target_id": CDB}, {"target_name": "cdb"}, {"database_type": "ORACLE"},
-    {"standard_metric_mappings": {}}, {"query": "arbitrary"},
+    {"query": "arbitrary"},
 ])
 def test_source_configuration_cannot_bind_database_or_request_metric_json(config):
     with pytest.raises(ValueError):
         DiagnosticSourceAdapterCatalog.normalize_config(source_type="OEM", config=config)
+
+
+def test_source_configuration_accepts_explicit_empty_standard_metric_mappings():
+    assert DiagnosticSourceAdapterCatalog.normalize_config(
+        source_type="OEM", config={"standard_metric_mappings": {}},
+    ) == {"standard_metric_mappings": {}}
 
 
 def test_discovery_uses_real_page_tokens_filters_host_and_excludes_root_auxiliary_target():
