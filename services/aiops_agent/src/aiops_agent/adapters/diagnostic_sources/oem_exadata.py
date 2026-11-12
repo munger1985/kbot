@@ -4,6 +4,9 @@ import asyncio
 import hashlib
 import json
 import re
+from dataclasses import replace
+from datetime import timedelta
+from decimal import Decimal, localcontext
 from functools import wraps
 import aiohttp
 from .base import DiagnosticSourceAdapterError
@@ -115,9 +118,35 @@ class OEMExadata:
             target_error("SOURCE_CAPABILITY_FORBIDDEN")
         if not definition.get("baseline_supported") or type(request.baseline_days) is not int or request.baseline_days not in (7, 30):
             target_error("SOURCE_QUERY_INVALID")
+        if (request.window_start is None or request.window_end is None or request.window_start.tzinfo is None
+                or request.window_end.tzinfo is None or request.window_end-request.window_start != timedelta(days=request.baseline_days)):
+            target_error("SOURCE_QUERY_INVALID")
         if self.context.config.get("exadata_metric_transport", "OEM_REST") == "EMCLI" and definition["keys"]:
             from .oem_exadata_emcli import query_emcli
             return await query_emcli(self, request, definition, target_type, history=True, baseline=True)
-        return await self.query_native_metric(request, metric_name=definition["selector"], limit=1000,
-            _expected_target_type=target_type, _expected_keys=tuple(definition["keys"]),
-            _paginate=True, _summary_only=True)
+        # OEM 按请求跨度切换留存层；计算列长窗可能没有聚合值。固定分片而非失败回退，
+        # 六天片段避开七天边界的毫秒扩窗；投影仍按原始半开区间，边界不重复计数。
+        self._remaining_response_bytes = request.max_response_bytes
+        lower = request.window_start
+        totals, hashes, unit, truncated = {}, [], None, False
+        while lower < request.window_end:
+            upper = min(lower + timedelta(days=6), request.window_end)
+            summary = await self.query_native_metric(replace(request, window_start=lower, window_end=upper),
+                metric_name=definition["selector"], limit=1000, _expected_target_type=target_type,
+                _expected_keys=tuple(definition["keys"]), _paginate=True, _summary_only=True, _shared_budget=True)
+            if hashes and summary["unit"] != unit:
+                target_error("SOURCE_METADATA_CHANGED")
+            unit = summary["unit"]
+            hashes.append(summary["response_sha256"])
+            truncated = truncated or summary["truncated"]
+            with localcontext() as context:
+                context.prec = 4096
+                for series in summary["series"]:
+                    identity = tuple(sorted(series["dimensions"].items()))
+                    total, count = totals.get(identity, (Decimal(0), 0))
+                    totals[identity] = (total + Decimal(series["total"]), count + series["sample_count"])
+            lower = upper
+        from .oem_native import _hash
+        return {"series": tuple({"dimensions": dict(identity), "total": str(total), "sample_count": count}
+                for identity, (total, count) in totals.items()), "unit": unit, "truncated": truncated,
+            "response_sha256": _hash(*hashes)}

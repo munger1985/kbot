@@ -17,6 +17,8 @@ from aiops_agent.application.exadata_chat import exadata_parameters, ExadataChat
 from aiops_agent.application.turn_planner import TurnPlannerService, CapabilityResult
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
+from aiops_agent.ports.exadata import ExadataMetricRead
+from tests.unit.aiops_agent.test_aiops_oem_native_metrics import adapter as native_adapter
 from tests.unit.aiops_agent.test_exadata_chat import collector, lab, resource, make_plan, parameters, CPU, TEMP, CELL
 from platform_core.identity import uuid7
 
@@ -199,4 +201,39 @@ def test_agent_state_analysis_interprets_availability_and_links_sample_indexes()
         finding = result.evidence[0]["snapshot"]["analysis_findings"][0]
         assert finding["severity"] == "WARNING" and finding["evidence_indexes"] == [0]
         assert not result.evidence[0]["snapshot"]["analysis_baselines"]
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("days,parts", [(7, 2), (30, 5)])
+def test_rest_baseline_fixed_nonoverlapping_parts_merge_counts_not_means(days, parts):
+    async def run():
+        value, _ = native_adapter()
+        value.query_native_metric = AsyncMock(side_effect=[{"series": ({"dimensions": {}, "total": str(index+1), "sample_count": index+1},),
+            "unit": "%", "truncated": False, "response_sha256": str(index)*64} for index in range(parts)])
+        end = datetime.now(UTC)
+        request = ExadataMetricRead(source_locator_key=CELL, window_start=end-timedelta(days=days), window_end=end, baseline_days=days)
+        summary = await value.exadata_baseline(request, load_catalog()[2][CPU], "oracle_exadata")
+        assert summary["series"][0]["total"] == str(parts*(parts+1)//2)
+        assert summary["series"][0]["sample_count"] == parts*(parts+1)//2
+        calls = value.query_native_metric.call_args_list
+        assert len(calls) == parts
+        windows = [(call.args[0].window_start, call.args[0].window_end) for call in calls]
+        assert windows[0][0] == request.window_start and windows[-1][1] == request.window_end
+        assert all(upper-lower <= timedelta(days=6) for lower, upper in windows)
+        assert all(left[1] == right[0] for left, right in zip(windows, windows[1:]))
+        assert all(call.kwargs["_shared_budget"] is True for call in calls)
+        assert value._remaining_response_bytes == request.max_response_bytes
+    asyncio.run(run())
+
+
+def test_rest_partition_failure_or_unit_change_cannot_return_partial_baseline():
+    async def run():
+        for failure in [DiagnosticSourceAdapterError("SOURCE_PROVIDER_ERROR", "测试"),
+                        {"series": (), "unit": "MB/s", "truncated": False, "response_sha256": "e"*64}]:
+            value, _ = native_adapter()
+            value.query_native_metric = AsyncMock(side_effect=[{"series": (), "unit": "%", "truncated": False, "response_sha256": "d"*64}, failure])
+            end = datetime.now(UTC)
+            request = ExadataMetricRead(source_locator_key=CELL, window_start=end-timedelta(days=7), window_end=end, baseline_days=7)
+            with pytest.raises(DiagnosticSourceAdapterError):
+                await value.exadata_baseline(request, load_catalog()[2][CPU], "oracle_exadata")
     asyncio.run(run())
