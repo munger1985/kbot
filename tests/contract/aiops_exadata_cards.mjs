@@ -288,6 +288,27 @@ const address = server.httpServer.address(), origin = `http://127.0.0.1:${addres
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH })
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [], calls = []
+  async function assertCardSpacing() {
+    const spacing = await page.locator('.exadata-metric-card').evaluateAll(nodes => nodes.map(card => {
+      const rect = card.getBoundingClientRect(), chart = card.querySelector('.exadata-chart')?.getBoundingClientRect()
+      const padding = selector => {
+        const css = getComputedStyle(card.querySelector(selector))
+        return [parseFloat(css.paddingLeft), parseFloat(css.paddingRight)]
+      }
+      const evidence = card.querySelector(':scope > .exadata-evidence'), css = getComputedStyle(evidence)
+      return { header: padding(':scope > header'), value: padding('.exadata-card-value'), time: padding('.exadata-card-time'),
+        caption: card.querySelector('.exadata-chart-caption') ? padding('.exadata-chart-caption') : null,
+        evidence: padding(':scope > .exadata-evidence'), evidenceBlock: [parseFloat(css.paddingTop), parseFloat(css.paddingBottom)],
+        marker: getComputedStyle(evidence.querySelector('summary')).listStylePosition,
+        chart: chart ? [chart.left - rect.left, rect.right - chart.right] : null }
+    }))
+    assert.ok(spacing.length)
+    for (const card of spacing) {
+      assert.ok([card.header, card.value, card.time, card.caption, card.evidence, card.chart].filter(Boolean).flat().every(value => value >= 16), `卡片标题、内容、图表和入口距离边框至少16px：${JSON.stringify(card)}`)
+      assert.ok(card.evidenceBlock.every(value => value >= 12), '查看数据入口上下留白至少12px')
+      assert.equal(card.marker, 'inside', '展开标记不得突出到卡片边框')
+    }
+  }
   page.on('pageerror', error => errors.push(error.message))
   await page.route('https://fonts.**', route => route.abort())
   let fail = false, unavailable = false, providerError = false, stateFixture = false, devicesFixture = false, baselineFixture = false, baselineFailure = false, slowWeek = false
@@ -374,6 +395,7 @@ try {
     }
     assert.ok(layout.overflow <= 1, `宽度 ${width} 不得产生横向溢出：${JSON.stringify(layout)}`)
     assert.ok(layout.cards.every(card => card.width > 200 && card.border === '2px' && card.background !== 'rgba(0, 0, 0, 0)'), '卡片具有真实样式，不是裸表格')
+    await assertCardSpacing()
   }
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-mobile.png`), fullPage: true })
   await page.setViewportSize({ width: 1440, height: 1000 })
@@ -464,6 +486,12 @@ try {
   for (const width of [390, 780, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1), '整机设备清单不横向溢出')
+    await assertCardSpacing()
+    const insets = await page.locator('.exadata-resource-row').evaluateAll(rows => rows.map(row => {
+      const css = getComputedStyle(row)
+      return [parseFloat(css.paddingLeft), parseFloat(css.paddingRight), parseFloat(css.paddingBottom)]
+    }))
+    assert.ok(insets.flat().every(value => value >= 16), '整机嵌套卡片与设备边框留白至少16px')
   }
   await page.screenshot({ path: resolve(artifacts, `${isKbot ? 'kbot' : 'ammolite'}-devices.png`), fullPage: true })
   await page.evaluate(() => document.documentElement.dataset.theme = 'dark')
