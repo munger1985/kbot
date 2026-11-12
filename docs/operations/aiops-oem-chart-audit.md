@@ -77,6 +77,10 @@ Exadata 其余 286 个指标继续遵循 [Exadata 逐项图表审核](aiops-exad
 
 仅对 Exadata + OEM，将查询模式、设备范围、均值偏离、刷新指标及只读诊断当前页合并到父页面的“观测设置”，与资源监控源、自动刷新共用一张设置卡。隐藏对此专用查询不生效的通用时间窗口和重复指标范围说明；历史模式仍明确标为“过去 1 小时历史（仅数值）”，不改变采样或诊断合同。普通 OEM、Prometheus 及其他资源继续使用原有观测设置，切换资源时清理专用控件，不留重复操作入口。
 
-组件回归入口为 `node tests/contract/aiops_exadata_cards.mjs`，真实父子页面集成回归为 `node tests/contract/aiops_exadata_observation.mjs`；后者覆盖 Exadata OEM → 普通 OEM → Prometheus → Exadata OEM 的切换，以及 1920/1440/1000/780/390px 设置布局。接口数据为固定替身，不代表线上采样验收。本节修改尚未部署。
+组件回归入口为 `node tests/contract/aiops_exadata_cards.mjs`，真实父子页面集成回归为 `node tests/contract/aiops_exadata_observation.mjs`；后者覆盖 Exadata OEM → 普通 OEM → Prometheus → Exadata OEM 的切换，以及 1920/1440/1000/780/390px 设置布局。接口数据为固定替身，不代表线上采样验收。
 
 两仓上述两项回归、普通 OEM 16 项图表回归、展示同步检查及六类普通资源请求编码/导航回归均已通过。Portal 类型检查与生产构建通过，仅保留既有大 chunk 提示。集成测试同时覆盖专用控件卸载清理、标签样式一致性和设置区域无横向溢出；Ammolite 在父页面初次加载时延迟挂载专用控件，避免目标容器尚未入 DOM 时丢失控件。
+
+2026-11-12 17:34（北京时间）已部署到 kbotdev：KBot 功能版本 `15312a97`，Ammolite 功能版本 `7b4010f7`。仅更新前端，51 个既有服务进程和配置摘要未变化，8 个服务/前端就绪地址均返回 HTTP 200，无后台服务重启。备份及部署记录保留在服务器 `/home/ubuntu/aiops-exadata-compact-20261112-__scank9`。
+
+两端真实线上页面均通过 8 个 Exadata 场景检查：专用控件只出现在观测设置中，介绍区和设备目录不存在，详情占满宽度，原有卡片等高布局保留；1920/1440/1000/780/390px 下无设置区或 Exadata 区域横向溢出。历史模式折线、设备筛选及切回普通 OEM 后恢复原有四类下拉框均通过，无页面脚本异常。部署后当前在线 Main API/AIOps Agent 日志检查未发现本轮新增错误。截图与结果位于本地 `/tmp/exadata-compact-online-kbot-rnZOyc` 和 `/tmp/exadata-compact-online-ammolite-fKKxSG`，均使用真实线上响应。
