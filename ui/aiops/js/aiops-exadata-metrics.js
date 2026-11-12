@@ -117,16 +117,17 @@
         <details class="exadata-evidence"><summary>查看数据 · ${evidence.length} 条</summary><p><code>${esc(card.selector)}</code> · 单位 ${esc(exadataUnit(card.unit))}</p>${this.renderBaseline(card)}<p>图表仅为数值近似；原始值、维度、质量与实际采集时间如下。未验证阈值，不判定健康。</p><div class="exadata-table-scroll"><table><thead><tr><th>取证类型</th><th>采集时间</th><th>原始值</th><th>维度</th><th>质量</th></tr></thead><tbody>${evidence.map(sample => `<tr><td>${esc(sample.evidenceKind)}</td><td title="${esc(sample.observed_at)}">${esc(fmt(sample.observed_at))}</td><td>${esc(exadataRaw(sample.value))} · ${esc(exadataUnit(sample.unit))}</td><td>${esc(exadataDimensions(sample.dimensions))}</td><td>${esc(exadataQuality(sample.quality))}</td></tr>`).join("")}</tbody></table></div>${card.gaps.map(gap => `<p>${esc(gap.code)} · ${esc(gap.detail)}</p>`).join("")}</details>
       </article>`;
     }
-    renderStatus(card) {
-      const items = exadataStatusItems(card), evidenceId = "exadata-evidence-" + encodeURIComponent(card.key);
+    renderStatus(card, raw = false) {
+      const items = !raw ? exadataStatusItems(card) : card.series.length ? card.series.map(series => ({ key: series.key, dimension: exadataDimensions(series.latest.dimensions), label: `${exadataRaw(series.latest.value)}${card.unit && card.unit !== "n/a" ? ` ${card.unit}` : ""}`, quality: exadataQuality(series.latest.quality), observedAt: series.latest.observed_at })) : [{ key: card.key, dimension: "", label: card.value, quality: card.quality, observedAt: card.observedAt }];
+      const evidenceId = "exadata-evidence-" + encodeURIComponent(card.key);
       return `<tbody class="exadata-status-item" data-metric-code="${esc(card.metricCode)}" data-component-id="${esc(card.componentId)}">
-        ${items.map((item, index) => `<tr class="exadata-status-row">${index === 0 ? `<th scope="rowgroup" rowspan="${items.length}" class="exadata-status-identity"><strong>${esc(card.title)}</strong><span>${esc(card.componentName)}</span></th>` : ""}<td class="exadata-status-dimension">${esc(item.dimension || "—")}</td><td><span class="exadata-status-value state-${esc(item.tone)}"><i aria-hidden="true"></i>${esc(item.label)}</span></td><td><div class="exadata-status-time"><time title="${esc(item.observedAt)}">${esc(fmt(item.observedAt))}</time><span>${esc(item.quality)}${card.currentStatus ? " · 取证时间" : ""}</span></div></td>${index === 0 ? `<td rowspan="${items.length}" class="exadata-status-action"><button type="button" class="exadata-data-button" data-status-evidence aria-expanded="false" aria-controls="${esc(evidenceId)}">查看数据 · ${card.samples.length}</button></td>` : ""}</tr>`).join("")}
+        ${items.map((item, index) => `<tr class="exadata-status-row">${index === 0 ? `<th scope="rowgroup" rowspan="${items.length}" class="exadata-status-identity"><strong>${esc(card.title)}</strong><span>${esc(card.componentName)}</span></th>` : ""}<td class="exadata-status-dimension">${esc(item.dimension || "—")}</td><td>${raw ? `<span class="exadata-raw-value">${esc(item.label)}</span>` : `<span class="exadata-status-value state-${esc(item.tone)}"><i aria-hidden="true"></i>${esc(item.label)}</span>`}</td><td><div class="exadata-status-time"><time title="${esc(item.observedAt)}">${esc(fmt(item.observedAt))}</time><span>${esc(item.quality)}${card.currentStatus ? " · 取证时间" : ""}</span></div></td>${index === 0 ? `<td rowspan="${items.length}" class="exadata-status-action"><button type="button" class="exadata-data-button" data-status-evidence aria-expanded="false" aria-controls="${esc(evidenceId)}">查看数据 · ${card.samples.length}</button></td>` : ""}</tr>`).join("")}
         <tr id="${esc(evidenceId)}" class="exadata-status-evidence-row" hidden><td colspan="5"><div class="exadata-evidence"><code>${esc(card.selector)}</code>${card.currentStatus ? "<p>OEM 目标接口返回的当前可用性；时间为接口取证时间，未提供设备采样时间，不生成历史或均值。</p>" : ""}<div class="exadata-table-scroll"><table><thead><tr><th>${card.currentStatus ? "状态取证时间" : "采集时间"}</th><th>原始值</th><th>维度</th><th>质量</th></tr></thead><tbody>${card.samples.map(sample => `<tr><td>${esc(fmt(sample.observed_at))}</td><td>${esc(exadataRaw(sample.value))}</td><td>${esc(exadataDimensions(sample.dimensions))}</td><td>${esc(card.currentStatus && sample.quality === "OBSERVED" ? "状态已读取" : exadataQuality(sample.quality))}</td></tr>`).join("")}</tbody></table></div>${card.gaps.map(gap => `<p>${esc(gap.code)} · ${esc(gap.detail)}</p>`).join("")}</div></td></tr>
       </tbody>`;
     }
-    renderStatusTable(cards) {
+    renderStatusTable(cards, raw = false) {
       if (!cards.length) return "";
-      return `<div class="exadata-status-table-scroll" tabindex="0" role="region" aria-label="设备状态明细"><table class="exadata-status-table"><colgroup><col class="status-metric-column"><col class="status-dimension-column"><col class="status-value-column"><col class="status-time-column"><col class="status-action-column"></colgroup><thead><tr><th scope="col">指标 / 设备</th><th scope="col">监控维度</th><th scope="col">状态</th><th scope="col">时间 / 采集质量</th><th scope="col">原始数据</th></tr></thead>${cards.map(card => this.renderStatus(card)).join("")}</table></div>`;
+      return `<div class="exadata-status-table-scroll${raw ? " exadata-value-table" : ""}" tabindex="0" role="region" aria-label="${raw ? "设备属性明细" : "设备状态明细"}"><table class="exadata-status-table"><colgroup><col class="status-metric-column"><col class="status-dimension-column"><col class="status-value-column"><col class="status-time-column"><col class="status-action-column"></colgroup><thead><tr><th scope="col">指标 / 设备</th><th scope="col">监控维度</th><th scope="col">${raw ? "值" : "状态"}</th><th scope="col">时间 / 采集质量</th><th scope="col">原始数据</th></tr></thead>${cards.map(card => this.renderStatus(card, raw)).join("")}</table></div>`;
     }
     selectScene(id) {
       this.scene = id;
@@ -149,8 +150,9 @@
         return `<section class="exadata-status-panel" data-device-group="${id}"><h3>${label} <span>${group.length}</span></h3>${!group.length ? '<p class="exadata-device-hint">暂无已确认设备</p>' : ""}${group.map(device => {
           const componentCards = cards.filter(card => card.componentId === device.member.target_id);
           return `<article class="exadata-device" data-device-id="${esc(device.member.target_id)}"><header><div><span>${esc(device.typeLabel)}</span><h4>${esc(device.member.display_name)}</h4></div><button class="secondary-button" type="button" data-device="${esc(device.member.target_id)}">设备详情 →</button></header>
-          ${componentCards.some(card => !card.status) ? `<div class="exadata-resource-row">${componentCards.filter(card => !card.status).map(card => this.renderResource(card)).join("")}</div>` : ""}
-          <div class="exadata-device-states">${this.renderStatusTable(componentCards.filter(card => card.status))}</div>
+          ${componentCards.some(card => exadataCardSection(card) === "performance") ? `<div class="exadata-resource-row">${componentCards.filter(card => exadataCardSection(card) === "performance").map(card => this.renderResource(card)).join("")}</div>` : ""}
+          <div class="exadata-device-states">${this.renderStatusTable(componentCards.filter(card => exadataCardSection(card) === "status"))}</div>
+          ${this.renderConfiguration(componentCards.filter(card => exadataCardSection(card) === "configuration"))}
           ${device.note ? `<p class="exadata-device-hint">${esc(device.note)}</p>` : ""}</article>`;
         }).join("")}</section>`;
       }).join("")}
@@ -159,7 +161,7 @@
     }
     renderConfiguration(cards) {
       if (!cards.length) return "";
-      return `<details class="exadata-configuration"><summary>配置、标识与原始值 · ${cards.length}</summary>${this.renderStatusTable(cards.filter(card => card.status))}${cards.filter(card => !card.status).map(card => `<section class="exadata-config-item"><header><strong>${esc(card.title)}</strong><span>${esc(card.componentName)}</span></header><p>${esc(card.value)} ${esc(card.valueUnit)} · ${esc(card.quality)} · ${esc(fmt(card.observedAt))}</p><details class="exadata-evidence"><summary>查看数据 · ${card.samples.length} 条</summary><code>${esc(card.selector)}</code><pre>${esc(JSON.stringify(card.samples, null, 2))}</pre>${card.gaps.map(gap => `<p>${esc(gap.code)} · ${esc(gap.detail)}</p>`).join("")}</details></section>`).join("")}</details>`;
+      return `<details class="exadata-configuration"><summary>配置、标识与原始值 · ${cards.length}</summary>${this.renderStatusTable(cards.filter(card => card.status))}${this.renderStatusTable(cards.filter(card => !card.status), true)}</details>`;
     }
     render(message = "", failed = false) {
       const preserve = this.renderedView && this.renderedView === this.view;

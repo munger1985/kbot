@@ -41,15 +41,15 @@ const sample = (definition, value, overrides = {}) => ({ component_id: 'cell-a',
 const overview = { resource_id: 'resource', binding_id: 'binding', binding_version: 1, source_version: 2, catalog_sha256: 'c'.repeat(64), query_mode: 'LATEST_SNAPSHOT', window_start: null, window_end: null, members, definitions: [...status, cpu, memory], samples: [...status.map(item => sample(item, '1', { unit: 'n/a' })), sample(cpu, '27.210000000000001'), sample(memory, '0')], gaps: [{ code: 'THRESHOLDS_UNVERIFIED', detail: '阈值与状态字典未验证，不判定健康。' }], total_queries: 5, next_offset: null, catalog_version: 'exadata-oem-v1', captured_at: '2026-11-11T12:01:00Z' }
 
 const dbCPU = metric('CPUUsageSummary/OverAllUsagePct', 'NUMBER', 'host'), dbMemory = metric('Load/memUsedPct', 'NUMBER', 'host')
-const switchAP = metric('AccessPointResponse/statusMsg', 'STRING', 'oracle_si_netswitch'), switchSensor = metric('SensorStatus/Status', 'STRING', 'oracle_si_netswitch')
+const switchAP = metric('AccessPointResponse/statusMsg', 'STRING', 'oracle_si_netswitch'), switchSensor = metric('SensorStatus/Status', 'STRING', 'oracle_si_netswitch'), switchUnit = metric('SensorStatus/Unit', 'STRING', 'oracle_si_netswitch')
 const deviceView = { ...clone(overview), members: [...members, {target_id:'db-a',target_type:'host',display_name:'SIM DB SERVER'}, {target_id:'switch-a',target_type:'oracle_si_netswitch',display_name:'SIM SWITCH'}, {target_id:'pdu-a',target_type:'oracle_si_pdu',display_name:'SIM PDU'}, {target_id:'rack-a',target_type:'oracle_si_rack',display_name:'SIM RACK'}],
-  definitions: [...overview.definitions, dbCPU, dbMemory, switchAP, switchSensor],
-  samples: [...overview.samples, sample(dbCPU, '0', {component_id:'db-a'}), sample(dbMemory, '37.125', {component_id:'db-a'}), sample(switchAP, 'UP', {component_id:'switch-a',unit:'n/a',dimensions:{ap_guid:'AP-1'}}), ...['SIM BACK','SIM CPU','SIM FRONT','SIM HEAVENLY'].map(id=>sample(switchSensor,'ok',{component_id:'switch-a',unit:'n/a',dimensions:{SensorId:id}}))],
+  definitions: [...overview.definitions, dbCPU, dbMemory, switchAP, switchSensor, switchUnit],
+  samples: [...overview.samples, sample(dbCPU, '0', {component_id:'db-a'}), sample(dbMemory, '37.125', {component_id:'db-a'}), sample(switchAP, 'UP', {component_id:'switch-a',unit:'n/a',dimensions:{ap_guid:'AP-1'}}), ...['SIM BACK','SIM CPU','SIM FRONT','SIM HEAVENLY'].flatMap(id=>[sample(switchSensor,'ok',{component_id:'switch-a',unit:'n/a',dimensions:{SensorId:id}}),sample(switchUnit,'celsius',{component_id:'switch-a',unit:'n/a',dimensions:{SensorId:id}})])],
   device_coverage: [
     {component_id:'cell-a',metric_codes:overview.definitions.map(item=>item.code),queried_metric_codes:overview.definitions.map(item=>item.code),note:''},
     {component_id:'cell-b',metric_codes:[cpu.code],queried_metric_codes:[],note:''},
     {component_id:'db-a',metric_codes:[dbCPU.code,dbMemory.code],queried_metric_codes:[dbCPU.code,dbMemory.code],note:''},
-    {component_id:'switch-a',metric_codes:[switchAP.code,switchSensor.code],queried_metric_codes:[switchAP.code,switchSensor.code],note:''},
+    {component_id:'switch-a',metric_codes:[switchAP.code,switchSensor.code,switchUnit.code],queried_metric_codes:[switchAP.code,switchSensor.code,switchUnit.code],note:''},
     {component_id:'pdu-a',metric_codes:['oracle_si_pdu.PduHttpResponse.Status'],queried_metric_codes:[],note:''},
     {component_id:'rack-a',metric_codes:[],queried_metric_codes:[],note:'此类目标尚无审核通过的独立状态读取指标'},
   ] }
@@ -525,13 +525,25 @@ try {
   await sensorCard.getByRole('button',{name:'收起数据 · 4',exact:true}).click()
   await expect(sensorCard.locator('.exadata-status-evidence-row')).toBeHidden()
   await page.locator('[data-baseline]').selectOption('1w')
+  await expect(page.locator('.exadata-metric-card[data-metric-code="'+switchUnit.code+'"]')).toHaveCount(0)
+  const configuration=page.locator('[data-device-id="switch-a"] .exadata-configuration')
+  await expect(configuration).not.toHaveAttribute('open','')
+  await configuration.locator(':scope > summary').click()
+  const rawProperty=configuration.locator('.exadata-status-item')
+  await expect(rawProperty.locator('.exadata-status-identity')).toHaveCount(1)
+  await expect(rawProperty.locator('.exadata-raw-value')).toHaveText(['celsius','celsius','celsius','celsius'])
+  await expect(rawProperty.locator('.exadata-status-value')).toHaveCount(0)
+  await rawProperty.getByRole('button',{name:'查看数据 · 4',exact:true}).click()
+  await expect(rawProperty.locator('.exadata-evidence tbody tr')).toHaveCount(4)
+  await expect(rawProperty.locator('.exadata-status-evidence-row')).toBeVisible()
+  await rawProperty.getByRole('button',{name:'收起数据 · 4',exact:true}).click()
   for (const width of [390, 780, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1), '整机设备清单不横向溢出')
     const statusLayout=await sensorCard.locator('.exadata-status-row').evaluateAll(rows=>rows.map(row=>({top:row.getBoundingClientRect().top,height:row.getBoundingClientRect().height})))
     assert.ok(statusLayout.every(row=>row.height<72),'多维状态紧凑逐行排列，不被邻列拉高')
     assert.ok(statusLayout.every((row,index)=>index===0||Math.abs(row.top-statusLayout[index-1].top-statusLayout[index-1].height)<1),'相邻维度之间没有卡片式空白')
-    if(width===390)assert.ok(await page.locator('[data-device-id="switch-a"] .exadata-status-table-scroll').evaluate(node=>node.scrollWidth>node.clientWidth),'窄屏仅状态表内部横向滚动')
+    if(width===390)assert.ok(await page.locator('[data-device-id="switch-a"] .exadata-status-table-scroll').evaluateAll(nodes=>nodes.every(node=>node.scrollWidth>node.clientWidth)),'窄屏仅状态和属性表内部横向滚动')
     await assertCardSpacing()
     const insets = await page.locator('.exadata-resource-row').evaluateAll(rows => rows.map(row => {
       const css = getComputedStyle(row)

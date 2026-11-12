@@ -37,6 +37,7 @@
 .exadata-oem .exadata-status-identity strong { display:block; color:var(--ink); font-size:var(--type-table); }
 .exadata-oem .exadata-status-identity > span { display:block; margin-top:var(--space-1,4px); font-weight:400; }
 .exadata-oem .exadata-status-dimension { font-family:var(--font-data); color:var(--muted); }
+.exadata-oem .exadata-raw-value { font-family:var(--font-data); color:var(--ink); }
 .exadata-oem .exadata-status-value { display:inline-flex; gap:var(--space-2,8px); align-items:center; color:var(--muted); font-size:var(--type-table); font-weight:600; }
 .exadata-oem .exadata-status-value i { display:block; width:var(--space-2,8px); height:var(--space-2,8px); border-radius:50%; background:currentColor; flex-shrink:0; }
 .exadata-oem .exadata-status-value.state-success { color:var(--success); }
@@ -143,11 +144,7 @@
 .exadata-oem .exadata-detail-heading { border-bottom:1px solid var(--line); padding-bottom:var(--form-label-control-gap); overflow-wrap:anywhere; }
 .exadata-oem .exadata-detail-heading p,.exadata-oem .exadata-detail-heading code { color:var(--muted); margin:0; font-size:var(--type-meta); }
 .exadata-oem .exadata-performance { min-width:0; display:grid; gap:var(--space-2,8px); }
-.exadata-oem .exadata-config-item { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start; gap:var(--space-2,8px) var(--exadata-card-inset); min-width:0; padding:var(--space-2,8px) 0; border-top:1px solid var(--line); overflow-wrap:anywhere; color:var(--muted); font-size:var(--type-meta); }
-.exadata-oem .exadata-config-item > p { margin:0; }
-.exadata-oem .exadata-config-item > .exadata-evidence { grid-column:1/-1; border:0; padding:0; }
-.exadata-oem .exadata-config-item header { display:flex; justify-content:space-between; gap:var(--space-2,8px); flex-wrap:wrap; }
-.exadata-oem .exadata-config-item strong { color:var(--ink); }
-.exadata-oem .exadata-config-item pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.exadata-oem .exadata-configuration > .exadata-status-table-scroll { margin-top:var(--space-2,8px); }
+.exadata-oem .exadata-device > .exadata-configuration { margin:var(--space-2,8px) var(--exadata-card-inset) var(--exadata-card-inset); }
 .exadata-oem .exadata-gaps > p { overflow-wrap:anywhere; font-size:var(--type-meta); color:var(--muted); }
-@media(max-width:600px) { .exadata-oem .exadata-resource-row,.exadata-oem .exadata-config-item { grid-template-columns:minmax(0,1fr); }.exadata-oem .exadata-assets li { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:600px) { .exadata-oem .exadata-resource-row { grid-template-columns:minmax(0,1fr); }.exadata-oem .exadata-assets li { grid-template-columns:minmax(0,1fr); } }
