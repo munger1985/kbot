@@ -10,13 +10,15 @@
       this.mode = "LATEST_SNAPSHOT"; this.scene = "overview"; this.component = ""; this.offset = 0;
       this.view = null; this.report = null; this.controller = null; this.disposed = false; this.loading = false;
       this.members = []; this.charts = []; this.observers = [];
+      this.controlsRoot = options.controlsRoot;
       this.baselinePeriod = "1w"; this.baselines = {}; this.baselineController = null;
       this.root.classList.add("exadata-oem");
       this.base = `/api/v1/apps/aiops/business-systems/${encodeURIComponent(options.systemId)}/exadata/${encodeURIComponent(options.instanceId)}/sources/${encodeURIComponent(options.sourceId)}`;
       this.refresh();
     }
     clearCharts() { this.observers.forEach(observer => observer.disconnect()); this.observers = []; this.charts.forEach(chart => chart.dispose()); this.charts = []; }
-    dispose() { this.disposed = true; this.controller?.abort(); this.baselineController?.abort(); this.trendController?.abort(); this.clearCharts(); }
+    dispose() { this.disposed = true; this.controller?.abort(); this.baselineController?.abort(); this.trendController?.abort(); this.clearCharts(); this.controlsRoot?.replaceChildren(); }
+    queryAll(selector) { return [...(this.controlsRoot?.querySelectorAll(selector) || []), ...this.root.querySelectorAll(selector)]; }
     async loadTrend(view) {
       const api = KBotAIOpsExadataPresentation;
       if (view.query_mode !== "LATEST_SNAPSHOT" || !buildExadataCards(view).some(api.exadataTrendMetric)) return;
@@ -157,25 +159,26 @@
     render(message = "", failed = false) {
       const preserve = this.renderedView && this.renderedView === this.view;
       const opened = preserve ? [...this.root.querySelectorAll("details")].map((node, index) => node.open ? index : -1).filter(index => index >= 0) : [];
-      const focusedIndex = preserve ? [...this.root.querySelectorAll("button,select,summary")].indexOf(document.activeElement) : -1;
+      const focusedIndex = preserve ? this.queryAll("button,select,summary").indexOf(document.activeElement) : -1;
       this.clearCharts();
       const view = this.view, cards = view ? buildExadataCards(view) : [], disabled = this.loading ? "disabled" : "";
       const statuses = cards.filter(card => exadataCardSection(card) === "status"), metrics = cards.filter(card => exadataCardSection(card) === "performance"), configuration = cards.filter(card => exadataCardSection(card) === "configuration");
       const overview = this.scene === "overview" && !this.component && view?.device_coverage?.length;
       const devices = overview ? this.renderDevices(view, cards) : "";
       const directory = exadataSceneMembers(this.members, this.scene), current = this.members.find(member => member.target_id === this.component);
-      const workspaceStart = `<div class="exadata-workspace"><aside class="exadata-directory" aria-label="设备目录"><h3>设备目录</h3><button class="secondary-button" data-home type="button">← 返回整机</button><button class="secondary-button" data-directory-all type="button" aria-pressed="${!this.component}">当前场景全部设备</button>${directory.map(member => `<button class="secondary-button" data-directory-device="${esc(member.target_id)}" type="button" aria-pressed="${this.component === member.target_id}">${esc(member.display_name)}</button>`).join("")}</aside><section class="exadata-detail" aria-label="设备详情"><header class="exadata-detail-heading"><p class="eyebrow">${esc(current?.target_type || "已确认成员")}</p><h3>${esc(current?.display_name || scenes.find(([id]) => id === this.scene)?.[1])}</h3>${current ? `<code>${esc(current.target_id)}</code>` : ""}</header>`;
+      const workspaceStart = `<div class="exadata-workspace"><section class="exadata-detail" aria-label="设备详情"><header class="exadata-detail-heading"><p class="eyebrow">${esc(current?.target_type || "已确认成员")}</p><h3>${esc(current?.display_name || scenes.find(([id]) => id === this.scene)?.[1])}</h3>${current ? `<code>${esc(current.target_id)}</code>` : ""}</header>`;
       this.root.setAttribute("aria-busy", String(this.loading));
-      this.root.innerHTML = `<header class="exadata-heading"><div><p class="eyebrow">EXADATA · OEM</p><h2>Exadata 设备监控</h2><p>整机巡检 · 设备详情 · 只读分析</p></div><span class="status-pill status-muted">${this.mode === "HISTORY" ? "数值历史" : "最新快照"}</span></header>
-      <nav class="exadata-scenes" aria-label="Exadata 监控场景">${scenes.map(([id, name]) => `<button class="secondary-button" type="button" data-scene-id="${id}" ${this.scene === id ? 'aria-current="page"' : ""} ${disabled}>${name}</button>`).join("")}</nav><div class="exadata-toolbar"><label class="control-field"><span class="field-label">查询模式</span><select data-mode ${disabled}><option value="LATEST_SNAPSHOT" ${this.mode === "LATEST_SNAPSHOT" ? "selected" : ""}>最新快照</option><option value="HISTORY" ${this.mode === "HISTORY" ? "selected" : ""}>过去 1 小时历史（仅数值）</option></select></label><label class="control-field"><span class="field-label">设备范围</span><select data-component ${disabled}><option value="">当前场景全部设备</option>${directory.map(member => `<option value="${esc(member.target_id)}" ${member.target_id === this.component ? "selected" : ""}>${esc(member.display_name)} · ${esc(member.target_type)}</option>`).join("")}</select></label><label class="control-field"><span class="field-label">均值偏离</span><select data-baseline ${disabled}><option value="" ${!this.baselinePeriod ? "selected" : ""}>不比较</option><option value="1w" ${this.baselinePeriod === "1w" ? "selected" : ""}>7 天均值</option><option value="1m" ${this.baselinePeriod === "1m" ? "selected" : ""}>1 个月（30 天）均值</option></select></label><div class="exadata-actions"><button class="secondary-button" data-refresh type="button" ${disabled}>刷新指标</button><button class="secondary-button" data-diagnose type="button" ${disabled}>只读诊断当前页</button></div></div>
+      this.root.innerHTML = `<div class="exadata-toolbar"><label class="control-field"><span class="field-label">查询模式</span><select data-mode ${disabled}><option value="LATEST_SNAPSHOT" ${this.mode === "LATEST_SNAPSHOT" ? "selected" : ""}>最新快照</option><option value="HISTORY" ${this.mode === "HISTORY" ? "selected" : ""}>过去 1 小时历史（仅数值）</option></select></label><label class="control-field"><span class="field-label">设备范围</span><select data-component ${disabled}><option value="">当前场景全部设备</option>${directory.map(member => `<option value="${esc(member.target_id)}" ${member.target_id === this.component ? "selected" : ""}>${esc(member.display_name)} · ${esc(member.target_type)}</option>`).join("")}</select></label><label class="control-field"><span class="field-label">均值偏离</span><select data-baseline ${disabled}><option value="" ${!this.baselinePeriod ? "selected" : ""}>不比较</option><option value="1w" ${this.baselinePeriod === "1w" ? "selected" : ""}>7 天均值</option><option value="1m" ${this.baselinePeriod === "1m" ? "selected" : ""}>1 个月（30 天）均值</option></select></label><div class="exadata-actions"><button class="secondary-button" data-refresh type="button" ${disabled}>刷新指标</button><button class="secondary-button" data-diagnose type="button" ${disabled}>只读诊断当前页</button></div></div>
+      <nav class="exadata-scenes" aria-label="Exadata 监控场景">${scenes.map(([id, name]) => `<button class="secondary-button" type="button" data-scene-id="${id}" ${this.scene === id ? 'aria-current="page"' : ""} ${disabled}>${name}</button>`).join("")}</nav>
       ${message ? `<p class="exadata-message ${failed ? "notice notice-error" : ""}" role="${failed ? "alert" : "status"}">${esc(message)}</p>` : ""}
       ${view ? `<div class="exadata-result-bar"><p role="status">${view.samples.length} 条采样 · 场景查询 ${this.offset + (view.total_queries ? 1 : 0)}–${Math.min(this.offset + (this.scene === "overview" ? 24 : 12), view.total_queries)} / ${view.total_queries}<small>获取时间 ${esc(fmt(view.captured_at))} · 目录 ${esc(view.catalog_version)}</small></p><div class="exadata-actions"><button class="secondary-button" data-first type="button" ${this.offset === 0 ? "disabled" : ""}>场景首页</button><button class="secondary-button" data-next type="button" ${view.next_offset === null ? "disabled" : ""}>下一页指标</button></div></div>${devices || (workspaceStart + (statuses.length ? `<section class="exadata-status-panel" aria-label="Exadata 状态"><h3>可用性与运行状态 · ${statuses.length}</h3>${statuses.map(card => this.renderStatus(card)).join("")}</section>` : ""))}${!overview && metrics.length ? `<section class="exadata-performance"><h3>性能与容量 · ${metrics.length}</h3><div class="monitoring-panels exadata-metric-grid" aria-label="Exadata 指标卡片">${metrics.map((card, index) => this.renderCard(card, index)).join("")}</div></section>` : ""}${!overview ? this.renderConfiguration(configuration) : ""}${!cards.length ? '<p class="exadata-empty">此页没有可展示的指标。请查看数据缺口或选择其他场景，不按零值或健康处理。</p>' : ""}${!overview ? "</section></div>" : ""}<details class="exadata-gaps"><summary>数据缺口与采集说明 · ${view.gaps.length} 项</summary><ul>${view.gaps.map(gap => `<li><strong>${esc(exadataGapLabel(gap.code))} · ${esc(gap.code)}</strong>${gap.component_id ? `<p>${esc(this.members.find(member => member.target_id === gap.component_id)?.display_name || gap.component_id)}</p>` : ""}<p>${esc(gap.detail)}</p>${gap.metric_code ? `<code>${esc(gap.metric_code)}</code>` : ""}</li>`).join("")}</ul></details>` : ""}
       ${this.report ? `<section class="exadata-report"><h3>只读诊断报告</h3><p>${this.report.status === "FINDINGS" ? "发现组件状态异常，请结合证据核查。" : "尚不足以判定故障或健康。"}范围仅限本次分页，不代表整机健康。</p><code>${esc(this.report.report_id)}</code><ul>${this.report.findings.map(finding => `<li>${esc(finding.code)} · ${esc(finding.detail)}</li>`).join("")}</ul></section>` : ""}`;
+      if (this.controlsRoot) this.controlsRoot.replaceChildren(this.root.querySelector(".exadata-toolbar"));
       this.renderedView = view;
       const details = this.root.querySelectorAll("details");
       opened.forEach(index => { if (details[index]) details[index].open = true; });
-      if (focusedIndex >= 0) this.root.querySelectorAll("button,select,summary")[focusedIndex]?.focus({ preventScroll: true });
-      const query = selector => this.root.querySelector(selector);
+      if (focusedIndex >= 0) this.queryAll("button,select,summary")[focusedIndex]?.focus({ preventScroll: true });
+      const query = selector => this.queryAll(selector)[0];
       query("[data-mode]").onchange = event => { this.mode = event.target.value; this.offset = 0; this.load(false); };
       this.root.querySelectorAll("[data-scene-id]").forEach(button => { button.onclick = () => this.selectScene(button.dataset.sceneId); });
       query("[data-component]").onchange = event => { this.component = event.target.value; this.offset = 0; this.load(false); };
@@ -185,9 +188,6 @@
       if (!view) return;
       query("[data-first]").onclick = () => { this.offset = 0; this.load(false); };
       this.root.querySelectorAll("[data-device]").forEach(button => { button.onclick = () => { this.openDevice(button.dataset.device); }; });
-      if (query("[data-home]")) query("[data-home]").onclick = () => this.selectScene("overview");
-      if (query("[data-directory-all]")) query("[data-directory-all]").onclick = () => { this.component = ""; this.offset = 0; this.load(false); };
-      this.root.querySelectorAll("[data-directory-device]").forEach(button => { button.onclick = () => { this.component = button.dataset.directoryDevice; this.offset = 0; this.load(false); }; });
       query("[data-next]").onclick = () => { this.offset = view.next_offset; this.load(false); };
       this.root.querySelectorAll("[data-chart]").forEach(node => {
         if (!globalThis.echarts) { node.textContent = "图表引擎不可用，请查看原始数据。"; return; }

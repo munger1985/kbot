@@ -278,8 +278,8 @@ const server = await createServer({ root: portal, configFile: resolve(portal, 'v
     const path = req.url?.split('?')[0]
     if (staticFiles[path]) { res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : 'text/javascript'); res.end(read(staticFiles[path])); return }
     if (path !== '/__exadata-fixture') return next()
-    const html = isKbot ? `<html><head>${['aiops.css', 'ammolite-shared.css', 'reference-monitoring.css', 'alignment.css', 'aiops-exadata-metrics.css'].map(name => `<link rel="stylesheet" href="/__kbot/${name}">`).join('')}</head><body data-page="monitoring"><main id="app" style="padding:20px"><section id="fixture"></section></main><script>window.KBOT_UI_CONFIG={mainApiBaseUrl:location.origin}; sessionStorage.setItem('kbot.aiops.session.v1',JSON.stringify({access_token:'fixture-not-a-real-token'})); window.KBotAIOpsShell={escape:value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),fmt:value=>value};</script><script src="/__kbot/echarts.js"></script><script src="/__kbot/aiops-auth.js"></script><script src="/__kbot/aiops-exadata-presentation.js"></script><script src="/__kbot/aiops-exadata-metrics.js"></script><script>window.fixtureComponent=new KBotAIOpsExadataMetrics(document.querySelector('#fixture'),{systemId:'system',sourceId:'source',instanceId:'resource'});</script></body></html>`
-      : `<html><head></head><body><main id="app" style="padding:20px"></main><script type="module">import{createApp}from'vue';import Component from '/src/features/aiops/business/AIOpsExadataMetrics.vue';import '/src/shared/ui/styles.css';window.fixtureApp=createApp(Component,{domainCode:'test',domainId:'domain',systemId:'system',sourceId:'source',resourceId:'resource',refresh:0});window.fixtureApp.mount('#app');</script></body></html>`
+    const html = isKbot ? `<html><head>${['aiops.css', 'ammolite-shared.css', 'reference-monitoring.css', 'alignment.css', 'aiops-exadata-metrics.css'].map(name => `<link rel="stylesheet" href="/__kbot/${name}">`).join('')}</head><body data-page="monitoring"><main id="app" style="padding:20px"><section class="monitoring-observation-card" aria-label="观测设置与运行状态"><section class="monitoring-query-toolbar is-exadata" aria-label="实时监控查询设置"><p>观测设置</p><div class="monitoring-rail-fields"><label class="control-field"><span class="field-label">资源监控源</span><select><option>测试 OEM</option></select></label><label class="control-field"><span class="field-label">自动刷新</span><select><option>关闭</option></select></label><div id="monitoring-exadata-controls" class="exadata-observation-controls"></div></div></section></section><section id="fixture"></section></main><script>window.KBOT_UI_CONFIG={mainApiBaseUrl:location.origin}; sessionStorage.setItem('kbot.aiops.session.v1',JSON.stringify({access_token:'fixture-not-a-real-token'})); window.KBotAIOpsShell={escape:value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),fmt:value=>value};</script><script src="/__kbot/echarts.js"></script><script src="/__kbot/aiops-auth.js"></script><script src="/__kbot/aiops-exadata-presentation.js"></script><script src="/__kbot/aiops-exadata-metrics.js"></script><script>window.fixtureComponent=new KBotAIOpsExadataMetrics(document.querySelector('#fixture'),{systemId:'system',sourceId:'source',instanceId:'resource',controlsRoot:document.querySelector('#monitoring-exadata-controls')});</script></body></html>`
+      : `<html><head></head><body><main style="padding:20px"><section class="monitoring-observation-card" aria-label="观测设置与运行状态"><section class="monitoring-query-toolbar is-exadata" aria-label="实时监控查询设置"><p>观测设置</p><div class="monitoring-rail-fields"><label class="control-field"><span class="field-label">资源监控源</span><select><option>测试 OEM</option></select></label><label class="control-field"><span class="field-label">自动刷新</span><select><option>关闭</option></select></label><div id="monitoring-exadata-controls" class="exadata-observation-controls"></div></div></section></section><div id="app"></div></main><script type="module">import{createApp}from'vue';import Component from '/src/features/aiops/business/AIOpsExadataMetrics.vue';import '/src/shared/ui/styles.css';window.fixtureApp=createApp(Component,{domainCode:'test',domainId:'domain',systemId:'system',sourceId:'source',resourceId:'resource',refresh:0,controlsTarget:'#monitoring-exadata-controls'});window.fixtureApp.mount('#app');</script></body></html>`
     res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(await server.transformIndexHtml(req.url, html.replace('<head>', '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">')))
   })
 } }] })
@@ -382,6 +382,14 @@ try {
   await expect(page.locator('.exadata-metric-card')).toHaveCount(2)
   await expect(page.locator('.exadata-status-row')).toHaveCount(3)
   await expect(page.locator('.exadata-status-value')).toHaveText(['可用', '可用', '可用'])
+  await expect(page.locator('.exadata-heading,.exadata-directory')).toHaveCount(0)
+  const observation = page.getByRole('region', { name: '观测设置与运行状态', exact: true })
+  for (const selector of ['[data-mode]', '[data-component]', '[data-baseline]', '[data-refresh]', '[data-diagnose]']) {
+    await expect(observation.locator(selector)).toHaveCount(1)
+    await expect(page.locator('.exadata-oem').locator(selector)).toHaveCount(0)
+  }
+  await expect(page.locator('.exadata-oem')).not.toContainText('整机巡检 · 设备详情 · 只读分析')
+  await expect(page.locator('.exadata-oem')).not.toContainText('Exadata 设备监控')
   await expect(page.locator('.exadata-status-panel .exadata-card-value')).toHaveCount(0)
   assert.ok(await page.locator('.exadata-status-row').first().evaluate(node => node.getBoundingClientRect().height < 100), '状态采用紧凑行，不使用大卡片')
   await expect(page.locator('.exadata-percent')).toHaveCount(0)
@@ -402,6 +410,8 @@ try {
     await page.setViewportSize({ width, height: 1000 })
     const layout = await page.locator('.exadata-metric-grid').evaluate(node => ({ columns: getComputedStyle(node).gridTemplateColumns.split(' ').length, overflow: document.documentElement.scrollWidth - innerWidth, cards: [...node.children].map(card => ({ width: card.getBoundingClientRect().width, border: getComputedStyle(card).borderTopWidth, background: getComputedStyle(card).backgroundColor })) }))
     assert.equal(layout.columns, columns, `宽度 ${width} 下卡片列数`)
+    const fullWidth = await page.locator('.exadata-workspace').evaluate(node => ({ workspace: node.clientWidth, detail: node.querySelector('.exadata-detail').getBoundingClientRect().width }))
+    assert.ok(Math.abs(fullWidth.workspace - fullWidth.detail) <= 1, '移除设备目录后详情使用全部可用宽度')
     if (layout.overflow > 1) {
       console.log(await page.evaluate(() => [...document.querySelectorAll('body,main,section,header,div,label,select,p,small')].filter(node => node.getBoundingClientRect().width > innerWidth).map(node => ({ tag: node.tagName, class: node.className, width: node.getBoundingClientRect().width, min: getComputedStyle(node).minWidth, text: node.textContent.slice(0, 45) })).slice(0, 20)))
     }
@@ -609,6 +619,8 @@ try {
   await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-sizes.png`),fullPage:true})
   assert.ok(calls.every(call => call.headers['content-type']?.includes('application/json')), `使用原有请求封装的 JSON 合同：${JSON.stringify(calls.map(call => ({url:call.url,type:call.headers['content-type']})))}`)
   assert.deepEqual(errors, [])
+  await page.evaluate(kbot => { if (kbot) fixtureComponent.dispose(); else fixtureApp.unmount() }, isKbot)
+  await expect(page.locator('#monitoring-exadata-controls select,#monitoring-exadata-controls button')).toHaveCount(0)
   await page.close()
   console.log(JSON.stringify({ ok: true, repository: isKbot ? 'kbot' : 'ammolite', semantics: 'passed', browser: 'passed', widths: [1920, 1440, 1000, 780, 390], artifacts }))
 } finally { await browser.close(); await server.close() }

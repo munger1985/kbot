@@ -235,6 +235,11 @@
     document.getElementById("monitoring-workspace").classList.toggle("is-empty", !state.systems.length);
     document.getElementById("monitoring-source").innerHTML = state.sources.length ? state.sources.map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.sourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(label(source.monitoring_readiness))}</option>`).join("") : '<option value="">当前资源尚未绑定监控源</option>';
     document.getElementById("monitoring-source").disabled = !state.sources.length;
+    const isExadataOEM = sourceById()?.source_type === "OEM" && state.instances.find(item => item.instance_id === state.selected[0])?.resource_type_key === "EXADATA";
+    context.classList.toggle("is-exadata", isExadataOEM);
+    document.getElementById("monitoring-exadata-controls").hidden = !isExadataOEM;
+    document.getElementById("monitoring-profile-name").closest("dl").hidden = isExadataOEM;
+    document.getElementById("monitoring-window").closest("label").hidden = isExadataOEM;
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
     document.getElementById("monitoring-baseline").closest("label").hidden = state.profileId === "host-overview" || state.instances.find(item => item.instance_id === state.selected[0])?.resource_type_key === "EXADATA";
@@ -365,7 +370,8 @@
         const resource = state.instances.find(item => item.instance_id === state.selected[0]);
         const MetricsView = resource?.resource_type_key === "EXADATA" ? KBotAIOpsExadataMetrics : KBotAIOpsOEMMetrics;
         state.nativeView = new MetricsView(root, { systemId: resource?.business_system_id || state.systemId, sourceId: state.sourceId, instanceId: state.selected[0], window: state.window,
-          baseline: state.baseline, sourceName: sourceById().display_name, instanceName: state.instances.find(item => item.instance_id === state.selected[0])?.display_name || "" });
+          baseline: state.baseline, sourceName: sourceById().display_name, instanceName: state.instances.find(item => item.instance_id === state.selected[0])?.display_name || "",
+          controlsRoot: resource?.resource_type_key === "EXADATA" ? document.getElementById("monitoring-exadata-controls") : null });
       }
       return;
     }
