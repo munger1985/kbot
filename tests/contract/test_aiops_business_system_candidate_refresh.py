@@ -21,7 +21,7 @@ class BusinessSystemCandidateRefreshTest(unittest.TestCase):
         self.assertIn("function selectedDiscoveryLocators", script)
         self.assertIn("candidate_locator_key", script)
         self.assertNotIn("host_candidate_locator_key", script)
-        self.assertIn("await hardware.discover(item, request)", script)
+        self.assertIn('await hardware.discover(item, request, { requireSelection: item.resource_type_key === "EXADATA" })', script)
         self.assertIn("async function refreshDiscoveryReferences", script)
         self.assertLess(
             commit.index("await refreshDiscoveryReferences()"),
@@ -33,8 +33,8 @@ class BusinessSystemCandidateRefreshTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("aiops-business-system-workspace.js?v=20261105_hardware2", page)
-        self.assertIn("aiops-hardware-resources.js?v=20261105_hardware2", page)
+        self.assertIn("aiops-business-system-workspace.js?v=20261113_exadata_refresh", page)
+        self.assertIn("aiops-hardware-resources.js?v=20261113_exadata_refresh", page)
 
 
 if __name__ == "__main__":

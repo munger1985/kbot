@@ -1021,8 +1021,8 @@
 
   async function refreshDiscoveryReferences() {
     await Promise.all(resources.filter(item => !item.database && item.hardware?.source_id && (item.mode === "NEW" || hardware.changed(item))).map(async item => {
-      await hardware.discover(item, request);
-      if (!item.hardware.candidate_ref) throw new Error(`${item.display_name} 的主机候选已失效，请重新发现。`);
+      await hardware.discover(item, request, { requireSelection: item.resource_type_key === "EXADATA" });
+      if (!item.hardware.candidate_ref) throw new Error(`${item.display_name} 的${item.resource_type_key === "EXADATA" ? "Exadata 整机" : "主机"}候选已失效，请重新发现。`);
     }));
     const groups = new Map();
     resources.filter((item) => (item.mode === "NEW" || monitoringChanged(item)) && usesDiscovery(item)).forEach((item) => {

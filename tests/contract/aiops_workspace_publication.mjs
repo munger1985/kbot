@@ -7,7 +7,7 @@ import { runInNewContext } from 'node:vm';
 const file = fileURLToPath(new URL('../../ui/aiops/js/aiops-business-system-workspace.js', import.meta.url));
 const source = readFileSync(file, 'utf8');
 const instrumented = source.replace(/\}\)\(\);\s*$/, `globalThis.workspaceTest = {
-  saveDraft, commit, validateResource, refreshDiscoveryReferences, draftPayload, loadDiscoveryCandidates, monitoringPayload, usesDiscovery, monitoringDraft, monitoringChanged, existingDatabasePatch, selectMonitoringBinding, resourceEditorHtml, updateResourceField,
+  hardware, saveDraft, commit, validateResource, refreshDiscoveryReferences, draftPayload, loadDiscoveryCandidates, monitoringPayload, usesDiscovery, monitoringDraft, monitoringChanged, existingDatabasePatch, selectMonitoringBinding, resourceEditorHtml, updateResourceField,
   seed(value) {
     system = value.system; resources = value.resources; relations = value.relations || []; sources = value.sources || [];
     detail = value.detail || null; draftId = value.draftId || ''; draftRevision = value.draftRevision || 0;
@@ -418,3 +418,45 @@ console.log('通过：草稿恢复、三引擎发布、OEM 分页候选与短期
   assert.equal(other.display_name, previousName, '改集群名称不能覆盖已有节点资源名称');
 }
 console.log('通过：已有数据库字段完整性、原绑定回显、OEM 改绑发布、密码留空和连接测试、多映射保留、RAC 节点隔离。');
+
+// 重放现场 Exadata 提交链路：刷新引用后真正保存草稿并发布，成员漂移不得产生写请求。
+for (const outcome of ['unchanged', 'members-changed', 'root-replaced']) {
+  const f = fixture();
+  const rootId = 'a'.repeat(32);
+  const member = { target_id: 'b'.repeat(32), target_type: 'oracle_exadata', display_name: 'Cell 01', parent_target_id: rootId };
+  const item = f.api.hardware.create('EXADATA', 'INFRASTRUCTURE', 'group-2', () => 'draft-exadata');
+  item.display_name = 'Exadata-Server';
+  Object.assign(item.hardware, { source_id: 'source-1', locator_key: rootId, candidate_ref: 'expired-ref', candidates: [
+    { locator_key: rootId, candidate_ref: 'expired-ref', display_name: item.display_name, members: [member] },
+  ] });
+  f.api.seed({ system: copy(system), resources: [item], sources: [{ ...monitor, source_type: 'OEM' }] });
+  f.handle(async call => {
+    if (call.path.endsWith('/exadata-discoveries')) {
+      assert.equal(call.payload.root_id, rootId);
+      return { items: [{ locator_key: outcome === 'root-replaced' ? 'c'.repeat(32) : rootId,
+        candidate_ref: 'fresh-ref', display_name: item.display_name,
+        members: outcome === 'members-changed' ? [] : [copy(member)] }] };
+    }
+    if (call.path === '/business-system-drafts') return { draft_id: 'exadata-draft', revision: 4 };
+    if (call.path.endsWith(':commit')) return { business_system_id: 'exadata-system', resources: [], validation_issues: [] };
+    throw new Error('未预期的提交请求：' + call.path);
+  });
+  await f.api.commit();
+  assert.equal(f.api.state().saving, false);
+  if (outcome === 'unchanged') {
+    assert.equal(f.calls.length, 3);
+    const draft = f.calls[1].payload.payload;
+    assert.equal(draft.publish.resources[0].monitoring.candidate_ref, 'fresh-ref');
+    assert.equal(draft.resources[0].hardware.candidate_ref, 'fresh-ref');
+    assert.equal(f.calls[2].path, '/business-system-drafts/exadata-draft:commit');
+    assert.equal(f.calls[2].headers['If-Match'], '"rv-4"');
+    assert.equal(f.navigations.length, 1);
+    assert.equal(f.api.state().dirty, false);
+  } else {
+    assert.equal(f.calls.length, 1, '成员或整机变化时禁止保存草稿、发布或修改资源');
+    assert.equal(f.api.state().dirty, true);
+    assert.equal(f.navigations.length, 0);
+    assert.ok(f.notifications.some(value => /Exadata.*变化|整机候选已不存在/.test(value)));
+  }
+}
+console.log('通过：Exadata 发布前引用刷新、实际草稿及发布请求、成员变化和同名整机替换时零业务写入。');

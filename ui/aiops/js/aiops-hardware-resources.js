@@ -68,18 +68,45 @@ const hardwareTypes = new Set([...hostTypes, ...serviceTypes, "STORAGE", "NETWOR
     }
     return retained;
   }
-  async function discover(item, request) {
+  function exadataMembership(members) {
+    if (!Array.isArray(members)) return null;
+    // 只比较成员身份与归属证据；接口返回顺序和对象字段顺序不影响确认结果。
+    return JSON.stringify(members.map(row => JSON.stringify([
+      row.target_id, row.target_type, row.display_name, row.parent_target_id ?? null,
+      row.membership_origin ?? "OEM_ASSOCIATION", row.evidence_ref ?? null,
+    ])).sort());
+  }
+  async function discover(item, request, { requireSelection = false } = {}) {
     const state = item.hardware, sourceId = state.source_id, ticket = ++state.revision;
     state.discovering = true;
     const candidates = [];
     let cursor = null;
     try {
       if (item.resource_type_key === "EXADATA") {
-        const page = await request(`/diagnostic-sources/${encodeURIComponent(sourceId)}/exadata-discoveries`, { method: "POST", body: JSON.stringify(JSON.parse(state.component_manifest_text || '[]').length ? {root_id: state.locator_key, component_manifest: JSON.parse(state.component_manifest_text)} : {}) });
-        if (ticket !== state.revision || state.source_id !== sourceId) return;
-        state.candidates = page.items;
-      state.confirmed_manifest = JSON.parse(state.component_manifest_text || '[]');
+        const locatorKey = state.locator_key, manifestText = state.component_manifest_text;
+        const selected = state.candidates.find(row => row.locator_key === locatorKey && row.candidate_ref === state.candidate_ref);
+        const previousMembers = exadataMembership(selected?.members);
         state.candidate_ref = "";
+        const manifest = JSON.parse(manifestText || "[]");
+        if (!Array.isArray(manifest)) throw new Error("组件清单必须是 JSON 数组。");
+        if (requireSelection && (!locatorKey || !selected || previousMembers === null)) throw new Error("请重新发现并确认 Exadata 整机及成员。");
+        if (requireSelection && JSON.stringify(manifest) !== JSON.stringify(state.confirmed_manifest || [])) throw new Error("组件清单已变化，请重新发现并确认 Exadata 整机及成员。");
+        const body = manifest.length || requireSelection ? { root_id: locatorKey, component_manifest: manifest } : {};
+        const page = await request(`/diagnostic-sources/${encodeURIComponent(sourceId)}/exadata-discoveries`, { method: "POST", body: JSON.stringify(body) });
+        if (ticket !== state.revision || state.source_id !== sourceId || state.locator_key !== locatorKey || state.component_manifest_text !== manifestText || state.candidate_ref) {
+          if (requireSelection) throw new Error("Exadata 发现期间配置已变化，请重新发现并确认。");
+          return;
+        }
+        state.candidates = page.items;
+        if (requireSelection) {
+          const matches = page.items.filter(row => row.locator_key === locatorKey);
+          if (matches.length !== 1) throw new Error("原 Exadata 整机候选已不存在或不唯一，请重新发现并确认。");
+          const candidate = matches[0];
+          if (exadataMembership(candidate.members) !== previousMembers) throw new Error("Exadata 成员已变化，请重新发现、复核并选择整机候选。");
+          if (!candidate.candidate_ref) throw new Error("Exadata 整机候选引用无效，请重新发现并确认。");
+          state.candidate_ref = candidate.candidate_ref;
+        }
+        state.confirmed_manifest = manifest;
         return;
       }
       do {
