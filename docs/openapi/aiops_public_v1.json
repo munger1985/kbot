@@ -4052,6 +4052,48 @@
         "title": "ExadataComparison",
         "type": "object"
       },
+      "ExadataComponentImport": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "evidence_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Evidence Ref",
+            "type": "string"
+          },
+          "parent_target_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Parent Target Id",
+            "type": "string"
+          },
+          "target_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_type",
+          "display_name",
+          "parent_target_id",
+          "evidence_ref"
+        ],
+        "title": "ExadataComponentImport",
+        "type": "object"
+      },
       "ExadataDeviceCoverage": {
         "additionalProperties": false,
         "properties": {
@@ -4107,6 +4149,34 @@
           "items"
         ],
         "title": "ExadataDiscovery",
+        "type": "object"
+      },
+      "ExadataDiscoveryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "component_manifest": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExadataComponentImport"
+            },
+            "maxItems": 64,
+            "title": "Component Manifest",
+            "type": "array"
+          },
+          "root_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Id"
+          }
+        },
+        "title": "ExadataDiscoveryRequest",
         "type": "object"
       },
       "ExadataFinding": {
@@ -14665,6 +14735,7 @@
             "enum": [
               "19c",
               "26ai",
+              "5.7",
               "8.4",
               "16"
             ],
@@ -14823,6 +14894,7 @@
                 "enum": [
                   "19c",
                   "26ai",
+                  "5.7",
                   "8.4",
                   "16"
                 ],
@@ -14999,6 +15071,7 @@
             "enum": [
               "19c",
               "26ai",
+              "5.7",
               "8.4",
               "16"
             ],
@@ -15961,6 +16034,7 @@
                 "enum": [
                   "19c",
                   "26ai",
+                  "5.7",
                   "8.4",
                   "16"
                 ],
@@ -17991,76 +18065,6 @@
         },
         "title": "WorkloadPolicy",
         "type": "object"
-      },
-      "ExadataDiscoveryRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "component_manifest": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/ExadataComponentImport"
-            },
-            "maxItems": 64,
-            "title": "Component Manifest",
-            "type": "array"
-          },
-          "root_id": {
-            "anyOf": [
-              {
-                "pattern": "^[0-9a-f]{32}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Root Id"
-          }
-        },
-        "title": "ExadataDiscoveryRequest",
-        "type": "object"
-      },
-      "ExadataComponentImport": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "evidence_ref": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Evidence Ref",
-            "type": "string"
-          },
-          "parent_target_id": {
-            "pattern": "^[0-9a-f]{32}$",
-            "title": "Parent Target Id",
-            "type": "string"
-          },
-          "target_id": {
-            "pattern": "^[0-9a-f]{32}$",
-            "title": "Target Id",
-            "type": "string"
-          },
-          "target_type": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Target Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target_id",
-          "target_type",
-          "display_name",
-          "parent_target_id",
-          "evidence_ref"
-        ],
-        "title": "ExadataComponentImport",
-        "type": "object"
       }
     }
   },
@@ -20057,7 +20061,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -20222,20 +20226,16 @@
     },
     "/api/v1/apps/aiops/diagnostic-sources/{source_id}/exadata-discoveries": {
       "post": {
-        "tags": [
-          "AIOps"
-        ],
-        "summary": "Discover Exadata",
         "operationId": "discover_exadata_api_v1_apps_aiops_diagnostic_sources__source_id__exadata_discoveries_post",
         "parameters": [
           {
-            "name": "source_id",
             "in": "path",
+            "name": "source_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Source Id"
+              "title": "Source Id",
+              "type": "string"
             }
           }
         ],
@@ -20253,26 +20253,30 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ExadataDiscovery"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
           },
           "422": {
-            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            }
+            },
+            "description": "Validation Error"
           }
-        }
+        },
+        "summary": "Discover Exadata",
+        "tags": [
+          "AIOps"
+        ]
       }
     },
     "/api/v1/apps/aiops/diagnostic-sources/{source_id}/instance-discoveries": {

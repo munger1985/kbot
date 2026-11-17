@@ -77,6 +77,7 @@ async def pipeline(*, microsecond, metric_code, defect=None):
     manager.__aenter__.return_value = uow
     service = SimpleNamespace(
         _uow_factory=lambda: manager,
+        _monitoring_profile_catalog=None,
         _monitoring_snapshot_builder=MonitoringSnapshotBuilder(
             metric_catalog=load_metric_catalog(), default_window_seconds=3600, max_response_bytes=65536),
     )

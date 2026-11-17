@@ -3,6 +3,9 @@
 > 本文记录当前实现，不是下一代算法模块的目标边界。已批准的新方向及待实施详细设计见
 > [App 独占数据的解析、索引与多模态召回算法设计](../proposals/app-owned-knowledge-algorithm-design.md)：
 > 只复用算法，各 App 独占解析数据与索引，不提供跨 App 检索；目前尚未切换运行实现。
+> 目标设计已明确图号消歧、正文与图片双向关联、成组证据返回及专项验收，不能将这些目标视为当前实现已具备的能力。
+> 本版目标不实现专用 reranker 或 LLM rerank，以 RRF 融合、确定性覆盖/预算选择为基线，并增加防证据丢失与实际模型上下文交付合同；详见目标设计第 8.6、8.12、13.5 节。
+> 新架构/所有权由[基础能力设计](knowledge-answering-capability.md)统一；进程、App 物理表与模型交付见[接入详细设计](../proposals/app-owned-knowledge-integration-detailed-design.md)，任务与退出门禁见[实施计划](../operations/app-owned-knowledge-implementation-plan.md)。下文 KC 共用正文表、两阶段与旧解析保留方式仅描述切换前现状，不是并存目标。
 
 ## 边界与数据模型
 

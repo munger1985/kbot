@@ -1,5 +1,7 @@
 # AIOps 诊断案例的 KC 入库与检索定制设计
 
+> 2026-11-05 目标边界：下文 KC 入库/对账是切换前案例定制基线，不是下一版公共知识库设计。新底层按[基础能力](../architecture/knowledge-answering-capability.md)、[接入详细设计](app-owned-knowledge-integration-detailed-design.md)与[实施计划](../operations/app-owned-knowledge-implementation-plan.md)替换：AIOps 自有物理表保存解析/图片/关系和索引，调用共享算法，Runtime 统一 Composer。不跨 App，不新增固定助手或独立模型重排。下文案例资格、来源重放、脱敏、用途/禁忌、人工发布和反馈语义继续适用，旧 KC ID/传输与排序假设由新合同替代；本次不把历史本地回归记作新算法已实施。
+
 日期：2026-11-03。状态：本次案例定制代码与本地回归已交付；真实环境测试由用户手动执行。
 不代表真实模型／KC 索引、召回排序质量或发布／撤回闭环已经验收。
 关联：[工作、报告与知识资产设计](../product/aiops-work-report-knowledge.md)；

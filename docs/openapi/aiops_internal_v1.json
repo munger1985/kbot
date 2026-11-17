@@ -19613,6 +19613,7 @@
             "enum": [
               "19c",
               "26ai",
+              "5.7",
               "8.4",
               "16"
             ],
@@ -19771,6 +19772,7 @@
                 "enum": [
                   "19c",
                   "26ai",
+                  "5.7",
                   "8.4",
                   "16"
                 ],
@@ -19947,6 +19949,7 @@
             "enum": [
               "19c",
               "26ai",
+              "5.7",
               "8.4",
               "16"
             ],
@@ -20964,6 +20967,7 @@
                 "enum": [
                   "19c",
                   "26ai",
+                  "5.7",
                   "8.4",
                   "16"
                 ],
@@ -25048,7 +25052,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -29692,20 +29696,16 @@
     },
     "/internal/v1/aiops/exadata/sources/{source_id}/discoveries": {
       "post": {
-        "tags": [
-          "Exadata OEM"
-        ],
-        "summary": "Discover",
         "operationId": "discover_internal_v1_aiops_exadata_sources__source_id__discoveries_post",
         "parameters": [
           {
-            "name": "source_id",
             "in": "path",
+            "name": "source_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Source Id"
+              "title": "Source Id",
+              "type": "string"
             }
           }
         ],
@@ -29723,26 +29723,30 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ExadataDiscovery"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
           },
           "422": {
-            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            }
+            },
+            "description": "Validation Error"
           }
-        }
+        },
+        "summary": "Discover",
+        "tags": [
+          "Exadata OEM"
+        ]
       }
     },
     "/internal/v1/aiops/exadata/systems/{system_id}/resources/{resource_id}/sources/{source_id}/baselines": {

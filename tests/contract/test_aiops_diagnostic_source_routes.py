@@ -19,6 +19,12 @@ class AIOpsDiagnosticSourceRouteContractTest(unittest.TestCase):
                 if isinstance(route, APIRoute)
             }
             prefix = router.prefix
+            connectivity_route = next(
+                route for route in router.routes
+                if isinstance(route, APIRoute)
+                and route.path == f"{prefix}/diagnostic-sources/{{source_id}}/connectivity-checks"
+            )
+            self.assertEqual(connectivity_route.status_code, 202)
             self.assertIn(
                 f"{prefix}/diagnostic-sources/{{source_id}}/enable", paths
             )

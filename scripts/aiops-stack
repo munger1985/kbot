@@ -151,6 +151,8 @@ local_access = false
 # enabled = true
 # 必填：仅允许已经过端到端验证的19c或26ai。
 # version = 19c
+# 可选：数据库所在的既有Docker网络，仅该目标采集器接入；不会创建或删除此网络。
+# docker_network = database-network
 # host = 10.0.0.20
 # port = 1521
 # service = ORCLPDB1
@@ -169,8 +171,11 @@ local_access = false
 
 [mysql:mysql-prod-01]
 # enabled = true
-# 必填：仅允许已经过端到端验证的8.4。
+# 必填：指标采集支持5.7和8.4；5.7已停止社区维护，仅建议隔离测试。
 # version = 8.4
+# docker_network = database-network
+# 可选：显式采集既有容器日志，无需修改标签或重建数据库容器；必须同时启用[logs]。
+# log_container = mysql-prod-01
 # host = 10.0.0.21
 # port = 3306
 # username = kbot_monitor
@@ -182,6 +187,8 @@ local_access = false
 # enabled = true
 # 必填：仅允许已经过端到端验证的16。
 # version = 16
+# docker_network = database-network
+# log_container = postgres-prod-01
 # uri = 10.0.0.22:5432/postgres?sslmode=require
 # username = kbot_monitor
 # password = CHANGE_ME
@@ -459,6 +466,7 @@ def _load_settings(path: Path) -> DeploymentSettings:
         values=parser,
     )
     _validate_module_settings(settings)
+    _docker_log_targets(settings)
     mappings = _storage_path_mappings(parser)
     if mappings and role == "central":
         raise ValueError("数据库路径映射必须部署在数据库所在Collector主机")
@@ -505,6 +513,9 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
         raise ValueError("collector角色不能配置[prometheus_target:*]")
     for target in database_targets:
         section = target.section
+        database_network = parser.get(section, "docker_network", fallback="").strip()
+        if database_network and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", database_network):
+            raise ValueError(f"[{section}] docker_network必须是有效的Docker网络名称")
         if target.engine == "oracle":
             for option in ("version", "host", "service", "username", "password"):
                 _required(parser, section, option)
@@ -524,8 +535,8 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
         elif target.engine == "mysql":
             for option in ("version", "host", "username", "password"):
                 _required(parser, section, option)
-            if _required(parser, section, "version") != "8.4":
-                raise ValueError(f"[{section}] version仅支持8.4")
+            if _required(parser, section, "version") not in {"5.7", "8.4"}:
+                raise ValueError(f"[{section}] version仅支持5.7或8.4")
             _bounded_int(parser, section, "port", 3306, 1, 65535)
             default_exporter_port = 9104
         else:
@@ -808,6 +819,8 @@ def _prometheus_rules() -> str:
 
       - record: kbot_db_storage_used_bytes
         expr: oracledb_tablespace_bytes{job="oracle"}
+        labels:
+          job: oracle
 
       - record: kbot_db_storage_free_bytes
         expr: oracledb_tablespace_free{job="oracle"}
@@ -957,6 +970,8 @@ def _prometheus_rules() -> str:
             ),
             "database", "$1", "schema", "(.+)"
           )
+        labels:
+          job: mysql
 
   - name: kbot-aiops-mysql-alerts
     interval: 15s
@@ -1360,9 +1375,46 @@ def _loki_rules() -> str:
 """
 
 
-def _docker_log_alloy_config() -> str:
+def _docker_log_targets(settings: DeploymentSettings) -> list[tuple[str, str, str]]:
+    """只允许显式登记的MySQL/PostgreSQL容器，不修改数据库容器。"""
+    targets: list[tuple[str, str, str]] = []
+    for target in _database_targets(settings.values):
+        name = settings.values.get(target.section, "log_container", fallback="").strip()
+        if not name:
+            continue
+        if "logs" not in settings.profiles:
+            raise ValueError(f"[{target.section}] log_container必须同时启用[logs]")
+        if target.engine not in {"mysql", "postgres"}:
+            raise ValueError("log_container仅支持MySQL和PostgreSQL；Oracle使用Alert Collector")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+            raise ValueError(f"[{target.section}] log_container必须是完整Docker容器名称")
+        if any(item[0] == name for item in targets):
+            raise ValueError("同一日志容器不能登记到多个数据库Target")
+        job = "mysql_error" if target.engine == "mysql" else "postgresql_log"
+        targets.append((name, target.target_key, job))
+    return targets
+
+
+def _docker_log_alloy_config(settings: DeploymentSettings) -> str:
     """生成仅发现显式启用日志采集的数据库容器的Alloy配置。"""
 
+    explicit_targets = _docker_log_targets(settings)
+    rules = []
+    if "containers" not in settings.profiles:
+        names = "|".join(re.escape(name) for name, _, _ in explicit_targets)
+        rules.append(f'''  rule {{
+    source_labels = ["__meta_docker_container_name"]
+    regex = {json.dumps('/(' + names + ')')}
+    action = "keep"
+  }}''')
+    for name, target_key, job in explicit_targets:
+        for label, value in (("aiops_target_key", target_key), ("aiops_log_source", job)):
+            rules.append(f'''  rule {{
+    source_labels = ["__meta_docker_container_name"]
+    regex = {json.dumps('/' + re.escape(name))}
+    target_label = "__meta_docker_container_label_{label}"
+    replacement = {json.dumps(value)}
+  }}''')
     return r'''
 
 discovery.docker "database_containers" {
@@ -1372,6 +1424,8 @@ discovery.docker "database_containers" {
 
 discovery.relabel "database_container_logs" {
   targets = discovery.docker.database_containers.targets
+
+__EXPLICIT_CONTAINER_RULES__
 
   rule {
     source_labels = ["__meta_docker_container_label_aiops_target_key"]
@@ -1414,7 +1468,7 @@ loki.process "database_container_logs" {
   stage.match {
     selector = "{job=\"mysql_error\"}"
     stage.regex {
-      expression = `\[(?P<severity>System|Error|Warning|Note)\]`
+      expression = `(?i)\[(?P<severity>System|Error|Warning|Note)\]`
     }
   }
 
@@ -1438,7 +1492,7 @@ loki.process "database_container_logs" {
 
   forward_to = [loki.write.central.receiver]
 }
-'''.lstrip()
+'''.lstrip().replace("__EXPLICIT_CONTAINER_RULES__", "\n\n".join(rules))
 
 
 def _target(
@@ -1466,6 +1520,7 @@ def _database_generated_compose(
     volumes: dict[str, object] = {}
     local_targets: list[dict[str, object]] = []
     alloy_mounts: list[str] = []
+    database_networks: dict[str, object] = {}
 
     mappings = _storage_path_mappings(parser)
     if mappings:
@@ -1531,6 +1586,11 @@ def _database_generated_compose(
             "security_opt": ["no-new-privileges:true"],
             "networks": ["observability", "outbound"],
         }
+        database_network = parser.get(section, "docker_network", fallback="").strip()
+        if database_network:
+            network_key = f"database-{key}"
+            database_networks[network_key] = {"external": True, "name": database_network}
+            common["networks"].append(network_key)
         port_mapping: list[str] = []
         if settings.role == "collector":
             default_port = {"oracle": 9161, "mysql": 9104, "postgres": 9187}[engine]
@@ -1760,11 +1820,13 @@ password={password}
         if settings.role == "all-in-one":
             local_targets.append(_target(engine, f"{exporter_name}:{exporter_port}", key))
 
-    if "logs" in settings.profiles and "containers" in settings.profiles:
+    if "logs" in settings.profiles and ("containers" in settings.profiles or _docker_log_targets(settings)):
         alloy_mounts.append("/var/run/docker.sock:/var/run/docker.sock:ro")
     if alloy_mounts and "logs" in settings.profiles:
         services["alloy"] = {"volumes": alloy_mounts}
     document: dict[str, object] = {"services": services}
+    if database_networks:
+        document["networks"] = database_networks
     if secrets:
         document["secrets"] = secrets
     if volumes:
@@ -1944,8 +2006,8 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         alloy_config = (
             STACK_ROOT / "configuration/alloy/config.alloy"
         ).read_text(encoding="utf-8")
-        if "containers" in settings.profiles:
-            alloy_config += _docker_log_alloy_config()
+        if "containers" in settings.profiles or _docker_log_targets(settings):
+            alloy_config += _docker_log_alloy_config(settings)
         alloy_revision = hashlib.sha256(
             alloy_config.encode("utf-8")
             + b"\0http-header-v2\0"
@@ -2243,6 +2305,11 @@ def _preflight(settings: DeploymentSettings) -> None:
         check=True,
         stdout=subprocess.DEVNULL,
     )
+    for network in sorted({
+        settings.values.get(target.section, "docker_network", fallback="").strip()
+        for target in _database_targets(settings.values)
+    } - {""}):
+        subprocess.run(["docker", "network", "inspect", network], check=True, stdout=subprocess.DEVNULL)
     minimum_free_gb = _bounded_int(
         settings.values, "deployment", "minimum_free_gb", 10, 1, 10240
     )

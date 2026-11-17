@@ -37,10 +37,10 @@ NotificationStage = Literal[
     "REPORT_READY",
     "SITUATION_RECOVERED",
 ]
-SupportedDatabaseVersion = Literal["19c", "26ai", "8.4", "16"]
+SupportedDatabaseVersion = Literal["19c", "26ai", "5.7", "8.4", "16"]
 SUPPORTED_DATABASE_VERSIONS: dict[DatabaseType, tuple[SupportedDatabaseVersion, ...]] = {
     DatabaseType.ORACLE: ("19c", "26ai"),
-    DatabaseType.MYSQL: ("8.4",),
+    DatabaseType.MYSQL: ("5.7", "8.4"),
     DatabaseType.POSTGRESQL: ("16",),
 }
 # 多个已验证版本可复用同一档案；仅当系统视图合同变化时新增SQL档案。
@@ -49,6 +49,7 @@ DATABASE_SQL_PROFILES: dict[
 ] = {
     (DatabaseType.ORACLE, "19c"): "oracle_19c",
     (DatabaseType.ORACLE, "26ai"): "oracle_26ai",
+    (DatabaseType.MYSQL, "5.7"): "mysql_5_7",
     (DatabaseType.MYSQL, "8.4"): "mysql_8_4",
     (DatabaseType.POSTGRESQL, "16"): "postgresql_16",
 }

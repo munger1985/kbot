@@ -183,7 +183,10 @@ def test_inspection_monitoring_reads_baseline_but_preserves_report_window():
                               runs=SimpleNamespace(database_now=AsyncMock(return_value=END + timedelta(seconds=45))))
         manager = AsyncMock()
         manager.__aenter__.return_value = uow
-        service = SimpleNamespace(_monitoring_snapshot_builder=builder, _uow_factory=lambda: manager)
+        service = SimpleNamespace(
+            _monitoring_snapshot_builder=builder, _monitoring_profile_catalog=None,
+            _uow_factory=lambda: manager,
+        )
         context = SimpleNamespace(inspection=inspection, target_id="sample", domain_id="sample", source_ids=())
         result = await TurnPlanningService._prepare_monitoring(service, context, requested_window_seconds=86400)
         kwargs = builder.build.await_args.kwargs

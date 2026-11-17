@@ -1,5 +1,17 @@
 # AIOps 运维知识详细设计
 
+## 2026-11-05 知识基础能力目标（优先于旧技术方案）
+
+下一版底层边界统一采用[基础能力设计](../architecture/knowledge-answering-capability.md)、[算法详细设计](app-owned-knowledge-algorithm-design.md)、[接入详细设计](app-owned-knowledge-integration-detailed-design.md)与[实施计划](../operations/app-owned-knowledge-implementation-plan.md)，尚未实施。
+
+- AIOps 自己拥有资料/案例的原文、解析节点、图片、关系、版本、物理表、索引和读取门禁；只复用算法与模型，不能继续把正文落在公共 KC 表。
+- 资料与案例是同一 AIOps 内的两种领域适配，不是跨 App 联检；原有审核、来源资格、语义脱敏、人工发布/退役和 VERIFIED 规则保留。
+- 正式问答只使用统一 Agent 版本绑定和既有会话/运行入口。不新增固定内部知识助手、独立 composer_llm 或知识问答会话路径。
+- 索引引用改为本 App 文档版本/解析/投影/索引代次与 Manifest；图文 Citation 不要求正文先命中，也不按 Bundle 强制单附件。
+- 不实现独立 reranker 或 LLM rerank。业务适配只提供已登记的确定性排序、来源/用途/禁忌解释，不借 App 扩展绕行模型重排。
+
+下文旧 KC Collection/Bundle/Revision 存储、固定资源、处理 API、对账与历史实施矩阵属于切换前基线，不是并存目标；其替换与数据动作以新实施计划为准。带日期的交付证据保留，不反向改写为新底层已经实现。具体新表、协议与门禁不在本文复制。
+
 ## 2026-11-03 已确认的产品分层与实施边界
 
 用户可见页面与异步行为遵循[运维工作、报告与知识资产设计](../product/aiops-work-report-knowledge.md)，
@@ -236,10 +248,10 @@ AIOps Candidate Resolver 只返回 `PUBLISHED` 版本，因此未审核内容即
 也不能被 Agent 检索到。
 
 正式知识问答不在 AIOps 内复制 Conversation、SSE、Document Skill 或 Composer，而是接入
-[Knowledge Answering 基础能力](../architecture/knowledge-answering-capability.md)。AIOps 负责内部知识助手、
-服务端 Scope 和业务引用呈现；Agent Runtime 负责 Run 与 Grounded Answer；KC 负责精确 Revision 检索。
+[知识基础能力](../architecture/knowledge-answering-capability.md)。AIOps 负责统一 Agent 的知识版本绑定、
+服务端 Scope、自有数据检索和业务引用呈现；Runtime 负责统一载荷交付与 Grounded Answer。不初始化固定知识助手，也不再依赖公共 KC Revision 存储；纯解析计算按新接入合同执行。
 
-### 5.2 KC Collection 规划
+### 5.2 切换前 KC Collection 资源基线
 
 业务上分别呈现“运维资料库”和“诊断案例库”，共享同一个 KC 底座。
 默认资料库和固定案例资源如下；用户创建的其他资料库使用各自 Collection：
@@ -976,7 +988,7 @@ Verification 事实限制。
 
 应用层负责这些规则，不建立数据库唯一约束。
 
-### 16.3 索引可用性判断
+### 16.3 切换前 KC 索引可用性基线
 
 KC Revision `READY` 不是唯一条件。发布前必须同时确认：
 
@@ -1005,23 +1017,17 @@ KC Revision `READY` 不是唯一条件。发布前必须同时确认：
 日志只记录资产、版本、任务、KC Revision、状态和稳定错误码，不记录文件正文、完整 SQL、
 日志原文、凭据或模型 Prompt。
 
-## 18. 一次性原子改造与切换
+## 18. 下一版实施与切换
 
-本功能不采用分阶段上线。以下工作可以并行开发，但属于同一个发布单元，只有一次 Oracle Schema 与应用
-切换：
+底层重构统一按[知识基础能力实施计划](../operations/app-owned-knowledge-implementation-plan.md)的 K0–K7 执行，不再使用原 KC 公共存储改造矩阵。AIOps 的资产、来源资格、案例/资料业务适配在各自包中承接，不重做已交付异步输出链路。
 
-1. `kbot4.1` 与 `km4.0` 已从共同基线提交建立；终版标签后续只补在该共同基线上。
-2. KBot 4.1 已完成 KM 全量物理删除并由不存在性合同锁定；继续冻结 Scope、Execution Spec、Citation、
-   SSE、错误码和 App 扩展合同。
-3. 同步完成 Registry、手册/案例、正式问答、KC 精确 Revision、Runtime 通用 Skill、Main API、AIOps 页面、
-   Platform Client、OpenAPI、Oracle canonical DDL/manifest 和全部测试。
-4. 按规范初始化知识库／案例资源和可信作用域，Agent 版本绑定是唯一问答配置来源，不再初始化固定
-   Knowledge Assistant。不能可靠确认的旧 Bundle 不按文件名猜测绑定，不回填伪造身份；
-   本轮新增规划不自动迁移、重新入库或回填历史资产。
-5. 删除旧 `knowledge-core` 页面/路由、旧 KC 响应解析、重复 Composer、兼容 DTO、双读写和失效测试；
-   KM 删除已在 4.1 前置提交完成，不在后续功能实现中重新引入。
-6. 对历史报告只生成待审核候选，不自动发布；这是新系统的运营数据，不是兼容链路。
-7. 全部门禁通过后同时切换前后端；失败时整体恢复上一发布物和数据库备份，不让新旧合同并行。
+1. K0 固定 AIOps 数据范围、Agent 版本绑定、App 表/索引、Scope 与新证据合同；旧资产/Run 的数据动作单独批准。
+2. K1–K3 提取共享算法，AIOps 自己接收解析、持久化、投影和检索；同批完成图文关系、快照、撤回与精确版本复核。
+3. K4 接入 Runtime 静态委托、真实载荷和唯一 Composer，替换正文/Bundle 单附件门禁；不初始化固定 Knowledge Assistant。
+4. K5/K6 分别执行真实依赖质量/资源评测与双前端业务闭环、Domain/权限/来源失效测试，mock 不代替真实验收。
+5. K7 仅在用户批准确切数据/Schema/部署范围后原子切换；退出旧公共 KC 路径与旧字段，不双读双写或自动回填，失败整体恢复一致快照。
+
+报告/案例异步任务的既有交付记录继续在原修改计划保留，不当作新检索能力已经通过。KM 分线规则仍独立有效，以下仅为原分线/删除门禁，不要求本次重新执行已经完成的删除。
 
 ### 18.1 KM 独立分支与 4.1 删除门禁
 

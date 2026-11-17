@@ -1,260 +1,87 @@
-# KBot 4.0 文档入库、解析与二阶段检索
+# 知识文档入库、解析与多模态检索
 
-## 一页产品概述
+日期：2026-11-05。状态：目标产品流程；底层 K0/K1 通过 G-A，产品接入尚未实施。适用：KBot4 与 Ammolite。
 
-Knowledge Core（KC）是 4.0 唯一拥有知识资产生命周期、解析结果和检索索引的
-领域服务。它接收一个文件或一组相关文件，生成可发现的 Bundle/Document 画像
-和可引用 Evidence；它不负责生成最终回答。
+本文取代原“文档入库、解析与二阶段检索”目标说明。当前旧 KC 实现见[Knowledge Core](../architecture/knowledge-core.md)，新边界以[基础能力设计](../architecture/knowledge-answering-capability.md)、[算法详细设计](../proposals/app-owned-knowledge-algorithm-design.md)、[接入详细设计](../proposals/app-owned-knowledge-integration-detailed-design.md)和[实施计划](../operations/app-owned-knowledge-implementation-plan.md)为准。
 
-相较 3.x 的 `KB → Batch → File → Chunk`，4.0 的核心变化是：
+## 1. 产品边界
 
-- 用 Collection 表达权限和检索边界；
-- 用 Bundle/Revision 表达一个业务知识对象及其不可变修订；
-- 用 Document/Version 表达逻辑文件和物理内容版本；
-- 用 Parse View 表达某次解析配置下的统一视图；
-- 用 Evidence 替代缺少结构和出处的 Chunk；
-- 分开“找对对象”和“找准正文”，形成二阶段检索。
+知识能力支持文搜文、文搜图、图搜图、图片/区域定位和同 App 文档引用。每个 App 只读取自己的资料，存储使用自己的物理表、目录、索引和缓存；只有算法与模型推理复用，不建设公共文档库。
 
-## 知识对象层次
+用户不需要理解解析器、向量模型、Scope 或数据库。知识检索可直接返回资料和图片，不强制先生成答案；正式问答由获授权 Agent 发起，并复用 Runtime 的统一回答链路。AIOps 从统一 Agent 入口使用已绑定知识库，不设置另一套固定知识助手或独立知识会话。
 
-```mermaid
-flowchart TD
-    D[Domain] --> C1[Collection A]
-    D --> C2[Collection B]
-    C1 --> B[Bundle]
-    B --> R1[Revision 1]
-    B --> R2[Revision 2 / Current]
-    R2 --> M1[Revision Document Member]
-    R2 --> M2[Revision Document Member]
-    M1 --> DOC1[Document]
-    M2 --> DOC2[Document]
-    DOC1 --> V1[Immutable Document Version]
-    V1 --> PV[Active Parse View]
-    PV --> E[Evidence]
-    R2 --> DO[Discovery Objects]
-```
+## 2. 上传与组织
 
-- 一个 Domain 有多个 Collection，强制隔离数据和权限；
-- 一个 Bundle 可以只有一个文件，也可以由 PDF、Word、Excel 等多个文件组成；
-- 多文件 Bundle 不要求存在 Primary Document；
-- Revision 冻结本次标题、Facet、成员和状态；
-- Document 是逻辑身份，Document Version 是内容 Hash 对应的不可变版本；
-- 新 Revision 完成索引前不会替换 Current Revision。
+App 可提供每个文件独立登记或多文件组成资料包两种上传方式。资料库、资料包、文件角色和审批属于 App 业务组织，不是通用召回的前置 Bundle 门禁。
 
-## 两种上传方式
+上传返回受理回执、文件校验和任务状态，不等于完成解析、已审核或可检索。用户只能提交产品允许的名称、文件及业务元数据；安全级、权限、资料范围、模型和处理策略由可信服务端确定。业务要求审批后才正式解析时继续遵守，不因算法重构放宽。
 
-### 独立文件批量上传
+## 3. 从源文件到可检索
 
-用户一次上传 10 个互不相关的文件，系统创建 10 个 Bundle，每个 Bundle
-包含一个 Document。
+~~~text
+App 保存原文件与持久任务
+  -> 纯解析执行器：原生结构/版面 + 质量检查 + 局部 OCR/VLM 修复
+  -> 规范内容节点、图片/表格、定位、引用出现与质量报告
+  -> App 接收校验，经自身 Repository/UoW 保存
+  -> 构建 SearchUnit、文本/视觉/多向量等独立表示
+  -> App 自有索引 generation 就绪
+  -> App 审核/发布门禁通过，切换可检索快照
+~~~
 
-### 多文件组成一个 Bundle
+解析器可用内存和有界流式输出；大图/张量使用受控临时制品，不强制整文档常驻内存。批次落库后确认消费，最终 Manifest 完整前不发布半成品。任务具有幂等、租约、取消、重试和恢复点。
 
-用户上传 1 个 PDF、2 个 Word 和 1 个 Excel，并声明它们属于同一知识对象。
-系统创建一个 Bundle Revision 和四个成员。Bundle Manifest/画像负责概括整体
-标题、Facet、文件角色、章节覆盖和缺失成员，检索时不依赖虚构的 Primary 文件。
+解析、业务审批、索引可用和发布是不同状态。照片没有正文也可形成有效视觉资料；文字提取成功不证明表格、版面或图号关系正确。部分页/模态失败必须明确展示，不能静默跳过后宣称完整。
 
-来源系统也可以随 Bundle 提交一个 `MANIFEST` 成员，例如业务对象的标题、编号、
-Solution Briefing 和结构化字段。附件下载失败时保留失败成员，已成功文件仍可
-解析；最终 Revision 可以是 `PARTIAL`。
+## 4. 解析结果
 
-## 从上传到可检索
+解析保留原始来源、文档版本、解析代次、章节/阅读顺序、表格表头和单位、图像原图/区域、原文跨度及真实页码/坐标或 Office 逻辑位置。
 
-```mermaid
-sequenceDiagram
-    participant U as Portal / Source System
-    participant KC as Knowledge Core API
-    participant DB as Oracle
-    participant P as Parser Worker
-    participant M as Model Serving
-    participant I as Index Worker
+生成的图片说明、摘要、修复推断与原文分开标注，不把模型猜测变成事实。图片包括自然照片、位图、页面和复合/矢量图裁剪；图题不是引用该图的正文。
 
-    U->>KC: 创建 Bundle Revision + 上传文件
-    KC->>DB: Receipt / Bundle / Revision / Document / Version
-    KC->>DB: 为每个成员创建 PARSE Job + Parse View
-    P->>DB: SKIP LOCKED 领取任务和有限租约
-    P->>KC: 获取只读源文件 URL
-    P->>P: 校验 SHA-256，执行统一解析流水线
-    P->>M: 按 Collection 绑定调用 OCR/VLM
-    P->>KC: 上传 IR/质量产物，分批提交 Evidence
-    KC->>DB: 原子发布 Parse View 和 Evidence
-    KC->>DB: 创建 INDEX Job
-    I->>M: 使用 Collection 唯一 Embedding 模型
-    I->>DB: 写 Evidence 向量和可选 Visual 向量
-    KC->>DB: 创建 PROFILE → Discovery INDEX Job
-    I->>DB: 发布 Bundle/Document Discovery Object
-    KC->>DB: Revision READY/PARTIAL，切换 Current
-```
+原生提取优先，质量不足才对相应区域执行 OCR/高精度解析/VLM。Docling 是适配器候选，不锁定所有格式和语料；解析模型与阈值按真实评测选择，不把模型自报置信度当作质量验收。
 
-所有 Job 都有幂等键、输入指纹、有限租约、心跳、重试次数和失败分类。
-Worker 崩溃后可以重新领取；过期 Worker 不能用旧租约覆盖新结果。
+## 5. 三类检索与排序
 
-## 自适应混合解析流水线
+| 用户任务 | 主要证据 |
+|---|---|
+| 文搜文 | 原文段落、带表头/单位的表格、章节和精确出处 |
+| 文搜图 | 真正图片/图表/区域、图题、引用它的正文和定位 |
+| 图搜图 | 相似或近重复图片/区域与原图出处，区分语义相似和找原图 |
 
-4.0 不再维护“Docling Chunk”和“纯视觉 Chunk”两套平行结果。Docling 是底层
-文档转换引擎，文本、OCR 和视觉增强最终统一进入同一套结构与 Evidence 模型：
+任务按已评测能力组合全文、文本 dense、跨模态、原生多向量和近重复路线。原始图片可独立命中，不要求先找到正文 Evidence。当前不实现独立 reranker/LLM rerank，使用 RRF、明确覆盖目标和预算选择。
 
-```text
-源文件与 Hash 校验
-  → Docling 转换、页面渲染和基础布局
-  → Collection parser_ocr 调用 Model Serving OCR
-  → 可选页面级 VLM / Figure 描述
-  → Atom IR 统一归一化
-  → Reading Order 重建
-  → Outline / 标题层级修复
-  → Structure Quality Gate
-  → Evidence Planner
-  → Parse Artifacts + Evidence
-```
+相关性搜索、范围内最新 N 条、全量枚举分别执行。最新/日期排序参与候选生成，不先截相关性 Top-K 再假称“最新”；无法证明自然语言语义全集时明确部分覆盖，不承诺列出全部。
 
-### OCR 与视觉能力
+用户要求数量指主命中，图题、关联正文和图片附件不重复计数；页面结果与模型窗口能容纳的子集分别说明。同文档可有多项必要证据，不强制“一文档一条”。
 
-| 能力 | 配置方式 | 未配置时 |
-| --- | --- | --- |
-| Parser OCR | Collection 的 `parser_ocr` 绑定 | `AUTO` 不允许提交新解析任务 |
-| Parser VLM | Collection 的 `parser_vlm` 绑定 | 跳过页面视觉增强；`VISUAL` 不允许提交 |
-| Parser LLM | Collection 的 `parser_llm` 绑定 | 不执行需要 LLM 的解析期提炼或 App 预分析 |
-| Visual Embedding | Collection 绑定的可选模型 | 不生成图像向量 |
+## 6. 图文与跨文档引用
 
-OCR Provider、模型路径和推理端点由 Model Serving 管理；KC 只保存模型 ID、任务快照和
-实际推理 revision，不读取部署级 OCR 参数。`parser_llm` 与 Agent 的 `composer_llm` 是两个
-独立角色：前者只参与解析期处理，后者只生成最终回答。VLM 与 Visual Embedding 相互独立。
+命中“结构如图 1-1 所示”时，沿已解析关系带出原文版本中的精确图 1-1、图题、预览与双方位置；命中图片时，反向带出明确引用该图的正文，不用最近邻段代替。
 
-### `TEXT / AUTO / VISUAL`
+不同文档、编号作用域或子图同号不得串图。图在下一页或远处章节仍应正确关联；没有唯一目标时展示歧义/缺失，不找语义相似图片替代。关联限制为明确关系与有界扩展，不无限递归。
 
-- `TEXT`：只提取原生文本和结构，关闭 OCR 及所有图片生成；
-- `AUTO`：按需渲染低文本页面供 OCR 使用，只把实际图片对象交给 VLM；
-- `VISUAL`：第一阶段发布结构化文本，第二阶段由持久化任务异步生成全部页面图像并逐页调用 VLM。
+预算不足时返回可披露关联清单/续取与部分覆盖，不把未加载图像说成已被模型阅读。同 App 跨文档引用锚定精确版本，目标不在授权范围或不存在时不越权查找，绝不跳到其他 App。
 
-AUTO 的页面图像只作为解析期 OCR 临时输入，不形成可检索图片，也不触发整页 VLM；
-VLM 只处理实际图片对象。VISUAL 的基础结果在
-视觉任务执行期间始终可检索，页面结果使用内容寻址缓存并支持失败重试。
+## 7. 正式问答与实际读图
 
-## 为什么需要 Atom IR、Structure IR 和 Evidence
+App 检索返回 EvidenceSet，Runtime Document 经本 App 内容端口核权读取真实载荷，由唯一 Runtime Composer 发给模型。App 不自建回答模型调用。
 
-`Atom IR` 保存标题、段落、列表、表格、单元格、图片描述等最小结构单元及其
-页码、bbox、来源和置信度。`Structure IR` 重建阅读顺序、章节层级和父子关系。
+纯图引用可以没有逐字 quote，但必须有真实图像、来源和定位；图题/模型描述不能冒充图像本体。展示预览链接不代表模型收到图像，只有实际发送的载荷才计为已交付，发送也不证明模型理解或结论受支持。
 
-Evidence Planner 再按语义边界生成检索单元：
+证据不足允许明确说明缺口；有候选不能因映射/选择/序列化异常静默交付零条。正常无命中、无权/撤回、不可读、预算不足、能力缺失和交付失败分别提示，不统称“知识库没数据”。
 
-- 标题不会脱离下属正文成为无意义短片段；
-- 过短段落与相邻同章节内容合并；
-- 超长章节按句子、列表项、表格边界拆分；
-- 表格、行、Sheet 和 Cell Range 保留结构类型；
-- 每条 Evidence 保存 `heading_path`、页码、bbox、Source Span、质量分和父子关系；
-- `content_text` 用于引用，`retrieval_text` 可加入标题路径以提高召回。
+## 8. 更新、撤回、历史与 Domain
 
-质量门检查 Atom 覆盖、阅读顺序、标题层级、Evidence 长度、来源可追溯性和
-定位完整性。未通过时任务失败，不发布“有文本但不可可信检索”的结果。
+新版本、重解析、重切分和更换 embedding 分别形成明确代次；新索引未就绪不替换旧的仍有效快照。调整切分或融合不必重跑 OCR，更换表示空间必须构建匹配索引。
 
-## 解析产物与可追溯性
+撤回首先阻断 App 权威读取门禁，再异步处理索引；旧索引或预览句柄不代表仍有权限。历史 Run 冻结身份，所需原图/解析按精确保留引用保存，不自动改到新版；依法删除和历史原文不可读须明确披露。
 
-Parser 保存以下不可变产物：
+Domain/业务空间切换重新校验身份和权限，清除旧候选、Scope、图像句柄、分页与在途响应，不将旧域结果带入新域。
 
-| 产物 | 用途 |
-| --- | --- |
-| `raw_docling` | 保留底层转换结果 |
-| `atom_ir` | 统一原子结构 |
-| `structure_ir` | 阅读顺序和章节树 |
-| `evidence_manifest` | Evidence Key、内容和定位 Hash |
-| `spreadsheet_artifact` | Excel Sheet、表格和结构信息 |
-| `visual_analysis` | VLM 页面选择、替换和失败记录 |
-| `ocr_analysis` | OCR 模型 ID、实际 revision、页级结果和失败记录 |
-| `quality_report` | 质量指标、警告和硬失败 |
+## 9. 页面和验收
 
-输出指纹同时覆盖 Artifact Hash 和 Evidence Key。KC 只有在租约、输入 Hash、
-输出指纹和质量门全部通过后才激活 Parse View。
+页面对齐既有 App 设计系统，展示真实输入方向、结果类型、来源、关联、任务状态与错误；不能将未支持的图搜图做成可点但无效入口。AIOps 保留资料/案例领域区别和来源等级，知识不能替代当前 Target 的事实与审批。
 
-## 索引与模型一致性
+双平台验证上传/审批/解析/发布、三类检索、图文双向带出、纯图引用、排序/数量、实际模型载荷、撤回和 Domain 切换。mock 浏览器、编译或 HTTP 200 不等于真实质量验收。
 
-每个 Collection 绑定唯一文本 Embedding 模型。解析不生成文本向量；INDEX
-Worker 才使用 Collection 冻结的模型快照生成 Evidence 和 Discovery 向量。
-
-写入前强制校验：
-
-- `model_id`、`served_model_name` 和配置指纹一致；
-- 模型维度等于全局配置维度；
-- 返回向量数量和每条向量长度正确；
-- 文档索引和查询召回使用同一个模型；
-- 已产生索引的 Collection 不允许更换 Embedding 模型。
-
-如果配置 Visual Embedding，INDEX 阶段还会为页面和 Figure 生成视觉向量。
-
-## 二阶段检索
-
-### 第一阶段：Discovery——先找对知识对象
-
-```text
-standalone_query
-  → Collection/Domain/状态/安全级别过滤
-  → Bundle/Document Discovery Object
-  → Oracle Text + Vector
-  → RRF 融合
-  → Document 命中聚合到 Bundle
-  → 多 Collection 平权交错
-  → 候选 Bundle Revision
-```
-
-Discovery Object 是短小的检索画像，包含 Bundle 标题、来源标识、Facet、成员、
-章节覆盖和缺失成员。它不返回大段正文。文本与向量结果按排名使用 RRF 融合，
-避免比较不同通道不可直接对齐的原始分数。多个 Collection 平权检索，不设置
-Primary Collection。
-
-### 第二阶段：Evidence——在候选对象内找准内容
-
-```text
-候选 Bundle Revision / Document Scope
-  → 只在候选范围搜索 ACTIVE Evidence
-  → Oracle Text + Vector 锚点召回
-  → Evidence ID、Parse View 去重
-  → 同 Document Version / Section 邻近扩展
-  → PRIMARY 与 STRUCTURAL_CONTEXT 分组
-  → Citation Pack
-```
-
-第二阶段不能回到全库重新选 Chunk。直接命中的 Evidence 是 `PRIMARY`，相邻标题、
-上下文段落等只作为 `STRUCTURAL_CONTEXT`，不能抢占引用。Citation Pack 为本次
-请求分配 `C1/C2...`，并保留 Bundle、Document、Version、Evidence、章节、页码
-和 bbox。
-
-KC 不设置独立重排阶段。混合检索与 RRF 负责产生候选 Bundle，Evidence 阶段为
-每个候选保留可引用的正文证据；同一 Bundle 的 Evidence Group 在进入 Composer 前
-合并为一个引用候选。Composer 在生成答案时忽略不相关 Bundle，并返回正文实际使用
-的引用标签。后端严格保证正文标签、`used_citation_labels` 与附件列表完全一致，且
-同一个 Bundle 只生成一个附件。
-
-### 图片查询
-
-聊天可上传多张图片：
-
-- 配置 Visual Embedding：每张图分别召回相似页面/Figure，再用 RRF 融合；
-- 配置查询 VLM：把图片转成检索描述，参与文本 Discovery；
-- 两者都配置：视觉候选与文本候选合并；
-- 都未配置：跳过图片并通过 SSE/最终警告告知前端。
-
-视觉相似度只负责发现候选，最终回答仍必须引用正文 Evidence。
-
-## 失败、重解析和版本切换
-
-- 单文件解析失败：成员记录失败原因，Revision 按整体结果进入 `FAILED/PARTIAL`；
-- 临时网络或模型错误：Job 进入 `RETRY_WAIT`，退避后重试；
-- 解析参数变化：创建新的不可变 Parse View；
-- 新 Parse View 成功后再删除旧解析结果，避免重解析窗口不可检索；
-- 失败的新 Parse View 不影响旧 Active View；
-- 新 Revision 完成解析、Profile 和 Index 后才切换 Current；
-- Collection 被 Agent 绑定时不可删除；未被使用时可级联删除全部内容。
-
-## 建议的 PPT 叙事
-
-1. 3.x Chunk 模型为何限制召回质量；
-2. Domain → Collection → Bundle → Document → Evidence；
-3. 单文件与多文件 Bundle 两种产品场景；
-4. 上传到可检索的完整时序；
-5. Docling + Model Serving OCR + VLM 的统一解析路线；
-6. 标题、短片段、表格和阅读顺序如何修复；
-7. Parse View、质量门和不可变产物；
-8. Collection 唯一 Embedding 模型；
-9. Discovery 找对象、Evidence 找正文；
-10. 图片搜图片与图片转文字；
-11. 真实 Citation 如何回到页码和坐标；
-12. Demo：上传复杂 PDF → 查看质量 → 问答并打开原文位置。
+当前设计及 K0/K1 的纯算法、正式线合同和独立合成基准已通过 G-A，尚未改变 App 产品运行路径；详见[实施记录](../operations/app-owned-knowledge-k0-k1-progress.md)。未执行真实模型评测、数据库变更、数据重处理、部署或重启。

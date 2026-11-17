@@ -872,7 +872,7 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("http://127.0.0.1:9090", summary.endpoint)
         self.assertIn("endpoint", summary.model_dump())
 
-    async def test_create_completes_connectivity_check_in_request(self) -> None:
+    async def test_create_queues_connectivity_check_without_network(self) -> None:
         scope = ConfigurationScope(
             domain_id=100,
             principal_id="PORTAL:km_portal",
@@ -899,7 +899,7 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
         service._idempotent = AsyncMock(side_effect=execute_handler)
         with patch(
             "aiops_agent.application.configuration."
-            "diagnostic_source_service.run_diagnostic_source_health_check",
+            "source_connection_test.run_diagnostic_source_health_check",
             new=AsyncMock(
                 return_value=DiagnosticSourceConnectionTestResult(
                     ok=True,
@@ -917,23 +917,24 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="create-source-1",
             )
 
-        self.assertFalse(result.connectivity_check_pending)
-        self.assertEqual("CONNECTED", result.connectivity_status)
+        self.assertTrue(result.connectivity_check_pending)
+        self.assertEqual("CHECKING", result.connectivity_status)
         self.assertEqual("DISABLED", result.status)
-        self.assertIsNotNone(result.last_connectivity_check_at)
-        self.assertIsNotNone(result.last_connectivity_success_at)
-        health_check.assert_awaited_once()
+        self.assertIsNone(result.last_connectivity_check_at)
+        self.assertIsNone(result.last_connectivity_success_at)
+        health_check.assert_not_awaited()
         repository.add.assert_awaited_once()
-        self.assertEqual(1, outbox.add.await_count)
+        self.assertEqual(2, outbox.add.await_count)
         event_types = [
             call.args[0].event_type for call in outbox.add.await_args_list
         ]
         self.assertEqual(
-            ["DIAGNOSTIC_SOURCE_CREATED"],
+            ["DIAGNOSTIC_SOURCE_CREATED", "SOURCE_CONNECTIVITY_CHECK_REQUESTED"],
             event_types,
         )
 
-    async def test_saved_source_connectivity_check_returns_final_state(self) -> None:
+
+    async def test_saved_source_connectivity_check_returns_pending_state(self) -> None:
         now = datetime.now(UTC)
         source_id = uuid7()
         credential_id = uuid7()
@@ -972,6 +973,7 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
         repository.get_scoped.return_value = entity
         uow = SimpleNamespace(
             diagnostic_sources=repository,
+            outbox=AsyncMock(),
             managed_credentials=object(),
             session=AsyncMock(),
         )
@@ -994,7 +996,7 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
         )
         with patch(
             "aiops_agent.application.configuration."
-            "diagnostic_source_service.run_diagnostic_source_health_check",
+            "source_connection_test.run_diagnostic_source_health_check",
             new=AsyncMock(
                 return_value=DiagnosticSourceConnectionTestResult(
                     ok=False,
@@ -1009,12 +1011,16 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="check-source-1",
             )
 
-        self.assertEqual("UNREACHABLE", result.connectivity_status)
-        self.assertEqual("SOURCE_UNREACHABLE", result.last_error_code)
-        self.assertFalse(result.connectivity_check_pending)
+        self.assertEqual("CHECKING", result.connectivity_status)
+        self.assertIsNone(result.last_error_code)
+        self.assertTrue(result.connectivity_check_pending)
         self.assertEqual(2, result.connectivity_version)
-        health_check.assert_awaited_once()
-        service._managed_credentials.read.assert_awaited_once()
+        health_check.assert_not_awaited()
+        service._managed_credentials.read.assert_not_awaited()
+
+        uow.outbox.add.assert_awaited_once()
+        self.assertEqual("SOURCE_CONNECTIVITY_CHECK_REQUESTED", uow.outbox.add.await_args.args[0].event_type)
+
 
 
 class TargetCreationTest(unittest.IsolatedAsyncioTestCase):

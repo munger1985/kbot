@@ -1,38 +1,31 @@
 # 知识检索 App 页面对齐
 
-KBot 知识检索以 Ammolite Portal 的真实知识检索组件为页面基准，不复用 AIOps 的蓝色主题。页面来源、路由和平台差异登记在 `ui/knowledge_retrieval/reference-pages.json`。
+日期：2026-11-06。KBot 以 Ammolite Portal 的生产知识检索组件为基准，使用共享页面与控件样式；认证和 Domain 沿用各自平台，不修改 AIOps 主题。页面映射见 `ui/knowledge_retrieval/reference-pages.json`。
 
-## 页面结构
+## 当前业务能力
 
-业务功能为知识检索、上传资料、资料审核、解析任务和知识库文件；管理配置为知识库管理、数据源、语义模型和 Agent 管理。KBot 既有工作台、X 实时搜索和 Domain 管理保留在扩展功能中。
+业务入口保留知识检索、上传、审核、解析和文件；资料库管理使用 App 自有 libraries/documents，而不是公共 KC 或 Bundle。上传只表示已登记摄取任务，解析／索引 READY 和人工审核独立；审核通过且索引就绪才可发布。权限由平台入口与当前资料库成员共同核验，不默认授权同域全体用户。
 
-知识检索使用会话侧栏、Agent 选择、连续问答和引用预览。资料上传支持独立文件与同一 Bundle 两种组织方式，包含文件角色、必要成员、SHA-256 和真实受理回执；受理成功不等于可检索。审核通过进入处理流水线，退回必须填写原因。解析任务和文件目录由 KC 执行分页、状态和关键词筛选，不在浏览器截断业务数据。
+知识页面提供直接检索与正式 Agent 问答。支持文本与最多 4 张、合计 8 MiB 查询图片、结果类型、数量、结构化筛选排序，分别展示主结果与关联图／图题／引用原文、通道状态和续取。图片方向是否可用依赖实际服务配置，不能把字节重复标成语义相似检索。正式回答展示 Runtime 实际交付与引用，不恢复旧正文唯一门禁。
 
-文件预览及原文通过 Main API 的公开 BFF 转发；不暴露内部地址、对象存储 URI 或服务凭据。可执行类型的原始文档只下载，不以 App 同源 Blob 页面执行。工作域切换继续使用已授权会话域列表与重新签发的 Token，并重新加载权限和资源。
+内容通过公开 BFF 核权读取精确版本；不暴露内部 URL／对象句柄。主动 HTML／可执行原文仅下载。Domain 或资料库切换释放图片 URL、清空结果／游标、取消请求并核验请求代次；KBot 切域失败恢复原域权限、操作和资料列表。
 
-## 平台差异
+## 实现与平台差异
 
-- 登录、首次改密和 Domain 权限沿用 KBot；资料处理页面仍要求 `knowledge_retrieval:knowledge_core_manage`，不因拆分导航放宽后端授权。
-- 知识库配置、对象发现、模型验证发布使用右侧抽屉及现有 KBot 合同。KBot 暂无数据源更新、资源分享、完整解析结果和视觉资产详情合同，不显示不可操作入口。
-- Ammolite 零知识库的解析页目前会保留加载状态；KBot 显示明确空态，不复制该缺陷。
-- 本次只有 API 路由与客户端转发变化，不涉及数据库 Schema、初始化或部署变更。
+- KBot：`ui/knowledge_retrieval/js/knowledge-library-workspace.js`、`knowledge-chat.js`、`knowledge-shell.js`。
+- Ammolite：`KnowledgeLibraryWorkspace.vue`、`KnowledgeRetrievalView.vue` 和 `KnowledgeCompositionResults.vue`。
+- KBot 使用已授权域列表和重新签发 Token；Ammolite 保留 Tenant／Domain 上下文。二者不共享检索和文档。
+- 数据源／问数／X Search 保持各自现有合同，不扩展本次知识存储边界。
 
-## 样式和验收
+## 离线验收
 
-`tests/contract/sync_knowledge_reference_styles.mjs` 从 Ammolite 的共享样式与生产组件生成 App 自有工件，记录来源 SHA-256。运行时不依赖 Ammolite 仓库，不修改 AIOps 样式。
+`sync_knowledge_reference_styles.mjs` 从真实组件生成本 App 样式工件和来源 SHA。跨项目浏览器测试编译真实 Vue 组件，对照 9 页空／有数据及 4 种宽度；另覆盖 KBot 13 页、导航／权限／登录和 Domain 成功／失败恢复。工作区交互覆盖查询图片、图文关联、发布、上传网络失败同键重试以及忽略 abort 的迟到响应隔离。
 
-```bash
+~~~bash
 node tests/contract/sync_knowledge_reference_styles.mjs --write
 node tests/contract/sync_knowledge_reference_styles.mjs
 node tests/contract/knowledge_page_alignment.mjs
 node tests/contract/knowledge_retrieval_ui_style.mjs
-conda run -n kbot4 python tests/contract/test_knowledge_retrieval_ui_style.py
-conda run -n kbot4 python tests/unit/platform/test_knowledge_core_client.py
-conda run -n kbot4 python -m unittest discover -s tests/unit/main_api -p test_main_api.py
-conda run -n kbot4 python tests/acceptance/check_openapi_contracts.py
-python3 tests/acceptance/check_4_0_boundaries.py
-```
+~~~
 
-跨项目测试实际编译 Ammolite Vue 组件，对照 9 个页面的空/有数据、桌面/移动宽度、布局与控件规格，并验证上传及审核交互。KBot 页面回归覆盖 13 个入口、授权、登录和 Domain 切换。所有浏览器数据均为隔离夹具；此类回归不代表线上部署或真实依赖端到端验收。
-
-默认引用 `../ammolite_cube/apps/portal-web` 的测试依赖，可通过 `AMMOLITE_ROOT` 指定参照仓库；截图和差异文件写入临时目录。
+所有浏览器数据为隔离夹具，不代表真实模型／数据库端到端或线上部署。Ammolite 还执行 `apps/portal-web` 的 `npm run build`。六项接入、离线命令与剩余真实门禁见[发布说明](../operations/app-owned-knowledge-release-readiness.md)。

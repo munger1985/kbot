@@ -39,7 +39,7 @@
     DATA: ["DATABASE", "ORACLE_ASM", "ORACLE_RAC", "ORACLE_LISTENER", "CACHE"],
     INFRASTRUCTURE: ["EXADATA", "PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER", "KUBERNETES_CLUSTER", "NETWORK_DEVICE", "STORAGE"],
   };
-  const versions = { ORACLE: ["19c", "26ai"], MYSQL: ["8.4"], POSTGRESQL: ["16", "17"] };
+  const versions = { ORACLE: ["19c", "26ai"], MYSQL: ["5.7", "8.4"], POSTGRESQL: ["16", "17"] };
   const oracleScopeOptions = [["NON_CDB", "非 CDB"], ["CDB_ROOT", "CDB"], ["PDB", "PDB"]];
   const relationTypes = [
     ["ORACLE_RAC", "组成 Oracle RAC"], ["DATA_GUARD", "Data Guard 保护"],

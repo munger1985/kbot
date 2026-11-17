@@ -1011,6 +1011,8 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         uow = _PlanningUow()
+        uow.agents.version_business_system_ids = AsyncMock(return_value=[])
+        uow.business_systems.list_storage_host_bindings = AsyncMock(return_value=[])
         question = "执行数据库日常健康巡检"
         evidence_steps = [
             {
@@ -1052,6 +1054,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         monitoring_builder = SimpleNamespace(
+            metric_catalog=load_metric_catalog(),
             build=AsyncMock(
                 return_value={
                     "bindings": [],
@@ -1125,6 +1128,14 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             realtime_profile.metric_codes,
             monitoring_call["requested_metric_codes"],
+        )
+        uow.agents.version_business_system_ids.assert_awaited_once_with(
+            agent_version_id=uow.run.agent_version_id,
+        )
+        uow.business_systems.list_storage_host_bindings.assert_awaited_once()
+        self.assertEqual(
+            "SOURCE_TARGET_MAPPING_MISSING",
+            uow.run.plan_snapshot_json["monitoring"]["initial_gaps"][0]["code"],
         )
 
     async def test_weekly_inspection_requires_server_trend_fields(self) -> None:

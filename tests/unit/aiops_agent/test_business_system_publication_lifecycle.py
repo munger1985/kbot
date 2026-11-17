@@ -379,13 +379,14 @@ def test_published_system_passes_agent_active_target_eligibility(lab):
         detail = await publish(lab)
         agent = object.__new__(AIOpsAgentService)
         agent._action_registry = None
-        agent._validate_production_llm_providers = AsyncMock()
+        agent._validate_production_model_bindings = AsyncMock()
         values = {**lab.owned, "allowed_business_system_ids": [detail.business_system_id],
             "capabilities": ["MONITORING_QUERY"], "knowledge_policy": {"enabled": False},
             "models": {"planner_llm": str(uuid7()), "composer_llm": str(uuid7())}}
         async with lab.service._uow_factory() as uow:
             targets = await agent._validate_resources(uow, lab.scope.domain_id, "ACTIVE", values)
             assert len(targets) == 1 and targets[0].status == "ENABLED"
+            agent._validate_production_model_bindings.assert_awaited_once_with(values)
     asyncio.run(run())
 
 

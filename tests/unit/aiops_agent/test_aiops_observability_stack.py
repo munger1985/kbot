@@ -853,6 +853,19 @@ def test_mysql_rules_publish_truthful_logical_used_capacity() -> None:
     assert '"database", "$1", "schema", "(.+)"' in rules
 
 
+def test_shared_storage_recording_name_has_distinct_existing_job_labels() -> None:
+    rules = _load_stack_script()._prometheus_rules()
+    storage_rules = [
+        block for block in rules.split("      - record: ")[1:]
+        if block.splitlines()[0] == "kbot_db_storage_used_bytes"
+    ]
+    assert len(storage_rules) == 2
+    for job in ("oracle", "mysql"):
+        matching_rules = [block for block in storage_rules if f'job="{job}"' in block]
+        assert len(matching_rules) == 1
+        assert f"\n        labels:\n          job: {job}\n" in matching_rules[0]
+
+
 def test_oracle_custom_metrics_use_pdb_compatible_sources() -> None:
     custom_metrics = (STACK / "configuration/oracle/custom-metrics.yaml").read_text(
         encoding="utf-8"

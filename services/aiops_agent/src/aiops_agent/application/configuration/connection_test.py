@@ -25,6 +25,7 @@ from platform_core.contracts.aiops import (
 _SUPPORTED_VERSION_PREFIXES = {
     ("ORACLE", "19c"): ("19.",),
     ("ORACLE", "26ai"): ("23.26.",),
+    ("MYSQL", "5.7"): ("5.7.",),
     ("MYSQL", "8.4"): ("8.4.",),
     ("POSTGRESQL", "16"): ("16.",),
 }

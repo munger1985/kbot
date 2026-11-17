@@ -1,5 +1,12 @@
 # KBot AIOps观测栈自动化部署资产
 
+数据库在同机独立Docker网络中时，可在该数据库配置段设置
+`docker_network = 实际既有网络名`。入口会检查网络存在，并只将该目标的采集器
+接入该外部网络，不改动或重启数据库，也不将Prometheus接入数据库网络。
+段内地址应填写数据库容器DNS名称及容器内部端口，而非宿主机回环发布端口。
+MySQL指标采集支持`version = 5.7`和`8.4`；5.7已停止社区维护，仅建议用于
+隔离测试。该声明是Exporter采集支持，不代表所有AIOps诊断/处置功能均已通过5.7验收。
+
 本目录是生产自动化部署包的受控资产目录，不是用户直接执行入口。
 
 - 唯一入口：`scripts/aiops-stack`
@@ -20,6 +27,12 @@ Collector、MySQL/PostgreSQL Docker日志发现、逐目标Secret、Volume和KBo
 同时启用`[logs]`和`[containers]`时，Alloy只采集显式设置
 `aiops_target_key`以及`aiops_log_source=mysql_error|postgresql_log`的容器。Docker
 Socket以只读方式挂载；不要给无关容器设置日志采集标签。
+
+对无法重建或不宜重启的既有MySQL/PostgreSQL容器，可在对应数据库配置段中显式填写
+`log_container = 完整容器名称`并启用`[logs]`。入口按精确名称白名单采集stdout/stderr，
+输出该配置段的`target_key`及`job=mysql_error|postgresql_log`；无需启用`[containers]`
+或cAdvisor，也不修改数据库容器。名称不支持通配符，同一容器只能绑定一个Target。
+未配置白名单且未启用`[containers]`时，不挂载Docker Socket，不发现其他容器。
 
 Oracle DBA在目标PDB创建专用数据库诊断用户时，使用
 `oracle/create_kbot_monitor.sql`。该脚本必须以SYSDBA执行，并会拒绝在`CDB$ROOT`

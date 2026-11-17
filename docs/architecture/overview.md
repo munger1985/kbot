@@ -1,5 +1,7 @@
 # KBot 4.1 系统架构
 
+> 本文拓扑/服务表描述当前实现。2026-11-05 的知识基础能力目标见[基础能力设计](knowledge-answering-capability.md)与[实施计划](../operations/app-owned-knowledge-implementation-plan.md)：各 App 独占解析数据和索引、在本 App 执行召回，KC 进程仅保留获批准的纯计算职责，Runtime 统一回答；当前尚未切换，不将旧 KC 存储边界作为并存目标。
+
 ## 架构形态
 
 KBot 4.1 是服务型单仓库。八个服务可独立构建、启动和

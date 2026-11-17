@@ -850,6 +850,7 @@ async def delete_diagnostic_source(
 @router.post(
     "/diagnostic-sources/{source_id}/connectivity-checks",
     response_model=DiagnosticSourceDetail,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def check_diagnostic_source_connectivity(
     source_id: UUID,

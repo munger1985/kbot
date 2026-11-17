@@ -849,6 +849,8 @@
       "template_sha256": "eeabe85550012ea1a9ba72f997258919c8051ed40b338f9697e5c250ecdf425f",
       "profile": "oracle_cursor",
       "output_columns": [["dbid","INTEGER"],["inst_id","INTEGER"],["container_id","INTEGER"],["sql_id","STRING"],["child_number","INTEGER"],["plan_hash_value","INTEGER"],["parsing_schema_name","STRING"],["module","STRING"],["action","STRING"],["executions","INTEGER"],["elapsed_seconds","DECIMAL"],["cpu_seconds","DECIMAL"],["buffer_gets","INTEGER"],["disk_reads","INTEGER"],["direct_writes","INTEGER"],["rows_processed","INTEGER"],["fetches","INTEGER"],["sorts","INTEGER"],["loads","INTEGER"],["invalidations","INTEGER"],["is_bind_sensitive","STRING"],["is_bind_aware","STRING"],["sql_profile","STRING"],["sql_plan_baseline","STRING"],["first_load_time","STRING"],["last_load_time","STRING"],["last_active_time","DATETIME"],["sql_text","STRING"]]
-    }
+    },
+    {"database_type":"MYSQL","tool_id":"db.instance.performance","tool_version":"1.0.0","variant":"mysql_5_7_instance_performance","template_sha256":"4f2781a4251ce3136aa06e9811e8aa8d3383e8ccae434360e08fb7d1db2bfff6","profile":"mysql_global_status","output_columns":[["server_uuid","STRING"],["uptime_seconds","INTEGER"],["questions","INTEGER"],["commits","INTEGER"],["rollbacks","INTEGER"],["threads_connected","INTEGER"],["threads_running","INTEGER"],["temp_disk_tables","INTEGER"],["full_table_scans","INTEGER"]]},
+    {"database_type":"MYSQL","tool_id":"db.mysql.instance.throughput","tool_version":"1.0.0","variant":"mysql_5_7_instance_throughput","template_sha256":"1102015f6003123df6b225b7c5e39c5105515a4c57fff7308b86d32cd703c7cd","profile":"mysql_throughput_status","output_columns":[["questions","INTEGER"],["uptime_seconds","INTEGER"],["questions_per_second","DECIMAL"],["threads_running","INTEGER"]]}
   ]
 }

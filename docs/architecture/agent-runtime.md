@@ -1,5 +1,8 @@
 # Agent Runtime
 
+> 状态边界：下文是当前 Runtime 的执行模型说明；知识底层尚未按 2026-11-05 目标切换。新知识合同以[基础能力设计](knowledge-answering-capability.md)、[接入详细设计](../proposals/app-owned-knowledge-integration-detailed-design.md)和[实施计划](../operations/app-owned-knowledge-implementation-plan.md)为准。
+> 目标的 Document Skill 通过可信静态 AppRetrievalPort 调用所属 App 自有检索，经 AppContentPort 读取真实载荷，由唯一 Runtime Composer 交付模型。Runtime 不访问 App SQL，也不借公共 KC 检索其他 App。旧 Collection/Bundle Revision Scope、CITATION_PACK 和正文/单 Bundle 引用门禁随同批切换替换为中立范围、RETRIEVAL_EVIDENCE、交付账本与多模态 Citation，不保留双格式解析。已有 AIOps 调查状态机不被强制迁入知识检索 Root Planner。
+
 ## Execution Spec 与 Skill
 
 Agent Runtime 不拥有可编辑 Agent Definition。Knowledge Retrieval App 与 AIOps

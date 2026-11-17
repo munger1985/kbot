@@ -15,6 +15,22 @@ GLOBAL_STYLES = (ROOT / "ui/aiops/css/aiops.css").read_text(encoding="utf-8")
 
 
 class BusinessSystemCardContractTests(unittest.TestCase):
+    def test_workspace_data_layer_includes_enabled_oracle_services(self):
+        self.assertIn(
+            'DATA: ["DATABASE", "ORACLE_ASM", "ORACLE_RAC", "ORACLE_LISTENER", "CACHE"]',
+            WORKSPACE_SCRIPT,
+        )
+        for resource_type, label in (
+            ("ORACLE_ASM", "Oracle ASM 服务"),
+            ("ORACLE_RAC", "Oracle RAC 服务"),
+            ("ORACLE_LISTENER", "Oracle Listener"),
+        ):
+            with self.subTest(resource_type=resource_type):
+                self.assertIn(
+                    f'["{resource_type}", "{label}", "数据平台", true]',
+                    WORKSPACE_SCRIPT,
+                )
+
     def test_add_entry_is_a_grid_card_not_a_header_button(self):
         header = PAGE.split('<header class="ops-head">', 1)[1].split("</header>", 1)[0]
         self.assertNotIn("新增业务系统", header)

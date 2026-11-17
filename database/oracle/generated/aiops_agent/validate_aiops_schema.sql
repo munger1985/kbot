@@ -393,6 +393,8 @@ BEGIN
             'IX_OPS_EVID_REQ_QUERY',
             'IX_OPS_EVID_REQ_RESPONSE',
             'IX_OPS_EVID_REQ_TURN',
+            'IX_OPS_EXA_REP_BIND',
+            'IX_OPS_EXA_REP_RESOURCE',
             'IX_OPS_EXEC_APPROVAL',
             'IX_OPS_EXEC_DEADLINE',
             'IX_OPS_EXEC_INSTANCE',
@@ -787,6 +789,8 @@ BEGIN
             'IX_OPS_EVID_REQ_QUERY',
             'IX_OPS_EVID_REQ_RESPONSE',
             'IX_OPS_EVID_REQ_TURN',
+            'IX_OPS_EXA_REP_BIND',
+            'IX_OPS_EXA_REP_RESOURCE',
             'IX_OPS_EXEC_APPROVAL',
             'IX_OPS_EXEC_DEADLINE',
             'IX_OPS_EXEC_INSTANCE',
@@ -1131,7 +1135,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 375 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 377 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -5069,7 +5073,7 @@ BEGIN
     dbms_output.put_line(
         '验证通过：102 张表、10 个视图、'
         || '1 个属性图、'
-        || '375 个命名索引、298 个命名约束、'
+        || '377 个命名索引、298 个命名约束、'
         || '1564 个表列；Schema 与当前规范一致。'
     );
 END;

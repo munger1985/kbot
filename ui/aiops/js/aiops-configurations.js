@@ -11,7 +11,7 @@
   function showError(message = "") {const node = document.getElementById("source-error");node.textContent = message;node.hidden = !message;}
   function connectivity(item) {
     const status = item.connectivity_check_pending ? "CHECKING" : item.health_status ?? item.connectivity_status ?? "UNKNOWN";
-    const labels = {HEALTHY:["已连通","success"],CONNECTED:["已连通","success"],DEGRADED:["受限","warning"],CHECKING:["未检测","muted"],UNREACHABLE:["不可达","danger"],MISCONFIGURED:["容器不匹配","danger"],DISCONNECTED:["未连接","danger"],UNHEALTHY:["异常","danger"],UNKNOWN:["未检测","muted"]};
+    const labels = {HEALTHY:["已连通","success"],CONNECTED:["已连通","success"],DEGRADED:["受限","warning"],CHECKING:["检查中","info"],UNREACHABLE:["不可达","danger"],MISCONFIGURED:["容器不匹配","danger"],DISCONNECTED:["未连接","danger"],UNHEALTHY:["异常","danger"],UNKNOWN:["未检测","muted"]};
     const [label,tone] = labels[status] || [status || "未检测","muted"];
     return {label,tone,usable:!item.connectivity_check_pending && ["HEALTHY","CONNECTED","DEGRADED"].includes(status)};
   }
@@ -32,9 +32,15 @@
   async function load() {
     const sequence = ++state.sequence;state.loading = true;showError();renderCatalog();
     try {
-      const result = await request("?limit=100");if (sequence !== state.sequence) return;state.items = rows(result);clearTimeout(state.poll);state.poll = null;
+      const result = await request("?limit=100");if (sequence !== state.sequence) return;const nextItems = rows(result);
+      for (const item of nextItems) {
+        const previous = state.items.find(value => value.source_id === item.source_id);
+        if (previous?.connectivity_check_pending && !item.connectivity_check_pending) shell.toast(`${item.display_name}：测试结果：${connectivity(item).label}`);
+      }
+      state.items = nextItems;clearTimeout(state.poll);state.poll = null;
       if (!state.items.some(item => item.connectivity_check_pending)) state.attempts = 0;
-      else if (state.attempts < 6) {state.attempts++;state.poll = setTimeout(load,1500);}
+      else if (state.attempts < 60) {state.attempts++;state.poll = setTimeout(load,Math.min(1500 * Math.ceil(state.attempts / 10),10000));}
+      else shell.toast("连接测试仍在后台进行，可稍后刷新目录查看结果。");
     } catch (error) {if (sequence === state.sequence) showError(error.message);}
     finally {if (sequence === state.sequence) {state.loading = false;renderCatalog();}}
   }
@@ -96,7 +102,7 @@
   async function save(event) {
     event.preventDefault();if (state.busy || !state.manage) return;let body;try {body = payload();} catch (error) {showError(error.message);shell.toast(error.message);return;}
     state.busy = true;syncBusy();showError();
-    try {const editing = state.editing;await request(editing ? `/${encodeURIComponent(editing.source_id)}` : "",{method:editing ? "PATCH" : "POST",headers:editing ? versionHeaders(editing) : {"Idempotency-Key":auth.uuid()},body:JSON.stringify(body)});state.busy = false;closeSource();await load();}
+    try {const editing = state.editing;const result = await request(editing ? `/${encodeURIComponent(editing.source_id)}` : "",{method:editing ? "PATCH" : "POST",headers:editing ? versionHeaders(editing) : {"Idempotency-Key":auth.uuid()},body:JSON.stringify(body)});state.items = [result,...state.items.filter(item => item.source_id !== result.source_id)];state.attempts = 0;state.busy = false;closeSource();shell.toast(result.connectivity_check_pending ? "监控源已保存，正在后台测试连接；通过后可启用。" : "监控源已保存。");void load();}
     catch (error) {showError(error.message);shell.toast(error.message);} finally {state.busy = false;syncBusy();}
   }
   function confirmAction(copy) {
@@ -108,6 +114,9 @@
     state.busy = true;syncBusy();showError();
     try {
       const result = await request(`/${encodeURIComponent(item.source_id)}${action === "delete" ? "" : action === "connectivity" ? "/connectivity-checks" : `/${action}`}`,{method:action === "delete" ? "DELETE" : "POST",headers:{...versionHeaders(item),"Idempotency-Key":auth.uuid()}});
+      if (action === "connectivity" && result.connectivity_check_pending) {
+        state.items = state.items.map(value => value.source_id === result.source_id ? result : value);state.attempts = 0;state.busy = false;syncBusy();void load();shell.toast("连接测试已提交，正在后台检查。");return;
+      }
       await load();if (action === "connectivity") shell.toast(`测试结果：${connectivity({...result,health_status:result.connectivity_status}).label}${result.last_error_code ? `（${result.last_error_code}）` : ""}`);else if (action === "delete") shell.toast("监控源已删除。");
     } catch (error) {showError(error.message);shell.toast(error.message);} finally {state.busy = false;syncBusy();}
   }

@@ -72,6 +72,22 @@
       },
       "variants": [
         {
+          "variant_id": "mysql-5-7",
+          "db_type": "MYSQL",
+          "version_codes": [
+            "5.7"
+          ],
+          "metric_codes": [
+            "mysql.availability",
+            "mysql.connection.utilization",
+            "mysql.transaction.throughput",
+            "mysql.sql.slow_query_rate",
+            "mysql.lock.row_wait_rate",
+            "mysql.innodb.buffer_pool_hit_percent",
+            "db.storage.used_bytes"
+          ]
+        },
+        {
           "variant_id": "mysql-8-4",
           "db_type": "MYSQL",
           "version_codes": [
