@@ -154,6 +154,10 @@ class OperationsKnowledgeBasePayload(_Payload):
     expected_row_version: int | None = Field(default=None, ge=1)
 
 
+class OperationsKnowledgeBaseStatusPayload(_Payload):
+    expected_row_version: int = Field(ge=1)
+
+
 class OperationsKnowledgeTagPayload(_Payload):
     category: Literal["RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"]
     display_name: str = Field(min_length=1, max_length=128)
@@ -527,6 +531,28 @@ async def create_operations_knowledge_base(
     await _require(request, "aiops:knowledge_manage")
     return await _client(request).create_operations_knowledge_base(
         payload=payload.model_dump(mode="json", exclude_none=True),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/operations-knowledge/knowledge-bases/{knowledge_base_id}:enable")
+async def enable_operations_knowledge_base(
+    knowledge_base_id: UUID, payload: OperationsKnowledgeBaseStatusPayload, request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).set_operations_knowledge_base_status(
+        knowledge_base_id, action="enable", expected_row_version=payload.expected_row_version,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/operations-knowledge/knowledge-bases/{knowledge_base_id}:disable")
+async def disable_operations_knowledge_base(
+    knowledge_base_id: UUID, payload: OperationsKnowledgeBaseStatusPayload, request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).set_operations_knowledge_base_status(
+        knowledge_base_id, action="disable", expected_row_version=payload.expected_row_version,
         auth_context=request.state.auth_context,
     )
 

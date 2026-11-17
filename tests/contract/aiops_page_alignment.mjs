@@ -1009,7 +1009,7 @@ try {
     }
     const editors = {
       'dashboard': {button:'新建工作项',drawer:'.admin-drawer:has(> .work-item-drawer-form)',regions:['.work-item-drawer-form','.work-item-form-grid','.work-item-drawer-form .control-field']},
-      'knowledge-bases': { button: '新建知识库', drawer: '.knowledge-base-drawer', regions: ['.knowledge-base-form', '.drawer-form-section', '.form-grid-two'] },
+      'knowledge-bases': { trigger: '.management-catalog-add-card', drawer: '.knowledge-base-drawer', regions: ['.knowledge-base-form', '.drawer-form-section', '.form-grid-two'] },
       'knowledge-tags': { button: '新增标签', drawer: '.knowledge-tag-drawer', regions: ['.knowledge-tag-form', '.drawer-form-section'] },
       'operations-knowledge': { button: '上传资料', drawer: '.knowledge-upload-drawer', regions: ['.knowledge-upload-form', '.drawer-form-section', '.upload-mode-picker', '.upload-drop-zone'] },
       'responsibility-groups': { trigger:'.management-catalog-add-card', drawer:'.responsibility-dialog:not(.responsibility-members-dialog)', regions:['.responsibility-dialog-header','.responsibility-dialog-form','.responsibility-dialog-body','.responsibility-dialog-actions'] },
@@ -1026,6 +1026,28 @@ try {
           await page.screenshot({path:resolve(artifacts,`${prefix}-${name}-editor-${empty?'empty':'populated'}-${width}.png`)});
           await page.locator(`${editor.drawer} ${name==='responsibility-groups'?'.responsibility-dialog-header':'.admin-drawer-header'} button`).click();
           await page.locator(editor.drawer).waitFor({state:'hidden'});
+        }
+      }
+    }
+    if (name==='knowledge-bases' && !empty) {
+      for (const width of [1440, 420, 390]) {
+        await Promise.all([kbot,reference].map(async page => {
+          await page.setViewportSize({width,height:1000});
+          const card = page.locator('.knowledge-base-card').first();
+          assert.equal(await card.getByRole('button',{name:'删除',exact:true}).isVisible(),false);
+          await card.getByRole('button',{name:'更多',exact:true}).click();
+          assert.equal(await card.getByRole('button',{name:'更多',exact:true}).textContent(),'更多⌄');
+          assert.equal(await card.getByRole('button',{name:'删除',exact:true}).isDisabled(),true);
+          // 对齐滚动起点，避免点击自动滚动导致相同菜单出现视口坐标差异。
+          await page.evaluate(() => {
+            document.querySelectorAll('.business-app-content').forEach(node => { node.scrollTop = 0; });
+            scrollTo(0,0);
+          });
+        }));
+        await compareRegions(kbot,reference,['.management-catalog-more','.management-catalog-menu','.management-catalog-menu button'],{page:name,width,empty,state:'delete-menu'});
+        for (const page of [kbot,reference]) {
+          await page.keyboard.press('Escape');
+          await page.locator('.management-catalog-menu:visible').waitFor({state:'hidden'});
         }
       }
     }

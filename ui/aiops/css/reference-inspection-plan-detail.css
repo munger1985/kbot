@@ -17,14 +17,22 @@
 :is([data-page="inspection-plan-detail"]) .inspection-tabs button { min-height:36px; padding:7px 16px; border:0; border-radius:7px; color:var(--muted); background:transparent; font-weight:650; }
 :is([data-page="inspection-plan-detail"]) .inspection-tabs button.active { color:var(--accent-strong); background:var(--surface); box-shadow:var(--shadow-soft); }
 :is([data-page="inspection-plan-detail"]) .inspection-tabs + :is(.aiops-inspection-plans-page,.inspection-summary-grid) { margin-top:var(--page-section-gap); }
-:is([data-page="inspection-plan-detail"]) .inspection-summary-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+
 :is([data-page="inspection-plan-detail"]) .inspection-summary-grid .operational-summary-card { cursor:default; }
 :is([data-page="inspection-plan-detail"]) .inspection-summary-grid .operational-summary-card:hover { border-color:var(--line); box-shadow:none; transform:none; }
 :is([data-page="inspection-plan-detail"]) .aiops-report-template-filter { min-width:220px; }
-@media (max-width:900px) { :is([data-page="inspection-plan-detail"]) .inspection-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 
 /* management/AIOpsInspectionPlansView.vue */
 :is([data-page="inspection-plan-detail"]) .aiops-inspection-plans-page { display: grid; gap: 20px; }
+:is([data-page="inspection-plan-detail"]) .aiops-page .management-catalog-grid .inspection-plan-card { --aiops-card-header-height:80px; gap:8px; }
+:is([data-page="inspection-plan-detail"]) .inspection-plan-card .aiops-catalog-card-body { gap:8px; scrollbar-gutter:auto; }
+:is([data-page="inspection-plan-detail"]) .inspection-plan-run-times { display:grid; gap:4px; }
+:is([data-page="inspection-plan-detail"]) .inspection-plan-run-times p { display:grid; grid-template-columns:auto minmax(0,1fr); gap:8px; margin:0; color:var(--muted); font-size:var(--type-meta); line-height:1.5; }
+:is([data-page="inspection-plan-detail"]) .inspection-plan-run-times p > span { white-space:nowrap; }
+:is([data-page="inspection-plan-detail"]) .inspection-plan-run-times p > span:last-child { overflow:hidden; text-align:right; text-overflow:ellipsis; }
+:is([data-page="inspection-plan-detail"]) .inspection-plan-card dl > div { gap:2px; padding:10px 12px; }
+:is([data-page="inspection-plan-detail"]) .inspection-plan-card dt { font-size:var(--type-meta); line-height:1.5; }
+:is([data-page="inspection-plan-detail"]) .inspection-plan-card dd { overflow:hidden; font-size:var(--type-supporting); line-height:1.5; text-overflow:ellipsis; white-space:nowrap; }
 :is([data-page="inspection-plan-detail"]) .page-header, :is([data-page="inspection-plan-detail"]) .header-actions { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 :is([data-page="inspection-plan-detail"]) .page-header h1 { margin: 4px 0 8px; }
 :is([data-page="inspection-plan-detail"]) .page-header p { margin: 0; }

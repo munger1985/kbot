@@ -64,8 +64,9 @@
       ? state.knowledgeBases.map((item) => `<option value="${escape(item.knowledge_base_id)}">${escape(item.display_name)}</option>`).join("")
       : "");
     if (preferred && state.knowledgeBases.some((item) => item.knowledge_base_id === preferred)) select.value = preferred;
-    document.getElementById("upload-knowledge-base").innerHTML = '<option value="" disabled>请选择</option>' + state.knowledgeBases.map(item => `<option value="${escape(item.knowledge_base_id)}">${escape(item.display_name)}</option>`).join("");
-    document.getElementById("upload-no-knowledge-base").hidden = Boolean(state.knowledgeBases.length);
+    const activeBases = state.knowledgeBases.filter(item => item.status === 'ACTIVE');
+    document.getElementById("upload-knowledge-base").innerHTML = '<option value="" disabled>请选择</option>' + activeBases.map(item => `<option value="${escape(item.knowledge_base_id)}">${escape(item.display_name)}</option>`).join("");
+    document.getElementById("upload-no-knowledge-base").hidden = Boolean(activeBases.length);
     document.getElementById("open-upload").disabled = false;
   }
 
@@ -209,7 +210,8 @@
     document.getElementById("upload-title").textContent = asset ? "上传新版本" : "上传资料";
     document.getElementById("upload-subtitle").textContent = asset ? "新版本上传后先等待人工审批；批准后才调用 AI 识别标签并进入文档解析，当前发布版本继续参与检索。" : "上传后先进入人工审批；批准后才调用 AI 识别标签并解析。可提交单个文件或由多个关联文件组成的一份资料。";
     document.getElementById("upload-knowledge-base-section").hidden = Boolean(asset);
-    document.getElementById("upload-knowledge-base").value = asset?.knowledge_base_id || selectedKnowledgeBaseId() || state.knowledgeBases[0]?.knowledge_base_id || "";
+    const activeBases = state.knowledgeBases.filter(item => item.status === 'ACTIVE');
+    document.getElementById("upload-knowledge-base").value = asset?.knowledge_base_id || activeBases.find(item => item.knowledge_base_id === selectedKnowledgeBaseId())?.knowledge_base_id || activeBases[0]?.knowledge_base_id || "";
     document.getElementById("upload-knowledge-base").disabled = Boolean(asset);
     document.getElementById("file-step").textContent = asset ? "01" : "03";
     document.getElementById("metadata-step").textContent = asset ? "02" : "04";

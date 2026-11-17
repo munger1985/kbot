@@ -99,7 +99,6 @@ body.aiops-static-page dialog.reference-drawer {
   overflow: hidden;
   border: 0;
   border-left: 1px solid var(--line);
-  box-shadow: -18px 0 42px rgb(22 43 31 / 20%);
 }
 body.aiops-static-page dialog.reference-drawer::backdrop { background: rgb(20 35 27 / 30%); backdrop-filter: blur(2px); }
 body.aiops-static-page dialog.reference-drawer[open] { display: flex; flex-direction: column; }

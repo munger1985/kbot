@@ -6,13 +6,13 @@
   <title>AIOps 运维知识库</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/aiops-forms.css?v=20261020_1">
-<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261110_release1"><link rel="stylesheet" href="./css/reference-knowledge-bases.css?v=20261030_1"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1"></head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261110_release1"><link rel="stylesheet" href="./css/reference-knowledge-bases.css?v=20261116_cards1"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1"></head>
 <body data-page="knowledge-bases">
   <main class="ops-main knowledge-bases-page">
     <header class="ops-head"><div><p class="eyebrow">AIOps 配置</p><h1>运维知识库</h1><p>每个知识库拥有独立的 Knowledge Core Collection；运维资料和 Agent 只在所选知识库范围内工作。</p></div><a class="secondary-button related-page-link" href="./operations-knowledge.html"><span class="related-page-link-copy"><small>关联页面</small><strong>查看运维知识</strong></span><span class="related-page-link-arrow" aria-hidden="true">→</span></a></header>
-    <section class="table-card">
-      <header class="resource-list-header"><div class="resource-list-heading"><h2>知识库目录</h2><p>创建、维护和删除当前 Domain 的运维知识库。</p></div><div class="resource-list-tools"><label class="search-field"><span aria-hidden="true">⌕</span><input id="knowledge-base-search" type="search" placeholder="搜索知识库名称或说明" aria-label="搜索知识库"></label><span id="knowledge-base-count" class="resource-list-count" aria-live="polite">0 项</span><button id="refresh-knowledge-bases" class="secondary-button" type="button">刷新</button><button id="create-knowledge-base" class="primary-button" type="button">新建知识库</button></div></header>
-      <div class="table-scroll"><table><thead><tr><th>知识库</th><th>使用情况</th><th>最近更新</th><th>状态</th><th class="table-action-heading">操作</th></tr></thead><tbody id="knowledge-base-rows"><tr><td colspan="5" class="empty-cell">正在读取运维知识库…</td></tr></tbody></table></div>
+    <section class="resource-list-surface">
+      <header class="resource-list-header"><div class="resource-list-heading"><h2>知识库目录</h2><p>创建、维护和删除当前 Domain 的运维知识库。</p></div><div class="resource-list-tools"><label class="search-field"><span aria-hidden="true">⌕</span><input id="knowledge-base-search" type="search" placeholder="搜索知识库名称或说明" aria-label="搜索知识库"></label><span id="knowledge-base-count" class="resource-list-count" aria-live="polite">0 项</span><button id="refresh-knowledge-bases" class="secondary-button" type="button">刷新</button></div></header>
+      <div id="knowledge-base-list" class="resource-list-body" aria-busy="true"><p class="empty-cell" role="status">正在读取运维知识库…</p></div>
     </section>
   </main>
   <dialog id="knowledge-base-dialog" class="admin-drawer admin-drawer-sectioned reference-drawer knowledge-base-drawer" aria-labelledby="knowledge-base-dialog-title">
@@ -26,6 +26,6 @@
       <footer class="admin-drawer-footer"><button class="secondary-button" type="button" data-close>取消</button><button id="save-knowledge-base" class="primary-button" type="submit">保存知识库</button></footer>
     </form>
   </dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261111_center2"></script><script src="./js/aiops-knowledge-bases.js?v=20261105_confirm1"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261111_center2"></script><script src="./js/aiops-knowledge-bases.js?v=20261116_menu4"></script>
 </body>
 </html>

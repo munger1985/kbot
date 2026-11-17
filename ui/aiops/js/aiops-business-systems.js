@@ -71,13 +71,13 @@
       : `./business-system-workspace.html?id=${encodeURIComponent(item.business_system_id)}${item.status === "ENABLED" ? "&view=readonly" : ""}`;
     return `<article class="management-catalog-card business-system-card importance-level-${importanceLevel} ${item.draft_id ? "unpublished-draft-card" : ""}">
       <header><div><p class="eyebrow">${shell.escape(item.system_code)}</p><h3>${shell.escape(item.display_name)}</h3></div>${shell.badge(item.status, item.draft_id ? "未发布草稿" : statusLabel(item.status))}</header>
-      <div class="architecture-tags">${labels}</div>
+      <div class="aiops-catalog-card-body" tabindex="0" aria-label="卡片内容"><div class="architecture-tags">${labels}</div>
       <dl>
         <div><dt>环境 / 重要级</dt><dd class="business-system-context"><span>${shell.escape(environmentLabel(item.environment))}</span><strong class="business-importance">${shell.escape(importanceLabel(importanceLevel))}</strong></dd></div>
         <div><dt>资源数量</dt><dd>${shell.escape(resourceScale(item))}</dd></div>
         <div><dt>业务责任组</dt><dd>${shell.escape(responsibilityGroupName(item.responsibility_group_id, groupsById))}</dd></div>
         <div><dt>${item.draft_id ? "发布状态" : "数据保护"}</dt><dd>${item.draft_id ? "尚未写入生产资源表" : "开发中"}</dd></div>
-      </dl>
+      </dl></div>
       <footer class="management-catalog-action-bar is-compact business-system-card-actions"><div class="management-catalog-meta"><span class="management-catalog-note">更新于 ${shell.escape(shell.fmt(item.updated_at))}</span></div><div class="management-catalog-primary-actions"><a class="row-action" href="${workspaceHref}">${workspaceLabel}</a>${lifecycleAction}</div></footer>
     </article>`;
   }

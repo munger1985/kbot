@@ -7410,6 +7410,48 @@
         "title": "ExadataComparison",
         "type": "object"
       },
+      "ExadataComponentImport": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "evidence_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Evidence Ref",
+            "type": "string"
+          },
+          "parent_target_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Parent Target Id",
+            "type": "string"
+          },
+          "target_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_type",
+          "display_name",
+          "parent_target_id",
+          "evidence_ref"
+        ],
+        "title": "ExadataComponentImport",
+        "type": "object"
+      },
       "ExadataDeviceCoverage": {
         "additionalProperties": false,
         "properties": {
@@ -7465,6 +7507,34 @@
           "items"
         ],
         "title": "ExadataDiscovery",
+        "type": "object"
+      },
+      "ExadataDiscoveryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "component_manifest": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExadataComponentImport"
+            },
+            "maxItems": 64,
+            "title": "Component Manifest",
+            "type": "array"
+          },
+          "root_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Id"
+          }
+        },
+        "title": "ExadataDiscoveryRequest",
         "type": "object"
       },
       "ExadataFinding": {
@@ -16166,6 +16236,21 @@
           "models"
         ],
         "title": "OperationsKnowledgeBasePayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeBaseStatusPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "OperationsKnowledgeBaseStatusPayload",
         "type": "object"
       },
       "OperationsKnowledgeCollectionModelsPayload": {
@@ -27805,76 +27890,6 @@
         ],
         "title": "WorkloadReportType",
         "type": "string"
-      },
-      "ExadataDiscoveryRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "component_manifest": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/ExadataComponentImport"
-            },
-            "maxItems": 64,
-            "title": "Component Manifest",
-            "type": "array"
-          },
-          "root_id": {
-            "anyOf": [
-              {
-                "pattern": "^[0-9a-f]{32}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Root Id"
-          }
-        },
-        "title": "ExadataDiscoveryRequest",
-        "type": "object"
-      },
-      "ExadataComponentImport": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "evidence_ref": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Evidence Ref",
-            "type": "string"
-          },
-          "parent_target_id": {
-            "pattern": "^[0-9a-f]{32}$",
-            "title": "Parent Target Id",
-            "type": "string"
-          },
-          "target_id": {
-            "pattern": "^[0-9a-f]{32}$",
-            "title": "Target Id",
-            "type": "string"
-          },
-          "target_type": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Target Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target_id",
-          "target_type",
-          "display_name",
-          "parent_target_id",
-          "evidence_ref"
-        ],
-        "title": "ExadataComponentImport",
-        "type": "object"
       }
     }
   },
@@ -35089,6 +35104,108 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}:disable": {
+      "post": {
+        "operationId": "disable_operations_knowledge_base_api_v1_apps_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeBaseStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Operations Knowledge Base",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}:enable": {
+      "post": {
+        "operationId": "enable_operations_knowledge_base_api_v1_apps_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeBaseStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Operations Knowledge Base",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/operations-knowledge/overview": {
       "get": {
         "operationId": "operations_knowledge_overview_api_v1_apps_aiops_operations_knowledge_overview_get",
@@ -35523,7 +35640,7 @@
     },
     "/api/v1/apps/aiops/operations-knowledge/uploads": {
       "post": {
-        "description": "把单文件或 Bundle multipart 原样转发到 AIOps 业务服务。",
+        "description": "把单文件或多文件资料 multipart 原样转发到 AIOps 业务服务。",
         "operationId": "upload_operations_knowledge_api_v1_apps_aiops_operations_knowledge_uploads_post",
         "parameters": [
           {

@@ -1,6 +1,12 @@
 /* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
 
 /* management/AIOpsReportTemplatesView.vue */
+:is([data-page="report-templates"]) .aiops-page .management-catalog-grid .template-catalog-card { --aiops-card-header-height:80px; gap:8px; }
+:is([data-page="report-templates"]) .template-card-statuses { display:grid; flex:0 0 auto; justify-items:end; align-content:start; gap:6px; }
+:is([data-page="report-templates"]) .template-catalog-card .aiops-catalog-card-body { gap:8px; scrollbar-gutter:auto; }
+:is([data-page="report-templates"]) .template-catalog-card dl > div { padding:10px 12px; }
+:is([data-page="report-templates"]) .inspection-template-flags { display:flex; align-items:center; gap:6px; }
+:is([data-page="report-templates"]) .session-template-sections { display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:3; font-size:var(--type-supporting); }
 :is([data-page="report-templates"]) .admin-drawer.inspection-template-preview-drawer { width:min(1120px,100vw); }
 :is([data-page="report-templates"]) .inspection-template-preview-drawer .admin-drawer-body { min-width:0; padding:24px; overscroll-behavior:contain; }
 @media (max-width:760px) { :is([data-page="report-templates"]) .inspection-template-preview-drawer .admin-drawer-body { padding:16px; } }

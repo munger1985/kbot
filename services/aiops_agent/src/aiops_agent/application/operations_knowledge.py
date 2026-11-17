@@ -581,6 +581,33 @@ class OperationsKnowledgeService:
             domain_id=domain_id, knowledge_base_id=knowledge_base_id
         )
 
+    async def set_knowledge_base_status(
+        self, *, domain_id, knowledge_base_id: UUID,
+        expected_row_version: int, status: str, context: AuthContext,
+    ) -> dict[str, Any]:
+        """启停仅改变使用资格，不修改模型、索引、资料或 Agent 绑定。"""
+        if status not in {"ACTIVE", "DISABLED"}:
+            raise ValueError("知识库状态无效")
+        async with self._uow_factory() as uow:
+            row = await uow.operations_knowledge.get_knowledge_base(
+                domain_id=domain_id, knowledge_base_id=knowledge_base_id, for_update=True,
+            )
+            if row is None or row.status == "ARCHIVED":
+                raise self._knowledge_base_not_found()
+            if int(row.row_version) != expected_row_version:
+                raise AIOpsApplicationError(
+                    code="STATE_VERSION_CONFLICT",
+                    message="运维知识库已被其他请求修改，请刷新后重试",
+                    status_code=412,
+                )
+            if row.status != status:
+                row.status = status
+                row.updated_by = self._actor(context)
+                row.updated_at = _now()
+                row.row_version = int(row.row_version) + 1
+                await uow.commit()
+        return await self.get_knowledge_base(domain_id=domain_id, knowledge_base_id=knowledge_base_id)
+
     async def delete_knowledge_base(self, *, domain_id, knowledge_base_id, expected_row_version, context):
         async with self._uow_factory() as uow:
             row = await uow.operations_knowledge.get_knowledge_base(

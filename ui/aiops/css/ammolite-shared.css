@@ -1,5 +1,5 @@
 /* 自动同步自 Ammolite shared/ui/styles.css；请修改源文件后重新生成。
- * 源文件 SHA-256: 379d93fa9ac443fa03806898417501aaad715b52fb1bd74cfa8bf7613b15cc4e
+ * 源文件 SHA-256: d03c058bb42649e6fb999f2857d54be2f5a672ee959092bbab12a64ff7dac641
  * 仅保留 AIOps 及其公共控件；字体使用同一系统回退栈，不从 CDN 加载。
  */
 button { all: revert; }
@@ -36,6 +36,18 @@ button { all: revert; }
   --shadow-soft: 0 14px 34px rgb(30 51 68 / 7%);
   --card-radius: 10px;
   --card-hover-offset: -2px;
+  --aiops-card-width: 312px;
+  --aiops-catalog-card-width: var(--aiops-card-width);
+  --aiops-catalog-card-ratio: 5 / 6;
+  --aiops-card-gap: 14px;
+  --aiops-card-padding: 22px;
+  --aiops-card-header-height: 96px;
+  --aiops-resource-card-width: var(--aiops-card-width);
+  --aiops-resource-card-ratio: 5 / 4;
+  --aiops-summary-card-width: 208px;
+  --aiops-summary-card-ratio: 13 / 9;
+  --aiops-monitor-card-width: var(--aiops-card-width);
+  --aiops-monitor-card-ratio: 16 / 19;
   --card-border: color-mix(in srgb,var(--line-strong) 82%,var(--line));
   --card-shadow: 0 0 0 1px var(--card-border), 0 7px 18px rgb(19 35 46 / 14%);
   --card-shadow-hover: 0 0 0 1px color-mix(in srgb,var(--card-border) 72%,var(--accent)), 0 15px 32px rgb(19 35 46 / 20%);
@@ -1609,6 +1621,62 @@ html[data-theme="dark"] :is(.nav-item:hover .nav-item-icon,.nav-item.router-link
 :root .business-app-content > .app-page-rail-workspace > .app-page-head {
   width: calc(100% - var(--app-page-inline-gutter));
   margin-left: var(--app-page-inline-gutter);
+}
+.aiops-page .management-catalog-grid {
+  grid-template-columns: repeat(auto-fill, min(100%, var(--aiops-catalog-card-width)));
+  align-items: start;
+  gap: var(--aiops-card-gap);
+}
+.aiops-page .management-catalog-grid :is(.management-catalog-card, .management-catalog-add-card) {
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: var(--aiops-catalog-card-ratio);
+  padding: var(--aiops-card-padding);
+}
+.aiops-page .management-catalog-grid .management-catalog-card {
+  display: grid;
+  grid-template-rows: var(--aiops-card-header-height) minmax(0, 1fr) auto;
+  gap: 16px;
+}
+.aiops-page .management-catalog-card > header {
+  height: var(--aiops-card-header-height);
+  min-height: 0;
+}
+.aiops-page .management-catalog-card h3 > .row-action {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.aiops-catalog-card-body {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.aiops-catalog-card-body > p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.aiops-catalog-card-body:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: -2px; }
+.aiops-page .aiops-summary-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, min(100%, var(--aiops-summary-card-width)));
+  align-items: start;
+  gap: var(--aiops-card-gap);
+}
+.aiops-page .aiops-summary-card-grid > :is(.operational-summary-card, article) {
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: var(--aiops-summary-card-ratio);
+  padding: 18px;
+  overflow: auto;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {

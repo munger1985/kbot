@@ -541,6 +541,19 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def set_operations_knowledge_base_status(
+        self, knowledge_base_id: UUID, *, action: str,
+        expected_row_version: int, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        if action not in {"enable", "disable"}:
+            raise ValueError("知识库状态操作无效")
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}:{action}",
+            payload={"expected_row_version": expected_row_version},
+            auth_context=auth_context,
+        )
+
     async def delete_operations_knowledge_base(
         self, *, knowledge_base_id: UUID, expected_row_version: int,
         auth_context: AuthContext,

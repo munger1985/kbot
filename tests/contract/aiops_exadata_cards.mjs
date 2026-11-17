@@ -297,7 +297,7 @@ try {
         return [parseFloat(css.paddingLeft), parseFloat(css.paddingRight)]
       }
       const evidence = card.querySelector(':scope > .exadata-evidence'), css = getComputedStyle(evidence)
-      return { height: rect.height, headerHeight: card.querySelector('header').getBoundingClientRect().height,
+      return { width: rect.width, height: rect.height, headerHeight: card.querySelector('header').getBoundingClientRect().height,
         chartTop: chart ? chart.top - rect.top : null, footerTop: evidence.getBoundingClientRect().top - rect.top,
         header: padding(':scope > header'), value: padding('.exadata-card-value'), time: padding('.exadata-card-time'),
         caption: card.querySelector('.exadata-chart-caption') ? padding('.exadata-chart-caption') : null,
@@ -310,7 +310,7 @@ try {
       assert.ok([card.header, card.value, card.time, card.caption, card.evidence, card.chart].filter(Boolean).flat().every(value => value >= 16), `卡片标题、内容、图表和入口距离边框至少16px：${JSON.stringify(card)}`)
       assert.ok(card.evidenceBlock.every(value => value >= 8), '查看数据入口上下留白至少8px')
       assert.equal(card.marker, 'inside', '展开标记不得突出到卡片边框')
-      assert.ok(Math.abs(card.height - 380) <= 1, `收起的数据卡统一380px，不因基线、无数据或文案变高：${JSON.stringify(card)}`)
+      assert.ok(card.width <= 312 && Math.abs(card.height - card.width * 19 / 16) <= 1, `数据卡统一312px宽及16:19比例，窄容器等比缩小：${JSON.stringify(card)}`)
       assert.ok(Math.abs(card.headerHeight - 64) <= 1, '卡片标题区域统一64px')
       assert.ok(Math.abs(card.footerTop - spacing[0].footerTop) <= 1, '卡片底部入口保持同一位置')
       if (card.chartTop !== null) assert.ok(Math.abs(card.chartTop - 134) <= 1, '图表起点统一，不随标题换行改变')
@@ -407,10 +407,10 @@ try {
   await cpuCard.locator('summary').click(); await expect(cpuCard.locator('tbody tr').first()).toBeVisible()
   await expect(cpuCard.locator('tbody')).toContainText('27.210000000000001')
   await cpuCard.locator('summary').click()
-  for (const [width, columns] of [[1920, 4], [1440, 3], [1000, 2], [780, 1], [390, 1]]) {
+  for (const width of [1920,1440,1000,780,390]) {
     await page.setViewportSize({ width, height: 1000 })
-    const layout = await page.locator('.exadata-metric-grid').evaluate(node => ({ columns: getComputedStyle(node).gridTemplateColumns.split(' ').length, overflow: document.documentElement.scrollWidth - innerWidth, cards: [...node.children].map(card => ({ width: card.getBoundingClientRect().width, border: getComputedStyle(card).borderTopWidth, background: getComputedStyle(card).backgroundColor })) }))
-    assert.equal(layout.columns, columns, `宽度 ${width} 下卡片列数`)
+    const layout = await page.locator('.exadata-metric-grid').evaluate(node => ({ available: node.clientWidth, columns: getComputedStyle(node).gridTemplateColumns.split(' ').length, overflow: document.documentElement.scrollWidth - innerWidth, cards: [...node.children].map(card => ({ width: card.getBoundingClientRect().width, border: getComputedStyle(card).borderTopWidth, background: getComputedStyle(card).backgroundColor })) }))
+    assert.equal(layout.columns, Math.max(1,Math.floor((layout.available+14)/334)), `宽度 ${width} 下卡片列数`)
     const fullWidth = await page.locator('.exadata-workspace').evaluate(node => ({ workspace: node.clientWidth, detail: node.querySelector('.exadata-detail').getBoundingClientRect().width }))
     assert.ok(Math.abs(fullWidth.workspace - fullWidth.detail) <= 1, '移除设备目录后详情使用全部可用宽度')
     if (layout.overflow > 1) {
@@ -645,8 +645,8 @@ try {
   const memoryCard = page.locator(`[data-metric-code="${memory.code}"]`)
   await cpuCard.locator('summary').click()
   await expect(cpuCard.locator('tbody tr').first()).toBeVisible()
-  assert.ok(await cpuCard.evaluate(node=>node.getBoundingClientRect().height>380), '展开后完整展示证据，不固定高度裁剪数据')
-  assert.equal(await memoryCard.evaluate(node=>node.getBoundingClientRect().height),380,'展开证据不拉高其他卡片')
+  assert.ok(await cpuCard.evaluate(node=>Math.abs(node.getBoundingClientRect().height-370.5)<=1), '展开证据仍保持卡片尺寸，证据在卡片内部滚动')
+  assert.equal(await memoryCard.evaluate(node=>node.getBoundingClientRect().height),370.5,'展开证据不拉高其他卡片')
   await page.screenshot({path:resolve(artifacts,`${isKbot?'kbot':'ammolite'}-sizes-expanded.png`),fullPage:true})
   await cpuCard.locator('summary').click()
   await assertCardSpacing()

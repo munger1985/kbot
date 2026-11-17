@@ -23,6 +23,11 @@ class KnowledgeBaseWrite(BaseModel):
     expected_row_version: int | None = Field(default=None, ge=1)
 
 
+class KnowledgeBaseStatusCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_row_version: int = Field(ge=1)
+
+
 class ManualUploadMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display_name: Annotated[str, StringConstraints(strip_whitespace=True)] = Field(

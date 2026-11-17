@@ -19,6 +19,7 @@ from aiops_agent.contracts.knowledge import (
     DiagnosisClosureCommand,
     DiagnosisCaseDraft,
     KnowledgeBaseWrite,
+    KnowledgeBaseStatusCommand,
     KnowledgeReviewCommand,
     KnowledgeSearchPreviewRequest,
     KnowledgeSearchRequest,
@@ -102,6 +103,30 @@ async def update_knowledge_base(
         knowledge_base_id=knowledge_base_id,
         command=payload,
         context=context,
+    )
+
+
+@router.post("/knowledge-bases/{knowledge_base_id}:enable")
+async def enable_knowledge_base(
+    knowledge_base_id: UUID, payload: KnowledgeBaseStatusCommand, request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.set_knowledge_base_status(
+        domain_id=domain_id, knowledge_base_id=knowledge_base_id,
+        expected_row_version=payload.expected_row_version, status="ACTIVE", context=context,
+    )
+
+
+@router.post("/knowledge-bases/{knowledge_base_id}:disable")
+async def disable_knowledge_base(
+    knowledge_base_id: UUID, payload: KnowledgeBaseStatusCommand, request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.set_knowledge_base_status(
+        domain_id=domain_id, knowledge_base_id=knowledge_base_id,
+        expected_row_version=payload.expected_row_version, status="DISABLED", context=context,
     )
 
 
