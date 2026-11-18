@@ -186,7 +186,7 @@ class ReleaseToolingTest(unittest.TestCase):
             rendered.count('      USER: "kbot"'),
         )
 
-    def test_ui_root_redirect_preserves_external_port_mapping(self) -> None:
+    def test_ui_redirects_preserve_external_port_mapping(self) -> None:
         template = (
             ROOT / "installation/common/docker/nginx.conf.template"
         ).read_text(encoding="utf-8")

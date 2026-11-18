@@ -40,7 +40,9 @@ Portal 业务页面统一使用共享 `TimePicker.vue`，后续备份计划等�
 
 ## 开发服务器
 
-development 环境执行 `start_kbot.sh` 后，开发服务器同时发布：
+development 环境执行 `start_kbot.sh` 后，打开 `http://<python-host>:8080/`
+可从 KBot 应用主页进入各自的登录页。容器部署的主页只列出部署时启用的应用。
+开发服务器同时发布：
 
 - 运行日志：`http://<python-host>:8080/operations-logs.html`
 - 知识检索：`http://<python-host>:8080/ui/knowledge_retrieval/login.html`

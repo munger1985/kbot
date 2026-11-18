@@ -1,9 +1,13 @@
 """KBot 4.0 开发日志页面的静态契约检查。"""
 
 from html.parser import HTMLParser
+from http.client import HTTPConnection
 from pathlib import Path
 import subprocess
+from threading import Thread
 import unittest
+
+from tools.dev_console.server import KBotUiHandler, KBotUiServer
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +20,7 @@ class _PageParser(HTMLParser):
         self.ids: set[str] = set()
         self.scripts: list[str] = []
         self.links: list[str] = []
+        self.app_links: dict[str, str] = {}
 
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
@@ -25,9 +30,40 @@ class _PageParser(HTMLParser):
             self.scripts.append(values["src"])
         if tag == "link" and values.get("href"):
             self.links.append(values["href"])
+        if tag == "a" and values.get("data-app") and values.get("href"):
+            self.app_links[values["data-app"]] = values["href"]
 
 
 class UiStaticPagesTest(unittest.TestCase):
+    def test_home_serves_the_app_directory_without_redirecting(self):
+        expected = {
+            "knowledge_retrieval": "/ui/knowledge_retrieval/login.html",
+            "aiops": "/ui/aiops/login.html",
+            "media_studio": "/ui/media_studio/login.html",
+        }
+        with KBotUiServer(("127.0.0.1", 0), KBotUiHandler) as server:
+            worker = Thread(
+                target=server.serve_forever, kwargs={"poll_interval": 0.05}
+            )
+            worker.start()
+            connection = HTTPConnection(*server.server_address, timeout=3)
+            try:
+                for path in ("/", "/index.html", "/ui/", "/ui/index.html"):
+                    connection.request("GET", path)
+                    response = connection.getresponse()
+                    self.assertEqual(200, response.status, path)
+                    self.assertIsNone(response.getheader("Location"), path)
+                    parser = _PageParser()
+                    parser.feed(response.read().decode("utf-8"))
+                    self.assertEqual(expected, parser.app_links)
+                for path in (*expected.values(), "/operations-logs.html"):
+                    connection.request("HEAD", path)
+                    self.assertEqual(200, connection.getresponse().status, path)
+            finally:
+                connection.close()
+                server.shutdown()
+                worker.join()
+
     def test_only_log_viewer_page_remains(self):
         self.assertEqual(
             ["operations-logs.html"],
@@ -133,12 +169,6 @@ class UiStaticPagesTest(unittest.TestCase):
         self.assertNotIn(
             'params.set("log_type", logTypeFilter.value)', script
         )
-
-    def test_server_redirects_root_to_log_page(self):
-        source = (UI_ROOT / "server.py").read_text(encoding="utf-8")
-        self.assertIn('"/operations-logs.html"', source)
-        self.assertIn("_redirect_log_root", source)
-
 
 if __name__ == "__main__":
     unittest.main()

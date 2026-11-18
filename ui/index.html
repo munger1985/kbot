@@ -1,1 +1,54 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=./knowledge_retrieval/login.html"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KBot</title></head><body><p><a href="./knowledge_retrieval/login.html">进入知识检索</a></p></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KBot 4 · 应用入口</title>
+  <link rel="stylesheet" href="/ui/portal.css">
+  <script defer src="/ui/runtime-config.js"></script>
+  <script defer src="/ui/portal.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="page-width brand">
+      <span class="brand-mark" aria-hidden="true">K</span>
+      <span>KBot <small>4</small></span>
+    </div>
+  </header>
+  <main class="page-width">
+    <section class="intro" aria-labelledby="portal-title">
+      <p class="eyebrow">KBOT WORKSPACE</p>
+      <h1 id="portal-title">选择应用</h1>
+      <p>从这里进入对应的工作台，使用该应用的账号登录。</p>
+    </section>
+    <nav class="app-grid" aria-label="KBot 应用">
+      <a class="app-card app-knowledge" data-app="knowledge_retrieval" href="/ui/knowledge_retrieval/login.html">
+        <span class="app-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 5h10a2 2 0 0 1 2 2v3M4 5v13a2 2 0 0 0 2 2h5M4 5l2-2h10a2 2 0 0 1 2 2v1M7 9h5m-5 4h3"/><circle cx="16.5" cy="15.5" r="3.5"/><path d="m19 18 2 2"/></svg>
+        </span>
+        <span class="app-name">知识检索</span>
+        <span class="app-description">查找资料、向知识库提问，并查看答案引用的来源。</span>
+        <span class="app-link" aria-hidden="true">进入应用 <span>→</span></span>
+      </a>
+      <a class="app-card app-aiops" data-app="aiops" href="/ui/aiops/login.html">
+        <span class="app-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M6 12h3l2-3 2 6 2-3h3"/></svg>
+        </span>
+        <span class="app-name">AIOps</span>
+        <span class="app-description">监控数据库和业务系统，查看告警并开展运维诊断。</span>
+        <span class="app-link" aria-hidden="true">进入应用 <span>→</span></span>
+      </a>
+      <a class="app-card app-media" data-app="media_studio" href="/ui/media_studio/login.html">
+        <span class="app-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 4-4 3 3 4-5 5 6"/></svg>
+        </span>
+        <span class="app-name">多媒体创作</span>
+        <span class="app-description">使用模型生成图像，查看生成记录并管理创作素材。</span>
+        <span class="app-link" aria-hidden="true">进入应用 <span>→</span></span>
+      </a>
+    </nav>
+    <p class="empty-state" id="empty-apps" hidden>当前没有可用的应用。</p>
+  </main>
+  <footer class="page-width site-footer">KBot 4</footer>
+</body>
+</html>

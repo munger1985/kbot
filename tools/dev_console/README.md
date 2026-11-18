@@ -10,8 +10,8 @@
 python3 tools/dev_console/server.py --port 8080
 ```
 
-访问 `http://127.0.0.1:8080/` 或
-`http://127.0.0.1:8080/operations-logs.html`。根路径会直接跳转到日志页面。
+根路径 `http://127.0.0.1:8080/` 打开 KBot 应用主页。开发日志通过
+`http://127.0.0.1:8080/operations-logs.html` 单独访问。
 
 日志页面根据当前浏览器主机自动连接 Main API 的 `18099` 端口，不在页面配置
 Main API URL、Domain ID 或 User ID。页面只调用 development 环境开放的
