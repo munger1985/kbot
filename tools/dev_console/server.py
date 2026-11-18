@@ -19,7 +19,6 @@ except ModuleNotFoundError:  # Python 3.10
 ROOT = Path(__file__).resolve().parents[2]
 DEV_ROOT = ROOT / "tools" / "dev_console"
 UI_ROOT = ROOT / "ui"
-HOME_PATHS = frozenset({"/", "/index.html", "/ui", "/ui/"})
 
 
 def _load_main_api_base_url() -> str:
@@ -59,9 +58,7 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
     def end_headers(self) -> None:
         """开发 UI 始终重新校验静态资源，避免部署后继续执行旧认证脚本。"""
         path = urlsplit(self.path).path
-        if path in HOME_PATHS or (
-            path.startswith("/ui/") and path != "/ui/runtime-config.js"
-        ):
+        if path.startswith("/ui/") and path != "/ui/runtime-config.js":
             self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
@@ -70,6 +67,24 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
             return False
         self.send_response(204)
         self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        return True
+
+    def _redirect_ui_root(self) -> bool:
+        path = urlsplit(self.path).path
+        if path in {"/ui", "/ui/"}:
+            self.send_response(302)
+            self.send_header("Location", "/ui/knowledge_retrieval/login.html")
+            self.end_headers()
+            return True
+        return False
+
+    def _redirect_log_root(self) -> bool:
+        """开发工具根路径只进入唯一保留的日志页面。"""
+        if urlsplit(self.path).path not in {"", "/"}:
+            return False
+        self.send_response(302)
+        self.send_header("Location", "/operations-logs.html")
         self.end_headers()
         return True
 
@@ -87,7 +102,9 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
             return
         if self._empty_favicon():
             return
-        if path == "/ui/runtime-config.js":
+        if self._redirect_log_root():
+            return
+        if urlsplit(self.path).path == "/ui/runtime-config.js":
             payload = (
                 "globalThis.KBOT_UI_CONFIG = Object.freeze("
                 + json.dumps(
@@ -104,17 +121,21 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
             return
+        if self._redirect_ui_root():
+            return
         super().do_GET()
 
     def do_HEAD(self):
         if self._empty_favicon():
             return
+        if self._redirect_log_root():
+            return
+        if self._redirect_ui_root():
+            return
         super().do_HEAD()
 
     def translate_path(self, path: str) -> str:
         request_path = unquote(urlsplit(path).path)
-        if request_path in HOME_PATHS:
-            return str(UI_ROOT / "index.html")
         if request_path.startswith("/ui/"):
             root = UI_ROOT
             relative = request_path.removeprefix("/ui/")

@@ -52,6 +52,8 @@ class ProcessTopologyTest(unittest.TestCase):
             root / "tools" / "dev_console" / "server.py"
         ).read_text(encoding="utf-8")
         self.assertIn('request_path.startswith("/ui/")', ui_server)
+        self.assertIn('"/ui/knowledge_retrieval/login.html"', ui_server)
+        self.assertIn('"/operations-logs.html"', ui_server)
         self.assertIn("class KBotUiServer(ThreadingHTTPServer)", ui_server)
         self.assertIn("daemon_threads = True", ui_server)
         self.assertIn("request_queue_size = 128", ui_server)

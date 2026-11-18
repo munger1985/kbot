@@ -1401,6 +1401,10 @@ def render_compose(
             "    restart: unless-stopped",
             "    environment:",
             '      MAIN_API_UPSTREAM: "main-api:18099"',
+            "      UI_ENTRY_PATH: "
+            + yaml_string(
+                catalog["app_packs"][values["enabled_apps"][0]]["entry_path"]
+            ),
             "    ports:",
             f"      - {yaml_string(str(values['ui_port']) + ':8080')}",
             "    volumes:",
