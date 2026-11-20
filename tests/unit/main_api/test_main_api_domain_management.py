@@ -117,21 +117,21 @@ class _DetachingUow(_Uow):
         await super().__aexit__(exc_type, exc, traceback)
 
 
-def _app_access(*, user_id="knowledgeadmin", scope_mode="ALL_APP_DOMAINS", scopes=()):
+def _app_access(*, user_id="knowledgeadmin", scope_mode="ALL_APP_DOMAINS", scopes=(), app_id="knowledge_retrieval"):
     access = _AccessRepository()
     access.users[user_id] = SimpleNamespace(
         user_id=user_id, status="ACTIVE", account_origin="APP",
     )
-    access.applications["knowledge_retrieval"] = SimpleNamespace(app_id="knowledge_retrieval", status="ACTIVE")
-    access.members[("knowledge_retrieval", user_id)] = SimpleNamespace(
-        app_id="knowledge_retrieval", user_id=user_id, status="ACTIVE",
+    access.applications[app_id] = SimpleNamespace(app_id=app_id, status="ACTIVE")
+    access.members[(app_id, user_id)] = SimpleNamespace(
+        app_id=app_id, user_id=user_id, status="ACTIVE",
     )
     access.roles.append(SimpleNamespace(
-        app_id="knowledge_retrieval", user_id=user_id, role_code="ADMIN",
+        app_id=app_id, user_id=user_id, role_code="ADMIN",
         scope_mode=scope_mode, status="ACTIVE",
     ))
     if scopes:
-        access.scopes[("knowledge_retrieval", user_id, "ADMIN")] = tuple(scopes)
+        access.scopes[(app_id, user_id, "ADMIN")] = tuple(scopes)
     return access
 
 
@@ -304,18 +304,18 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("DISABLED", access.app_domains[("knowledge_retrieval", 8)].status)
         self.assertEqual(2, result["row_version"])
 
-    async def test_bootstrap_portal_cannot_be_renamed_or_disabled(self):
+    async def test_media_studio_portal_cannot_be_renamed_or_disabled(self):
         repository = _DomainRepository()
-        _seed_domain(repository, domain_id=41, name="knowledge_retrieval_portal")
-        access = _app_access(scope_mode="ALL_APP_DOMAINS")
-        access.app_domains[("knowledge_retrieval", 41)] = SimpleNamespace(
-            app_id="knowledge_retrieval", domain_id=41, status="ACTIVE",
+        _seed_domain(repository, domain_id=41, name="media_studio_portal")
+        access = _app_access(scope_mode="ALL_APP_DOMAINS", app_id="media_studio")
+        access.app_domains[("media_studio", 41)] = SimpleNamespace(
+            app_id="media_studio", domain_id=41, status="ACTIVE",
         )
         service = DomainManagementService(uow_factory=lambda: _Uow(repository, access))
 
         with self.assertRaises(DomainLifecycleError) as renamed:
             await service.update_for_app(
-                app_id="knowledge_retrieval",
+                app_id="media_studio",
                 domain_id=41,
                 user_id="knowledgeadmin",
                 actor_id="knowledgeadmin",
@@ -326,7 +326,7 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(DomainLifecycleError) as disabled:
             await service.disable_for_app(
-                app_id="knowledge_retrieval",
+                app_id="media_studio",
                 domain_id=41,
                 user_id="knowledgeadmin",
                 actor_id="knowledgeadmin",
@@ -334,6 +334,20 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual("DOMAIN_BOOTSTRAP_PROTECTED", disabled.exception.code)
         self.assertEqual("ACTIVE", repository.rows[0].status)
+
+    async def test_existing_knowledge_portal_name_has_no_special_lifecycle(self):
+        repository = _DomainRepository()
+        _seed_domain(repository, domain_id=41, name="knowledge_retrieval_portal")
+        access = _app_access()
+        access.app_domains[("knowledge_retrieval", 41)] = SimpleNamespace(
+            app_id="knowledge_retrieval", domain_id=41, status="ACTIVE",
+        )
+        service = DomainManagementService(uow_factory=lambda: _Uow(repository, access))
+        result = await service.update_for_app(
+            app_id="knowledge_retrieval", domain_id=41, user_id="knowledgeadmin",
+            actor_id="knowledgeadmin", expected_row_version=1, name="实际业务域",
+        )
+        self.assertEqual("实际业务域", result["name"])
 
 
 if __name__ == "__main__":

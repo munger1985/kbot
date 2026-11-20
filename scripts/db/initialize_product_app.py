@@ -1,4 +1,4 @@
-"""幂等初始化知识检索或多媒体创作 App 的引导 Domain 与初始管理员。"""
+"""幂等初始化知识检索或多媒体创作 App 的初始管理员。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
 class AppBootstrap:
     app_id: str
     display_name: str
-    domain_name: str
+    domain_name: str | None
     admin_user: str
     initial_password: str
 
@@ -34,7 +34,7 @@ APP_BOOTSTRAPS = {
     "knowledge_retrieval": AppBootstrap(
         app_id="knowledge_retrieval",
         display_name="知识检索",
-        domain_name="knowledge_retrieval_portal",
+        domain_name=None,
         admin_user="knowledgeadmin",
         initial_password="KnowledgeAdmin@2026!",
     ),
@@ -52,7 +52,7 @@ APP_BOOTSTRAPS = {
 class AppInitializationResult:
     pdb_name: str
     schema_name: str
-    domain_id: int
+    domain_id: int | None
     permission_count: int
     initial_password_created: bool | None
 
@@ -187,20 +187,14 @@ async def _validate(connection, config: AppBootstrap) -> AppInitializationResult
         "SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM DUAL"
     ))).one()
     resource = (await connection.execute(text("""
-        SELECT domain.DOMAIN_ID
-          FROM KBOT_PLATFORM_DOMAIN domain
-          JOIN KBOT_PLATFORM_APP app
-            ON app.APP_ID = :app_id AND app.STATUS = 'ACTIVE'
+        SELECT app.APP_ID
+          FROM KBOT_PLATFORM_APP app
           JOIN KBOT_PLATFORM_USER app_user
             ON app_user.USER_ID = :admin_user
            AND app_user.STATUS = 'ACTIVE'
            AND app_user.OWNER_APP_ID = app.APP_ID
           JOIN KBOT_PLATFORM_USER_CREDENTIAL credential
             ON credential.USER_ID = app_user.USER_ID
-          JOIN KBOT_APP_DOMAIN app_domain
-            ON app_domain.APP_ID = app.APP_ID
-           AND app_domain.DOMAIN_ID = domain.DOMAIN_ID
-           AND app_domain.STATUS = 'ACTIVE'
           JOIN KBOT_APP_MEMBER member
             ON member.APP_ID = app.APP_ID
            AND member.USER_ID = app_user.USER_ID
@@ -212,8 +206,7 @@ async def _validate(connection, config: AppBootstrap) -> AppInitializationResult
            AND member_role.ROLE_CODE = 'app_admin'
            AND member_role.SCOPE_MODE = 'ALL_APP_DOMAINS'
            AND member_role.STATUS = 'ACTIVE'
-         WHERE domain.NAME = :domain_name
-           AND domain.STATUS = 'ACTIVE'
+         WHERE app.APP_ID = :app_id AND app.STATUS = 'ACTIVE'
            AND NOT EXISTS (
                SELECT 1 FROM KBOT_APP_MEMBER_ROLE_SCOPE scope
                 WHERE scope.APP_ID = member_role.APP_ID
@@ -223,10 +216,20 @@ async def _validate(connection, config: AppBootstrap) -> AppInitializationResult
     """), {
         "app_id": config.app_id,
         "admin_user": config.admin_user,
-        "domain_name": config.domain_name,
     })).one_or_none()
     if resource is None:
-        raise RuntimeError(f"{config.admin_user}、{config.domain_name} 或 app_admin 初始化不完整")
+        raise RuntimeError(f"{config.admin_user} 或 app_admin 初始化不完整")
+    domain_id = None
+    if config.domain_name is not None:
+        domain_id = (await connection.execute(text("""
+            SELECT d.DOMAIN_ID
+              FROM KBOT_PLATFORM_DOMAIN d
+              JOIN KBOT_APP_DOMAIN ad ON ad.DOMAIN_ID = d.DOMAIN_ID
+             WHERE ad.APP_ID = :app_id AND ad.STATUS = 'ACTIVE'
+               AND d.NAME = :domain_name AND d.STATUS = 'ACTIVE'
+        """), {"app_id": config.app_id, "domain_name": config.domain_name})).scalar_one_or_none()
+        if domain_id is None:
+            raise RuntimeError(f"{config.domain_name} 初始化不完整")
     missing = (await connection.execute(text("""
         SELECT PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID = :app_id
         MINUS
@@ -242,7 +245,7 @@ async def _validate(connection, config: AppBootstrap) -> AppInitializationResult
     return AppInitializationResult(
         pdb_name=str(target[0]),
         schema_name=str(target[1]),
-        domain_id=int(resource[0]),
+        domain_id=int(domain_id) if domain_id is not None else None,
         permission_count=permission_count,
         initial_password_created=None,
     )
@@ -293,9 +296,14 @@ def main() -> int:
         print(f"{config.display_name}初始化失败：{exc}")
         return 1
     action = "校验通过" if args.check_only else "初始化完成"
+    domain_summary = (
+        f"Domain={config.domain_name}({result.domain_id})"
+        if config.domain_name is not None
+        else "工作域由应用管理员首次登录后创建"
+    )
     print(
         f"{config.display_name}{action}：PDB={result.pdb_name}，Schema={result.schema_name}，"
-        f"Domain={config.domain_name}({result.domain_id})，权限={result.permission_count}，"
+        f"{domain_summary}，权限={result.permission_count}，"
         f"用户={config.admin_user}"
     )
     if args.show_initial_password and result.initial_password_created:

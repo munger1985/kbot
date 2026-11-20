@@ -254,6 +254,7 @@ def create_main_api_app(
         "/api/v1/auth/apps",
         "/api/v1/apps/aiops/auth/login",
         "/api/v1/apps/knowledge-retrieval/auth/login",
+        "/api/v1/apps/knowledge-retrieval/auth/entry",
         "/api/v1/apps/media-studio/auth/login",
     }
     public_prefixes = {

@@ -11,7 +11,6 @@ from sqlalchemy.exc import IntegrityError
 from main_api.entities import AppDomainEntity, PlatformDomainEntity
 
 BOOTSTRAP_DOMAIN_NAMES = frozenset({
-    "knowledge_retrieval_portal",
     "media_studio_portal",
 })
 
@@ -69,12 +68,19 @@ class DomainManagementService:
         name: str,
         description: str | None,
         actor_id: str,
+        first_domain: bool = False,
     ) -> dict[str, Any]:
         """由 App 委托平台原子创建 Domain、绑定 App-Domain，并保证创建人可访问。"""
         normalized_name = _normalized_name(name)
         normalized_description = _normalized_description(description)
         async with self._uow_factory() as uow:
-            await self._require_app_actor(uow=uow, app_id=app_id, actor_id=actor_id)
+            if first_domain:
+                if app_id != "knowledge_retrieval":
+                    raise DomainLifecycleError("APP_ENTRY_NOT_SUPPORTED", "此 App 不支持首次创建工作域", status_code=403)
+                await uow.access.lock_application(app_id)
+                await self.require_knowledge_first_domain_creator(uow=uow, actor_id=actor_id)
+            else:
+                await self._require_app_actor(uow=uow, app_id=app_id, actor_id=actor_id)
             entity = await self._insert_domain(
                 uow=uow,
                 name=normalized_name,
@@ -95,6 +101,25 @@ class DomainManagementService:
             )
             await uow.commit()
             return self._view(entity)
+
+    @classmethod
+    async def require_knowledge_first_domain_creator(cls, *, uow: Any, actor_id: str) -> None:
+        """只允许具有全 App 范围权限的应用管理员开通首个工作域。"""
+        app_id = "knowledge_retrieval"
+        await cls._require_app_actor(uow=uow, app_id=app_id, actor_id=actor_id)
+        if await uow.access.list_app_domains(app_id=app_id):
+            raise DomainLifecycleError("FIRST_DOMAIN_ALREADY_EXISTS", "工作域已存在，请重新登录并选择授权工作域", status_code=409)
+        role = await uow.access.get_role(app_id=app_id, role_code="app_admin")
+        bindings = await uow.access.list_member_roles(app_id=app_id)
+        if role and role.status == "ACTIVE" and role.is_system == "Y" and any(
+            row.user_id == actor_id and row.role_code == role.role_code
+            and row.status == "ACTIVE" and row.scope_mode == "ALL_APP_DOMAINS"
+            for row in bindings
+        ):
+            permissions = await uow.access.list_role_permission_codes(app_id=app_id, role_code=role.role_code)
+            if {"knowledge_retrieval:use", "knowledge_retrieval:domain_manage"}.issubset(permissions):
+                return
+        raise DomainLifecycleError("FIRST_DOMAIN_ADMIN_REQUIRED", "只有知识检索应用管理员可以创建首个工作域", status_code=403)
 
     async def list_for_app(
         self,

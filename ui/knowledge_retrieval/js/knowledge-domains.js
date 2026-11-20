@@ -3,7 +3,6 @@
   "use strict";
 
   const { badge, escapeHtml, toast } = KBotKnowledgeShell;
-  const PORTAL_NAME = "knowledge_retrieval_portal";
   let rows = [];
   let editingId = null;
 
@@ -17,10 +16,6 @@
 
   function statusTone(status) {
     return status === "ACTIVE" ? "good" : "warn";
-  }
-
-  function isPortal(row) {
-    return String(row?.name || "") === PORTAL_NAME;
   }
 
   function isCurrent(row) {
@@ -44,7 +39,7 @@
     document.getElementById("domain-id").value = row.domain_id;
     document.getElementById("domain-row-version").value = row.row_version;
     document.getElementById("domain-name").value = row.name || "";
-    document.getElementById("domain-name").disabled = isPortal(row);
+    document.getElementById("domain-name").disabled = false;
     document.getElementById("domain-description").value = row.description || "";
   }
 
@@ -57,10 +52,10 @@
       buttons.push(`<button class="small" type="button" data-action="switch" data-domain-id="${id}">切换</button>`);
     }
     buttons.push(`<button class="small" type="button" data-action="edit" data-domain-id="${id}">编辑</button>`);
-    if (!isPortal(row) && row.status === "DISABLED") {
+    if (row.status === "DISABLED") {
       buttons.push(`<button class="small" type="button" data-action="enable" data-domain-id="${id}">启用</button>`);
     }
-    if (!isPortal(row) && row.status !== "DISABLED") {
+    if (row.status !== "DISABLED") {
       buttons.push(`<button class="small danger" type="button" data-action="delete" data-domain-id="${id}">删除</button>`);
     }
     return `<div class="knowledge-row-actions">${buttons.join("")}</div>`;

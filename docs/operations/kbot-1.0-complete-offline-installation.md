@@ -330,7 +330,9 @@ Oracle DDL 会隐式提交。如果中途失败，不得用零散 SQL 补表或�
   knowledge_retrieval --show-initial-password
 ```
 
-创建 `knowledge_retrieval_portal` 和 `knowledgeadmin`。只有首次创建凭据时才显示初始密码；
+创建知识检索初始管理员 `knowledgeadmin`，不预建或绑定工作域。管理员首次访问
+`/ui/knowledge_retrieval/login.html`，按页面提示先修改初始密码，再创建首个工作域。
+已有工作域时，按账号的实际授权直接进入或选择工作域。只有首次创建凭据时才显示初始密码；
 日常复查改用 `--check-only`，不要使用 `--show-initial-password`。
 
 ### 10.2 Media Studio
@@ -433,8 +435,8 @@ docker compose \
 新密码至少 12 位，并同时包含大小写字母、数字和特殊字符。安装证据只记录“已轮换”，不得
 保存新密码。
 
-如果没有平台管理 UI，可使用以下 Python 标准库脚本安全交互修改密码。它不会把密码写入
-Shell 历史；每个账号分别执行一次：
+知识检索首次部署需要通过登录页改密并创建首个工作域。其余入口如果没有平台管理 UI，
+可使用以下 Python 标准库脚本安全交互修改密码。它不会把密码写入 Shell 历史；每个账号分别执行一次：
 
 ```bash
 python3 - <<'PY'
@@ -445,10 +447,6 @@ import urllib.request
 
 entries = {
     "platform": ("/api/v1/auth/platform/login", "/api/v1/auth/password"),
-    "knowledge": (
-        "/api/v1/apps/knowledge-retrieval/auth/login",
-        "/api/v1/apps/knowledge-retrieval/auth/password",
-    ),
     "media": (
         "/api/v1/apps/media-studio/auth/login",
         "/api/v1/apps/media-studio/auth/password",
@@ -460,9 +458,9 @@ entries = {
 }
 
 base_url = input("KBot URL，例如 http://10.0.0.10:8080: ").strip().rstrip("/")
-entry = input("入口 platform/knowledge/media/aiops: ").strip()
+entry = input("入口 platform/media/aiops: ").strip()
 if entry not in entries:
-    raise SystemExit("入口必须是 platform、knowledge、media 或 aiops")
+    raise SystemExit("入口必须是 platform、media 或 aiops；知识检索请使用登录页")
 user_id = input("用户 ID: ").strip()
 current_password = getpass("当前密码: ")
 new_password = getpass("新密码: ")

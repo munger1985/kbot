@@ -307,7 +307,7 @@ docker compose \
   knowledge_retrieval --show-initial-password
 ```
 
-创建 `knowledge_retrieval_portal` Domain 和 `knowledgeadmin`。重复执行不会重置已有密码；
+创建初始管理员 `knowledgeadmin`，不预建工作域；管理员登录后创建首域。重复执行不会重置已有密码；
 日常复查使用同一命令加 `--check-only`，不加 `--show-initial-password`。
 
 ### Media Studio

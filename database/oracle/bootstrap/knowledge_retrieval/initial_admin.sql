@@ -1,5 +1,5 @@
 -- 知识检索首次使用数据资产；只写基础数据，不创建或修改 Schema。
--- 固定资源：knowledge_retrieval_portal 引导 Domain、knowledgeadmin 初始管理员。
+-- 只建立 knowledgeadmin 初始管理员及 App 授权；工作域由管理员在登录后创建。
 -- 不创建业务 Agent、模型绑定或模型配置；重复执行不会重置已有管理员密码。
 -- 初始密码：KnowledgeAdmin@2026!，首次登录必须修改。
 
@@ -60,13 +60,6 @@ ON (target.APP_ID = source.APP_ID)
 WHEN MATCHED THEN UPDATE SET target.DISPLAY_NAME = source.DISPLAY_NAME, target.STATUS = 'ACTIVE', target.MEMBER_ASSIGNABLE = 'Y', target.UPDATED_AT = SYSTIMESTAMP
 WHEN NOT MATCHED THEN INSERT (APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE, ROW_VERSION, CREATED_AT, UPDATED_AT)
 VALUES (source.APP_ID, source.DISPLAY_NAME, 'ACTIVE', 'Y', 1, SYSTIMESTAMP, SYSTIMESTAMP);
-
-MERGE INTO KBOT_PLATFORM_DOMAIN target
-USING (SELECT 'knowledge_retrieval_portal' NAME, '知识检索初始空白 Domain；可在 App 内创建业务 Domain' DESCRIPTION FROM DUAL) source
-ON (target.NAME = source.NAME)
-WHEN MATCHED THEN UPDATE SET target.STATUS = 'ACTIVE', target.DESCRIPTION = source.DESCRIPTION, target.UPDATED_BY = 'bootstrap:knowledge_retrieval_initial_admin', target.UPDATED_AT = SYSTIMESTAMP
-WHEN NOT MATCHED THEN INSERT (NAME, STATUS, DESCRIPTION, ROW_VERSION, CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT)
-VALUES (source.NAME, 'ACTIVE', source.DESCRIPTION, 1, 'bootstrap:knowledge_retrieval_initial_admin', 'bootstrap:knowledge_retrieval_initial_admin', SYSTIMESTAMP, SYSTIMESTAMP);
 
 MERGE INTO KBOT_PERMISSION target
 USING (
@@ -145,13 +138,6 @@ USING (SELECT 'knowledgeadmin' USER_ID, '$2b$12$8cE1PJglw40By3I.RlWHAeiQDtEBARUk
 ON (target.USER_ID = source.USER_ID)
 WHEN NOT MATCHED THEN INSERT (USER_ID, PASSWORD_HASH, MUST_CHANGE_PASSWORD, PASSWORD_UPDATED_AT, CREATED_AT, UPDATED_AT)
 VALUES (source.USER_ID, source.PASSWORD_HASH, 'Y', SYSTIMESTAMP, SYSTIMESTAMP, SYSTIMESTAMP);
-
-MERGE INTO KBOT_APP_DOMAIN target
-USING (SELECT 'knowledge_retrieval' APP_ID, DOMAIN_ID FROM KBOT_PLATFORM_DOMAIN WHERE NAME = 'knowledge_retrieval_portal' AND STATUS = 'ACTIVE') source
-ON (target.APP_ID = source.APP_ID AND target.DOMAIN_ID = source.DOMAIN_ID)
-WHEN MATCHED THEN UPDATE SET target.STATUS = 'ACTIVE'
-WHEN NOT MATCHED THEN INSERT (APP_ID, DOMAIN_ID, STATUS, CREATED_BY, CREATED_AT)
-VALUES (source.APP_ID, source.DOMAIN_ID, 'ACTIVE', 'bootstrap:knowledge_retrieval_initial_admin', SYSTIMESTAMP);
 
 MERGE INTO KBOT_APP_MEMBER target
 USING (SELECT 'knowledge_retrieval' APP_ID, 'knowledgeadmin' USER_ID FROM DUAL) source

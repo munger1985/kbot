@@ -2,7 +2,7 @@
 
 import re
 from datetime import UTC, date, datetime
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
@@ -68,7 +68,6 @@ router = APIRouter(
     tags=["Knowledge Retrieval App"],
 )
 
-KNOWLEDGE_RETRIEVAL_PORTAL_DOMAIN_NAME = "knowledge_retrieval_portal"
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "REJECTED"})
 
 
@@ -79,6 +78,36 @@ class _Payload(BaseModel):
 class KnowledgeRetrievalLoginPayload(_Payload):
     user_id: str = Field(min_length=1, max_length=256)
     password: str = Field(min_length=1, max_length=256)
+
+
+class KnowledgeRetrievalDomainOption(_Payload):
+    domain_id: int = Field(gt=0)
+    name: str
+
+
+class KnowledgeRetrievalEntryChallenge(_Payload):
+    action: Literal["SELECT_DOMAIN", "CHANGE_PASSWORD", "CREATE_FIRST_DOMAIN"]
+    entry_ticket: str
+    domains: list[KnowledgeRetrievalDomainOption]
+
+
+class KnowledgeRetrievalEnteredResponse(_Payload):
+    action: Literal["ENTERED"]
+    access_token: str
+    token_type: Literal["Bearer"]
+    expires_at: datetime
+    user_id: str
+    display_name: str | None
+    entry_kind: Literal["BUSINESS"]
+    app_id: Literal["knowledge_retrieval"]
+    domain_id: int = Field(gt=0)
+    domain_name: str
+    must_change_password: bool
+
+
+class KnowledgeRetrievalSelectDomainPayload(_Payload):
+    action: Literal["SELECT_DOMAIN"]
+    domain_id: int = Field(gt=0)
 
 
 class KnowledgeRetrievalPasswordChangePayload(_Payload):
@@ -96,6 +125,10 @@ class KnowledgeRetrievalPasswordChangePayload(_Payload):
         ):
             raise ValueError("新密码必须同时包含大小写字母、数字和特殊字符")
         return value
+
+
+class KnowledgeRetrievalEntryPasswordPayload(KnowledgeRetrievalPasswordChangePayload):
+    action: Literal["CHANGE_PASSWORD"]
 
 
 class KnowledgeRetrievalAgentCreatePayload(_Payload):
@@ -164,6 +197,10 @@ class KnowledgeRetrievalResearchCreatePayload(_Payload):
 class KnowledgeRetrievalDomainCreatePayload(_Payload):
     name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+
+
+class KnowledgeRetrievalFirstDomainPayload(KnowledgeRetrievalDomainCreatePayload):
+    action: Literal["CREATE_FIRST_DOMAIN"]
 
 
 class KnowledgeRetrievalDomainUpdatePayload(_Payload):
@@ -581,14 +618,36 @@ async def _knowledge_document_reference(
         ) from exc
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", response_model=KnowledgeRetrievalEnteredResponse | KnowledgeRetrievalEntryChallenge,
+             openapi_extra={"x-sensitive-input": True})
 async def login(payload: KnowledgeRetrievalLoginPayload, request: Request):
-    """使用平台用户凭据进入固定的智能工作台 Portal Domain。"""
+    """先验证账号，再按已授权工作域决定进入、选域或创建首域。"""
     service = cast(UserAuthService, request.app.state.user_auth_service)
-    return await service.login_for_domain_name(
+    return await service.begin_knowledge_entry(
         user_id=payload.user_id.strip(), password=payload.password,
-        domain_name=KNOWLEDGE_RETRIEVAL_PORTAL_DOMAIN_NAME, app_id="knowledge_retrieval",
     )
+
+
+@router.post("/auth/entry", response_model=KnowledgeRetrievalEnteredResponse | KnowledgeRetrievalEntryChallenge,
+             openapi_extra={"x-sensitive-input": True})
+async def complete_entry(
+    payload: Annotated[
+        KnowledgeRetrievalSelectDomainPayload | KnowledgeRetrievalFirstDomainPayload | KnowledgeRetrievalEntryPasswordPayload,
+        Field(discriminator="action"),
+    ],
+    request: Request,
+):
+    """用登录返回的短期入口票据完成选域或首域创建。"""
+    scheme, _, ticket = request.headers.get("Authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not ticket.strip():
+        raise HTTPException(401, {"code": "ENTRY_TICKET_REQUIRED", "message": "请先登录知识检索"})
+    service = cast(UserAuthService, request.app.state.user_auth_service)
+    try:
+        return await service.complete_knowledge_entry(
+            entry_ticket=ticket.strip(), **payload.model_dump(),
+        )
+    except (DomainConflictError, DomainLifecycleError) as exc:
+        _raise_domain_error(exc)
 
 
 @router.post("/auth/password")

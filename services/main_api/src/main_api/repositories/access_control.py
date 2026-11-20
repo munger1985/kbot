@@ -29,6 +29,14 @@ class AccessControlRepository:
     async def get_application(self, app_id: str) -> PlatformApplicationEntity | None:
         return await self._session.get(PlatformApplicationEntity, app_id)
 
+    async def lock_application(self, app_id: str) -> None:
+        """用 App 行锁串行化首域创建和平台直接绑定。"""
+        await self._session.execute(
+            select(PlatformApplicationEntity.app_id)
+            .where(PlatformApplicationEntity.app_id == app_id)
+            .with_for_update()
+        )
+
     async def list_applications(self) -> list[PlatformApplicationEntity]:
         rows = await self._session.scalars(
             select(PlatformApplicationEntity).order_by(PlatformApplicationEntity.app_id)

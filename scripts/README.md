@@ -19,7 +19,8 @@ Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位�
   “日常巡检”和“月度巡检”；模板由当前 Check Catalog 编译并覆盖 Oracle、MySQL、
   PostgreSQL，`--check-only` 可只读复查。
 - `scripts/db/initialize_product_app.py`：按 `knowledge_retrieval` 或 `media_studio`
-  幂等创建空白引导 Domain、App 权限和初始管理员；不创建业务
+  幂等创建 App 权限和初始管理员。知识检索工作域由管理员登录后创建；
+  多媒体创作保留其引导 Domain。不创建业务
   Agent、模型绑定或模型配置。`--check-only` 可只读复查；初始密码只会在
   首次建凭据且显式指定
   `--show-initial-password` 时输出。

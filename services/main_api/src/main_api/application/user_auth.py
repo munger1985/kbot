@@ -15,11 +15,15 @@ from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
 from platform_core.contracts import AuthContext, IdentityEntryKind, PrincipalKind
 from platform_core.security import PortalApiKeyError, extract_bearer_token
 from main_api.application.access_control import is_reserved_global_admin
+from main_api.application.domain_management import DomainLifecycleError, DomainManagementService
 
 
 _ALGORITHM = "HS256"
 _AUDIENCE = "kbot-public-api"
 _TOKEN_TYPE = "kbot-user+jwt"
+_KNOWLEDGE_ENTRY_AUDIENCE = "kbot-knowledge-retrieval-entry"
+_KNOWLEDGE_ENTRY_TTL_SECONDS = 300
+_KNOWLEDGE_APP = "knowledge_retrieval"
 KM_PORTAL_DOMAIN_NAME = "km_portal"
 
 
@@ -41,6 +45,12 @@ class UserTokenClaims:
     must_change_password: bool
     password_version: int
     expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeEntryClaims:
+    user_id: str
+    password_version: int
 
 
 class UserTokenCodec:
@@ -114,6 +124,31 @@ class UserTokenCodec:
             raise UserAuthenticationError("USER_TOKEN_EXPIRED", "用户登录已过期，请重新登录") from exc
         except (JWTClaimsError, JWTError, KeyError, TypeError, ValueError) as exc:
             raise UserAuthenticationError("INVALID_USER_TOKEN", "用户令牌无效") from exc
+
+    def issue_knowledge_entry(self, *, user_id: str, password_version: int, action: str) -> str:
+        """签发只用于知识检索入口的短期票据，不能作为业务 API 的 Bearer Token。"""
+        now = int(datetime.now(timezone.utc).timestamp())
+        return jwt.encode({
+            "iss": self._issuer, "aud": _KNOWLEDGE_ENTRY_AUDIENCE, "sub": user_id,
+            "action": action, "pwd": password_version,
+            "iat": now, "exp": now + _KNOWLEDGE_ENTRY_TTL_SECONDS,
+        }, self._secret, algorithm=_ALGORITHM)
+
+    def verify_knowledge_entry(self, entry_ticket: str, *, action: str) -> KnowledgeEntryClaims:
+        try:
+            claims = jwt.decode(
+                entry_ticket, self._secret, algorithms=[_ALGORITHM],
+                audience=_KNOWLEDGE_ENTRY_AUDIENCE, issuer=self._issuer,
+                options={"require_exp": True, "require_iss": True, "require_aud": True,
+                         "require_iat": True, "require_sub": True},
+            )
+            if claims["action"] != action or not claims["sub"]:
+                raise ValueError("票据用途不匹配")
+            return KnowledgeEntryClaims(user_id=claims["sub"], password_version=int(claims["pwd"]))
+        except ExpiredSignatureError as exc:
+            raise UserAuthenticationError("ENTRY_TICKET_EXPIRED", "入口已过期，请重新登录") from exc
+        except (JWTError, KeyError, TypeError, ValueError) as exc:
+            raise UserAuthenticationError("INVALID_ENTRY_TICKET", "入口票据无效，请重新登录") from exc
 
 
 class UserAuthService:
@@ -317,6 +352,103 @@ class UserAuthService:
             raise UserAuthenticationError("DOMAIN_UNAVAILABLE", "固定 Domain 尚未初始化或未启用")
         return await self.app_login(user_id=user_id, password=password, app_id=app_id, domain_id=domain_id)
 
+    async def begin_knowledge_entry(self, *, user_id: str, password: str) -> dict[str, object]:
+        """认证后按当前授权决定直接进入、选域或创建首域。"""
+        display_name, origin, owner_app_id, must_change, password_version = await self._verify_credentials(
+            user_id=user_id, password=password,
+        )
+        self._check_knowledge_account(origin=origin, owner_app_id=owner_app_id)
+        async with self._uow_factory() as uow:
+            app = await uow.access.get_application(_KNOWLEDGE_APP)
+            if app is None or app.status != "ACTIVE":
+                raise UserAuthenticationError("APP_DISABLED", "知识检索 App 不存在或已停用", status_code=403)
+            ids = await uow.access.list_active_domain_ids(user_id, app_id=_KNOWLEDGE_APP)
+            domains = [
+                {"domain_id": int(row.domain_id), "name": row.name}
+                for row in await uow.domains.list_by_ids(domain_ids=ids)
+                if row.status == "ACTIVE"
+            ]
+            if not domains:
+                try:
+                    await DomainManagementService.require_knowledge_first_domain_creator(uow=uow, actor_id=user_id)
+                except DomainLifecycleError as exc:
+                    raise UserAuthenticationError("DOMAIN_ACCESS_DENIED", "没有可进入的工作域，请联系知识检索管理员", status_code=403) from exc
+        if len(domains) == 1:
+            return await self._issue_knowledge_session(
+                user_id=user_id, display_name=display_name, domain_id=domains[0]["domain_id"],
+                must_change_password=must_change, password_version=password_version,
+            )
+        action = "SELECT_DOMAIN" if domains else ("CHANGE_PASSWORD" if must_change else "CREATE_FIRST_DOMAIN")
+        return self._knowledge_challenge(
+            user_id=user_id, password_version=password_version, action=action, domains=domains,
+        )
+
+    def _knowledge_challenge(
+        self, *, user_id: str, password_version: int, action: str,
+        domains: list[dict[str, int | str]],
+    ) -> dict[str, object]:
+        return {
+            "action": action, "domains": domains,
+            "entry_ticket": self._codec.issue_knowledge_entry(
+                user_id=user_id, password_version=password_version, action=action,
+            ),
+        }
+
+    @staticmethod
+    def _check_knowledge_account(*, origin: str, owner_app_id: str | None) -> None:
+        if origin == "APP" and owner_app_id != _KNOWLEDGE_APP:
+            raise UserAuthenticationError("APP_ACCESS_DENIED", "App 用户不能进入其他 App", status_code=403)
+
+    async def _issue_knowledge_session(
+        self, *, user_id: str, display_name: str | None, domain_id: int,
+        must_change_password: bool, password_version: int,
+    ) -> dict[str, object]:
+        business = await self._issue_business_session(
+            user_id=user_id, display_name=display_name, app_id=_KNOWLEDGE_APP, domain_id=domain_id,
+            must_change_password=must_change_password, password_version=password_version,
+        )
+        return {"action": "ENTERED", **business}
+
+    async def complete_knowledge_entry(
+        self, *, entry_ticket: str, action: str, domain_id: int | None = None,
+        name: str | None = None, description: str | None = None,
+        current_password: str | None = None, new_password: str | None = None,
+    ) -> dict[str, object]:
+        claims = self._codec.verify_knowledge_entry(entry_ticket, action=action)
+        async with self._uow_factory() as uow:
+            user = await uow.access.get_user(claims.user_id)
+            credential = await uow.access.get_user_credential(claims.user_id)
+            if user is None or user.status != "ACTIVE":
+                raise UserAuthenticationError("USER_DISABLED", "用户不存在或已停用", status_code=403)
+            if credential is None or self._timestamp_version(credential.password_updated_at) != claims.password_version:
+                raise UserAuthenticationError("USER_SESSION_REVOKED", "密码已更新，请重新登录")
+            self._check_knowledge_account(origin=user.account_origin, owner_app_id=user.owner_app_id)
+            display_name = user.display_name
+            must_change = credential.must_change_password == "Y"
+            if action == "CHANGE_PASSWORD" and current_password is not None and new_password is not None:
+                await DomainManagementService.require_knowledge_first_domain_creator(uow=uow, actor_id=user.user_id)
+                version = await self._update_password(
+                    uow=uow, credential=credential, current_password=current_password, new_password=new_password,
+                )
+                await uow.commit()
+                return self._knowledge_challenge(
+                    user_id=claims.user_id, password_version=version, action="CREATE_FIRST_DOMAIN", domains=[],
+                )
+        if action == "CREATE_FIRST_DOMAIN" and name is not None:
+            if must_change:
+                raise UserAuthenticationError("PASSWORD_CHANGE_REQUIRED", "请先更新初始密码再创建工作域", status_code=403)
+            domain = await DomainManagementService(uow_factory=self._uow_factory).create_for_app(
+                app_id=_KNOWLEDGE_APP, name=name, description=description,
+                actor_id=claims.user_id, first_domain=True,
+            )
+            domain_id = domain["domain_id"]
+        elif action != "SELECT_DOMAIN" or domain_id is None:
+            raise UserAuthenticationError("INVALID_ENTRY_ACTION", "工作域入口请求无效", status_code=422)
+        return await self._issue_knowledge_session(
+            user_id=claims.user_id, display_name=display_name, domain_id=domain_id,
+            must_change_password=must_change, password_version=claims.password_version,
+        )
+
     def _token_response(
         self, *, user_id: str, display_name: str | None, entry_kind: str,
         app_id: str | None, domain_id: int | None, domain_name: str | None,
@@ -447,24 +579,15 @@ class UserAuthService:
         )
 
     async def change_password(self, *, claims: UserTokenClaims, current_password: str, new_password: str) -> dict[str, object]:
-        if current_password == new_password:
-            raise UserAuthenticationError("PASSWORD_REUSED", "新密码不能与当前密码相同")
         async with self._uow_factory() as uow:
             credential = await uow.access.get_user_credential(claims.user_id)
-            valid = bool(credential and await asyncio.to_thread(
-                bcrypt.checkpw, current_password.encode("utf-8"), credential.password_hash.encode("ascii")
-            ))
-            if not valid:
-                raise UserAuthenticationError("INVALID_CREDENTIALS", "当前密码错误")
-            password_hash = await asyncio.to_thread(
-                bcrypt.hashpw, new_password.encode("utf-8"), bcrypt.gensalt(rounds=12)
+            password_version = await self._update_password(
+                uow=uow, credential=credential, current_password=current_password, new_password=new_password,
             )
-            await uow.access.set_user_password(credential=credential, password_hash=password_hash.decode("ascii"))
             user = await uow.access.get_user(claims.user_id)
             domain = await uow.domains.get(domain_id=claims.domain_id) if claims.domain_id is not None else None
             display_name = user.display_name if user else None
             domain_name = domain.name if domain else None
-            password_version = self._timestamp_version(credential.password_updated_at)
             await uow.commit()
         return self._token_response(
             user_id=claims.user_id, display_name=display_name,
@@ -472,6 +595,20 @@ class UserAuthService:
             domain_name=domain_name, must_change_password=False,
             password_version=password_version,
         )
+
+    async def _update_password(self, *, uow, credential, current_password: str, new_password: str) -> int:
+        if current_password == new_password:
+            raise UserAuthenticationError("PASSWORD_REUSED", "新密码不能与当前密码相同")
+        valid = bool(credential and await asyncio.to_thread(
+            bcrypt.checkpw, current_password.encode("utf-8"), credential.password_hash.encode("ascii")
+        ))
+        if not valid:
+            raise UserAuthenticationError("INVALID_CREDENTIALS", "当前密码错误")
+        password_hash = await asyncio.to_thread(
+            bcrypt.hashpw, new_password.encode("utf-8"), bcrypt.gensalt(rounds=12)
+        )
+        await uow.access.set_user_password(credential=credential, password_hash=password_hash.decode("ascii"))
+        return self._timestamp_version(credential.password_updated_at)
 
     async def validate_session(self, *, claims: UserTokenClaims) -> None:
         async with self._uow_factory() as uow:

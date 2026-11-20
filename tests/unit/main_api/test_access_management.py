@@ -444,6 +444,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_initial_admin_is_protected_and_uses_all_domains(self):
         uow = _Uow()
+        uow.access.app_domains.clear()
         service = AccessManagementService(uow_factory=lambda: uow)
 
         result = await service.create_initial_app_admin(
@@ -476,14 +477,15 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual("INITIAL_APP_ADMIN_PROTECTED", context.exception.code)
 
-    async def test_initial_admin_requires_an_active_app_domain(self):
+    async def test_media_studio_initial_admin_still_requires_an_active_app_domain(self):
         uow = _Uow()
         uow.access.app_domains.clear()
+        uow.access.apps["media_studio"] = uow.access.apps["knowledge_retrieval"]
         service = AccessManagementService(uow_factory=lambda: uow)
 
         with self.assertRaises(AccessManagementError) as context:
             await service.create_initial_app_admin(
-                app_id="knowledge_retrieval", user_id="KR_ADMIN",
+                app_id="media_studio", user_id="MEDIA_ADMIN",
                 display_name="初始管理员", password="Example@Password2026!",
                 must_change_password=False, max_security_level=3,
                 actor_id="ADMIN", actor_security_level=3,

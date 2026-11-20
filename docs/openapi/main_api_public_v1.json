@@ -11948,6 +11948,26 @@
         "title": "KnowledgeRetrievalDomainCreatePayload",
         "type": "object"
       },
+      "KnowledgeRetrievalDomainOption": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain_id",
+          "name"
+        ],
+        "title": "KnowledgeRetrievalDomainOption",
+        "type": "object"
+      },
       "KnowledgeRetrievalDomainUpdatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -12001,6 +12021,178 @@
           "expected_row_version"
         ],
         "title": "KnowledgeRetrievalDomainUpdatePayload",
+        "type": "object"
+      },
+      "KnowledgeRetrievalEnteredResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "action": {
+            "const": "ENTERED",
+            "title": "Action",
+            "type": "string"
+          },
+          "app_id": {
+            "const": "knowledge_retrieval",
+            "title": "App Id",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "domain_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "domain_name": {
+            "title": "Domain Name",
+            "type": "string"
+          },
+          "entry_kind": {
+            "const": "BUSINESS",
+            "title": "Entry Kind",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "token_type": {
+            "const": "Bearer",
+            "title": "Token Type",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "access_token",
+          "token_type",
+          "expires_at",
+          "user_id",
+          "display_name",
+          "entry_kind",
+          "app_id",
+          "domain_id",
+          "domain_name",
+          "must_change_password"
+        ],
+        "title": "KnowledgeRetrievalEnteredResponse",
+        "type": "object"
+      },
+      "KnowledgeRetrievalEntryChallenge": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "SELECT_DOMAIN",
+              "CHANGE_PASSWORD",
+              "CREATE_FIRST_DOMAIN"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeRetrievalDomainOption"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "entry_ticket": {
+            "title": "Entry Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "entry_ticket",
+          "domains"
+        ],
+        "title": "KnowledgeRetrievalEntryChallenge",
+        "type": "object"
+      },
+      "KnowledgeRetrievalEntryPasswordPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "CHANGE_PASSWORD",
+            "title": "Action",
+            "type": "string"
+          },
+          "current_password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password",
+          "action"
+        ],
+        "title": "KnowledgeRetrievalEntryPasswordPayload",
+        "type": "object"
+      },
+      "KnowledgeRetrievalFirstDomainPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "CREATE_FIRST_DOMAIN",
+            "title": "Action",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "action"
+        ],
+        "title": "KnowledgeRetrievalFirstDomainPayload",
         "type": "object"
       },
       "KnowledgeRetrievalLoginPayload": {
@@ -12167,6 +12359,27 @@
           "object_ids"
         ],
         "title": "KnowledgeRetrievalSchemaSelectionPayload",
+        "type": "object"
+      },
+      "KnowledgeRetrievalSelectDomainPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "SELECT_DOMAIN",
+            "title": "Action",
+            "type": "string"
+          },
+          "domain_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Domain Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "domain_id"
+        ],
+        "title": "KnowledgeRetrievalSelectDomainPayload",
         "type": "object"
       },
       "KnowledgeRetrievalSemanticModelCandidatePayload": {
@@ -41516,9 +41729,79 @@
         ]
       }
     },
+    "/api/v1/apps/knowledge-retrieval/auth/entry": {
+      "post": {
+        "description": "用登录返回的短期入口票据完成选域或首域创建。",
+        "operationId": "complete_entry_api_v1_apps_knowledge_retrieval_auth_entry_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "CHANGE_PASSWORD": "#/components/schemas/KnowledgeRetrievalEntryPasswordPayload",
+                    "CREATE_FIRST_DOMAIN": "#/components/schemas/KnowledgeRetrievalFirstDomainPayload",
+                    "SELECT_DOMAIN": "#/components/schemas/KnowledgeRetrievalSelectDomainPayload"
+                  },
+                  "propertyName": "action"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/KnowledgeRetrievalSelectDomainPayload"
+                  },
+                  {
+                    "$ref": "#/components/schemas/KnowledgeRetrievalFirstDomainPayload"
+                  },
+                  {
+                    "$ref": "#/components/schemas/KnowledgeRetrievalEntryPasswordPayload"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/KnowledgeRetrievalEnteredResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/KnowledgeRetrievalEntryChallenge"
+                    }
+                  ],
+                  "title": "Response Complete Entry Api V1 Apps Knowledge Retrieval Auth Entry Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Entry",
+        "tags": [
+          "Knowledge Retrieval App"
+        ],
+        "x-sensitive-input": true
+      }
+    },
     "/api/v1/apps/knowledge-retrieval/auth/login": {
       "post": {
-        "description": "使用平台用户凭据进入固定的智能工作台 Portal Domain。",
+        "description": "先验证账号，再按已授权工作域决定进入、选域或创建首域。",
         "operationId": "login_api_v1_apps_knowledge_retrieval_auth_login_post",
         "requestBody": {
           "content": {
@@ -41534,7 +41817,17 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/KnowledgeRetrievalEnteredResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/KnowledgeRetrievalEntryChallenge"
+                    }
+                  ],
+                  "title": "Response Login Api V1 Apps Knowledge Retrieval Auth Login Post"
+                }
               }
             },
             "description": "Successful Response"
@@ -41553,7 +41846,8 @@
         "summary": "Login",
         "tags": [
           "Knowledge Retrieval App"
-        ]
+        ],
+        "x-sensitive-input": true
       }
     },
     "/api/v1/apps/knowledge-retrieval/auth/password": {

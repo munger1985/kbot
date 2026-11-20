@@ -12,12 +12,22 @@ class ProductAppInitializerTest(unittest.TestCase):
             statements = load_bootstrap_statements(config)
             source = "\n".join(statements).upper()
             self.assertGreater(len(statements), 8)
-            self.assertIn(config.domain_name.upper(), source)
+            if config.domain_name is not None:
+                self.assertIn(config.domain_name.upper(), source)
             self.assertIn(config.admin_user.upper(), source)
             self.assertIn(f"'{app_id.upper()}:USE'", source)
             self.assertNotIn("CREATE TABLE", source)
             self.assertNotIn("ALTER TABLE", source)
             self.assertNotIn("DROP TABLE", source)
+
+    def test_knowledge_bootstrap_creates_admin_without_domain_or_binding(self):
+        config = APP_BOOTSTRAPS["knowledge_retrieval"]
+        source = "\n".join(load_bootstrap_statements(config)).upper()
+        self.assertIsNone(config.domain_name)
+        self.assertNotIn("KNOWLEDGE_RETRIEVAL_PORTAL", source)
+        self.assertNotIn("MERGE INTO KBOT_PLATFORM_DOMAIN", source)
+        self.assertNotIn("MERGE INTO KBOT_APP_DOMAIN", source)
+        self.assertIn("'ALL_APP_DOMAINS'", source)
 
     def test_bootstrap_requires_each_app_private_runtime_tables(self):
         knowledge = APP_BOOTSTRAPS["knowledge_retrieval"].sql_path.read_text(encoding="utf-8")

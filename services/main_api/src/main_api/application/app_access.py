@@ -147,6 +147,9 @@ async def authorize_business_app_route(request: Request) -> None:
     prefix = "/api/v1/apps/"
     if not request.url.path.startswith(prefix):
         return
+    if request.method == "POST" and request.url.path == "/api/v1/apps/knowledge-retrieval/auth/entry":
+        # 此入口只接受显式用途的短期票据；不能用于任何业务路由。
+        return
     relative = request.url.path.removeprefix(prefix).strip("/")
     parts = relative.split("/") if relative else []
     if len(parts) >= 3 and parts[1] == "auth" and parts[2] in {

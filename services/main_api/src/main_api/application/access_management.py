@@ -166,7 +166,7 @@ class AccessManagementService:
             if app.member_assignable != "Y":
                 raise AccessManagementError("APP_MEMBER_DISABLED", "该 App 不允许配置成员", status_code=409)
             app_domains = await uow.access.list_app_domains(app_id=app_id)
-            if not any(row.status == "ACTIVE" for row in app_domains):
+            if app_id != "knowledge_retrieval" and not any(row.status == "ACTIVE" for row in app_domains):
                 raise AccessManagementError(
                     "APP_DOMAIN_REQUIRED",
                     "请先为 App 配置至少一个启用的 Domain，再创建初始管理员",
@@ -351,6 +351,8 @@ class AccessManagementService:
 
     async def assign_app_domain(self, *, app_id: str, domain_id: int, actor_id: str) -> dict[str, object]:
         async with self._uow_factory() as uow:
+            if app_id == "knowledge_retrieval":
+                await uow.access.lock_application(app_id)
             await self._require_app(uow=uow, app_id=app_id, require_active=False)
             domain = await uow.domains.get(domain_id=domain_id)
             if domain is None:
