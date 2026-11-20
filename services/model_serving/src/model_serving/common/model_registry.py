@@ -17,6 +17,7 @@ from model_serving.common.provider_catalog import (
 from model_serving.config import get_model_serving_settings
 from platform_core.contracts import (
     AuthContext,
+    ModelReference,
     ModelReferenceSummary,
     is_grok_provider_model_name,
 )
@@ -330,9 +331,19 @@ class ModelRegistryService:
                 unavailable.append(service)
         return ModelReferenceSummary(
             model_id=model_id,
-            references=tuple(references),
+            references=tuple(self._project_reference(reference) for reference in references),
             unavailable_services=tuple(unavailable),
         )
+
+    @staticmethod
+    def _project_reference(reference: Mapping[str, Any]) -> ModelReference:
+        """将业务绑定角色投影为目录引用用途，不返回业务侧附加信息。"""
+        return ModelReference.model_validate({
+            "service": reference.get("service"),
+            "resource_type": reference.get("resource_type"),
+            "resource_id": reference.get("resource_id"),
+            "usage": reference.get("usage", reference.get("binding_role")),
+        })
 
     async def get_connection_material(
         self, model_id: UUID, *, category: int | None = None,
