@@ -32,9 +32,9 @@ class BoundedKnowledgeRoute(APIRoute):
 async def library_access(request: Request):
     identity = getattr(request.state, "service_identity", None)
     context = getattr(request.state, "auth_context", None)
+    # 内部调用 scope 由服务身份承载，用户上下文只传递 App、Domain 和操作主体。
     if (not isinstance(identity, ServiceIdentity) or not isinstance(context, AuthContext)
             or "knowledge_retrieval.manage" not in identity.scopes
-            or "knowledge_retrieval.manage" not in context.scopes
             or context.app_id != "knowledge_retrieval" or context.domain_id is None):
         raise HTTPException(403, {"code": "KNOWLEDGE_LIBRARY_CONTEXT_REQUIRED"})
     try:
