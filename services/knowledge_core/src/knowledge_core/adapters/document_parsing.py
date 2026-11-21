@@ -221,9 +221,20 @@ class DoclingParsingAdapter:
                                       "", markdown)
             require("![" not in without_embedded and "<" not in markdown,
                     "Markdown 含未登记媒体或 HTML；不能由转换进程抓取外部资源")
-        from docling.datamodel.base_models import DocumentStream
-        result = self.converter().convert(DocumentStream(name="source." + DOCUMENT_TYPES[mime], stream=BytesIO(raw)),
-            max_num_pages=profile.max_pages, max_file_size=profile.max_input_bytes)
+        try:
+            from docling.datamodel.base_models import DocumentStream
+            result = self.converter().convert(DocumentStream(name="source." + DOCUMENT_TYPES[mime], stream=BytesIO(raw)),
+                max_num_pages=profile.max_pages, max_file_size=profile.max_input_bytes)
+        except MemoryError:
+            raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "文档转换内存不足", stage="convert") from None
+        except (OSError, RuntimeError) as exc:
+            from errno import ENOMEM
+            message = str(exc).lower()
+            if (isinstance(exc, OSError) and exc.errno == ENOMEM) or (
+                "mmap" in message and "cannot allocate memory" in message
+            ):
+                raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "文档转换内存不足", stage="convert") from None
+            raise
         status = getattr(result.status, "value", result.status)
         require(status == "success", "Docling 未完整成功转换；不静默发布部分文档")
         document = result.document

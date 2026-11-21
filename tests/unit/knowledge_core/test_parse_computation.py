@@ -114,6 +114,43 @@ class ComputeJobTests(unittest.IsolatedAsyncioTestCase):
         self.service.acknowledge(self.job.access, ref, sequence=page[-1].sequence, event_digest=page[-1].event_digest)
         self.assertEqual(self.store.load(self.job.access, ref, 1000)[2]["acked_sequence"], len(page))
 
+    async def test_child_exit_reports_resource_or_channel_failure(self):
+        create_subprocess = asyncio.create_subprocess_exec
+        for reason, expected in (
+            ("OpenBLAS error: Memory allocation still failed after 10 retries, giving up.", ErrorCode.RESOURCE_LIMIT),
+            ("任意子进程输出", ErrorCode.CHANNEL_FAILED),
+        ):
+            async def fail(*args, **kwargs):
+                for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "DOCLING_NUM_THREADS"):
+                    self.assertEqual(kwargs["env"][name], "1")
+                return await create_subprocess(sys.executable, "-c",
+                    "import sys; sys.stdin.buffer.readline(); "
+                    "sys.stderr.write('x' * 180000 + '\\n' + sys.argv[1]); sys.exit(7)", reason, **kwargs)
+
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as temporary, \
+                    unittest.mock.patch("asyncio.create_subprocess_exec", side_effect=fail):
+                with self.assertRaises(AlgorithmError) as failure:
+                    async for _ in self.executor.events(self.job, self.source, Path(temporary)):
+                        self.fail("模拟子进程不应产生事件")
+                self.assertEqual(failure.exception.code, expected)
+                self.assertEqual(failure.exception.stage, "executor")
+
+    async def test_docling_mapping_error_is_a_resource_limit(self):
+        from knowledge_core.adapters.document_parsing import DoclingParsingAdapter
+        self.source.descriptor = replace(self.source.descriptor, mime_type="application/pdf")
+        for error in (MemoryError(), OSError(12, "内存不足"),
+                      RuntimeError("unable to mmap model weights: Cannot allocate memory (12)")):
+            converter = unittest.mock.Mock()
+            converter.convert.side_effect = error
+            adapter = DoclingParsingAdapter(None, converter_factory=lambda: converter)
+            docling = unittest.mock.Mock()
+            with self.subTest(error=type(error)), unittest.mock.patch.dict(
+                sys.modules, {"docling.datamodel.base_models": docling}
+            ), self.assertRaises(AlgorithmError) as failure:
+                await anext(adapter.extract(self.source, self.profile, run_for(self.source, self.profile)))
+            self.assertEqual(failure.exception.code, ErrorCode.RESOURCE_LIMIT)
+            self.assertEqual(failure.exception.stage, "convert")
+
     async def test_submit_idempotent_no_second_executor(self):
         class Wait:
             calls = 0

@@ -49,6 +49,8 @@ class KnowledgePipelineWorker:
     async def process(self, scope, job_id, *, parse_only=False):
         lease = await self.ingestion.get_job(scope, job_id)
         if lease.status in {"FAILED", "CANCELLED"}:
+            if parse_only:
+                return {"status": lease.status}
             raise AlgorithmError(ErrorCode.PARSE_QUALITY_INSUFFICIENT, "知识任务已失败或取消", stage="pipeline")
         if lease.status != "PARSED":
             if lease.status != "PARSING" or lease.lease_until <= self.ingestion.clock():
@@ -66,6 +68,9 @@ class KnowledgePipelineWorker:
                 lease = await self.ingestion.get_job(scope, job_id)
                 if lease.status == "PARSING":
                     await asyncio.sleep(self.poll_interval)
+            # 解析终态及原始错误码已由摄取用例持久化，无须转成流水线合同异常。
+            if parse_only and lease.status in {"FAILED", "CANCELLED"}:
+                return {"status": lease.status}
             require(lease.status == "PARSED", "知识任务没有完成解析，禁止建立发布索引")
         if parse_only:
             return {"status": "PARSED"}

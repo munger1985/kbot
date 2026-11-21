@@ -7,9 +7,26 @@ import os
 import signal
 import sys
 
-from knowledge_algorithms.contracts.errors import require
+from loguru import logger
+
+from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
 from knowledge_algorithms.contracts.wire import encode
 from knowledge_algorithms.parsing.wire import event_from_wire
+
+
+async def _stderr_tail(stream):
+    tail = b""
+    while block := await stream.read(4096):
+        tail = (tail + block)[-4096:]
+    return tail
+
+
+def _exit_error_code(returncode, stderr):
+    if returncode in {-signal.SIGXCPU, -signal.SIGXFSZ} or (
+        b"OpenBLAS error: Memory allocation still failed" in stderr
+    ):
+        return ErrorCode.RESOURCE_LIMIT
+    return ErrorCode.CHANNEL_FAILED
 
 
 class BoundedParseExecutor:
@@ -25,7 +42,7 @@ class BoundedParseExecutor:
         from .document_parsing import DOCUMENT_TYPES, IMAGE_TYPES
         require(job.source.mime_type in {"text/plain"} | set(DOCUMENT_TYPES) | IMAGE_TYPES,
                 "该执行器未登记此格式适配器")
-        process = None
+        process = stderr_task = None
         try:
             async with asyncio.timeout(job.profile.timeout_seconds):
                 fd = os.open(directory / "source.bin", os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
@@ -53,9 +70,14 @@ class BoundedParseExecutor:
                     if close:
                         await close()
                 line_limit = job.profile.max_event_bytes * 2 + 8192
+                # 在运行库导入前限线程；只约束解析子进程，不修改服务环境。
+                child_env = {**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1",
+                             "MKL_NUM_THREADS": "1", "DOCLING_NUM_THREADS": "1",
+                             "HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1", "TRANSFORMERS_OFFLINE": "1"}
                 process = await asyncio.create_subprocess_exec(sys.executable, "-m", "knowledge_core.workers.compute_parser",
                     str(directory), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL, start_new_session=True, limit=line_limit)
+                    stderr=asyncio.subprocess.PIPE, start_new_session=True, limit=line_limit, env=child_env)
+                stderr_task = asyncio.create_task(_stderr_tail(process.stderr))
                 payload = json.dumps({"job": encode(job), "memory_bytes": self.memory_bytes,
                     "cpu_seconds": self.cpu_seconds, "max_file_bytes": self.max_file_bytes,
                     "max_artifact_bytes": self.max_artifact_bytes,
@@ -67,7 +89,14 @@ class BoundedParseExecutor:
                 while line := await process.stdout.readline():
                     require(len(line) <= line_limit, "子进程事件超过预算")
                     yield event_from_wire(json.loads(line))
-                require(await process.wait() == 0, "解析子进程异常退出")
+                returncode = await process.wait()
+                stderr = await stderr_task
+                if returncode != 0:
+                    code = _exit_error_code(returncode, stderr)
+                    # 错误输出可能含有输入内容，不写入运行日志或失败事件。
+                    logger.warning("解析子进程异常退出：job_id={} exit_code={} code={}",
+                                   job.run.job_ref, returncode, code.value)
+                    raise AlgorithmError(code, "解析子进程异常退出", stage="executor")
         finally:
             if process is not None and process.returncode is None:
                 try:
@@ -82,3 +111,6 @@ class BoundedParseExecutor:
                     except ProcessLookupError:
                         pass
                     await process.wait()
+            if stderr_task is not None and not stderr_task.done():
+                stderr_task.cancel()
+                await asyncio.gather(stderr_task, return_exceptions=True)

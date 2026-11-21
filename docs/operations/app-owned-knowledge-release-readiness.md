@@ -53,7 +53,6 @@ node tests/contract/knowledge_retrieval_ui_style.mjs
 
 ~~~toml
 [knowledge.computation]
-memory_bytes = 2147483648
 cpu_seconds = 300
 max_jobs = 2
 
@@ -72,7 +71,7 @@ payload_images = 8
 payload_bytes = 16777216
 ~~~
 
-此处仅展示资源参数，不推荐未经测量直接采用；实际机器须承担并发峰值与转换子进程开销。App 和 Runtime 预算共同约束交付，模型输出 token 上限继续取自 Model Serving。
+解析子进程默认使用 6 GiB 的虚拟地址空间硬上限（不是固定物理内存预留），为 Docling 模型权重映射保留空间；显式部署预算仍优先。子进程限制数值计算线程，资源耗尽单独报告，不归为协议错误。本次修复不需要改动系统级 TOML。实际部署仍需验证并发峰值与转换开销。App 和 Runtime 预算共同约束交付，模型输出 token 上限继续取自 Model Serving。
 
 representations 需要完整 RepresentationSpec：model_ref、revision、processor_revision、input_template、dimension、kind、input_kind、similarity、normalization、directions。KBot 模型引用使用 served_model_name，Ammolite 使用 model_id；模型生命周期与部署配置变更应共同审查，不能只检查 Agent 回答模型的引用。不得复制合成模型参数到真实配置。
 

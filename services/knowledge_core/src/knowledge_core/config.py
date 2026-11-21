@@ -8,7 +8,8 @@ from platform_core.config import ServiceConfig, ServiceDependencyConfig, Setting
 
 class ParseComputeConfig(BaseModel):
     spool_root: str = "./var/spool/knowledge-computation"
-    memory_bytes: int = Field(default=2147483648, ge=67108864, le=34359738368)
+    # 解析子进程的虚拟地址空间需容纳 Docling 模型权重映射和本地运行库。
+    memory_bytes: int = Field(default=6 * 1024**3, ge=67108864, le=34359738368)
     cpu_seconds: int = Field(default=300, ge=1, le=1800)
     max_file_bytes: int = Field(default=67108864, ge=1024, le=67108864)
     max_artifact_bytes: int = Field(default=134217728, ge=1024, le=1073741824)
