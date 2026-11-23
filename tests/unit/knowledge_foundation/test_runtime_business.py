@@ -11,7 +11,10 @@ from uuid import UUID
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(path) for path in ROOT.glob("packages/*/src")] + [str(path) for path in ROOT.glob("services/*/src")]
-from agent_runtime.application.knowledge_query import KnowledgeQueryPlan, plan_knowledge_query
+from agent_runtime.application.knowledge_query import KnowledgeQueryPlan, PlannedImageQuery, plan_knowledge_query
+from agent_runtime.adapters.knowledge_ocr import read_question_images
+from agent_runtime.application.knowledge_delivery import QuestionImage
+from platform_clients.knowledge_computation import KnowledgeComputationClientError
 from agent_runtime.application.runtime_service import AgentRuntimeService, AgentRuntimeNotFound
 from agent_runtime.composition.knowledge_runtime import RuntimeKnowledgeIntegration
 from knowledge_algorithms.contracts.errors import AlgorithmError
@@ -41,6 +44,13 @@ class RuntimeBusinessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(row.field, row.descending) for row in query.order_by],
                          [("created_at", True), ("stable_key", False)])
 
+    async def test_visual_question_uses_independent_recall_without_discarding_topic(self):
+        query = self.query_plan(combination="COMPOSED").compile(("image-one", "image-two"),
+                                                               independent_modalities=True)
+        self.assertEqual(query.image_handles, ("image-one", "image-two"))
+        self.assertEqual(query.text, "图1-1的引用文字")
+        self.assertEqual(query.combination, "ANY")
+
     async def test_query_plan_rejects_fake_semantic_exhaustive_and_arbitrary_fields(self):
         with self.assertRaises(AlgorithmError):
             self.query_plan(mode="EXHAUSTIVE", order_by=[{"field": "title", "descending": False}]).compile(())
@@ -60,6 +70,70 @@ class RuntimeBusinessTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("candidates", json.dumps(payload))
         self.assertEqual(query.combination, "ALL")
 
+    async def test_visual_query_planner_marks_explicit_transcription(self):
+        plan = self.query_plan(text=None).model_dump()
+        plan["transcription_requested"] = True
+        client = SimpleNamespace(json=AsyncMock(return_value={"choices": [{"message": {
+            "content": json.dumps(plan)}}]}))
+        value = await plan_knowledge_query(text="请逐字转写图片", image_handles=["one"],
+            model={"model_id": str(ID), "max_tokens": 1234}, prompt="合成查询编译",
+            client=client, auth_context=None, independent_modalities=True, classify_transcription=True)
+        self.assertIsInstance(value, PlannedImageQuery)
+        self.assertTrue(value.transcription_requested)
+        self.assertEqual(value.query.image_handles, ("one",))
+
+    async def test_ocr_failure_does_not_drop_images_or_other_recognized_text(self):
+        from model_serving.ocr.schema import OCRResponse
+
+        raw = (QuestionImage("image/png", b"image-one"), QuestionImage("image/webp", b"image-two"))
+        revision = "a" * 64
+        response = OCRResponse(model_id=ID, provider="fixture", model_revision="ocr-engine/v2",
+                               text="合成内容", blocks=[]).model_dump(mode="json")
+        client = SimpleNamespace(binding=AsyncMock(return_value={"model_id": str(ID), "revision": revision}),
+            infer=AsyncMock(side_effect=[KnowledgeComputationClientError(503, "OCR_PROVIDER_UNAVAILABLE"),
+                response]))
+        value = await read_question_images(raw, client=client, auth_context=None, model_id=str(ID), run_id=ID)
+        self.assertEqual(value[0], raw[0])
+        self.assertEqual(value[1].data, raw[1].data)
+        self.assertEqual(value[1].ocr_text, "合成内容")
+        payload = client.infer.await_args.kwargs["payload"]
+        self.assertEqual(payload["expected_revision"], revision)
+        self.assertEqual(payload["mime_type"], "image/webp")
+
+    async def test_ocr_rejects_wrong_model_and_invalid_response(self):
+        raw = (QuestionImage("image/png", b"image-one"),)
+        revision = "a" * 64
+        for invalid in ({"model_id": str(UUID(int=1))}, {"model_revision": " "}, {"text": None}):
+            with self.subTest(invalid=invalid):
+                reply = {"model_id": str(ID), "model_revision": "ocr-engine/v2", "text": "合成文字", **invalid}
+                client = SimpleNamespace(binding=AsyncMock(return_value={"model_id": str(ID), "revision": revision}),
+                                         infer=AsyncMock(return_value=reply))
+                self.assertEqual(await read_question_images(raw, client=client, auth_context=None,
+                                                            model_id=str(ID), run_id=ID), raw)
+
+    async def test_ocr_revision_conflict_stops_batch_and_preserves_originals(self):
+        raw = (QuestionImage("image/png", b"image-one"), QuestionImage("image/webp", b"image-two"))
+        revision = "a" * 64
+        client = SimpleNamespace(binding=AsyncMock(return_value={"model_id": str(ID), "revision": revision}),
+                                 infer=AsyncMock(side_effect=KnowledgeComputationClientError(409, "MODEL_REVISION_CHANGED")))
+        self.assertEqual(await read_question_images(raw, client=client, auth_context=None,
+                                                    model_id=str(ID), run_id=ID), raw)
+        self.assertEqual(client.infer.await_count, 1)
+        self.assertEqual(client.infer.await_args.kwargs["payload"]["expected_revision"], revision)
+
+    async def test_text_only_query_plan_never_requests_visual_outputs(self):
+        question = "荧光光谱法是什么"
+        plan = self.query_plan(output_types=["FIGURE", "MIXED"], text=None, combination="ALL")
+        client = SimpleNamespace(json=AsyncMock(return_value={"choices": [{"message": {
+            "content": plan.model_dump_json()}}]}))
+        query = await plan_knowledge_query(text=question, image_handles=(),
+            model={"model_id": str(ID), "max_tokens": 1234}, prompt="合成查询编译",
+            client=client, auth_context=None, text_only=True)
+        self.assertEqual(query.output_types, ("TEXT", "TABLE"))
+        self.assertEqual(query.text, question)
+        self.assertFalse(query.image_handles)
+        self.assertIsNone(query.combination)
+
     async def test_runtime_planning_and_composition_use_model_service_credentials(self):
         question = "解释一下审计工作管理"
         plan = self.query_plan(text=question)
@@ -78,7 +152,10 @@ class RuntimeBusinessTests(unittest.IsolatedAsyncioTestCase):
 
         @asynccontextmanager
         async def respond(method, url, *, headers, **kwargs):
-            requests.append((method, url, headers, kwargs["json"]["max_tokens"]))
+            payload = kwargs["json"]
+            requests.append((method, url, headers, payload["max_tokens"]))
+            content_type = list if url.endswith("/inference") else str
+            self.assertTrue(all(isinstance(message["content"], content_type) for message in payload["messages"]))
             body = plan.model_dump_json() if len(requests) == 1 else "依据资料 [C1]。"
             async def chunks(size):
                 yield json.dumps({"choices": [{"message": {"content": body}}]}, ensure_ascii=False).encode()

@@ -5,8 +5,9 @@ import base64
 from hashlib import sha256
 from pathlib import Path
 import time
+from uuid import UUID
 
-from knowledge_algorithms.contracts.errors import require
+from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
 from knowledge_algorithms.contracts.identity import AuthorizedScope, fingerprint
 from knowledge_algorithms.contracts.runtime import DelegationClaims
 from knowledge_algorithms.contracts.wire import decode, encode
@@ -17,8 +18,9 @@ from platform_core.contracts import AuthContext
 from platform_core.security.knowledge_delegation import create_knowledge_delegation_codec
 from agent_runtime.adapters.app_knowledge import AppEvidenceContentPort
 from agent_runtime.adapters.knowledge_model import KnowledgeEvidenceModelGateway
+from agent_runtime.adapters.knowledge_ocr import read_question_images
 from agent_runtime.adapters.knowledge_recorder import RuntimeKnowledgeArtifactRecorder
-from agent_runtime.application.knowledge_delivery import KnowledgeEvidenceComposer
+from agent_runtime.application.knowledge_delivery import KnowledgeEvidenceComposer, QuestionImage
 from .knowledge import KnowledgeExecutionBinding, freeze_knowledge_context
 
 
@@ -86,23 +88,10 @@ class RuntimeKnowledgeIntegration:
         scope = decode(AuthorizedScope, configuration["scope"])
         client = self.clients[scope.owner_binding_ref].for_delegation(configuration["delegation"])
         auth_context = self.auth_context(context, scope)
-        metadata = context.config_snapshot.get("client_metadata") or {}
-        images = metadata.get("query_images") or []
-        require(type(images) is list and len(images) <= 4, "查询图片数超过预算")
-        handles, total = [], 0
-        conversation = context.config_snapshot.get("conversation") or {}
-        for image in images:
-            require(conversation.get("conversation_id"), "查询图片必须属于正式会话")
-            root = (Path(self.settings.attachments.local_storage_path).resolve() / "conversation-query-images"
-                    / str(conversation["conversation_id"])).resolve()
-            target = Path(image["storage_uri"]).resolve()
-            require(target.parent == root and target.suffix in {".png", ".jpg", ".webp"}, "查询图片不在本会话受控目录")
-            raw = await asyncio.to_thread(self._read_image, target, min(8388608, 8388608 - total))
-            total += len(raw)
-            require(len(raw) == image["byte_size"] and sha256(raw).hexdigest() == image["content_sha256"],
-                    "查询图片不可变摘要不匹配")
+        handles = []
+        for image in await self.question_images(context):
             result = await client.register_query_image({"scope": encode(scope),
-                "image_base64": base64.b64encode(raw).decode("ascii"), "mime_type": image["mime_type"]},
+                "image_base64": base64.b64encode(image.data).decode("ascii"), "mime_type": image.mime_type},
                 auth_context=auth_context)
             handles.append(result["image_handle"])
         text = context.original_input
@@ -120,15 +109,61 @@ class RuntimeKnowledgeIntegration:
             caller_service=self.caller, timeout_seconds=config.timeout_seconds)
         return await plan_knowledge_query(text=text, image_handles=handles,
             model=context.config_snapshot["agent"]["models"]["context_llm"], prompt=prompt.content,
-            client=client, auth_context=auth_context)
+            client=client, auth_context=auth_context,
+            text_only=scope.owner_binding_ref == "knowledge_retrieval" and not handles,
+            independent_modalities=scope.owner_binding_ref == "knowledge_retrieval",
+            classify_transcription=scope.owner_binding_ref == "knowledge_retrieval"
+                and "query_ocr" in context.config_snapshot["agent"]["models"])
+
+    async def question_images(self, context):
+        """只读取本轮由会话服务冻结且仍符合摘要的图片附件。"""
+        metadata = context.config_snapshot.get("client_metadata") or {}
+        images = metadata.get("query_images") or []
+        require(type(images) is list and len(images) <= 4, "查询图片数超过预算", stage="question_image")
+        if not images:
+            return ()
+        conversation = context.config_snapshot.get("conversation") or {}
+        require(conversation.get("conversation_id"), "查询图片必须属于正式会话", stage="question_image")
+        try:
+            conversation_id = UUID(str(conversation["conversation_id"]))
+        except ValueError:
+            require(False, "查询图片的会话身份无效", stage="question_image")
+        root = (Path(self.settings.attachments.local_storage_path).resolve() / "conversation-query-images"
+                / str(conversation_id))
+        suffixes = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+        output, total = [], 0
+        for image in images:
+            try:
+                target = Path(image["storage_uri"]).resolve()
+                suffix = suffixes.get(image["mime_type"])
+                require(target.parent == root and suffix is not None
+                        and target.name == image["content_sha256"] + suffix,
+                        "查询图片不在本会话受控目录", stage="question_image")
+                raw = await asyncio.to_thread(self._read_image, target, 8388608 - total)
+            except OSError:
+                raise AlgorithmError(ErrorCode.ARTIFACT_EXPIRED, "本轮提问图片已不可读取",
+                                     stage="question_image") from None
+            total += len(raw)
+            require(len(raw) == image["byte_size"] and sha256(raw).hexdigest() == image["content_sha256"],
+                    "查询图片不可变摘要不匹配", stage="question_image")
+            output.append(QuestionImage(image["mime_type"], raw))
+        return tuple(output)
 
     @staticmethod
     def _read_image(target, maximum):
-        require(maximum > 0, "查询图片总大小超过 8 MiB")
+        require(maximum > 0, "查询图片总大小超过 8 MiB", stage="question_image")
         with target.open("rb") as stream:
             raw = stream.read(maximum + 1)
-        require(0 < len(raw) <= maximum, "查询图片大小超过预算")
+        require(0 < len(raw) <= maximum, "查询图片大小超过预算", stage="question_image")
         return raw
+
+    async def ocr_question_images(self, context, images):
+        model = context.config_snapshot["agent"]["models"]["query_ocr"]
+        endpoint = self.settings.ocr
+        client = KnowledgeModelBindingClient(base_url=endpoint.base_url, audience=endpoint.audience,
+            caller_service=self.caller, timeout_seconds=endpoint.timeout_seconds)
+        return await read_question_images(images, client=client, model_id=model["model_id"],
+                                          auth_context=self.auth_context(context), run_id=context.run_id)
 
     def content_port(self, context, retrieval_ref, evidence):
         configuration = context.config_snapshot["app_knowledge"]
@@ -136,9 +171,9 @@ class RuntimeKnowledgeIntegration:
         return AppEvidenceContentPort(client=client, auth_context=self.auth_context(context),
             retrieval_ref=retrieval_ref, evidence_set=evidence)
 
-    async def composer(self, context):
+    async def composer(self, context, *, text_only=False):
         models = context.config_snapshot["agent"]["models"]
-        supports_images = bool(models.get("query_vlm"))
+        supports_images = bool(models.get("query_vlm")) and not text_only
         model = models["query_vlm"] if supports_images else models["composer_llm"]
         config = self.settings.vlm if supports_images else self.settings.llm
         prompt = await self.prompts.resolve("agent_runtime.app_knowledge_compose")
@@ -152,6 +187,8 @@ class RuntimeKnowledgeIntegration:
             image_cost=lambda raw, mime: self.settings.knowledge.image_token_cost, model_gateway=gateway,
             artifact_recorder=RuntimeKnowledgeArtifactRecorder(uow_factory=self.uow_factory, context=context),
             max_payload_bytes=self.settings.knowledge.payload_bytes, max_materialized_items=128, max_cover_states=20000,
+            estimate_tokens=lambda item: (self.settings.knowledge.image_token_cost
+                                          if item.mime_type.startswith("image/") else item.byte_count),
             image_mime_types=frozenset({"image/png", "image/jpeg", "image/webp"}) if supports_images else frozenset())
 
     @staticmethod

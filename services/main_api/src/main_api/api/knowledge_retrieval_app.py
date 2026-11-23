@@ -412,6 +412,19 @@ async def _require_grok_model_id(request: Request, model_id: UUID) -> None:
         )
 
 
+async def _require_question_image_models(request: Request, models: dict) -> None:
+    roles = {"query_ocr": ModelCategory.OCR, "query_vlm": ModelCategory.VLM}
+    selected = {role: models[role] for role in roles if role in models}
+    if not selected:
+        return
+    catalog = {str(row.get("model_id")): coerce_model_category(row.get("category"))
+               for row in await load_model_catalog(request)}
+    for role, model_id in selected.items():
+        if catalog.get(str(model_id)) != roles[role]:
+            raise HTTPException(422, {"code": "AGENT_IMAGE_MODEL_INVALID",
+                "message": f"请选择已启用的 {roles[role].name} 模型"})
+
+
 async def _agent_x_search_model(
     request: Request, *, domain_id: int, agent_id: UUID, snapshot
 ) -> UUID:
@@ -1484,6 +1497,7 @@ async def list_agent_management_options(request: Request):
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
 async def create_agent(payload: KnowledgeRetrievalAgentCreatePayload, request: Request):
     domain_id, _, _ = await _require(request, "knowledge_retrieval:agent_manage")
+    await _require_question_image_models(request, payload.models)
     x_search_model_id = payload.models.get("x_search_llm")
     if x_search_model_id is not None:
         await _require_grok_model_id(request, x_search_model_id)
@@ -1547,6 +1561,8 @@ async def update_agent(
     current = await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
     values = payload.model_dump(mode="json", exclude_unset=True)
     effective_models = values.get("models", current.get("models") or {})
+    if "models" in values and effective_models is not None:
+        await _require_question_image_models(request, effective_models)
     x_search_model_id = effective_models.get("x_search_llm")
     if x_search_model_id is not None:
         await _require_grok_model_id(request, UUID(str(x_search_model_id)))

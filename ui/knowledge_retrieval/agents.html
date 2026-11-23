@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="./css/knowledge.css?v=20261120_agent_tooltip">
   <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261120">
   <link rel="stylesheet" href="./css/reference-agents.css?v=20261105_3">
-  <link rel="stylesheet" href="./css/alignment.css?v=20261105_3">
+  <link rel="stylesheet" href="./css/alignment.css?v=20261123_agent_buttons">
 </head>
 <body class="business-app-knowledge_retrieval" data-page="agents">
 <main class="knowledge-main platform-home-page knowledge-retrieval-page agent-management-page">
@@ -61,6 +61,8 @@
             <select id="agent-x-search-llm"></select>
           </div>
           <div class="knowledge-field"><label for="agent-data-planner-llm">问数规划 LLM</label><select id="agent-data-planner-llm"><option value="">跟随回答生成 LLM</option></select></div>
+          <div class="knowledge-field"><label for="agent-query-ocr">图片文字识别（OCR）</label><select id="agent-query-ocr" aria-describedby="agent-query-ocr-help"></select><p class="knowledge-help" id="agent-query-ocr-help">可选。上传图片后优先识别文字。</p></div>
+          <div class="knowledge-field"><label for="agent-query-vlm">图片理解（VLM）</label><select id="agent-query-vlm" aria-describedby="agent-query-vlm-help"></select><p class="knowledge-help" id="agent-query-vlm-help">可选。用于看图、解释流程和图表；OCR 不足时可直接看原图。</p></div>
         </div>
       </section>
 
@@ -81,7 +83,7 @@
       </section>
       <div id="agent-form-notice" class="knowledge-notice">Agent 保存后会自动同步问数模型绑定；知识问答会在 Agent 已授权能力内自动路由。</div>
     </div>
-    <div class="knowledge-dialog-foot"><button type="button" data-close-dialog="agent-dialog">取消</button><button class="primary" id="agent-submit" type="submit">保存草稿</button></div>
+    <div class="knowledge-dialog-foot"><button class="secondary-button" type="button" data-close-dialog="agent-dialog">取消</button><button class="primary-button" id="agent-submit" type="submit">保存草稿</button></div>
   </form>
 </dialog>
 
@@ -89,6 +91,6 @@
 <script src="./js/knowledge-auth.js?v=20261105_3"></script>
 <script src="./js/knowledge-api.js?v=20261120"></script>
 <script src="./js/knowledge-shell.js?v=20261121_files_governance"></script>
-<script src="./js/knowledge-agents.js?v=20261120_agent_tooltip"></script>
+<script src="./js/knowledge-agents.js?v=20261123_agent_buttons"></script>
 </body>
 </html>

@@ -23,6 +23,11 @@
       "name": "004_knowledge_library.sql",
       "statements": 2,
       "sha256": "d79a37412220600518f5d814c94004f6145e1d59e81446b06d4dff81b0f41775"
+    },
+    {
+      "name": "005_knowledge_search_history.sql",
+      "statements": 3,
+      "sha256": "ad6d333f8dec5287ca9971aa7741eadbd73ab1cc149f8126aeb2e827e5c3a48a"
     }
   ],
   "tables": [
@@ -47,6 +52,7 @@
     "KBOT_KR_KNOWLEDGE_RETRIEVAL_RECEIPT",
     "KBOT_KR_KNOWLEDGE_SCOPE_MEMBER",
     "KBOT_KR_KNOWLEDGE_SCOPE_SNAPSHOT",
+    "KBOT_KR_KNOWLEDGE_SEARCH_HISTORY",
     "KBOT_KR_KNOWLEDGE_SEARCH_UNIT",
     "KBOT_KR_KNOWLEDGE_UNIT_SOURCE",
     "KBOT_KR_KNOWLEDGE_VISUAL_ASSET"

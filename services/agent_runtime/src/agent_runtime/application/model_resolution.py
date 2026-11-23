@@ -18,6 +18,7 @@ AGENT_MODEL_ROLE_CATEGORIES = {
     "memory_llm": ModelCategory.LLM,
     "diagnosis_llm": ModelCategory.LLM,
     "query_vlm": ModelCategory.VLM,
+    "query_ocr": ModelCategory.OCR,
     "memory_embedding": ModelCategory.TXT_EMBEDDING,
 }
 

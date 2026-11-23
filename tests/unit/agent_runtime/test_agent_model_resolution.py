@@ -79,6 +79,18 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "LLM"):
             await resolver.resolve({"composer_llm": model_id})
 
+    async def test_resolves_separate_ocr_and_vision_roles(self):
+        ocr_id, vision_id = uuid7(), uuid7()
+        resolver = AgentModelCatalogResolver({
+            ModelCategory.OCR: _Client({ocr_id: {"category": 6, "status": "ACTIVE"}}),
+            ModelCategory.VLM: _Client({vision_id: {"category": 5, "status": "ACTIVE", "effective_max_tokens": 4000}}),
+        })
+        models = await resolver.resolve({"query_ocr": ocr_id, "query_vlm": vision_id})
+        self.assertIsNone(models["query_ocr"]["max_tokens"])
+        self.assertEqual(models["query_vlm"]["max_tokens"], 4000)
+        with self.assertRaises(LookupError):
+            await resolver.resolve({"query_ocr": vision_id})
+
     async def test_archived_model_cannot_create_new_runtime_binding(self):
         model_id = uuid7()
         resolver = AgentModelCatalogResolver({

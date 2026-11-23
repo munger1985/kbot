@@ -31,6 +31,7 @@
 :is([data-page="knowledge"]) .knowledge-chat-attachments:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted); font-size: var(--type-meta); overflow-wrap: anywhere; }
 :is([data-page="knowledge"]) .knowledge-composer-wrap .agent-chat-composer-hint { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; color: var(--faint); font-size: var(--type-meta); }
 :is([data-page="knowledge"]) .knowledge-message.user .chat-message-bubble { width: fit-content; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+:is([data-page="knowledge"]) .knowledge-answer-preview { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 900px) {
   :is([data-page="knowledge"]) .knowledge-chat-workspace.agent-chat-workspace:not(.is-session-collapsed) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   :is([data-page="knowledge"]) .knowledge-chat-workspace .knowledge-session-sidebar { position: static; width: auto; max-height: 360px; border-right: 0; border-bottom: 1px solid var(--line); box-shadow: none; transform: none; }

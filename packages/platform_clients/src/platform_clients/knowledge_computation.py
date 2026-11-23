@@ -9,9 +9,9 @@ from platform_core.security import build_scoped_internal_auth_headers
 
 
 class KnowledgeComputationClientError(RuntimeError):
-    def __init__(self, status_code, code):
+    def __init__(self, status_code, code, *, stage=None):
         super().__init__("知识计算请求失败")
-        self.status_code, self.code = status_code, code
+        self.status_code, self.code, self.stage = status_code, code, stage
 
 
 class KnowledgeComputationClient:
@@ -47,6 +47,7 @@ class KnowledgeComputationClient:
                                        timeout=self.timeout, allow_redirects=False) as response:
                 if response.status >= 300:
                     code = "ARTIFACT_EXPIRED" if response.status == 410 else "COMPUTE_REQUEST_REJECTED"
+                    stage = None
                     raw = await response.content.read(4097)
                     if len(raw) <= 4096:
                         try:
@@ -55,9 +56,12 @@ class KnowledgeComputationClient:
                             reported = detail.get("code") if isinstance(detail, dict) else None
                             if isinstance(reported, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", reported):
                                 code = reported
+                            reported_stage = detail.get("stage") if isinstance(detail, dict) else None
+                            if isinstance(reported_stage, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", reported_stage):
+                                stage = reported_stage
                         except (ValueError, TypeError, AttributeError):
                             pass
-                    raise KnowledgeComputationClientError(response.status, code)
+                    raise KnowledgeComputationClientError(response.status, code, stage=stage)
                 yield response
         finally:
             if owned:

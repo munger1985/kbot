@@ -4,7 +4,7 @@ from contextlib import aclosing
 from dataclasses import replace
 from hashlib import sha256
 from uuid import UUID
-from knowledge_algorithms.contracts.errors import require
+from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
 from knowledge_algorithms.contracts.identity import fingerprint
 from knowledge_algorithms.contracts.wire import encode
 from knowledge_algorithms.parsing.contracts import ParseModelBinding, ParseStrategy, SourceDescriptor
@@ -15,6 +15,8 @@ from platform_core.contracts.knowledge_parse_approval import available_parse_bin
 from ..domain.knowledge_ingestion import OWNER
 from ..domain.knowledge_retrieval import KnowledgeGrant
 from ..domain.knowledge_library import INDEX_ROLES, LibraryConflict
+from .knowledge_retrieval import RetrievalReceipt
+from .knowledge_search_history import KnowledgeSearchHistory
 
 
 class LibraryAuthorization:
@@ -44,6 +46,7 @@ class KnowledgeLibraryService:
     def __init__(self, *, uow_factory, ingestion, retrieval, parse_profile, configurations,
                  resolve_parse_model=None, model_executor_ready=False, resolve_index_profile=None):
         self.uow_factory, self.ingestion, self.retrieval = uow_factory, ingestion, retrieval
+        self.search_history = KnowledgeSearchHistory(uow_factory, retrieval)
         self.parse_profile, self.configurations = parse_profile, dict(configurations)
         self.resolve_parse_model, self.model_executor_ready = resolve_parse_model, model_executor_ready
         self.resolve_index_profile = resolve_index_profile
@@ -386,11 +389,90 @@ class KnowledgeLibraryService:
             text=request.text, image_handles=tuple(handles), combination=request.combination,
             predicates=tuple(Predicate(item.field, item.operator, item.value) for item in request.predicates),
             order_by=ordering)
+        image_intent = (request.image_intent or "SOURCE") if len(handles) == 1 and not request.text else None
         receipt = await self.retrieval.retrieve(access, scope=scope, query=query,
-            profile_ref=library["configuration"]["profile_ref"], direct=True)
-        return await self.present(access, receipt)
+            profile_ref=library["configuration"]["profile_ref"], direct=True, image_intent=image_intent)
+        result = await self.present(access, receipt)
+        if receipt.evidence_set.status == "EMPTY" or (
+                receipt.evidence_set.status in {"COMPLETE", "PARTIAL"} and receipt.evidence_set.primary_hits):
+            result["history_id"] = await self.search_history.save(access, library_id, request, receipt)
+        return result
 
-    async def present(self, access, receipt, *, relation_anchor=None):
+    async def history_detail(self, access, identity):
+        record = await self.search_history.record(access, identity)
+        entry = {key: value for key, value in record.items() if key != "manifest_ref"}
+        entry["library_name"] = None
+        response = dict(entry=entry, result=None, availability="UNAVAILABLE")
+        try:
+            name, evidence, partial = await self.search_history.replay(access, record)
+            entry["library_name"] = name
+            if partial and not evidence.primary_hits:
+                return response
+
+            async def reauthorize():
+                entry["library_name"] = None
+                entry["library_name"] = await self.search_history.reauthorize(access, record, evidence.evidence)
+
+            result = await self.present(access, RetrievalReceipt(str(identity), evidence, None), reauthorize=reauthorize)
+            result["history_id"] = identity
+            return dict(entry=entry, result=result, availability="PARTIAL" if partial else "AVAILABLE")
+        except FileNotFoundError:
+            # 对象存储被管理员清理时，不能以当前召回填补原历史。
+            return response
+        except AlgorithmError as exc:
+            if exc.code not in {ErrorCode.INVALID_CONTRACT, ErrorCode.SNAPSHOT_STALE, ErrorCode.SCOPE_CHANGED}:
+                raise
+            entry["library_name"] = None
+            return response
+
+    async def _history_hit(self, access, identity, stable_key):
+        try:
+            record = await self.search_history.record(access, identity)
+            _, evidence, _ = await self.search_history.replay(access, record)
+        except AlgorithmError as exc:
+            if exc.code != ErrorCode.INVALID_CONTRACT:
+                raise
+            raise AlgorithmError(ErrorCode.SCOPE_CHANGED, "检索历史已过期、删除或不可读", stage="scope") from exc
+        except FileNotFoundError as exc:
+            raise AlgorithmError(ErrorCode.SNAPSHOT_STALE, "历史证据清单不存在", stage="snapshot") from exc
+        hit = next((item for item in evidence.evidence if item.key.stable_key == stable_key), None)
+        if hit is None:
+            raise AlgorithmError(ErrorCode.SNAPSHOT_STALE, "历史证据不在首批结果中或已不可读", stage="snapshot")
+        return record, evidence, hit
+
+    async def history_content(self, access, identity, stable_key):
+        record, _, hit = await self._history_hit(access, identity, stable_key)
+        require(hit.byte_count <= self.retrieval.limits.max_payload_bytes, "内容读取超过预算")
+        async def reauthorize():
+            await self.search_history.reauthorize(access, record, (hit,))
+        return hit, self.retrieval.content_blocks(hit, reauthorize)
+
+    async def history_context(self, access, identity, stable_key, *, before, after):
+        record, evidence, hit = await self._history_hit(access, identity, stable_key)
+        # 同一段落使用首批中同来源的已授权命中进行定位与高亮。
+        keys = {item.evidence_key for item in evidence.primary_hits} | {hit.key}
+        items = tuple(item for item in evidence.evidence if item.key in keys
+                      and item.key.document_version_ref == hit.key.document_version_ref)
+        async def reauthorize():
+            await self.search_history.reauthorize(access, record, items)
+        return await self._passage_context(access, hit, items, record["conditions"].get("text"),
+                                           before=before, after=after, reauthorize=reauthorize)
+
+    async def history_pdf(self, access, identity, stable_key):
+        record, _, hit = await self._history_hit(access, identity, stable_key)
+        require(any(loc.page_no for loc in hit.locators), "当前检索证据没有原文页码")
+        source, stream = await self.source(access, record["library_id"],
+            UUID(hit.key.document_version_ref), published_only=True)
+        require(source["mime_type"] == "application/pdf" and 0 < source["byte_count"] <= 67108864,
+                "引用原文不支持 PDF 预览或超出大小上限")
+        async def authorized_blocks():
+            async with aclosing(stream):
+                async for block in stream:
+                    await self.search_history.reauthorize(access, record, (hit,))
+                    yield block
+        return source, authorized_blocks()
+
+    async def present(self, access, receipt, *, relation_anchor=None, reauthorize=None):
         from knowledge_algorithms.contracts.identity import fingerprint
         from .knowledge_passages import PassageDocument, source_keys
 
@@ -460,7 +542,11 @@ class KnowledgeLibraryService:
                 "mime_type": item.mime_type, "byte_count": item.byte_count,
                 "locators": encode(item.locators), "text": None,
                 "content_ref": {"retrieval_ref": receipt.retrieval_ref, "key": item.key.stable_key}})
-        previews = await self.retrieval.presentation_previews(access, receipt, primary_keys if relation_anchor is None else ())
+        preview_keys = primary_keys if relation_anchor is None else ()
+        if reauthorize is None:
+            previews = await self.retrieval.presentation_previews(access, receipt, preview_keys)
+        else:
+            previews = await self.retrieval.presentation_previews(access, receipt, preview_keys, reauthorize=reauthorize)
         previews = {key.stable_key: text for key, text in previews.items()}
         for value in items:
             value["text"] = previews.get(value["key"])
@@ -480,24 +566,37 @@ class KnowledgeLibraryService:
             "model_delivery": "NOT_APPLICABLE"}
 
     async def passage_context(self, access, retrieval_ref, stable_key, *, before, after):
-        from .knowledge_passages import PassageDocument, source_keys
-
         row, scope, evidence = await self.retrieval.receipt(access, retrieval_ref)
         hit = next((item for item in evidence.evidence if item.key.stable_key == stable_key), None)
         require(hit is not None, "段落锚点不属于当前检索回执")
+        primary_keys = {item.evidence_key for item in evidence.primary_hits} | {hit.key}
+        async def reauthorize():
+            await self.retrieval.validate(access, scope, expected_snapshot=evidence.snapshot)
+        return await self._passage_context(access, hit, (item for item in evidence.evidence if item.key in primary_keys),
+            row["plan"]["query"].get("text"), before=before, after=after, reauthorize=reauthorize)
+
+    async def _passage_context(self, access, hit, items, text, *, before, after, reauthorize):
+        from .knowledge_passages import PassageDocument, source_keys
+
+        empty = {"blocks": [], "has_before": False, "has_after": False, "pdf_page": None}
+        image_page = next((loc.page_no for loc in hit.locators if loc.page_no), None) \
+            if hit.mime_type.startswith("image/") else None
         # 锚点固定在当前命中；相同段落的重复片段共用一份上下文。
-        if not source_keys(hit):
-            return {"blocks": [], "has_before": False, "has_after": False, "pdf_page": None}
+        if image_page is None and not source_keys(hit):
+            await reauthorize()
+            return empty
         version_id = hit.key.document_version_ref
         async with self.uow_factory() as uow:
             versions = await uow.knowledge_retrieval.passage_versions(access, {UUID(version_id)})
-        document = await PassageDocument.open(self.retrieval.store, versions[version_id],
-                                              self.retrieval.limits.max_object_bytes)
-        primary_keys = {item.evidence_key for item in evidence.primary_hits} | {hit.key}
-        context = await document.context(hit, (item for item in evidence.evidence if item.key in primary_keys),
-                                         before=before, after=after, query_text=(row["plan"]["query"].get("text") or "").strip())
-        await self.retrieval.validate(access, scope, expected_snapshot=evidence.snapshot)
-        return context or {"blocks": [], "has_before": False, "has_after": False, "pdf_page": None}
+        version = versions[version_id]
+        if image_page is not None:
+            # 图片命中只定位到原 PDF 页，不打开段落清单或猜测文字高亮。
+            await reauthorize()
+            return {**empty, "pdf_page": image_page if version["mime_type"] == "application/pdf" else None}
+        document = await PassageDocument.open(self.retrieval.store, version, self.retrieval.limits.max_object_bytes)
+        context = await document.context(hit, items, before=before, after=after, query_text=(text or "").strip())
+        await reauthorize()
+        return context or empty
 
     async def passage_pdf(self, access, retrieval_ref, stable_key):
         _, scope, evidence = await self.retrieval.receipt(access, retrieval_ref)

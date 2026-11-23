@@ -1,6 +1,7 @@
 """正式摄取队列驱动；不自动审核，首次索引成功后按库审批自动发布。"""
 
 import asyncio
+from time import monotonic
 from loguru import logger
 from knowledge_algorithms.contracts.errors import AlgorithmError
 from ..domain.knowledge_ingestion import utcnow
@@ -67,7 +68,18 @@ class KnowledgeBusinessWorker:
 
     async def run_forever(self):
         await self.recover_ready_rebuilds()
+        next_cleanup = 0
         while not self.stopped.is_set():
+            if monotonic() >= next_cleanup:
+                next_cleanup = monotonic() + 3600
+                try:
+                    async with self.uow_factory() as uow:
+                        removed = await uow.purge_search_history(now=utcnow())
+                        await uow.commit()
+                    if removed == 500:
+                        next_cleanup = monotonic() + 60
+                except Exception:
+                    logger.warning("检索历史过期清理未完成，将在下一轮重试")
             handled = await self.process_once()
             if not handled:
                 try:

@@ -34,6 +34,7 @@ class PublishedKnowledgeBackend:
         self.image_fingerprints = image_fingerprints or {}
         self.vector_batches, self.materialize = vector_batches, materialize
         self.candidate_filter = candidate_filter
+        self.verify_query_image = None
         self.text_scan = None
         self.scan_policy = None
 
@@ -84,6 +85,11 @@ class PublishedKnowledgeBackend:
             hits = self.index.search(request, image_sha256=image_hash, visual_hash=visual_hash,
                                      candidate_filter=self.candidate_filter)
         scan_complete, scan_reason = True, None
+        if (self.verify_query_image is not None and request.channel.direction == "IMAGE_TO_IMAGE"
+                and request.channel.representation_spec is not None):
+            hits, scan_complete = await self.verify_query_image(request, hits)
+            if not scan_complete:
+                scan_reason = "IMAGE_VERIFICATION_LIMIT"
         if request.channel.kind == "LEXICAL" and self.text_scan is not None and self.scan_policy is not None:
             from knowledge_algorithms.ports.text_scan import lexical_family_order
             from knowledge_algorithms.retrieval.fusion import NativeHit

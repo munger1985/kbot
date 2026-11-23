@@ -1,6 +1,6 @@
 """Runtime 消费和实际交付的冻结合同；不在算法核调用 Composer。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .errors import ErrorCode, require
 from .identity import AppBackendBinding, AuthorizedScope, EvidenceKey, Locator, nonempty
@@ -121,16 +121,26 @@ class ModelEvidenceDelivery:
     prepared: tuple[DeliveredEvidence, ...]
     sent_at: int | None
     schema_version: str = "knowledge.model_evidence_delivery.v1"
+    question_image_count: int | None = field(default=None, metadata={"omit_none": True})
+    question_image_kind: str | None = field(default=None, metadata={"omit_none": True})
 
     def __post_init__(self) -> None:
         require(self.schema_version == "knowledge.model_evidence_delivery.v1", "模型交付版本无效")
         nonempty(self.run_ref, self.model_snapshot_ref)
         require(self.status in {"NOT_APPLICABLE", "PREPARED", "SENT", "FAILED", "UNKNOWN_DELIVERY"}, "交付状态无效")
         require((self.sent_at is not None) == (self.status == "SENT"), "只有真实发送才有 SENT 时间")
-        require(self.status != "NOT_APPLICABLE" or not self.prepared, "纯搜索没有模型交付清单")
+        require(self.question_image_count is None
+                or type(self.question_image_count) is int and 0 < self.question_image_count <= 4,
+                "提问图片数量无效")
+        require(self.question_image_kind is None or (
+                self.question_image_kind == "OCR" and self.question_image_count
+                and self.status == "SENT" and not self.prepared), "纯 OCR 交付不能包含知识库证据")
+        require(self.status != "NOT_APPLICABLE" or not (self.prepared or self.question_image_count),
+                "纯搜索没有模型交付清单")
         require(len({(p.evidence_key, p.label, p.input_kind) for p in self.prepared}) == len(self.prepared),
                 "交付清单身份重复")
-        require(self.status != "SENT" or bool(self.prepared), "不能把零载荷宣称为已交付证据")
+        require(self.status != "SENT" or bool(self.prepared or self.question_image_count),
+                "不能把零载荷宣称为已交付证据")
         require(self.sent_at is None or type(self.sent_at) is int and self.sent_at > 0, "交付时间无效")
 
 
@@ -168,6 +178,7 @@ class ErrorEnvelope:
 class AppRetrievalArtifact:
     retrieval_ref: str
     evidence: RetrievalEvidenceArtifact
+    transcription_requested: bool | None = field(default=None, metadata={"omit_none": True})
 
     def __post_init__(self) -> None:
         nonempty(self.retrieval_ref)

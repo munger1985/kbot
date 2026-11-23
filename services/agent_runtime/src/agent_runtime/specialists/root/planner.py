@@ -131,7 +131,7 @@ class RootAgentPlanner:
             return RouteDecision(
                 route_type=RouteType.DOCUMENT,
                 confidence=1,
-                reason="请求包含查询图片，进入 Document 多模态检索",
+                reason="请求包含图片，进入 Document 图文问答",
                 classifier_version="deterministic-query-image-v1",
             )
         if capabilities == {"data_query"}:

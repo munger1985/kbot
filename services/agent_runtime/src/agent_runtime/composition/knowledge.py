@@ -30,14 +30,16 @@ COMPOSER_MANIFEST = SkillManifest(skill_id="response-composer", version="1.0.0",
 
 
 def register_app_knowledge_skills(registry, *, clients, context_factory, query_factory,
-                                  composer_factory, content_port_factory):
+                                  composer_factory, content_port_factory, question_images_factory=None,
+                                  question_ocr_reader=None):
     """调用方须传空知识注册槽，不覆盖同版本 Manifest，也不保留新旧检索 fallback。"""
     from agent_runtime.specialists.document.app_knowledge_skill import AppKnowledgeRetrievalSkill
     from agent_runtime.specialists.response_composer.app_knowledge_skill import AppKnowledgeComposerSkill
     registry.register(RETRIEVAL_MANIFEST, AppKnowledgeRetrievalSkill(clients=clients,
         context_factory=context_factory, query_factory=query_factory))
     registry.register(COMPOSER_MANIFEST, AppKnowledgeComposerSkill(composer_factory=composer_factory,
-        content_port_factory=content_port_factory))
+        content_port_factory=content_port_factory, question_images_factory=question_images_factory,
+        question_ocr_reader=question_ocr_reader))
     return registry
 
 

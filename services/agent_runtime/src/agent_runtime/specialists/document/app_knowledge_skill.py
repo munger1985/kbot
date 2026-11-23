@@ -1,12 +1,16 @@
 """新的 App 证据检索 Skill；只从冻结配置选择一个 owner，不回落旧 KC。"""
 
 import inspect
+from time import monotonic
+
+from loguru import logger
 from knowledge_algorithms.contracts.errors import require
 from knowledge_algorithms.contracts.identity import AuthorizedScope
 from knowledge_algorithms.contracts.query import QueryInput
 from knowledge_algorithms.contracts.retrieval import EvidenceSet
-from knowledge_algorithms.contracts.runtime import CitationLabel, CitationLabelMap, RetrievalEvidenceArtifact, DelegationClaims
+from knowledge_algorithms.contracts.runtime import AppRetrievalArtifact, CitationLabel, CitationLabelMap, RetrievalEvidenceArtifact, DelegationClaims
 from knowledge_algorithms.contracts.wire import decode, encode
+from agent_runtime.application.knowledge_query import PlannedImageQuery
 from agent_runtime.runtime import SkillArtifact, SkillResult
 from agent_runtime.adapters.knowledge_context import owner_app_id
 
@@ -31,12 +35,18 @@ class AppKnowledgeRetrievalSkill:
         require(scope.owner_binding_ref == owner and configuration.get("spec_hash"),
                 "运行知识范围或冻结 Spec 无效")
         auth_context = self.context_factory(context, scope)
+        planning_started = monotonic()
         query = self.query_factory(context)
         if inspect.isawaitable(query):
             query = await query
+        transcription_requested = None
+        if isinstance(query, PlannedImageQuery):
+            query, transcription_requested = query.query, query.transcription_requested
         require(isinstance(query, QueryInput), "查询规划没有返回正式查询合同")
+        retrieve_started = monotonic()
         raw = await client.retrieve({"scope": encode(scope), "query": encode(query),
             "profile_ref": configuration["profile_ref"]}, auth_context=auth_context)
+        retain_started = monotonic()
         evidence = decode(EvidenceSet, raw["evidence_set"])
         require(evidence.owner_binding_ref == owner and evidence.scope_ref == scope.scope_ref
                 and evidence.scope_hash == scope.scope_hash and evidence.query_hash == query.query_hash,
@@ -54,8 +64,12 @@ class AppKnowledgeRetrievalSkill:
                     "evidence_keys": [encode(item.key) for item in evidence.evidence[start:start + 128]],
                     "expires_at": configuration["retain_until"]}, auth_context=auth_context)
                 pins.extend(retained["pin_ids"])
+        logger.info("问答检索完成 | event=agent.knowledge.retrieved | run_id={} | planning_ms={:.1f} | retrieve_ms={:.1f} | retain_ms={:.1f} | hits={} | candidates={}",
+                    context.run_id, (retrieve_started - planning_started) * 1000,
+                    (retain_started - retrieve_started) * 1000, (monotonic() - retain_started) * 1000,
+                    len(evidence.primary_hits), len(evidence.evidence))
         return SkillResult(artifact=SkillArtifact(artifact_type="RETRIEVAL_EVIDENCE",
             schema_version="knowledge.app_retrieval.v1",
-            payload={"retrieval_ref": raw["retrieval_ref"], "evidence": encode(artifact)},
+            payload=encode(AppRetrievalArtifact(raw["retrieval_ref"], artifact, transcription_requested)),
             provenance={"owner_binding_ref": owner, "scope_hash": scope.scope_hash,
                         "spec_hash": configuration["spec_hash"], "pin_ids": pins}))

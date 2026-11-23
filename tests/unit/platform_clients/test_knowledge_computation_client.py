@@ -70,6 +70,16 @@ class ParseTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.code,"ARTIFACT_EXPIRED")
         self.assertTrue(session.response.closed)
 
+    async def test_retrieval_error_preserves_code_and_stage_without_payload(self):
+        body = b'{"code":"MODALITY_UNAVAILABLE","stage":"plan","message":"private query"}'
+        client, _ = self.client(Response(422, body))
+        with patch.object(transport, "build_scoped_internal_auth_headers", return_value={}):
+            with self.assertRaises(transport.KnowledgeComputationClientError) as error:
+                await client.json("POST", "/test", auth_context=object())
+        self.assertEqual((error.exception.status_code, error.exception.code, error.exception.stage),
+                         (422, "MODALITY_UNAVAILABLE", "plan"))
+        self.assertNotIn("private query", str(error.exception))
+
     async def test_artifact_budget_closes_response(self):
         client,session = self.client(Response(200,b"too-large"))
         with patch.object(transport,"build_scoped_internal_auth_headers",return_value={}):

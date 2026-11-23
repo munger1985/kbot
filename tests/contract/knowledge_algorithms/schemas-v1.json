@@ -2694,6 +2694,28 @@
         "name": "schema_version",
         "type": "str",
         "required": false
+      },
+      {
+        "name": "question_image_count",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "int",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "question_image_kind",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
       }
     ],
     "DeliveredEvidence": [
@@ -2900,6 +2922,17 @@
           "contract": "RetrievalEvidenceArtifact"
         },
         "required": true
+      },
+      {
+        "name": "transcription_requested",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "bool",
+            "NoneType"
+          ]
+        },
+        "required": false
       }
     ],
     "KnowledgeCompositionArtifact": [

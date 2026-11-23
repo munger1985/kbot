@@ -1,6 +1,7 @@
 """K3 受控合成回归；SQLite 只检验编排，不替代 Oracle/PG 锁或真实质量验收。"""
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import importlib
@@ -125,6 +126,50 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("图像检索", data.decode())
         self.assertEqual(item.byte_count, len(data))
 
+    async def test_direct_search_history_with_real_published_view_and_membership(self):
+        from knowledge_retrieval_app.application.knowledge_library import KnowledgeLibraryService, LibraryAuthorization
+        from knowledge_retrieval_app.entities.knowledge_library import KnowledgeLibraryEntity
+        from knowledge_retrieval_app.entities.knowledge_search_history import KnowledgeSearchHistoryEntity
+        from knowledge_retrieval_app.repositories.knowledge_library import KnowledgeLibraryRepository
+        from knowledge_retrieval_app.repositories.knowledge_search_history import KnowledgeSearchHistoryRepository
+        from platform_core.contracts.knowledge_app import KnowledgeSearchRequest
+
+        fixture, library_id = self.fixture, uuid4()
+        for entity in (KnowledgeLibraryEntity, KnowledgeSearchHistoryEntity):
+            entity.__table__.create(self.engine)
+        with Session(self.engine) as session:
+            scope = {"domain_id": fixture.scope.domain_id}
+            if fixture.scope.tenant_id:
+                scope["tenant_id"] = fixture.scope.tenant_id
+            session.add(KnowledgeLibraryEntity(library_id=library_id, display_name="合成资料库",
+                status="ACTIVE", grants_json={fixture.scope.subject_ref: ["READ"]},
+                configuration_json={"profile_ref": "baseline"}, created_by=fixture.scope.subject_ref, **scope))
+            doc = session.get(fixture.entities.KnowledgeDocumentEntity, fixture.document)
+            doc.business_asset_ref = f"library:{library_id}:{fixture.document}"
+            doc.metadata_json = {"versions": {str(fixture.version): {"review": "APPROVED"}}}
+            session.commit()
+
+        class BusinessUow(type(self.uow_factory())):
+            def library(self, access):
+                return KnowledgeLibraryRepository(self.session, access)
+
+            def search_history(self, access):
+                return KnowledgeSearchHistoryRepository(self.session, access)
+
+        self.service.uow_factory = lambda: BusinessUow(fixture)
+        self.service.authorization = LibraryAuthorization(self.service.uow_factory)
+        library = KnowledgeLibraryService(uow_factory=self.service.uow_factory, ingestion=fixture.service,
+            retrieval=self.service, parse_profile=fixture.profile, configurations={"baseline": {}})
+        result = await library.search(fixture.scope, library_id, KnowledgeSearchRequest(text="图像检索"))
+        self.assertTrue(result["primary_hits"])
+        fixture.now += timedelta(hours=1)
+        with patch.object(self.service, "retrieve", side_effect=AssertionError("历史不得重新召回")):
+            replay = await library.history_detail(fixture.scope, result["history_id"])
+        self.assertEqual(replay["availability"], "AVAILABLE")
+        self.assertEqual(replay["result"]["primary_hits"], result["primary_hits"])
+        self.assertEqual([item["text"] for item in replay["result"]["items"]],
+                         [item["text"] for item in result["items"]])
+
     async def test_scope_revocation_is_not_empty_success(self):
         await self.retrieve()
         self.revision = "auth/v2"
@@ -215,6 +260,9 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
         self.service.profiles["baseline"] = replace(default, channels=default.channels + (visual,))
         direct = await self.service.retrieve(access, scope=self.scope, query=query, profile_ref="baseline", direct=True)
         self.assertNotIn("visual", {value.channel_key for value in direct.evidence_set.channel_status})
+        agent = await self.service.retrieve(access, scope=self.scope, query=query, profile_ref="baseline")
+        self.assertEqual(agent.evidence_set.plan.channel_keys, ("lexical",))
+        self.assertNotIn("visual", {value.channel_key for value in agent.evidence_set.channel_status})
         mixed = await self.service.retrieve(access, scope=self.scope, profile_ref="baseline", direct=True,
                                             query=replace(query, output_types=("TEXT", "FIGURE")))
         visual_status = next(value for value in mixed.evidence_set.channel_status if value.channel_key == "visual")
@@ -519,19 +567,37 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
             await self.service.receipt(access, receipt.retrieval_ref)
 
     async def test_runtime_skills_materialize_app_bytes_and_emit_registered_composition(self):
+        await self.exercise_runtime_composition(visual=False)
+
+    async def test_runtime_submits_question_image_and_library_text_in_same_visual_request(self):
+        await self.exercise_runtime_composition(visual=True)
+
+    async def test_runtime_keeps_ocr_before_vision_and_preserves_library_citation(self):
+        await self.exercise_runtime_composition(visual=True, use_ocr=True)
+
+    async def test_runtime_uses_text_for_text_evidence_despite_configured_vision(self):
+        await self.exercise_runtime_composition(visual=False, vision_configured=True)
+
+    async def exercise_runtime_composition(self, *, visual, use_ocr=False, vision_configured=False):
+        import base64
         from contextlib import asynccontextmanager
+        from io import BytesIO
         from types import SimpleNamespace
         from unittest.mock import AsyncMock
+        from PIL import Image
         from knowledge_algorithms.contracts.identity import AuthorizedScope
         from knowledge_algorithms.contracts.runtime import DelegationClaims
         from knowledge_algorithms.contracts.wire import decode, encode
         from platform_clients.knowledge_computation import KnowledgeComputationClientError
         from knowledge_retrieval_app.domain.knowledge_retrieval import RetrievalAccess
         from agent_runtime.composition.knowledge import build_app_knowledge_registry, freeze_knowledge_context, KnowledgeExecutionBinding
+        from agent_runtime.composition.knowledge_runtime import RuntimeKnowledgeIntegration
         from agent_runtime.adapters.app_knowledge import AppEvidenceContentPort
         from agent_runtime.adapters.knowledge_model import KnowledgeEvidenceModelGateway
         from agent_runtime.adapters.knowledge_recorder import RuntimeKnowledgeArtifactRecorder
+        from agent_runtime.application.attachments import ConversationAttachmentStore
         from agent_runtime.application.knowledge_delivery import KnowledgeEvidenceComposer
+        from agent_runtime.application.knowledge_query import PlannedImageQuery
         from agent_runtime.runtime import ExecutionContext
         from agent_runtime.application.commands import LeasedArtifact
         from agent_runtime.repositories.runtime import AgentArtifactRepository
@@ -548,7 +614,8 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
                 return inner
             async def retrieve(inner, payload, **kwargs):
                 value = await service.retrieve(access, scope=decode(AuthorizedScope,payload["scope"]),
-                    query=decode(QueryInput,payload["query"]),profile_ref=payload["profile_ref"])
+                    query=decode(QueryInput,payload["query"]),profile_ref=payload["profile_ref"],
+                    independent_modalities=visual)
                 return {"retrieval_ref":value.retrieval_ref,"evidence_set":encode(value.evidence_set)}
             async def retain(inner,payload,**kwargs):
                 from knowledge_algorithms.contracts.identity import EvidenceKey
@@ -565,15 +632,24 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
                 async for block in stream:
                     yield block
         client = Client()
-        sent, recorded = [], []
+        sent, recorded, image_steps = [], [], []
         commit = AsyncMock()
-        class TextModelClient:
-            async def json(inner, method, path, *, auth_context, payload):
+        class ModelClient:
+            @asynccontextmanager
+            async def response(inner, method, path, *, auth_context, payload):
                 sent.append((method, path, payload))
-                if not isinstance(payload["messages"][-1]["content"], str):
+                if visual:
+                    image_steps.append("vlm")
+                if not isinstance(payload["messages"][-1]["content"], list if visual else str):
                     raise KnowledgeComputationClientError(500, "MODEL_ERROR")
-                return {"choices": [{"message": {"content": "合成回答 [D1]"}}]}
-        def composer_factory(context):
+                async def lines():
+                    yield 'data: {"choices":[{"delta":{"content":"合成回答 [D1]"}}]}\n'.encode()
+                    yield b"\n"
+                    yield b"data: [DONE]\n"
+                    yield b"\n"
+                yield SimpleNamespace(content_type="text/event-stream", content=lines())
+        def composer_factory(context, *, text_only):
+            self.assertEqual(text_only, not visual)
             run = SimpleNamespace(domain_id=context.domain_id, actor_id=context.actor_id,
                 config_snapshot_json=context.config_snapshot)
             session = SimpleNamespace(
@@ -586,14 +662,16 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
             async def uow_factory():
                 yield SimpleNamespace(artifacts=AgentArtifactRepository(session), commit=commit)
 
-            gateway = KnowledgeEvidenceModelGateway(client=TextModelClient(), auth_context=None,
-                model_snapshot_ref="model/v1", model_payload={"model_id": str(uuid4()), "max_tokens": 77},
-                system_prompt="依据资料回答并引用来源", supports_images=False,
+            gateway = KnowledgeEvidenceModelGateway(client=ModelClient(), auth_context=None,
+                model_snapshot_ref="text/v1" if text_only and vision_configured else "model/v1",
+                model_payload={"model_id": str(uuid4()), "max_tokens": 77},
+                system_prompt="依据资料回答并引用来源", supports_images=visual,
                 clock=lambda: fixture.now.timestamp())
             return KnowledgeEvidenceComposer(tokenizer=CharacterTokenizer(), image_cost=lambda *args:20,
                 model_gateway=gateway, artifact_recorder=RuntimeKnowledgeArtifactRecorder(
                     uow_factory=uow_factory, context=context), max_payload_bytes=100000,
-                max_materialized_items=128, max_cover_states=1000)
+                max_materialized_items=128, max_cover_states=1000,
+                image_mime_types=frozenset({"image/png"}) if visual else frozenset())
         claims = DelegationClaims("knowledge_retrieval","fixture",fixture.scope.subject_ref,
             str(fixture.scope.tenant_id) if fixture.scope.tenant_id else None,str(fixture.scope.domain_id),
             "agent-v1",str(run_id),"spec-fixture",self.scope.scope_hash,
@@ -603,15 +681,50 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
             payload_budget=PayloadCost(10000,10,100000),retain_until=int(fixture.now.timestamp())+600,search_only=False)
         fields = dict(domain_id=fixture.scope.domain_id,agent_id=uuid4(),run_id=run_id,task_id=uuid4(),task_key="retrieve",
             actor_id=fixture.scope.subject_ref,request_id="fixture",trace_id="fixture",original_input="图像检索",
-            config_snapshot={"agent":{"owner_app_id":"knowledge_retrieval"},"app_knowledge":config})
+            config_snapshot={"agent":{"owner_app_id":"knowledge_retrieval",
+                "models":{"composer_llm":{"config_fingerprint":"model/v1"}}},"app_knowledge":config})
         if fixture.scope.tenant_id is not None:
             fields["tenant_id"] = fixture.scope.tenant_id
             fields["owner_app_id"] = "knowledge_retrieval"
+        handles, raw_image, read_images = (), b"", None
+        if visual:
+            image = BytesIO()
+            Image.new("RGB", (4, 4), "red").save(image, format="PNG")
+            raw_image = image.getvalue()
+            image_base64 = base64.b64encode(raw_image).decode("ascii")
+            handles = (await service.register_query_image(access, scope=self.scope,
+                                                          raw=raw_image, mime_type="image/png"),)
+            attachment_root = tempfile.TemporaryDirectory()
+            self.addCleanup(attachment_root.cleanup)
+            conversation_id = uuid4()
+            descriptors = await ConversationAttachmentStore(Path(attachment_root.name)).put_images(
+                conversation_id=conversation_id, images=(SimpleNamespace(content_base64=image_base64,
+                    mime_type="image/png", file_name="question.png"),))
+            fields["config_snapshot"].update(conversation={"conversation_id": str(conversation_id)},
+                                             client_metadata={"query_images": list(descriptors)})
+            image_runtime = object.__new__(RuntimeKnowledgeIntegration)
+            image_runtime.settings = SimpleNamespace(attachments=SimpleNamespace(local_storage_path=attachment_root.name))
+            read_images = image_runtime.question_images
+        ocr_reader = None
+        if use_ocr:
+            fields["config_snapshot"]["agent"]["models"] = {"query_ocr": {"config_fingerprint": "ocr/v1"}}
+            async def ocr_reader(context, images):
+                image_steps.append("ocr")
+                return tuple(replace(image, ocr_text="识别出的图中文字") for image in images)
+        if vision_configured:
+            fields["config_snapshot"]["agent"].setdefault("models", {}).update(
+                composer_llm={"config_fingerprint": "text/v1"},
+                query_vlm={"config_fingerprint": "model/v1"})
         context = ExecutionContext(**fields)
+        def query_factory(context):
+            query = QueryInput(QueryMode.RELEVANCE, 2, ("TEXT",), text=context.original_input, image_handles=handles)
+            return PlannedImageQuery(query, False) if use_ocr else query
         registry = build_app_knowledge_registry(clients={"knowledge_retrieval":client},
             context_factory=lambda *args:None,
-            query_factory=lambda context:QueryInput(QueryMode.RELEVANCE,2,("TEXT",),text=context.original_input),
+            query_factory=query_factory,
             composer_factory=composer_factory,
+            question_images_factory=read_images,
+            question_ocr_reader=ocr_reader,
             content_port_factory=lambda context,ref,evidence:AppEvidenceContentPort(client=client,
                 auth_context=None,retrieval_ref=ref,evidence_set=evidence))
         _, retrieve_skill = registry.resolve("knowledge-retrieval","1.0.0")
@@ -626,11 +739,21 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
         result = events[-1]
         self.assertEqual(len(sent), 1)
         method, path, model_payload = sent[0]
-        self.assertEqual((method, path), ("POST", "/internal/v1/chat/completions"))
+        self.assertEqual((method, path), ("POST", "/internal/v1/inference" if visual else "/internal/v1/chat/completions"))
         self.assertEqual(model_payload["max_tokens"], 77)
+        self.assertTrue(model_payload["stream"])
         user_content = model_payload["messages"][-1]["content"]
-        self.assertIsInstance(user_content, str)
-        question, evidence = user_content.split("\n\n[D1]\n\n", 1)
+        if visual:
+            question = user_content[0]["text"]
+            self.assertEqual(user_content[2]["image_url"]["url"], "data:image/png;base64," + image_base64)
+            if use_ocr:
+                self.assertEqual(image_steps, ["ocr", "vlm"])
+                self.assertIn("识别出的图中文字", user_content[3]["text"])
+            anchor = user_content.index({"type": "text", "text": "[D1]"})
+            evidence = user_content[anchor + 1]["text"]
+        else:
+            self.assertIsInstance(user_content, str)
+            question, evidence = user_content.split("\n\n[D1]\n\n", 1)
         self.assertEqual(question, execution.original_input)
         self.assertIn("图像检索", evidence)
         self.assertEqual([(row.artifact_type, row.schema_version) for row in recorded], [
@@ -643,11 +766,14 @@ class AppRetrievalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.artifact.artifact_type, "GROUNDED_ANSWER")
         payload = result.artifact.payload
         self.assertEqual(payload["answer"], "合成回答 [D1]")
-        self.assertEqual("".join(event.payload["delta"] for event in events[:-1]), payload["answer"])
+        self.assertEqual(events[0].event_type, "answer.preview.delta")
+        self.assertEqual("".join(event.payload["delta"] for event in events[:-1]
+                                 if event.event_type == "answer.delta"), payload["answer"])
         self.assertEqual(payload["references"][0]["reference_type"], "APP_KNOWLEDGE")
         self.assertEqual(payload["references"][0]["citation_label"], "D1")
         self.assertTrue(payload["references"][0]["locators"])
         self.assertEqual(payload["knowledge_composition"]["model_delivery"], "SENT")
+        self.assertEqual(payload["knowledge_composition"].get("question_image_count"), 1 if visual else None)
 
 
 if __name__ == "__main__":

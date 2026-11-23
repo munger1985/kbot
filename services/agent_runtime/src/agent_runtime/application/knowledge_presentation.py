@@ -7,6 +7,7 @@ from knowledge_algorithms.contracts.wire import decode, encode
 def public_composition(value):
     composition = decode(KnowledgeCompositionArtifact, value)
     evidence = composition.evidence
+    image_count = composition.delivery.question_image_count
     return {
         "retrieval_ref": composition.retrieval_ref, "status": evidence.status,
         "reason": evidence.reason, "mode": evidence.mode.value, "continuation": evidence.continuation,
@@ -25,6 +26,8 @@ def public_composition(value):
                    for group in evidence.groups],
         "channels": encode(evidence.channel_status), "model_delivery": composition.delivery.status,
         "delivered_count": len(composition.delivery.prepared) if composition.delivery.status == "SENT" else 0,
+        **({"question_image_count": image_count} if image_count and composition.delivery.status == "SENT" else {}),
+        **({"question_image_kind": composition.delivery.question_image_kind} if composition.delivery.question_image_kind else {}),
         "coverage_status": composition.answer.coverage_status if composition.answer else "INSUFFICIENT",
         "excluded": [{"key": key.stable_key, "reason": reason} for key, reason in composition.excluded],
         "selection": {"selected_keys": [key.stable_key for key in composition.context_selection.selected_evidence_keys],

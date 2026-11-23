@@ -817,6 +817,18 @@ class KnowledgeLibraryRepository(BaseRepository):
             "governance": governance, "generation_id": version.active_generation_id if version.status == "PUBLISHED"
                 else generations[0].index_generation_id if generations else None}
 
+    async def history_versions(self, library_id, version_ids):
+        library = await self.authorized(library_id, "READ")
+        if not version_ids:
+            return library.display_name, set()
+        statement = self._documents(library_id).add_columns(Version).join(
+            Version, Version.document_id == Document.document_id).where(
+            Version.document_version_id.in_(version_ids), Version.status == "PUBLISHED",
+            Document.status == "PUBLISHED")
+        rows = (await self._session.execute(statement)).all()
+        return library.display_name, {version.document_version_id for document, version in rows
+            if document.metadata_json.get("versions", {}).get(str(version.document_version_id), {}).get("review") == "APPROVED"}
+
     async def grant(self, library_id, *, include_unpublished=False):
         library = await self.authorized(library_id, "READ")
         rows = (await self._session.execute(self._documents(library_id).add_columns(Version)

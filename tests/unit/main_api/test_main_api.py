@@ -50,15 +50,17 @@ class _FakeKnowledgeLibraryClient:
     def view(library_id):
         return {"library_id": str(library_id), "display_name": "合成资料库", "description": None,
             "status": "ACTIVE", "row_version": 1, "permissions": ["READ", "UPLOAD"],
-            "configuration": {"profile_ref": "default"}, "grants": None, "search_capabilities": []}
+            "configuration": {"profile_ref": "default"}, "grants": None, "search_capabilities": [],
+            "updated_at": "2026-11-23T00:00:00+00:00", "upload_max_bytes": 1000000,
+            "upload_formats": {".txt": "text/plain"}, "ocr_enabled": False}
 
-    async def libraries(self, *, auth_context):
+    async def libraries(self, *, auth_context, management=False):
         if self.raise_error:
             raise KnowledgeComputationClientError(503, "KNOWLEDGE_UNAVAILABLE")
         self.record(auth_context)
         return [self.view(TEST_COLLECTION_ID)]
 
-    async def library(self, library_id, *, auth_context):
+    async def library(self, library_id, *, auth_context, management=False):
         self.record(auth_context)
         return self.view(library_id)
 
@@ -955,6 +957,28 @@ class MainApiTest(unittest.TestCase):
             "AGENT_LIBRARY_REQUIRED",
             response.json()["code"],
         )
+
+    def test_agent_image_roles_accept_only_corresponding_active_model_categories(self) -> None:
+        ocr = "019f8eae-2c25-7d48-b044-350ec3f5a061"
+        vlm = "019f8eae-2c25-7d48-b044-350ec3f5a062"
+        disabled = "019f8eae-2c25-7d48-b044-350ec3f5a063"
+        self.app.state.model_config_clients = (SimpleNamespace(list_models=AsyncMock(return_value=[
+            {"model_id": ocr, "category": 6, "status": "ACTIVE"},
+            {"model_id": vlm, "category": 5, "status": "ACTIVE"},
+            {"model_id": disabled, "category": 6, "status": "DISABLED"},
+        ])),)
+        path = f"/api/v1/apps/knowledge-retrieval/agents/{self.agent_runtime.agent_id}"
+        selections = {"query_ocr": ocr, "query_vlm": vlm}
+        response = self.client.patch(path, headers=self._headers(),
+            json={"expected_row_version": 1, "status": "DRAFT", "models": selections})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["models"], selections)
+        for invalid in (vlm, disabled):
+            with self.subTest(invalid=invalid):
+                response = self.client.post("/api/v1/apps/knowledge-retrieval/agents", headers=self._headers(),
+                    json={"display_name": "图片问答 Agent", "models": {"query_ocr": invalid}})
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.json()["code"], "AGENT_IMAGE_MODEL_INVALID")
 
     def test_agent_activation_requires_knowledge_core(self) -> None:
         original_agent = self.agent_runtime._agent

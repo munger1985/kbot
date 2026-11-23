@@ -26,7 +26,8 @@ from ..domain.knowledge_retrieval import RetrievalLimits
 class RetrievalReceipt:
     retrieval_ref: str
     evidence_set: EvidenceSet
-    scope: AuthorizedScope
+    scope: AuthorizedScope | None
+    manifest_ref: str | None = None
 
 
 class KnowledgeRetrievalService:
@@ -138,7 +139,7 @@ class KnowledgeRetrievalService:
         return backend, profile
 
     async def retrieve(self, access, *, scope, query, profile_ref, targets=(), cursor=None,
-                       expected_snapshot=None, direct=False):
+                       expected_snapshot=None, direct=False, independent_modalities=False, image_intent=None):
         backend, profile = await self.backend(access, scope, profile_ref, cursor=cursor,
                                                expected_snapshot=expected_snapshot, direct_query=query if direct else None)
         fingerprints = {}
@@ -149,11 +150,22 @@ class KnowledgeRetrievalService:
             _, descriptor = await self.query_image(access, scope, handle)
             fingerprints[handle] = (descriptor["sha256"], None)
         backend.image_fingerprints = fingerprints
+        if image_intent is not None:
+            require(direct and len(query.image_handles) == 1 and image_intent in {"SOURCE", "SIMILAR"},
+                    "图片核验只适用于直接单图检索")
+            has_visual = any(channel.direction == "IMAGE_TO_IMAGE" and channel.representation_spec is not None
+                             for channel in profile.channels)
+            if image_intent == "SIMILAR" and not has_visual:
+                raise AlgorithmError(ErrorCode.MODALITY_UNAVAILABLE, "当前知识库没有已发布的图片相似索引",
+                                     stage="plan")
+            if has_visual:
+                backend.verify_query_image = self.image_verifier(backend, image_reader, image_intent)
         gateway = self.model_gateway_factory(access, image_reader=image_reader) if self.model_gateway_factory else None
         # 文字模式只查正文与表格，保留主命中的关联图；不改 Profile 身份，关联游标仍可续取。
-        text_only = direct and query.text and set(query.output_types) <= {"TEXT", "TABLE"}
+        text_only = not query.image_handles and set(query.output_types) <= {"TEXT", "TABLE"}
         evidence = await RetrievalEngine(backend, gateway).retrieve(
             query, scope, profile, targets=targets, primary_relations_only=direct,
+            independent_modalities=independent_modalities, prefer_exact_image=image_intent == "SOURCE",
             skip_directions=frozenset({"TEXT_TO_IMAGE"}) if text_only else frozenset())
         await self.validate(access, scope, expected_snapshot=evidence.snapshot)
         raw = json.dumps(encode(evidence), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
@@ -162,9 +174,56 @@ class KnowledgeRetrievalService:
             identity = await uow.knowledge_retrieval.save_receipt(access, scope, evidence, manifest_ref=stored.handle_ref,
                 query=query, profile_ref=profile_ref, now=self.clock(), limits=self.limits)
             await uow.commit()
-        return RetrievalReceipt(str(identity), evidence, scope)
+        return RetrievalReceipt(str(identity), evidence, scope, stored.handle_ref)
 
-    async def presentation_previews(self, access, receipt, keys):
+    def image_verifier(self, backend, image_reader, intent):
+        from ..adapters.knowledge_image_source import IMAGE_VERIFICATION_LIMIT, image_for_verification, verifies_image
+
+        prepared, checked = {}, {}
+        lock = asyncio.Lock()
+
+        async def verify(request, hits):
+            # 同一次请求的多个表示空间共享核验缓存和预算。
+            async with lock:
+                return await verify_candidates(request, hits)
+
+        async def verify_candidates(request, hits):
+            handle = request.query.image_handles[request.input_index]
+            if handle not in prepared:
+                query_raw, _ = await image_reader(handle)
+                prepared[handle] = await asyncio.to_thread(image_for_verification, query_raw)
+            query_image = prepared[handle]
+            query_sha = backend.image_fingerprints[handle][0]
+            accepted = []
+            limit = min(IMAGE_VERIFICATION_LIMIT, request.channel.limit)
+            exhausted = len(hits) <= limit
+            for hit in hits[:limit]:
+                item = backend.items[hit.key]
+                if not item.mime_type.startswith("image/"):
+                    continue
+                if item.content_hash == query_sha:
+                    accepted.append(hit)
+                    continue
+                key = (handle, item.content_handle)
+                if key not in checked:
+                    if len(checked) >= IMAGE_VERIFICATION_LIMIT:
+                        exhausted = False
+                        continue
+                    accepted_visual = False
+                    if query_image is not None and item.byte_count <= self.limits.max_object_bytes:
+                        raw = await self.store.read(item.content_handle, max_bytes=self.limits.max_object_bytes)
+                        require(len(raw) == item.byte_count and sha256(raw).hexdigest() == item.content_hash,
+                                "候选图片与已发布证据摘要不一致", stage="image_verify")
+                        accepted_visual = await asyncio.to_thread(verifies_image, query_image, raw,
+                                                                  similar=intent == "SIMILAR")
+                    checked[key] = accepted_visual
+                if checked[key]:
+                    accepted.append(hit)
+            return tuple(accepted), exhausted
+
+        return verify
+
+    async def presentation_previews(self, access, receipt, keys, *, reauthorize=None):
         """只读取首屏文本；同一批只在释放响应前复核一次。"""
         evidence = receipt.evidence_set
         selected = tuple(item for item in evidence.evidence
@@ -173,7 +232,7 @@ class KnowledgeRetrievalService:
         now = int(self.clock().timestamp())
         unique = {}
         for item in selected:
-            require(item.expires_at > now, "首屏证据已过期")
+            require(reauthorize is not None or item.expires_at > now, "首屏证据已过期")
             original = unique.setdefault(item.content_handle, item)
             require(original.content_hash == item.content_hash and original.byte_count == item.byte_count,
                     "同一首屏证据对象的摘要或大小不一致")
@@ -192,7 +251,10 @@ class KnowledgeRetrievalService:
                 if isinstance(value, BaseException):
                     raise value
                 previews[item.content_handle] = value
-        await self.validate(access, receipt.scope, expected_snapshot=evidence.snapshot)
+        if reauthorize is None:
+            await self.validate(access, receipt.scope, expected_snapshot=evidence.snapshot)
+        else:
+            await reauthorize()
         return {item.key: previews[item.content_handle] for item in selected}
 
     async def receipt(self, access, retrieval_ref):
@@ -237,20 +299,24 @@ class KnowledgeRetrievalService:
         item = matches[0]
         require(item.byte_count <= self.limits.max_payload_bytes and item.expires_at > int(self.clock().timestamp()),
                 "内容读取超过预算或已过期")
-        async def chunks():
-            count, digest = 0, sha256()
-            iterator = self.store.stream(item.content_handle)
-            try:
-                async for block in iterator:
-                    await self.validate(access, scope, expected_snapshot=evidence.snapshot)
-                    count += len(block)
-                    require(count <= item.byte_count, "内容超过冻结字节数")
-                    digest.update(block)
-                    yield block
-                require(count == item.byte_count and digest.hexdigest() == item.content_hash, "内容摘要或大小发生变化")
-            finally:
-                await iterator.aclose()
-        return item, chunks()
+        async def reauthorize():
+            await self.validate(access, scope, expected_snapshot=evidence.snapshot)
+        return item, self.content_blocks(item, reauthorize)
+
+    async def content_blocks(self, item, reauthorize):
+        require(item.byte_count <= self.limits.max_payload_bytes, "内容读取超过预算")
+        count, digest = 0, sha256()
+        iterator = self.store.stream(item.content_handle)
+        try:
+            async for block in iterator:
+                await reauthorize()
+                count += len(block)
+                require(count <= item.byte_count, "内容超过冻结字节数")
+                digest.update(block)
+                yield block
+            require(count == item.byte_count and digest.hexdigest() == item.content_hash, "内容摘要或大小发生变化")
+        finally:
+            await iterator.aclose()
 
 
     async def historical_evidence(self, access, *, retrieval_ref, stable_key):

@@ -18,9 +18,11 @@ from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode
 from knowledge_algorithms.projections.builder import ProjectionBuilder
 from platform_core.contracts.knowledge_app import KnowledgeDocumentPage, KnowledgePassageContext, KnowledgeSearchRequest
 from knowledge_retrieval_app.entities.knowledge_library import KnowledgeLibraryEntity
+from knowledge_retrieval_app.entities.knowledge_search_history import KnowledgeSearchHistoryEntity
 from knowledge_retrieval_app.entities.agent import KnowledgeRetrievalAgentEntity, KnowledgeRetrievalAgentVersionEntity
 from knowledge_retrieval_app.domain.knowledge_library import LibraryConflict
 from knowledge_retrieval_app.repositories.knowledge_library import KnowledgeLibraryRepository
+from knowledge_retrieval_app.repositories.knowledge_search_history import KnowledgeSearchHistoryRepository
 from knowledge_retrieval_app.application.knowledge_library import KnowledgeLibraryService, LibraryAuthorization
 
 
@@ -39,6 +41,7 @@ class LibraryBusinessTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await support.AppRetrievalTests.asyncSetUp(self)
         KnowledgeLibraryEntity.__table__.create(self.engine)
+        KnowledgeSearchHistoryEntity.__table__.create(self.engine)
         KnowledgeRetrievalAgentEntity.__table__.create(self.engine)
         KnowledgeRetrievalAgentVersionEntity.__table__.create(self.engine)
         self.fixture.sessions = lambda: SyntheticSession(self.engine)
@@ -48,6 +51,7 @@ class LibraryBusinessTests(unittest.IsolatedAsyncioTestCase):
                 inner.delegate = previous()
                 value = await inner.delegate.__aenter__()
                 value.library = lambda scope: KnowledgeLibraryRepository(value.session, scope)
+                value.search_history = lambda scope: KnowledgeSearchHistoryRepository(value.session, scope)
                 from knowledge_retrieval_app.repositories.knowledge_queue import KnowledgeJobQueueRepository
                 value.knowledge_queue = KnowledgeJobQueueRepository(value.session, lambda: None)
                 return value

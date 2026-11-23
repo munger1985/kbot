@@ -79,6 +79,19 @@ class KnowledgeLibraryClient(KnowledgeComputationClient):
         return await self.json("POST", self.prefix + self.library_path(library_id) + "/search",
                                payload=payload, auth_context=auth_context)
 
+    async def history_page(self, *, auth_context, limit, offset):
+        return await self.json("GET", self.prefix + "/search-history", auth_context=auth_context,
+                               params={"limit": limit, "offset": offset})
+
+    async def history_detail(self, identity, *, auth_context):
+        return await self.json("GET", self.result_path(identity, history=True), auth_context=auth_context)
+
+    async def history_delete(self, identity, *, auth_context):
+        return await self.json("DELETE", self.result_path(identity, history=True), auth_context=auth_context)
+
+    def result_path(self, identity, *, history):
+        return self.prefix + ("/search-history/" if history else "/results/") + str(UUID(str(identity)))
+
     async def continue_results(self, retrieval_ref, payload, *, relations=False, auth_context):
         path = self.prefix + "/results/" + str(UUID(str(retrieval_ref))) + (
             "/relations:continue" if relations else ":continue")
@@ -116,11 +129,11 @@ class KnowledgeLibraryClient(KnowledgeComputationClient):
             await stack.aclose()
             raise
 
-    async def open_content(self, retrieval_ref, key, *, auth_context):
+    async def open_content(self, retrieval_ref, key, *, auth_context, history=False):
         import re
         if not re.fullmatch(r"[0-9a-f]{64}", key):
             raise ValueError("知识内容句柄无效")
-        path = self.prefix + "/results/" + str(UUID(str(retrieval_ref))) + "/content/" + key
+        path = self.result_path(retrieval_ref, history=history) + "/content/" + key
         return await self.open_download(path, auth_context=auth_context, max_bytes=33554432,
                                         require_preview_type=True)
 
@@ -129,16 +142,16 @@ class KnowledgeLibraryClient(KnowledgeComputationClient):
         return await self.open_download(path, auth_context=auth_context, max_bytes=67108864,
                                         attachment=not preview, require_preview_type=preview)
 
-    def passage_path(self, retrieval_ref, key):
+    def passage_path(self, retrieval_ref, key, *, history=False):
         import re
         if not re.fullmatch(r"[0-9a-f]{64}", key):
             raise ValueError("段落锚点无效")
-        return self.prefix + "/results/" + str(UUID(str(retrieval_ref))) + "/context/" + key
+        return self.result_path(retrieval_ref, history=history) + "/context/" + key
 
-    async def passage_context(self, retrieval_ref, key, *, before, after, auth_context):
-        return await self.json("GET", self.passage_path(retrieval_ref, key),
+    async def passage_context(self, retrieval_ref, key, *, before, after, auth_context, history=False):
+        return await self.json("GET", self.passage_path(retrieval_ref, key, history=history),
                                params={"before": str(before), "after": str(after)}, auth_context=auth_context)
 
-    async def open_passage_pdf(self, retrieval_ref, key, *, auth_context):
-        return await self.open_download(self.passage_path(retrieval_ref, key) + "/pdf", auth_context=auth_context,
+    async def open_passage_pdf(self, retrieval_ref, key, *, auth_context, history=False):
+        return await self.open_download(self.passage_path(retrieval_ref, key, history=history) + "/pdf", auth_context=auth_context,
                                         max_bytes=67108864, require_preview_type=True)

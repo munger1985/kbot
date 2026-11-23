@@ -127,6 +127,38 @@ async def test_present_uses_complete_paragraph_key_and_chapter_for_tail_only_hit
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("mime", "locators", "expected"), [
+    ("application/pdf", (Locator(6),), 6),
+    ("image/png", (Locator(1),), None),
+    ("application/pdf", (Locator(logical_ref="figure"),), None),
+])
+async def test_image_context_resolves_pinned_pdf_page_without_loading_passages(mime, locators, expected):
+    version_id = uuid4()
+    access = object()
+    item = SimpleNamespace(key=EvidenceKey("owner", str(version_id), "parse", "figure"),
+                           mime_type="image/png", locators=locators)
+    calls = []
+
+    async def versions(seen_access, refs):
+        assert seen_access is access and refs == {version_id}
+        calls.append("version")
+        return {str(version_id): {"mime_type": mime}}
+
+    @asynccontextmanager
+    async def uow():
+        yield SimpleNamespace(knowledge_retrieval=SimpleNamespace(passage_versions=versions))
+
+    async def reauthorize():
+        calls.append("authorize")
+
+    service = SimpleNamespace(uow_factory=uow)
+    context = await KnowledgeLibraryService._passage_context(
+        service, access, item, (), "", before=2, after=2, reauthorize=reauthorize)
+    assert context == {"blocks": [], "has_before": False, "has_after": False, "pdf_page": expected}
+    assert calls == (["version", "authorize"] if locators[0].page_no else ["authorize"])
+
+
+@pytest.mark.asyncio
 async def test_split_clause_joins_in_reading_order_even_if_continuation_is_ranked_first():
     first = node(1, "第九条 内部审计人员应熟悉公司的经营业务和内", y=0.26)
     second = node(2, "部控制规范，具备相关专业知识。", y=0.285)

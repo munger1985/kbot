@@ -30,18 +30,21 @@ class RetrievalEngine:
 
     async def retrieve(self, query: QueryInput, scope: AuthorizedScope, profile: RetrievalProfile,
                        *, targets: tuple[CoverageTarget, ...] = (), primary_relations_only=False,
-                       skip_directions: frozenset[str] = frozenset()) -> EvidenceSet:
+                       skip_directions: frozenset[str] = frozenset(), independent_modalities=False,
+                       prefer_exact_image=False) -> EvidenceSet:
         self.binding.check_owner(scope.owner_binding_ref)
         self.backend.capabilities.validate(query)
         require(query.requested_count <= profile.max_primary_count, "用户数量超过服务上限，不得静默截断")
         require(len(query.image_handles) <= profile.candidate_budget, "查询图片数超过显式工作预算")
-        if query.combination == "COMPOSED" or query.text and query.image_handles:
+        # 独立分支可以融合排名，但不等同于联合表示，也不宣称理解多图关系。
+        if query.combination == "COMPOSED" or (query.text and query.image_handles and not independent_modalities):
             raise AlgorithmError(ErrorCode.MODALITY_UNAVAILABLE, "尚未登记已评测的组合输入能力", stage="plan")
         require(not primary_relations_only or not targets, "按主结果展开关联仅适用于无目标的直接检索")
         return await Deadline(profile.timeout_seconds).run(
-            self._retrieve(query, scope, profile, targets, primary_relations_only, skip_directions), stage="retrieval")
+            self._retrieve(query, scope, profile, targets, primary_relations_only, skip_directions, prefer_exact_image),
+            stage="retrieval")
 
-    async def _retrieve(self, query, scope, profile, targets, primary_relations_only, skip_directions):
+    async def _retrieve(self, query, scope, profile, targets, primary_relations_only, skip_directions, prefer_exact_image):
         backend = self.backend
         snapshot = await backend.snapshot(scope)
         snapshot.validate_scope(self.binding, scope)
@@ -92,6 +95,12 @@ class RetrievalEngine:
                 if any(r.channel_key == c.channel_key for r in channels)}, constant=profile.rrf_constant)
             initial = tuple(dict.fromkeys(hit.key for channel in channels for hit in channel.hits))
             ranked_keys = tuple(hit.key for hit in fused)
+            if prefer_exact_image:
+                # 找出处时，已验证的同一原图始终排在裁剪、缩放核验结果之前。
+                exact_channels = {channel.channel_key for channel in planned_channels
+                                  if channel.kind == "NEAR_DUPLICATE" and channel.direction == "IMAGE_TO_IMAGE"}
+                exact = {hit.key for channel in channels if channel.channel_key in exact_channels for hit in channel.hits}
+                ranked_keys = tuple(sorted(ranked_keys, key=lambda key: key not in exact))
             require(set(initial) == set(ranked_keys), "融合丢失或伪造身份", stage="fusion")
             trace.append(StageRecord("fusion", initial, ranked_keys, ()))
             scores = {hit.key: hit.score for hit in fused}

@@ -15,7 +15,7 @@ from ..domain.knowledge_ingestion import BINDING
 
 
 class KnowledgeRetrievalRepository(KnowledgeIngestionRepository):
-    async def passage_versions(self, access, version_ids):
+    async def passage_versions(self, access, version_ids, *, allow_missing=False):
         if not version_ids:
             return {}
         repositories = self._repos(access)
@@ -30,7 +30,7 @@ class KnowledgeRetrievalRepository(KnowledgeIngestionRepository):
         records = {str(ref): dict(version_id=str(ref), document_id=str(document_id), title=title, mime_type=mime,
                    parse_run_id=str(run_id), manifest=manifest, view_hash=view_hash)
                    for ref, document_id, title, mime, run_id, manifest, view_hash in rows}
-        if len(records) != len(version_ids):
+        if not allow_missing and len(records) != len(version_ids):
             raise AlgorithmError(ErrorCode.SNAPSHOT_STALE, "证据来源已变化，请重新检索", stage="snapshot")
         return records
 

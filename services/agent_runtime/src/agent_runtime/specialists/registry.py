@@ -210,7 +210,9 @@ def register_builtin_skills(
             model_client=model_client,
             prompt_resolver=prompt_resolver,
             app_knowledge=AppKnowledgeComposerSkill(composer_factory=knowledge_integration.composer,
-                content_port_factory=knowledge_integration.content_port),
+                content_port_factory=knowledge_integration.content_port,
+                question_images_factory=knowledge_integration.question_images,
+                question_ocr_reader=knowledge_integration.ocr_question_images),
         ),
     )
     registry.register(

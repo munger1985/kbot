@@ -252,11 +252,6 @@ async def run_vlm_inference(
                             except (json.JSONDecodeError, ValueError):
                                 pass
                             continue
-                        if isinstance(content, str) and content.startswith(
-                            "\n\n=== FULL RESPONSE ==="
-                        ):
-                            continue
-
                         # Construct standard OpenAI-style Chunk
                         chunk = {
                             "id": resp_id,

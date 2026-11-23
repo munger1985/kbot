@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock
 
 from agent_runtime.application import (
     AppendTaskProgressCommand,
@@ -415,6 +416,40 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             idempotency_key="create-1",
             original_input="总结上传文档",
         )
+
+    async def test_unavailable_query_ocr_does_not_block_text_or_vlm(self):
+        ocr_model_id = uuid7()
+        spec = self.execution_spec.model_copy(update={
+            "models": {**self.execution_spec.models, "query_ocr": ocr_model_id},
+        })
+        resolve = self.model_resolver.resolve
+
+        async def resolve_with_unavailable_ocr(models):
+            if "query_ocr" in models:
+                raise RuntimeError("OCR 模型目录不可用")
+            return await resolve(models)
+
+        self.model_resolver.resolve = AsyncMock(side_effect=resolve_with_unavailable_ocr)
+        text_run = self.create_command.model_copy(update={"execution_spec": spec})
+        receipt = await self.service.create_run(text_run)
+        self.model_resolver.resolve.assert_awaited_once_with({
+            role: model for role, model in self.execution_spec.models.items() if role != "query_vlm"
+        })
+        models = self.store.runs[receipt.run_id].config_snapshot_json["agent"]["models"]
+        self.assertNotIn("query_ocr", models)
+        self.assertNotIn("query_vlm", models)
+
+        self.model_resolver.resolve.reset_mock()
+        image_run = CreateRunCommand.model_validate({**text_run.model_dump(),
+            "idempotency_key": "create-image", "conversation_id": uuid7(), "turn_id": uuid7(),
+            "client_metadata": {"query_images": [{"mime_type": "image/png"}]}},
+        )
+        receipt = await self.service.create_run(image_run)
+        self.assertEqual(self.model_resolver.resolve.await_count, 2)
+        self.assertEqual(self.model_resolver.resolve.await_args.args, ({"query_ocr": ocr_model_id},))
+        models = self.store.runs[receipt.run_id].config_snapshot_json["agent"]["models"]
+        self.assertIn("query_vlm", models)
+        self.assertNotIn("query_ocr", models)
 
     async def test_create_run_atomically_installs_document_plan(self):
         service = AgentRuntimeService(

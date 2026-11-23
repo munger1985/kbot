@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 import os
+from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -76,6 +77,7 @@ class RuntimeKnowledgeConfig(BaseModel):
 
 
 class AgentRuntimeSettings(Settings):
+    topology_client_endpoints: ClassVar[dict[str, str]] = {"ocr": "model_ocr"}
     knowledge: RuntimeKnowledgeConfig = Field(default_factory=RuntimeKnowledgeConfig)
     api: AgentRuntimeApiConfig = Field(default_factory=AgentRuntimeApiConfig)
     worker: AgentRuntimeWorkerConfig = Field(
@@ -125,6 +127,13 @@ class AgentRuntimeSettings(Settings):
             base_url="http://127.0.0.1:18094",
             audience="kbot-model-vlm",
             timeout_seconds=300,
+        )
+    )
+    ocr: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18096",
+            audience="kbot-model-ocr",
+            timeout_seconds=30,
         )
     )
 

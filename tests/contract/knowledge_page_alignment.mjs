@@ -36,6 +36,7 @@ function installFixture(data,empty,pdfBase64){
   const queueView=view==="processing";
   const chatSession={conversation_id:"session-1",agent_id:data.agent.agent_id,title:"解释一下职业道德",last_active_at:"2026-11-21T08:00:00Z",row_version:4};
   let chatSessions=empty?[]:[chatSession];
+  let managedAgent={...data.agent};
   let governanceItems;
   let rebuiltStatus="FAILED";
   const fileBatches=new Map();
@@ -43,6 +44,8 @@ function installFixture(data,empty,pdfBase64){
   const fileTitle=id=>id==="version-2"?"安装说明":data.document.title;
   const governanceVersion=id=>governanceItems?.find(item=>Object.hasOwn(item.versions,id))?.versions[id];
   const excerpt="原句：图1-1 用于说明本节检索架构。";
+  const searchHistoryKey="fixture-search-history";
+  const historyList=()=>JSON.parse(sessionStorage.getItem(searchHistoryKey) || "[]");
   const chatLocators=[{page_no:1,bbox:[0.07,0.72,0.92,0.80]}];
   const composition={status:"READY",model_delivery:"SENT",delivered_count:1,coverage_status:"COMPLETE",
     primary_hits:[{key:"a".repeat(64),rank:1}],linked:[],
@@ -126,27 +129,62 @@ function installFixture(data,empty,pdfBase64){
             error_code:rebuiltStatus==="FAILED"?"TIMEOUT":null,visual_not_applicable:false,
             index_progress:{committed_batches:rebuiltStatus==="FAILED"?4:10,total_batches:10,validated:rebuiltStatus!=="FAILED"}}]}};
     }
+    if(suffix==="/knowledge/search-history")return {items:historyList().map(record=>record.entry),has_more:false};
+    const historyRecord=suffix.match(/^\/knowledge\/search-history\/([^/]+)$/);
+    if(historyRecord){
+      const id=historyRecord[1], records=historyList();
+      if(init.method==="DELETE"){
+        sessionStorage.setItem(searchHistoryKey,JSON.stringify(records.filter(record=>record.entry.history_id!==id)));
+        return {status:"DELETED"};
+      }
+      const saved=records.find(record=>record.entry.history_id===id);
+      if(saved)return saved;
+      throw Object.assign(new Error("历史不存在"),{status:422});
+    }
     if(suffix.includes("/knowledge/libraries/") && suffix.endsWith("/search")){
       const query=typeof init.body==="string"?JSON.parse(init.body):init.body;
       // 即使浏览器已中止，也让隔离接口继续返回，以验证迟到响应隔离。
       const outcome=globalThis.fixtureDelay ? await new Promise(resolve=>{
         fixturePendingSearch.push({query,signal:init.signal,resolve});
-      }) : "success";
+      }) : globalThis.fixtureNextSearchOutcome ?? "success";
+      globalThis.fixtureNextSearchOutcome=null;
       if(outcome==="failure")throw new Error("隔离检索失败，请重试");
-      if(outcome==="empty")return {retrieval_ref:"empty",status:"COMPLETE",mode:query.mode,reason:null,
-        scope_exhausted:true,continuation:null,primary_hits:[],items:[],linked:[],channels:[]};
+      if(outcome==="timeout")throw Object.assign(new Error("请检查权限、处理状态或服务配置"),{status:422,code:"TIMEOUT"});
+      if(outcome==="no-visual-index")throw Object.assign(new Error("没有已发布视觉索引"),{status:422,code:"MODALITY_UNAVAILABLE"});
+      const failedChannel=reason=>({channel_key:"visual:IMAGE_TO_IMAGE",status:"FAILED",reason,
+        required:false,approximate:false,exhausted:false});
+      if(["empty","channel-failure","channel-timeout"].includes(outcome))return {retrieval_ref:"receipt",
+        status:outcome==="empty"?"EMPTY":"FAILED",mode:query.mode,reason:outcome==="empty"?"NO_MATCH":"CHANNEL_FAILED",
+        scope_exhausted:outcome==="empty",continuation:null,primary_hits:[],items:[],linked:[],model_delivery:"NOT_REQUESTED",
+        channels:outcome==="empty"?[]:[failedChannel(outcome==="channel-timeout"?"TIMEOUT":"CHANNEL_FAILED")]};
       const image=!!query?.images?.length;
-      const first=image?"figure":"text",other=image?"text":"figure";
+      const first=image?(outcome==="standalone-image"?"photo":"figure"):"text",other=image?"text":"figure";
       const text={key:"text",kind:"TEXT",text:"原文如图1-1所示，知识检索的图文关系",source_title:"产品手册",document_id:"doc-1",version_id:"version-1",mime_type:"text/plain",chapter:"第一章 检索",passage_key:"paragraph-1",locators:[{page_no:1}],content_ref:{retrieval_ref:"receipt",key:"text"},
         passage_display:{order:1,kind:"PARAGRAPH",title:"第九条",text:"第九条 内部审计人员应熟悉公司的经营业务和内部控制规范。",pages:[1],chapter_key:"chapter-1"}};
       const items=[text,{...text,key:"duplicate",text:"同一段落的重叠片段",content_ref:{retrieval_ref:"receipt",key:"duplicate"}},
         {...text,key:"another",source_title:"使用说明",document_id:"doc-2",version_id:"version-2",passage_key:"paragraph-2",chapter:null,passage_display:null,content_ref:{retrieval_ref:"receipt",key:"another"}},
-        {key:"figure",kind:"FIGURE",text:"图1-1 检索架构",source_title:"产品手册",document_id:"doc-1",version_id:"version-1",mime_type:"image/png",passage_key:null,chapter:null,locators:[{page_no:1}],content_ref:{retrieval_ref:"receipt",key:"figure"}}];
-      return {retrieval_ref:"receipt",status:"COMPLETE",mode:query.mode,reason:null,scope_exhausted:true,continuation:null,
+        {key:"figure",kind:"FIGURE",text:"图1-1 检索架构",source_title:"产品手册",document_id:"doc-1",version_id:"version-1",mime_type:"image/png",byte_count:68,passage_key:null,chapter:null,locators:[{page_no:6}],content_ref:{retrieval_ref:"receipt",key:"figure"}},
+        {key:"photo",kind:"PHOTO",text:"独立图片命中",source_title:"单张图片.png",document_id:"doc-3",version_id:"version-3",mime_type:"image/png",byte_count:68,passage_key:null,chapter:null,locators:[{page_no:1}],content_ref:{retrieval_ref:"receipt",key:"photo"}}];
+      const result={retrieval_ref:"receipt",status:"COMPLETE",mode:query.mode,reason:null,scope_exhausted:true,continuation:null,
         primary_hits:(image?[first]:[first,"duplicate","another"]).map((key,i)=>({key,rank:i+1})),
         items,linked:[{anchor_key:first,linked_keys:[other],manifest_status:"PARTIAL",continuation:"next-related"}],channels:[]};
+      if(outcome==="channel-partial")Object.assign(result,{status:"PARTIAL",scope_exhausted:false,channels:[failedChannel("TIMEOUT")]});
+      if(query.text==="历史验收" || (image && globalThis.fixtureSaveImageHistory)){
+        globalThis.fixtureSaveImageHistory=false;
+        const {images, ...conditions}=query, id=crypto.randomUUID();
+        const entry={history_id:id,library_id:data.library.library_id,library_name:data.library.display_name,
+          conditions:{...conditions,image_count:images.length},created_at:"2026-11-20T08:00:00Z",result_count:result.primary_hits.length};
+        const frozen={...result,history_id:id,retrieval_ref:id,
+          items:items.map(item=>({...item,content_ref:{...item.content_ref,retrieval_ref:id}})),
+          linked:result.linked.map(group=>({...group,continuation:null}))};
+        result.history_id=id;
+        sessionStorage.setItem(searchHistoryKey,JSON.stringify([{entry,result:frozen,availability:"AVAILABLE"},...historyList()]));
+      }
+      return result;
     }
-    if(suffix.endsWith("/retrievals/receipt/context/text")){
+    const imageContext=suffix.match(/\/(?:retrievals|search-history)\/[^/]+\/context\/(figure|photo)$/);
+    if(imageContext)return {blocks:[],has_before:false,has_after:false,pdf_page:imageContext[1]==="figure"?6:null};
+    if(suffix.endsWith("/retrievals/receipt/context/text") || /\/search-history\/[^/]+\/context\/text$/.test(suffix)){
       const before=Number(url.searchParams.get("before")), after=Number(url.searchParams.get("after"));
       const block=(key,text)=>({key,kind:"PARAGRAPH",anchor:false,locators:[{page_no:1}],segments:[{text,matched:false}]});
       return {blocks:[...(before>2?[block("earliest","展开后显示的更早一段")]:[]),block("preceding","原文上一段"),
@@ -241,12 +279,25 @@ function installFixture(data,empty,pdfBase64){
       globalThis.fixtureReparsing=suffix.split("/").at(-1).split(":")[0];
       return {job_id:"replacement-job",status:"RECEIVED"};
     }
+    if(view==="agents" && suffix==="/agents" && init.method==="POST"){
+      managedAgent={...managedAgent,...JSON.parse(init.body)};
+      return managedAgent;
+    }
+    if(view==="agents" && suffix==="/agents/agent-1" && init.method==="PATCH"){
+      const {expected_row_version,...changes}=JSON.parse(init.body);
+      managedAgent={...managedAgent,...changes,row_version:expected_row_version+1};
+      return managedAgent;
+    }
     if(init.method && init.method!=="GET")return {};
     if(suffix==="/access")return {permissions:data.permissions,domain_id:1,domain_name:"企业知识工作域",user_id:"fixture-user",display_name:"知识管理员"};
     if(suffix==="/bootstrap")return {agents:value("agent"),libraries:value("library")};
-    if(suffix==="/agents" || suffix==="/manage/agents")return value("agent");
-    if(suffix==="/agents/agent-1")return data.agent;
-    if(suffix==="/agents/options")return {libraries:value("library"),data_models:[],models:[]};
+    if(suffix==="/agents" || suffix==="/manage/agents")return view==="agents" && !empty?[managedAgent]:value("agent");
+    if(suffix==="/agents/agent-1")return view==="agents"?managedAgent:data.agent;
+    if(suffix==="/agents/options")return {libraries:value("library"),data_models:[],models:view!=="agents"?[]:[
+      {model_id:"ocr-1",category:6,display_name:"文字识别"},
+      {model_id:"vlm-1",category:5,display_name:"图片理解"},
+      {model_id:"llm-1",category:1,display_name:"对话模型"},
+    ]};
     if(suffix==="/collections")return {libraries:value("library")};
     if(suffix==="/manage/collections" || suffix==="/knowledge-cores")return value("library");
     if(suffix.endsWith("/model-catalog"))return globalThis.fixtureIndexEdit?[
@@ -270,8 +321,9 @@ function installFixture(data,empty,pdfBase64){
     const encoder=new TextEncoder();
     const frame=(type,created_at,payload)=>encoder.encode("event: "+type+"\ndata: "+JSON.stringify({event_type:type,created_at,payload})+"\n\n");
     return new Response(new ReadableStream({start(controller){
-      controller.enqueue(frame("answer.delta","2026-11-22T16:01:25Z",{delta:"这是一条实时回答。[D1]"}));
+      controller.enqueue(frame("answer.preview.delta","2026-11-22T16:01:25Z",{chunk_index:1,delta:"这是一条生成预览。<b>纯文本</b>"}));
       globalThis.fixtureFinishReply=()=>{
+        controller.enqueue(frame("answer.delta","2026-11-22T16:01:26Z",{delta:"这是一条实时回答。[D1]"}));
         controller.enqueue(frame("answer.completed","2026-11-22T16:01:26Z",{references:[
           {citation_label:"D1",reference_type:"APP_KNOWLEDGE",title:"实时引用.pdf"},
         ],knowledge_composition:composition}));
@@ -292,11 +344,12 @@ function installFixture(data,empty,pdfBase64){
       return {blob:new Blob([Uint8Array.from(binary,char=>char.charCodeAt(0))],{type:"application/pdf"}),contentType:"application/pdf"};
     }
     if((target.pathname.endsWith("/versions/version-pdf/source") && target.searchParams.get("preview")==="true") ||
-      target.pathname.endsWith("/retrievals/receipt/context/text/pdf")){
+      /\/(?:retrievals|search-history)\/[^/]+\/context\/(?:text|figure)\/pdf$/.test(target.pathname)){
       const binary=globalThis.fixtureInvalidPdf?"<html>invalid</html>":atob(pdfBase64);
       return {blob:new Blob([Uint8Array.from(binary,char=>char.charCodeAt(0))],{type:"application/pdf"}),contentType:"application/pdf"};
     }
-    if(target.pathname.endsWith("/versions/version-png/source") && target.searchParams.get("preview")==="true"){
+    if((target.pathname.endsWith("/versions/version-png/source") && target.searchParams.get("preview")==="true") ||
+      /\/(?:retrievals|search-history)\/[^/]+\/content\/(?:photo|figure)$/.test(target.pathname)){
       const binary=atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cFqkAAAAASUVORK5CYII=");
       return {blob:new Blob([Uint8Array.from(binary,char=>char.charCodeAt(0))],{type:"image/png"}),contentType:"image/png"};
     }
@@ -308,6 +361,7 @@ function installFixture(data,empty,pdfBase64){
     try{
       if(/\/events$/.test(new URL(url,location.origin).pathname))return await fixtureEventStream(url);
       if(/\/(?:source|pdf)$/.test(new URL(url,location.origin).pathname) ||
+        /\/(?:retrievals|search-history)\/[^/]+\/content\/(?:photo|figure)$/.test(new URL(url,location.origin).pathname) ||
         (view==="knowledge" && /\/runs\/run-1\/(?:references\/D1\/content|knowledge\/content\/a{64})$/.test(new URL(url,location.origin).pathname))) {
         const {blob,contentType}=await fixtureRequestBlob(url,init);
         return new Response(blob,{headers:{"content-type":contentType}});
@@ -318,21 +372,24 @@ function installFixture(data,empty,pdfBase64){
   };
   sessionStorage.setItem("kbot.knowledge.session.v1",JSON.stringify({access_token:"fixture-session",domain_id:1,domain_name:"企业知识工作域",display_name:"知识管理员",user_id:"fixture-user"}));
 }
-const httpModule=`export class ApiError extends Error{}; export const businessFetch=(path,options={})=>fixtureRequest(path,options.init||{});export const apiFetch=(path,options={})=>fixtureRequest(path,options);export const businessBlobFetch=(path,options={})=>fixtureRequestBlob(path,options.init||{});export const businessEventStream=(path)=>fixtureEventStream(path);`;
+const httpModule=`export class ApiError extends Error{constructor(status,code,message){super(message);this.status=status;this.code=code;}}; export const businessFetch=async(path,options={})=>{try{return await fixtureRequest(path,options.init||{});}catch(error){if(path.endsWith('/search') && Number.isInteger(error.status))throw new ApiError(error.status,error.code,error.message);throw error;}};export const apiFetch=(path,options={})=>fixtureRequest(path,options);export const businessBlobFetch=(path,options={})=>fixtureRequestBlob(path,options.init||{});export const businessEventStream=(path)=>fixtureEventStream(path);`;
 const entry=`
 import {createApp,computed,h} from 'vue';
 import {createRouter,createWebHistory,RouterView} from 'vue-router';
 import {businessAppPermissionsKey,businessAppPrincipalKey} from '/src/app/businessAppContext.ts';
 import ConfirmDialog from '/src/shared/ui/ConfirmDialog.vue';
+import ToastHost from '/src/shared/ui/ToastHost.vue';
 import '/src/shared/ui/styles.css';
 const name=new URLSearchParams(location.search).get('page'),empty=new URLSearchParams(location.search).get('empty')==='1';
 const pages={${pages.map(key=>JSON.stringify(key)+":()=>import('/src/features/knowledge-retrieval/"+manifest.pages[key].sources[0]+"')").join(",")}};
 const component=(await pages[name]()).default;
 const router=createRouter({history:createWebHistory(),routes:[{path:'/apps/knowledge-retrieval/:domainCode/:pathMatch(.*)*',component,meta:{title:${JSON.stringify(Object.fromEntries(pages.map(key=>[key,manifest.pages[key].title])))}[name]}}]});
-const app=createApp({render:()=>[h(RouterView),h(ConfirmDialog)]});app.use(router);
+const app=createApp({render:()=>[h(RouterView),h(ConfirmDialog),h(ToastHost)]});app.use(router);
 app.provide(businessAppPermissionsKey,computed(()=>Object.fromEntries(${JSON.stringify(permissions)}.map(key=>[key,true]))));
 app.provide(businessAppPrincipalKey,computed(()=>({id:'fixture-user',display_name:'知识管理员',username:'fixture-user'})));
-await router.replace('/apps/knowledge-retrieval/fixture/'+name+'?domainId=1');
+const historyQuery=new URLSearchParams(location.search);
+const restore=Object.fromEntries(['history_id','history_hit'].filter(key=>historyQuery.has(key)).map(key=>[key,historyQuery.get(key)]));
+await router.replace({path:'/apps/knowledge-retrieval/fixture/'+name,query:{domainId:'1',...restore}});
 if(name==='knowledge')document.querySelector('#reference').classList.add('is-viewport-contained','is-agent-chat');
 app.mount('#reference');globalThis.referenceMounted=true;globalThis.fixtureSwitchDomain=()=>router.replace('/apps/knowledge-retrieval/second/'+name+'?domainId=2');`;
 const vite=await createViteServer({root:portal,configFile:false,cacheDir:resolve(artifacts,"vite-cache"),plugins:[vue(),{name:"knowledge-reference",enforce:"pre",resolveId(id){if(id==="/fixture-entry.js")return "\0fixture-entry";if(["@/shared/api/http",resolve(portal,"src/shared/api/http.ts")].includes(id))return "\0fixture-http";},load(id){if(id==="\0fixture-entry")return entry;if(id==="\0fixture-http")return httpModule;},configureServer(server){server.middlewares.use((req,res,next)=>{if(!req.url.startsWith("/reference.html"))return next();res.setHeader("Content-Type","text/html");res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="business-app-shell business-app-knowledge_retrieval"><header class="business-app-topbar"></header><div class="business-app-layout"><aside class="business-app-sidebar"></aside><div class="business-app-content" id="reference"></div></div></div><style>*,*::before,*::after{transition:none!important;animation:none!important}</style><script type="module" src="/fixture-entry.js"></script></body></html>');});}}],resolve:{alias:[{find:"@",replacement:resolve(portal,"src")}]},server:{host:"127.0.0.1",port:0},logLevel:"error"});
@@ -370,6 +427,7 @@ try{
      p{position:absolute;margin:0;left:48px} section + section{break-before:page}</style>
      <section><p style="top:90px">原句：图1-1 用于说明本节检索架构。</p>
        <p style="top:595px">原句：图1-1 用于说明本节检索架构。</p></section>
+     <section></section><section></section><section></section><section></section>
      <section><svg width="300" height="120"><rect width="300" height="120" fill="#ddd"/></svg></section>`);
    pdfBase64=(await pdfPage.pdf({preferCSSPageSize:true})).toString("base64");
    await pdfPage.close();
@@ -476,6 +534,53 @@ try{
      for(const page of pair)assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,name+"/"+width+" 页面溢出");
      if(width===1440 || width===390)for(const [prefix,page]of [["kbot",kbot],["ammolite",reference]])await page.screenshot({path:resolve(artifacts,prefix+"-"+name+"-"+(empty?"empty":"populated")+"-"+width+".png"),fullPage:true});
    }
+   if(!empty && name==="agents"){
+     await kbot.setViewportSize({width:1440,height:1000});
+     const dialog=kbot.locator("#agent-dialog");
+     const ocr=dialog.getByLabel("图片文字识别（OCR）");
+     const vlm=dialog.getByLabel("图片理解（VLM）");
+     const optionIds=field=>field.locator("option").evaluateAll(options=>options.map(option=>option.value));
+     async function buttonStyle(scope,name,variant,minHeight){
+       const actual=await scope.getByRole("button",{name,exact:true}).evaluate((node,variant)=>{
+         const css=getComputedStyle(node);
+         return {variant:node.classList.contains(variant),border:parseFloat(css.borderTopWidth),
+           height:node.getBoundingClientRect().height,background:css.backgroundColor};
+       },variant);
+       assert.ok(actual.variant && actual.border>0 && actual.height>=minHeight,`${name} 应使用全局按钮样式：${JSON.stringify(actual)}`);
+       return actual.background;
+     }
+     const editBackground=await buttonStyle(kbot,"编辑","row-action",32);
+     assert.notEqual(await buttonStyle(kbot,"停用","danger-row-action",32),editBackground);
+     await kbot.getByRole("button",{name:"新建 Agent"}).click();
+     const cancelBackground=await buttonStyle(dialog,"取消","secondary-button",38);
+     assert.notEqual(await buttonStyle(dialog,"保存草稿","primary-button",38),cancelBackground);
+     assert.deepEqual(await optionIds(ocr),["","ocr-1"]);
+     assert.deepEqual(await optionIds(vlm),["","vlm-1"]);
+     await dialog.getByLabel("名称",{exact:true}).fill("图文问答助手");
+     await ocr.selectOption("ocr-1");
+     await vlm.selectOption("vlm-1");
+     await dialog.getByRole("button",{name:"保存草稿"}).click();
+     await kbot.getByText("图文问答助手",{exact:true}).waitFor();
+     await buttonStyle(kbot,"启用","row-action",32);
+     await buttonStyle(kbot,"删除","danger-row-action",32);
+     const submittedModels=method=>kbot.evaluate(method=>JSON.parse(fixtureRequests.find(row=>row.method===method).body).models,method);
+     assert.deepEqual(await submittedModels("POST"),{query_ocr:"ocr-1",query_vlm:"vlm-1"});
+     await kbot.getByRole("button",{name:"编辑",exact:true}).click();
+     await dialog.waitFor();
+     await buttonStyle(dialog,"保存修改","primary-button",38);
+     assert.equal(await ocr.inputValue(),"ocr-1");
+     assert.equal(await vlm.inputValue(),"vlm-1");
+     await ocr.selectOption("");
+     await vlm.selectOption("");
+     await dialog.getByRole("button",{name:"保存修改"}).click();
+     await dialog.waitFor({state:"hidden"});
+     assert.deepEqual(await submittedModels("PATCH"),{});
+     await kbot.getByRole("button",{name:"编辑",exact:true}).click();
+     await dialog.waitFor();
+     assert.equal(await ocr.inputValue(),"");
+     assert.equal(await vlm.inputValue(),"");
+     await dialog.getByRole("button",{name:"取消"}).click();
+   }
    if(!empty && ["knowledge","search","files","processing","knowledge-cores"].includes(name)){
      for(const [index,page] of pair.entries()){
        await page.setViewportSize({width:1440,height:1000});
@@ -577,12 +682,17 @@ try{
          await composerInput.fill("验证实时问答时间");
          await composerInput.press("Enter");
          const liveUser=page.locator(".knowledge-message.user").filter({hasText:"验证实时问答时间"});
-         const liveAnswer=page.locator(".knowledge-message.assistant").filter({hasText:"这是一条实时回答。"});
-         await liveAnswer.waitFor();
+         const preview=page.locator(".knowledge-answer-preview").filter({hasText:"这是一条生成预览。<b>纯文本</b>"});
+         await preview.waitFor();
+         const pendingAnswer=page.locator(".knowledge-message.assistant").filter({has:preview});
          assert.equal(await liveUser.locator("time").innerText(),"00:01:00");
-         assert.equal(await liveAnswer.locator("time").getAttribute("datetime"),"2026-11-22T16:01:25Z");
-         assert.equal(await liveAnswer.locator("time").innerText(),"00:01:25");
+         assert.equal(await pendingAnswer.locator("time").getAttribute("datetime"),"2026-11-22T16:01:25Z");
+         assert.equal(await pendingAnswer.locator("time").innerText(),"00:01:25");
+         assert.equal(await preview.locator("b").count(),0);
+         assert.equal(await button("引用 D1",pendingAnswer).count(),0);
          await page.evaluate(()=>globalThis.fixtureFinishReply());
+         await preview.waitFor({state:"hidden"});
+         const liveAnswer=page.locator(".knowledge-message.assistant").filter({hasText:"这是一条实时回答。"});
          const completedTime=liveAnswer.locator('time[datetime="2026-11-22T16:01:27Z"]');
          await completedTime.waitFor();
          assert.equal(await completedTime.innerText(),"00:01:27");
@@ -651,15 +761,26 @@ try{
        }
        if(name==="search"){
          const reader=page.getByRole("region",{name:"原文阅读",exact:true});
-         assert.equal(await page.getByLabel("结果类型").isVisible(),false);
+         const errorToast=page.locator(".knowledge-toast-region .knowledge-toast.error, .toast-viewport .app-toast-error");
+         const inlineError=page.locator("main .table-error[role='alert']");
+         const searchHead=page.locator(".knowledge-search-list > .knowledge-search-panel-head");
+         const includeImages=page.getByRole("switch",{name:"同时找相关图片"});
+         const onlyImages=page.getByRole("checkbox",{name:"只找图片",exact:true});
+         const searchPayload=()=>page.evaluate(()=>JSON.parse(fixtureRequests.filter(row=>row.path.endsWith("/search")).at(-1).body));
+         assert.equal(await page.getByLabel("结果类型").count(),0,"移除旧下拉框");
+         assert.equal(await includeImages.isChecked(),false,"默认搜正文和表格");
+         assert.equal(await onlyImages.isVisible(),false,"只找图片收在更多条件里");
+         await button("检索").click();
+         await errorToast.getByText("请填写查询文字或选择一张图片。",{exact:true}).waitFor();
+         assert.equal(await inlineError.count(),0,"输入错误不在页面内重复显示");
          await button("更多条件").click();
-         await page.getByLabel("结果类型").selectOption("TEXT");
          await page.getByLabel("主结果数").fill("20");
          await button("收起条件").click();
          await page.getByLabel("查询文字").fill("图1-1");
          await button("检索").click();
          await page.getByText(/2 份文档 · 2 处相关段落/).waitFor();
-         await page.getByText(/仅文字与表格 · 20 条主结果/).waitFor();
+         await searchHead.getByText(/正文与表格 · 20 条主结果/).waitFor();
+         assert.deepEqual((await searchPayload()).output_types,["TEXT","TABLE"]);
          assert.equal(await page.locator(".knowledge-search-hit").count(),2);
          assert.equal(await page.getByText("同一段落的重叠片段",{exact:true}).count(),0);
          const firstSource=page.locator(".knowledge-search-source").filter({has:page.locator(".knowledge-search-document").filter({hasText:"产品手册"})});
@@ -740,15 +861,129 @@ try{
          assert.deepEqual([structured.mode,structured.text,structured.requested_count,structured.predicates],
            ["EXHAUSTIVE",null,20,[{field:"title",operator:"PREFIX",value:"制度"}]]);
          await page.getByRole("checkbox",{name:"按标题或日期查找"}).uncheck();
-         await page.getByLabel("结果类型").selectOption("ALL");
+         await includeImages.check();
+         await button("检索").click();
+         await searchHead.getByText(/同时找相关图片 · 20 条主结果/).waitFor();
+         assert.deepEqual((await searchPayload()).output_types,["TEXT","TABLE","FIGURE","PHOTO","PAGE"]);
+         await onlyImages.check();
+         assert.equal(await includeImages.isChecked(),false,"两种选择互斥");
+         assert.equal(await searchHead.getByText(/同时找相关图片 · 20 条主结果/).isVisible(),true,"编辑未提交不重标已有结果");
+         await button("检索").click();
+         await searchHead.getByText(/只找图片 · 20 条主结果/).waitFor();
+         assert.deepEqual((await searchPayload()).output_types,["FIGURE","PHOTO","PAGE","REGION"]);
+         assert.equal((await searchPayload()).text,"图1-1","只找图片可继续用文字作为查询");
+         await includeImages.check();
+         assert.equal(await onlyImages.isChecked(),false);
          await button("收起条件").click();
          const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cFqkAAAAASUVORK5CYII=","base64");
-         await page.getByLabel("查找同一原图",{exact:true}).setInputFiles({name:"查询.png",mimeType:"image/png",buffer:png});
+         await page.getByLabel("选择查询图",{exact:true}).setInputFiles({name:"查询.png",mimeType:"image/png",buffer:png});
+         await page.getByText("已选查询图 · 只找图片",{exact:true}).waitFor();
+         const imageIntent=page.getByLabel("图片检索方式");
+         assert.equal(await imageIntent.inputValue(),"SOURCE","图搜图默认找出处");
+         await button("更多条件").click();
+         assert.equal(await onlyImages.isChecked(),true);
+         assert.equal(await onlyImages.isDisabled(),true,"选图时固定为只找图片");
+         await button("收起条件").click();
+         await page.evaluate(()=>{globalThis.fixtureSaveImageHistory=true;});
+         await button("检索").click();
+         const figureHit=page.locator(".knowledge-search-hit").getByText("图1-1 检索架构");
+         await figureHit.click();
+         await pdf.getByLabel("PDF 原文第 6 页",{exact:true}).waitFor();
+         await pdf.getByText("已定位到命中页。",{exact:true}).waitFor();
+         assert.equal(await highlight.count(),0,"图片命中不标黄文字");
+         assert.equal(await reader.locator("a[download]").count(),0,"原文阅读不提供下载");
+         assert.equal(await page.evaluate(()=>fixtureRequests.some(row=>row.path.endsWith("/retrievals/receipt/content/figure"))),false,
+           "PDF 命中默认不读取截取图");
+         await button("图片证据",reader).click();
+         await button("预览图片",reader).click();
+         await reader.getByAltText("本次读取的图片证据").waitFor();
+         await button("PDF 原文",reader).click();
+         await pdf.getByText("已定位到命中页。",{exact:true}).waitFor();
+         const imagePayload=await searchPayload();
+         assert.equal(imagePayload.images.length,1);
+         assert.equal(imagePayload.text,null);
+         assert.equal(imagePayload.image_intent,"SOURCE");
+         assert.deepEqual(imagePayload.output_types,["FIGURE","PHOTO","PAGE","REGION"]);
+         await page.waitForFunction(()=>new URL(location.href).searchParams.get("history_hit")==="figure");
+         const imageHistoryId=new URL(page.url()).searchParams.get("history_id");
+         const imageHistoryQuery=new URLSearchParams({history_id:imageHistoryId,history_hit:"figure"});
+         for(const [outcome,message] of [["channel-failure","检索通道执行失败，请稍后重试。"],["channel-timeout","有检索通道超时，请稍后重试。"]]){
+           await page.evaluate(value=>{globalThis.fixtureNextSearchOutcome=value;},outcome);
+           await button("检索").click();
+           await errorToast.getByText(message,{exact:true}).waitFor();
+           await page.getByRole("region",{name:"检索等待",exact:true}).waitFor({state:"detached"});
+           assert.equal(await inlineError.count(),0,"HTTP 200 的业务失败也只显示 Toast");
+           assert.equal(await searchHead.getByText(/本页没有可展示的结果|检索通道执行失败/).count(),0,"失败不冒充空结果");
+           await page.getByText("已选查询图 · 只找图片",{exact:true}).waitFor();
+           assert.deepEqual(await searchPayload(),imagePayload,"失败后保留图片和检索条件");
+         }
+         await page.evaluate(()=>{globalThis.fixtureNextSearchOutcome="channel-partial";});
          await button("检索").click();
          await page.locator(".knowledge-search-hit").getByText("图1-1 检索架构").waitFor();
-         const requests=await page.evaluate(()=>fixtureRequests.filter(row=>row.path.endsWith("/search")));
-         assert.equal(JSON.parse(requests.at(-1).body).images.length,1);
+         assert.equal(await searchHead.getByText(/部分/).count(),1,"部分通道失败仍展示可用命中");
+         await page.evaluate(()=>{globalThis.fixtureNextSearchOutcome="empty";});
+         await button("检索").click();
+         await searchHead.getByText(/未找到核验通过的图片/).waitFor();
+         await imageIntent.selectOption("SIMILAR");
+         await page.evaluate(()=>{globalThis.fixtureNextSearchOutcome="no-visual-index";});
+         await button("检索").click();
+         await errorToast.getByText(/当前知识库没有已发布的图片相似索引/).waitFor();
+         await button("检索").click();
+         await searchHead.getByText(/找相似图 · 只找图片/).waitFor();
+         assert.equal((await searchPayload()).image_intent,"SIMILAR","找相似图必须显式选择");
+         await page.evaluate(()=>{globalThis.fixtureNextSearchOutcome="standalone-image";});
+         await button("检索").click();
+         await page.locator(".knowledge-search-hit").getByText("独立图片命中").click();
+         await reader.getByAltText("本次读取的图片证据").waitFor();
+         assert.equal(await pdf.count(),0,"非 PDF 来源即使有页码也仍预览图片");
+         assert.equal(await page.evaluate(()=>fixtureRequests.some(row=>row.path.endsWith("/context/photo/pdf"))),false);
          await button("移除图片").click();
+         assert.equal(await includeImages.isChecked(),true,"移除图片恢复之前的文字检索设置");
+         await page.getByLabel("查询文字").fill("历史验收");
+         await button("检索").click();
+         await page.waitForFunction(()=>new URL(location.href).searchParams.has("history_id"));
+         const historyId=new URL(page.url()).searchParams.get("history_id");
+         const callsBeforeReplay=await page.evaluate(()=>fixtureRequests.filter(row=>row.path.endsWith("/search")).length);
+         await button("检索历史").click();
+         await drawer.getByText("历史验收",{exact:true}).waitFor();
+         await drawer.getByText(/2026.*3 条主结果/).waitFor();
+         await button("查看当前记录",drawer).click();
+         await page.getByText("历史首批结果 · 未重新检索。",{exact:true}).waitFor();
+         await firstSource.getByRole("button",{name:/业务和内部控制规范/}).click();
+         await pdf.getByText("已定位并标黄命中文字。").waitFor({state:"attached"});
+         assert.equal(await button("继续读取关联",reader).count(),0,"历史禁止使用旧关联游标");
+         assert.equal(await page.evaluate(()=>fixtureRequests.filter(row=>row.path.endsWith("/search")).length),callsBeforeReplay);
+         await page.waitForFunction(()=>new URL(location.href).searchParams.get("history_hit")==="text");
+         const queryString=new URLSearchParams({history_id:historyId,history_hit:"text"});
+         if(index===0)await page.reload();
+         else await page.goto(refOrigin+"/reference.html?page=search&"+queryString);
+         await pdf.getByText("已定位并标黄命中文字。").waitFor({state:"attached"});
+         assert.equal(await page.evaluate(()=>fixtureRequests.filter(row=>row.path.endsWith("/search")).length),0,"刷新不重新召回");
+         if(index===0)await page.goto(kbotOrigin+"/ui/knowledge_retrieval/search.html?"+imageHistoryQuery);
+         else await page.goto(refOrigin+"/reference.html?page=search&"+imageHistoryQuery);
+         await pdf.getByLabel("PDF 原文第 6 页",{exact:true}).waitFor();
+         assert.ok(await page.evaluate(id=>fixtureRequests.some(row=>row.path.endsWith("/search-history/"+id+"/context/figure/pdf")),imageHistoryId),
+           "刷新历史图搜图命中使用历史权限链读取 PDF");
+         assert.equal(await page.evaluate(()=>fixtureRequests.filter(row=>row.path.endsWith("/search")).length),0);
+         if(index===0)await page.goto(kbotOrigin+"/ui/knowledge_retrieval/search.html?"+queryString);
+         else await page.goto(refOrigin+"/reference.html?page=search&"+queryString);
+         await pdf.getByText("已定位并标黄命中文字。").waitFor({state:"attached"});
+         await page.getByLabel("查询文字").fill("编辑未提交");
+         await includeImages.uncheck();
+         await button("重新检索").click();
+         await page.waitForFunction(previous=>{
+           const id=new URL(location.href).searchParams.get("history_id"); return id && id!==previous;
+         },historyId);
+         const replayPayload=await searchPayload();
+         assert.equal(replayPayload.text,"历史验收","按历史原条件重查");
+         assert.deepEqual(replayPayload.output_types,["TEXT","TABLE","FIGURE","PHOTO","PAGE"]);
+         await button("检索历史").click();
+         await drawer.getByText("历史验收",{exact:true}).first().waitFor();
+         await button("删除",drawer).first().click();
+         await page.getByRole("alertdialog",{name:"删除这条检索历史？"}).getByRole("button",{name:"删除",exact:true}).click();
+         await page.waitForFunction(()=>!new URL(location.href).searchParams.has("history_id"));
+         await page.keyboard.press("Escape");
+         await drawer.waitFor({state:"hidden"});
          const query=page.getByLabel("查询文字"), wait=page.getByRole("region",{name:"检索等待",exact:true});
          const stop=button("停止等待",wait), awaiting=button("检索中…");
          const track=wait.locator(".knowledge-search-wait-track");
@@ -801,15 +1036,18 @@ try{
          assert.equal(await page.locator(".knowledge-search-hit").count(),2,"旧请求迟到时不得覆盖新结果");
          await button("检索").click();
          await page.waitForFunction(()=>fixturePendingSearch.length===3);
-         await page.evaluate(()=>fixturePendingSearch[2].resolve("failure"));
-         await page.getByRole("alert").waitFor();
+         await page.evaluate(()=>fixturePendingSearch[2].resolve("timeout"));
+         await errorToast.getByText("检索超时，请稍后重试。",{exact:true}).waitFor();
+         assert.equal(await inlineError.count(),0,"服务异常只显示全局 Toast");
          await wait.waitFor({state:"detached"});
          assert.equal(await query.inputValue(),"下一次的条件");
+         await page.clock.fastForward(8500);
+         await errorToast.waitFor({state:"detached"});
          await button("检索").click();
          await page.waitForFunction(()=>fixturePendingSearch.length===4);
          await page.evaluate(()=>fixturePendingSearch[3].resolve("empty"));
          await wait.waitFor({state:"detached"});
-         assert.equal(await page.getByRole("alert").count(),0,"空结果不能显示为请求失败");
+         assert.equal(await errorToast.count(),0,"空结果不能显示为请求失败");
          assert.equal(await page.locator(".knowledge-search-hit").count(),0);
          await query.fill("切库前检索");
          await button("检索").click();

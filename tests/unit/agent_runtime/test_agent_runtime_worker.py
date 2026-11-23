@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 import unittest
 
+from loguru import logger
 from pydantic import ValidationError
 
 from agent_runtime.application import TaskLease
@@ -19,6 +20,7 @@ from agent_runtime.specialists.conversation.contracts import (
     ContextRewriteOutput,
 )
 from platform_core.identity import uuid7
+from platform_clients.knowledge_computation import KnowledgeComputationClientError
 
 
 class _EchoSkill:
@@ -73,6 +75,27 @@ class AgentRuntimeWorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("valid tuple", detail)
 
     async def test_worker_executes_registered_skill_and_completes_task(self):
+        runtime = await self._execute_skill(_EchoSkill())
+        self.assertIsNotNone(runtime.completed)
+        self.assertIsNone(runtime.failed)
+        self.assertEqual(runtime.completed.artifact.payload["answer"], "你好")
+
+    async def test_worker_keeps_upstream_stage_in_logs_and_status_code_in_task(self):
+        class Rejected:
+            async def execute(self, context):
+                raise KnowledgeComputationClientError(422, "MODALITY_UNAVAILABLE", stage="plan")
+
+        logs = []
+        sink = logger.add(logs.append, level="ERROR", backtrace=False, diagnose=False)
+        try:
+            runtime = await self._execute_skill(Rejected())
+        finally:
+            logger.remove(sink)
+        self.assertEqual(runtime.failed.error_code, "MODALITY_UNAVAILABLE")
+        self.assertIn("stage=plan | upstream_status=422", "".join(logs))
+        self.assertIn("request_id=request-1", "".join(logs))
+
+    async def _execute_skill(self, skill):
         registry = SkillRegistry()
         registry.register(
             SkillManifest(
@@ -93,7 +116,7 @@ class AgentRuntimeWorkerTest(unittest.IsolatedAsyncioTestCase):
                 timeout_seconds=30,
                 data_classification=DataClassification.INTERNAL,
             ),
-            _EchoSkill(),
+            skill,
         )
         lease = TaskLease(
             task_id=uuid7(),
@@ -126,11 +149,7 @@ class AgentRuntimeWorkerTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(await worker.run_once())
-        self.assertIsNotNone(runtime.completed)
-        self.assertIsNone(runtime.failed)
-        self.assertEqual(
-            runtime.completed.artifact.payload["answer"], "你好"
-        )
+        return runtime
 
 
 if __name__ == "__main__":

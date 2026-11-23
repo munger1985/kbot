@@ -89,6 +89,12 @@ async def main() -> None:
                     caller_service=config.service_name,
                     audience=settings.vlm.audience,
                 ),
+                ModelCategory.OCR: AIModelConfigClient(
+                    base_url=settings.ocr.base_url,
+                    timeout=settings.ocr.timeout_seconds,
+                    caller_service=config.service_name,
+                    audience=settings.ocr.audience,
+                ),
             }
         )
         try:

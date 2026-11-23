@@ -1,10 +1,13 @@
 """仅消费已验证 Artifact 的最终回答组合器。"""
 
+import asyncio
 import json
 import re
+from time import monotonic
 from typing import Any
 
 from loguru import logger
+from knowledge_algorithms.contracts.errors import AlgorithmError
 
 from agent_runtime.domain.model_bindings import snapshot_model_id
 from agent_runtime.language import (
@@ -31,6 +34,9 @@ from .contracts import (
 
 
 _CITATION_PATTERN = re.compile(r"\[([A-Z]\d+)\]")
+_PREVIEW_LABEL = re.compile(r"\[[A-Z]+[0-9]+\]")
+_PREVIEW_LABEL_PREFIX = re.compile(r"\[(?:[A-Z]+[0-9]*)?\Z")
+_PREVIEW_CHUNK_SIZE = 2048
 _CITATION_VARIANT_PATTERN = re.compile(
     r"(?:【\s*([A-Z]\d+)\s*】|<sup>\s*\[?([A-Z]\d+)\]?\s*</sup>)",
     re.IGNORECASE,
@@ -70,7 +76,7 @@ class ResponseComposerSkill:
         self._prompt_resolver = prompt_resolver
         self._app_knowledge = app_knowledge
 
-    async def execute(self, context: ExecutionContext) -> SkillResult:
+    async def execute(self, context: ExecutionContext, *, on_preview=None) -> SkillResult:
         clarification = self._blocking_clarification(context)
         if clarification:
             return self._result(context, GroundedAnswer(answer=clarification,
@@ -84,26 +90,94 @@ class ResponseComposerSkill:
         query = self._query_result(context)
         has_documents = any(item.artifact_type == "RETRIEVAL_EVIDENCE" for item in context.input_artifacts)
         if has_documents:
-            return await self._compose_app_knowledge(context, query)
+            return await self._compose_app_knowledge(context, query, on_preview=on_preview)
         if query is not None:
             return await self._compose_query_result(context, query)
         return self._result(context, GroundedAnswer(answer="没有可用的授权证据，未生成无来源回答。",
             status="INSUFFICIENT_EVIDENCE"))
 
     async def execute_stream(self, context: ExecutionContext):
-        """只有通过引用闭包校验的正文才进入 SSE，避免流出后无法撤回的伪造引用。"""
-        result = await self.execute(context)
+        """正式正文保持引用闭包校验；知识问答另行发送无引用的生成预览。"""
+        stream_knowledge = (
+            (context.config_snapshot.get("agent") or {}).get("owner_app_id") == "knowledge_retrieval"
+            and any(item.artifact_type == "RETRIEVAL_EVIDENCE" for item in context.input_artifacts)
+        )
+        if stream_knowledge:
+            queue = asyncio.Queue(maxsize=1)
+            prefix = pending = ""
+            preview_index, last_preview = 0, 0.0
+
+            async def preview(text):
+                nonlocal prefix, pending, preview_index, last_preview
+                text = prefix + text
+                suffix = _PREVIEW_LABEL_PREFIX.search(text)
+                prefix = suffix.group() if suffix else ""
+                pending += _PREVIEW_LABEL.sub("", text[:suffix.start()] if suffix else text)
+                # 第一段立即显示；后续合并细碎 token，避免频繁写入 Run 事件。
+                now = monotonic()
+                if not pending or (not preview_index and not pending.strip()):
+                    return
+                if preview_index and len(pending) < 256 and now - last_preview < 0.2:
+                    return
+                for start in range(0, len(pending), _PREVIEW_CHUNK_SIZE):
+                    preview_index += 1
+                    await queue.put(SkillProgress(event_type="answer.preview.delta", payload={
+                        "chunk_index": preview_index, "delta": pending[start:start + _PREVIEW_CHUNK_SIZE],
+                    }))
+                pending, last_preview = "", now
+
+            async def produce():
+                try:
+                    result = await self.execute(context, on_preview=preview)
+                except Exception as exc:
+                    await queue.put(exc)
+                else:
+                    await queue.put(result)
+
+            producer = asyncio.create_task(produce())
+            try:
+                while True:
+                    item = await queue.get()
+                    if isinstance(item, Exception):
+                        raise item
+                    if isinstance(item, SkillResult):
+                        result = item
+                        break
+                    yield item
+            finally:
+                producer.cancel()
+                await asyncio.gather(producer, return_exceptions=True)
+        else:
+            result = await self.execute(context)
         body = str(result.artifact.payload.get("answer") or "")
-        for index, delta in enumerate(body.splitlines(keepends=True), 1):
+        # 知识回答已经展示生成预览；正文按块替换，避免逐行重复写入。
+        deltas = (body[start:start + _PREVIEW_CHUNK_SIZE] for start in range(0, len(body), _PREVIEW_CHUNK_SIZE)
+                  ) if stream_knowledge else body.splitlines(keepends=True)
+        for index, delta in enumerate(deltas, 1):
             yield SkillProgress(event_type="answer.delta", payload={"chunk_index": index, "delta": delta})
         yield result
 
-    async def _compose_app_knowledge(self, context, query):
+    async def _compose_app_knowledge(self, context, query, *, on_preview=None):
         if self._app_knowledge is None:
             raise ValueError("App 知识 Composer 未正式装配")
         from knowledge_algorithms.contracts.runtime import KnowledgeCompositionArtifact
         from knowledge_algorithms.contracts.wire import decode, encode
-        result = await self._app_knowledge.execute(context)
+        try:
+            preview = {"on_preview": on_preview} if on_preview is not None else {}
+            result = await self._app_knowledge.execute(context, **preview)
+        except AlgorithmError as exc:
+            image_errors = {
+                ("vision_model", "IMAGE_INPUT_UNSUPPORTED"): "当前 Agent 未配置 OCR 或视觉模型。请在 Agent 管理的「运行模型」中配置后重试。",
+                ("question_ocr", "NO_ACCESSIBLE_PAYLOAD"): "本轮没有取得可读的图片文字。请上传更清晰的图片，或给 Agent 配置视觉模型后重试。",
+                ("question_image_budget", "RESOURCE_LIMIT"): "提问图片超过模型处理预算，请减少图片数量或压缩后重试。",
+                ("question_image", "ARTIFACT_EXPIRED"): "本轮图片已不可读取，请重新添加图片后发送。",
+            }
+            message = image_errors.get((exc.stage, exc.code.value))
+            if message is None:
+                raise
+            logger.warning("图文问答不可用 | run_id={} | error_code={} | stage={}",
+                           context.run_id, exc.code.value, exc.stage)
+            return self._result(context, GroundedAnswer(answer=message, status="INSUFFICIENT_EVIDENCE"))
         composition = decode(KnowledgeCompositionArtifact, result.artifact.payload)
         grounded = composition.answer
         references = tuple(ReferenceCard(citation_label=entry.label, run_id=context.run_id,
@@ -115,8 +189,11 @@ class ResponseComposerSkill:
         if grounded:
             text, status, labels = grounded.body, grounded.coverage_status, grounded.used_labels
         else:
-            text = ("未命中可访问资料。" if not composition.evidence.primary_hits else
-                    "已保留检索结果；本轮没有成功交付足够的合法模型载荷，未补写无来源回答。")
+            if composition.delivery.question_image_count:
+                text = "本轮视觉模型未成功返回回答，无法确认图中内容。请稍后重试。"
+            else:
+                text = ("未命中可访问资料。" if not composition.evidence.primary_hits else
+                        "已保留检索结果；本轮没有成功交付足够的合法模型载荷，未补写无来源回答。")
             status, labels = "INSUFFICIENT_EVIDENCE", ()
         query_results, visualizations, warnings = (), (), ()
         if query is not None:
@@ -161,6 +238,13 @@ class ResponseComposerSkill:
         """文档已命中可引用证据时，不让上下文歧义阻断回答。"""
         clarification = cls._clarification(context)
         if clarification is None:
+            return None
+        configuration = context.config_snapshot
+        if ((configuration.get("agent") or {}).get("owner_app_id") == "knowledge_retrieval"
+                and (configuration.get("client_metadata") or {}).get("query_images")
+                and not (configuration.get("app_knowledge") or {}).get("search_only")
+                and any(item.artifact_type == "RETRIEVAL_EVIDENCE" for item in context.input_artifacts)):
+            # 文字改写看不到附件，不能以其歧义判断代替视觉模型。
             return None
         if any(item.artifact_type == "RETRIEVAL_EVIDENCE"
                and ((item.payload or {}).get("evidence") or {}).get("evidence_set", {}).get("primary_hits")

@@ -13,7 +13,7 @@ from platform_core.contracts.knowledge_app import (
     KnowledgeSearchRequest, KnowledgeContinuationRequest, KnowledgeRelationsRequest,
     KnowledgeLibraryView, KnowledgeDocumentPage, KnowledgeUploadReceipt, KnowledgeActionReceipt,
     KnowledgeSearchResult, KnowledgeDirectoryQuery, KnowledgeMemberOption, KnowledgePassageContext,
-    KnowledgePassageQuery, parse_library_revision)
+    KnowledgePassageQuery, KnowledgeSearchHistoryPage, KnowledgeSearchHistoryDetail, parse_library_revision)
 from platform_core.security import get_auth_context
 from main_api.application import knowledge_library_members
 from main_api.api.knowledge_parse_models import validate_parse_models
@@ -190,6 +190,48 @@ async def search(library_id: UUID, payload: KnowledgeSearchRequest, request: Req
 async def continue_results(retrieval_ref: UUID, payload: KnowledgeContinuationRequest, request: Request):
     return await client(request).continue_results(retrieval_ref, payload.model_dump(mode="json"),
                                                  auth_context=get_auth_context(request))
+
+
+@router.get("/search-history", response_model=KnowledgeSearchHistoryPage)
+async def search_history(request: Request, response: Response, limit: Annotated[int, Query(ge=1, le=50)] = 20,
+                         offset: Annotated[int, Query(ge=0)] = 0):
+    response.headers["Cache-Control"] = "no-store"
+    return await client(request).history_page(auth_context=get_auth_context(request), limit=limit, offset=offset)
+
+
+@router.get("/search-history/{identity}", response_model=KnowledgeSearchHistoryDetail)
+async def search_history_detail(identity: UUID, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await client(request).history_detail(identity, auth_context=get_auth_context(request))
+
+
+@router.delete("/search-history/{identity}", response_model=KnowledgeActionReceipt)
+async def search_history_delete(identity: UUID, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await client(request).history_delete(identity, auth_context=get_auth_context(request))
+
+
+@router.get("/search-history/{identity}/content/{key}")
+async def search_history_content(identity: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")], request: Request):
+    download = await client(request).open_content(identity, key, auth_context=get_auth_context(request), history=True)
+    return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
+                             background=BackgroundTask(download.close))
+
+
+@router.get("/search-history/{identity}/context/{key}", response_model=KnowledgePassageContext)
+async def search_history_context(identity: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
+                                 query: Annotated[KnowledgePassageQuery, Query()], request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await client(request).passage_context(identity, key, **query.model_dump(),
+                                                 auth_context=get_auth_context(request), history=True)
+
+
+@router.get("/search-history/{identity}/context/{key}/pdf", response_class=StreamingResponse,
+            responses={200: {"content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}})
+async def search_history_pdf(identity: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")], request: Request):
+    download = await client(request).open_passage_pdf(identity, key, auth_context=get_auth_context(request), history=True)
+    return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
+                             background=BackgroundTask(download.close))
 
 
 @router.post("/retrievals/{retrieval_ref}/relations:continue", response_model=KnowledgeSearchResult)

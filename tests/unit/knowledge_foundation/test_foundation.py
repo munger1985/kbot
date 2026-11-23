@@ -1,10 +1,11 @@
 """新增基础能力的受控测试；没有真实文档、模型或开发数据库访问。"""
 
 import asyncio
-from contextlib import nullcontext
+from contextlib import aclosing, asynccontextmanager, nullcontext
 from dataclasses import replace
 from hashlib import sha256
 from io import BytesIO
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -20,10 +21,11 @@ sys.path[:0] = [str(ROOT / "tests/unit/knowledge_algorithms")]
 from knowledge_algorithm_fixtures import (FakeBackend, CharacterTokenizer, allowed, node, parse_profile,
     provenance, retrieval_profile, run_for, spec, source)
 from knowledge_algorithms.contracts.content import ContentKind
-from knowledge_algorithms.contracts.errors import AlgorithmError
+from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode
 from knowledge_algorithms.contracts.identity import AppBackendBinding, SourceSpan, fingerprint
 from knowledge_algorithms.contracts.query import QueryInput, QueryMode
 from knowledge_algorithms.contracts.retrieval import ChannelSpec, ChannelRequest
+from knowledge_algorithms.contracts.runtime import AppRetrievalArtifact, CitationLabelMap, RetrievalEvidenceArtifact
 from knowledge_algorithms.contracts.wire import encode
 from knowledge_algorithms.parsing.engine import ParseEngine
 from knowledge_algorithms.ports.text_scan import (AuthorizedTextSource, TextScanRequest, lexical_family_order)
@@ -34,8 +36,10 @@ from knowledge_algorithms.retrieval.engine import RetrievalEngine
 from knowledge_algorithms.retrieval.exact import IndexedUnit, ExactIndex, is_orphan_letter, lexical_tokens
 from knowledge_algorithms.retrieval.maxsim import TokenMatrix
 from knowledge_algorithms.retrieval.selection import PayloadCost
-from agent_runtime.application.knowledge_delivery import KnowledgeEvidenceComposer, ModelEvidenceReply, EvidenceDeliveryError
+from agent_runtime.application.knowledge_delivery import KnowledgeEvidenceComposer, ModelEvidenceReply, EvidenceDeliveryError, QuestionImage
 from agent_runtime.adapters.knowledge_model import KnowledgeEvidenceModelGateway
+from agent_runtime.specialists.response_composer.app_knowledge_skill import AppKnowledgeComposerSkill
+from agent_runtime.specialists.response_composer.skill import ResponseComposerSkill
 from knowledge_core.adapters.document_parsing import WorkerArtifactWriter, NativeImageAdapter
 
 
@@ -167,8 +171,8 @@ class ImageParserTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DeliveryTests(unittest.IsolatedAsyncioTestCase):
-    async def setup_evidence(self, *, image=False):
-        backend = FakeBackend()
+    async def setup_evidence(self, *, image=False, owner=None):
+        backend = FakeBackend() if owner is None else FakeBackend(owner=owner)
         self.raw = b"synthetic-image" if image else "合成证据".encode()
         self.other_raw = b"another source"
         p = backend.add("p", ContentKind.FIGURE if image else ContentKind.PARAGRAPH)
@@ -221,11 +225,201 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
                          ["PREPARED", "SENT"])
         self.assertEqual(result.answer.used_labels, ("D1",))
 
+    @staticmethod
+    def _model_frame(text):
+        return ("data: " + json.dumps({"choices": [{"delta": {"content": text}}]}, ensure_ascii=False)).encode()
+
+    async def _stream_skill(self, lines):
+        await self.setup_evidence(owner="knowledge_retrieval")
+        model_id, run_id, turn_id = str(uuid4()), uuid4(), uuid4()
+
+        @asynccontextmanager
+        async def response(method, path, *, auth_context, payload):
+            self.assertEqual((method, path), ("POST", "/internal/v1/chat/completions"))
+            self.assertIs(auth_context, self)
+            self.assertEqual((payload["stream"], payload["max_tokens"]), (True, 1234))
+            yield SimpleNamespace(content_type="text/event-stream", content=lines)
+
+        self.composer.gateway = KnowledgeEvidenceModelGateway(client=SimpleNamespace(response=response),
+            auth_context=self, model_snapshot_ref="m", model_payload={"model_id": model_id, "max_tokens": 1234},
+            system_prompt="合成提示", supports_images=False, clock=lambda: 1000)
+        artifact = AppRetrievalArtifact(str(uuid4()), RetrievalEvidenceArtifact(
+            str(run_id), str(turn_id), self.evidence, CitationLabelMap(str(run_id), ())))
+        context = SimpleNamespace(owner_app_id="knowledge_retrieval", run_id=run_id, task_id=uuid4(),
+            original_input="问题", config_snapshot={
+                "agent": {"owner_app_id": "knowledge_retrieval",
+                          "models": {"composer_llm": {"config_fingerprint": "m"}}},
+                "app_knowledge": {"turn_ref": str(turn_id), "model_snapshot_ref": "m",
+                                  "payload_budget": encode(PayloadCost(10000, 0, 10000))}},
+            input_artifacts=(SimpleNamespace(artifact_type="RETRIEVAL_EVIDENCE", artifact_id=uuid4(),
+                                             security_level=0, payload=encode(artifact)),))
+        app = AppKnowledgeComposerSkill(composer_factory=lambda context, text_only: self.composer,
+                                        content_port_factory=lambda *args: self.port)
+        return ResponseComposerSkill(model_client=None, prompt_resolver=None, app_knowledge=app).execute_stream(context)
+
+    async def test_model_stream_previews_before_completion_and_finalizes_verified_citations(self):
+        release = asyncio.Event()
+        second = "。后续正文" * 60
+
+        async def lines():
+            yield self._model_frame("首段 [D") + b"\n"
+            yield b"\n"
+            await release.wait()
+            yield self._model_frame("1]" + second) + b"\n"
+            yield b"\n"
+            yield b"data: [DONE]\n"
+            yield b"\n"
+
+        async with aclosing(await self._stream_skill(lines())) as stream:
+            first = await asyncio.wait_for(anext(stream), 2)
+            self.assertEqual((first.event_type, first.payload["delta"]), ("answer.preview.delta", "首段 "))
+            self.assertEqual([value.status for _, value in self.recorder.events], ["PREPARED"])
+            release.set()
+            items = [item async for item in stream]
+        self.assertEqual(items[0].event_type, "answer.preview.delta")
+        self.assertEqual(items[0].payload["delta"], second)
+        answer = items[-1].artifact.payload
+        self.assertEqual(answer["answer"], "首段 [D1]" + second)
+        self.assertEqual([row["citation_label"] for row in answer["references"]], ["D1"])
+        self.assertEqual("".join(item.payload["delta"] for item in items[1:-1]), answer["answer"])
+
+    async def test_model_stream_error_or_truncation_cannot_publish_partial_answer(self):
+        for last in (b"", b"data: {broken}\n\n", b'data: {"error":"provider failed"}\n\n', b"data: [DONE]\n"):
+            with self.subTest(last=last):
+                async def lines():
+                    yield self._model_frame("未完成的文字 [D1]") + b"\n"
+                    yield b"\n"
+                    for line in last.splitlines(keepends=True):
+                        yield line
+                items = [item async for item in await self._stream_skill(lines())]
+                self.assertEqual(items[0].event_type, "answer.preview.delta")
+                answer = items[-1].artifact.payload
+                self.assertNotIn("未完成的文字", answer["answer"])
+                self.assertEqual(answer["references"], [])
+                self.assertEqual([value.status for _, value in self.recorder.events],
+                                 ["PREPARED", "UNKNOWN_DELIVERY"])
+
+    async def test_model_stream_forged_citation_never_becomes_a_final_answer(self):
+        async def lines():
+            yield self._model_frame("无效引用 [D999]") + b"\n"
+            yield b"\n"
+            yield b"data: [DONE]\n"
+            yield b"\n"
+        async with aclosing(await self._stream_skill(lines())) as stream:
+            first = await anext(stream)
+            self.assertEqual(first.payload["delta"], "无效引用 ")
+            with self.assertRaises(AlgorithmError):
+                await anext(stream)
+        self.assertEqual([value.status for _, value in self.recorder.events], ["PREPARED", "SENT"])
+
+    async def test_closing_preview_cancels_the_model_stream(self):
+        closed = asyncio.Event()
+        async def lines():
+            try:
+                yield self._model_frame("未完成的文字") + b"\n"
+                yield b"\n"
+                await asyncio.Future()
+            finally:
+                closed.set()
+        async with aclosing(await self._stream_skill(lines())) as stream:
+            self.assertEqual((await anext(stream)).event_type, "answer.preview.delta")
+        self.assertTrue(closed.is_set())
+        self.assertEqual([value.status for _, value in self.recorder.events], ["PREPARED", "UNKNOWN_DELIVERY"])
+
     async def test_image_only_payload_does_not_need_text_gate(self):
         await self.setup_evidence(image=True)
         result = await self.compose()
         self.assertEqual(result.delivery.status, "SENT")
         self.assertEqual(self.gateway.calls[0]["evidence_parts"][0]["kind"], "IMAGE")
+
+    async def test_question_image_can_answer_without_library_evidence(self):
+        await self.setup_evidence()
+        self.port.broken = {self.p, self.q}
+        image = QuestionImage("image/png", b"test-image")
+
+        async def answer_from_upload(**kwargs):
+            self.assertEqual(kwargs["evidence_parts"], ())
+            self.assertEqual(kwargs["question_images"], (image,))
+            return ModelEvidenceReply("上传的图中有两个步骤。", (), 1000)
+
+        self.gateway.generate = answer_from_upload
+        result = await self.compose(question_images=(image,))
+        self.assertEqual(result.delivery.status, "SENT")
+        self.assertEqual(result.delivery.question_image_count, 1)
+        self.assertEqual(result.delivery.prepared, ())
+        self.assertEqual(result.answer.used_labels, ())
+        self.assertEqual(result.answer.references, ())
+
+    async def test_question_image_never_silently_removed_for_text_only_model(self):
+        await self.setup_evidence()
+        self.composer.image_mime_types = frozenset()
+        with self.assertRaises(AlgorithmError) as error:
+            await self.compose(question_images=(QuestionImage("image/png", b"test-image"),))
+        self.assertEqual(error.exception.code, ErrorCode.IMAGE_INPUT_UNSUPPORTED)
+        self.assertFalse(self.gateway.calls)
+
+    async def test_explicit_transcription_uses_ocr_without_sending_to_vision_model(self):
+        await self.setup_evidence()
+        result = await self.compose(question_images=(QuestionImage("image/png", b"test-image", "OCR 文字 [D1]"),),
+            ocr_model_snapshot_ref="ocr/v1", transcription_requested=True)
+        self.assertIn("OCR 文字 ［D1］", result.answer.body)
+        self.assertEqual(result.answer.used_labels, ())
+        self.assertEqual(result.delivery.question_image_kind, "OCR")
+        self.assertEqual(result.delivery.model_snapshot_ref, "ocr/v1")
+        self.assertFalse(result.selection.selected_evidence_keys)
+        self.assertFalse(self.gateway.calls)
+
+    async def test_ocr_only_does_not_claim_to_understand_image(self):
+        await self.setup_evidence()
+        self.composer.image_mime_types = frozenset()
+        result = await self.compose(question_images=(QuestionImage("image/png", b"test-image", "供应商质量"),),
+                                    ocr_model_snapshot_ref="ocr/v1")
+        self.assertIn("未解读图形", result.answer.body)
+        self.assertIn("供应商质量", result.answer.body)
+        self.assertFalse(self.gateway.calls)
+
+    async def test_incomplete_ocr_transcription_falls_back_to_original_image(self):
+        await self.setup_evidence()
+        result = await self.compose(
+            question_images=(QuestionImage("image/png", b"img-one", "识别到的字"),
+                             QuestionImage("image/png", b"img-two")),
+            ocr_model_snapshot_ref="ocr/v1", transcription_requested=True)
+        self.assertIsNone(result.delivery.question_image_kind)
+        self.assertEqual(result.delivery.question_image_count, 2)
+        delivered = self.gateway.calls[0]["question_images"]
+        self.assertEqual(tuple(image.data for image in delivered), (b"img-one", b"img-two"))
+        self.assertEqual(delivered[0].ocr_text, "识别到的字")
+
+    async def test_ocr_without_visible_text_and_without_vision_reports_gap(self):
+        await self.setup_evidence()
+        self.composer.image_mime_types = frozenset()
+        with self.assertRaises(AlgorithmError) as error:
+            await self.compose(question_images=(QuestionImage("image/png", b"test-image"),),
+                               ocr_model_snapshot_ref="ocr/v1")
+        self.assertEqual((error.exception.code, error.exception.stage),
+                         (ErrorCode.NO_ACCESSIBLE_PAYLOAD, "question_ocr"))
+        self.assertFalse(self.gateway.calls)
+
+    async def test_question_images_take_budget_before_library_evidence(self):
+        await self.setup_evidence(image=True)
+        gateway_calls = self.gateway.calls
+
+        async def generate(**kwargs):
+            gateway_calls.append(kwargs)
+            return ModelEvidenceReply("根据用户图片回答。", (), 1000)
+
+        self.gateway.generate = generate
+        result = await self.composer.compose(run_ref="run-1", turn_ref="turn-1", model_snapshot_ref="model/v1",
+            evidence_set=self.evidence, content_port=self.port, question="问题", budget=PayloadCost(10000, 1, 10000),
+            question_images=(QuestionImage("image/png", b"test-image"),))
+        self.assertEqual(result.delivery.question_image_count, 1)
+        self.assertTrue(all(part["kind"] == "TEXT" for part in self.gateway.calls[0]["evidence_parts"]))
+
+    async def test_question_image_may_not_invent_library_citations(self):
+        await self.setup_evidence()
+        self.port.broken = {self.p, self.q}
+        with self.assertRaises(AlgorithmError):
+            await self.compose(question_images=(QuestionImage("image/png", b"test-image"),))
 
     async def test_one_materialization_failure_preserves_other_sources(self):
         await self.setup_evidence()
@@ -234,6 +428,62 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.delivery.status, "SENT")
         self.assertEqual(self.gateway.calls[0]["evidence_parts"][0]["data"], self.other_raw)
         self.assertEqual(result.answer.coverage_status, "PARTIAL")
+
+    async def test_budgeted_reads_are_bounded_and_keep_ranked_citations(self):
+        await self.setup_evidence()
+        backend, bodies = FakeBackend(), {}
+        for rank in range(10):
+            key = backend.add(f"p{rank}")
+            raw = f"段落{rank}".encode()
+            bodies[key] = raw
+            backend.items[key] = replace(backend.items[key], byte_count=len(raw),
+                content_hash=sha256(raw).hexdigest(), estimated_cost=PayloadCost(3, 0, len(raw)))
+        backend.rows = {"lexical": tuple((key, 10 - rank) for rank, key in enumerate(bodies))}
+        self.evidence = await RetrievalEngine(backend, None).retrieve(
+            QueryInput(QueryMode.RELEVANCE, 10, ("TEXT",), text="段落"), backend.scope, retrieval_profile())
+        reads, active, peak = [], 0, 0
+
+        async def content(key, *, max_bytes):
+            nonlocal active, peak
+            reads.append(key)
+            active += 1
+            peak = max(peak, active)
+            try:
+                await asyncio.sleep(0)
+                self.assertEqual(max_bytes, len(bodies[key]))
+                yield bodies[key]
+            finally:
+                active -= 1
+
+        self.port.content = content
+        result = await self.composer.compose(run_ref="run-1", turn_ref="turn-1", model_snapshot_ref="model/v1",
+            evidence_set=self.evidence, content_port=self.port, question="问题", budget=PayloadCost(12, 0, 1000))
+        ranked = [hit.evidence_key for hit in self.evidence.primary_hits]
+        self.assertEqual(len(ranked), 10)
+        self.assertEqual(reads, ranked[:4])
+        self.assertEqual(peak, 4)
+        self.assertEqual(tuple(label.evidence_key for label in result.labels.entries), tuple(ranked[:4]))
+        self.assertEqual(result.answer.used_labels, ("D1",))
+
+    async def test_single_slot_reads_next_candidate_only_after_failure(self):
+        await self.setup_evidence()
+        reads = []
+        original = self.port.content
+
+        async def content(key, *, max_bytes):
+            reads.append(key)
+            async for block in original(key, max_bytes):
+                yield block
+
+        self.port.content = content
+        self.port.broken = {self.p}
+        self.composer.max_payload_bytes = max(len(self.raw), len(self.other_raw))
+        result = await self.composer.compose(run_ref="run-1", turn_ref="turn-1", model_snapshot_ref="model/v1",
+            evidence_set=self.evidence, content_port=self.port, question="问题",
+            budget=PayloadCost(100, 0, max(len(self.raw), len(self.other_raw))))
+        self.assertEqual(reads, [self.p, self.q])
+        self.assertEqual(result.labels.entries[0].evidence_key, self.q)
+        self.assertEqual(result.delivery.status, "SENT")
 
     async def test_malformed_model_receipt_is_unknown_not_prepared(self):
         await self.setup_evidence()
@@ -291,13 +541,22 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             model_payload={"model_id":str(model_id), "max_tokens":77}, system_prompt="合成受控提示",
             supports_images=True, clock=lambda:1000)
         result = await gateway.generate(question="图里是什么", model_snapshot_ref="m",
-            evidence_parts=({"label":"D1", "kind":"IMAGE", "data":b"image", "mime_type":"image/png"},))
+            evidence_parts=({"label":"D1", "kind":"IMAGE", "data":b"image", "mime_type":"image/png"},),
+            question_images=(QuestionImage("image/jpeg", b"user-image", "识别文字"),))
         content = client.payload["messages"][1]["content"]
+        self.assertEqual(content[0]["text"], "图里是什么")
+        self.assertEqual(content[2]["image_url"]["url"], "data:image/jpeg;base64," + base64.b64encode(b"user-image").decode())
+        self.assertIn("识别文字", content[3]["text"])
+        self.assertLess(content.index({"type":"text", "text":"[D1]"}), len(content) - 1)
         self.assertEqual(content[-1]["image_url"]["url"], "data:image/png;base64," + base64.b64encode(b"image").decode())
         self.assertEqual(client.payload["max_tokens"],77)
         self.assertEqual(client.path,"/internal/v1/inference")
+        from model_serving.vlm.model.openai_client import OpenAIVLM
         from model_serving.vlm.schema import VLMRequest
-        self.assertEqual(VLMRequest.model_validate(client.payload).model_id, model_id)
+        request = VLMRequest.model_validate(client.payload)
+        self.assertEqual(request.model_id, model_id)
+        self.assertTrue(OpenAIVLM._validate_messages(None, request.messages))
+        self.assertIn("合成受控提示", request.messages[0]["content"][0]["text"])
         self.assertEqual(result.used_labels,("D1",))
 
 

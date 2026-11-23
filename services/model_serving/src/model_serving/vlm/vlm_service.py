@@ -140,12 +140,11 @@ class VLMService:
                 # Handle streaming response
                 async def generate_stream():
                     try:
-                        content_parts = []
-                        last_chunk = None
+                        usage = None
 
                         async for chunk in response: # type: ignore
                             logger.debug(f"收到响应块类型：{type(chunk)}")
-                            last_chunk = chunk
+                            usage = getattr(chunk, "usage", None) or usage
 
                             if not hasattr(chunk, 'choices'):
                                 logger.warning("收到无效响应块：缺少 'choices' 属性")
@@ -163,46 +162,19 @@ class VLMService:
                             if delta and hasattr(delta, 'content'):
                                 content = delta.content
                                 if content is not None:
-                                    content_parts.append(str(content))
                                     yield str(content)
                                 else:
                                     logger.debug("收到 content 为空的 delta")
                             else:
                                 logger.debug("收到不含 content 字段的 delta")
 
-                        # Append token usage statistics after stream completion
-                        if hasattr(last_chunk, 'usage'):
+                        # 部分模型从不发送用量，另一些用空 choices 的尾帧发送。
+                        usage = usage or getattr(response, "usage", None)
+                        if usage is not None:
                             yield "\n\n=== USAGE ===\n" + json.dumps({
-                                "total_tokens": int(last_chunk.usage.total_tokens), # type: ignore
-                                "prompt_tokens": int(last_chunk.usage.prompt_tokens), # type: ignore
-                                "completion_tokens": int(last_chunk.usage.completion_tokens) # type: ignore
-                            })
-                        elif hasattr(response, 'usage'):
-                            yield "\n\n=== USAGE ===\n" + json.dumps({
-                                "total_tokens": int(response.usage.total_tokens), # type: ignore
-                                "prompt_tokens": int(response.usage.prompt_tokens), # type: ignore
-                                "completion_tokens": int(response.usage.completion_tokens) # type: ignore
-                            })
-
-                        # Append full response metadata after usage stats
-                        if last_chunk:
-                            yield "\n\n=== FULL RESPONSE ===\n" + json.dumps({
-                                "id": last_chunk.id,
-                                "choices": [{
-                                    "delta": {
-                                        "content": last_chunk.choices[0].delta.content,
-                                        "role": last_chunk.choices[0].delta.role,
-                                        "function_call": last_chunk.choices[0].delta.function_call,
-                                        "tool_calls": last_chunk.choices[0].delta.tool_calls
-                                    },
-                                    "finish_reason": last_chunk.choices[0].finish_reason,
-                                    "index": last_chunk.choices[0].index
-                                }],
-                                "created": last_chunk.created,
-                                "model": last_chunk.model,
-                                "object": last_chunk.object,
-                                "system_fingerprint": last_chunk.system_fingerprint if hasattr(last_chunk, 'system_fingerprint') else None,
-                                "service_tier": last_chunk.service_tier if hasattr(last_chunk, 'service_tier') else None
+                                "total_tokens": int(usage.total_tokens),
+                                "prompt_tokens": int(usage.prompt_tokens),
+                                "completion_tokens": int(usage.completion_tokens),
                             })
 
                     except Exception as e:

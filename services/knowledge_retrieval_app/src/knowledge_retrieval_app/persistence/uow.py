@@ -4,6 +4,7 @@ from knowledge_retrieval_app.repositories.knowledge_library import KnowledgeLibr
 from knowledge_retrieval_app.repositories.knowledge_queue import KnowledgeJobQueueRepository
 from knowledge_retrieval_app.repositories.knowledge_ingestion import KnowledgeIngestionRepository
 from knowledge_retrieval_app.repositories.knowledge_retrieval import KnowledgeRetrievalRepository
+from knowledge_retrieval_app.repositories.knowledge_search_history import KnowledgeSearchHistoryRepository
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from knowledge_retrieval_app.repositories import (
@@ -41,6 +42,14 @@ class KnowledgeRetrievalAppUnitOfWork:
     def library(self, scope):
         self._require_knowledge_active()
         return KnowledgeLibraryRepository(self.session, scope)
+
+    def search_history(self, scope):
+        self._require_knowledge_active()
+        return KnowledgeSearchHistoryRepository(self.session, scope)
+
+    async def purge_search_history(self, *, now):
+        self._require_knowledge_active()
+        return await KnowledgeSearchHistoryRepository.purge_expired(self.session, now=now)
 
     def _require_knowledge_active(self):
         if self.session is None or self._committed:

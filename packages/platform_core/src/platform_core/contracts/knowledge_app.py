@@ -1,5 +1,6 @@
 """业务知识库公开输入合同；浏览器不能指定内部 Scope、模型、表或检索 Profile。"""
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 import re
@@ -70,6 +71,7 @@ class KnowledgeOrder(KnowledgePayload):
 class KnowledgeSearchRequest(KnowledgePayload):
     text: str | None = Field(default=None, min_length=1, max_length=32000)
     images: list[KnowledgeQueryImage] = Field(default_factory=list, max_length=4)
+    image_intent: Literal["SOURCE", "SIMILAR"] | None = None
     requested_count: int = Field(default=10, ge=1, le=100)
     output_types: list[Literal["TEXT", "FIGURE", "PHOTO", "TABLE", "PAGE", "REGION", "MIXED"]] = Field(
         default_factory=lambda: ["TEXT", "FIGURE", "PHOTO", "TABLE", "PAGE"])
@@ -88,6 +90,8 @@ class KnowledgeSearchRequest(KnowledgePayload):
             raise ValueError("多图查询必须指定组合语义")
         if len(self.images) <= 1 and self.combination is not None:
             raise ValueError("单图不能指定多图组合")
+        if self.image_intent is not None and (len(self.images) != 1 or self.text):
+            raise ValueError("图片检索意图只适用于单张查询图")
         if len(set(self.output_types)) != len(self.output_types) or not self.output_types:
             raise ValueError("结果类型必须非空且不能重复")
         if sum(len(image.image_base64) for image in self.images) > 12000000:
@@ -387,6 +391,7 @@ class KnowledgeChannelView(KnowledgePayload):
 
 
 class KnowledgeSearchResult(KnowledgePayload):
+    history_id: UUID | None = None
     retrieval_ref: str
     status: str
     reason: str | None
@@ -398,3 +403,35 @@ class KnowledgeSearchResult(KnowledgePayload):
     channels: list[KnowledgeChannelView]
     model_delivery: str
     scope_exhausted: bool
+
+
+class KnowledgeSearchHistoryConditions(KnowledgePayload):
+    text: str | None
+    image_count: int
+    image_intent: Literal["SOURCE", "SIMILAR"] | None = None
+    requested_count: int
+    output_types: list[str]
+    combination: str | None
+    mode: str
+    predicates: list[KnowledgePredicate]
+    order_by: list[KnowledgeOrder]
+
+
+class KnowledgeSearchHistoryEntry(KnowledgePayload):
+    history_id: UUID
+    library_id: UUID
+    library_name: str | None
+    created_at: datetime
+    conditions: KnowledgeSearchHistoryConditions
+    result_count: int
+
+
+class KnowledgeSearchHistoryPage(KnowledgePayload):
+    items: list[KnowledgeSearchHistoryEntry]
+    has_more: bool
+
+
+class KnowledgeSearchHistoryDetail(KnowledgePayload):
+    entry: KnowledgeSearchHistoryEntry
+    result: KnowledgeSearchResult | None
+    availability: Literal["AVAILABLE", "PARTIAL", "UNAVAILABLE"]

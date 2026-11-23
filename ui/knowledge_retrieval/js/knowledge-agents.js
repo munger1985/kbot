@@ -11,6 +11,8 @@
     router_llm: "agent-router-llm",
     x_search_llm: "agent-x-search-llm",
     data_planner_llm: "agent-data-planner-llm",
+    query_ocr: "agent-query-ocr",
+    query_vlm: "agent-query-vlm",
   });
   const ROUTER_THRESHOLDS = [
     [0.4, "较宽松（40%）"], [0.6, "标准（60%，默认）"], [0.8, "较严格（80%）"],
@@ -42,13 +44,15 @@
   function actionButtons(row) {
     const id = escapeHtml(row.agent_id);
     if (row.status === "ARCHIVED") return '<span class="knowledge-badge">只读</span>';
+    const button = (action, label, danger = false) =>
+      `<button class="${danger ? "danger-row-action" : "row-action"}" type="button" data-agent-action="${action}" data-agent-id="${id}">${label}</button>`;
     const lifecycle = row.status === "ACTIVE"
-      ? `<button class="small" type="button" data-agent-action="disable" data-agent-id="${id}">停用</button>`
-      : `<button class="small primary" type="button" data-agent-action="activate" data-agent-id="${id}">启用</button>`;
+      ? button("disable", "停用", true)
+      : button("activate", "启用");
     return `<div class="knowledge-row-actions">
-      <button class="small" type="button" data-agent-action="edit" data-agent-id="${id}">编辑</button>
+      ${button("edit", "编辑")}
       ${lifecycle}
-      ${row.status === "ACTIVE" ? "" : `<button class="small danger" type="button" data-agent-action="archive" data-agent-id="${id}">删除</button>`}
+      ${row.status === "ACTIVE" ? "" : button("archive", "删除", true)}
     </div>`;
   }
 
@@ -126,9 +130,13 @@
     const llms = state.options.models.filter((row) => KBotKnowledgeApi.modelCategory(row) === KBotKnowledgeApi.ModelCategory.LLM);
     const grokModels = llms.filter(KBotKnowledgeApi.isGrokModel);
     const embeddings = state.options.models.filter((row) => KBotKnowledgeApi.modelCategory(row) === KBotKnowledgeApi.ModelCategory.TXT_EMBEDDING);
+    const categories = { query_ocr: KBotKnowledgeApi.ModelCategory.OCR, query_vlm: KBotKnowledgeApi.ModelCategory.VLM };
     Object.entries(MODEL_ROLES).forEach(([role, id]) => {
-      const placeholder = role === "data_planner_llm" ? "跟随回答生成 LLM" : "不绑定";
-      const rows = role === "memory_embedding" ? embeddings : role === "x_search_llm" ? grokModels : llms;
+      const imageModel = Object.hasOwn(categories, role);
+      const rows = imageModel ? state.options.models.filter(row => KBotKnowledgeApi.modelCategory(row) === categories[role])
+        : role === "memory_embedding" ? embeddings : role === "x_search_llm" ? grokModels : llms;
+      const placeholder = role === "data_planner_llm" ? "跟随回答生成 LLM"
+        : imageModel && !rows.length ? "没有可选的已启用模型" : "不绑定";
       setSelectOptions(element(id), rows, current?.models?.[role], placeholder);
     });
   }

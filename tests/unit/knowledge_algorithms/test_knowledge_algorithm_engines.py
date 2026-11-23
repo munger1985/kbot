@@ -365,6 +365,20 @@ class RetrievalEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({item.key for item in result.evidence}, {a, b, c})
         self.assertEqual(result.status, "COMPLETE")
 
+    async def test_image_source_search_prioritizes_verified_identical_file(self):
+        source, visual_only = (self.backend.add(name, ContentKind.FIGURE) for name in ("source", "visual"))
+        self.backend.rows = {"exact": ((source, 1),), "visual": ((visual_only, 1),)}
+        visual = ChannelSpec("visual", "visual", "MULTIVECTOR", "IMAGE_TO_IMAGE", 2, 10, 1, False,
+                             spec(kind="MULTIVECTOR", input_kind="IMAGE", direction="IMAGE_TO_IMAGE"))
+        exact = ChannelSpec("exact", "image-identity", "NEAR_DUPLICATE", "IMAGE_TO_IMAGE", 1, 10, 1, False)
+        query = QueryInput(QueryMode.RELEVANCE, 2, ("FIGURE",), image_handles=("image-query",))
+
+        result = await RetrievalEngine(self.backend, FakeModel()).retrieve(
+            query, self.backend.scope, retrieval_profile(channels=(exact, visual)),
+            primary_relations_only=True, prefer_exact_image=True)
+
+        self.assertEqual(tuple(hit.evidence_key for hit in result.primary_hits), (source, visual_only))
+
     async def test_multiple_images_one_signal_vote_and_all_target_coverage(self):
         a, b = self.backend.add("a", ContentKind.FIGURE), self.backend.add("b", ContentKind.FIGURE)
         self.backend.rows = {("image", 0): ((a, 1),), ("image", 1): ((b, 1),)}
@@ -380,6 +394,21 @@ class RetrievalEngineTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AlgorithmError) as result:
             await self.retrieve(query=query)
         self.assertEqual(result.exception.code, ErrorCode.MODALITY_UNAVAILABLE)
+
+    async def test_independent_text_and_image_recall_fuse_without_joint_model(self):
+        text = self.backend.add("text")
+        figure = self.backend.add("figure", ContentKind.FIGURE)
+        self.backend.rows = {"lexical": ((text, 1),), ("exact-image", 0): ((figure, 1),)}
+        profile = retrieval_profile()
+        profile = replace(profile, channels=profile.channels + (
+            ChannelSpec("exact-image", "image-identity", "NEAR_DUPLICATE", "IMAGE_TO_IMAGE", 1, 10, 1, False),))
+        query = QueryInput(QueryMode.RELEVANCE, 2, ("MIXED",), text="检索主题", image_handles=("user-image",))
+        engine = RetrievalEngine(self.backend, None)
+        with self.assertRaises(AlgorithmError) as rejected:
+            await engine.retrieve(query, self.backend.scope, profile)
+        self.assertEqual(rejected.exception.code, ErrorCode.MODALITY_UNAVAILABLE)
+        result = await engine.retrieve(query, self.backend.scope, profile, independent_modalities=True)
+        self.assertEqual({hit.evidence_key for hit in result.primary_hits}, {text, figure})
 
     async def test_engine_cancellation_propagates_to_parallel_channels(self):
         started, finished = asyncio.Event(), []

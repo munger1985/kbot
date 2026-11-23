@@ -246,7 +246,7 @@ export function mountPdfSearchReader(host, onPageCount = () => {}) {
       const isAnchorPage = config.page === config.hitPage || config.blocks.some(block =>
         block.anchor && block.locators.some(loc => loc.page_no === config.page));
       signal("ready", first ? (verified.incomplete ? "已定位到可核对的命中文字；其余仅定位到页。" : "已定位并标黄命中文字。")
-        : isAnchorPage ? "当前页无法核实命中文字的位置，仅定位到页。" : "");
+        : isAnchorPage ? (config.blocks.length ? "当前页无法核实命中文字的位置，仅定位到页。" : "已定位到命中页。") : "");
       host.scrollTop = 0;
       host.scrollLeft = 0;
       if (first) {

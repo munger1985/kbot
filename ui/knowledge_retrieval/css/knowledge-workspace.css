@@ -7,9 +7,14 @@
 .knowledge-directory-layout { display: grid; align-items: start; gap: 16px; grid-template-columns: minmax(240px, 310px) minmax(0, 1fr); }
 .knowledge-search-workspace { display: grid; min-width: 0; gap: .75rem; }
 .knowledge-search-formbar { padding: .875rem; }
+.knowledge-history-list { display: grid; padding: 0; list-style: none; }
+.knowledge-history-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.knowledge-history-list small { display: block; color: var(--muted); }
+.knowledge-history-actions { display: flex; gap: .5rem; }
 .knowledge-search-top, .knowledge-search-options { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
 .knowledge-search-top .control-field:first-child { width: min(14rem, 100%); }
 .knowledge-search-top .control-field:nth-child(2), .knowledge-search-top .field-help, .knowledge-query-image { flex: 1 1 15rem; min-width: 0; }
+.knowledge-search-scope { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; min-height: 2.25rem; margin-top: .375rem; }
 .knowledge-search-options { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--line); }
 .knowledge-search-options .control-field { min-width: 8rem; }
 .knowledge-search-check, .knowledge-query-image { display: flex; align-items: center; gap: .5rem; overflow-wrap: anywhere; }

@@ -255,13 +255,15 @@
     await loadConversations();
   }
 
-  function messageMarkup(role, label, text, runId, createdAt) {
+  function messageMarkup(role, label, text, runId, createdAt, images) {
     const content = role === "knowledge" ? renderMarkdown(text) : escapeHtml(text);
     const run = runId ? ` data-run-id="${escapeHtml(runId)}"` : "";
     const clock = formatMessageTime(createdAt);
     const time = clock ? `<time datetime="${escapeHtml(createdAt)}" title="${escapeHtml(formatDate(createdAt))}">${clock}</time>` : "";
     const references = runId ? `<div class="knowledge-message-references" data-references-for="${escapeHtml(runId)}"></div>` : "";
-    return `<article class="knowledge-message ${role === "knowledge" ? "assistant" : role}"${run}><div class="chat-message-avatar" aria-hidden="true">${role === "user" ? userIcon : icon("agents")}</div><div class="knowledge-message-body"><header><strong>${escapeHtml(label)}</strong>${time}</header><div class="knowledge-message-content chat-message-bubble">${content}</div>${references}</div></article>`;
+    const attachments = role === "user" && Array.isArray(images) && images.length
+      ? `<div aria-label="提问图片">${images.map(image => `<span class="knowledge-badge">${escapeHtml(image?.file_name || "图片附件")}</span>`).join(" ")}</div>` : "";
+    return `<article class="knowledge-message ${role === "knowledge" ? "assistant" : role}"${run}><div class="chat-message-avatar" aria-hidden="true">${role === "user" ? userIcon : icon("agents")}</div><div class="knowledge-message-body"><header><strong>${escapeHtml(label)}</strong>${time}</header><div class="knowledge-message-content chat-message-bubble">${content}</div>${attachments}${references}</div></article>`;
   }
 
   function referenceRows(source) {
@@ -277,8 +279,13 @@
       .find((node) => node.dataset.referencesFor === String(runId));
     if (!host) return;
     host.innerHTML = composition
-      ? '<button type="button" class="secondary-button" data-open-retrieval aria-haspopup="dialog">查看检索结果 <span aria-hidden="true">›</span></button>'
+      ? `${composition.question_image_count > 0 ? `<span class="knowledge-badge">${questionImageStatus(composition)}</span>` : ""}<button type="button" class="secondary-button" data-open-retrieval aria-haspopup="dialog">查看检索结果 <span aria-hidden="true">›</span></button>`
       : "";
+  }
+
+  function questionImageStatus(value) {
+    const count = Number(value.question_image_count);
+    return value.question_image_kind === "OCR" ? `OCR 已识别 ${count} 张提问图片的文字` : `视觉模型收到 ${count} 张提问图片`;
   }
 
   let retrievalSession;
@@ -297,9 +304,13 @@
         <div class="knowledge-evidence-content"></div></details>`;
     };
     const hits = value.primary_hits || [];
-    const delivery = { SENT: `已交给 Agent ${Number(value.delivered_count) || 0} 项`, FAILED: "证据交给 Agent 失败",
+    const delivery = { SENT: value.question_image_kind === "OCR" ? questionImageStatus(value) : value.question_image_count > 0
+      ? `${Number(value.delivered_count) || 0} 项知识库资料 · ${Number(value.question_image_count)} 张提问图片`
+      : `已交给 Agent ${Number(value.delivered_count) || 0} 项`, FAILED: "证据交给 Agent 失败",
       UNKNOWN_DELIVERY: "未确认哪些证据已交给 Agent", PREPARED: "证据已准备，尚未确认送达", NOT_APPLICABLE: "本轮未使用模型交付" };
-    const coverage = { COMPLETE: "证据可支撑回答", PARTIAL: "证据只能支撑部分回答", INSUFFICIENT: "证据不足", UNKNOWN: "无法确认覆盖程度" };
+    const coverage = { COMPLETE: "证据可支撑回答", PARTIAL: "证据只能支撑部分回答", INSUFFICIENT: "证据不足",
+      UNKNOWN: value.question_image_kind === "OCR" ? "仅识别图中文字，未引用知识库资料"
+        : value.question_image_count > 0 ? "根据提问图片回答，未引用知识库资料" : "无法确认覆盖程度" };
     $("knowledge-retrieval-body").innerHTML = `<dl class="knowledge-evidence-summary">
       <div><dt>主要结果</dt><dd>${hits.length} 项</dd></div><div><dt>交给 Agent</dt><dd>${escapeHtml(Object.hasOwn(delivery, value.model_delivery) ? delivery[value.model_delivery] : "未确认")}</dd></div>
       <div><dt>回答覆盖</dt><dd>${escapeHtml(Object.hasOwn(coverage, value.coverage_status) ? coverage[value.coverage_status] : "未确认")}</dd></div>
@@ -372,7 +383,7 @@
       const waiting = turn.status && turn.status !== "COMPLETED" ? `处理状态：${turn.status}` : "";
       const userAt = turn.user_item?.created_at ?? turn.created_at;
       const assistantAt = turn.assistant_item?.created_at ?? turn.completed_at;
-      return `${user ? messageMarkup("user", "你", user, null, userAt) : ""}${knowledge || waiting ? messageMarkup("knowledge", agentName(state.active.agent_id), knowledge || waiting, turn.run_id, assistantAt) : ""}`;
+      return `${user ? messageMarkup("user", "你", user, null, userAt, turn.user_item?.content?.images) : ""}${knowledge || waiting ? messageMarkup("knowledge", agentName(state.active.agent_id), knowledge || waiting, turn.run_id, assistantAt) : ""}`;
     }).join("");
     turns.forEach((turn) => {
       const content = turn.assistant_item?.content;
@@ -381,10 +392,10 @@
     stream.scrollTop = stream.scrollHeight;
   }
 
-  function appendPending(input, createdAt) {
+  function appendPending(input, createdAt, images) {
     const stream = $("knowledge-chat-stream");
     if (stream.querySelector(".knowledge-chat-empty, .knowledge-chat-welcome")) stream.innerHTML = "";
-    stream.insertAdjacentHTML("beforeend", messageMarkup("user", "你", input, null, createdAt));
+    stream.insertAdjacentHTML("beforeend", messageMarkup("user", "你", input, null, createdAt, images));
     const wrapper = document.createElement("div");
     wrapper.className = "knowledge-message assistant pending";
     wrapper.setAttribute("aria-busy", "true");
@@ -397,6 +408,7 @@
       content: wrapper.querySelector(".knowledge-message-content"),
       references: wrapper.querySelector(".knowledge-message-references"),
       answer: "",
+      preview: "",
       referencesReceived: false,
     };
   }
@@ -414,7 +426,20 @@
     const data = item.json && typeof item.json === "object" ? item.json : {};
     const payload = data.payload && typeof data.payload === "object" ? data.payload : {};
     const eventType = item.type || data.event_type || "message";
+    if (eventType === "answer.preview.delta") {
+      if (payload.chunk_index === 1) pending.preview = "";
+      pending.preview += String(payload.delta || "");
+      if (pending.time.hidden && pending.preview) setReplyTime(pending, data.created_at ?? new Date().toISOString());
+      pending.content.classList.add("knowledge-answer-preview");
+      pending.content.textContent = pending.preview;
+      $("knowledge-progress").textContent = "正在生成回答，引用核验后显示";
+      $("knowledge-chat-stream").scrollTop = $("knowledge-chat-stream").scrollHeight;
+      return;
+    }
     if (eventType === "answer.delta") {
+      if (pending.preview) $("knowledge-progress").textContent = "正在呈现最终回答";
+      pending.preview = "";
+      pending.content.classList.remove("knowledge-answer-preview");
       pending.answer += String(payload.delta || "");
       if (pending.time.hidden && pending.answer) setReplyTime(pending, data.created_at ?? new Date().toISOString());
       pending.content.innerHTML = renderMarkdown(pending.answer);
@@ -485,7 +510,7 @@
     if (!state.active && !(await createConversation())) {
       state.sending = false; renderAgentContext(); return;
     }
-    const pending = appendPending(input, submittedAt);
+    const pending = appendPending(input, submittedAt, images);
     $("knowledge-input").value = "";
     state.sending = true;
     renderAgentContext();
@@ -513,6 +538,7 @@
           const result = await KBotKnowledgeApi.request(`/runs/${receipt.run_id}/result`);
           if (!pending.answer) {
             pending.answer = String(result?.payload?.answer || "");
+            pending.content.classList.remove("knowledge-answer-preview");
             pending.content.innerHTML = renderMarkdown(pending.answer);
           }
           if (!pending.referencesReceived) renderReferences(receipt.run_id, result);
@@ -530,6 +556,7 @@
       pending.wrapper.classList.remove("pending");
       pending.wrapper.classList.add("failed");
       pending.wrapper.setAttribute("aria-busy", "false");
+      pending.content.classList.remove("knowledge-answer-preview");
       pending.content.textContent = error?.message || "本轮处理失败";
       showError(error, "对话请求失败");
       await refreshActive().catch(() => {});

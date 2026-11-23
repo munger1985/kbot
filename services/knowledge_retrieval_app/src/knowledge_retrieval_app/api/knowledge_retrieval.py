@@ -3,6 +3,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from loguru import logger
 
 from knowledge_algorithms.contracts.errors import AlgorithmError, require
 from knowledge_algorithms.contracts.identity import AuthorizedScope, EvidenceKey
@@ -55,9 +56,17 @@ def create_knowledge_retrieval_router(*, service=None, access_dependency):
 
     @router.post("/retrieve")
     async def retrieve(request: Request, access=Depends(access_dependency), service=Depends(resolve_service)):
-        value = await body(request, ("scope", "query", "profile_ref"))
-        receipt = await service.retrieve(access, scope=decode(AuthorizedScope, value["scope"]),
-            query=decode(QueryInput, value["query"]), profile_ref=value["profile_ref"])
+        query = None
+        try:
+            value = await body(request, ("scope", "query", "profile_ref"))
+            query = decode(QueryInput, value["query"])
+            receipt = await service.retrieve(access, scope=decode(AuthorizedScope, value["scope"]),
+                query=query, profile_ref=value["profile_ref"], independent_modalities=True)
+        except AlgorithmError as exc:
+            logger.warning("知识问答检索被拒绝 | error_code={} | stage={} | mode={} | has_text={} | image_count={}",
+                exc.code.value, exc.stage, query.mode.value if query else None,
+                bool(query and query.text), len(query.image_handles) if query else 0)
+            raise
         return {"retrieval_ref": receipt.retrieval_ref, "evidence_set": encode(receipt.evidence_set)}
 
     @router.post("/retrievals/{retrieval_ref}:continue")

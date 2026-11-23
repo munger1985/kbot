@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
+from contextlib import aclosing
 from typing import Any
 
 from agent_runtime.runtime import ExecutionContext, SkillResult
@@ -41,7 +42,8 @@ class AppScopedSkill:
     ) -> AsyncIterator[Any]:
         implementation = self.implementation_for(context)
         if hasattr(implementation, "execute_stream"):
-            async for item in implementation.execute_stream(context):
-                yield item
+            async with aclosing(implementation.execute_stream(context)) as stream:
+                async for item in stream:
+                    yield item
             return
         yield await implementation.execute(context)

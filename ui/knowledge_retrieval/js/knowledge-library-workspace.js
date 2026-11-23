@@ -14,6 +14,7 @@
     APPROVED: "已通过", REJECTED: "已拒绝", PUBLISHED: "已发布", WITHDRAWN: "已撤回",
     COMPLETE: "已完成", PARTIAL: "部分覆盖", EMPTY: "无结果",
     NO_MATCH: "没有命中", MODALITY_UNAVAILABLE: "本次查询没有可用通道", CHANNEL_FAILED: "检索通道执行失败",
+    IMAGE_VERIFICATION_LIMIT: "仅核验排名靠前的候选",
     TEXT: "文字", FIGURE: "图示", PHOTO: "图片", TABLE: "表格", PAGE: "页面", REGION: "区域",
     READ: "读取", UPLOAD: "上传", REVIEW: "审核", MANAGE: "管理", PUBLISH: "发布", WITHDRAW: "撤回",
   };
@@ -191,9 +192,10 @@
       batchIds: new Set(), batchStrategy: "", batchFailures: [],
       confirmingCreate: false, indexImpact: null, indexTasks: null, detailIndex: null, progressHelp: false,
       memberMatrix: null,
-      preview: "", previewKey: "", result: null, anchor: "", summary: "", submittedMode: "", searchOptionsOpen: false, submittedSearchOptions: "",
+      preview: "", previewKey: "", result: null, anchor: "", summary: "", submittedMode: "", submittedImageIntent: null, searchOptionsOpen: false, submittedSearchOptions: "",
+      historyOpen: false, historyItems: [], historyMore: false, historyId: "", historyEntry: null, historyStatus: "",
       mode: "RELEVANCE", order: "title", inputKind: "TEXT", query: "", prefix: "", descending: false, output: "TEXT", count: 10,
-      createdFrom: "", createdBefore: "", queryImage: null, queryImageUrl: "", uploads: [], uploadOpen: false, uploadError: "" });
+      createdFrom: "", createdBefore: "", queryImage: null, queryImageUrl: "", imageIntent: "SOURCE", uploads: [], uploadOpen: false, uploadError: "" });
   }
   function perform(work) {
     if (state.busy) return;
@@ -204,7 +206,9 @@
     return Promise.resolve().then(() => { assertCurrent(epoch); return work(epoch); }).catch(error => {
       if (epoch !== state.epoch || error?.name === "AbortError") return;
       if (view === "search" && ["SCOPE_CHANGED","SNAPSHOT_STALE","CURSOR_EXPIRED","ARTIFACT_EXPIRED"].includes(error.code)) {
-        state.result = null; state.anchor = ""; clearPreview(); clearPassage(); state.error = "检索回执已失效，请重新检索。";
+        state.result = null; state.anchor = ""; clearPreview(); clearPassage(); setHistoryLink(state.historyId);
+        if (state.historyEntry) state.historyStatus = "这条历史的结果已变化或不可访问。请重新打开历史核对。";
+        else state.error = "检索回执已失效，请重新检索。";
       } else state.error = ({
         KNOWLEDGE_LIBRARY_REVISION_CONFLICT: "知识库已变化，请刷新后重试。",
         KNOWLEDGE_TASK_REVISION_CONFLICT: "当前解析任务已变化，请关闭详情并刷新列表。",
@@ -268,7 +272,9 @@
     const sources = searchDocuments(), items = sources.flatMap(source => source.chapters.flatMap(chapter => [...chapter.items, ...chapter.unknown]));
     const passages = items.filter(item => item.passage_key).length, others = items.length - passages;
     const documents = new Set(items.map(item => item.document_id || item.version_id)).size;
-    const count = documents ? `${documents} 份文档 · ${passages} 处相关段落${others ? ` · ${others} 条其他证据` : ""}` : "本页没有可展示的结果";
+    const count = state.submittedImageIntent
+      ? documents ? `${documents} 份文档 · ${items.length} 条图片结果` : "未找到核验通过的图片"
+      : documents ? `${documents} 份文档 · ${passages} 处相关段落${others ? ` · ${others} 条其他证据` : ""}` : "本页没有可展示的结果";
     const hit = (item, unknown = false) => `<button type="button" class="knowledge-search-hit" data-action="evidence" data-key="${esc(item.key)}" aria-pressed="${state.anchor === item.key}">
       <span>${unknown ? "" : `<strong>${esc(item.passage_display?.title || (item.passage_display?.kind === "SECTION" ? "章节标题" : item.passage_key ? "相关段落" : label(item.kind)))}</strong> `}<small>${esc(locationOf(item))}</small></span>
       <span>${esc(item.passage_display?.text || item.text || (unknown ? "查看摘录" : "查看证据"))}</span></button>`;
@@ -356,7 +362,7 @@
     const relatedKeys = [...new Set(groups.flatMap(value => value.linked_keys))];
     const tabs = state.passage?.pdf_page ? `<div class="knowledge-search-reader-tabs" role="group" aria-label="阅读方式">
       <button type="button" class="secondary-button" data-action="reader-tab" data-key="pdf" aria-pressed="${state.readerTab === "pdf"}">PDF 原文</button>
-      <button type="button" class="secondary-button" data-action="reader-tab" data-key="context" aria-pressed="${state.readerTab === "context"}">文字上下文</button>
+      <button type="button" class="secondary-button" data-action="reader-tab" data-key="context" aria-pressed="${state.readerTab === "context"}">${isInlineImage(anchor) ? "图片证据" : "文字上下文"}</button>
       </div>` : "";
     const content = !anchor ? `<p class="knowledge-search-empty">${searchWait ? "检索结果返回后，可在此阅读原文。" : "选择左侧一条结果，在这里核对原文。"}</p>` :
       state.readerTab === "pdf" ? (state.readerExpanded ? "" : state.passagePdf ? readerPdf() :
@@ -386,6 +392,8 @@
   function renderSearch() {
     const exact = library()?.search_capabilities?.some(channel => channel.kind === "NEAR_DUPLICATE" && channel.direction === "IMAGE_TO_IMAGE");
     const related = state.mode === "RELEVANCE";
+    const imageQuery = related && Boolean(state.queryImage);
+    const onlyImages = imageQuery || state.output === "IMAGE";
     const result = state.result && searchResultCards();
     return `<div class="knowledge-search-workspace">
       <form class="table-card knowledge-search-formbar" data-form="search" novalidate>
@@ -393,13 +401,19 @@
           ${related ? state.queryImage ? `<div class="knowledge-query-image"><img class="knowledge-query-thumb" src="${esc(state.queryImageUrl)}" alt=""><span>${esc(state.queryImage.name)}</span>${button("remove-image", "移除图片")}</div>` :
             field("查询文字", input("query", state.query, 'type="search" maxlength="32000" required placeholder="输入要查的内容…"')) :
             `<p class="field-help">按标题或日期查找${state.mode === "EXHAUSTIVE" ? " · 逐页查全" : ""}</p>`}
-          ${related && exact && !state.queryImage ? '<label for="knowledge-search-image" class="secondary-button knowledge-search-image-label">查找同一原图</label><input id="knowledge-search-image" class="knowledge-search-image-input" type="file" name="queryFile" data-query-image aria-label="查找同一原图" accept="image/png,image/jpeg,image/webp">' : ""}
+          ${related && exact && !state.queryImage ? '<label for="knowledge-search-image" class="secondary-button knowledge-search-image-label">选择查询图</label><input id="knowledge-search-image" class="knowledge-search-image-input" type="file" name="queryFile" data-query-image aria-label="选择查询图" accept="image/png,image/jpeg,image/webp">' : ""}
           <button type="submit" class="primary-button" data-search-submit${searchWait || !library() ? " disabled" : ""}>${searchWait ? "检索中…" : "检索"}</button>
           <button type="button" class="secondary-button" data-action="search-options" data-key="" aria-expanded="${state.searchOptionsOpen}" aria-controls="knowledge-search-options">${state.searchOptionsOpen ? "收起条件" : "更多条件"}</button>
+          ${button("search-history", "检索历史", "", "secondary-button", Boolean(searchWait))}
+        </div>
+        <div class="knowledge-search-scope">
+          ${imageQuery ? "" : `<label class="knowledge-search-check"><input name="includeImages" type="checkbox" role="switch"${state.output === "ALL" ? " checked" : ""}> ${related ? "同时找相关图片" : "结果也包含图片"}</label>`}
+          ${onlyImages ? `<small class="muted">${imageQuery ? "已选查询图 · " : "当前："}只找图片</small>` : ""}
+          ${imageQuery ? `<label class="control-field">图片检索方式<select name="imageIntent"${searchWait ? " disabled" : ""}><option value="SOURCE"${state.imageIntent !== "SIMILAR" ? " selected" : ""}>找这张图的出处</option><option value="SIMILAR"${state.imageIntent === "SIMILAR" ? " selected" : ""}>找相似图（需视觉索引）</option></select></label>` : ""}
         </div>
         <div class="knowledge-search-options" id="knowledge-search-options"${state.searchOptionsOpen ? "" : " hidden"}>
-          ${field("结果类型", select("output", [["TEXT","文字与表格（含关联图）"],["ALL","图文混合（同时搜图）"],["IMAGE","图片与页面"]], state.output))}
           ${field("主结果数", input("count", state.count, 'type="number" min="1" max="100"'))}
+          <label class="knowledge-search-check"><input name="onlyImages" type="checkbox"${onlyImages ? " checked" : ""}${imageQuery ? " disabled" : ""}> 只找图片</label>
           <label class="knowledge-search-check"><input name="structuredSearch" type="checkbox"${related ? "" : " checked"}> 按标题或日期查找</label>
           ${related ? "" : `${field("标题前缀", input("prefix", state.prefix, 'maxlength="256"'))}
             ${field("版本创建时间从（本地）", input("createdFrom", state.createdFrom, 'type="datetime-local"'))}
@@ -414,7 +428,8 @@
         <section class="table-card knowledge-search-list" aria-label="检索结果">
           <header class="knowledge-search-panel-head" aria-live="polite"><h2>检索结果</h2>
             ${result ? `<p>${result.count}</p><small>${esc([state.summary, state.submittedSearchOptions].filter(Boolean).join(" · "))}</small>` :
-              searchWait ? "<p>等待本次检索结果</p>" : "<p>选择知识库，输入文字后检索。</p>"}</header>
+              searchWait ? "<p>等待本次检索结果</p>" : !state.historyEntry ? "<p>选择知识库，输入文字后检索。</p>" : ""}
+            ${state.historyEntry ? `<p>${esc(state.historyStatus)}</p>${button("history-rerun", "重新检索", "", "secondary-button", !library() || state.historyEntry.conditions.image_count > 1)}` : ""}</header>
           ${searchWait ? `<section class="knowledge-search-wait" aria-label="检索等待">
             <div class="knowledge-search-wait-copy"><p role="status">正在检索知识库…</p>
               <small>${esc([state.summary, state.submittedSearchOptions].filter(Boolean).join(" · "))}</small></div>
@@ -423,7 +438,7 @@
             <p class="knowledge-search-wait-slow" data-search-slow role="status"${searchSeconds(searchWait) < slowSearchSeconds ? " hidden" : ""}>这次检索用时较长，可继续等待或停止等待。</p>
           </section>` : ""}
           ${result ? `<div class="knowledge-search-scroll" data-search-tree="${state.searchTreeRevision}">${result.cards}
-            <div class="knowledge-search-tail">${state.result.continuation ? button("continue", "下一页主结果") : state.submittedMode === "EXHAUSTIVE" &&
+            <div class="knowledge-search-tail">${state.result.continuation ? button("continue", "下一页主结果") : !state.historyEntry && state.submittedMode === "EXHAUSTIVE" &&
               state.result.scope_exhausted && !["PARTIAL","FAILED"].includes(state.result.status) ? "<p>当前条件下的授权范围已查完。</p>" : ""}</div>
             </div>` : ""}
         </section>
@@ -755,7 +770,16 @@
     let title, body, footer = "";
     const row = state.row, item = state.managed, anchor = evidence(state.anchor);
     const documentDetail = ["files", "processing"].includes(view) && Boolean(row) && !state.uploadOpen;
-    if (state.progressHelp) {
+    if (state.historyOpen) {
+      title = "检索历史";
+      body = `<p class="field-help">仅自己可见，保留最近 30 天。打开历史不会重新检索。</p>
+        ${state.historyItems.length ? `<ul class="knowledge-history-list">${state.historyItems.map(entry =>
+          `<li><div><strong>${esc(historyTitle(entry.conditions))}</strong><small>${esc([entry.library_name || "知识库不可访问", historyTime(entry.created_at), `${entry.result_count} 条主结果`].join(" · "))}</small></div>
+          <div class="knowledge-history-actions">${button("history-view", state.historyId === entry.history_id ? "查看当前记录" : "查看", entry.history_id)}
+          ${button("history-delete", "删除", entry.history_id, "secondary-button")}</div></li>`).join("")}</ul>` :
+          `<p role="status">${state.busy ? "正在读取历史…" : "最近 30 天还没有检索记录。"}</p>`}`;
+      if (state.historyMore) footer = button("history-more", "加载更多");
+    } else if (state.progressHelp) {
       title = "进度说明";
       body = `<section class="drawer-form-section knowledge-task-section"><h3>识别与整理</h3><p>显示当前处理步骤，不估算时长或百分比。</p></section>
         <section class="drawer-form-section knowledge-task-section"><h3>分批建索引</h3><p>百分比按已提交批次 / 总批次计算。总数还没有确定时，只显示已提交批次数；重试同一任务时保留已提交批次。</p></section>
@@ -846,7 +870,7 @@
         <button type="button" class="icon-button" data-action="close" aria-label="关闭">×</button>` :
       `<h2 id="knowledge-drawer-title">${title}</h2>${button("close","关闭")}`;
     dialog.innerHTML = `<header class="admin-drawer-header">${heading}</header>
-      <div class="admin-drawer-body">${body}${state.preview ? `<img class="knowledge-preview" src="${esc(state.preview)}" alt="本次读取的原图">` : ""}${errorHtml()}</div>
+      <div class="admin-drawer-body">${body}${!state.historyOpen && state.preview ? `<img class="knowledge-preview" src="${esc(state.preview)}" alt="本次读取的原图">` : ""}${errorHtml()}</div>
       ${footer ? `<footer class="admin-drawer-footer">${footer}</footer>` : ""}`;
     if (!wasOpen) dialog.showModal();
     else if (state.edit === "create" && state.confirmingCreate !== wasReviewing) {
@@ -974,7 +998,7 @@
   function load() {
     reset(); state.libraries = []; state.libraryId = ""; render();
     if (management) return refreshCatalog();
-    return perform(async () => {
+    return perform(async epoch => {
       state.libraries = await request("/libraries");
       const requested = linkQuery.get("library_id"), requestedQueue = view === "files" ? linkQuery.get("queue") : "";
       state.libraryId = requested ? eligible().find(item => item.library_id === requested)?.library_id || ""
@@ -982,6 +1006,10 @@
       if (requested && !state.libraryId) state.error = "指定知识库当前无权访问或已停用，请重新选择。";
       if (reviewStates().includes(requestedQueue)) state.queue = requestedQueue;
       await loadRows();
+      const history = new URLSearchParams(location.search);
+      if (view === "search" && history.has("history_id")) {
+        await openHistory(history.get("history_id"), epoch, history.get("history_hit"));
+      }
       if (view === "processing" && linkQuery.get("index_rebuild") === "1" && canIndex("MANAGE")) await refreshIndexTasks();
       const version = linkQuery.get("version_id"), job = linkQuery.get("job_id");
       if (directoryView && library() && version) {
@@ -1042,13 +1070,13 @@
     }
   }
   function selectImage(file) {
-    const hadImage = Boolean(state.queryImage);
     revoke(state.queryImageUrl);
-    Object.assign(state, { queryImageUrl: "", queryImage: null, error: "", inputKind: "TEXT" });
-    if (hadImage && !file) state.output = "TEXT";
+    Object.assign(state, { queryImageUrl: "", queryImage: null, error: "", inputKind: "TEXT",
+      imageIntent: file ? state.historyEntry?.conditions.image_intent || "SOURCE" : "SOURCE" });
     if (file) {
-      if (!/^image\/(png|jpeg|webp)$/.test(file.type) || !file.size || file.size > 8 * 1024 * 1024) state.error = "请选择单张 PNG、JPEG 或 WebP，大小不超过 8 MiB。";
-      else { state.queryImage = file; state.queryImageUrl = objectUrl(file); state.inputKind = "IMAGE"; state.output = "IMAGE"; }
+      if (!/^image\/(png|jpeg|webp)$/.test(file.type) || !file.size || file.size > 8 * 1024 * 1024)
+        shell.toast("请选择单张 PNG、JPEG 或 WebP，大小不超过 8 MiB。", "error");
+      else { state.queryImage = file; state.queryImageUrl = objectUrl(file); state.inputKind = "IMAGE"; }
     }
     render();
   }
@@ -1075,35 +1103,134 @@
     render();
     host.querySelector("[data-search-submit]")?.focus({ preventScroll: true });
   }
-  async function search() {
+  function setHistoryLink(id = "", hit = "") {
+    const url = new URL(location.href);
+    if (id) url.searchParams.set("history_id", id); else url.searchParams.delete("history_id");
+    if (id && hit) url.searchParams.set("history_hit", hit); else url.searchParams.delete("history_hit");
+    history.replaceState(history.state, "", url);
+    state.historyId = id;
+  }
+  function historyTime(value) {
+    const date = new Date(value);
+    const time = date.toLocaleTimeString("zh-CN", { hour12: false });
+    const pad = number => String(number).padStart(2, "0");
+    return date.toDateString() === new Date().toDateString() ? time :
+      `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`;
+  }
+  const imageIntentLabel = value => value === "SIMILAR" ? "找相似图" : "找这张图的出处";
+  function historyTitle(conditions) {
+    if (conditions.text) return conditions.text;
+    if (conditions.image_count) return conditions.image_intent ? imageIntentLabel(conditions.image_intent) : "图片检索";
+    const fields = {title:"标题",created_at:"版本创建时间",kind:"类型",document_version_ref:"文档版本",business_asset_ref:"业务资料"};
+    const operators = {PREFIX:"开头为",EQ:"等于",NE:"不等于",GE:"不早于",GT:"晚于",LE:"不晚于",LT:"早于"};
+    const order = conditions.order_by[0];
+    return [...conditions.predicates.map(item => `${fields[item.field] || item.field}${operators[item.operator] || item.operator} ${item.value}`),
+      order ? `按${fields[order.field] || "匹配顺序"}${order.descending ? "降序" : "升序"}` : ""].filter(Boolean).join(" · ") || "按条件查找";
+  }
+  function searchOutputFromTypes(types) {
+    const isText = value => value === "TEXT" || value === "TABLE";
+    return types.every(isText) ? "TEXT" : types.includes("MIXED") || types.some(isText) ? "ALL" : "IMAGE";
+  }
+  function searchConditionSummary(output, count, mode) {
+    return [output === "TEXT" ? "正文与表格" : output === "IMAGE" ? "只找图片" :
+      mode === "RELEVANCE" ? "同时找相关图片" : "结果也包含图片",
+    count !== 10 ? `${count} 条主结果` : "", mode === "EXHAUSTIVE" ? "逐页查全" : ""].filter(Boolean).join(" · ");
+  }
+  async function historyPage(append = false) {
+    const data = await request("/search-history?limit=20&offset=" + (append ? state.historyItems.length : 0));
+    state.historyItems = append ? [...state.historyItems, ...data.items.filter(item => !state.historyItems.some(old => old.history_id === item.history_id))] : data.items;
+    state.historyMore = data.has_more;
+  }
+  function clearSearchResult() {
+    clearPreview(); clearPassage();
+    Object.assign(state, { result: null, anchor: "", summary: "", submittedMode: "", submittedImageIntent: null, submittedSearchOptions: "", historyEntry: null, historyStatus: "" });
+    state.searchTreeRevision++;
+  }
+  async function openHistory(id, epoch, hit) {
+    clearSearchResult();
+    state.historyOpen = false;
+    render();
+    let detail;
+    try { detail = await request("/search-history/" + enc(id)); }
+    catch (error) {
+      assertCurrent(epoch);
+      if ([401, 403, 404, 422].includes(error.status)) {
+        setHistoryLink(); state.error = "这条历史不存在、已到期或当前不可访问。"; return;
+      }
+      throw error;
+    }
+    const { entry, result, availability } = detail, c = entry.conditions, output = searchOutputFromTypes(c.output_types);
+    setHistoryLink(id);
+    revoke(state.queryImageUrl);
+    const localInput = value => {
+      if (!value) return "";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "" : new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    };
+    const predicate = (field, operator) => c.predicates.find(item => item.field === field && item.operator === operator)?.value;
+    Object.assign(state, {
+      libraryId: entry.library_name ? entry.library_id : "", historyEntry: entry, result,
+      query: c.text || "", mode: c.mode, queryImage: null, queryImageUrl: "", inputKind: "TEXT",
+      output,
+      count: c.requested_count, prefix: predicate("title", "PREFIX") || "",
+      createdFrom: localInput(predicate("created_at", "GE")), createdBefore: localInput(predicate("created_at", "LT")),
+      order: c.order_by[0]?.field === "created_at" ? "created_at" : "title", descending: !!c.order_by[0]?.descending,
+      searchOptionsOpen: c.mode !== "RELEVANCE",
+      summary: [entry.library_name, historyTitle(c)].filter(Boolean).join(" · "),
+      submittedImageIntent: c.image_intent || null,
+      submittedSearchOptions: searchConditionSummary(output, c.requested_count, c.mode),
+      historyStatus: (availability === "UNAVAILABLE" ? "原结果已不可查看。" : availability === "PARTIAL" ? "部分原结果已撤回、换版或不可查看。仅显示仍可访问的首批结果。" : "历史首批结果 · 未重新检索。") +
+        (c.image_count > 1 ? " 此记录使用多张图片；此页仅支持单图重新检索。" : c.image_count ? " 重新检索需再选一次原图。" : ""),
+    });
+    if (hit && evidence(hit)) {
+      await readSearchHit(hit, epoch);
+      if (state.readerTab === "context") { render(); scrollToSearchMatch(); }
+    }
+  }
+  async function readSearchHit(key, epoch) {
+    clearPreview(); clearPassage(); state.anchor = key;
+    const item = evidence(key);
+    setHistoryLink(state.historyId, key);
+    const image = isInlineImage(item);
+    if (item?.passage_key || (image && item.locators?.some(loc => loc.page_no > 0))) await loadPassage();
+    if (state.passage?.pdf_page) {
+      state.readerPage = state.passage.pdf_page; state.readerTab = "pdf"; render();
+      await openPassagePdf(epoch);
+    } else if (image) await previewEvidence(item, epoch);
+  }
+  const searchResultPath = ref => `/${state.historyEntry ? "search-history" : "retrievals"}/${enc(ref)}`;
+  async function search(saved = null) {
     const selected = library();
     if (!selected || searchWait || state.busy) return;
-    const { mode, inputKind, query, prefix, order, descending, output, count, createdFrom, createdBefore } = state;
+    const { mode, inputKind, query, prefix, order, descending, output, count, createdFrom, createdBefore, imageIntent } = state;
     const structured = mode !== "RELEVANCE", text = query.trim(), title = prefix.trim();
-    const file = !structured && inputKind === "IMAGE" ? state.queryImage : null;
+    const file = (saved ? saved.image_count > 0 : !structured && inputKind === "IMAGE") ? state.queryImage : null;
+    const submittedIntent = file ? (saved ? saved.image_intent || "SOURCE" : imageIntent) : null;
+    const resultType = saved ? searchOutputFromTypes(saved.output_types) : file ? "IMAGE" : output;
     state.error = ""; state.notice = "";
     let wait;
     try {
-      if (!structured && !(file || (inputKind === "TEXT" && text))) throw new Error("请填写查询文字或选择一张图片。");
-      if (!Number.isInteger(count) || count < 1 || count > 100) {
+      if (saved?.image_count && !file) {
+        shell.toast("历史未保留查询图片，请先选择原图。", "error");
+        render(); host.querySelector("[data-query-image]")?.focus(); return;
+      }
+      if (!saved && !structured && !(file || (inputKind === "TEXT" && text))) throw new Error("请填写查询文字或选择一张图片。");
+      if (!saved && (!Number.isInteger(count) || count < 1 || count > 100)) {
         state.searchOptionsOpen = true; throw new Error("主结果数必须在 1 至 100 之间。");
       }
-      if (structured && createdFrom && createdBefore && createdFrom >= createdBefore) throw new Error("创建时间上界必须晚于下界。");
+      if (!saved && structured && createdFrom && createdBefore && createdFrom >= createdBefore) throw new Error("创建时间上界必须晚于下界。");
       const iso = value => new Date(value).toISOString().replace(/\.000Z$/, "+00:00");
-      const predicates = structured ? [
+      const predicates = saved?.predicates || (structured ? [
         ...(title ? [{field:"title",operator:"PREFIX",value:title}] : []),
         ...(createdFrom ? [{field:"created_at",operator:"GE",value:iso(createdFrom)}] : []),
         ...(createdBefore ? [{field:"created_at",operator:"LT",value:iso(createdBefore)}] : []),
-      ] : [];
+      ] : []);
       const path = `${libraryPath()}/search`;
-      clearPreview(); clearPassage();
-      state.searchTreeRevision++;
-      state.submittedSearchOptions = [
-        output === "TEXT" ? "仅文字与表格" : output === "IMAGE" ? "仅图片与页面" : "",
-        count !== 10 ? `${count} 条主结果` : "", mode === "EXHAUSTIVE" ? "逐页查全" : "",
-      ].filter(Boolean).join(" · ");
-      Object.assign(state, { result: null, anchor: "", submittedMode: mode,
-        summary: `${selected.display_name} · ${structured ? `${title || "全部标题"} · ${order === "title" ? "标题" : "版本创建时间"}${descending ? "降序" : "升序"}${createdFrom || createdBefore ? ` · ${createdFrom || "不限"} 至 ${createdBefore || "不限"}（本地时间，上界不含）` : ""}` : file?.name || text}` });
+      clearSearchResult(); setHistoryLink();
+      state.submittedSearchOptions = [submittedIntent ? imageIntentLabel(submittedIntent) : "",
+        searchConditionSummary(resultType, saved?.requested_count ?? count, saved?.mode || mode)].filter(Boolean).join(" · ");
+      Object.assign(state, { result: null, anchor: "", submittedMode: saved?.mode || mode, submittedImageIntent: submittedIntent,
+        summary: `${selected.display_name} · ${saved ? historyTitle(saved) : structured ? `${title || "全部标题"} · ${order === "title" ? "标题" : "版本创建时间"}${descending ? "降序" : "升序"}${createdFrom || createdBefore ? ` · ${createdFrom || "不限"} 至 ${createdBefore || "不限"}（本地时间，上界不含）` : ""}` : file?.name || text}` });
       wait = searchWait = { controller: new AbortController(), startedAt: performance.now(), timer: 0 };
       wait.timer = setInterval(() => updateSearchWait(wait), 1000);
       render();
@@ -1116,15 +1243,27 @@
       }
       const result = await request(path, { method: "POST", headers: { "Content-Type": "application/json" },
         signal: wait.controller.signal, body: JSON.stringify({
-          mode, text: structured || file ? null : text, images, requested_count: count,
-          output_types: output === "TEXT" ? ["TEXT","TABLE"] : output === "IMAGE" ? ["FIGURE","PHOTO","PAGE","REGION"] : ["TEXT","TABLE","FIGURE","PHOTO","PAGE"],
-          predicates, order_by: structured ? [{field:order,descending}] : [],
+          mode: saved?.mode || mode, text: saved ? saved.text : structured || file ? null : text,
+          images: saved && !saved.image_count ? [] : images, requested_count: saved?.requested_count ?? count,
+          ...(submittedIntent ? { image_intent: submittedIntent } : {}),
+          output_types: saved?.output_types || (resultType === "TEXT" ? ["TEXT","TABLE"] : resultType === "IMAGE" ? ["FIGURE","PHOTO","PAGE","REGION"] : ["TEXT","TABLE","FIGURE","PHOTO","PAGE"]),
+          predicates, order_by: saved?.order_by || (structured ? [{field:order,descending}] : []), combination: saved?.combination ?? null,
         }) });
-      if (searchWait === wait) state.result = result;
+      if (searchWait !== wait) return;
+      if (result.status === "FAILED") {
+        const timedOut = result.reason === "TIMEOUT" || result.channels?.some(channel => channel.status === "FAILED" && channel.reason === "TIMEOUT");
+        shell.toast(timedOut ? "有检索通道超时，请稍后重试。" : "检索通道执行失败，请稍后重试。", "error");
+        return;
+      }
+      state.result = result;
+      setHistoryLink(result.history_id || "");
     } catch (error) {
       if ((wait && searchWait !== wait) || error?.name === "AbortError") return;
-      state.error = ["SCOPE_CHANGED","SNAPSHOT_STALE","CURSOR_EXPIRED","ARTIFACT_EXPIRED"].includes(error?.code)
-        ? "检索回执已失效，请重新检索。" : error?.message || "检索未完成，请重试。";
+      const message = error?.code === "MODALITY_UNAVAILABLE" && submittedIntent === "SIMILAR" ? "当前知识库没有已发布的图片相似索引，可切换到「找这张图的出处」。" :
+        error?.code === "TIMEOUT" ? "检索超时，请稍后重试。" :
+        ["SCOPE_CHANGED","SNAPSHOT_STALE","CURSOR_EXPIRED","ARTIFACT_EXPIRED"].includes(error?.code)
+          ? "检索回执已失效，请重新检索。" : error?.message || "检索未完成，请重试。";
+      shell.toast(message, "error");
     } finally {
       if (!wait || searchWait === wait) {
         const stopFocused = document.activeElement?.dataset.action === "stop-search";
@@ -1136,10 +1275,10 @@
   }
   async function nextResults(key) {
     const current = state.result, related = key ? group(key) : null, cursor = related ? related.continuation : current?.continuation;
-    if (!current || !cursor) return;
+    if (state.historyEntry || !current || !cursor) return;
     const next = await json(`/retrievals/${enc(related?.retrieval_ref || current.retrieval_ref)}${related ? "/relations:continue" : ":continue"}`,
       "POST", related ? { cursor, anchor_key: key } : { cursor });
-    if (!related) { state.result = next; state.searchTreeRevision++; state.anchor = ""; clearPreview(); clearPassage(); return; }
+    if (!related) { state.result = next; state.searchTreeRevision++; state.anchor = ""; setHistoryLink(state.historyId); clearPreview(); clearPassage(); return; }
     const nextGroup = next.linked.find(value => value.anchor_key === key);
     if (!nextGroup) throw new Error("未返回对应关联组，请重新检索。");
     const items = new Map(current.items.map(item => [item.key, item]));
@@ -1151,7 +1290,7 @@
     if (!canPreview(entry)) return;
     const { retrieval_ref, key } = entry.content_ref;
     const result = state.result, anchor = state.anchor;
-    const blob = await api.requestBlob(`/knowledge/retrievals/${enc(retrieval_ref)}/content/${enc(key)}`,
+    const blob = await api.requestBlob(`/knowledge${searchResultPath(retrieval_ref)}/content/${enc(key)}`,
       { signal: state.controller.signal, headers: { Accept: entry.mime_type } });
     const matchesSelection = () => state.result === result && state.anchor === anchor && evidence(entry.key) === entry;
     const mime = blob.type.split(";")[0];
@@ -1174,7 +1313,7 @@
   function passagePath(anchor) {
     const ref = anchor?.content_ref;
     if (!ref) throw new Error("当前结果没有可读取的段落定位。");
-    return `/retrievals/${enc(ref.retrieval_ref)}/context/${enc(ref.key)}`;
+    return `${searchResultPath(ref.retrieval_ref)}/context/${enc(ref.key)}`;
   }
   async function loadPassage(before = state.passageBefore, after = state.passageAfter) {
     const data = await request(passagePath(evidence(state.anchor)) + "?" + new URLSearchParams({ before, after }));
@@ -1381,6 +1520,7 @@
     if (file && action !== "START") state.row = (await getRows(row.id, 1)).rows.find(item => item.id === row.id) || row;
   }
   async function closeDrawer(epoch) {
+    if (state.historyOpen) { state.historyOpen = false; return; }
     if (state.readerExpanded) { state.readerExpanded = false; return; }
     const item = state.managed;
     if (state.uploadOpen && state.uploads.some(entry => !entry.receipt) &&
@@ -1410,6 +1550,14 @@
   async function runAction(action, key, epoch) {
     switch (action) {
       case "close": return closeDrawer(epoch);
+      case "history-more": return historyPage(true);
+      case "history-view": return openHistory(key, epoch);
+      case "history-delete":
+        if (!await shell.confirmAction({ title: "删除这条检索历史？", message: "只移除这条记录，不影响知识库资料。", confirmLabel: "删除", tone: "danger" })) return;
+        assertCurrent(epoch);
+        await json("/search-history/" + enc(key), "DELETE");
+        if (state.historyId === key) { clearSearchResult(); setHistoryLink(); }
+        return historyPage();
       case "index-refresh": return refreshIndexTasks();
       case "index-start": return indexAction("START", key, epoch);
       case "index-retry": return indexAction("RETRY", key, epoch);
@@ -1498,7 +1646,7 @@
       if (name === "memberQuery" && !event.isComposing && !state.busy) {
         state.memberMatrix.query = value; state.memberMatrix.page = 1; render(); return;
       }
-      if (["query","prefix","output","order","name","description","filterTitle","filterState","comment","createdFrom","createdBefore"].includes(name)) state[name] = value;
+      if (["query","prefix","order","name","description","filterTitle","filterState","comment","createdFrom","createdBefore"].includes(name)) state[name] = value;
       if (management && root === host && name === "filterTitle" && !event.isComposing) filterCatalog();
       if (name === "count") state.count = Number(value);
       if (["descending","mine"].includes(name)) state[name] = checked;
@@ -1517,6 +1665,7 @@
         state.batchStrategy = field.value; render();
       } else if (field.matches("[data-library]")) {
         reset(); state.libraryId = field.value;
+        if (view === "search") setHistoryLink();
         render(); void perform(() => loadRows(1));
       } else if (management && root === host && field.name === "filterState") {
         state.filterState = field.value; filterCatalog();
@@ -1546,7 +1695,11 @@
         const row = state.fileVersions.find(value => value.id === field.value);
         if (row) { state.row = row; clearPreview(); void loadFilePreview(row); render(); }
       }
-      else if (field.name === "structuredSearch") {
+      else if (field.name === "imageIntent") { state.imageIntent = field.value; }
+      else if (field.name === "includeImages" || field.name === "onlyImages") {
+        state.output = !field.checked ? "TEXT" : field.name === "includeImages" ? "ALL" : "IMAGE";
+        render();
+      } else if (field.name === "structuredSearch") {
         state.mode = field.checked ? "FILTERED_ORDER" : "RELEVANCE";
         if (field.checked) selectImage(); else render();
       } else if (field.name === "exhaustiveSearch") {
@@ -1572,6 +1725,13 @@
       if (!node || state.busy) return;
       const { action, key } = node.dataset;
       if (action === "stop-search") return stopSearch();
+      if (action === "search-history") {
+        if (searchWait) return;
+        trigger = node; state.historyOpen = true; state.historyItems = []; state.historyMore = false;
+        void perform(async () => { render(); await historyPage(); });
+        return;
+      }
+      if (action === "history-rerun") return void search(state.historyEntry?.conditions);
       if (action === "pick-library") {
         if (key === state.libraryId || !eligible().some(item => item.library_id === key)) return;
         reset(); state.libraryId = key;
@@ -1645,20 +1805,10 @@
         if (trigger !== node) { trigger.focus(); closeCatalogMenus(); }
         state.error = ""; clearPreview();
         if (action === "evidence") {
-          clearPassage(); state.anchor = key;
-          const item = evidence(key);
-          if (isInlineImage(item)) {
-            void perform(async epoch => { render(); await previewEvidence(item, epoch); });
-            return;
-          }
-          if (item?.passage_key) {
+          if (evidence(key)) {
             void perform(async epoch => {
-              render();
-              await loadPassage();
-              if (state.passage?.pdf_page) {
-                state.readerPage = state.passage.pdf_page; state.readerTab = "pdf"; render();
-                await openPassagePdf(epoch);
-              }
+              const loading = readSearchHit(key, epoch);
+              render(); await loading;
             })?.then(() => {
               if (state.anchor !== key) return;
               if (state.readerTab === "context") scrollToSearchMatch();

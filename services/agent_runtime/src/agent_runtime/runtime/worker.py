@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import aclosing
 from datetime import datetime, timedelta, timezone
 
 from loguru import logger
 from pydantic import ValidationError
+from knowledge_algorithms.contracts.errors import AlgorithmError
+from platform_clients.knowledge_computation import KnowledgeComputationClientError
 
 from agent_runtime.application import (
     AppendTaskProgressCommand,
@@ -178,6 +181,12 @@ class AgentRuntimeWorker:
         except Exception as exc:
             latest = current["lease"]
             error_detail = _exception_detail(exc)
+            error_code = type(exc).__name__.upper()
+            error_stage, http_status = None, None
+            if isinstance(exc, KnowledgeComputationClientError):
+                error_code, error_stage, http_status = exc.code, exc.stage, exc.status_code
+            elif isinstance(exc, AlgorithmError):
+                error_code, error_stage = exc.code.value, exc.stage
             retryable = bool(
                 manifest is not None
                 and manifest.idempotent
@@ -191,13 +200,17 @@ class AgentRuntimeWorker:
             )
             logger.exception(
                 "Task 执行失败 | event=agent.task.failed | run_id={} "
-                "| task_id={} | trace_id={} | retryable={} "
-                "| error_type={} | error_detail={}",
+                "| task_id={} | trace_id={} | request_id={} | retryable={} "
+                "| error_type={} | error_code={} | stage={} | upstream_status={} | error_detail={}",
                 latest.run_id,
                 latest.task_id,
                 latest.trace_id,
+                latest.request_id,
                 retryable,
                 type(exc).__name__,
+                error_code,
+                error_stage,
+                http_status,
                 error_detail,
             )
             try:
@@ -207,7 +220,7 @@ class AgentRuntimeWorker:
                         expected_row_version=latest.row_version,
                         worker_id=self._worker_id,
                         lease_token=latest.lease_token,
-                        error_code=type(exc).__name__.upper(),
+                        error_code=error_code,
                         error_message=error_detail,
                         retryable=retryable,
                         retry_at=retry_at,
@@ -280,35 +293,36 @@ class AgentRuntimeWorker:
     ) -> SkillResult:
         result = None
         index = 0
-        async for item in implementation.execute_stream(context):
-            if isinstance(item, SkillResult):
-                if result is not None:
-                    raise RuntimeError("流式 Skill 返回了多个最终结果")
-                result = item
-                continue
-            progress = (
-                item
-                if isinstance(item, SkillProgress)
-                else SkillProgress.model_validate(item)
-            )
-            if result is not None:
-                raise RuntimeError("最终结果之后不能继续输出增量事件")
-            index += 1
-            lease = current["lease"]
-            await self._runtime_service.append_task_progress(
-                AppendTaskProgressCommand(
-                    task_id=lease.task_id,
-                    worker_id=self._worker_id,
-                    lease_token=lease.lease_token,
-                    event_type=progress.event_type,
-                    payload=progress.payload,
-                    actor_id=self._worker_id,
-                    trace_id=lease.trace_id,
-                    idempotency_key=(
-                        f"{lease.attempt}:{progress.event_type}:{index}"
-                    ),
+        async with aclosing(implementation.execute_stream(context)) as stream:
+            async for item in stream:
+                if isinstance(item, SkillResult):
+                    if result is not None:
+                        raise RuntimeError("流式 Skill 返回了多个最终结果")
+                    result = item
+                    continue
+                progress = (
+                    item
+                    if isinstance(item, SkillProgress)
+                    else SkillProgress.model_validate(item)
                 )
-            )
+                if result is not None:
+                    raise RuntimeError("最终结果之后不能继续输出增量事件")
+                index += 1
+                lease = current["lease"]
+                await self._runtime_service.append_task_progress(
+                    AppendTaskProgressCommand(
+                        task_id=lease.task_id,
+                        worker_id=self._worker_id,
+                        lease_token=lease.lease_token,
+                        event_type=progress.event_type,
+                        payload=progress.payload,
+                        actor_id=self._worker_id,
+                        trace_id=lease.trace_id,
+                        idempotency_key=(
+                            f"{lease.attempt}:{progress.event_type}:{index}"
+                        ),
+                    )
+                )
         if result is None:
             raise RuntimeError("流式 Skill 未返回最终结果")
         return result

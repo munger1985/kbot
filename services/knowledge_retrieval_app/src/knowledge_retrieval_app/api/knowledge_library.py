@@ -13,7 +13,8 @@ from platform_core.contracts.knowledge_app import (
     KnowledgeIndexMaintenance, KnowledgeIndexRebuildRequest,
     KnowledgeSearchRequest, KnowledgeContinuationRequest, KnowledgeRelationsRequest,
     KnowledgeLibraryView, KnowledgeDocumentPage, KnowledgeUploadReceipt, KnowledgeActionReceipt,
-    KnowledgeSearchResult, KnowledgeDirectoryQuery, KnowledgePassageContext, KnowledgePassageQuery)
+    KnowledgeSearchResult, KnowledgeDirectoryQuery, KnowledgePassageContext, KnowledgePassageQuery,
+    KnowledgeSearchHistoryPage, KnowledgeSearchHistoryDetail)
 from ..domain.knowledge_retrieval import RetrievalAccess
 from ..domain.knowledge_library import LibraryConflict
 
@@ -176,6 +177,46 @@ def create_library_router():
     async def passage_pdf(retrieval_ref: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
                           request: Request, access=Depends(library_access)):
         record, stream = await service(request).passage_pdf(access, str(retrieval_ref), key)
+        return StreamingResponse(stream, media_type="application/pdf", headers={
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox", "Content-Length": str(record["byte_count"])})
+
+    @router.get("/search-history", response_model=KnowledgeSearchHistoryPage)
+    async def history_page(request: Request, response: Response, limit: Annotated[int, Query(ge=1, le=50)] = 20,
+                           offset: Annotated[int, Query(ge=0)] = 0, access=Depends(library_access)):
+        response.headers["Cache-Control"] = "no-store"
+        return await service(request).search_history.page(access, limit=limit, offset=offset)
+
+    @router.get("/search-history/{identity}", response_model=KnowledgeSearchHistoryDetail)
+    async def history_detail(identity: UUID, request: Request, response: Response, access=Depends(library_access)):
+        response.headers["Cache-Control"] = "no-store"
+        return await service(request).history_detail(access, identity)
+
+    @router.delete("/search-history/{identity}", response_model=KnowledgeActionReceipt)
+    async def history_delete(identity: UUID, request: Request, response: Response, access=Depends(library_access)):
+        await service(request).search_history.delete(access, identity)
+        response.headers["Cache-Control"] = "no-store"
+        return {"status": "DELETED"}
+
+    @router.get("/search-history/{identity}/content/{key}")
+    async def history_content(identity: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")], request: Request,
+                              access=Depends(library_access)):
+        item, stream = await service(request).history_content(access, identity, key)
+        return StreamingResponse(stream, media_type=item.mime_type, headers={"Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox"})
+
+    @router.get("/search-history/{identity}/context/{key}", response_model=KnowledgePassageContext)
+    async def history_context(identity: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
+                              query: Annotated[KnowledgePassageQuery, Query()], request: Request,
+                              response: Response, access=Depends(library_access)):
+        response.headers["Cache-Control"] = "no-store"
+        return await service(request).history_context(access, identity, key, **query.model_dump())
+
+    @router.get("/search-history/{identity}/context/{key}/pdf", response_class=StreamingResponse,
+                responses={200: {"content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}})
+    async def history_pdf(identity: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")], request: Request,
+                          access=Depends(library_access)):
+        record, stream = await service(request).history_pdf(access, identity, key)
         return StreamingResponse(stream, media_type="application/pdf", headers={
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "default-src 'none'; sandbox", "Content-Length": str(record["byte_count"])})

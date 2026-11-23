@@ -235,10 +235,22 @@ class AgentRuntimeService:
                 "MODEL_CATALOG_UNAVAILABLE",
                 "Agent 模型目录解析器尚未初始化",
             )
+        # OCR 和 VLM 都只供带附件的知识问答使用。
+        query_ocr = raw_models.pop("query_ocr", None) if execution_spec.owner_app_id == "knowledge_retrieval" else None
+        if execution_spec.owner_app_id == "knowledge_retrieval" and not command.client_metadata.get("query_images"):
+            raw_models.pop("query_vlm", None)
         try:
             agent_snapshot["models"] = await self._model_resolver.resolve(
                 raw_models
             )
+            if query_ocr is not None and command.client_metadata.get("query_images"):
+                try:
+                    agent_snapshot["models"].update(await self._model_resolver.resolve({"query_ocr": query_ocr}))
+                except (LookupError, RuntimeError, ValueError) as exc:
+                    if "query_vlm" not in agent_snapshot["models"]:
+                        raise
+                    logger.warning("提问图片 OCR 模型不可用，继续交给视觉模型 | request_id={} | error_type={}",
+                                   command.request_id, type(exc).__name__)
         except (LookupError, RuntimeError, ValueError) as exc:
             raise AgentRuntimeConflict(
                 "AGENT_MODEL_INVALID", str(exc)
@@ -828,6 +840,7 @@ class AgentRuntimeService:
         """在租约有效期内原子追加流式事件，不改变 Task 版本。"""
         if command.event_type not in {
             "answer.delta",
+            "answer.preview.delta",
             "thinking.delta",
             "skill.progress",
         }:
