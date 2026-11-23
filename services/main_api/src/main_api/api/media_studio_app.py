@@ -9,26 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from main_api.api.models import (
     PublicModelCatalogItem,
-    load_managed_model_catalog,
-    load_model_provider_options,
     model_config_client,
 )
 from main_api.application import UserAuthService, authorize_app_request
-from platform_clients import (
-    AIModelConfigClientError,
-    MediaStudioClient,
-)
-from platform_core.contracts import (
-    ModelArchiveRequest,
-    ModelCatalogItem as ManagedModelCatalogItem,
-    ModelCreateRequest,
-    ModelDeleteRequest,
-    ModelProviderOption,
-    ModelReferenceSummary,
-    ModelStatusRequest,
-    ModelUpdateRequest,
-    PUBLIC_API_V1,
-)
+from platform_clients import MediaStudioClient
+from platform_core.contracts import PUBLIC_API_V1
 from platform_core.dictionary import ModelCategory
 
 
@@ -86,20 +71,6 @@ async def _require(request: Request, permission: str):
 def _run_response(view: dict[str, Any]) -> JSONResponse:
     code = 200 if view.get("status") in TERMINAL_STATUSES else 202
     return JSONResponse(status_code=code, content=view)
-
-
-def _raise_model_configuration_error(exc: AIModelConfigClientError) -> None:
-    detail: dict[str, Any] = {
-        "code": exc.code,
-        "message": exc.message,
-    }
-    if exc.context:
-        detail["context"] = exc.context
-    raise HTTPException(status_code=exc.status_code, detail=detail) from exc
-
-
-async def _require_model_manager(request: Request):
-    return await _require(request, "media_studio:model_manage")
 
 
 @router.post("/auth/login")
@@ -165,142 +136,6 @@ async def list_model_catalog(request: Request):
                 "message": "图像生成模型目录暂时不可用",
             },
         ) from exc
-
-
-@router.get(
-    "/models/provider-options", response_model=list[ModelProviderOption],
-)
-async def list_model_provider_options(request: Request):
-    await _require_model_manager(request)
-    return await load_model_provider_options(
-        request, auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/models", response_model=list[ManagedModelCatalogItem])
-async def list_models(request: Request):
-    await _require_model_manager(request)
-    return await load_managed_model_catalog(
-        request, auth_context=request.state.auth_context,
-    )
-
-
-@router.post(
-    "/models", status_code=status.HTTP_201_CREATED,
-    response_model=ManagedModelCatalogItem,
-)
-async def create_model(payload: ModelCreateRequest, request: Request):
-    await _require_model_manager(request)
-    client = model_config_client(request, category=payload.category)
-    try:
-        return await client.create_model(
-            payload.model_dump(mode="json"),
-            auth_context=request.state.auth_context,
-        )
-    except AIModelConfigClientError as exc:
-        _raise_model_configuration_error(exc)
-
-
-@router.patch(
-    "/models/{category}/{model_id}", response_model=ManagedModelCatalogItem,
-)
-async def update_model(
-    category: ModelCategory,
-    model_id: UUID,
-    payload: ModelUpdateRequest,
-    request: Request,
-):
-    await _require_model_manager(request)
-    client = model_config_client(request, category=category)
-    try:
-        return await client.update_model(
-            model_id,
-            payload.model_dump(mode="json", exclude_unset=True),
-            auth_context=request.state.auth_context,
-        )
-    except AIModelConfigClientError as exc:
-        _raise_model_configuration_error(exc)
-
-
-@router.patch(
-    "/models/{category}/{model_id}/status",
-    response_model=ManagedModelCatalogItem,
-)
-async def change_model_status(
-    category: ModelCategory,
-    model_id: UUID,
-    payload: ModelStatusRequest,
-    request: Request,
-):
-    await _require_model_manager(request)
-    client = model_config_client(request, category=category)
-    try:
-        return await client.change_model_status(
-            model_id,
-            payload.model_dump(mode="json"),
-            auth_context=request.state.auth_context,
-        )
-    except AIModelConfigClientError as exc:
-        _raise_model_configuration_error(exc)
-
-
-@router.get(
-    "/models/{category}/{model_id}/references",
-    response_model=ModelReferenceSummary,
-)
-async def get_model_references(
-    category: ModelCategory, model_id: UUID, request: Request,
-):
-    await _require_model_manager(request)
-    client = model_config_client(request, category=category)
-    try:
-        return await client.get_model_references(
-            model_id, auth_context=request.state.auth_context,
-        )
-    except AIModelConfigClientError as exc:
-        _raise_model_configuration_error(exc)
-
-
-@router.post("/models/{category}/{model_id}/archive")
-async def archive_model(
-    category: ModelCategory,
-    model_id: UUID,
-    payload: ModelArchiveRequest,
-    request: Request,
-):
-    await _require_model_manager(request)
-    client = model_config_client(request, category=category)
-    try:
-        return await client.archive_model(
-            model_id,
-            payload.model_dump(mode="json"),
-            auth_context=request.state.auth_context,
-        )
-    except AIModelConfigClientError as exc:
-        _raise_model_configuration_error(exc)
-
-
-@router.delete(
-    "/models/{category}/{model_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def delete_model(
-    category: ModelCategory,
-    model_id: UUID,
-    payload: ModelDeleteRequest,
-    request: Request,
-):
-    await _require_model_manager(request)
-    client = model_config_client(request, category=category)
-    try:
-        await client.delete_model(
-            model_id,
-            payload.model_dump(mode="json"),
-            auth_context=request.state.auth_context,
-        )
-    except AIModelConfigClientError as exc:
-        _raise_model_configuration_error(exc)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/bindings")

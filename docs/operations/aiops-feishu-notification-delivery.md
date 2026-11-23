@@ -132,7 +132,7 @@ App Secret 通过现有托管凭据设施加密。API 不回显已有 Secret、T
 
 ### 操作条件与配置位置
 
-- capabilities 仅报告当前身份权限，不再返回 TOML 外发开关。渠道和公共设置读取／写入使用原有渠道治理授权；Ammolite 租户管理员在租户控制台维护，KBot 全局管理员维护。
+- capabilities 仅报告当前身份权限，不再返回 TOML 外发开关。渠道和公共设置读取／写入使用各平台的渠道治理授权：Ammolite 租户管理员在租户控制台维护，KBot 由当前有效的 AIOps `app_admin` 维护。
 - App ID、加密 Secret、渠道 enabled 在数据库连接表；public_origin 在独立公共设置表，各厂商共用。GET／PUT /api/v1/notification-delivery/settings 返回公共地址和 row_version，首次未配置为 0；更新必须携带 expected_row_version，并写审计。
 - 检查连接仅检查令牌，无需门户地址，也不自动发测试消息。发码要求渠道启用及本人身份；试发要求渠道启用、个人目标已验证和显式确认；纯文本验证码／试发均不含任务链接，不依赖门户地址。
 - 启用业务规则缺少门户地址返回 422／NOTIFICATION_PUBLIC_ORIGIN_REQUIRED；仍有启用规则时清空地址返回 409／NOTIFICATION_PUBLIC_ORIGIN_IN_USE。未配置门户地址不生成业务任务，页面明确提示；不会补发历史消息。已有任务内容与入口保留冻结，不因改地址批量重写或重发。

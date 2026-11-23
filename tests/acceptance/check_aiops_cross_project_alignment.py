@@ -559,7 +559,7 @@ CONTRACT_KEY_FIELDS = {
 
 
 def _default_peer(root: Path) -> Path:
-    peer_name = "kbot4" if root.name == "ammolite_cube" else "ammolite_cube"
+    peer_name = "kbot4" if root.name in {"ammolite_cube", "Ammolite"} else "ammolite_cube"
     return root.parent / peer_name
 
 
@@ -798,7 +798,7 @@ def _operation_parameter_names(
 def _openapi_guard(root: Path) -> tuple[dict[str, Any], list[str]]:
     results: dict[str, Any] = {}
     violations: list[str] = []
-    profiles = OPENAPI_PROFILES.get(root.name)
+    profiles = OPENAPI_PROFILES.get("ammolite_cube" if root.name == "Ammolite" else root.name)
     if profiles is None:
         return results, [f"没有为仓库配置 OpenAPI 门禁: {root.name}"]
 

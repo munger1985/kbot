@@ -91,7 +91,6 @@ def _portal_auth_context():
 def _model(*, status=1, category=1, model_params=None):
     return SimpleNamespace(
         model_id=uuid7(),
-        served_model_name="chat-prod",
         display_name="生产对话模型",
         provider_model_name="provider-chat",
         category=category,
@@ -130,7 +129,6 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
 
         result = await service.create(
             {
-                "served_model_name": "chat-active",
                 "display_name": "已启用对话模型",
                 "provider_model_name": "provider-chat",
                 "category": ModelCategory.LLM.value,
@@ -237,17 +235,18 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
 
         result = await service.update(
             row.model_id,
-            {"display_name": "新名称", "api_key": "new-secret"},
+            {"display_name": "新名称", "provider_model_name": "Vendor/Updated-Model", "api_key": "new-secret"},
             expected_row_version=1,
             actor_id="operator",
         )
 
         self.assertEqual(2, result["row_version"])
+        self.assertEqual("Vendor/Updated-Model", result["provider_model_name"])
+        self.assertEqual("Vendor/Updated-Model", row.provider_model_name)
         self.assertNotIn("api_key", result)
         self.assertNotIn("config_file", result["model_params"])
         self.assertNotIn("new-secret", repr(events))
         self.assertNotIn("private-key", repr(events))
-        self.assertEqual("chat-prod", events[0]["served_model_name"])
         with self.assertRaisesRegex(ModelRegistryConflict, "版本已变化"):
             await service.update(
                 row.model_id, {"display_name": "过期更新"},

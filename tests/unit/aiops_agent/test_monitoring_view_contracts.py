@@ -172,8 +172,12 @@ class MonitoringProfileContractTest(unittest.TestCase):
     def test_default_database_profiles_use_authorized_exporter_metrics(self):
         expected_profiles = {
             ("ORACLE", "19c"): "oracle-overview",
+            ("ORACLE", "26ai"): "oracle-overview",
+            ("MYSQL", "8.0"): "mysql-overview",
             ("MYSQL", "8.4"): "mysql-overview",
             ("POSTGRESQL", "16"): "postgresql-overview",
+            ("POSTGRESQL", "17"): "postgresql-overview",
+            ("POSTGRESQL", "18"): "postgresql-overview",
         }
         authorized = set(DEFAULT_BASELINE_METRICS)
         for (db_type, version_code), profile_id in expected_profiles.items():

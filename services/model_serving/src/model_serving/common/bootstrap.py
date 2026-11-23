@@ -86,7 +86,7 @@ def create_model_registry(
 
     async def invalidate(event):
         if runtime_service is not None:
-            await runtime_service.invalidate_model(event["served_model_name"])
+            await runtime_service.invalidate_model(event["model_id"])
 
     uow_factory = create_model_serving_uow_factory(session_factory)
     return ModelRegistryService(

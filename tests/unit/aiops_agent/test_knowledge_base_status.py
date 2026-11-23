@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
-from aiops_agent.application.errors import AIOpsApplicationError
+from aiops_agent.application.errors import AIOpsApplicationError, KnowledgeBaseReferenceConflict
 from aiops_agent.contracts.knowledge import KnowledgeBaseStatusCommand
 from aiops_agent.entities import OperationsKnowledgeBaseEntity
 from platform_clients.aiops import AIOpsManagementClient
@@ -20,7 +20,7 @@ ORACLE = OperationsKnowledgeBaseEntity.__tablename__.startswith("KBOT_")
 
 def fixture(status="ACTIVE", version=7, missing=False):
     row = SimpleNamespace(status=status, row_version=version,
-        configuration_json={"models": {"embedding": str(uuid7())}}, updated_by=None, updated_at=None)
+        configuration_json={"index_models": {"embedding": str(uuid7())}}, updated_by=None, updated_at=None)
     repo = SimpleNamespace(get_knowledge_base=AsyncMock(return_value=None if missing else row))
     uow = SimpleNamespace(operations_knowledge=repo, commit=AsyncMock())
     @asynccontextmanager
@@ -83,6 +83,19 @@ def test_status_command_requires_current_version_and_excludes_model_edits(payloa
         KnowledgeBaseStatusCommand.model_validate(payload)
 
 
+def test_base_can_enable_without_text_embedding():
+    async def run():
+        f = fixture()
+        f.row.configuration_json = {"index_models": {"visual_embedding": str(uuid7())}}
+        await f.service.set_knowledge_base_status(**f.kwargs, status="DISABLED")
+        await f.service.set_knowledge_base_status(
+            **{**f.kwargs, "expected_row_version": f.row.row_version}, status="ACTIVE")
+        assert f.row.status == "ACTIVE"
+        assert "embedding" not in f.row.configuration_json["index_models"]
+        assert f.uow.commit.await_count == 2
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("action,status", [("enable","ACTIVE"), ("disable","DISABLED")])
 def test_public_client_internal_route_preserves_scope_permission_and_version(monkeypatch, action, status):
     async def run():
@@ -113,4 +126,68 @@ def test_public_client_internal_route_preserves_scope_permission_and_version(mon
             "domain_id":domain, "knowledge_base_id":identity, "expected_row_version":7, "status":status, "context":context}
         if ORACLE:
             permission.assert_awaited_once_with(request, "aiops:knowledge_manage")
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(("dependency", "expected"), [
+    ("assets", 409), ("current_agent_versions", 409), ("historical_agent_versions", 409),
+    ("stale", 412), (None, 204),
+])
+def test_delete_rechecks_dependencies_only_after_lock_and_version_check(dependency, expected):
+    async def run():
+        f = fixture(status="DISABLED", version=8 if dependency == "stale" else 7)
+        usage = {key: int(key == dependency) for key in ("assets", "current_agent_versions", "historical_agent_versions")}
+        order = []
+        f.repo.get_knowledge_base.side_effect = lambda **kwargs: order.append("lock") or f.row
+        f.repo.knowledge_base_usage = AsyncMock(side_effect=lambda **_: order.append("usage") or usage)
+        f.repo.delete_knowledge_base = AsyncMock(side_effect=lambda _: order.append("delete"))
+        f.uow.commit.side_effect = lambda: order.append("commit")
+        if expected != 204:
+            with pytest.raises(AIOpsApplicationError) as error:
+                await f.service.delete_knowledge_base(**f.kwargs)
+            assert error.value.status_code == expected
+            f.uow.commit.assert_not_awaited()
+        else:
+            await f.service.delete_knowledge_base(**f.kwargs)
+        assert f.repo.get_knowledge_base.await_args.kwargs["for_update"]
+        assert order == (["lock", "usage", "delete", "commit"] if expected == 204
+            else ["lock", "usage"] if expected == 409 else ["lock"])
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(("if_match", "expected"), [(None, 428), ("rv-7", 400),
+    ('"rv-0"', 400), ('W/"rv-7"', 400), ('"rv-7"', 204)])
+def test_public_delete_requires_strong_version_etag(monkeypatch, if_match, expected):
+    from fastapi import HTTPException
+
+    async def run():
+        public = importlib.import_module("main_api.api.aiops_app" if ORACLE else "main_api.api.ops")
+        request = SimpleNamespace(state=SimpleNamespace(auth_context=object()))
+        client = SimpleNamespace(delete_operations_knowledge_base=AsyncMock())
+        monkeypatch.setattr(public, "_client", lambda _: client)
+        if ORACLE:
+            monkeypatch.setattr(public, "_require", AsyncMock())
+        if expected == 204:
+            response = await public.delete_operations_knowledge_base(uuid7(), request, if_match=if_match)
+            assert response.status_code == 204
+            assert client.delete_operations_knowledge_base.await_args.kwargs["expected_row_version"] == 7
+        else:
+            with pytest.raises(HTTPException) as error:
+                await public.delete_operations_knowledge_base(uuid7(), request, if_match=if_match)
+            assert error.value.status_code == expected
+            client.delete_operations_knowledge_base.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_delete_maps_final_foreign_key_protection_without_committing():
+    async def run():
+        f = fixture()
+        f.repo.knowledge_base_usage = AsyncMock(return_value={
+            "assets": 0, "current_agent_versions": 0, "historical_agent_versions": 0})
+        f.repo.delete_knowledge_base = AsyncMock(side_effect=KnowledgeBaseReferenceConflict)
+        with pytest.raises(AIOpsApplicationError) as error:
+            await f.service.delete_knowledge_base(**f.kwargs)
+        assert error.value.status_code == 409
+        assert error.value.code == "AIOPS_KNOWLEDGE_BASE_IN_USE"
+        f.uow.commit.assert_not_awaited()
     asyncio.run(run())

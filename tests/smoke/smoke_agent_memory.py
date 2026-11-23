@@ -81,7 +81,6 @@ class _ModelResolver:
         return {
             role: {
                 "model_id": str(model_id),
-                "served_model_name": names[role],
                 "category": 2 if role == "memory_embedding" else 1,
                 "config_fingerprint": "a" * 64,
             }

@@ -175,7 +175,6 @@ try {
     ["#chat-workspace", ".aiops-diagnosis-workspace"],
     [".ops-conversation-head", ".aiops-diagnosis-conversation-head"],
     ["#agent-select", ".aiops-diagnosis-head-context select"],
-    ["#chat-session-toggle", ".aiops-diagnosis-conversation-head .button-row > button"],
     [".ops-starter-home", ".aiops-starter-home"],
     [".ops-starter-card", ".aiops-starter-option"],
     [".ops-composer", ".aiops-diagnosis-composer"],
@@ -183,7 +182,7 @@ try {
     [".aiops-composer-attachment", ".aiops-composer-attachment"],
     [".aiops-composer-send", ".aiops-composer-send"],
     [".aiops-diagnosis-rail-head", ".aiops-diagnosis-rail-head"],
-    ["#new-conversation", ".aiops-diagnosis-rail-head > button"],
+    ["#new-conversation", ".aiops-session-create"],
     ["#chat-rail-toggle", ".agent-chat-session-toggle"],
     [".ops-workspace-item", ".conversation-select"],
     [".ops-starter-section > h3", ".aiops-starter-section > h3"],
@@ -209,13 +208,35 @@ try {
     await Promise.all([kbot.setViewportSize({ width, height: 1000 }), reference.setViewportSize({ width, height: 1000 })]);
     for (const expanded of [false, true]) {
       await kbot.evaluate((expanded) => {
-        const button = document.getElementById("chat-session-toggle");
+        const button = document.getElementById("chat-rail-toggle");
         if ((button.getAttribute("aria-expanded") === "true") !== expanded) button.click();
         document.querySelector("#chat-workspace").style.transition = "none";
       }, expanded);
       await reference.evaluate((expanded) => { referenceVm.sidebarOpen = expanded; document.querySelector(".aiops-diagnosis-workspace").style.transition = "none"; }, expanded);
       const actual = await measure(kbot, 0);
       const expected = await measure(reference, 1);
+      for (const page of [kbot, reference]) {
+        const railHead = page.locator(".aiops-diagnosis-rail-head");
+        const toggle = railHead.locator(".agent-chat-session-toggle");
+        const create = railHead.getByRole("button", { name: "新增会话" });
+        assert.equal(await page.locator(".agent-chat-session-toggle").count(), 1);
+        assert.equal(await toggle.getAttribute("aria-expanded"), String(expanded));
+        const menuBox = await toggle.boundingBox();
+        const addBox = await create.boundingBox();
+        assert.ok(menuBox && addBox, `${width}px 三横与新增会话始终可见`);
+        if (expanded) {
+          assert.ok(addBox.x >= menuBox.x + menuBox.width && Math.abs(addBox.y + addBox.height / 2 - menuBox.y - menuBox.height / 2) <= 1, `${width}px 展开时先三横，再横向排列新增会话`);
+          assert.ok(await create.locator("span").isVisible());
+        } else {
+          assert.ok(addBox.y >= menuBox.y + menuBox.height && Math.abs(addBox.x - menuBox.x) <= 1, "收起时三横在加号正上方");
+          assert.equal(await create.locator("span").isVisible(), false);
+        }
+        const toolbar = page.locator(".aiops-chat-toolbar");
+        const picker = await toolbar.getByRole("combobox", { name: "选择 Agent" }).boundingBox();
+        const toolbarBox = await toolbar.boundingBox();
+        assert.ok(picker.x - toolbarBox.x <= 12, "Agent 下拉应在主区左侧");
+        assert.equal(await toolbar.locator(".aiops-chat-toolbar-actions").isVisible(), false, "新会话不应留空的操作行");
+      }
       for (let index = 0; index < selectors.length; index++) {
         const keys = ["x", "y", "width", "height", "background", "color", "fontSize", "fontWeight", "borderColor", "radius"];
         for (const key of keys) {
@@ -261,7 +282,7 @@ try {
   }
   for (const width of [1440,420]) {
     await Promise.all([kbot.setViewportSize({width,height:1000}),reference.setViewportSize({width,height:1000})]);
-    if(await kbot.locator('#chat-session-toggle').getAttribute('aria-expanded')!=='true') await kbot.locator('#chat-session-toggle').click();
+    if(await kbot.locator('#chat-rail-toggle').getAttribute('aria-expanded')!=='true') await kbot.locator('#chat-rail-toggle').click();
     await kbot.locator('.ops-workspace-more').click();
     await kbot.locator('.ops-conversation-menu button').click();
     await reference.evaluate(()=>{referenceConfirmVm.confirmState.open=true});
@@ -292,17 +313,18 @@ try {
   await kbot.locator('#conversation-form textarea').press("Enter");
   await kbot.waitForFunction(() => fixtureRequests.some((item) => item.method === "POST"));
   assert.equal(await kbot.locator('#conversation-form textarea').isEnabled(), true);
-  await kbot.locator("#chat-session-toggle").click();
-  if (await kbot.locator("#chat-workspace").evaluate((element) => element.classList.contains("is-rail-collapsed"))) await kbot.locator("#chat-session-toggle").click();
+  if (await kbot.locator("#chat-rail-toggle").getAttribute("aria-expanded") !== "true") await kbot.locator("#chat-rail-toggle").click();
   await kbot.locator('.ops-workspace-item[data-id="session-1"]').click();
-  await kbot.waitForFunction(() => document.getElementById("conversation-title").textContent === "MES 系统诊断");
+  await kbot.locator('.ops-workspace-item[data-id="session-1"][aria-current="true"]').waitFor();
+  assert.equal(await kbot.locator(".aiops-chat-toolbar-turn").textContent(), "第 1 轮");
   assert.equal(await kbot.locator("#agent-select").inputValue(), "agent-1");
   assert.equal(await kbot.locator('#conversation-actions [data-close-diagnosis]').count(), 1);
   assert.equal(await kbot.locator('#conversation-actions [data-generate-report-conversation]').textContent(), "生成报告");
   assert.equal(await kbot.locator(".aiops-chat-message-user .ops-message-content").textContent(), "诊断 <script> 与业务系统");
   assert.equal(await kbot.locator(".ops-message-content script").count(), 0);
   await kbot.locator("#new-conversation").click();
-  assert.equal(await kbot.locator("#conversation-title").textContent(), "新运维会话");
+  assert.equal(await kbot.locator('.ops-workspace-item[aria-current="true"]').count(), 0);
+  assert.equal(await kbot.locator(".aiops-chat-toolbar-actions").isVisible(), false);
   assert.equal(await kbot.locator(".ops-starter-home").count(), 1);
   assert.equal(new URL(kbot.url()).search, "");
   await kbot.locator('#open-starter-menu').click();
@@ -326,7 +348,7 @@ try {
     {turn_id:'text-turn-3',turn_no:3,conversation_id:'session-1',status:'FAILED',error_code:'FIXTURE_ERROR',error_message:'隔离环境错误状态',messages:[{message_type:'USER_MESSAGE',role:'USER',created_at:'2026-10-30T03:00:04Z',payload:{text:'检查不可达实例。'}}],answer_blocks:[],events:[],evidence_gaps:[]},
   ];
   await kbot.evaluate(turns=>{globalThis.fixtureTurns=turns},turns);
-  if(await kbot.locator('#chat-session-toggle').getAttribute('aria-expanded')!=='true') await kbot.locator('#chat-session-toggle').click();
+  if(await kbot.locator('#chat-rail-toggle').getAttribute('aria-expanded')!=='true') await kbot.locator('#chat-rail-toggle').click();
   await kbot.locator('.ops-workspace-item[data-id="session-1"]').click();
   await kbot.locator('.aiops-diagnosis-turn').first().waitFor();
   await reference.evaluate(({turns,sessions})=>{referenceVm.conversationTurns=turns;referenceVm.selectedConversationId='session-1';referenceVm.currentTurn=turns.at(-1);referenceVm.conversations=sessions;referenceVm.question='';referenceVm.canSubmit=false;referenceVm.sidebarOpen=true;referenceVm.canGenerateReport=true;referenceVm.canCloseDiagnosis=true;}, {turns,sessions:fixtureSessions});
@@ -354,12 +376,14 @@ try {
       const header = await toolbar.boundingBox();
       assert.ok(header.height <= 88, `${prefix} ${width}px 工具栏最多两行`);
       if (width === 1440) assert.ok(header.height <= 50, `${prefix} 宽屏工具栏保持单行`);
-      const title = toolbar.locator('h2').first();
-      const previousTitle = await title.textContent();
-      await title.evaluate(node => { node.textContent = '执行功能：全面健康诊断，检查数据库负载与等待事件的很长会话标题'.repeat(4); });
-      assert.equal((await toolbar.boundingBox()).height, header.height, '长标题不得增加工具栏高度');
-      assert.equal(await title.evaluate(node => getComputedStyle(node).whiteSpace), 'nowrap');
-      await title.evaluate((node, text) => { node.textContent = text; }, previousTitle);
+      assert.equal(await toolbar.getByText('MES 系统诊断', {exact:true}).count(), 0, '会话名只在历史列表显示');
+      const picker = await toolbar.getByRole('combobox').boundingBox();
+      assert.ok(picker.width >= 160, `${prefix} ${width}px 有操作时也应留出空间显示 Agent 名`);
+      const selectedAgent = toolbar.getByRole('combobox').locator('option:checked');
+      const previousName = await selectedAgent.textContent();
+      await selectedAgent.evaluate(node => { node.textContent = '覆盖数据库负载与等待事件全面健康诊断的运维 Agent'.repeat(8); });
+      assert.equal((await toolbar.boundingBox()).height, header.height, '长 Agent 名不得增加工具栏高度');
+      await selectedAgent.evaluate((node, text) => { node.textContent = text; }, previousName);
       const summary = toolbar.locator('summary');
       const top = (await transcript.boundingBox()).y;
       await summary.click();
@@ -379,6 +403,15 @@ try {
       assert.equal(await summary.evaluate(node => node === document.activeElement), true);
       assert.equal((await transcript.boundingBox()).y, top);
     }
+  }
+  for (const [prefix, page] of [['kbot', kbot], ['ammolite', reference]]) {
+    const toggle = page.locator('.aiops-diagnosis-rail-head .agent-chat-session-toggle');
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    const picker = await page.locator('.aiops-chat-toolbar').getByRole('combobox').boundingBox();
+    assert.ok(picker.width >= 160, `${prefix} 320px 收起列表后仍有空间显示 Agent 名`);
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
   }
   for(const empty of [false,true]) for(const width of [1440,420]) {
     await Promise.all([kbot,reference].map(page=>page.setViewportSize({width,height:1000})));

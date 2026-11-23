@@ -162,6 +162,7 @@ class ReleaseToolingTest(unittest.TestCase):
         )
         self.assertEqual(1, rendered.count("    ports:\n"))
         self.assertIn('      - "8080:8080"', rendered)
+        self.assertIn('UI_ENTRY_PATH: "/ui/index.html"', rendered)
         self.assertNotIn("network_mode: host", rendered)
 
     def test_dynamic_uid_services_publish_runtime_identity(self) -> None:

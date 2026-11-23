@@ -2,8 +2,10 @@
 
 from datetime import timedelta
 from uuid import UUID
+from sqlalchemy import and_, tuple_
+from sqlalchemy.orm import aliased
 
-from knowledge_algorithms.contracts.errors import require
+from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
 from knowledge_algorithms.contracts.identity import AuthorizedScope, fingerprint
 from knowledge_algorithms.contracts.wire import encode
 from platform_core.identity import uuid7
@@ -13,6 +15,44 @@ from ..domain.knowledge_ingestion import BINDING
 
 
 class KnowledgeRetrievalRepository(KnowledgeIngestionRepository):
+    async def passage_versions(self, access, version_ids):
+        if not version_ids:
+            return {}
+        repositories = self._repos(access)
+        versions, documents = repositories["knowledge_document_version"], repositories["knowledge_document"]
+        version = versions.entity
+        rows = await self._session.execute(versions.statement().with_only_columns(
+            version.document_version_id, version.document_id, documents.entity.title, version.mime_type,
+            version.published_parse_run_id, version.allowed_view_manifest_ref, version.allowed_view_hash).join(
+            documents.entity, documents.entity.document_id == versions.entity.document_id).where(
+            versions.entity.document_version_id.in_(version_ids), versions.entity.status == "PUBLISHED",
+            documents.entity.status == "PUBLISHED", documents.entity.domain_id == access.domain_id))
+        records = {str(ref): dict(version_id=str(ref), document_id=str(document_id), title=title, mime_type=mime,
+                   parse_run_id=str(run_id), manifest=manifest, view_hash=view_hash)
+                   for ref, document_id, title, mime, run_id, manifest, view_hash in rows}
+        if len(records) != len(version_ids):
+            raise AlgorithmError(ErrorCode.SNAPSHOT_STALE, "证据来源已变化，请重新检索", stage="snapshot")
+        return records
+
+    async def passage_headings(self, access, keys):
+        """只读取规范章节的键；展示文字仍从发布的允许视图读取。"""
+        if not keys:
+            return {}
+        repo = self._repos(access)["knowledge_node"]
+        node = repo.entity
+        parent = aliased(node)
+        pairs = sorted({(UUID(key.parse_run_ref), key.object_key) for key in keys})
+        headings = {}
+        for offset in range(0, len(pairs), 200):
+            rows = await self._session.execute(repo.statement().with_only_columns(
+                node.parse_run_id, node.local_key, node.kind, parent.local_key).outerjoin(parent,
+                    and_(parent.node_id == node.parent_node_id, parent.parse_run_id == node.parse_run_id,
+                         parent.kind == "SECTION")).where(
+                    tuple_(node.parse_run_id, node.local_key).in_(pairs[offset:offset + 200])))
+            for run_id, key, kind, parent_key in rows:
+                headings[(str(run_id), key)] = key if kind == "SECTION" else parent_key
+        return headings
+
     async def version_records(self, access, version_ids, *, lock=False):
         repositories = self._repos(access)
         result = []
@@ -103,14 +143,16 @@ class KnowledgeRetrievalRepository(KnowledgeIngestionRepository):
                     result.extend({"descriptor": row.metadata_json, "handle": row.content_ref} for row in rows)
         return {"scope": scope_record, "versions": records, "relations": tuple(relations), "assets": tuple(assets)}
 
-    async def publish(self, access, *, version_id, generation_id, expected_generation_id, now):
+    async def publish(self, access, *, version_id, generation_id, expected_generation_id, now, rebuild_id=None):
         repositories = self._repos(access)
         version = await repositories["knowledge_document_version"].get(version_id, lock=True)
         require(version is not None and version.status != "WITHDRAWN", "发布版本不在当前 App 范围或已永久撤回")
         generation = await repositories["knowledge_index_generation"].get(generation_id, lock=True)
         require(generation is not None and generation.document_version_id == version_id
-                and generation.status == "READY" and generation.manifest_json.get("unit_count", 0) > 0,
+                and (generation.status == "READY" or rebuild_id is not None and generation.status == "CANDIDATE")
+                and generation.manifest_json.get("unit_count", 0) > 0,
                 "索引代次未完整准备")
+        require(generation.manifest_json.get("rebuild_id") == rebuild_id, "批次候选不能单独发布")
         document = await repositories["knowledge_document"].get(version.document_id, lock=True)
         require(document is not None and document.status not in {"DELETED", "WITHDRAWN"}, "文档不可发布")
         if version.active_generation_id == generation_id and version.status == document.status == "PUBLISHED":
@@ -118,17 +160,26 @@ class KnowledgeRetrievalRepository(KnowledgeIngestionRepository):
         require(version.active_generation_id == expected_generation_id, "发布指针已被其他任务修改")
         run = await repositories["knowledge_parse_run"].get(generation.parse_run_id)
         jobs = repositories["knowledge_ingestion_job"]
-        job_rows = (await self._session.scalars(jobs.statement().where(
-            jobs.entity.document_version_id == version_id))).all()
+        job = (await self._session.scalars(jobs.statement().where(
+            jobs.entity.document_version_id == version_id
+        ).order_by(jobs.entity.attempt.desc(), jobs.entity.ingestion_job_id.desc()).limit(1))).first()
         require(run is not None and run.status == "PARSED" and run.source_sha256 == version.source_sha256
-                and len(job_rows) == 1 and job_rows[0].parse_run_id == run.parse_run_id
-                and job_rows[0].status == "PARSED", "发布代次已经失去任务栅栏")
-        require(version.allowed_view_hash == generation.manifest_json.get("allowed_view_hash")
-                and version.allowed_view_manifest_ref, "允许视图和索引代次不一致")
-        document = await repositories["knowledge_document"].get(version.document_id, lock=True)
-        require(document is not None and document.status not in {"DELETED", "WITHDRAWN"}, "文档不可发布")
+                and job is not None and job.parse_run_id == run.parse_run_id
+                and job.status == "PARSED", "发布代次已经失去任务栅栏")
+        replacement = expected_generation_id is not None and rebuild_id is None
+        if replacement:
+            require(version.status == "PUBLISHED" and job.context_json.get("replaces_generation_id") == str(expected_generation_id)
+                    and version.published_parse_run_id != run.parse_run_id, "重新解析发布栅栏已失效")
+            staged = run.checkpoint_json.get("replacement_view") or {}
+            view_hash, manifest_ref = staged.get("hash"), staged.get("manifest_ref")
+        else:
+            view_hash, manifest_ref = version.allowed_view_hash, version.allowed_view_manifest_ref
+        require(view_hash and view_hash == generation.manifest_json.get("allowed_view_hash")
+                and manifest_ref, "允许视图和索引代次不一致")
         generation.active_revision = int(generation.active_revision or 0) + 1
+        generation.status = "READY"
         version.published_parse_run_id, version.active_generation_id = run.parse_run_id, generation_id
+        version.allowed_view_hash, version.allowed_view_manifest_ref = view_hash, manifest_ref
         version.status, version.updated_at = "PUBLISHED", now
         document.status, document.updated_at = "PUBLISHED", now
 

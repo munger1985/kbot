@@ -183,8 +183,11 @@ def test_actual_search_reranks_grounded_body_matches_and_returns_scorecard():
             values=[]
             for row in f.rows:
                 key=EvidenceKey("aiops",str(row[2].document_version_id),str(row[2].parse_run_id),str(row[1].asset_version_id))
-                values.append(SimpleNamespace(key=key,mime_type="text/plain",locators=(),source_keys=(key,),source_spans=()))
-            return SimpleNamespace(retrieval_ref="receipt",evidence_set=SimpleNamespace(evidence=tuple(values)))
+                values.append(SimpleNamespace(key=key,mime_type="text/plain",locators=(),source_keys=(key,),
+                    source_spans=(), payload_status="DEFERRED"))
+            return SimpleNamespace(retrieval_ref="receipt", evidence_set=SimpleNamespace(evidence=tuple(values),
+                primary_hits=tuple(SimpleNamespace(rank=i, evidence_key=item.key) for i, item in enumerate(values, 1)),
+                groups=(), channel_status=(), status="COMPLETE", scope_exhausted=True))
         f.retrieval.retrieve.side_effect = retrieve
         f.kwargs["request"] = f.request.model_copy(update={"purpose": "CHANGE"})
         result = await f.service.search(**f.kwargs)

@@ -39,7 +39,7 @@
     DATA: ["DATABASE", "ORACLE_ASM", "ORACLE_RAC", "ORACLE_LISTENER", "CACHE"],
     INFRASTRUCTURE: ["EXADATA", "PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER", "KUBERNETES_CLUSTER", "NETWORK_DEVICE", "STORAGE"],
   };
-  const versions = { ORACLE: ["19c", "26ai"], MYSQL: ["5.7", "8.4"], POSTGRESQL: ["16", "17"] };
+  const versions = { ORACLE: ["19c", "26ai"], MYSQL: ["5.7", "8.0", "8.4"], POSTGRESQL: ["16", "17", "18"] };
   const oracleScopeOptions = [["NON_CDB", "非 CDB"], ["CDB_ROOT", "CDB"], ["PDB", "PDB"]];
   const relationTypes = [
     ["ORACLE_RAC", "组成 Oracle RAC"], ["DATA_GUARD", "Data Guard 保护"],
@@ -1527,6 +1527,15 @@
     plansLink.hidden = !published || !operationsPlanAllowed;historyLink.hidden = !published;
     plansLink.href = `./inspection-plans.html?businessSystemId=${encodeURIComponent(systemId)}`;
     historyLink.href = `./inspections.html?businessSystemId=${encodeURIComponent(systemId)}`;
+    const protectionLink = document.getElementById("system-data-protection");
+    if (protectionLink) {
+      const databases = protectionDatabases();
+      protectionLink.hidden = !published || !protectionAllowed || !databases.length;
+      document.getElementById("system-protection-summary").hidden = protectionLink.hidden;
+      const context = new URLSearchParams({businessSystemId: systemId});
+      if (databases.length === 1) context.set("resourceId", databases[0].resource.resource_id);
+      protectionLink.href = "./data-protection.html?" + context.toString();
+    }
     document.getElementById("step-copy").textContent = published ? "业务系统运行中，当前为只读查看" : dirty ? "有未保存修改" : draftId ? "草稿已保存到服务器" : "尚未保存草稿";
     document.getElementById("save-draft").hidden = !editable;
     document.getElementById("save-draft").disabled = saving || Boolean(snapshotState?.mutating);
@@ -1572,6 +1581,29 @@
     finally { loading = false; render(); }
   }
 
+  function protectionDatabases() {
+    return (detail?.resources || []).filter(row => row.status === "ACTIVE" && row.resource?.resource_type_key === "DATABASE" && row.resource.database);
+  }
+  const protectionSummary = document.getElementById("system-protection-summary");
+  protectionSummary.addEventListener("toggle", async () => {
+    if (!protectionSummary.open || protectionSummary.hidden) return;
+    const list = document.getElementById("system-protection-databases");
+    const labels = {NOT_ENROLLED:"未纳入", DRAFT:"已保存 · 未调度", SCHEDULED:"已调度"};
+    list.replaceChildren();
+    for (const row of protectionDatabases()) {
+      if (!protectionSummary.open || protectionSummary.hidden) break;
+      const item = document.createElement("li"), resource = row.resource;
+      list.append(item);
+      item.textContent = resource.display_name + " · 读取中";
+      try {
+        const value = await request("/data-protection/resources/" + encodeURIComponent(resource.resource_id));
+        item.textContent = resource.display_name + " · " + (labels[value.status] || "未确认");
+      } catch {
+        item.textContent = resource.display_name + " · 无法读取";
+      }
+    }
+  });
+
   document.getElementById("previous").onclick = () => { if (step > 0) { step -= 1; render(); } };
   document.getElementById("next").onclick = () => { if (step < 2) { if (step === 1 && syncInferredDatabaseRelations()) mark(); step += 1; furthest = Math.max(furthest, step); render(); } };
   document.getElementById("commit").onclick = () => void commit();
@@ -1597,5 +1629,10 @@
   addEventListener("beforeunload", (event) => { if (dirty || snapshotState?.mutating) event.preventDefault(); });
   addEventListener("pagehide",() => { KBotAIOpsTopology.dispose();snapshotGeneration += 1;snapshotState = null; });
   let operationsPlanAllowed = false;
-  shell.ready.then(access => {operationsPlanAllowed = (access.permissions || []).includes("aiops:plan_manage");return load();}).catch((error) => shell.toast(error.message));
+  let protectionAllowed = false;
+  shell.ready.then(access => {
+    operationsPlanAllowed = (access.permissions || []).includes("aiops:plan_manage");
+    protectionAllowed = (access.permissions || []).includes("aiops:use");
+    return load();
+  }).catch((error) => shell.toast(error.message));
 })();

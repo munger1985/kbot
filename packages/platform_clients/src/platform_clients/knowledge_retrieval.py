@@ -107,15 +107,16 @@ class AppKnowledgeClient(KnowledgeComputationClient):
                     raise KnowledgeComputationClientError(502, "RESOURCE_LIMIT")
                 yield block
 
-    async def open_historical_content(self, retrieval_ref, stable_key, *, auth_context, max_bytes=8388608):
+    async def open_historical_content(self, retrieval_ref, stable_key, *, auth_context, max_bytes=8388608, source_pdf=False):
         """在下游发出响应头前完成内部历史读取授权，并显式持有流资源。"""
         from .knowledge_library import KnowledgeLibraryClient
         identity = str(UUID(str(retrieval_ref)))
         if type(stable_key) is not str or not re.fullmatch(r"[0-9a-f]{64}", stable_key):
             raise ValueError("历史证据身份无效")
         return await KnowledgeLibraryClient.open_download(self,
-            self.prefix + "/history/" + identity + "/content/" + stable_key,
-            auth_context=auth_context, max_bytes=max_bytes)
+            self.prefix + "/history/" + identity + "/content/" + stable_key + ("?source_pdf=true" if source_pdf else ""),
+            auth_context=auth_context, max_bytes=67108864 if source_pdf else max_bytes,
+            require_preview_type=source_pdf)
     async def release_run(self, scope, *, auth_context):
         return await self.json("POST", self.prefix + "/evidence:release-run",
             payload={"scope": scope}, auth_context=auth_context)

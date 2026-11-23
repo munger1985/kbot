@@ -1,8 +1,8 @@
 /* 多媒体创作工作台公共 Shell。 */
 (function () {
   "use strict";
-  const PAGE_PERMISSIONS = {"dashboard": "media_studio:use", "image-generation": "media_studio:image_generate", "models": "media_studio:model_manage", "model-bindings": "media_studio:model_binding_manage", "media-assets": "media_studio:media_read", "usage-runs": "media_studio:run_read"};
-  const sections = [["创作工作区", [["dashboard", "工作台", "./dashboard.html"], ["image-generation", "图片生成", "./image-generation.html"]]], ["管理", [["models", "模型管理", "./models.html"], ["model-bindings", "模型绑定", "./model-bindings.html"], ["media-assets", "媒体资产", "./media-assets.html"], ["usage-runs", "运行记录", "./usage-runs.html"]]]];
+  const PAGE_PERMISSIONS = {"dashboard": "media_studio:use", "image-generation": "media_studio:image_generate", "model-bindings": "media_studio:model_binding_manage", "media-assets": "media_studio:media_read", "usage-runs": "media_studio:run_read"};
+  const sections = [["创作工作区", [["dashboard", "工作台", "./dashboard.html"], ["image-generation", "图片生成", "./image-generation.html"]]], ["管理", [["model-bindings", "模型绑定", "./model-bindings.html"], ["media-assets", "媒体资产", "./media-assets.html"], ["usage-runs", "运行记录", "./usage-runs.html"]]]];
   const escapeHtml = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('\"', '&quot;');
   function toast(message, kind = "info") {
     const region = document.getElementById("media-toast-region");
@@ -18,12 +18,15 @@
       const links = pages.map(([id, label, href]) => `<a href="${href}" data-permission="${PAGE_PERMISSIONS[id]}"${id === current ? ' aria-current=\"page\"' : ""}>${escapeHtml(label)}</a>`).join("");
       return `<div class="media-nav-label">${escapeHtml(title)}</div><nav class="media-nav">${links}</nav>`;
     }).join("");
-    return `<aside class="media-sidebar"><a class="media-brand" href="./dashboard.html"><span class="media-brand-mark">MS</span><span><strong>多媒体创作工作台</strong><small>KBot 4.0</small></span></a>${navigation}</aside><header class="media-topbar"><div class="media-context"><small>当前工作域</small><strong>多媒体创作工作台</strong></div><div class="media-session"><span>${escapeHtml(session.domain_name || "default")}</span><span class="media-session-user">${escapeHtml(session.display_name || session.user_id || "已登录")}</span><button class="small" id="media-logout">退出</button></div></header><div id="media-toast-region" class="media-toast-region" aria-live="polite"></div>`;
+    return `<aside class="media-sidebar"><a class="media-brand" href="../index.html" aria-label="返回 KBot 工作台"><span class="media-brand-mark">MS</span><span><strong>多媒体创作工作台</strong><small>KBot 4.0</small></span></a>${navigation}</aside><header class="media-topbar"><div class="media-context"><small>当前工作域</small><strong>多媒体创作工作台</strong></div><div class="media-session"><span>${escapeHtml(session.domain_name || "default")}</span><span class="media-session-user">${escapeHtml(session.display_name || session.user_id || "已登录")}</span><button class="small" id="media-logout">退出</button></div></header><div id="media-toast-region" class="media-toast-region" aria-live="polite"></div>`;
   }
   function mount(session, page) {
     if (document.querySelector(".media-sidebar")) return;
     document.body.insertAdjacentHTML("afterbegin", shellMarkup(session, page));
-    document.getElementById("media-logout")?.addEventListener("click", () => { KBotMediaAuth.clear(); location.replace("./login.html"); });
+    document.getElementById("media-logout")?.addEventListener("click", () => {
+      void import("../../shared/kbot-platform-session.js?v=20261120_sso")
+        .then(() => KBotPlatformSession.logout()).catch(() => toast("退出失败，请返回 KBot 工作台后重试。", "error"));
+    });
   }
   async function initialize() {
     const page = document.body.dataset.page || "";

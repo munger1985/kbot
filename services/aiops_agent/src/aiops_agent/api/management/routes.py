@@ -25,6 +25,9 @@ from aiops_agent.application.configuration.source_connection_test import (
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops.host_topology import HostTopologyView
 from aiops_agent.application.configuration.host_topology import read_host_topology
+from platform_core.contracts.aiops.data_protection import (
+    ProtectionBackupScheduleChange, ProtectionDrillScheduleChange, ProtectionPlanSave, ProtectionPlanView,
+)
 from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
@@ -553,6 +556,35 @@ async def retire_target_fact(
     )
     _etag(response, result.row_version)
     return result
+
+
+@router.get("/data-protection/resources/{resource_id}", response_model=ProtectionPlanView)
+async def get_data_protection(resource_id: UUID, service: Service, scope: Scope) -> ProtectionPlanView:
+    return await service.get_data_protection(scope=scope, resource_id=resource_id)
+
+
+@router.put(
+    "/data-protection/resources/{resource_id}", response_model=ProtectionPlanView,
+    openapi_extra={"x-sensitive-input": True},
+)
+async def save_data_protection(
+    resource_id: UUID, body: ProtectionPlanSave, service: Service, scope: Scope,
+) -> ProtectionPlanView:
+    return await service.save_data_protection(scope=scope, resource_id=resource_id, request=body)
+
+
+@router.put("/data-protection/resources/{resource_id}/backup-schedule", response_model=ProtectionPlanView)
+async def change_data_protection_backup_schedule(
+    resource_id: UUID, body: ProtectionBackupScheduleChange, service: Service, scope: Scope,
+) -> ProtectionPlanView:
+    return await service.change_data_protection_backup_schedule(scope=scope, resource_id=resource_id, request=body)
+
+
+@router.put("/data-protection/resources/{resource_id}/drill-schedule", response_model=ProtectionPlanView)
+async def change_data_protection_drill_schedule(
+    resource_id: UUID, body: ProtectionDrillScheduleChange, service: Service, scope: Scope,
+) -> ProtectionPlanView:
+    return await service.change_data_protection_drill_schedule(scope=scope, resource_id=resource_id, request=body)
 
 
 @router.get(

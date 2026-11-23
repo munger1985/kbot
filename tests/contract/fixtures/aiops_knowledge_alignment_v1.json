@@ -1,0 +1,590 @@
+{
+  "write": [
+    {
+      "name": "lexical_only_create",
+      "phase": "create",
+      "payload": {
+        "display_name": "运维手册"
+      },
+      "tagging_operation": "UNCONFIGURED"
+    },
+    {
+      "name": "rename_only",
+      "phase": "update",
+      "payload": {
+        "display_name": "数据库手册",
+        "expected_row_version": 7
+      },
+      "tagging_operation": "UNCHANGED"
+    },
+    {
+      "name": "explicit_null_clears_tagging",
+      "phase": "update",
+      "payload": {
+        "display_name": "数据库手册",
+        "expected_row_version": 7,
+        "tagging_model_id": null
+      },
+      "tagging_operation": "CLEAR"
+    },
+    {
+      "name": "set_tagging_model",
+      "phase": "update",
+      "payload": {
+        "display_name": "数据库手册",
+        "expected_row_version": 7,
+        "tagging_model_id": "019d0000-0000-7000-8000-000000000003"
+      },
+      "tagging_operation": "SET"
+    },
+    {
+      "name": "reject_legacy_models",
+      "phase": "create",
+      "payload": {
+        "display_name": "数据库手册",
+        "models": {
+          "embedding": "old"
+        }
+      },
+      "error": "unknown write field"
+    },
+    {
+      "name": "reject_client_capabilities",
+      "phase": "update",
+      "payload": {
+        "display_name": "数据库手册",
+        "expected_row_version": 7,
+        "capabilities": {
+          "lexical": "AVAILABLE"
+        }
+      },
+      "error": "unknown write field"
+    }
+  ],
+  "capability": [
+    {
+      "name": "empty_library_and_ocr_disabled",
+      "payload": {
+        "capabilities": {
+          "native_parse": "AVAILABLE",
+          "ocr": "NOT_ENABLED",
+          "visual_enrichment": "NOT_ENABLED",
+          "lexical": "PENDING_VERIFICATION",
+          "semantic_directions": []
+        },
+        "index": {
+          "state": "EMPTY"
+        },
+        "tagging": {
+          "state": "NOT_CONFIGURED",
+          "model_id": null
+        }
+      }
+    },
+    {
+      "name": "no_ready_index_differs_from_degraded_channel",
+      "payload": {
+        "capabilities": {
+          "native_parse": "AVAILABLE",
+          "ocr": "NOT_ENABLED",
+          "visual_enrichment": "NOT_ENABLED",
+          "lexical": "PENDING_VERIFICATION",
+          "semantic_directions": [
+            {
+              "direction": "TEXT_TO_TEXT",
+              "state": "DEGRADED"
+            }
+          ]
+        },
+        "index": {
+          "state": "NOT_READY"
+        },
+        "tagging": {
+          "state": "NOT_CONFIGURED",
+          "model_id": null
+        }
+      }
+    },
+    {
+      "name": "reject_false_tagging_availability",
+      "payload": {
+        "capabilities": {
+          "native_parse": "AVAILABLE",
+          "ocr": "NOT_ENABLED",
+          "visual_enrichment": "NOT_ENABLED",
+          "lexical": "PENDING_VERIFICATION",
+          "semantic_directions": []
+        },
+        "index": {
+          "state": "EMPTY"
+        },
+        "tagging": {
+          "state": "AVAILABLE",
+          "model_id": null
+        }
+      },
+      "error": "tagging binding is missing"
+    }
+  ],
+  "search": [
+    {
+      "name": "usable_evidence_with_failed_semantic_channel",
+      "payload": {
+        "retrieval_conclusion": "EVIDENCE_FOUND",
+        "coverage": {
+          "scope": "PARTIAL",
+          "ranking": "LIMITED",
+          "gaps": [
+            "RETRIEVAL_CHANNEL_FAILED"
+          ],
+          "channel_failures": [
+            {
+              "channel": "SEMANTIC_TEXT",
+              "reason": "CHANNEL_UNAVAILABLE"
+            }
+          ]
+        },
+        "results": [
+          {
+            "asset_version_id": "019d0000-0000-7000-8000-000000000002",
+            "ranking": {
+              "business_rank": 1
+            },
+            "citation_pack": [
+              {
+                "document_version_id": "019d0000-0000-7000-8000-000000000001",
+                "quote": "检查归档日志空间。",
+                "locator": {
+                  "page": 3,
+                  "paragraph": 2
+                }
+              }
+            ],
+            "evidence_groups": [
+              {
+                "primary": {
+                  "evidence_key": "sample-primary",
+                  "document_version_id": "019d0000-0000-7000-8000-000000000001",
+                  "rank": 1,
+                  "quote": "检查归档日志空间。",
+                  "locator": {
+                    "page": 3,
+                    "paragraph": 2
+                  }
+                },
+                "related": [
+                  {
+                    "relation": "FIGURE_CAPTION",
+                    "readable": true,
+                    "quote": "图 1：归档日志容量",
+                    "locator": {
+                      "page": 4
+                    }
+                  }
+                ],
+                "relation_gaps": [
+                  "VISUAL_NOT_DELIVERED"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "eligible_scope_empty",
+      "payload": {
+        "retrieval_conclusion": "NO_ELIGIBLE_RESOURCES",
+        "coverage": {
+          "scope": "COMPLETE",
+          "ranking": "NOT_APPLICABLE",
+          "gaps": [],
+          "channel_failures": []
+        },
+        "results": []
+      }
+    },
+    {
+      "name": "full_scope_without_match",
+      "payload": {
+        "retrieval_conclusion": "NO_MATCH",
+        "coverage": {
+          "scope": "COMPLETE",
+          "ranking": "NOT_APPLICABLE",
+          "gaps": [],
+          "channel_failures": []
+        },
+        "results": []
+      }
+    },
+    {
+      "name": "qualified_but_index_not_ready",
+      "payload": {
+        "retrieval_conclusion": "NOT_VERIFIED",
+        "coverage": {
+          "scope": "NOT_VERIFIED",
+          "ranking": "NOT_APPLICABLE",
+          "gaps": [
+            "INDEX_NOT_READY"
+          ],
+          "channel_failures": []
+        },
+        "results": []
+      }
+    },
+    {
+      "name": "independent_shards_have_limited_ranking",
+      "payload": {
+        "retrieval_conclusion": "EVIDENCE_FOUND",
+        "coverage": {
+          "scope": "COMPLETE",
+          "ranking": "LIMITED",
+          "gaps": [],
+          "channel_failures": []
+        },
+        "results": [
+          {
+            "asset_version_id": "019d0000-0000-7000-8000-000000000002",
+            "ranking": {
+              "business_rank": 1
+            },
+            "citation_pack": [
+              {
+                "document_version_id": "019d0000-0000-7000-8000-000000000001",
+                "quote": "检查归档日志空间。",
+                "locator": {
+                  "page": 3,
+                  "paragraph": 2
+                }
+              }
+            ],
+            "evidence_groups": [
+              {
+                "primary": {
+                  "evidence_key": "sample-primary",
+                  "document_version_id": "019d0000-0000-7000-8000-000000000001",
+                  "rank": 1,
+                  "quote": "检查归档日志空间。",
+                  "locator": {
+                    "page": 3,
+                    "paragraph": 2
+                  }
+                },
+                "related": [
+                  {
+                    "relation": "FIGURE_CAPTION",
+                    "readable": true,
+                    "quote": "图 1：归档日志容量",
+                    "locator": {
+                      "page": 4
+                    }
+                  }
+                ],
+                "relation_gaps": [
+                  "VISUAL_NOT_DELIVERED"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "reject_false_no_match_when_channel_failed",
+      "payload": {
+        "retrieval_conclusion": "NO_MATCH",
+        "coverage": {
+          "scope": "PARTIAL",
+          "ranking": "NOT_APPLICABLE",
+          "gaps": [
+            "RETRIEVAL_CHANNEL_FAILED"
+          ],
+          "channel_failures": [
+            {
+              "channel": "SEMANTIC_TEXT",
+              "reason": "CHANNEL_UNAVAILABLE"
+            }
+          ]
+        },
+        "results": []
+      },
+      "error": "empty conclusion requires complete coverage"
+    },
+    {
+      "name": "reject_false_no_eligible_when_candidates_truncated",
+      "payload": {
+        "retrieval_conclusion": "NO_ELIGIBLE_RESOURCES",
+        "coverage": {
+          "scope": "PARTIAL",
+          "ranking": "NOT_APPLICABLE",
+          "gaps": [
+            "CANDIDATE_BUDGET_EXCEEDED"
+          ],
+          "channel_failures": []
+        },
+        "results": []
+      },
+      "error": "empty conclusion requires complete coverage"
+    },
+    {
+      "name": "reject_global_ranking_with_failed_coverage",
+      "payload": {
+        "retrieval_conclusion": "EVIDENCE_FOUND",
+        "coverage": {
+          "scope": "PARTIAL",
+          "ranking": "GLOBAL",
+          "gaps": [
+            "RETRIEVAL_CHANNEL_FAILED"
+          ],
+          "channel_failures": [
+            {
+              "channel": "SEMANTIC_TEXT",
+              "reason": "CHANNEL_UNAVAILABLE"
+            }
+          ]
+        },
+        "results": [
+          {
+            "asset_version_id": "019d0000-0000-7000-8000-000000000002",
+            "ranking": {
+              "business_rank": 1
+            },
+            "citation_pack": [
+              {
+                "document_version_id": "019d0000-0000-7000-8000-000000000001",
+                "quote": "检查归档日志空间。",
+                "locator": {
+                  "page": 3,
+                  "paragraph": 2
+                }
+              }
+            ],
+            "evidence_groups": [
+              {
+                "primary": {
+                  "evidence_key": "sample-primary",
+                  "document_version_id": "019d0000-0000-7000-8000-000000000001",
+                  "rank": 1,
+                  "quote": "检查归档日志空间。",
+                  "locator": {
+                    "page": 3,
+                    "paragraph": 2
+                  }
+                },
+                "related": [
+                  {
+                    "relation": "FIGURE_CAPTION",
+                    "readable": true,
+                    "quote": "图 1：归档日志容量",
+                    "locator": {
+                      "page": 4
+                    }
+                  }
+                ],
+                "relation_gaps": [
+                  "VISUAL_NOT_DELIVERED"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "error": "global ranking requires complete coverage"
+    },
+    {
+      "name": "reject_rank_on_related_evidence",
+      "payload": {
+        "retrieval_conclusion": "EVIDENCE_FOUND",
+        "coverage": {
+          "scope": "COMPLETE",
+          "ranking": "LIMITED",
+          "gaps": [],
+          "channel_failures": []
+        },
+        "results": [
+          {
+            "asset_version_id": "019d0000-0000-7000-8000-000000000002",
+            "ranking": {
+              "business_rank": 1
+            },
+            "citation_pack": [
+              {
+                "document_version_id": "019d0000-0000-7000-8000-000000000001",
+                "quote": "检查归档日志空间。",
+                "locator": {
+                  "page": 3,
+                  "paragraph": 2
+                }
+              }
+            ],
+            "evidence_groups": [
+              {
+                "primary": {
+                  "evidence_key": "sample-primary",
+                  "document_version_id": "019d0000-0000-7000-8000-000000000001",
+                  "rank": 1,
+                  "quote": "检查归档日志空间。",
+                  "locator": {
+                    "page": 3,
+                    "paragraph": 2
+                  }
+                },
+                "related": [
+                  {
+                    "relation": "FIGURE_CAPTION",
+                    "readable": true,
+                    "quote": "图 1：归档日志容量",
+                    "locator": {
+                      "page": 4
+                    },
+                    "rank": 2
+                  }
+                ],
+                "relation_gaps": [
+                  "VISUAL_NOT_DELIVERED"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "error": "related evidence cannot rank"
+    },
+    {
+      "name": "reject_query_ticket_in_product_contract",
+      "payload": {
+        "retrieval_conclusion": "NO_MATCH",
+        "coverage": {
+          "scope": "COMPLETE",
+          "ranking": "NOT_APPLICABLE",
+          "gaps": [],
+          "channel_failures": []
+        },
+        "results": [],
+        "query_ticket": "internal-only"
+      },
+      "error": "internal retrieval field"
+    }
+  ],
+  "usage": [
+    {
+      "name": "empty_library",
+      "payload": {
+        "usage": {
+          "assets": 0,
+          "current_agent_versions": 0,
+          "historical_agent_versions": 0
+        },
+        "blockers": []
+      }
+    },
+    {
+      "name": "historical_binding_only",
+      "payload": {
+        "usage": {
+          "assets": 0,
+          "current_agent_versions": 0,
+          "historical_agent_versions": 1
+        },
+        "blockers": [
+          "HISTORICAL_AGENT_VERSION"
+        ]
+      }
+    },
+    {
+      "name": "current_binding_only",
+      "payload": {
+        "usage": {
+          "assets": 0,
+          "current_agent_versions": 1,
+          "historical_agent_versions": 0
+        },
+        "blockers": [
+          "CURRENT_AGENT_VERSION"
+        ]
+      }
+    },
+    {
+      "name": "unpublished_asset_only",
+      "payload": {
+        "usage": {
+          "assets": 1,
+          "current_agent_versions": 0,
+          "historical_agent_versions": 0
+        },
+        "blockers": [
+          "ASSET_RECORDS"
+        ]
+      }
+    },
+    {
+      "name": "reject_hidden_history_blocker",
+      "payload": {
+        "usage": {
+          "assets": 0,
+          "current_agent_versions": 0,
+          "historical_agent_versions": 1
+        },
+        "blockers": []
+      },
+      "error": "usage and blockers disagree"
+    }
+  ],
+  "deletion": [
+    {
+      "name": "matching_etag_and_empty",
+      "row_version": 7,
+      "if_match": "\"rv-7\"",
+      "blockers": [],
+      "expected": {
+        "status": 204
+      }
+    },
+    {
+      "name": "matching_etag_and_historical_binding",
+      "row_version": 7,
+      "if_match": "\"rv-7\"",
+      "blockers": [
+        "HISTORICAL_AGENT_VERSION"
+      ],
+      "expected": {
+        "status": 409,
+        "code": "AIOPS_KNOWLEDGE_BASE_IN_USE",
+        "blockers": [
+          "HISTORICAL_AGENT_VERSION"
+        ]
+      }
+    },
+    {
+      "name": "stale_etag_takes_priority_over_usage",
+      "row_version": 7,
+      "if_match": "\"rv-6\"",
+      "blockers": [
+        "HISTORICAL_AGENT_VERSION"
+      ],
+      "expected": {
+        "status": 412,
+        "code": "STATE_VERSION_CONFLICT"
+      }
+    },
+    {
+      "name": "missing_etag",
+      "row_version": 7,
+      "if_match": null,
+      "blockers": [],
+      "expected": {
+        "status": 428,
+        "code": "PRECONDITION_REQUIRED"
+      }
+    },
+    {
+      "name": "malformed_etag",
+      "row_version": 7,
+      "if_match": "rv-7",
+      "blockers": [],
+      "expected": {
+        "status": 400
+      }
+    }
+  ]
+}

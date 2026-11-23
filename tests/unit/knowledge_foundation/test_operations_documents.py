@@ -125,19 +125,35 @@ class ModelReferencesTests(unittest.IsolatedAsyncioTestCase):
         from aiops_agent.repositories.agent import AIOpsAgentRepository
         model=uuid4()
         library=SimpleNamespace(library_id=uuid4(),display_name="synthetic",status="DISABLED",domain_id=42,
-            configuration_json={"models":{"embedding":str(model),"composer":str(uuid4())}})
+            configuration_json={"index_models":{"embedding":str(model),"visual_embedding":str(uuid4())},
+                                "parse_models":{"ocr":str(model)}})
         result=SimpleNamespace(all=lambda:[library])
         session=SimpleNamespace(scalars=AsyncMock(return_value=result))
         repo=KnowledgeRetrievalAgentRepository(session, **({"write_guard": lambda: None} if "write_guard" in inspect.signature(KnowledgeRetrievalAgentRepository).parameters else {}))
         refs=await repo.knowledge_model_references(model_id=model, **({"tenant_id": uuid4()} if "tenant_id" in inspect.signature(repo.knowledge_model_references).parameters else {}))
-        self.assertEqual([(row["resource_type"],row["usage"]) for row in refs],[("knowledge_library","embedding")])
+        self.assertEqual({(row["resource_type"],row["usage"]) for row in refs},
+                         {("knowledge_library","embedding"),("knowledge_library","ocr")})
         base=SimpleNamespace(knowledge_base_id=uuid4(),display_name="synthetic",status="ACTIVE",domain_id=42,
-            configuration_json={"models":{"embedding":str(model)}})
+            configuration_json={"models":{"parser_llm":str(model)},
+                                "index_models":{"visual_embedding":str(model)},
+                                "parse_models":{"vlm":str(model)}})
         config=SimpleNamespace(domain_id=42,models_json={"parser_llm":str(model)})
         session.scalars=AsyncMock(side_effect=[SimpleNamespace(all=lambda:[base]),SimpleNamespace(all=lambda:[config])])
+        task=SimpleNamespace(asset_version_id=uuid4(),tenant_id=uuid4(),domain_id=42,status="TAGGING_FAILED",
+            tag_analysis_json={"execution_spec":{"model":{"model_id":str(model)}}})
+        generation=SimpleNamespace(index_generation_id=uuid4(),tenant_id=uuid4(),domain_id=42,status="READY",
+            manifest_json={"profile":{"representations":[{"model_ref":str(model)}]}})
+        session.execute=AsyncMock(side_effect=[
+            SimpleNamespace(all=lambda:[(task,"manual",42)]),
+            SimpleNamespace(all=lambda:[(generation,"manual")]),
+        ])
         ops=AIOpsAgentRepository(session, **({"write_guard": lambda: None} if "write_guard" in inspect.signature(AIOpsAgentRepository).parameters else {}))
         refs=await ops.knowledge_model_references(model_id=model)
-        self.assertEqual({row["resource_type"] for row in refs},{"operations_knowledge_base","operations_case_configuration"})
+        self.assertEqual({(row["resource_type"],row["usage"]) for row in refs},{
+            ("operations_knowledge_base","tagging_model"), ("operations_case_configuration","parser_llm"),
+            ("operations_knowledge_base","visual_embedding"), ("operations_knowledge_base","vlm"),
+            ("operations_knowledge_tagging_task","tagging_model"), ("operations_knowledge_generation","representation"),
+        })
 
 
 if __name__ == "__main__":

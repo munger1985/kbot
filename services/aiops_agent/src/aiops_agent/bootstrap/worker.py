@@ -52,6 +52,9 @@ from aiops_agent.application.changes.effect_followup import BusinessEffectFollow
 from aiops_agent.application.work_items import SituationRecoveryProjector
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.bootstrap.output_jobs import create_output_job_worker
+from aiops_agent.application.data_protection_jobs import ProtectionBackend
+from aiops_agent.bootstrap.data_protection import LocalProtectionBackend, local_drill_worker, local_protection_backend
+from aiops_agent.workers.data_protection import DataProtectionWorker
 from aiops_agent.application.configuration.connection_test import (
     test_target_connection,
 )
@@ -98,9 +101,9 @@ async def _resolve_model_snapshot(
     model_client: AIModelConfigClient, model_id
 ) -> dict[str, str]:
     definition = await model_client.get_model(model_id)
-    technical_name = str(definition.get("served_model_name") or "").strip()
+    technical_name = str(definition.get("provider_model_name") or "").strip()
     if not technical_name:
-        raise RuntimeError("规划模型缺少 served_model_name")
+        raise RuntimeError("规划模型缺少 provider_model_name")
     return {
         "model_id": str(model_id),
         "technical_name": technical_name,
@@ -132,6 +135,8 @@ async def _check_worker_readiness(
 
 def create_aiops_worker_probe(
     settings: AIOpsSettings | None = None,
+    *,
+    protection_backend: ProtectionBackend | None = None,
 ):
     """创建可多副本运行的 Task、恢复、监控与 Outbox Worker。"""
     resolved = settings or get_aiops_settings()
@@ -143,7 +148,6 @@ def create_aiops_worker_probe(
             resolved,
             process="worker",
         )
-        cursor_codec = create_cursor_codec(resolved)
         database_runtime = create_database_runtime(resolved)
         runtime = AIOpsProcessRuntime(
             settings=resolved,
@@ -155,6 +159,25 @@ def create_aiops_worker_probe(
         )
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_database_connection
+        credential_cipher = ManagedCredentialCipher.from_environment()
+        managed_credential_service = AIOpsManagedCredentialService(
+            uow_factory=runtime.uow_factory,
+            cipher=credential_cipher,
+        )
+        effective_protection_backend = protection_backend
+        if effective_protection_backend is None:
+            effective_protection_backend = local_protection_backend(
+                settings=resolved, uow_factory=runtime.uow_factory,
+                credentials=managed_credential_service, worker=True,
+            )
+        if (isinstance(effective_protection_backend, LocalProtectionBackend)
+            and effective_protection_backend.drill_resource_ids):
+            async with local_drill_worker(
+                app, runtime, effective_protection_backend, interval_seconds=config.claim_interval_seconds,
+            ):
+                yield
+            return
+        cursor_codec = create_cursor_codec(resolved)
         action_registry = ActionRegistry.load()
         model_catalogs = create_model_catalog_clients(
             resolved, caller_service=config.service_name,
@@ -168,11 +191,6 @@ def create_aiops_worker_probe(
                 model_client=model_client,
             ),
             model_client=model_client,
-        )
-        credential_cipher = ManagedCredentialCipher.from_environment()
-        managed_credential_service = AIOpsManagedCredentialService(
-            uow_factory=runtime.uow_factory,
-            cipher=credential_cipher,
         )
         from aiops_agent.application.sql_plan_materials import SqlPlanMaterialService
         from aiops_agent.application.sql_plan_material_vault import SqlPlanMaterialVault
@@ -490,6 +508,10 @@ def create_aiops_worker_probe(
             "outbox-dispatcher": dispatcher,
             "workload-retention": retention_worker,
             "output-jobs": output_worker,
+            "data-protection": DataProtectionWorker(
+                uow_factory=runtime.uow_factory, backend=effective_protection_backend,
+                interval_seconds=config.claim_interval_seconds,
+            ),
         }
         background_tasks = {
             name: asyncio.create_task(

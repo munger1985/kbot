@@ -1951,6 +1951,7 @@ class TurnPlannerService:
                 if item.supported or item.evidence
             ),
             evidence,
+            tuple(coverage for item in results for coverage in item.knowledge_coverage),
         )
 
     async def _complete_without_run(
@@ -1962,6 +1963,7 @@ class TurnPlannerService:
         gaps: tuple[str, ...],
         capabilities_used: tuple[str, ...] = (),
         evidence: tuple[dict[str, Any], ...] = (),
+        knowledge_coverage: tuple[dict[str, Any], ...] = (),
     ) -> dict:
         conversation = await uow.conversations.get_conversation(
             domain_id=int(turn.domain_id),
@@ -2003,6 +2005,7 @@ class TurnPlannerService:
                 payload_json={
                     "markdown": markdown,
                     "citations": list(evidence),
+                    "knowledge_coverage": list(knowledge_coverage),
                 },
                 content_hash=hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
             )

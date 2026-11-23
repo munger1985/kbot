@@ -23,7 +23,7 @@ if (selectedPage) assert.ok(manifest.pages[selectedPage]?.sources.length, "单�
 const classes = new Set();
 const sourceFiles = new Set([
   "src/app/BusinessAppShell.vue", "src/shared/ui/ConversationList.vue",
-  "src/shared/ui/CatalogCardActions.vue", "src/shared/ui/DateTimePicker.vue",
+  "src/shared/ui/CatalogCardActions.vue", "src/shared/ui/AdminDrawer.vue", "src/shared/ui/DateTimePicker.vue",
   "src/shared/ui/AgentMarkdownContent.vue", "src/shared/ui/AgentChart.vue",
   "src/shared/ui/LifecycleStatusBadge.vue", "src/shared/ui/LifecycleToggleButton.vue",
   "src/shared/ui/ConfirmDialog.vue",
@@ -62,10 +62,13 @@ const hash = createHash("sha256").update(sharedSource).digest("hex");
 const header = `/* 自动同步自 Ammolite shared/ui/styles.css；请修改源文件后重新生成。\n * 源文件 SHA-256: ${hash}\n * 仅保留知识检索及其公共控件；字体使用同一系统回退栈，不从 CDN 加载。\n */\n`;
 // 旧静态页的裸 button 规则不能泄漏到 Portal 控件；随后按源样式恢复字体与各类按钮。
 const outputs = [["css/ammolite-shared.css", header + "button { all: revert; }\n" + shared.toString().trim() + "\n"]];
-assert.ok(classes.has('knowledge-owned-workspace'), '生产工作区必须纳入共享控件样式来源');
+assert.ok(classes.has("knowledge-purpose-page"), "生产工作区必须纳入共享控件样式来源");
 
 for (const [page, entry] of Object.entries(manifest.pages)) {
   if (!entry.sources.length) continue;
+  const html = read(resolve(root, `ui/knowledge_retrieval/${page}.html`));
+  // 独立业务页面使用一份工作区样式，只生成实际加载的页面级快照。
+  if (!html.includes(`href="./css/reference-${page}.css`)) continue;
   let css = "/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */\n";
   for (const source of entry.sources) {
     const content = read(resolve(portal, `src/features/knowledge-retrieval/${source}`));
@@ -84,6 +87,7 @@ for (const [page, entry] of Object.entries(manifest.pages)) {
   }
   outputs.push([`css/reference-${page}.css`, css]);
 }
+if (selectedPage) assert.ok(outputs.some(([file]) => file === `css/reference-${selectedPage}.css`), "该页面未使用独立样式快照");
 for (const [file, content] of outputs) {
   if (sharedOnly && file !== "css/ammolite-shared.css") continue;
   if (selectedPage && file !== `css/reference-${selectedPage}.css`) continue;

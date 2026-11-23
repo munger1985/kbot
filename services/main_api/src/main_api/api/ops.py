@@ -42,6 +42,9 @@ from platform_core.contracts.aiops.effect import (
     EffectPlanCommand,
     EffectVerificationView,
 )
+from platform_core.contracts.aiops.data_protection import (
+    ProtectionBackupScheduleChange, ProtectionDrillScheduleChange, ProtectionPlanSave, ProtectionPlanView,
+)
 from platform_core.contracts.aiops import (
     ResponsibilityGroupCreate,
     ResponsibilityGroupMemberUpsert,
@@ -189,6 +192,7 @@ def _route_permissions() -> dict[str, str]:
             "list_proposals", "get_proposal", "cancel_ops_run",
             "stream_ops_run_events", "list_targets",
             "get_recovery_profile", "list_recovery_drills",
+            "get_data_protection",
             "list_business_systems", "get_business_system",
             "list_managed_resources", "get_business_system_topology", "get_host_topology",
         },
@@ -215,6 +219,9 @@ def _route_permissions() -> dict[str, str]:
             "disable_target", "request_target_connectivity_check",
             "list_target_facts", "create_target_fact", "retire_target_fact",
             "upsert_recovery_profile",
+            "save_data_protection",
+            "change_data_protection_backup_schedule",
+            "change_data_protection_drill_schedule",
             "commit_business_system", "patch_business_system",
             "patch_managed_resource", "add_system_resource",
             "patch_system_resource", "remove_system_resource",
@@ -1711,6 +1718,45 @@ async def retire_target_fact(
         auth_context=request.state.auth_context,
     )
     return _validated(TargetFactView, payload, response)
+
+
+@router.get("/data-protection/resources/{resource_id}", response_model=ProtectionPlanView)
+async def get_data_protection(resource_id: UUID, request: Request) -> ProtectionPlanView:
+    payload = await _client(request).get_data_protection(resource_id, auth_context=request.state.auth_context)
+    return ProtectionPlanView.model_validate(payload)
+
+
+@router.put(
+    "/data-protection/resources/{resource_id}", response_model=ProtectionPlanView,
+    openapi_extra={"x-sensitive-input": True},
+)
+async def save_data_protection(
+    resource_id: UUID, body: ProtectionPlanSave, request: Request,
+) -> ProtectionPlanView:
+    payload = await _client(request).save_data_protection(
+        resource_id, body.model_dump(mode="json"), auth_context=request.state.auth_context,
+    )
+    return ProtectionPlanView.model_validate(payload)
+
+
+@router.put("/data-protection/resources/{resource_id}/backup-schedule", response_model=ProtectionPlanView)
+async def change_data_protection_backup_schedule(
+    resource_id: UUID, body: ProtectionBackupScheduleChange, request: Request,
+) -> ProtectionPlanView:
+    payload = await _client(request).change_data_protection_backup_schedule(
+        resource_id, body.model_dump(mode="json"), auth_context=request.state.auth_context,
+    )
+    return ProtectionPlanView.model_validate(payload)
+
+
+@router.put("/data-protection/resources/{resource_id}/drill-schedule", response_model=ProtectionPlanView)
+async def change_data_protection_drill_schedule(
+    resource_id: UUID, body: ProtectionDrillScheduleChange, request: Request,
+) -> ProtectionPlanView:
+    payload = await _client(request).change_data_protection_drill_schedule(
+        resource_id, body.model_dump(mode="json"), auth_context=request.state.auth_context,
+    )
+    return ProtectionPlanView.model_validate(payload)
 
 
 @router.get(

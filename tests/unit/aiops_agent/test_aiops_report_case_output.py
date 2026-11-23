@@ -78,7 +78,7 @@ async def fixture():
         entity_scope={"tenant_id": f.store.tenant} if f.store.tenant else {},
         kc_scope={"tenant_id": f.store.tenant} if f.store.tenant else {"domain_id": f.domain},
         model_catalog=f.service._model_catalog, model_scope={"tenant_id": str(f.store.tenant)} if f.store.tenant else {},
-        technical_name_field="model_name" if f.store.tenant else "served_model_name")
+        technical_name_field="model_name" if f.store.tenant else "provider_model_name")
     f.processor = CaseOutputProcessor(knowledge_service=f.service, options_factory=lambda *_: f.options)
     f.finalizer = OutputJobFinalizer()
     f.authority = SimpleNamespace(request=SimpleNamespace(source_agent_ids=(f.run.agent_id,)))

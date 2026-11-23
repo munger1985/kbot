@@ -13,7 +13,7 @@ APP_CONFIGS = {
         "prefix": "knowledge",
         "global": "KBotKnowledge",
         "pages": {
-            "login.html": {"login-form", "password-form"},
+            "login.html": set(),
             "dashboard.html": set(),
             "knowledge.html": {"knowledge-form", "knowledge-agent", "knowledge-chat-stream"},
             "x-search.html": {"x-search-form", "x-search-agent", "x-search-result", "x-search-sources"},
@@ -28,10 +28,9 @@ APP_CONFIGS = {
         "prefix": "media",
         "global": "KBotMedia",
         "pages": {
-            "login.html": {"login-form", "password-form"},
+            "login.html": set(),
             "dashboard.html": set(),
             "image-generation.html": {"image-form", "image-history", "image-result"},
-            "models.html": {"model-rows", "model-dialog", "model-form"},
             "model-bindings.html": {"binding-rows", "model-binding-dialog"},
             "media-assets.html": {"asset-rows", "asset-preview-dialog"},
             "usage-runs.html": {"run-rows"},
@@ -64,6 +63,12 @@ def _parse(page: Path) -> _PageParser:
 
 
 class ProductUiStaticPagesTest(unittest.TestCase):
+    def test_app_login_aliases_return_to_the_single_workspace_sign_in(self):
+        for app in ("knowledge_retrieval", "aiops", "media_studio"):
+            page = (ROOT / "ui" / app / "login.html").read_text(encoding="utf-8")
+            self.assertIn('content="0;url=../index.html"', page)
+            self.assertNotIn("<form", page)
+
     def test_pages_and_referenced_assets_exist(self):
         for app_name, config in APP_CONFIGS.items():
             root = config["root"]
@@ -119,38 +124,53 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertIn("/image-generations/runs", blob)
         self.assertIn("/media-assets", blob)
         self.assertIn("/bindings", blob)
-        self.assertIn("/models", blob)
+        self.assertNotIn("models.html", blob)
         self.assertNotIn("/x-search", blob)
         self.assertNotIn("/agents", blob)
         self.assertNotIn("/knowledge-cores", blob)
 
-    def test_media_model_form_supports_oci_sdk_api_base(self):
-        root = APP_CONFIGS["media_studio"]["root"]
+    def test_platform_model_form_supports_oci_sdk_api_base(self):
+        root = ROOT / "ui" / "system_management"
         page = (root / "models.html").read_text(encoding="utf-8")
-        script = (root / "js" / "media-models.js").read_text(encoding="utf-8")
-        self.assertIn("OCI API Key 模式填写 SDK 使用的完整 API Base URL", page)
+        script = (root / "models.js").read_text(encoding="utf-8")
+        self.assertIn("OCI 令牌模式填写包含基础路径的 API Base URL", page)
         self.assertIn("程序不会截断或补写路径", page)
-        self.assertIn('"api_oci_image"', script)
+        self.assertIn('fields.includes("model_params.oci_auth")', script)
         self.assertNotIn("parsed.pathname", script)
         self.assertIn('value="8">图像生成', page)
-        api_script = (root / "js" / "media-api.js").read_text(encoding="utf-8")
-        self.assertIn("IMAGE_GENERATION: 8", api_script)
         self.assertIn('id="model-oci-config-upload"', page)
         self.assertIn('id="model-oci-key-upload"', page)
         self.assertIn('id="model-oci-tenancy"', page)
         self.assertIn('id="model-oci-key-content"', page)
         self.assertIn("parseOciConfigText", script)
-        self.assertIn("normalizeServedModelName", script)
-        self.assertIn("served_model_name: servedModelName", script)
-        self.assertIn("保存时自动转为小写", page)
+        self.assertNotIn("normalizeServedModelName", script)
+        self.assertNotIn("served_model_name", script)
         self.assertIn("modelParams.oci_auth", script)
+        self.assertNotIn("KBot 调用名", page)
+        self.assertIn("厂商模型名称 / ID", page)
+        self.assertIn("renderModelParameterFields", script)
+        self.assertNotIn("模型参数（JSON Object）", page)
         self.assertIn("saved?.status !== payload.status", script)
         self.assertIn("当前状态：${finalStatus}", script)
         self.assertNotIn("新增 OCI 模型必须填写 config_file", script)
         self.assertNotIn("capabilities/image-generation:verify", script)
         self.assertNotIn("supports_image_generation", script)
-        self.assertIn("payload?.field_errors", api_script)
-        self.assertIn('part !== "body"', api_script)
+        session_script = (ROOT / "ui/shared/kbot-platform-session.js").read_text(encoding="utf-8")
+        self.assertIn("payload?.field_errors", session_script)
+        self.assertIn('part !== "body"', session_script)
+
+    def test_workspace_and_system_management_assets_exist(self):
+        ui = ROOT / "ui"
+        home = _parse(ui / "index.html")
+        page = ui / "system_management" / "models.html"
+        models = _parse(page)
+        self.assertTrue({"portal-login", "portal-password", "portal-domain-form", "system-entry"} <= home.ids)
+        self.assertTrue({"model-rows", "model-dialog", "model-form"} <= models.ids)
+        for parsed, folder in [(home, ui), (models, page.parent)]:
+            for url in parsed.scripts + parsed.links:
+                url = url.partition("?")[0]
+                asset = ROOT / url.lstrip("/") if url.startswith("/") else folder / url
+                self.assertTrue(asset.is_file(), url)
 
     def test_media_model_binding_has_row_edit_action(self):
         root = APP_CONFIGS["media_studio"]["root"]

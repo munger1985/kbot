@@ -49,10 +49,10 @@ def agent_model_id(agent, role: str) -> UUID | None:
     return UUID(str(raw)) if raw else None
 
 
-def agent_model_name(snapshot: Mapping, role: str) -> str | None:
-    """从冻结的 Agent 快照读取模型调用名称。"""
+def snapshot_model_id(snapshot: Mapping, role: str) -> str | None:
+    """从冻结的 Agent 快照读取模型 UUID。"""
     value = dict(snapshot.get("models") or {}).get(role)
     if not isinstance(value, Mapping):
         return None
-    name = str(value.get("served_model_name") or "").strip()
-    return name or None
+    model_id = str(value.get("model_id") or "").strip()
+    return model_id or None

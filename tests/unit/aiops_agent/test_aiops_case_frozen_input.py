@@ -39,7 +39,7 @@ async def execute(f, prepared):
         kc_scope={"tenant_id": tenant_id} if tenant_id else {"domain_id": f.domain},
         model_catalog=f.service._model_catalog if tenant_id else f.service._llm_model_catalog,
         model_scope={"tenant_id": str(tenant_id)} if tenant_id else {},
-        technical_name_field="model_name" if tenant_id else "served_model_name")
+        technical_name_field="model_name" if tenant_id else "provider_model_name")
 
 
 def test_freezing_is_database_only_and_persisted_input_has_no_runtime_identity():

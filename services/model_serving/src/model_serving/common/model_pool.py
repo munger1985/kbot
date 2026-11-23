@@ -5,11 +5,15 @@ from dataclasses import dataclass
 from loguru import logger
 from typing import Any, Callable, TypeVar, Generic
 from time import monotonic
+from uuid import UUID
 
 from platform_core.dictionary import Status
 from model_serving.config import get_model_serving_settings
 
 from .model_repository import AIModelRepository as ModelRepository
+from platform_core.model_representation import representation_metadata
+from .frozen_binding import FrozenModelConflict, frozen_revision
+from .local_embedding_revisions import with_local_embedding_metadata
 from .entities.ai_model import AIModelEntity as Model
 
 T = TypeVar('T')
@@ -27,10 +31,11 @@ class BaseModelPool(ABC, Generic[T]):
     def __init__(self, health_check_interval: int = 3600, session_factory: Callable | None = None):
         """初始化模型池；健康检查周期单位为秒。"""
         self._models: dict[str, T] = {}
+        self._frozen_revisions: dict[str, str] = {}
         self._last_used: dict[str, float] = {}
         self._health_check_interval = health_check_interval
         self._health_check_task: asyncio.Task | None = None
-        # 每个服务名独立串行化生命周期操作，不让一个慢模型阻塞其他模型加载。
+        # 每个模型 UUID独立串行化生命周期操作，不让一个慢模型阻塞其他模型加载。
         self._model_locks: dict[str, _ModelLockState] = {}
         self._session_factory = session_factory
 
@@ -88,17 +93,18 @@ class BaseModelPool(ABC, Generic[T]):
             await asyncio.gather(*tasks, return_exceptions=True)
 
         self._models.clear()
+        self._frozen_revisions.clear()
         self._last_used.clear()
         self._model_locks.clear()
         logger.success(f"{self.__class__.__name__} 已停止")
 
-    async def _safe_shutdown_model(self, served_model_name: str, model: T) -> None:
+    async def _safe_shutdown_model(self, model_id: str, model: T) -> None:
         """安全释放单个模型，避免一个实例阻塞整体关闭。"""
         try:
             await self._shutdown_model_instance(model)
-            logger.info(f"模型 {served_model_name} 的资源已释放")
+            logger.info(f"模型 {model_id} 的资源已释放")
         except Exception as e:
-            logger.error(f"释放模型 {served_model_name} 的资源失败：{e}")
+            logger.error(f"释放模型 {model_id} 的资源失败：{e}")
 
     # --- 子类扩展点 ---
 
@@ -109,7 +115,7 @@ class BaseModelPool(ABC, Generic[T]):
 
     @abstractmethod
     async def _start_model(
-        self, served_model_name: str, model_data: dict[str, Any],
+        self, model_id: str, model_data: dict[str, Any],
     ) -> T:
         """根据目录配置创建并启动具体模型实例。"""
         pass
@@ -121,7 +127,7 @@ class BaseModelPool(ABC, Generic[T]):
 
     @abstractmethod
     async def _perform_model_health_check(
-        self, served_model_name: str, model: T,
+        self, model_id: str, model: T,
     ) -> None:
         """执行模型专属健康检查。"""
         pass
@@ -129,19 +135,16 @@ class BaseModelPool(ABC, Generic[T]):
     # --- 对外接口 ---
 
     @staticmethod
-    def _normalize_served_name(served_model_name: str) -> str:
-        normalized = served_model_name.strip()
-        if not normalized:
-            raise ValueError("served_model_name 不能为空")
-        return normalized
+    def _normalize_model_id(model_id: str) -> str:
+        return str(UUID(str(model_id)))
 
     @asynccontextmanager
-    async def _model_lifecycle_lock(self, served_model_name: str):
+    async def _model_lifecycle_lock(self, model_id: str):
         """串行化同一模型的生命周期操作，并回收失败请求创建的空锁。"""
-        state = self._model_locks.get(served_model_name)
+        state = self._model_locks.get(model_id)
         if state is None:
             state = _ModelLockState(lock=asyncio.Lock())
-            self._model_locks[served_model_name] = state
+            self._model_locks[model_id] = state
         state.users += 1
         try:
             async with state.lock:
@@ -150,66 +153,92 @@ class BaseModelPool(ABC, Generic[T]):
             state.users -= 1
             if (
                 state.users == 0
-                and served_model_name not in self._models
-                and self._model_locks.get(served_model_name) is state
+                and model_id not in self._models
+                and self._model_locks.get(model_id) is state
             ):
-                self._model_locks.pop(served_model_name, None)
+                self._model_locks.pop(model_id, None)
 
-    async def load_model(self, served_model_name: str) -> T:
-        """按公开服务名加载模型；相同模型的并发冷启动只执行一次。"""
-        served_model_name = self._normalize_served_name(served_model_name)
-        async with self._model_lifecycle_lock(served_model_name):
-            if served_model_name in self._models:
-                self._last_used[served_model_name] = monotonic()
-                return self._models[served_model_name]
+    async def load_model(self, model_id: str, *, expected_revision: str | None = None) -> T:
+        """按模型 UUID 加载；相同模型的并发冷启动只执行一次。"""
+        model_id = self._normalize_model_id(model_id)
+        async with self._model_lifecycle_lock(model_id):
+            model_data = None
+            if expected_revision is not None:
+                model_data = await self._prepare_model_data(await self._fetch_model_data(model_id))
+                if frozen_revision(model_data) != expected_revision:
+                    raise FrozenModelConflict("模型版本已变化")
+            if model_id in self._models:
+                if expected_revision is not None and self._frozen_revisions.get(model_id) != expected_revision:
+                    raise FrozenModelConflict("缓存模型与冻结版本不符")
+                self._last_used[model_id] = monotonic()
+                return self._models[model_id]
 
-            logger.info(f"正在加载模型配置：{served_model_name}")
-            model_data = await self._fetch_model_data(served_model_name)
-            model = await self._start_model(served_model_name, model_data)
-            self._models[served_model_name] = model
-            self._last_used[served_model_name] = monotonic()
+            logger.info(f"正在加载模型配置：{model_id}")
+            if model_data is None:
+                model_data = await self._prepare_model_data(await self._fetch_model_data(model_id))
+            revision = frozen_revision(model_data)
+            model = await self._start_model(model_id, model_data)
+            try:
+                if frozen_revision(await self._prepare_model_data(model_data)) != revision:
+                    raise FrozenModelConflict("本地模型制品在加载期间发生变化")
+            except ValueError:
+                await self._safe_shutdown_model(model_id, model)
+                raise
+            self._models[model_id] = model
+            self._frozen_revisions[model_id] = revision
+            self._last_used[model_id] = monotonic()
             return model
 
-    async def unload_model(self, served_model_name: str) -> bool:
+    async def _prepare_model_data(self, data: dict) -> dict:
+        return await with_local_embedding_metadata(data, input_template=self._local_input_template)
+
+    def _local_input_template(self, data: dict) -> str:
+        raise ValueError("未实现此本地模型的输入模板合同")
+
+    async def inference_binding(self, model_id: UUID, *, representation_kind=None) -> dict:
+        data = await self._prepare_model_data(await self._fetch_model_data(str(model_id)))
+        return {"model_id": model_id, "inference_ref": str(model_id), "revision": frozen_revision(data),
+                "representation": representation_metadata(data, representation_kind) if representation_kind else None}
+
+    async def unload_model(self, model_id: str) -> bool:
         """卸载一个已加载模型；不存在时保持幂等。"""
-        served_model_name = self._normalize_served_name(served_model_name)
-        async with self._model_lifecycle_lock(served_model_name):
-            model = self._models.pop(served_model_name, None)
-            self._last_used.pop(served_model_name, None)
+        model_id = self._normalize_model_id(model_id)
+        async with self._model_lifecycle_lock(model_id):
+            model = self._models.pop(model_id, None)
+            self._frozen_revisions.pop(model_id, None)
+            self._last_used.pop(model_id, None)
             if model is None:
                 return True
-            await self._safe_shutdown_model(served_model_name, model)
+            await self._safe_shutdown_model(model_id, model)
         return True
 
-    def is_model_loaded(self, served_model_name: str) -> bool:
+    def is_model_loaded(self, model_id: str) -> bool:
         """返回当前进程是否持有指定模型实例。"""
-        return self._normalize_served_name(served_model_name) in self._models
+        return self._normalize_model_id(model_id) in self._models
 
-    async def reload_model(self, served_model_name: str) -> bool:
+    async def reload_model(self, model_id: str) -> bool:
         """强制重启指定模型。"""
-        await self.unload_model(served_model_name)
+        await self.unload_model(model_id)
         try:
-            await self.load_model(served_model_name)
+            await self.load_model(model_id)
             return True
         except Exception as e:
-            logger.error(f"重启模型 {served_model_name} 失败：{e}")
+            logger.error(f"重启模型 {model_id} 失败：{e}")
             return False
 
     # --- 内部逻辑 ---
 
-    async def _fetch_model_data(self, served_model_name: str) -> dict[str, Any]:
+    async def _fetch_model_data(self, model_id: str) -> dict[str, Any]:
         """读取并校验当前进程可加载的模型定义。"""
         async with self.oracle_session as session:
             repo = ModelRepository(session)
-            model = await repo.get_by_served_name(
-                served_model_name=served_model_name,
-            )
+            model = await repo.get_by_id(UUID(model_id))
             if int(model.category) != int(self._get_model_category()):
                 raise ValueError(
-                    f"模型 {served_model_name} 不属于当前模型进程"
+                    f"模型 {model_id} 不属于当前模型进程"
                 )
             if int(model.status) != int(Status.ENABLED.value):
-                raise ValueError(f"模型 {served_model_name} 未启用")
+                raise ValueError(f"模型 {model_id} 未启用")
             return self._map_entity_to_dict(model)
 
     async def _fetch_available_models(self) -> list[dict[str, Any]]:
@@ -230,12 +259,12 @@ class BaseModelPool(ABC, Generic[T]):
         """将目录实体映射为模型驱动配置。"""
         return {
             "model_id": str(model.model_id),
-            "served_model_name": model.served_model_name,
             "provider_model_name": model.provider_model_name,
             "category": model.category,
             "provider": model.provider,
             "api_endpoint": model.api_endpoint,
             "api_key": model.api_key,
+            "definition_revision": model.row_version,
             "model_path": model.model_params.get("model_path") if model.model_params else None,
             "model_params": model.model_params
         }
@@ -258,24 +287,24 @@ class BaseModelPool(ABC, Generic[T]):
         now = monotonic()
         inactive_threshold = now - 7200
 
-        for served_model_name in list(self._models.keys()):
+        for model_id in list(self._models.keys()):
             # 自动回收长时间未调用的模型。
-            last_time = self._last_used.get(served_model_name, now)
+            last_time = self._last_used.get(model_id, now)
             if last_time < inactive_threshold:
-                logger.info(f"正在卸载长时间未使用的模型：{served_model_name}")
-                await self.unload_model(served_model_name)
+                logger.info(f"正在卸载长时间未使用的模型：{model_id}")
+                await self.unload_model(model_id)
                 continue
 
             # 执行模型实现提供的健康检查。
             try:
-                model = self._models.get(served_model_name)
+                model = self._models.get(model_id)
                 if model is not None:
-                    await self._perform_model_health_check(served_model_name, model)
+                    await self._perform_model_health_check(model_id, model)
             except Exception as e:
                 logger.error(
-                    f"模型 {served_model_name} 健康检查失败，准备重启：{e}"
+                    f"模型 {model_id} 健康检查失败，准备重启：{e}"
                 )
-                await self.reload_model(served_model_name)
+                await self.reload_model(model_id)
 
     async def warmup(self) -> None:
         """串行预热当前类别下的全部启用模型，避免瞬时资源峰值。"""
@@ -286,9 +315,9 @@ class BaseModelPool(ABC, Generic[T]):
         logger.info(f"准备预热 {len(models_data)} 个模型")
         for data in models_data:
             try:
-                await self.load_model(data["served_model_name"])
+                await self.load_model(data["model_id"])
             except Exception as e:
-                logger.error(f"预热模型 {data['served_model_name']} 失败：{e}")
+                logger.error(f"预热模型 {data['model_id']} 失败：{e}")
 
     def get_pool_status(self) -> dict[str, Any]:
         """返回不含凭据的模型池运行摘要。"""

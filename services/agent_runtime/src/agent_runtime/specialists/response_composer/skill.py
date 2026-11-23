@@ -6,7 +6,7 @@ from typing import Any
 
 from loguru import logger
 
-from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.domain.model_bindings import snapshot_model_id
 from agent_runtime.language import (
     language_instruction,
     localized_message,
@@ -232,7 +232,7 @@ class ResponseComposerSkill:
         )
         parts: list[str] = []
         async for chunk in self._model_client.stream_llm_chunks(
-            served_model_name=model_name,
+            model_id=model_name,
             prompt=attempt_prompt,
             temperature=0,
         ):
@@ -268,7 +268,7 @@ class ResponseComposerSkill:
             context.config_snapshot, context.original_input
         )
         return await self._model_client.get_llm_json(
-            served_model_name=model_name,
+            model_id=model_name,
             prompt=self._answer_attempt_prompt(
                 messages,
                 language=language,
@@ -281,7 +281,7 @@ class ResponseComposerSkill:
     ) -> tuple[str, list[dict[str, str]]]:
         agent = context.config_snapshot.get("agent", {})
         model_name = str(
-            agent_model_name(agent, "composer_llm") or ""
+            snapshot_model_id(agent, "composer_llm") or ""
         ).strip()
         if not model_name:
             raise ValueError("Agent 未配置 models.composer_llm")

@@ -1,15 +1,21 @@
 """本 App 召回、可续取回执与有界内容读取；不自行生成答案。"""
 
+import asyncio
 from dataclasses import dataclass
 from hashlib import sha256
 import json
 from uuid import UUID
 
 from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
-from knowledge_algorithms.contracts.identity import AuthorizedScope, RetrievalSnapshot, fingerprint
+from knowledge_algorithms.contracts.identity import AuthorizedScope, RetrievalSnapshot, canonical_json, fingerprint
+from knowledge_algorithms.contracts.query import QueryMode
 from knowledge_algorithms.contracts.retrieval import EvidenceSet
 from knowledge_algorithms.contracts.wire import decode, encode
+from knowledge_algorithms.execution import Deadline
 from knowledge_algorithms.retrieval.engine import RetrievalEngine
+from knowledge_algorithms.retrieval.exact import is_orphan_letter
+from knowledge_algorithms.retrieval.published_metadata import PublishedMetadataCache
+from knowledge_algorithms.projections.library_models import published_profile
 from .knowledge_hydration import hydrate_published
 from ..adapters.knowledge_backend import PublishedKnowledgeBackend
 from ..domain.knowledge_ingestion import BINDING, utcnow
@@ -20,17 +26,21 @@ from ..domain.knowledge_retrieval import RetrievalLimits
 class RetrievalReceipt:
     retrieval_ref: str
     evidence_set: EvidenceSet
+    scope: AuthorizedScope
 
 
 class KnowledgeRetrievalService:
     def __init__(self, *, uow_factory, object_store, authorization, profiles, tokenizer,
-                 image_cost, cursor_codec, model_gateway_factory=None, text_scan_factory=None, limits=None, clock=utcnow):
+                 image_cost, cursor_codec, model_gateway_factory=None, text_scan_factory=None, limits=None, clock=utcnow,
+                 published_model_spaces=False):
         require(profiles and all(name for name in profiles), "必须在组合根登记检索 Profile")
         self.uow_factory, self.store, self.authorization = uow_factory, object_store, authorization
         self.profiles, self.tokenizer, self.image_cost = dict(profiles), tokenizer, image_cost
         self.cursor_codec, self.model_gateway_factory = cursor_codec, model_gateway_factory
         self.text_scan_factory = text_scan_factory
         self.limits, self.clock = limits or RetrievalLimits(), clock
+        self.published_model_spaces = published_model_spaces
+        self._published_metadata = PublishedMetadataCache()
 
     async def grant(self, access, resource_ref):
         grant = await self.authorization.authorize(access, resource_ref)
@@ -79,29 +89,58 @@ class KnowledgeRetrievalService:
             raise AlgorithmError(ErrorCode.SNAPSHOT_STALE, "索引快照已经改变", stage="snapshot")
         return frozen, snapshot
 
-    async def backend(self, access, scope, profile_ref, *, cursor=None, expected_snapshot=None):
+    async def backend(self, access, scope, profile_ref, *, cursor=None, expected_snapshot=None, direct_query=None):
         require(profile_ref in self.profiles, "检索 Profile 未在组合根登记")
         frozen, snapshot = await self.validate(access, scope, expected_snapshot=expected_snapshot)
-        async with self.uow_factory() as uow:
-            bundle = await uow.knowledge_retrieval.published_bundle(access, scope, now=self.clock(), limits=self.limits)
-        # 防止读取对象前后发生代次切换。
-        await self.validate(access, scope, expected_snapshot=snapshot)
-        index, items, relations = await hydrate_published(bundle, store=self.store, tokenizer=self.tokenizer,
-            image_cost=self.image_cost, limits=self.limits)
+        profile = self.profiles[profile_ref]
+
         async def validate():
             await self.validate(access, scope, expected_snapshot=snapshot)
-        profile = self.profiles[profile_ref]
+
+        async def load():
+            async with self.uow_factory() as uow:
+                bundle = await uow.knowledge_retrieval.published_bundle(access, scope, now=self.clock(), limits=self.limits)
+            versions = bundle["versions"]
+            manifest = canonical_json(versions).encode("utf-8")
+            if sha256(manifest).hexdigest() != snapshot.snapshot_ref:
+                raise AlgorithmError(ErrorCode.SNAPSHOT_STALE, "加载元数据时索引快照已经改变", stage="snapshot")
+            metadata = await hydrate_published(bundle, store=self.store, tokenizer=self.tokenizer,
+                                               image_cost=self.image_cost, limits=self.limits)
+            return (metadata, versions), metadata.estimated_bytes + len(manifest)
+
+        cache_key = (access.domain_id, access.tenant_id, snapshot.snapshot_ref)
+        metadata, versions = await Deadline(profile.timeout_seconds).run(
+            self._published_metadata.get(cache_key, load), stage="index_read")
+        # 等锁、读取对象或命中缓存都不替代当前请求的权限与发布快照校验。
+        await validate()
+        if self.published_model_spaces:
+            index_policy = getattr(self.authorization, "index_policy", None)
+            allowed = None
+            if index_policy is not None:
+                policy = await index_policy(access, frozen["resource_ref"])
+                def allowed(spec, manifest):
+                    return (spec.input_kind in policy
+                        and (policy[spec.input_kind] is None or spec.model_ref in policy[spec.input_kind])
+                        and not (spec.input_kind == "IMAGE" and manifest.get("has_images") is False))
+            profile = published_profile(profile, versions, allows=allowed)
+        candidate_filter = None
+        if direct_query is not None and direct_query.mode == QueryMode.RELEVANCE and direct_query.text:
+            candidate_filter = lambda indexed: not is_orphan_letter(indexed, direct_query)
+        index, items, relations, vectors, materialize = metadata.bind(
+            store=self.store, max_bytes=self.limits.max_object_bytes, expires_at=frozen["expires_at"])
         backend = PublishedKnowledgeBackend(index=index, items=items, relations=relations, scope=scope,
             snapshot=snapshot, subject_ref=access.subject_ref, expires_at=frozen["expires_at"],
             profile_hash=fingerprint(encode(profile)), cursor_codec=self.cursor_codec,
-            validate=validate, clock=self.clock, primary_cursor=cursor)
+            validate=validate, clock=self.clock, primary_cursor=cursor, vector_batches=vectors,
+            materialize=materialize, candidate_filter=candidate_filter)
         if self.text_scan_factory is not None:
             backend.text_scan, backend.scan_policy = self.text_scan_factory(backend)
         return backend, profile
 
-    async def retrieve(self, access, *, scope, query, profile_ref, targets=(), cursor=None, expected_snapshot=None):
+    async def retrieve(self, access, *, scope, query, profile_ref, targets=(), cursor=None,
+                       expected_snapshot=None, direct=False):
         backend, profile = await self.backend(access, scope, profile_ref, cursor=cursor,
-                                               expected_snapshot=expected_snapshot)
+                                               expected_snapshot=expected_snapshot, direct_query=query if direct else None)
         fingerprints = {}
         async def image_reader(handle):
             raw, descriptor = await self.query_image(access, scope, handle)
@@ -111,7 +150,11 @@ class KnowledgeRetrievalService:
             fingerprints[handle] = (descriptor["sha256"], None)
         backend.image_fingerprints = fingerprints
         gateway = self.model_gateway_factory(access, image_reader=image_reader) if self.model_gateway_factory else None
-        evidence = await RetrievalEngine(backend, gateway).retrieve(query, scope, profile, targets=targets)
+        # 文字模式只查正文与表格，保留主命中的关联图；不改 Profile 身份，关联游标仍可续取。
+        text_only = direct and query.text and set(query.output_types) <= {"TEXT", "TABLE"}
+        evidence = await RetrievalEngine(backend, gateway).retrieve(
+            query, scope, profile, targets=targets, primary_relations_only=direct,
+            skip_directions=frozenset({"TEXT_TO_IMAGE"}) if text_only else frozenset())
         await self.validate(access, scope, expected_snapshot=evidence.snapshot)
         raw = json.dumps(encode(evidence), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         stored = await self.store.put_bytes(raw, max_bytes=self.limits.max_object_bytes)
@@ -119,7 +162,38 @@ class KnowledgeRetrievalService:
             identity = await uow.knowledge_retrieval.save_receipt(access, scope, evidence, manifest_ref=stored.handle_ref,
                 query=query, profile_ref=profile_ref, now=self.clock(), limits=self.limits)
             await uow.commit()
-        return RetrievalReceipt(str(identity), evidence)
+        return RetrievalReceipt(str(identity), evidence, scope)
+
+    async def presentation_previews(self, access, receipt, keys):
+        """只读取首屏文本；同一批只在释放响应前复核一次。"""
+        evidence = receipt.evidence_set
+        selected = tuple(item for item in evidence.evidence
+                         if item.key in keys and item.mime_type.startswith("text/") and item.byte_count <= 65536)
+        require(len(selected) <= self.limits.max_read_items, "首屏预览数量超过读取预算")
+        now = int(self.clock().timestamp())
+        unique = {}
+        for item in selected:
+            require(item.expires_at > now, "首屏证据已过期")
+            original = unique.setdefault(item.content_handle, item)
+            require(original.content_hash == item.content_hash and original.byte_count == item.byte_count,
+                    "同一首屏证据对象的摘要或大小不一致")
+
+        async def read(item):
+            raw = await self.store.read(item.content_handle, max_bytes=65536)
+            require(len(raw) == item.byte_count and sha256(raw).hexdigest() == item.content_hash,
+                    "首屏证据摘要或大小发生变化")
+            return raw.decode("utf-8")[:4000]
+
+        previews, pending = {}, tuple(unique.values())
+        for offset in range(0, len(pending), 8):
+            batch = pending[offset:offset + 8]
+            values = await asyncio.gather(*(read(item) for item in batch), return_exceptions=True)
+            for item, value in zip(batch, values):
+                if isinstance(value, BaseException):
+                    raise value
+                previews[item.content_handle] = value
+        await self.validate(access, receipt.scope, expected_snapshot=evidence.snapshot)
+        return {item.key: previews[item.content_handle] for item in selected}
 
     async def receipt(self, access, retrieval_ref):
         require(type(retrieval_ref) is str and len(retrieval_ref) <= 36, "检索回执标识无效")
@@ -179,7 +253,7 @@ class KnowledgeRetrievalService:
         return item, chunks()
 
 
-    async def stream_historical_content(self, access, *, retrieval_ref, stable_key):
+    async def historical_evidence(self, access, *, retrieval_ref, stable_key):
         """重新授权读取原证据；不重搜、不续期原 Scope、不以新版本替换历史引用。"""
         identity = UUID(retrieval_ref)
         async with self.uow_factory() as uow:
@@ -198,6 +272,11 @@ class KnowledgeRetrievalService:
             grant = await self.grant(access, record["resource_ref"])
             require("READ" in grant.operations and UUID(item.key.document_version_ref) in grant.version_ids,
                     "当前业务权限不允许读取历史证据")
+            return record["resource_ref"]
+        return item, reauthorize
+
+    async def stream_historical_content(self, access, *, retrieval_ref, stable_key):
+        item, reauthorize = await self.historical_evidence(access, retrieval_ref=retrieval_ref, stable_key=stable_key)
         await reauthorize()
         async def chunks():
             count, digest = 0, sha256()
@@ -313,7 +392,7 @@ class KnowledgeRetrievalService:
                 query=decode(QueryInput, row["plan"]["query"]), profile_ref=row["plan"]["profile_ref"],
                 now=self.clock(), limits=self.limits)
             await uow.commit()
-        return RetrievalReceipt(str(identity), updated)
+        return RetrievalReceipt(str(identity), updated, scope)
 
     async def retain_evidence(self, access, *, retrieval_ref, keys, expires_at):
         from datetime import datetime, timezone

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>数据保护</title>
+  <link rel="stylesheet" href="./css/aiops.css"><link rel="stylesheet" href="./css/aiops-forms.css">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261110_release1"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1">
+  <link rel="stylesheet" href="./css/aiops-data-protection.css?v=20261119_protection_help">
+</head>
+<body data-page="data-protection">
+<main class="ops-main aiops-config-page">
+  <header class="ops-head"><div><h1>数据保护</h1><p>按需配置备份和隔离空库演练；生产主库和备库不提供 Agent 恢复入口。</p></div></header>
+  <div class="protection-workspace">
+  <aside class="resource-list-surface protection-rail" id="protection-rail" aria-label="业务系统与数据库导航">
+    <div class="protection-rail-title"><h2>业务系统</h2><small>仅数据库</small></div>
+    <label class="control-field">搜索业务系统<input id="protection-system-search" type="search" placeholder="名称或编码"></label>
+    <p id="protection-catalog-status" role="status">正在读取业务系统…</p>
+    <button class="secondary-button" id="protection-retry-catalog" type="button" hidden>重新读取业务系统</button>
+    <ul class="protection-system-list" id="protection-systems"></ul>
+    <div class="protection-database-branch" id="protection-branch" hidden>
+      <p id="protection-database-status" role="status"></p>
+      <button class="secondary-button" id="protection-retry-system" type="button" hidden>重试</button>
+      <label class="control-field" id="protection-database-search-field" hidden>搜索数据库<input id="protection-database-search" type="search" placeholder="名称、编码或类型"></label>
+      <ul class="protection-database-list" id="protection-databases"></ul>
+    </div>
+  </aside>
+  <div class="protection-main">
+  <section class="resource-list-surface protection-panel" id="protection-selection-guide" aria-label="数据保护配置">
+    <h2>数据保护配置</h2>
+    <p id="protection-guide" role="status">请在左侧选择业务系统，再选择要查看或配置保护的数据库。</p>
+  </section>
+  <section class="resource-list-surface protection-panel protection-detail" id="protection-panel" hidden>
+    <header class="protection-context"><div><small id="protection-system-name"></small><h2 id="protection-database-name"></h2><p id="protection-database-facts"></p></div><span class="protection-tag" id="protection-status"></span></header>
+    <nav class="protection-nav" aria-label="数据保护分区" id="protection-nav">
+      <button type="button" data-section="config">保护配置</button><button type="button" data-section="backup" aria-current="page">备份计划</button>
+      <button type="button" data-section="drill">恢复演练</button><button type="button" data-section="history">历史与报告</button>
+    </nav>
+    <div class="protection-content">
+    <header class="protection-section-head">
+      <div><div class="protection-section-title"><h3 id="protection-section-title">备份计划</h3>
+        <button id="protection-help" class="icon-button protection-help" type="button" aria-label="所需权限与配置检查" aria-haspopup="dialog" title="所需权限与配置检查" hidden>?</button>
+      </div><p id="protection-section-description"></p></div>
+      <div class="protection-actions">
+        <button id="protection-edit" class="primary-button" type="button" hidden></button>
+        <button id="protection-toggle-backup" class="secondary-button" type="button" hidden></button>
+        <button id="protection-toggle-drill" class="secondary-button" type="button" hidden></button>
+      </div>
+    </header>
+    <p id="protection-message" role="status"></p>
+    <div data-overview="config" hidden>
+      <dl class="protection-facts" id="protection-config-facts"></dl>
+      <p id="protection-identities"></p>
+    </div>
+    <div data-overview="backup" hidden>
+      <dl class="protection-facts" id="protection-backup-facts"></dl><p id="protection-tool-note"></p><p id="protection-next-backup"></p>
+    </div>
+    <div data-overview="drill" hidden>
+      <p class="protection-guard">Agent 只能对隔离空库做演练，不自动清空目标。生产库恢复由 DBA 按恢复文档执行。</p>
+      <p id="protection-preflight" role="status"></p><dl class="protection-facts" id="protection-drill-facts"></dl>
+    </div>
+    <form id="protection-form" class="protection-form" hidden>
+      <fieldset data-editor="config"><legend>期望恢复目标</legend>
+        <dl class="protection-importance"><dt>业务系统重要程度</dt><dd id="protection-importance"></dd></dl>
+        <label class="control-field">主备形态 <select name="topology"><option value="UNKNOWN">未确认</option><option value="SINGLE">单库</option><option value="ASYNC_REPLICA">异步主备</option><option value="SYNC_REPLICA">同步主备</option></select></label>
+        <label class="control-field">RTO（秒） <input name="rto_seconds" type="number" min="1"></label>
+        <label class="control-field">RPO（秒） <input name="rpo_seconds" type="number" min="0"></label>
+        <p id="protection-advice"></p>
+        <button id="protection-use-advice" class="secondary-button" type="button" hidden></button>
+      </fieldset>
+      <fieldset data-editor="backup"><legend>工具、存储与计划</legend>
+        <label class="control-field" id="protection-repository">pgBackRest stanza（使用已配置的 repo1） <input name="storage_key" type="text"></label>
+        <label class="control-field" id="protection-directory">备份目录 <input name="backup_directory" type="text" placeholder="/srv/backups/database"></label>
+        <label class="control-field">备份并行度 <input name="backup_parallelism" type="number" min="1" max="32" required></label>
+        <label class="control-field">备份时区（IANA） <input name="backup_timezone" type="text" required></label>
+        <label class="control-field">备份策略 <select name="backup_strategy">
+          <option value="FULL">仅全量</option><option value="CRON">全量与增量 · 分别配置 Cron</option>
+          <option value="ROTATION">全量与增量 · 按天轮转</option>
+        </select></label>
+        <label class="control-field" id="protection-full-cron">全量 Cron <input name="backup_cron" type="text" placeholder="0 2 * * *（每天 02:00）"></label>
+        <label class="control-field" id="protection-incremental-cron" hidden>增量 Cron <input name="incremental_cron" type="text" disabled></label>
+        <p id="protection-cron-hint" hidden>两条规则共用计划时区；同一时刻同时命中时只执行全量。</p>
+        <label class="control-field" id="protection-cycle-start" hidden>轮转起始日期 <input name="cycle_start" type="date" disabled></label>
+        <label class="control-field" id="protection-cycle-days" hidden>轮转周期（天）<input name="cycle_days" type="number" min="2" max="365" value="3" disabled></label>
+        <label class="control-field" id="protection-full-time" hidden>全量时间 <input name="full_time" type="time" value="02:00" disabled></label>
+        <label class="control-field" id="protection-incremental-time" hidden>增量时间 <input name="incremental_time" type="time" value="02:00" disabled></label>
+        <p id="protection-rotation-hint" hidden>每轮首日全量，其余天增量，跨月连续计算。例如 3 天一轮：1 天全量、2 天增量。</p>
+        <p id="protection-baseline-hint" hidden>缺少本次增量对应的已校验全量时，不会自动改跑全量。</p>
+        <label class="control-field">执行超时（秒） <input name="timeout_seconds" type="number" min="60" max="172800" required></label>
+        <label class="control-field">允许迟到窗口（秒） <input name="schedule_window_seconds" type="number" min="60" max="86400" required></label>
+      </fieldset>
+      <fieldset data-editor="drill"><legend>演练目标与时间</legend>
+        <label class="control-field">恢复模板 <input name="restore_template_key" type="text"></label>
+        <label class="control-field">隔离空环境引用 <input name="drill_destination_key" type="text"></label>
+        <label class="control-field">演练时区（IANA） <input name="drill_timezone" type="text" required></label>
+        <label class="control-field">演练 Cron <input name="drill_cron" type="text"></label>
+        <label class="control-field">一次性演练（ISO 时间） <input name="drill_once" type="text"></label>
+        <p>一次性时间与周期 Cron 只填一项。</p>
+      </fieldset>
+      <fieldset data-editor="config"><legend>专用身份</legend>
+        <label class="control-field" id="protection-backup-auth">备份身份类型
+          <select name="backup_auth_mode"><option value="DATABASE_PASSWORD">数据库专用账号</option><option value="ORACLE_OS">本机 Oracle OS SYSBACKUP</option></select>
+        </label>
+        <label class="control-field"><span id="protection-backup-user-label">备份用户名</span> <input name="backup_username" type="text"></label>
+        <label class="control-field" id="protection-backup-password-field">备份密码 <input name="backup_password" type="password" autocomplete="new-password"></label>
+        <label class="control-field">演练用户名 <input name="restore_username" type="text"></label>
+        <label class="control-field">演练密码 <input name="restore_password" type="password" autocomplete="new-password"></label>
+        <p>留空保留原凭据。</p>
+      </fieldset>
+      <p>保存更改会停止已有备份和演练调度，需重新启用。</p>
+      <div class="protection-actions"><button id="protection-save" class="primary-button" type="submit">保存草稿</button><button id="protection-cancel" class="secondary-button" type="button">取消</button></div>
+    </form>
+    <section id="protection-schedule" aria-label="排程预览" hidden>
+      <header class="protection-section-head"><div><h4>排程预览</h4><p id="protection-rotation-summary"></p></div><span class="protection-tag" id="protection-schedule-status"></span></header>
+      <div id="protection-cron-summary"></div>
+      <div class="protection-calendar-layout" id="protection-calendar-layout" hidden>
+        <div class="protection-calendar" aria-label="备份排程月历">
+          <div class="protection-month"><strong id="protection-month-caption"></strong><div class="protection-actions">
+            <button class="secondary-button" type="button" id="protection-first-day">回到起点</button>
+            <button class="secondary-button" type="button" id="protection-previous-month" aria-label="上个月">〈</button>
+            <button class="secondary-button" type="button" id="protection-next-month" aria-label="下个月">〉</button>
+          </div></div>
+          <div id="protection-month-grid" class="protection-month-grid"></div>
+          <p class="protection-calendar-note">仅显示配置的计划时刻，不代表执行结果；夏令时以实际调度为准。</p>
+        </div>
+        <aside class="protection-date-detail" id="protection-date-detail" aria-label="所选日期详情"></aside>
+      </div>
+    </section>
+    <section id="protection-history" class="protection-history" hidden>
+      <div class="protection-section-head" id="protection-recent"><h4>最近备份</h4><button class="protection-link" type="button" id="protection-show-history">查看历史 →</button></div>
+      <p id="protection-no-history">暂无运行记录。</p>
+      <div class="protection-table-scroll" id="protection-history-table"><table class="protection-table"><thead><tr><th>计划时刻</th><th>类型</th><th>结果</th><th>说明</th><th>报告</th></tr></thead><tbody id="protection-history-rows"></tbody></table></div>
+    </section>
+    </div>
+  </section>
+  </div>
+  </div>
+</main>
+<dialog id="protection-permissions" class="reference-drawer admin-drawer admin-drawer-sectioned protection-permission-drawer" aria-labelledby="protection-permissions-title">
+  <header class="admin-drawer-header"><h2 id="protection-permissions-title">所需权限与配置检查</h2>
+    <button id="protection-close-help" class="icon-button" type="button" aria-label="关闭">×</button>
+  </header>
+  <div class="admin-drawer-body admin-drawer-content">
+    <p>以下是当前数据库的配置要求，不代表现场预检已通过。</p>
+    <div id="protection-checks"></div>
+  </div>
+</dialog>
+<script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261118_protection"></script><script src="./js/aiops-data-protection.js?v=20261119_protection_help"></script>
+</body>
+</html>

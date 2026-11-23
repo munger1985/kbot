@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 from platform_core.config import get_settings  # noqa: E402
 from platform_core.database.oracle import create_database_runtime  # noqa: E402
+from platform_core.persistence.orm import BaseEntity  # noqa: E402
 from tests.acceptance.check_aiops_entity_schema import (  # noqa: E402
     ColumnContract,
     catalog_column_contract,
@@ -34,6 +35,14 @@ def _entity_classes() -> tuple[type, ...]:
         for name in module.__all__
         if hasattr((entity := getattr(module, name)), "__table__")
     )
+
+
+def _orm_tables() -> tuple:
+    """覆盖规范 ORM 元数据，包含无映射类的通知投递表。"""
+    _entity_classes()
+    from main_api.entities import notification_delivery  # noqa: F401
+
+    return tuple(BaseEntity.metadata.sorted_tables)
 
 
 def _compatible(
@@ -68,8 +77,8 @@ async def check_all_entity_schema() -> list[str]:
     oracle = settings.database.oracle
     require_oracle_listener(host=oracle.host, port=oracle.port)
     runtime = create_database_runtime(settings)
-    entities = _entity_classes()
-    table_names = tuple(entity.__tablename__ for entity in entities)
+    tables = _orm_tables()
+    table_names = tuple(table.name for table in tables)
     try:
         async with runtime.session_factory() as session:
             rows = (
@@ -99,11 +108,11 @@ async def check_all_entity_schema() -> list[str]:
         for row in rows
     }
     expected = {
-        (entity.__tablename__, column.name.upper()): entity_column_contract(
+        (table.name, column.name.upper()): entity_column_contract(
             column
         )
-        for entity in entities
-        for column in entity.__table__.columns
+        for table in tables
+        for column in table.columns
     }
     errors: list[str] = []
     missing = sorted(set(expected) - set(catalog))
@@ -132,11 +141,11 @@ def main() -> int:
         for error in errors:
             print(f"- {error}")
         return 1
-    entities = _entity_classes()
-    columns = sum(len(entity.__table__.columns) for entity in entities)
+    tables = _orm_tables()
+    columns = sum(len(table.columns) for table in tables)
     print(
         "全服务 Entity/Oracle Schema 校验通过："
-        f"{len(entities)} 张表，{columns} 列"
+        f"{len(tables)} 张表，{columns} 列"
     )
     return 0
 

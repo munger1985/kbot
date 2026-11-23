@@ -1,16 +1,21 @@
 """正式知识资料库内部 API；业务入口只消费 App 独占存储。"""
 
+from typing import Annotated
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
 from platform_core.contracts import AuthContext, ServiceIdentity
 from platform_core.contracts.knowledge_app import (
+    KNOWLEDGE_INLINE_MEDIA_TYPES,
     KnowledgeLibraryCreate, KnowledgeLibraryUpdate, KnowledgeReviewRequest,
+    KnowledgeReprocessRequest, KnowledgeRetryIndexRequest, KnowledgeMaintenanceReceipt,
+    KnowledgeIndexMaintenance, KnowledgeIndexRebuildRequest,
     KnowledgeSearchRequest, KnowledgeContinuationRequest, KnowledgeRelationsRequest,
     KnowledgeLibraryView, KnowledgeDocumentPage, KnowledgeUploadReceipt, KnowledgeActionReceipt,
-    KnowledgeSearchResult)
+    KnowledgeSearchResult, KnowledgeDirectoryQuery, KnowledgePassageContext, KnowledgePassageQuery)
 from ..domain.knowledge_retrieval import RetrievalAccess
+from ..domain.knowledge_library import LibraryConflict
 
 
 class BoundedKnowledgeRoute(APIRoute):
@@ -25,7 +30,10 @@ class BoundedKnowledgeRoute(APIRoute):
                         raise HTTPException(413, {"code": "KNOWLEDGE_INPUT_TOO_LARGE"})
                     data.extend(block)
                 request._body = bytes(data)
-            return await handler(request)
+            try:
+                return await handler(request)
+            except LibraryConflict as exc:
+                raise HTTPException(409, {"code": exc.code}) from exc
         return limited
 
 
@@ -51,16 +59,23 @@ def create_library_router():
         return request.app.state.knowledge_library_service
 
     @router.get("/libraries", response_model=list[KnowledgeLibraryView])
-    async def listing(request: Request, access=Depends(library_access)):
-        return await service(request).list(access)
+    async def listing(request: Request, management: bool = False, access=Depends(library_access)):
+        return await service(request).list(access, management=management)
 
     @router.post("/libraries", status_code=201, response_model=KnowledgeLibraryView)
     async def create(payload: KnowledgeLibraryCreate, request: Request, access=Depends(library_access)):
         return await service(request).create(access, **payload.model_dump())
 
     @router.get("/libraries/{library_id}", response_model=KnowledgeLibraryView)
-    async def detail(library_id: UUID, request: Request, access=Depends(library_access)):
-        return await service(request).get(access, library_id)
+    async def detail(library_id: UUID, request: Request, management: bool = False, access=Depends(library_access)):
+        return await service(request).get(access, library_id, management=management)
+
+    @router.delete("/libraries/{library_id}", response_model=KnowledgeActionReceipt)
+    async def delete(library_id: UUID, request: Request,
+                     expected_revision: Annotated[int, Query(ge=1)],
+                     access=Depends(library_access)):
+        await service(request).delete(access, library_id, expected_revision=expected_revision)
+        return {"status": "DELETED"}
 
     @router.patch("/libraries/{library_id}", response_model=KnowledgeLibraryView)
     async def update(library_id: UUID, payload: KnowledgeLibraryUpdate, request: Request,
@@ -69,9 +84,19 @@ def create_library_router():
             changes=payload.model_dump(exclude_unset=True, exclude={"expected_revision"}))
 
     @router.get("/libraries/{library_id}/documents", response_model=KnowledgeDocumentPage)
-    async def files(library_id: UUID, request: Request, page: int = Query(1, ge=1),
-                    page_size: int = Query(20, ge=1, le=100), access=Depends(library_access)):
-        return await service(request).files(access, library_id, page=page, page_size=page_size)
+    async def files(library_id: UUID, request: Request, filters: Annotated[KnowledgeDirectoryQuery, Query()],
+                    access=Depends(library_access)):
+        return await service(request).files(access, library_id, **filters.model_dump(mode="json", exclude_none=True))
+
+    @router.get("/libraries/{library_id}/index-rebuild", response_model=KnowledgeIndexMaintenance)
+    async def index_rebuild_status(library_id: UUID, request: Request, version_id: UUID | None = None,
+                                   access=Depends(library_access)):
+        return await service(request).index_rebuild(access, library_id, version_id=version_id)
+
+    @router.post("/libraries/{library_id}/index-rebuild", response_model=KnowledgeIndexMaintenance)
+    async def operate_index_rebuild(library_id: UUID, payload: KnowledgeIndexRebuildRequest, request: Request,
+                                    access=Depends(library_access)):
+        return await service(request).index_rebuild(access, library_id, **payload.model_dump())
 
     @router.post("/libraries/{library_id}/documents", status_code=202, response_model=KnowledgeUploadReceipt)
     async def upload(library_id: UUID, request: Request,
@@ -85,10 +110,6 @@ def create_library_router():
                      request: Request, access=Depends(library_access)):
         return await service(request).review(access, library_id, version_id, **payload.model_dump())
 
-    @router.post("/libraries/{library_id}/versions/{version_id}:publish", response_model=KnowledgeActionReceipt)
-    async def publish(library_id: UUID, version_id: UUID, request: Request, access=Depends(library_access)):
-        return await service(request).publish(access, library_id, version_id)
-
     @router.post("/libraries/{library_id}/versions/{version_id}:withdraw", response_model=KnowledgeActionReceipt)
     async def withdraw(library_id: UUID, version_id: UUID, request: Request, access=Depends(library_access)):
         return await service(request).withdraw(access, library_id, version_id)
@@ -97,10 +118,26 @@ def create_library_router():
     async def cancel(library_id: UUID, version_id: UUID, request: Request, access=Depends(library_access)):
         return await service(request).cancel(access, library_id, version_id)
 
+    @router.post("/libraries/{library_id}/versions/{version_id}:reprocess", status_code=202,
+                 response_model=KnowledgeMaintenanceReceipt)
+    async def reprocess(library_id: UUID, version_id: UUID, payload: KnowledgeReprocessRequest,
+                        request: Request, access=Depends(library_access)):
+        return await service(request).reprocess(access, library_id, version_id, **payload.model_dump())
+
+    @router.post("/libraries/{library_id}/versions/{version_id}:retry-index", status_code=202,
+                 response_model=KnowledgeMaintenanceReceipt)
+    async def retry_index(library_id: UUID, version_id: UUID, payload: KnowledgeRetryIndexRequest,
+                          request: Request, access=Depends(library_access)):
+        return await service(request).retry_index(access, library_id, version_id, **payload.model_dump())
+
     @router.get("/libraries/{library_id}/versions/{version_id}/source")
     async def source(library_id: UUID, version_id: UUID, request: Request, access=Depends(library_access)):
         record, stream = await service(request).source(access, library_id, version_id)
-        return StreamingResponse(stream, media_type="application/octet-stream", headers={
+        # 只从已核权版本的元数据取 MIME；内部始终返回附件，是否内联由公开 BFF 决定。
+        media_type = str(record["mime_type"]).lower()
+        if media_type not in KNOWLEDGE_INLINE_MEDIA_TYPES:
+            media_type = "application/octet-stream"
+        return StreamingResponse(stream, media_type=media_type, headers={
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "default-src 'none'; sandbox",
             "Content-Disposition": "attachment", "Content-Length": str(record["byte_count"])})
@@ -126,5 +163,21 @@ def create_library_router():
             access, retrieval_ref=str(retrieval_ref), stable_key=stable_key)
         return StreamingResponse(stream, media_type=item.mime_type, headers={"Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox"})
+
+    @router.get("/results/{retrieval_ref}/context/{key}", response_model=KnowledgePassageContext)
+    async def passage_context(retrieval_ref: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
+                              query: Annotated[KnowledgePassageQuery, Query()], request: Request,
+                              response: Response, access=Depends(library_access)):
+        response.headers["Cache-Control"] = "no-store"
+        return await service(request).passage_context(access, str(retrieval_ref), key, **query.model_dump())
+
+    @router.get("/results/{retrieval_ref}/context/{key}/pdf", response_class=StreamingResponse,
+                responses={200: {"content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}})
+    async def passage_pdf(retrieval_ref: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
+                          request: Request, access=Depends(library_access)):
+        record, stream = await service(request).passage_pdf(access, str(retrieval_ref), key)
+        return StreamingResponse(stream, media_type="application/pdf", headers={
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox", "Content-Length": str(record["byte_count"])})
 
     return router

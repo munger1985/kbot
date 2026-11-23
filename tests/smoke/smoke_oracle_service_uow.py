@@ -105,7 +105,6 @@ async def smoke() -> None:
         )
         model = await model_service.create(
             {
-                "served_model_name": f"oracle-smoke-{marker}",
                 "display_name": "Oracle Smoke Embedding",
                 "provider_model_name": "oracle-smoke",
                 "category": 2,
@@ -122,7 +121,7 @@ async def smoke() -> None:
         )
         model_id = UUID(model["model_id"])
         loaded_model = await model_service.get(model_id, category=2)
-        assert loaded_model["served_model_name"] == model["served_model_name"]
+        assert loaded_model["model_id"] == model["model_id"]
         expected_model_params = {
             "embedding_dimension": settings.vector.dimensions,
             "model_path": "/tmp/kbot-oracle-smoke-model",

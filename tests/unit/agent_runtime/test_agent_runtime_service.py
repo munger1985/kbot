@@ -55,7 +55,6 @@ class _ModelResolver:
         return {
             role: {
                 "model_id": str(model_id),
-                "served_model_name": self._NAMES[role],
                 "category": 2 if role == "memory_embedding" else 1,
                 "config_fingerprint": "a" * 64,
             }
@@ -489,15 +488,15 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             snapshot["agent"]["models"]["composer_llm"][
-                "served_model_name"
+                "model_id"
             ],
-            "composer-model",
+            str(self.execution_spec.models["composer_llm"]),
         )
         self.assertEqual(
             snapshot["agent"]["models"]["memory_llm"][
-                "served_model_name"
+                "model_id"
             ],
-            "memory-model",
+            str(self.execution_spec.models["memory_llm"]),
         )
         self.assertEqual(
             snapshot["app_knowledge"]["scope"]["scope_ref"],

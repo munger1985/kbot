@@ -32,15 +32,6 @@ def create_knowledge_retrieval_router(*, service=None, access_dependency):
         except ValueError:
             require(False, "知识版本标识无效")
 
-    @router.post("/versions/{version_id}:publish")
-    async def publish(version_id: UUID, request: Request, access=Depends(access_dependency), service=Depends(resolve_service)):
-        value = await body(request, ("resource_ref", "generation_id", "expected_generation_id"))
-        await service.publish(access, resource_ref=value["resource_ref"], version_id=version_id,
-            generation_id=identifier(value["generation_id"]),
-            expected_generation_id=identifier(value["expected_generation_id"])
-                if value["expected_generation_id"] is not None else None)
-        return {"status": "PUBLISHED"}
-
     @router.post("/versions/{version_id}:withdraw")
     async def withdraw(version_id: UUID, request: Request, access=Depends(access_dependency), service=Depends(resolve_service)):
         value = await body(request, ("resource_ref", "expected_revision"))
@@ -132,9 +123,16 @@ def create_knowledge_retrieval_router(*, service=None, access_dependency):
                      "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox"})
 
     @router.get("/history/{retrieval_ref}/content/{stable_key}")
-    async def historical_content(retrieval_ref: UUID, stable_key: str,
+    async def historical_content(retrieval_ref: UUID, stable_key: str, request: Request,
+            source_pdf: bool = False,
             access=Depends(access_dependency), service=Depends(resolve_service)):
         require(len(stable_key) == 64 and all(c in "0123456789abcdef" for c in stable_key), "历史证据句柄无效")
+        if source_pdf:
+            library = request.app.state.knowledge_library_service
+            record, chunks = await library.historical_pdf(access, str(retrieval_ref), stable_key)
+            return StreamingResponse(chunks, media_type="application/pdf",
+                headers={"Cache-Control": "no-store", "Content-Length": str(record["byte_count"]),
+                         "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox"})
         item, chunks = await service.stream_historical_content(access,
             retrieval_ref=str(retrieval_ref), stable_key=stable_key)
         return StreamingResponse(chunks, media_type=item.mime_type,
@@ -149,5 +147,8 @@ def install_knowledge_errors(app):
     @app.exception_handler(AlgorithmError)
     async def algorithm_error(request, exc):
         del request
-        status = 409 if exc.code.value in {"SNAPSHOT_STALE", "SCOPE_CHANGED"} else 422
+        code = exc.code.value
+        status = (409 if code in {"SNAPSHOT_STALE", "SCOPE_CHANGED"} else
+                  503 if code == "RESOURCE_LIMIT" and exc.stage.startswith("index_") else
+                  504 if code == "TIMEOUT" and exc.stage == "index_read" else 422)
         return JSONResponse(status_code=status, content={"code": exc.code.value, "stage": exc.stage})

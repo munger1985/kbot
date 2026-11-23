@@ -30,13 +30,7 @@ def _parse_field(expression: str, minimum: int, maximum: int) -> set[int]:
     return values
 
 
-def next_cron_run(
-    *,
-    expression: str,
-    timezone_name: str,
-    after: datetime | None = None,
-) -> datetime:
-    """计算五段 Cron 的下一次 UTC 触发时间。"""
+def _cron_matcher(expression, timezone_name, *, first_occurrence_only):
     fields = expression.split()
     if len(fields) != 5:
         raise validation_failed("Cron 必须是规范的五段表达式")
@@ -53,13 +47,13 @@ def next_cron_run(
     except (ValueError, ZoneInfoNotFoundError) as exc:
         raise validation_failed(f"Cron 或 IANA 时区无效：{exc}") from exc
 
-    current = (after or datetime.now(UTC)).astimezone(UTC)
-    current = current.replace(second=0, microsecond=0) + timedelta(minutes=1)
-    end = current + timedelta(days=370)
     day_of_month_wildcard = fields[2] == "*"
     day_of_week_wildcard = fields[4] == "*"
-    while current <= end:
-        local = current.astimezone(timezone)
+
+    def matches(at):
+        local = at.astimezone(timezone)
+        if (first_occurrence_only and local.fold) or at.second or at.microsecond:
+            return False
         cron_weekday = (local.weekday() + 1) % 7
         dom_match = local.day in month_days
         dow_match = cron_weekday in week_days
@@ -69,12 +63,44 @@ def next_cron_run(
             day_match = dom_match
         else:
             day_match = dom_match or dow_match
-        if (
+        return (
             local.minute in minutes
             and local.hour in hours
             and local.month in months
             and day_match
-        ):
+        )
+
+    return matches
+
+
+def _find_cron_run(expression, timezone_name, at, *, forward, first_occurrence_only):
+    matches = _cron_matcher(expression, timezone_name, first_occurrence_only=first_occurrence_only)
+    at = at.astimezone(UTC)
+    current = at.replace(second=0, microsecond=0)
+    step = timedelta(minutes=1 if forward else -1)
+    if forward or current == at:
+        current += step
+    for _ in range(370 * 24 * 60 + 1):
+        if matches(current):
             return current
-        current += timedelta(minutes=1)
-    raise validation_failed("Cron 在未来 370 天内没有可计算的触发时间")
+        current += step
+    return None
+
+
+def next_cron_run(
+    *, expression: str, timezone_name: str, after: datetime | None = None, first_occurrence_only: bool = False,
+) -> datetime:
+    """计算五段 Cron 的下一次 UTC 触发时间。"""
+    result = _find_cron_run(expression, timezone_name, after or datetime.now(UTC), forward=True,
+                            first_occurrence_only=first_occurrence_only)
+    if result is None:
+        raise validation_failed("Cron 在未来 370 天内没有可计算的触发时间")
+    return result
+
+
+def previous_cron_run(*, expression: str, timezone_name: str, before: datetime) -> datetime | None:
+    return _find_cron_run(expression, timezone_name, before, forward=False, first_occurrence_only=True)
+
+
+def backup_cron_matches(*, expression: str, timezone_name: str, at: datetime) -> bool:
+    return _cron_matcher(expression, timezone_name, first_occurrence_only=True)(at)

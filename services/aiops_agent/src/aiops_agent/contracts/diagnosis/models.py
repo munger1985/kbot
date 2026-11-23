@@ -94,6 +94,7 @@ class KnowledgeCitationPack(_DiagnosisContract):
     query: str = Field(min_length=1, max_length=2000)
     citations: tuple[dict[str, Any], ...] = ()
     gap_code: str | None = None
+    knowledge_coverage: dict[str, Any] = Field(default_factory=dict)
 
 
 class EvidenceRequestDraft(_DiagnosisContract):

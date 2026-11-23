@@ -35,7 +35,7 @@ async def fixture():
         kc_scope={"tenant_id": tenant} if tenant else {"domain_id": f.domain},
         model_catalog=f.service._model_catalog if tenant else f.service._llm_model_catalog,
         model_scope={"tenant_id": str(tenant)} if tenant else {},
-        technical_name_field="model_name" if tenant else "served_model_name")
+        technical_name_field="model_name" if tenant else "provider_model_name")
     f.execution = OutputExecution(uuid7(), "CASE_EXTRACTION", f.scope, {}, uuid7(), "ACCEPTED", f.frozen)
     f.authority = SimpleNamespace(request=SimpleNamespace(source_agent_ids=(f.run.agent_id,)))
     f.ref = {}

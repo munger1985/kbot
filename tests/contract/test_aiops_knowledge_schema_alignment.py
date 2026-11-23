@@ -18,7 +18,8 @@ class KnowledgeSchemaAlignmentTests(unittest.TestCase):
         self.tables, self.indexes, self.constraints = alignment.canonical(ROOT)
         self.current = {"columns": {name: deepcopy(item["columns"]) for name, item in self.tables.items()},
             "indexes": list(self.indexes), "constraints": list(self.constraints),
-            "versions": [], "assets": [], "counts": {name: 0 for name in self.tables}}
+            "versions": [], "assets": [], "counts": {name: 0 for name in self.tables},
+            "index_primary_key": ["ASSET_VERSION_ID"]}
 
     def plan(self, before):
         return alignment.build_plan(before, self.tables, self.indexes, self.constraints)
@@ -47,6 +48,18 @@ class KnowledgeSchemaAlignmentTests(unittest.TestCase):
 
     def test_aligned_schema_is_idempotent(self):
         self.assertEqual({"create": [], "alter": [], "discard_versions": 0, "reset_assets": 0}, self.plan(self.current))
+
+    def test_existing_multi_file_mapping_cannot_use_legacy_alignment(self):
+        self.current["index_primary_key"] = ["INDEX_REF_ID"]
+        with self.assertRaisesRegex(ValueError, "Schema 62"):
+            self.plan(self.current)
+
+    def test_schema_upgrade_checks_grouped_files_before_ddl(self):
+        path = ROOT / "database/oracle/operations/apply_aiops_schema_62.sql"
+        script = path.read_text(encoding="utf-8")
+        self.assertIn("PRIMARY KEY (ASSET_VERSION_ID)", script)
+        self.assertIn("GROUP BY ASSET_VERSION_ID HAVING COUNT(*) > 1", script)
+        self.assertLess(script.index("RAISE_APPLICATION_ERROR(-20063"), script.index("ALTER TABLE"))
 
     def test_old_index_is_replaced_without_remapping_ids(self):
         plan = self.plan(self.legacy())

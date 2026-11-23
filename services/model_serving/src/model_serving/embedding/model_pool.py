@@ -3,6 +3,7 @@ from platform_core.dictionary import ModelCategory, EmbeddingProvider
 from loguru import logger
 from typing import Any
 from model_serving.common.model_pool import BaseModelPool
+from model_serving.common.local_embedding_templates import text_input_template
 from .model import *
 from .model_factory import create_embedding_model
 
@@ -17,33 +18,37 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
         """Define the database model category managed by this pool"""
         return ModelCategory.TXT_EMBEDDING.value
 
+    def _local_input_template(self, data: dict) -> str:
+        config = self._build_config(str(data.get("model_id") or ""), data["provider"], data, get_embedding_config())
+        return text_input_template(config)
+
     async def _shutdown_model_instance(self, model: BaseEmbedding[Any]) -> None:
         """Invoke specific model's shutdown logic"""
         await model.shutdown()
 
-    async def _perform_model_health_check(self, served_model_name: str, model: BaseEmbedding[Any]) -> None:
+    async def _perform_model_health_check(self, model_id: str, model: BaseEmbedding[Any]) -> None:
         """
         Perform lightweight inference health check.
         Note: Wrapped with try-except in parent class, only focus on check action here.
         """
         # Use an extremely short text for health check
         await model.embed(["ping"], batch_size=1)
-        logger.debug(f"Embedding 模型 {served_model_name} 健康检查通过")
+        logger.debug(f"Embedding 模型 {model_id} 健康检查通过")
 
-    async def _start_model(self, served_model_name: str, model_data: dict[str, Any]) -> BaseEmbedding[Any]:
+    async def _start_model(self, model_id: str, model_data: dict[str, Any]) -> BaseEmbedding[Any]:
         """
         Construct configuration and start model instance.
         Improvement: Extract configuration construction logic to ensure single responsibility principle.
         """
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"模型 {served_model_name} 缺少 provider")
+            raise ValueError(f"模型 {model_id} 缺少 provider")
 
         # 1. Get base global configuration (as fallback)
         global_config = get_embedding_config()
         
         # 2. Construct Provider-specific Config object
-        model_config = self._build_config(served_model_name, provider, model_data, global_config)
+        model_config = self._build_config(model_id, provider, model_data, global_config)
 
         # 3. Create model via factory function
         model = create_embedding_model(model_config)
@@ -53,11 +58,11 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
             await model.startup()
             # 父类在启动成功后统一登记实例，子类只负责构建模型。
             logger.success(
-                f"Embedding 模型 {served_model_name}（{provider}）启动成功"
+                f"Embedding 模型 {model_id}（{provider}）启动成功"
             )
             return model
         except Exception as e:
-            logger.error(f"Embedding 模型 {served_model_name} 启动失败：{e}")
+            logger.error(f"Embedding 模型 {model_id} 启动失败：{e}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> EmbeddingConfig:

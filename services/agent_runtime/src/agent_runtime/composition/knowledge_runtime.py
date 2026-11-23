@@ -11,7 +11,7 @@ from knowledge_algorithms.contracts.identity import AuthorizedScope, fingerprint
 from knowledge_algorithms.contracts.runtime import DelegationClaims
 from knowledge_algorithms.contracts.wire import decode, encode
 from knowledge_algorithms.retrieval.selection import PayloadCost
-from platform_clients.knowledge_computation import KnowledgeComputationClient
+from platform_clients.knowledge_model_binding import KnowledgeModelBindingClient
 from platform_clients.knowledge_retrieval import AppKnowledgeClient
 from platform_core.contracts import AuthContext
 from platform_core.security.knowledge_delegation import create_knowledge_delegation_codec
@@ -116,9 +116,8 @@ class RuntimeKnowledgeIntegration:
         from agent_runtime.application.knowledge_query import plan_knowledge_query
         prompt = await self.prompts.resolve("agent_runtime.knowledge_query_plan")
         config = self.settings.llm
-        client = KnowledgeComputationClient(base_url=config.base_url, audience=config.audience,
-            caller_service=self.caller, timeout_seconds=config.timeout_seconds,
-            service_scopes=("model.inference",))
+        client = KnowledgeModelBindingClient(base_url=config.base_url, audience=config.audience,
+            caller_service=self.caller, timeout_seconds=config.timeout_seconds)
         return await plan_knowledge_query(text=text, image_handles=handles,
             model=context.config_snapshot["agent"]["models"]["context_llm"], prompt=prompt.content,
             client=client, auth_context=auth_context)
@@ -143,9 +142,9 @@ class RuntimeKnowledgeIntegration:
         model = models["query_vlm"] if supports_images else models["composer_llm"]
         config = self.settings.vlm if supports_images else self.settings.llm
         prompt = await self.prompts.resolve("agent_runtime.app_knowledge_compose")
-        gateway = KnowledgeEvidenceModelGateway(client=KnowledgeComputationClient(base_url=config.base_url,
-            audience=config.audience, caller_service=self.caller, timeout_seconds=config.timeout_seconds,
-            service_scopes=("model.inference",)), auth_context=self.auth_context(context),
+        gateway = KnowledgeEvidenceModelGateway(client=KnowledgeModelBindingClient(base_url=config.base_url,
+            audience=config.audience, caller_service=self.caller, timeout_seconds=config.timeout_seconds),
+            auth_context=self.auth_context(context),
             model_snapshot_ref=model["config_fingerprint"],
             model_payload={"model_id": model["model_id"], "max_tokens": model["max_tokens"]},
             system_prompt=prompt.content + self._agent_context(context), supports_images=supports_images)
@@ -162,10 +161,13 @@ class RuntimeKnowledgeIntegration:
         instruction = agent.get("instruction") or ""
         language = context.config_snapshot.get("language") or context.config_snapshot.get("language_policy") or {}
         business = (agent.get("config") or {}).get("business_knowledge")
+        coverage = (agent.get("config") or {}).get("parent_knowledge_coverage")
         return ("\n当前执行语言约束：\n" + json.dumps(language, ensure_ascii=False)
             + "\n当前 Agent 指令：\n" + instruction
             + ("\n业务知识使用边界（历史案例不等于当前诊断证据）：\n"
-               + json.dumps(business, ensure_ascii=False) if business else ""))
+               + json.dumps(business, ensure_ascii=False) if business else "")
+            + ("\n父诊断知识覆盖（子执行完成不改变该覆盖结论）：\n"
+               + json.dumps(coverage, ensure_ascii=False) if coverage else ""))
 
     async def text_inputs(self, context, artifact):
         from knowledge_algorithms.contracts.runtime import AppRetrievalArtifact
@@ -186,14 +188,14 @@ class RuntimeKnowledgeIntegration:
             rows.append({"key": item.key.stable_key, "text": raw.decode("utf-8")})
         require(rows, "Hybrid 没有可交付的合法正文，不能凭句柄提取条件")
         return {"source_kind": "APP_KNOWLEDGE_TEXT", "items": rows}
-    async def open_history(self, *, snapshot, auth_context, retrieval_ref, key):
+    async def open_history(self, *, snapshot, auth_context, retrieval_ref, key, source_pdf=False):
         configuration = snapshot["app_knowledge"]
         owner = snapshot["agent"]["owner_app_id"]
         claims = {**configuration["delegation"], "expires_at": int(time.time()) + 300}
         context = auth_context.model_copy(update={"calling_service": self.caller,
             "scopes": ("knowledge.content.read",)})
         return await self.clients[owner].for_delegation(claims).open_historical_content(
-            retrieval_ref, key, auth_context=context)
+            retrieval_ref, key, auth_context=context, **({"source_pdf": True} if source_pdf else {}))
     async def release_snapshot(self, snapshot):
         from types import SimpleNamespace
         configuration = snapshot.get("app_knowledge")

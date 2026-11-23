@@ -3,26 +3,17 @@
   "policy": "以实际生产组件为页面结构、控件与交互基准；认证、权限和数据合同使用 KBot 的公开 BFF。",
   "pages": {
     "knowledge": {
-      "title": "知识检索",
+      "title": "Agent 问答",
       "route": "",
       "sources": [
-        "business/KnowledgeRetrievalView.vue",
-        "business/KnowledgeLibraryWorkspace.vue"
+        "business/KnowledgeRetrievalView.vue"
       ]
     },
-    "upload": {
-      "title": "上传资料",
-      "route": "upload",
+    "search": {
+      "title": "直接检索",
+      "route": "search",
       "sources": [
-        "business/KnowledgeUploadView.vue",
-        "business/KnowledgeLibraryWorkspace.vue"
-      ]
-    },
-    "reviews": {
-      "title": "资料审核",
-      "route": "reviews",
-      "sources": [
-        "business/KnowledgeReviewView.vue",
+        "business/KnowledgeDirectSearchView.vue",
         "business/KnowledgeLibraryWorkspace.vue"
       ]
     },
@@ -96,7 +87,7 @@
       "title": "登录",
       "route": null,
       "sources": [],
-      "platform_difference": "保留 KBot 登录与首次改密，不复制 Ammolite SSO。"
+      "platform_difference": "旧登录地址仅跳转到 KBot 统一工作台；首次改密和知识检索首域开通均在工作台完成。"
     }
   },
   "capability_differences": [

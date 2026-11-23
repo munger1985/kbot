@@ -114,8 +114,14 @@ from platform_core.security import (
 )
 
 
+from aiops_agent.application.data_protection_jobs import ProtectionBackend
+from aiops_agent.bootstrap.data_protection import local_protection_backend
+
+
 def create_aiops_api(
     settings: AIOpsSettings | None = None,
+    *,
+    protection_backend: ProtectionBackend | None = None,
 ):
     """创建配置、运行内核与监控接入 Internal API。"""
     resolved = settings or get_aiops_settings()
@@ -275,6 +281,12 @@ def create_aiops_api(
             secret_store=secret_store,
             max_response_bytes=resolved.monitoring.max_response_bytes,
         )
+        effective_protection_backend = protection_backend
+        if effective_protection_backend is None:
+            effective_protection_backend = local_protection_backend(
+                settings=resolved, uow_factory=runtime.uow_factory,
+                credentials=managed_credential_service,
+            )
         app.state.configuration_service = AIOpsConfigurationService(
             uow_factory=runtime.uow_factory,
             cursor_codec=cursor_codec,
@@ -283,6 +295,8 @@ def create_aiops_api(
             management=resolved.management,
             credential_cipher=credential_cipher,
             managed_credential_service=managed_credential_service,
+            protection_backend=effective_protection_backend,
+            local_drill_resource_ids=frozenset(resolved.local_drills) if protection_backend is None else frozenset(),
             target_connection_tester=partial(
                 test_target_connection,
                 tls_profile_resolver=TLSProfileResolver(

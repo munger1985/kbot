@@ -38,15 +38,16 @@ class OCRService:
             await self._model_pool.shutdown()
             self._initialized = False
 
-    async def invalidate_model(self, served_model_name: str) -> None:
+    async def invalidate_model(self, model_id: str) -> None:
         if self._initialized:
-            await self._model_pool.unload_model(served_model_name)
+            await self._model_pool.unload_model(model_id)
 
-    def is_model_loaded(self, served_model_name: str) -> bool:
-        return self._model_pool.is_model_loaded(served_model_name)
+    def is_model_loaded(self, model_id: str) -> bool:
+        return self._model_pool.is_model_loaded(model_id)
 
     async def infer(
-        self, *, model_id: UUID, image_base64: str
+        self, *, model_id: UUID, image_base64: str,
+        expected_revision: str | None = None,
     ) -> dict[str, Any]:
         try:
             image = base64.b64decode(image_base64, validate=True)
@@ -58,7 +59,7 @@ class OCRService:
         if not self._initialized:
             await self.initialize()
         model: OCRModel = await self._model_pool.load_model(
-            model_data["served_model_name"],
+            str(model_id), expected_revision=expected_revision,
         )
         text, blocks = await model.infer(image)
         return {

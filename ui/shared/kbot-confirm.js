@@ -6,7 +6,7 @@ function loadStyles() {
   if (!stylesheet) stylesheet = new Promise((resolve, reject) => {
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = new URL("./kbot-confirm.css?v=20261105_1", import.meta.url).href;
+    link.href = new URL("./kbot-confirm.css?v=20261120_matrix", import.meta.url).href;
     link.onload = resolve;
     link.onerror = () => { link.remove(); stylesheet = null; reject(new Error("无法加载确认框，请刷新后重试。")); };
     document.head.append(link);
@@ -44,7 +44,9 @@ function mount(options) {
   dialog.querySelector(".confirm-dialog-mark").textContent = danger ? "!" : "?";
   dialog.querySelector(".confirm-dialog-kicker").textContent = danger ? "请确认此操作" : "需要你的确认";
   dialog.querySelector("h2").textContent = options.title;
-  dialog.querySelector(".confirm-dialog-message").textContent = options.message;
+  const message = dialog.querySelector(".confirm-dialog-message");
+  message.textContent = options.message ?? "";
+  if (options.scrollMessage) message.tabIndex = 0;
   const approve = dialog.querySelector('[value="confirm"]');
   approve.textContent = options.confirmLabel || "确认";
   approve.className = danger ? "danger-button" : "primary-button";

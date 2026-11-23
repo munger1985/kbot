@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 from typing import Any
 import uuid
@@ -77,7 +79,7 @@ class ChatRequest(BaseModel):
     text generation and advanced features like tool calling, streaming, and
     fine-grained generation parameter control.
     """
-    served_model_name: str = Field(..., description="Name of the LLM model to use")
+    model_id: UUID
     messages: list[dict[str, Any]] | str = Field(
         ..., description="List of chat messages or single prompt string",
     )
@@ -101,7 +103,7 @@ class ChatRequest(BaseModel):
 class OpenAIChatRequest(BaseModel):
     """OpenAI 兼容的对话补全请求。"""
 
-    model: str = Field(min_length=1, max_length=128)
+    model: UUID
     messages: list[dict[str, Any]]
     max_tokens: int | None = None
     temperature: float | None = None
@@ -116,4 +118,4 @@ class OpenAIChatRequest(BaseModel):
 
     def to_internal(self) -> ChatRequest:
         payload = self.model_dump(exclude={"model"})
-        return ChatRequest(served_model_name=self.model, **payload)
+        return ChatRequest(model_id=self.model, **payload)

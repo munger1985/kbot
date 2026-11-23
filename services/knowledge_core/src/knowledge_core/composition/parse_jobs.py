@@ -16,11 +16,12 @@ from knowledge_core.application.parse_jobs import ParseComputationService
 def install_parse_computation(app: FastAPI, *, spool_root: Path, source_resolver,
                               memory_bytes=536870912, cpu_seconds=120, max_file_bytes=67108864,
                               max_jobs=2, max_unacked_events=32, converter_artifacts_path=None,
-                              max_artifact_bytes=134217728, ocr=None):
+                              max_artifact_bytes=134217728, ocr=None, model_transcription=None):
     """认证中间件先验证 JWT；source_resolver 必须来自可信 App 注册表。"""
     service = ParseComputationService(ParseJobStore(spool_root),
         BoundedParseExecutor(memory_bytes=memory_bytes, cpu_seconds=cpu_seconds, max_file_bytes=max_file_bytes,
-                            converter_artifacts_path=converter_artifacts_path, max_artifact_bytes=max_artifact_bytes, ocr=ocr),
+                            converter_artifacts_path=converter_artifacts_path, max_artifact_bytes=max_artifact_bytes,
+                            ocr=ocr, model_transcription=model_transcription),
         max_jobs=max_jobs, max_unacked_events=max_unacked_events)
     app.include_router(create_parse_jobs_router(service=service, access_dependency=compute_access,
                                                source_resolver=source_resolver))

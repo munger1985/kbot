@@ -62,7 +62,7 @@ def test_real_platform_service_context_is_scoped_but_never_impersonates_actor():
             assert options.technical_name_field == "model_name"
         else:
             assert options.context.tenant_id is None
-            assert options.technical_name_field == "served_model_name"
+            assert options.technical_name_field == "provider_model_name"
         output = await worker._processor.advance(f.execution,
             authority=f.authority, checkpoint=f.checkpoint, record_receipt=f.receipt)
         assert output.stage == "INDEXING" and output.finalization is None

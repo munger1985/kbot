@@ -2,13 +2,17 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from model_serving.common.oci_auth import ModelConfigOciAuth, oci_sdk_service_endpoint
+from model_serving.common.provider_catalog import validate_provider_config
+from model_serving.llm.model import OpenaiClient, OpenaiLLMConfig
+from model_serving.llm.model_factory import create_llm_model
+from model_serving.llm.model_pool import LLMModelPool
 
 from model_serving.llm.model.oci_client import (
     OCIClient,
@@ -33,6 +37,28 @@ def _client(model_name: str, *, max_tokens: int = 8192) -> OCIClient:
 
 
 class OCILLMClientTest(unittest.TestCase):
+    def test_api_key_model_preserves_oci_identity_and_uses_compatibility_api(self):
+        name = "xai.grok-4.6"
+        material = {
+            "provider_model_name": name,
+            "category": 1,
+            "provider": "oci",
+            "api_endpoint": "https://example.invalid/20231130/actions/v1",
+            "api_key": "test-key",
+            "model_params": {"max_tokens": 16000},
+        }
+        validate_provider_config(material)
+        defaults = SimpleNamespace(
+            max_tokens=8192, temperature=0.7, top_p=1.0,
+            frequency_penalty=0, presence_penalty=0, timeout=30,
+        )
+        config = LLMModelPool()._build_config(name, "oci", material, defaults)
+        client = create_llm_model(config)
+        self.assertIsInstance(client, OpenaiClient)
+        self.assertEqual(client.config.provider, "oci")
+        self.assertEqual(client.config.api_endpoint, material["api_endpoint"])
+        self.assertEqual(client.config.max_tokens, 16000)
+
     def test_sdk_endpoint_accepts_only_service_origin(self):
         host = "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com"
 
@@ -82,16 +108,18 @@ class OCILLMClientTest(unittest.TestCase):
         self.assertIn("x-content-sha256", captured)
         self.assertIn("content-length", captured)
 
-    def test_gpt5_uses_max_completion_tokens_only(self):
-        request = _client("openai.gpt-5.6-sol")._build_chat_request(
-            [{"role": "user", "content": "你好"}],
-        )
-
-        self.assertEqual(8192, request.max_completion_tokens)
-        self.assertIsNone(request.max_tokens)
-        self.assertIsNone(request.temperature)
-        self.assertIsNone(request.top_p)
-        self.assertIsNone(request.top_k)
+    def test_gpt_reasoning_uses_max_completion_tokens_only(self):
+        for name in ("openai.gpt-5.6-sol", "openai.gpt-6.2-sol"):
+            with self.subTest(model=name):
+                request = _client(name)._build_chat_request(
+                    [{"role": "user", "content": "你好"}],
+                    max_tokens=128,
+                )
+                self.assertEqual(128, request.max_completion_tokens)
+                self.assertIsNone(request.max_tokens)
+                self.assertIsNone(request.temperature)
+                self.assertIsNone(request.top_p)
+                self.assertIsNone(request.top_k)
 
     def test_gpt5_preserves_per_call_output_limit(self):
         request = _client("openai.gpt-5.6-sol")._build_chat_request(
@@ -138,6 +166,23 @@ class OCILLMClientTest(unittest.TestCase):
 
 
 class OCIStartupEndpointTest(unittest.IsolatedAsyncioTestCase):
+    async def test_gpt6_oci_token_client_uses_same_reasoning_profile(self):
+        config = OpenaiLLMConfig(
+            model_name="openai.gpt-6.2-sol", provider="oci", max_tokens=1024,
+            api_endpoint="https://example.invalid/openai/v1", api_key="test-key",
+            temperature=0.7, top_p=1.0, frequency_penalty=0.3, presence_penalty=0.2,
+        )
+        create = AsyncMock()
+        sdk = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("model_serving.llm.model.openai_client.AsyncOpenAI", return_value=sdk):
+            client = OpenaiClient(config)
+            await client.chat("你好", stream=True, max_tokens=128)
+
+        payload = create.await_args.kwargs
+        self.assertEqual(128, payload["max_completion_tokens"])
+        self.assertFalse({"max_tokens", "temperature", "top_p", "frequency_penalty",
+                          "presence_penalty"}.intersection(payload))
+
     async def test_startup_forwards_configured_origin_to_sdk(self):
         host = "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com"
         client = _client("xai.grok-4.6")

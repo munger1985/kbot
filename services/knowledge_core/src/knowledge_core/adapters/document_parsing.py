@@ -1,6 +1,8 @@
 """有界原生图像/Docling 适配器；在隔离计算子进程内执行转换。"""
 
 import asyncio
+from dataclasses import dataclass
+from errno import ENOMEM
 from hashlib import sha256
 from io import BytesIO
 import os
@@ -13,16 +15,28 @@ from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, req
 from knowledge_algorithms.contracts.identity import EvidenceKey, Locator, fingerprint
 from knowledge_algorithms.parsing.contracts import ExtractedRegion, ExtractionBatch
 from knowledge_algorithms.parsing.events import ParseArtifact, local_key
+from knowledge_algorithms.parsing.formats import DOCUMENT_TYPES, IMAGE_TYPES, OFFICE_TYPES
 from knowledge_algorithms.references.figures import extract_figure_references
+from .markdown_parsing import guarded_markdown_backend, validate_markdown
+from .model_transcription import ImageDimensionsUnsupported, TranscriptionImageTooLarge, WorkerModelTranscriber
+from .pdf_text_spacing import REVISION as PDF_SPACING_REVISION, restore_pdf_word_spacing
 
 
-OFFICE_TYPES = {
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-}
-DOCUMENT_TYPES = {**OFFICE_TYPES, "application/pdf": "pdf", "text/html": "html", "text/markdown": "md"}
-IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/tiff"})
+def _is_conversion_memory_error(exc: BaseException) -> bool:
+    """识别 Docling 流水线包装的内存错误，不误报其他转换故障。"""
+    seen = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, MemoryError) or (isinstance(current, OSError) and current.errno == ENOMEM):
+            return True
+        if isinstance(current, (OSError, RuntimeError)):
+            message = str(current).lower()
+            if "mmap" in message and "cannot allocate memory" in message:
+                return True
+        cause = current.__cause__
+        current = cause if cause is not None else (None if current.__suppress_context__ else current.__context__)
+    return False
 
 
 class WorkerArtifactWriter:
@@ -91,15 +105,49 @@ def image_asset(image, source, run, profile, *, figure, locator, provenance, wri
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     key = native_key(source, run, profile, figure.native_ref + ":native-image", ContentKind.IMAGE)
-    artifact = writer.put(buffer.getvalue(), object_key=key.object_key, mime_type="image/png")
+    try:
+        artifact = writer.put(buffer.getvalue(), object_key=key.object_key, mime_type="image/png")
+    except AlgorithmError as exc:
+        raise AlgorithmError(exc.code, "图像制品合同无效", stage="artifact_write") from exc
+    except OSError as exc:
+        raise AlgorithmError(ErrorCode.CHANNEL_FAILED, "图像制品写入失败", stage="artifact_write") from exc
     return VisualAsset(key, figure.key, artifact.handle_ref, artifact.sha256, artifact.mime_type,
                        artifact.byte_count, locator, provenance)
 
 
 
-async def transcribe_nodes(image, source, run, profile, *, figure, transcriber, max_nodes):
+@dataclass(frozen=True)
+class RegionTranscription:
+    nodes: tuple[ContentNode, ...] = ()
+    image_input_unsupported: bool = False
+
+
+def is_office_separator(image, item, mime, *, is_page_image):
+    """仅过滤无语义标记且像素形态明确的 Office 线条。"""
+    label = getattr(item.label, "value", item.label)
+    if (mime not in OFFICE_TYPES or is_page_image or label != "picture"
+            or any(getattr(item, name, None) for name in
+                   ("captions", "references", "footnotes", "children", "meta", "text"))):
+        return False
+    short, long = sorted(image.size)
+    if not (0 < short <= 4 and short * 64 <= long <= 8192):
+        return False
+    horizontal = image.width == long
+    # 允许首尾各一个抗锯齿像素；每条长边方向的内部像素必须完全一致。
+    for offset in range(short):
+        bounds = (1, offset, long - 1, offset + 1) if horizontal else (offset, 1, offset + 1, long - 1)
+        with image.crop(bounds) as scanline, scanline.convert("RGBA") as rgba:
+            if any(lo != hi for lo, hi in rgba.getextrema()):
+                return False
+    return True
+
+
+async def transcribe_nodes(image, source, run, profile, *, figure, transcriber, max_nodes, complex_layout=False):
     if transcriber is None or "OCR" not in profile.repair_strategies:
-        return ()
+        return RegionTranscription()
+    if profile.ocr_model is not None:
+        return await bound_transcription_nodes(image, source, run, profile, figure=figure,
+                                               transcriber=transcriber, max_nodes=max_nodes, complex_layout=complex_layout)
     lines = await transcriber.transcribe(image, profile=profile)
     require(len(lines) <= max_nodes, "OCR 区域超过节点预算")
     result = []
@@ -116,7 +164,47 @@ async def transcribe_nodes(image, source, run, profile, *, figure, transcriber, 
         result.append(ContentNode(key, ContentKind.PARAGRAPH, line.text, (locator,),
             Provenance(ProvenanceKind.OCR, "local-ocr", transcriber.revision, source.descriptor.sha256),
             native, figure.reading_order + index + 1, parent_key=figure.key.object_key))
-    return tuple(result)
+    return RegionTranscription(tuple(result))
+
+
+def readable(text, profile):
+    bad = sum(char == "\ufffd" or ord(char) < 32 and not char.isspace() for char in text)
+    return any(char.isalnum() for char in text) and bad / max(len(text), 1) <= profile.max_bad_char_ratio
+
+
+async def bound_transcription_nodes(image, source, run, profile, *, figure, transcriber, max_nodes, complex_layout=False):
+    locator = figure.locators[0]
+    box = locator.bbox
+    full_page = figure.kind == ContentKind.PAGE or (box is not None and (box[2] - box[0]) * (box[3] - box[1]) >= 0.9)
+    region = "page" if full_page else "figure"
+    if isinstance(transcriber, WorkerModelTranscriber):
+        transcriber.set_region(figure.key.object_key, locator.page_no, figure.kind == ContentKind.PAGE,
+                               source.descriptor.mime_type in IMAGE_TYPES)
+    try:
+        text = await transcriber.transcribe_region(image, profile=profile, role="ocr", region=region)
+    except TranscriptionImageTooLarge:
+        # OCR 与 VLM 使用同一传输编码和上限，无须重复尝试同一张图。
+        return RegionTranscription(image_input_unsupported=True)
+    transcripts = [(text, profile.ocr_model, ProvenanceKind.OCR)] if readable(text, profile) else []
+    image_input_unsupported = False
+    if (profile.vlm_model is not None and (not full_page or profile.strategy == "VISUAL")
+            and (not transcripts or (complex_layout and profile.strategy == "VISUAL"))):
+        try:
+            visual = await transcriber.transcribe_region(image, profile=profile, role="vlm", region=region)
+        except (ImageDimensionsUnsupported, TranscriptionImageTooLarge):
+            image_input_unsupported = True
+        else:
+            if readable(visual, profile) and visual != text:
+                transcripts.append((visual, profile.vlm_model, ProvenanceKind.MODEL_TRANSCRIPTION))
+    require(len(transcripts) <= max_nodes, "转写节点超过预算")
+    result = []
+    for order, (value, binding, kind) in enumerate(transcripts):
+        native = figure.native_ref + ":" + kind.value.lower()
+        key = native_key(source, run, profile, native, ContentKind.PARAGRAPH)
+        result.append(ContentNode(key, ContentKind.PARAGRAPH, value, (locator,),
+            Provenance(kind, binding.model_id, binding.revision, source.descriptor.sha256),
+            native, figure.reading_order + order + 1, parent_key=figure.key.object_key))
+    return RegionTranscription(tuple(result), image_input_unsupported)
 
 
 class NativeImageAdapter:
@@ -139,8 +227,9 @@ class NativeImageAdapter:
                                 provenance=provenance, writer=self.writer)
             transcribed = await transcribe_nodes(image, source, run, profile, figure=node,
                 transcriber=self.transcriber, max_nodes=profile.max_objects - 2)
-            regions = (ExtractedRegion(native, (node,), 1.0),) + tuple(
-                ExtractedRegion(text_node.native_ref, (text_node,), 1.0) for text_node in transcribed)
+            coverage = 1.0 if profile.strategy is None or transcribed.nodes and not transcribed.image_input_unsupported else 0.0
+            regions = (ExtractedRegion(native, (node,), coverage),) + tuple(
+                ExtractedRegion(text_node.native_ref, (text_node,), 1.0) for text_node in transcribed.nodes)
             yield ExtractionBatch((), regions, (asset,))
         finally:
             image.close()
@@ -161,14 +250,15 @@ class DoclingParsingAdapter:
         # 不允许转换器下载模型、访问外部服务或加载插件；PDF 模型必须预置。
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
-        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.document_converter import DocumentConverter, MarkdownFormatOption, PdfFormatOption
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         options = PdfPipelineOptions(do_ocr=False, do_picture_description=False, do_picture_classification=False,
             generate_picture_images=True, generate_page_images=True, enable_remote_services=False, allow_external_plugins=False)
         if self.artifacts_path is not None:
             options.artifacts_path = Path(self.artifacts_path)
-        return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)})
+        return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options),
+            InputFormat.MD: MarkdownFormatOption(backend=guarded_markdown_backend())})
 
     async def extract(self, source, profile, run):
         raw = await read_source(source, profile)
@@ -214,29 +304,19 @@ class DoclingParsingAdapter:
                         raise ValueError("HTML 外部图片不允许由转换进程抓取")
             SafeHTML().feed(raw.decode("utf-8"))
         if mime == "text/markdown":
-            import re
-            markdown = raw.decode("utf-8")
-            # 仅允许明确内嵌的行内图片；引用式、嵌套式或外部图片一律拒绝。
-            without_embedded = re.sub(r"!\[[^\]\n]*\]\(data:image/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+\)",
-                                      "", markdown)
-            require("![" not in without_embedded and "<" not in markdown,
-                    "Markdown 含未登记媒体或 HTML；不能由转换进程抓取外部资源")
+            validate_markdown(raw)
         try:
             from docling.datamodel.base_models import DocumentStream
             result = self.converter().convert(DocumentStream(name="source." + DOCUMENT_TYPES[mime], stream=BytesIO(raw)),
                 max_num_pages=profile.max_pages, max_file_size=profile.max_input_bytes)
-        except MemoryError:
-            raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "文档转换内存不足", stage="convert") from None
-        except (OSError, RuntimeError) as exc:
-            from errno import ENOMEM
-            message = str(exc).lower()
-            if (isinstance(exc, OSError) and exc.errno == ENOMEM) or (
-                "mmap" in message and "cannot allocate memory" in message
-            ):
-                raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "文档转换内存不足", stage="convert") from None
+        except AlgorithmError:
             raise
+        except Exception as exc:
+            if _is_conversion_memory_error(exc):
+                raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "文档转换内存不足", stage="convert") from None
+            raise AlgorithmError(ErrorCode.PARSE_QUALITY_INSUFFICIENT, "原生转换异常", stage="convert") from exc
         status = getattr(result.status, "value", result.status)
-        require(status == "success", "Docling 未完整成功转换；不静默发布部分文档")
+        require(status == "success", "Docling 未完整成功转换；不静默发布部分文档", stage="convert")
         document = result.document
         pages = {int(number): page for number, page in document.pages.items()}
         require(len(pages) <= profile.max_pages, "转换页数超过预算")
@@ -258,8 +338,10 @@ class DoclingParsingAdapter:
                 for ref in getattr(item, "captions", ()):
                     require(ref.cref not in captions, "Docling 图题属于多个逻辑图，拒绝猜测归属")
                     captions[ref.cref] = item.self_ref
-        provenance = Provenance(ProvenanceKind.NATIVE, "docling", self.revision, source.descriptor.sha256)
+        revision = self.revision + "+" + PDF_SPACING_REVISION if mime == "application/pdf" else self.revision
+        provenance = Provenance(ProvenanceKind.NATIVE, "docling", revision, source.descriptor.sha256)
         regions, assets = [], []
+        table_gaps = set()
         for order, (item, _) in enumerate(entries):
             if item.self_ref not in kinds:
                 continue
@@ -292,6 +374,8 @@ class DoclingParsingAdapter:
             node = ContentNode(key, kind, text, tuple(locators), provenance, native, order,
                 heading_level=min(9, max(1, int(level or 1))) if level is not None else None,
                 parent_key=parent_key, numbering_scope="document", display_label=label, native_anchor=native)
+            if profile.strategy is not None and kind == ContentKind.TABLE and not readable(text, profile):
+                table_gaps.update(loc.page_no for loc in locators)
             regions.append(ExtractedRegion(native, (node,), 1.0))
             if kind == ContentKind.FIGURE:
                 image = item.get_image(document)
@@ -300,16 +384,31 @@ class DoclingParsingAdapter:
                         require(image.width * image.height <= self.max_pixels, "Docling 图像超过像素预算")
                         assets.append(image_asset(image, source, run, profile, figure=node, locator=locators[0],
                                                  provenance=provenance, writer=self.writer))
-                        transcribed = await transcribe_nodes(image, source, run, profile, figure=node,
-                            transcriber=self.transcriber, max_nodes=profile.max_objects - len(regions) - len(assets))
-                        regions.extend(ExtractedRegion(text_node.native_ref,(text_node,),1.0) for text_node in transcribed)
+                        box = locators[0].bbox
+                        is_page_image = box is not None and (box[2] - box[0]) * (box[3] - box[1]) >= 0.9
+                        if not ((profile.strategy is not None and is_page_image)
+                                or is_office_separator(image, item, mime, is_page_image=is_page_image)):
+                            transcribed = await transcribe_nodes(image, source, run, profile, figure=node,
+                                transcriber=self.transcriber, max_nodes=profile.max_objects - len(regions) - len(assets))
+                            if transcribed.image_input_unsupported:
+                                regions[-1] = ExtractedRegion(native, (node,), 0.0)
+                            regions.extend(ExtractedRegion(text_node.native_ref, (text_node,), 1.0)
+                                           for text_node in transcribed.nodes)
                     finally:
                         image.close()
             await asyncio.sleep(0)
+        if mime == "application/pdf":
+            regions = restore_pdf_word_spacing(raw, regions)
         covered_pages = {locator.page_no for region in regions for node in region.nodes
                          if node.kind not in {ContentKind.HEADER, ContentKind.FOOTER} for locator in node.locators}
+        if profile.strategy is not None:
+            covered_pages = {loc.page_no for region in regions for node in region.nodes
+                if node.kind not in {ContentKind.HEADER, ContentKind.FOOTER, ContentKind.FIGURE}
+                and node.provenance.kind == ProvenanceKind.NATIVE
+                and readable(node.text, profile) for loc in node.locators}
         for number, page in sorted(pages.items()):
-            if number in covered_pages:
+            complex_layout = number in table_gaps
+            if number in covered_pages and not (profile.strategy == "VISUAL" and complex_layout):
                 continue
             # 不能忽略扫描页或空白页；至少保留可定位的原始页面图像。
             page_image = getattr(getattr(page, "image", None), "pil_image", None)
@@ -322,12 +421,14 @@ class DoclingParsingAdapter:
                 locator = Locator(number, (0., 0., 1., 1.))
                 page_node = ContentNode(key, ContentKind.PAGE, "", (locator,), provenance,
                     native, len(entries) + number, numbering_scope="document", native_anchor=native)
-                regions.append(ExtractedRegion(native, (page_node,), 1.0))
                 assets.append(image_asset(image, source, run, profile, figure=page_node,
                     locator=locator, provenance=provenance, writer=self.writer))
                 transcribed = await transcribe_nodes(image, source, run, profile, figure=page_node,
-                    transcriber=self.transcriber, max_nodes=profile.max_objects-len(regions)-len(assets))
-                regions.extend(ExtractedRegion(node.native_ref, (node,), 1.0) for node in transcribed)
+                    transcriber=self.transcriber, max_nodes=profile.max_objects-len(regions)-len(assets)-1,
+                    complex_layout=complex_layout)
+                coverage = 1.0 if profile.strategy is None or transcribed.nodes and not transcribed.image_input_unsupported else 0.0
+                regions.append(ExtractedRegion(native, (page_node,), coverage))
+                regions.extend(ExtractedRegion(node.native_ref, (node,), 1.0) for node in transcribed.nodes)
             finally:
                 image.close()
         require(bool(regions), "文档没有可定位内容")

@@ -31,7 +31,7 @@
         const active = KBotMediaApi.isActiveModel(row);
         const disabled = active ? "" : " disabled";
         const status = active ? "已启用" : row.status === "ARCHIVED" ? "已归档" : "草稿";
-        const label = `${row.display_name || row.served_model_name || row.model_id}（${status}）`;
+        const label = `${row.display_name || row.provider_model_name || row.model_id}（${status}）`;
         return `<option value="${escapeHtml(row.model_id)}"${selected}${disabled}>${escapeHtml(label)}</option>`;
       }),
     );

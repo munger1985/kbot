@@ -17,6 +17,7 @@ from aiops_agent.application.alert_query import (
     AlertQueryParameters, TERMINAL_SIGNAL_STATUSES, signal_status_label,
 )
 from aiops_agent.contracts.knowledge import KnowledgeSearchRequest
+from .knowledge_evidence import coverage_gap_code, coverage_note, coverage_summary
 from platform_core.contracts.aiops import (
     AIOpsCapability,
     AgentKnowledgePolicy,
@@ -33,6 +34,7 @@ class CapabilityResult:
     markdown: str
     gap_code: str | None = None
     evidence: tuple[dict[str, Any], ...] = ()
+    knowledge_coverage: tuple[dict[str, Any], ...] = ()
 
 
 
@@ -158,7 +160,7 @@ class KnowledgeQuestionAdapter:
             try:
                 if self._child is None:
                     raise ValueError("知识子执行尚未装配")
-                markdown, evidence = await self._child.answer(context=auth,
+                markdown, evidence, coverage = await self._child.answer(context=auth,
                     turn_id=UUID(str(runtime["turn_id"])), agent_id=UUID(str(runtime["agent_id"])),
                     agent_version_id=UUID(str(runtime["agent_version_id"])),
                     target_id=targets[0] if len(targets) == 1 else None,
@@ -166,7 +168,8 @@ class KnowledgeQuestionAdapter:
                         knowledge_base_ids=policy.knowledge_base_ids,
                         tag_ids=tuple(str(item) for item in policy.tag_ids), source_kinds=policy.source_kinds,
                         max_results=policy.maximum_references, max_security_level=policy.max_security_level))
-                return CapabilityResult(capability, True, markdown, evidence=evidence)
+                return CapabilityResult(capability, True, markdown, coverage_gap_code(coverage),
+                    evidence=evidence, knowledge_coverage=(coverage,))
             except Exception:
                 return CapabilityResult(capability, False, "知识子执行暂时不可用，未生成无来源回答。",
                     "OPERATIONS_KNOWLEDGE_UNAVAILABLE")
@@ -414,6 +417,7 @@ class RuntimeQueryAdapter:
             runtime.get("knowledge_policy") or {}
         )
         case_evidence = []
+        case_coverage = []
         if (
             self._knowledge is not None
             and self._caller
@@ -445,6 +449,12 @@ class RuntimeQueryAdapter:
                         lines.append("- 当前知识授权或资料范围已变化，请重新查询历史案例目录。")
                         continue
                     lines.extend(str(warning) for warning in result.get("warnings", ()))
+                    if not catalog_mode:
+                        coverage = coverage_summary(result)
+                        case_coverage.append(coverage)
+                        case_gap = case_gap or coverage_gap_code(coverage)
+                        if note := coverage_note(coverage):
+                            lines.append(f"- {note}")
                     for item in result.get("results", ()):
                         asset_version_id = str(item.get("asset_version_id") or "")
                         if not asset_version_id or asset_version_id in seen_cases:
@@ -496,7 +506,7 @@ class RuntimeQueryAdapter:
             case_gap = "DIAGNOSIS_CASE_POLICY_DISABLED"
         if case_gap:
             lines.append("- 历史案例查询未完成，请检查当前知识授权或稍后重试；这不表示没有已发布案例。")
-        elif not case_count:
+        elif not case_count and catalog_mode:
             lines.append("- 当前范围内没有符合条件的已发布历史诊断案例。")
         return CapabilityResult(
             AIOpsCapability.REPORT_CASE_QUERY,
@@ -504,6 +514,7 @@ class RuntimeQueryAdapter:
             "\n".join(lines),
             case_gap,
             evidence=tuple(case_evidence),
+            knowledge_coverage=tuple(case_coverage),
         )
 
 

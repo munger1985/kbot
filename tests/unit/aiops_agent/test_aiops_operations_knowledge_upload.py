@@ -1,4 +1,4 @@
-"""运维资料上传的多文件合同回归，不连接数据库或外部摄取服务。"""
+"""独立文件上传及单文件持久化合同回归，不连接数据库。"""
 
 import hashlib
 import json
@@ -13,7 +13,7 @@ from aiops_agent.api import operations_knowledge as api
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.contracts.knowledge import ManualUploadMetadata
-from aiops_agent.entities import OperationsKnowledgeAssetEntity
+from aiops_agent.entities import OperationsKnowledgeAssetEntity, OperationsKnowledgeIndexEntity
 from platform_core.identity import uuid7
 
 
@@ -48,7 +48,7 @@ def upload_documents():
 class OperationsKnowledgeMultipartTest(unittest.TestCase):
     def setUp(self):
         self.service = SimpleNamespace(ingest_upload=AsyncMock(return_value={
-            "grouping_mode": "SINGLE_ASSET", "items": [],
+            "grouping_mode": "EACH_FILE", "items": [],
         }))
         self.context = SimpleNamespace(request_id="multi-file-upload-test")
         self.domain_id = 42 if ORACLE else uuid7()
@@ -80,7 +80,7 @@ class OperationsKnowledgeMultipartTest(unittest.TestCase):
         ]
         self.fields = {
             "knowledge_base_id": str(uuid7()),
-            "grouping_mode": "SINGLE_ASSET",
+            "grouping_mode": "EACH_FILE",
             "metadata": json.dumps({"display_name": "  数据库运维资料  ", "security_level": 2}),
             "files": json.dumps(self.declarations),
         }
@@ -96,24 +96,17 @@ class OperationsKnowledgeMultipartTest(unittest.TestCase):
             headers={"Idempotency-Key": "multi-file-upload-test"},
         )
 
-    def test_multi_file_request_uses_only_asset_metadata(self):
+    def test_multi_file_request_forwards_independent_files(self):
         response = self.post_upload()
         self.assertEqual(202, response.status_code, response.text)
         forwarded = self.service.ingest_upload.await_args.kwargs
-        self.assertEqual("SINGLE_ASSET", forwarded["grouping_mode"])
+        self.assertEqual("EACH_FILE", forwarded["grouping_mode"])
         self.assertEqual("数据库运维资料", forwarded["metadata"].display_name)
         self.assertEqual(self.domain_id, forwarded["domain_id"])
-        self.assertNotIn("bundle_title", forwarded)
-        self.assertEqual(
-            [
-                ("manual.md", 0, "CONTENT", True, b"# Manual"),
-                ("appendix.txt", 1, "SUPPLEMENT", False, b"Appendix"),
-            ],
-            [
-                (doc["file_name"], doc["ordinal"], doc["role"], doc["required_flag"], doc["body"])
-                for doc in forwarded["documents"]
-            ],
-        )
+        self.assertEqual([("manual.md", b"# Manual"), ("appendix.txt", b"Appendix")],
+                         [(doc["file_name"], doc["body"]) for doc in forwarded["documents"]])
+        self.assertTrue(all(not {"ordinal", "role", "required_flag"} & doc.keys()
+                            for doc in forwarded["documents"]))
 
     def test_each_file_mode_remains_supported(self):
         self.fields["grouping_mode"] = "EACH_FILE"
@@ -122,7 +115,7 @@ class OperationsKnowledgeMultipartTest(unittest.TestCase):
         self.assertEqual("EACH_FILE", self.service.ingest_upload.await_args.kwargs["grouping_mode"])
 
     def test_obsolete_and_unknown_grouping_modes_are_rejected(self):
-        for mode in ("SINGLE_BUNDLE", "UNKNOWN"):
+        for mode in ("SINGLE_ASSET", "SINGLE_BUNDLE", "UNKNOWN"):
             with self.subTest(mode=mode):
                 self.fields["grouping_mode"] = mode
                 response = self.post_upload()
@@ -130,16 +123,7 @@ class OperationsKnowledgeMultipartTest(unittest.TestCase):
                 self.assertEqual("AIOPS_KNOWLEDGE_UPLOAD_INVALID", response.json()["detail"]["code"])
         self.service.ingest_upload.assert_not_awaited()
 
-    def test_multi_file_asset_requires_content(self):
-        for declaration in self.declarations:
-            declaration["role"] = "SUPPLEMENT"
-        self.fields["files"] = json.dumps(self.declarations)
-        response = self.post_upload()
-        self.assertEqual(422, response.status_code, response.text)
-        self.assertIn("至少需要一个正文文件", response.json()["detail"]["message"])
-        self.service.ingest_upload.assert_not_awaited()
-
-    def test_multi_file_asset_requires_metadata_title(self):
+    def test_upload_requires_metadata_title(self):
         self.fields["metadata"] = json.dumps({"security_level": 2})
         response = self.post_upload()
         self.assertEqual(422, response.status_code, response.text)
@@ -174,7 +158,7 @@ class OperationsKnowledgeGroupingTest(unittest.IsolatedAsyncioTestCase):
             "domain_id": 42 if ORACLE else uuid7(),
             "knowledge_base_id": uuid7(),
             "context": SimpleNamespace(request_id="multi-file-upload-test"),
-            "grouping_mode": "SINGLE_ASSET",
+            "grouping_mode": "EACH_FILE",
             "documents": upload_documents(),
             "metadata": ManualUploadMetadata(display_name="数据库运维资料"),
             "idempotency_key": "multi-file-upload-test",
@@ -184,35 +168,10 @@ class OperationsKnowledgeGroupingTest(unittest.IsolatedAsyncioTestCase):
         for document in self.arguments["documents"]:
             document["content_sha256"] = hashlib.sha256(document["body"]).hexdigest()
 
-    async def test_group_registers_one_asset_version_with_independent_documents(self):
-        asset_id, version_id = str(uuid7()), str(uuid7())
-        identities = [
-            {
-                "document_id": str(uuid7()),
-                "document_version_id": str(uuid7()),
-                "ingestion_job_id": str(uuid7()),
-            }
-            for _ in self.arguments["documents"]
-        ]
-        self.service._register_manual_documents = AsyncMock(return_value={
-            "asset": {"asset_id": asset_id},
-            "version": {"asset_version_id": version_id},
-            "documents": identities,
-            "replayed": False,
-        })
-        receipt = await self.service.ingest_upload(**self.arguments)
-        self.service._register_manual_documents.assert_awaited_once()
-        forwarded = self.service._register_manual_documents.await_args.kwargs
-        self.assertEqual("数据库运维资料", forwarded["title"])
-        self.assertIs(self.arguments["metadata"], forwarded["metadata"])
-        self.assertIs(self.arguments["documents"], forwarded["documents"])
-        self.assertEqual("multi-file-upload-test", forwarded["idempotency_key"])
-        self.assertEqual("SINGLE_ASSET", receipt["grouping_mode"])
-        self.assertEqual(["manual", "appendix"], [item["client_file_id"] for item in receipt["items"]])
-        self.assertEqual({asset_id}, {item["asset_id"] for item in receipt["items"]})
-        self.assertEqual({version_id}, {item["asset_version_id"] for item in receipt["items"]})
-        self.assertTrue(all(item["status"] == "ACCEPTED" for item in receipt["items"]))
-        self.assertTrue(all(item["documents"] == identities for item in receipt["items"]))
+    def test_one_file_mapping_per_asset_version_in_schema(self):
+        table = OperationsKnowledgeIndexEntity.__table__
+        self.assertEqual(["asset_version_id"], [column.key for column in table.primary_key])
+        self.assertFalse(table.c.document_version_id.nullable)
 
     async def test_each_file_creates_independent_assets(self):
         asset_ids = [str(uuid7()), str(uuid7())]
@@ -230,20 +189,21 @@ class OperationsKnowledgeGroupingTest(unittest.IsolatedAsyncioTestCase):
             [call["idempotency_key"] for call in calls],
         )
 
-    async def test_rejected_group_does_not_report_partial_acceptance(self):
-        self.service._register_manual_documents = AsyncMock(side_effect=AIOpsApplicationError(
-            code="AIOPS_KNOWLEDGE_UPLOAD_INVALID", message="资料登记失败", status_code=422,
-        ))
+    async def test_failed_file_does_not_block_independent_file(self):
+        self.service.ingest_manual = AsyncMock(side_effect=[
+            AIOpsApplicationError(code="AIOPS_KNOWLEDGE_UPLOAD_INVALID", message="登记失败", status_code=422),
+            {"asset": {"asset_id": str(uuid7())}, "version": {"asset_version_id": str(uuid7())}},
+        ])
         receipt = await self.service.ingest_upload(**self.arguments)
-        self.assertEqual(["REJECTED", "REJECTED"], [item["status"] for item in receipt["items"]])
+        self.assertEqual(["REJECTED", "ACCEPTED"], [item["status"] for item in receipt["items"]])
 
-    async def test_application_rejects_obsolete_grouping_mode(self):
-        self.service._register_manual_documents = AsyncMock()
-        self.arguments["grouping_mode"] = "SINGLE_BUNDLE"
+    async def test_application_rejects_group_creation(self):
+        self.service.ingest_manual = AsyncMock()
+        self.arguments["grouping_mode"] = "SINGLE_ASSET"
         with self.assertRaises(AIOpsApplicationError) as raised:
             await self.service.ingest_upload(**self.arguments)
         self.assertEqual(422, raised.exception.status_code)
-        self.service._register_manual_documents.assert_not_awaited()
+        self.service.ingest_manual.assert_not_awaited()
 
 
 if __name__ == "__main__":

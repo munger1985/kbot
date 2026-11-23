@@ -170,8 +170,8 @@ def create_public_auth_middleware(
             if alternate_context is not None:
                 domain_id = alternate_context.domain_id
                 user_id = alternate_context.asserted_user_id
-                platform_entry = str(alternate_context.entry_kind) == "PLATFORM"
-                if not user_id or (not platform_entry and not domain_id):
+                root_entry = str(alternate_context.entry_kind) in {"PLATFORM", "WORKSPACE"}
+                if not user_id or (not root_entry and not domain_id):
                     raise PortalApiKeyError(
                         "INVALID_IDENTITY_CONTEXT",
                         "备用认证没有提供完整的平台或业务身份上下文",
@@ -304,6 +304,8 @@ def create_public_auth_middleware(
             elif exc.code == "APP_API_KEY_EXPIRED":
                 status_code = 401
             elif exc.code.startswith("APP_API_KEY_"):
+                status_code = 403
+            elif exc.code == "WORKSPACE_SCOPE_DENIED":
                 status_code = 403
             else:
                 status_code = 401 if exc.code in {

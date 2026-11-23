@@ -1,4 +1,4 @@
-"""正式摄取队列驱动；不自动审核或发布，取消后不继续写入。"""
+"""正式摄取队列驱动；不自动审核，首次索引成功后按库审批自动发布。"""
 
 import asyncio
 from loguru import logger
@@ -13,6 +13,29 @@ class KnowledgeBusinessWorker:
 
     def stop(self):
         self.stopped.set()
+
+    async def recover_ready_rebuilds(self):
+        """恢复进程启动前已交付、但尚未切换的批次。"""
+        after = None
+        while not self.stopped.is_set():
+            async with self.uow_factory() as uow:
+                after, batches = await uow.knowledge_queue.rebuild_recovery_page(after)
+            for scope, library_id in batches:
+                if self.stopped.is_set():
+                    return
+                try:
+                    async with self.uow_factory() as uow:
+                        library = uow.library(scope)
+                        row = await library.get(library_id, lock=True)
+                        if row is not None:
+                            await library.complete_rebuild(row, publish=uow.knowledge_retrieval.publish,
+                                                           now=self.pipeline.ingestion.clock())
+                        await uow.commit()
+                except Exception as exc:
+                    code = exc.code.value if isinstance(exc, AlgorithmError) else "KNOWLEDGE_PIPELINE_FAILED"
+                    logger.warning("恢复索引批次失败：library_id={} code={}", library_id, code)
+            if after is None:
+                return
 
     async def process_once(self):
         async with self.uow_factory() as uow:
@@ -29,7 +52,8 @@ class KnowledgeBusinessWorker:
             raise
         except Exception as exc:
             code = exc.code.value if isinstance(exc, AlgorithmError) else "KNOWLEDGE_PIPELINE_FAILED"
-            logger.warning("知识流水线失败：job_id={} code={}", job_id, code)
+            stage = exc.stage if isinstance(exc, AlgorithmError) else ("index" if outbox_id else "parse")
+            logger.warning("知识流水线失败：job_id={} code={} stage={}", job_id, code, stage)
             async with self.uow_factory() as uow:
                 await uow.knowledge_queue.finish(scope, job_id, worker_id=self.worker_id,
                     now=utcnow(), error_code=code, outbox_id=outbox_id)
@@ -42,6 +66,7 @@ class KnowledgeBusinessWorker:
         return True
 
     async def run_forever(self):
+        await self.recover_ready_rebuilds()
         while not self.stopped.is_set():
             handled = await self.process_once()
             if not handled:

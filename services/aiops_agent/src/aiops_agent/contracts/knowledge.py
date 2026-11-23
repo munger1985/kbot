@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from platform_core.contracts.aiops.knowledge_base import KnowledgeBaseWrite as KnowledgeBaseWrite
 
 from .case_knowledge import CaseActionEffect, CaseInvestigationStep, CaseKnowledgeManifest
 
@@ -14,13 +15,6 @@ class KnowledgeScopeInput(BaseModel):
     kind: str = Field(min_length=1, max_length=64)
     value: str = Field(min_length=1, max_length=512)
 
-
-class KnowledgeBaseWrite(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    display_name: str = Field(min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=1000)
-    models: dict[str, UUID]
-    expected_row_version: int | None = Field(default=None, ge=1)
 
 
 class KnowledgeBaseStatusCommand(BaseModel):
@@ -274,3 +268,7 @@ class KnowledgeReviewCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_row_version: int = Field(ge=1)
     comment: str | None = Field(default=None, max_length=2000)
+
+
+class ManualKnowledgeApproveCommand(KnowledgeReviewCommand):
+    parse_strategy: Literal["TEXT", "AUTO", "VISUAL"]

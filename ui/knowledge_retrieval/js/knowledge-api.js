@@ -108,7 +108,10 @@
     if (!response.ok) {
       const payload = await decode(response);
       if (response.status === 401) redirectIfUnauthorized();
-      throw new Error(errorMessage(payload, response.status));
+      const error = new Error(errorMessage(payload, response.status));
+      error.status = response.status;
+      error.code = payload?.code || payload?.detail?.code;
+      throw error;
     }
     const blob = await response.blob();
     assertEpoch(epoch);

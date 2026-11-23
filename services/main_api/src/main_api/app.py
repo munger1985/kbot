@@ -39,6 +39,7 @@ from main_api.api import (
 )
 from main_api.config import get_main_api_settings
 from main_api.api.output_authority import OUTPUT_AUTHORITY_PATH, install_output_authority_boundary
+from main_api.api.system_models import router as system_models_router
 from main_api.application import (
     AppApiKeyError,
     UserAuthenticationError,
@@ -220,6 +221,18 @@ def create_main_api_app(
             await service.validate_session(claims=claims)
         except UserAuthenticationError as exc:
             raise PortalApiKeyError(exc.code, str(exc)) from exc
+        if claims.entry_kind == "WORKSPACE" and (
+            request.method, request.url.path
+        ) not in {
+            ("GET", "/api/v1/auth/entries"),
+            ("POST", "/api/v1/auth/exchange"),
+            ("POST", "/api/v1/auth/password"),
+            ("POST", "/api/v1/auth/refresh"),
+            ("POST", "/api/v1/auth/knowledge-first-domain"),
+        }:
+            raise PortalApiKeyError(
+                "WORKSPACE_SCOPE_DENIED", "工作台会话仅用于发现入口或进入已授权的应用",
+            )
         if claims.must_change_password and request.url.path not in {
             "/api/v1/auth/me",
             "/api/v1/auth/password",
@@ -250,6 +263,7 @@ def create_main_api_app(
         "/docs",
         "/redoc",
         "/openapi.json",
+        "/api/v1/auth/login",
         "/api/v1/auth/platform/login",
         "/api/v1/auth/apps",
         "/api/v1/apps/aiops/auth/login",
@@ -304,6 +318,7 @@ def create_main_api_app(
     app.include_router(aiops_app_router)
     app.include_router(media_studio_app_router)
     app.include_router(model_catalog_router)
+    app.include_router(system_models_router)
     app.include_router(notification_router)
     from main_api.api.notification_delivery import router as notification_delivery_router
     app.include_router(notification_delivery_router)
@@ -361,8 +376,12 @@ def create_main_api_app(
     @app.exception_handler(KnowledgeComputationClientError)
     async def knowledge_business_error(request: Request, exc: KnowledgeComputationClientError):
         status = exc.status_code if 400 <= exc.status_code <= 599 else 502
+        detail = {
+            (503, "RESOURCE_LIMIT"): "知识服务读取索引时达到资源上限，请稍后重试或联系管理员。",
+            (504, "TIMEOUT"): "读取已发布索引超时，请重试。",
+        }.get((status, exc.code), "请检查权限、处理状态或服务配置")
         return _problem_response(request=request, status_code=status, code=exc.code,
-            title="知识请求未完成", detail="请检查权限、处理状态或服务配置")
+            title="知识请求未完成", detail=detail)
 
     @app.exception_handler(KnowledgeRetrievalAppClientError)
     async def knowledge_retrieval_app_error_handler(

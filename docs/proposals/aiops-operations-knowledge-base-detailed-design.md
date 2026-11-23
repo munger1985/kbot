@@ -1,5 +1,7 @@
 # AIOps 运维知识详细设计
 
+> **2026-11-20 已确认的运维资料解析规则**：以[按库绑定模型与三档文档解析](../product/knowledge-library-parse-strategies.md)为准。运维知识库在创建／编辑时绑定本库 OCR、VLM，问号右抽屉说明原生解析、自动判断、视觉增强；上传只接收，人工审批时选择当前库允许的档位并冻结模型规格。标签模型、索引 Embedding 和独立诊断案例流程不属于这三档。下文旧公共 Collection 或 App 级共用解析模型的约定不再适用。
+
 ## 2026-11-05 知识基础能力目标（优先于旧技术方案）
 
 下一版底层边界统一采用[基础能力设计](../architecture/knowledge-answering-capability.md)、[算法详细设计](app-owned-knowledge-algorithm-design.md)、[接入详细设计](app-owned-knowledge-integration-detailed-design.md)与[实施计划](../operations/app-owned-knowledge-implementation-plan.md)，尚未实施。
@@ -901,7 +903,7 @@ Collection ID、Bundle ID、Embedding 模型和 KC 行版本放入管理员诊�
 
 ### 14.2 手册上传与审核
 
-上传采用单文件/Bundle 与最小元数据表单。提交后进入处理详情抽屉，展示：
+上传支持选择一个或多个独立文件，不合并为资料组。逐文件生成接收回执，处理详情展示：
 
 - 原始文件和版本；
 - AI 建议标签、置信度和逐字原文证据；

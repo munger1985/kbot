@@ -1,5 +1,6 @@
 import oci
 import asyncio
+import re
 from dataclasses import dataclass
 from typing import Any
 from pydantic import Field
@@ -47,10 +48,10 @@ _GROK_PROFILE = OCIChatProfile(
     supported_sampling_params=_GENERIC_SAMPLING_PARAMS,
     output_token_cap=20000,
 )
-_OPENAI_GPT5_PROFILE = OCIChatProfile(
+_OPENAI_REASONING_PROFILE = OCIChatProfile(
     request_format="generic",
     output_token_field="max_completion_tokens",
-    # OCI 上的 GPT-5 推理模型不应继承通用采样默认值。
+    # OCI 上的 GPT-5 / GPT-6 推理模型不应继承通用采样默认值。
     supported_sampling_params=frozenset(),
 )
 
@@ -61,8 +62,8 @@ def resolve_oci_chat_profile(model_name: str) -> OCIChatProfile:
     normalized = model_name.strip().lower()
     if "cohere" in normalized:
         return _COHERE_PROFILE
-    if normalized.startswith("openai.gpt-5"):
-        return _OPENAI_GPT5_PROFILE
+    if re.match(r"^openai\.gpt-[56](?:[.-]|$)", normalized):
+        return _OPENAI_REASONING_PROFILE
     if "llama" in normalized:
         return _LLAMA_PROFILE
     if "grok" in normalized:

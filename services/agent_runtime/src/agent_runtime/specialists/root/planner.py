@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.domain.model_bindings import snapshot_model_id
 from agent_runtime.language import (
     detect_unicode_language,
     language_instruction,
@@ -172,7 +172,7 @@ class RootAgentPlanner:
         if not enabled_routes:
             return self.decide(agent_snapshot=agent_snapshot)
         model_name = str(
-            agent_model_name(agent_snapshot, "router_llm") or ""
+            snapshot_model_id(agent_snapshot, "router_llm") or ""
         ).strip()
         if (
             not model_name
@@ -193,7 +193,7 @@ class RootAgentPlanner:
         )
         context = conversation_context or {}
         response = await self._model_client.get_llm_json(
-            served_model_name=model_name,
+            model_id=model_name,
             prompt=[
                 {"role": "system", "content": prompt.content},
                 {
@@ -252,7 +252,15 @@ class RootAgentPlanner:
                 1.0,
             ),
         )
-        if route_value == "CLARIFY" and document_fallback:
+        if (
+            route_value == "CONVERSATION"
+            and "document" in capabilities
+            and agent_snapshot.get("owner_app_id") == "knowledge_retrieval"
+            and agent_snapshot.get("knowledge_scope_hash")
+        ):
+            route_value = "DOCUMENT"
+            response["reason"] = "知识问答已绑定授权资料，通用解释先检索资料"
+        elif route_value == "CLARIFY" and document_fallback:
             route_value = "DOCUMENT"
             response["reason"] = (
                 "托管资源 Agent 对不明确的企业知识问题优先检索文档"

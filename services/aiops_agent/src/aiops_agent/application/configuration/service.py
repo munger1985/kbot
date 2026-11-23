@@ -8,12 +8,14 @@ from .diagnostic_source_service import DiagnosticSourceConfigurationMixin
 from .policy_service import PolicyConfigurationMixin
 from .target_service import TargetConfigurationMixin
 from .recovery_service import RecoveryConfigurationMixin
+from .data_protection_service import DataProtectionConfigurationMixin
 from .business_system_service import BusinessSystemConfigurationMixin
 
 
 class AIOpsConfigurationService(
     BusinessSystemConfigurationMixin,
     RecoveryConfigurationMixin,
+    DataProtectionConfigurationMixin,
     TargetConfigurationMixin,
     DiagnosticSourceConfigurationMixin,
     PolicyConfigurationMixin,

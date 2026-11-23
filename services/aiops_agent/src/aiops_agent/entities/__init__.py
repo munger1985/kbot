@@ -47,6 +47,7 @@ from .runtime import (
 )
 from .target import PolicyEntity, TargetBindingEntity, TargetEntity, TargetFactEntity
 from .recovery import RecoveryDrillEntity, RecoveryProfileEntity
+from .data_protection import ProtectionPlanEntity, ProtectionRunEntity
 from .business_system import (
     BusinessSystemDraftChangeEntity,
     BusinessSystemDraftEntity,

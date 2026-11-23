@@ -1,33 +1,40 @@
 """从已发布清单构造有界检索视图；对象读取与模型操作不持有数据库事务。"""
 
-from dataclasses import replace
 from hashlib import sha256
 import json
+from types import MappingProxyType
 
 from knowledge_algorithms.contracts.content import ContentKind, VisualAsset
-from knowledge_algorithms.contracts.errors import require
-from knowledge_algorithms.contracts.identity import EvidenceKey, SourceSpan, fingerprint
+from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
+from knowledge_algorithms.contracts.identity import EvidenceKey, SourceSpan, canonical_json, fingerprint
 from knowledge_algorithms.contracts.retrieval import EvidenceItem
-from knowledge_algorithms.contracts.wire import decode, encode
-from knowledge_algorithms.projections.contracts import AllowedContent, ProjectionBatch, ProjectionProfile
+from knowledge_algorithms.contracts.wire import decode
+from knowledge_algorithms.projections.contracts import AllowedContent, ProjectedUnit, ProjectionProfile
 from knowledge_algorithms.references.relations import ResolvedRelation
 from knowledge_algorithms.references.citations import CitationTarget, document_citation_edges
 from knowledge_algorithms.retrieval.exact import ExactIndex, IndexedUnit
+from knowledge_algorithms.retrieval.published_batches import PublishedBatch, PublishedVectorBatches
+from knowledge_algorithms.retrieval.published_metadata import PublishedMetadata
 from knowledge_algorithms.retrieval.selection import PayloadCost
 from ..domain.knowledge_ingestion import BINDING
 
 
 async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
     items, indexed, contents = {}, [], {}
-    assets = {}
-    consumed = 0
-    expires = bundle["scope"]["expires_at"]
+    assets, text_payloads = {}, {}
+    consumed = text_chars = 0
+    vectors = PublishedVectorBatches(store=store, max_bytes=limits.max_object_bytes,
+                                     max_elements=limits.max_vector_elements)
+
+    def account(count):
+        nonlocal consumed
+        consumed += count
+        if consumed > limits.max_total_object_bytes:
+            raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "已发布索引元数据超过读取预算", stage="index_metadata")
 
     async def read_json(handle, max_bytes=None):
-        nonlocal consumed
         raw = await store.read(handle, max_bytes=min(max_bytes or limits.max_object_bytes, limits.max_object_bytes))
-        consumed += len(raw)
-        require(consumed <= limits.max_total_object_bytes, "读取已发布索引超过总字节预算")
+        account(len(raw))
         return json.loads(raw)
 
     for entry in bundle["assets"]:
@@ -37,7 +44,7 @@ async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
         require(identity not in assets, "同一逻辑图像资产被重复登记")
         assets[identity] = (descriptor, entry["handle"])
 
-    async def evidence(key, source_keys, kind, text, locators, provenance, view_ref, image_handle, spans=(), figure_key=None):
+    def evidence(key, source_keys, kind, text, locators, provenance, view_ref, image_handle, spans=(), figure_key=None):
         raw = text.encode("utf-8")
         if image_handle is not None:
             identity = (image_handle, figure_key or key)
@@ -49,11 +56,12 @@ async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
             # 这里只保存允许视图，不从原文副本提取被策略删除的文字。
             if not raw:
                 return None
-            stored = await store.put_bytes(raw, max_bytes=limits.max_object_bytes)
-            handle, digest, byte_count, mime = stored.handle_ref, sha256(raw).hexdigest(), len(raw), "text/plain"
+            digest, byte_count, mime = sha256(raw).hexdigest(), len(raw), "text/plain"
+            handle = "parsed-" + digest
+            text_payloads[handle] = text
             cost = PayloadCost(tokenizer.count(text), 0, byte_count)
         return EvidenceItem(key, tuple(dict.fromkeys(source_keys)), kind, locators, provenance,
-            view_ref, handle, digest, mime, byte_count, cost, expires, preview_handle=key.stable_key,
+            view_ref, handle, digest, mime, byte_count, cost, 1, preview_handle=key.stable_key,
             source_spans=spans)
 
     for record in bundle["versions"]:
@@ -67,14 +75,14 @@ async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
             BINDING.check_owner(content.key.owner_binding_ref)
             require(content.key not in contents, "允许视图对象重复")
             contents[content.key] = content
-            item = await evidence(content.key, (content.key,), content.kind, content.text, content.locators,
+            item = evidence(content.key, (content.key,), content.kind, content.text, content.locators,
                 content.provenance, manifest["view_ref"], content.content_handle)
             if item is not None:
                 items[item.key] = item
             if content.content_handle:
                 asset, _ = assets[(content.content_handle, content.key)]
                 require(asset.figure_key == content.key, "图像资产与允许节点不一致")
-                image_item = await evidence(asset.key, (content.key,), ContentKind.IMAGE, "", (asset.locator,),
+                image_item = evidence(asset.key, (content.key,), ContentKind.IMAGE, "", (asset.locator,),
                     asset.provenance, manifest["view_ref"], content.content_handle, figure_key=content.key)
                 items[image_item.key] = image_item
         generation = record["generation_manifest"]
@@ -84,13 +92,20 @@ async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
                 and generation["batch_digest"] == fingerprint([batches[str(i)]["hash"]
                     for i in range(1, len(batches) + 1)]), "发布投影清单摘要不一致")
         total = 0
+        spaces = {spec.space_id for spec in profile.representations}
         for sequence in range(1, len(batches) + 1):
             entry = batches[str(sequence)]
-            batch = decode(ProjectionBatch, await read_json(entry["ref"]))
-            require(batch.sequence == sequence and batch.projection_ref == record["projection_ref"]
-                    and batch.payload_hash == entry["hash"] == fingerprint(encode(batch.units))
-                    and len(batch.units) == entry["count"], "投影批次身份或摘要不一致")
-            for projected in batch.units:
+            batch = PublishedBatch(entry["ref"], record["projection_ref"], sequence, entry["hash"],
+                                   entry["count"], profile.max_representation_elements)
+            members = {}
+            for position, raw_unit in enumerate(await batch.read_units(store, limits.max_object_bytes)):
+                unit_spaces = [rep["space_id"] for rep in raw_unit["representations"]]
+                require(len(set(unit_spaces)) == len(unit_spaces) and set(unit_spaces) <= spaces
+                        and not set(unit_spaces).intersection(raw_unit.get("skipped_image_spaces") or ()),
+                        "投影出现重复、缺口重叠或未登记表示空间")
+                thin = {**raw_unit, "representations": []}
+                account(len(canonical_json(thin).encode("utf-8")))
+                projected = decode(ProjectedUnit, thin)
                 unit = projected.unit
                 require(unit.source_key in contents and unit.key.owner_binding_ref == BINDING.binding_ref
                         and unit.key.document_version_ref == record["version_id"]
@@ -98,13 +113,9 @@ async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
                         and unit.key.projection_ref == record["projection_ref"]
                         and unit.allowed_view_hash == record["allowed_view_hash"]
                         and unit.allowed_view_ref == manifest["view_ref"], "投影单元越出允许范围")
-                specifications = {spec.space_id: spec for spec in profile.representations}
-                for representation in projected.representations:
-                    require(representation.space_id in specifications, "投影出现未登记表示空间")
-                    representation.validate(specifications[representation.space_id], profile.max_representation_elements)
                 spans = tuple(SourceSpan(s.source_key.object_key, s.source_start, s.source_end) for s in unit.sources)
                 sources = (unit.source_key,) + tuple(s.source_key for s in unit.sources)
-                item = await evidence(unit.key, sources, unit.kind, unit.text, unit.locators,
+                item = evidence(unit.key, sources, unit.kind, unit.text, unit.locators,
                     unit.provenance, unit.allowed_view_ref, unit.content_handle, spans, figure_key=unit.source_key)
                 if item is not None:
                     require(unit.key not in items, "投影证据身份重复")
@@ -112,10 +123,22 @@ async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
                     attributes = tuple((field, record[field]) for field in
                                        ("title", "business_asset_ref", "created_at"))
                     image_hash = assets[(unit.content_handle, unit.source_key)][0].sha256 if unit.content_handle else None
-                    indexed.append(IndexedUnit(projected, attributes, image_hash))
+                    value = IndexedUnit(projected, attributes, image_hash)
+                    indexed.append(value)
+                    text_chars += len(unit.text) + len(unit.context)
+                    if text_chars > limits.max_text_chars:
+                        raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "已发布索引文本超过内存预算",
+                                             stage="index_metadata")
+                    for space in unit_spaces:
+                        members.setdefault(space, []).append((position, value))
                 total += 1
-                require(len(indexed) <= limits.max_units, "已发布单元超过有界精确索引预算")
-            require(len(items) <= limits.max_units * 4, "规范证据对象超过读取预算")
+                if len(indexed) > limits.max_units:
+                    raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "已发布单元超过有界精确索引预算",
+                                         stage="index_metadata")
+            raw_unit = None
+            vectors.add(batch, members)
+            if len(items) > limits.max_units * 4:
+                raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "规范证据对象超过读取预算", stage="index_metadata")
         require(total == generation["unit_count"], "发布单元总数不一致")
     relations = tuple(decode(ResolvedRelation, raw) for raw in bundle["relations"]
                       if raw.get("relation_type") in {"REFERS_TO", "CAPTION_OF", "HAS_ASSET", "PART_OF", "CITES_DOCUMENT"})
@@ -128,4 +151,8 @@ async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
     relations = tuple({edge.relation_key: edge for edge in relations + cross_edges}.values())
     index = ExactIndex(indexed, max_units=limits.max_units, max_text_chars=limits.max_text_chars,
                        max_vector_elements=limits.max_vector_elements)
-    return index, items, relations
+    # 计入展平元数据以外的分词统计与证据对象；向量不进入缓存。
+    estimated_bytes = (consumed + sum(len(terms) for terms in index.terms.values()) * 96
+                       + len(index.frequency) * 96 + len(items) * 384 + len(relations) * 384)
+    return PublishedMetadata(index, MappingProxyType(items), relations, vectors,
+                             MappingProxyType(text_payloads), estimated_bytes)

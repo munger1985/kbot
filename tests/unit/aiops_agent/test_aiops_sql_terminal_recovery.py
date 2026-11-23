@@ -84,7 +84,7 @@ def test_http_timeout_is_deadline_only_when_budget_really_expires(streaming, exp
     )
     prompt = "仅依据证据"
     kwargs = dict(purpose="diagnosis.test", model_snapshot={
-        "technical_name": "test", "served_model_name": "test", "model_id": str(uuid7()), "tenant_id": str(uuid7()),
+        "technical_name": "test", "provider_model_name": "test", "model_id": str(uuid7()), "tenant_id": str(uuid7()),
     }, prompt_ref={"content": prompt, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest()},
         input_payload={}, deadline=deadline, idempotency_key="test-deadline")
     async def invoke():

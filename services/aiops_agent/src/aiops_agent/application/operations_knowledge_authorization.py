@@ -30,7 +30,8 @@ class OperationsKnowledgeAuthorization:
             current = await _current_knowledge_authorization(uow=uow, domain_id=access.domain_id,
                 agent_id=agent_id, target_id=target_id, request=request)
             require(not isinstance(current, str), "Agent 知识策略、绑定或目标权限已撤销")
-            effective, base_ids = current
+            effective, base_ids, agent_version_id = current
+            require(str(agent_version_id) == ticket.get("agent_version_id"), "Agent 版本已切换，原查询委托不再有效")
             require(effective == request, "Agent 知识策略已改变，原查询委托不再有效")
             expected = {row["index_ref_id"]: row for row in ticket["snapshots"]}
             rows = await uow.operations_knowledge.list_published_candidates(
@@ -44,7 +45,8 @@ class OperationsKnowledgeAuthorization:
                 frozen = expected.get(str(index.index_ref_id))
                 if frozen is None:
                     continue
-                identity_matches = all(str(getattr(index, name)) == frozen[name] for name in (
+                identity_matches = str(version.asset_version_id) == frozen["asset_version_id"] and all(
+                    str(getattr(index, name)) == frozen[name] for name in (
                     "document_id", "document_version_id", "ingestion_job_id", "parse_run_id", "index_generation_id"))
                 if not identity_matches or not await _eligible_case(self.service, uow=uow,
                     domain_id=access.domain_id, agent_id=agent_id, asset=asset, version=version):
@@ -54,7 +56,8 @@ class OperationsKnowledgeAuthorization:
                     "asset_version_id": str(version.asset_version_id),
                     "profile": version.profile_json, "security_level": int(asset.security_level),
                     "version": int(version.row_version), "asset": int(asset.row_version)})
-        revision = fingerprint({"request": ticket["request"], "facts": sorted(facts, key=lambda row: row["index_ref_id"])})
+        revision = fingerprint({"request": ticket["request"], "agent_version_id": ticket["agent_version_id"],
+            "facts": sorted(facts, key=lambda row: row["index_ref_id"])})
         return KnowledgeGrant(revision, tuple(sorted(set(permitted), key=str)))
 
 async def validate_parent(uow, access, turn_id, agent_id, agent_version_id, *, lock=False):

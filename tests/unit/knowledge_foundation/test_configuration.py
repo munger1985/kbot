@@ -7,9 +7,17 @@ import unittest
 from platform_core.config import load_settings
 from knowledge_core.config import KnowledgeCoreSettings
 from knowledge_retrieval_app.config import KnowledgeRetrievalAppSettings
+from knowledge_retrieval_app.composition.knowledge_profiles import KnowledgeFoundationConfig
 
 
 class KnowledgeConfigurationTests(unittest.TestCase):
+    def test_parse_budget_does_not_change_default_index_profile(self):
+        baseline = KnowledgeFoundationConfig().profiles()[1]
+        parse, projection, _ = KnowledgeFoundationConfig(parse_timeout_seconds=230).profiles()
+        self.assertEqual(parse.timeout_seconds, 230)
+        self.assertEqual(projection, baseline)
+        self.assertEqual(projection.timeout_seconds, 180)
+
     def test_fixed_sections_are_loaded_by_their_owner_only(self):
         oracle = (Path(__file__).resolve().parents[3] / "database/oracle").is_dir()
         compute_name = "knowledge_core" if oracle else "ammolite_knowledge_core"

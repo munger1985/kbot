@@ -17,6 +17,7 @@ from main_api.application import (
     DomainValidationService,
 )
 from main_api.config import get_main_api_settings
+from main_api.application.user_auth import UserAuthService, UserTokenCodec
 from platform_clients.knowledge_computation import KnowledgeComputationClientError
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.security import (
@@ -449,7 +450,6 @@ class _FakeModelConfigClient:
     def _row(self, **values):
         return {
             "model_id": str(self.model_id),
-            "served_model_name": f"model-{self.category}",
             "display_name": f"模型 {self.category}",
             "provider_model_name": f"provider-model-{self.category}",
             "category": self.category,
@@ -483,7 +483,6 @@ class _FakeModelConfigClient:
         self.last_payload = payload
         self.last_context = auth_context
         return self._row(
-            served_model_name=payload["served_model_name"],
             display_name=payload["display_name"],
             provider_model_name=payload["provider_model_name"],
             status=payload["status"],
@@ -496,6 +495,7 @@ class _FakeModelConfigClient:
         return self._row(
             model_id=str(model_id),
             display_name=payload.get("display_name", f"模型 {self.category}"),
+            provider_model_name=payload.get("provider_model_name", f"provider-model-{self.category}"),
             row_version=2,
         )
 
@@ -1140,12 +1140,14 @@ class MainApiTest(unittest.TestCase):
         self.assertNotIn(
             "/api/v1/apps/knowledge-retrieval/agent-grants", paths
         )
+        self.assertIn("/api/v1/auth/login", paths)
         self.assertIn("/api/v1/auth/platform/login", paths)
         self.assertIn("/api/v1/auth/apps/{app_id}/login", paths)
         self.assertIn("/api/v1/auth/apps/{app_id}/domains", paths)
         self.assertIn("/api/v1/auth/me", paths)
         self.assertIn("/api/v1/auth/entries", paths)
         self.assertIn("/api/v1/auth/exchange", paths)
+        self.assertIn("/api/v1/auth/knowledge-first-domain", paths)
         self.assertIn("/api/v1/auth/refresh", paths)
         self.assertIn("/api/v1/platform/users", paths)
         self.assertIn("/api/v1/platform/apps/{app_id}/initial-admin", paths)
@@ -1224,37 +1226,55 @@ class MainApiTest(unittest.TestCase):
             "media_studio_portal", response.json()["domain_name"]
         )
 
-    def test_media_studio_model_management_routes_all_categories(self) -> None:
+    def _platform_client(self, models):
+        codec = UserTokenCodec(secret="t" * 32, issuer="test", ttl_seconds=3600)
+        service = UserAuthService(uow_factory=None, codec=codec)
+        service.validate_session = AsyncMock()
+        app = create_main_api_app(domain_validator=self.domain_service.is_active, enable_access_log=False)
+        app.state.user_auth_service = service
+        app.state.model_config_clients = models
+        app.state.access_control_service = self.app.state.access_control_service
+
+        def headers(entry_kind, app_id, domain_id):
+            token, _ = codec.issue(
+                user_id="portal-user-1", entry_kind=entry_kind, app_id=app_id, domain_id=domain_id,
+                must_change_password=False, password_version=1,
+            )
+            return {"Authorization": f"Bearer {token}"}
+
+        return TestClient(app), headers("PLATFORM", None, None), headers("BUSINESS", "media_studio", 100)
+
+    def test_platform_model_management_routes_all_categories(self) -> None:
         self.app.state.access_control_service.permissions = frozenset({
-            "media_studio:use",
-            "media_studio:model_manage",
+            "platform:model_manage",
         })
         clients = tuple(
             _FakeModelConfigClient(category)
             for category in (1, 2, 3, 5, 6, 8)
         )
-        self.app.state.model_config_clients = clients
+        client, headers, _ = self._platform_client(clients)
 
-        listed = self.client.get(
-            "/api/v1/apps/media-studio/models", headers=self._headers(),
+        listed = client.get(
+            "/api/v1/platform/models", headers=headers,
         )
         self.assertEqual(200, listed.status_code, listed.text)
         self.assertEqual([1, 2, 3, 5, 6, 8], [row["category"] for row in listed.json()])
-        self.assertTrue(all(client.last_context for client in clients))
+        self.assertTrue(all(model.last_context.domain_id is None for model in clients))
+        self.assertEqual("platform:model_manage", self.app.state.access_control_service.last_permission_code)
+        self.assertNotIn("/api/v1/apps/media-studio/models", client.get("/openapi.json").json()["paths"])
 
-        providers = self.client.get(
-            "/api/v1/apps/media-studio/models/provider-options",
-            headers=self._headers(),
+        providers = client.get(
+            "/api/v1/platform/models/provider-options",
+            headers=headers,
         )
         self.assertEqual(200, providers.status_code, providers.text)
         self.assertEqual(6, len(providers.json()))
 
         image = clients[-1]
-        created = self.client.post(
-            "/api/v1/apps/media-studio/models",
-            headers=self._headers(),
+        created = client.post(
+            "/api/v1/platform/models",
+            headers=headers,
             json={
-                "served_model_name": "image-model-test",
                 "display_name": "图片模型测试",
                 "provider_model_name": "provider-image-model",
                 "category": 8,
@@ -1272,47 +1292,49 @@ class MainApiTest(unittest.TestCase):
         self.assertNotIn("api_key", created.json())
 
         model_id = created.json()["model_id"]
-        updated = self.client.patch(
-            f"/api/v1/apps/media-studio/models/8/{model_id}",
-            headers=self._headers(),
-            json={"expected_row_version": 1, "display_name": "图片模型已更新"},
+        updated = client.patch(
+            f"/api/v1/platform/models/8/{model_id}",
+            headers=headers,
+            json={"expected_row_version": 1, "display_name": "图片模型已更新", "provider_model_name": "Vendor/New-Image"},
         )
         self.assertEqual(200, updated.status_code, updated.text)
         self.assertEqual("update", image.last_operation)
+        self.assertEqual("Vendor/New-Image", updated.json()["provider_model_name"])
+        self.assertEqual("Vendor/New-Image", image.last_payload["provider_model_name"])
 
-        activated = self.client.patch(
-            f"/api/v1/apps/media-studio/models/8/{model_id}/status",
-            headers=self._headers(),
+        activated = client.patch(
+            f"/api/v1/platform/models/8/{model_id}/status",
+            headers=headers,
             json={"expected_row_version": 1, "status": "ACTIVE"},
         )
         self.assertEqual(200, activated.status_code, activated.text)
         self.assertEqual("ACTIVE", activated.json()["status"])
 
-        references = self.client.get(
-            f"/api/v1/apps/media-studio/models/8/{model_id}/references",
-            headers=self._headers(),
+        references = client.get(
+            f"/api/v1/platform/models/8/{model_id}/references",
+            headers=headers,
         )
         self.assertEqual(200, references.status_code, references.text)
         self.assertEqual([], references.json()["references"])
 
-        archived = self.client.post(
-            f"/api/v1/apps/media-studio/models/8/{model_id}/archive",
-            headers=self._headers(),
+        archived = client.post(
+            f"/api/v1/platform/models/8/{model_id}/archive",
+            headers=headers,
             json={"expected_row_version": 1},
         )
         self.assertEqual(200, archived.status_code, archived.text)
         self.assertEqual("ARCHIVED", archived.json()["model"]["status"])
 
-        deleted = self.client.request(
+        deleted = client.request(
             "DELETE",
-            f"/api/v1/apps/media-studio/models/8/{model_id}",
-            headers=self._headers(),
+            f"/api/v1/platform/models/8/{model_id}",
+            headers=headers,
             json={"expected_row_version": 2},
         )
         self.assertEqual(204, deleted.status_code, deleted.text)
         self.assertEqual("delete", image.last_operation)
 
-    def test_media_studio_model_management_requires_dedicated_permission(self) -> None:
+    def test_platform_model_management_rejects_business_session_and_requires_platform_permission(self) -> None:
         self.app.state.access_control_service.permissions = frozenset({
             "media_studio:use",
             "media_studio:model_binding_manage",
@@ -1322,14 +1344,19 @@ class MainApiTest(unittest.TestCase):
             for category in (1, 2, 3, 5, 6, 8)
         )
 
-        response = self.client.get(
-            "/api/v1/apps/media-studio/models", headers=self._headers(),
-        )
-
+        client, headers, business_headers = self._platform_client(self.app.state.model_config_clients)
+        path = "/api/v1/platform/models"
+        unauthenticated = client.get(path)
+        self.assertEqual(401, unauthenticated.status_code)
+        response = client.get(path, headers=headers)
         self.assertEqual(403, response.status_code, response.text)
-        self.assertEqual(
-            "APP_PERMISSION_DENIED", response.json()["code"],
-        )
+        self.assertEqual("PLATFORM_PERMISSION_DENIED", response.json()["code"])
+
+        self.app.state.access_control_service.permissions |= {"platform:model_manage"}
+        response = client.get(path, headers=business_headers)
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual("PLATFORM_SESSION_REQUIRED", response.json()["code"])
+        self.assertTrue(all(model.last_context is None for model in self.app.state.model_config_clients))
 
         catalog = self.client.get(
             "/api/v1/apps/media-studio/model-catalog",
@@ -1609,11 +1636,22 @@ class MainApiTest(unittest.TestCase):
         preview = self.client.get(base + "/preview", headers=self._headers())
         self.assertEqual(200, preview.status_code, preview.text)
         self.assertEqual([{"page_no": 3}], preview.json()["locators"])
+        self.assertEqual(base + "/content?source_pdf=true", preview.json()["pdf_url"])
         content = self.client.get(base + "/content", headers=self._headers())
         self.assertEqual(b"%PDF-synthetic", content.content)
         kwargs = self.agent_runtime.open_knowledge_content.await_args.kwargs
         self.assertEqual(self.agent_runtime.run_id, kwargs["run_id"])
         self.assertEqual("a" * 64, kwargs["key"])
+        self.assertFalse(kwargs.get("source_pdf", False))
+        original = self.client.get(preview.json()["pdf_url"], headers=self._headers())
+        self.assertEqual(200, original.status_code)
+        self.assertEqual(b"%PDF-synthetic", original.content)
+        self.assertTrue(self.agent_runtime.open_knowledge_content.await_args.kwargs["source_pdf"])
+        self.agent_runtime.open_knowledge_content.side_effect = KnowledgeComputationClientError(
+            502, "AGENT_EVIDENCE_SERVICE_AUTH_FAILED")
+        unavailable = self.client.get(base + "/preview", headers=self._headers())
+        self.assertEqual(502, unavailable.status_code)
+        self.assertEqual("AGENT_EVIDENCE_SERVICE_AUTH_FAILED", unavailable.json()["code"])
 
     def test_document_reference_preview_rejects_unknown_label(self) -> None:
         response = self.client.get(

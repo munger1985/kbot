@@ -234,17 +234,20 @@ async def create_run(
 
 
 @router.get("/{run_id}/knowledge/content/{key}")
-async def knowledge_content(run_id: UUID, key: str, request: Request):
+async def knowledge_content(run_id: UUID, key: str, request: Request, source_pdf: bool = False):
     from fastapi.responses import StreamingResponse
     from starlette.background import BackgroundTask
+    from platform_clients.knowledge_computation import KnowledgeComputationClientError
     domain_id, actor_id, _, _ = _identity(request)
     context = request.state.auth_context
     try:
         download = await _service(request).open_knowledge_content(run_id=run_id, key=key,
             domain_id=domain_id,
-            actor_id=actor_id, auth_context=context)
+            actor_id=actor_id, auth_context=context, **({"source_pdf": True} if source_pdf else {}))
     except (AgentRuntimeNotFound, AgentRuntimeConflict) as exc:
         _raise_runtime_error(exc)
+    except KnowledgeComputationClientError as exc:
+        raise HTTPException(exc.status_code, {"code": exc.code}) from exc
     return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
                              background=BackgroundTask(download.close))
 

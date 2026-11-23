@@ -123,11 +123,9 @@ async def model_references(
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
     require_service_scope(request, "model.references")
-    return {
-        "references": await request.app.state.agent_service.model_references(
-            model_id=model_id
-        )
-    }
+    references = await request.app.state.agent_service.model_references(model_id=model_id)
+    documents = request.app.state.operations_documents
+    return {"references": [*references, *documents.representation_model_references(model_id)]}
 
 
 @router.get("/action-catalog/{resource_id}")

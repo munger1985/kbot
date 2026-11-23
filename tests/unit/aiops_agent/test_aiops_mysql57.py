@@ -40,11 +40,11 @@ class MySQL57SupportTest(unittest.TestCase):
         cls.registry = DiagnosticRegistry.load()
 
     def test_contract_accepts_only_published_mysql_versions(self):
-        for version in ("5.7", "8.4"):
+        for version in ("5.7", "8.0", "8.4"):
             validate_supported_database_version("MYSQL", version)
             self.assertEqual(request(version).version_code, version)
         self.assertEqual(DATABASE_SQL_PROFILES[("MYSQL", "5.7")], "mysql_5_7")
-        for version in ("5.6", "5", "5.7.44", "8.0", "9.0"):
+        for version in ("5.6", "5", "5.7.44", "8", "9.0"):
             with self.subTest(version=version), self.assertRaises(ValidationError):
                 request(version)
         with self.assertRaises(ValueError):
@@ -53,11 +53,14 @@ class MySQL57SupportTest(unittest.TestCase):
     def test_detection_distinguishes_mismatch_and_unsupported(self):
         for selected, detected, expected in (
             ("5.7", "5.7.44", None),
+            ("8.0", "8.0.40", None),
             ("8.4", "8.4.0", None),
             ("8.4", "5.7.44", "DATABASE_VERSION_MISMATCH"),
             ("5.7", "8.4.0", "DATABASE_VERSION_MISMATCH"),
             ("5.7", "5.6.51", "UNSUPPORTED_DATABASE_VERSION"),
-            ("5.7", "8.0.40", "UNSUPPORTED_DATABASE_VERSION"),
+            ("5.7", "8.0.40", "DATABASE_VERSION_MISMATCH"),
+            ("8.4", "8.0.40", "DATABASE_VERSION_MISMATCH"),
+            ("8.0", "8.4.0", "DATABASE_VERSION_MISMATCH"),
         ):
             with self.subTest(selected=selected, detected=detected):
                 self.assertEqual(_database_version_error(db_type="MYSQL",
@@ -95,6 +98,7 @@ class MySQL57SupportTest(unittest.TestCase):
         old = profiles.resolve("mysql-overview", (("MYSQL", "8.4"),))
         new = profiles.resolve("mysql-overview", (("MYSQL", "5.7"),))
         self.assertEqual(old.metric_codes, new.metric_codes)
+        self.assertEqual(profiles.resolve("mysql-overview", (("MYSQL", "8.0"),)).metric_codes, old.metric_codes)
         self.assertEqual(len(new.metric_codes), 7)
         self.assertEqual(profiles.overview_for_database("MYSQL", "5.7").profile_id, "mysql-overview")
         with self.assertRaises(LookupError):
@@ -147,11 +151,12 @@ class MySQL57SupportTest(unittest.TestCase):
             with self.subTest(filename=filename):
                 values = list(enums(json.loads((ROOT / "docs/openapi" / filename).read_text())))
                 self.assertEqual(len(values), 4)
-                self.assertTrue(all("5.7" in value for value in values))
+                self.assertTrue(all({"5.7", "8.0", "8.4", "17", "18"}.issubset(value) for value in values))
 
     def test_workspace_offers_mysql_57(self):
         source = (ROOT / "ui/aiops/js/aiops-business-system-workspace.js").read_text()
-        self.assertIn('MYSQL: ["5.7", "8.4"]', source)
+        self.assertIn('MYSQL: ["5.7", "8.0", "8.4"]', source)
+        self.assertIn('POSTGRESQL: ["16", "17", "18"]', source)
 
 
 if __name__ == "__main__":

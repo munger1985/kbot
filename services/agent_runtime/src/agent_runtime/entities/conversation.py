@@ -208,8 +208,8 @@ class AgentMemoryIndexProfileEntity(BaseEntity):
     )
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    embedding_model_name: Mapped[str] = mapped_column(
-        String(128), nullable=False
+    embedding_model_id: Mapped[str] = mapped_column(
+        String(36), nullable=False
     )
     embedding_dimension: Mapped[int] = mapped_column(
         Numeric(10, 0), nullable=False

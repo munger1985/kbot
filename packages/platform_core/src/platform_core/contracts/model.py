@@ -4,7 +4,12 @@ import re
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.json_schema import SkipJsonSchema
+
+
+NATIVE_VISUAL_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+NATIVE_VISUAL_IMAGE_INPUT_UNSUPPORTED = "IMAGE_INPUT_UNSUPPORTED"
 
 
 class _ModelContract(BaseModel):
@@ -34,10 +39,6 @@ class ModelProviderOption(_ModelContract):
 
 
 class ModelCreateRequest(_ModelContract):
-    served_model_name: str = Field(
-        min_length=1, max_length=128,
-        pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$",
-    )
     display_name: str = Field(min_length=1, max_length=256)
     provider_model_name: str = Field(min_length=1, max_length=256)
     category: int = Field(ge=1, le=8)
@@ -52,10 +53,18 @@ class ModelCreateRequest(_ModelContract):
 class ModelUpdateRequest(_ModelContract):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
+    provider_model_name: str | SkipJsonSchema[None] = Field(default=None, min_length=1, max_length=256)
     api_endpoint: str | None = Field(default=None, max_length=1024)
     api_key: str | None = Field(default=None, max_length=4096)
     model_params: dict[str, Any] | None = None
     description: str | None = Field(default=None, max_length=512)
+
+    @field_validator("provider_model_name", mode="before")
+    @classmethod
+    def validate_provider_model_name(cls, value: object) -> object:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raise ValueError("厂商模型名称或 ID 不能为空")
+        return value.strip() if isinstance(value, str) else value
 
 
 class ModelArchiveRequest(_ModelContract):
@@ -71,9 +80,12 @@ class ModelDeleteRequest(_ModelContract):
     expected_row_version: int = Field(ge=1)
 
 
+class ModelConnectionTestResult(_ModelContract):
+    latency_ms: int = Field(ge=0)
+
+
 class ModelCatalogItem(_ModelContract):
     model_id: UUID
-    served_model_name: str
     display_name: str
     provider_model_name: str
     category: int = Field(ge=1, le=8)

@@ -13,7 +13,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const require = createRequire(process.env.KBOT_BROWSER_REQUIRE_FROM || resolve(root, "../ammolite_cube/apps/portal-web/package.json"));
 const { chromium } = require("@playwright/test");
 const artifacts = await mkdtemp(resolve(tmpdir(), "knowledge-retrieval-ui-"));
-const permissions = ["use", "knowledge_chat", "x_search", "domain_manage", "knowledge_core_manage", "data_model_manage", "agent_manage"].map(key => `knowledge_retrieval:${key}`);
+const permissions = ["use", "knowledge_chat", "x_search", "domain_manage", "upload", "review", "knowledge_core_manage", "data_model_manage", "agent_manage"].map(key => `knowledge_retrieval:${key}`);
 const access = { permissions, domain_id: 1, domain_name: "企业知识工作域", display_name: "知识管理员", user_id: "fixture-user" };
 const agent = { agent_id: "agent-1", display_name: "企业知识助手", status: "ACTIVE", version_no: 1, library_id: "library-1", data_model_ids: [], models: { x_search_llm: "grok-fixture" } };
 const domain = { domain_id: 1, domain_code: "fixture", display_name: "企业知识工作域", status: "ACTIVE", row_version: 1 };
@@ -49,6 +49,7 @@ async function newPage(width, granted = permissions, session = true, switchMode 
     if (response.status() >= 400 && !(switchMode === "reject" && response.status() === 403 && response.url().endsWith("/auth/switch-domain"))) errors.push(`${response.status()} ${response.url()}`);
   });
   if (session) await page.addInitScript(value => {
+    if (!location.pathname.startsWith("/ui/knowledge_retrieval/")) return;
     if (!sessionStorage.getItem("kbot.knowledge.session.v1")) sessionStorage.setItem("kbot.knowledge.session.v1", JSON.stringify({ ...value, access_token: "fixture-session" }));
   }, access);
   page.domainReads = [];
@@ -84,17 +85,20 @@ async function newPage(width, granted = permissions, session = true, switchMode 
 
 try {
   browser = await chromium.launch({ headless: true });
-  const pages = Object.keys(JSON.parse(await readFile(resolve(root, "ui/knowledge_retrieval/reference-pages.json"), "utf8")).pages);
+  const pages = (process.env.KNOWLEDGE_UI_PAGES?.split(",") || Object.keys(JSON.parse(await readFile(resolve(root, "ui/knowledge_retrieval/reference-pages.json"), "utf8")).pages)).filter(name => name !== "login");
   if (!process.env.KNOWLEDGE_UI_SWITCH_ONLY) for (const width of [1440, 1024, 390, 320]) {
     for (const name of pages) {
       console.log(`检查：${name}/${width}`);
-      const page = await newPage(width, permissions, name !== "login");
+      const page = await newPage(width);
       await page.goto(`${origin}/ui/knowledge_retrieval/${name}.html`);
-      if (name !== "login") await page.waitForFunction(() => document.body.dataset.access === "ready");
+      await page.waitForFunction(() => document.body.dataset.access === "ready");
       await page.waitForLoadState("networkidle");
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${name}/${width} 页面横向溢出`);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1 ?
+        {width: document.documentElement.scrollWidth, nodes: [...document.querySelectorAll("main *")]
+          .filter(node => node.getBoundingClientRect().right > innerWidth + 1).slice(0, 10).map(node => node.tagName + "." + node.className)} : null);
+      assert.equal(overflow, null, `${name}/${width} 页面横向溢出：${JSON.stringify(overflow)}`);
       assert.equal(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--accent").trim()), "#087f74");
-      if (name !== "login") {
+      {
         assert.equal(await page.locator("#knowledge-shell-content > main").count(), 1);
         assert.equal(await page.locator('.business-nav-item[aria-current="page"]').count(), 1);
         const sidebar = page.locator("#knowledge-app-navigation");
@@ -116,10 +120,6 @@ try {
         assert.equal(await page.locator("#knowledge-account-menu").isVisible(), true);
         await page.keyboard.press("Escape");
         assert.equal(await page.locator("#knowledge-account-menu").isVisible(), false);
-      } else {
-        const bounds = await page.locator(".knowledge-login-card").boundingBox();
-        assert.ok(Math.abs(bounds.x + bounds.width / 2 - width / 2) < 2, "登录卡片应居中");
-        assert.equal(await page.locator("#password-section").isVisible(), false);
       }
       if (name === "knowledge") assert.equal(await page.locator("#knowledge-agent").inputValue(), "agent-1");
       if (name === "x-search") assert.equal(await page.locator("#x-search-agent option").count(), 2);
@@ -139,10 +139,14 @@ try {
   const limited = await newPage(1440, ["knowledge_retrieval:use"]);
   await limited.goto(`${origin}/ui/knowledge_retrieval/dashboard.html`);
   await limited.waitForFunction(() => document.body.dataset.access === "ready");
-  assert.equal(await limited.locator(".business-nav-group").count(), 1);
-  assert.equal(await limited.locator(".business-nav-item").count(), 1);
-  assert.equal(await limited.locator(".business-nav-group-count").innerText(), "1");
+  assert.equal(await limited.locator(".business-nav-group").count(), 2);
+  assert.deepEqual(await limited.locator(".business-nav-item").evaluateAll(links => links.map(link => link.getAttribute("href"))),
+    ["./search.html", "./files.html", "./dashboard.html"]);
   assert.equal(await limited.locator(".knowledge-entry a").count(), 0);
+  await limited.goto(`${origin}/ui/knowledge_retrieval/search.html`);
+  await limited.locator(".knowledge-search-formbar").waitFor();
+  assert.equal(await limited.locator(".agent-chat-workspace").count(), 0);
+  assert.equal(await limited.locator(".knowledge-catalog").count(), 0);
   await limited.goto(`${origin}/ui/knowledge_retrieval/agents.html`);
   await limited.waitForURL("**/dashboard.html");
   await limited.waitForFunction(() => document.body.dataset.access === "ready");
@@ -163,18 +167,20 @@ try {
   await navigation.waitForFunction(() => document.body.dataset.access === "ready");
   assert.equal((await navigation.locator('#knowledge-nav-resources a[aria-current="page"]').textContent()).trim(), "Agent 管理");
   assert.equal(await navigation.locator("#knowledge-app-navigation").isVisible(), false);
-  // 未登录仍跳登录；首次改密仍在原有流程内完成。
+  // 未登录直接回统一工作台；改密和首域开通另有定向回归。
   const anonymous = await newPage(390, permissions, false);
   await anonymous.goto(`${origin}/ui/knowledge_retrieval/agents.html`);
-  await anonymous.waitForURL("**/login.html");
-  const firstLogin = await newPage(390);
-  await firstLogin.addInitScript(() => {
-    const value = JSON.parse(sessionStorage.getItem("kbot.knowledge.session.v1"));
-    sessionStorage.setItem("kbot.knowledge.session.v1", JSON.stringify({ ...value, must_change_password: true }));
+  await anonymous.waitForURL("**/ui/index.html");
+  await anonymous.locator("#portal-sign-in").waitFor();
+  await navigation.evaluate(() => {
+    sessionStorage.setItem("kbot.platform.session.v1", JSON.stringify({ access_token: "fixture-root", entry_kind: "WORKSPACE" }));
+    sessionStorage.setItem("kbot.aiops.session.v1", "{}");
   });
-  await firstLogin.goto(`${origin}/ui/knowledge_retrieval/login.html`);
-  assert.equal(await firstLogin.locator("#password-section").isVisible(), true);
-  assert.equal(await firstLogin.locator("#login-section").isVisible(), false);
+  await navigation.locator("#knowledge-account-toggle").click();
+  await navigation.locator("#knowledge-logout").click();
+  await navigation.waitForURL("**/ui/index.html");
+  await navigation.locator("#portal-sign-in").waitFor();
+  assert.equal(await navigation.evaluate(() => sessionStorage.length), 0);
   // 知识库页无需 Domain 管理权限，即可发现、切换已授权工作域。
   const readerPermissions = permissions.filter(value => value !== "knowledge_retrieval:domain_manage");
   for (const width of [1440, 390, 320]) {
@@ -218,7 +224,7 @@ try {
   assert.deepEqual(unexpected, [], "出现未声明 API 请求");
   assert.deepEqual(writes, [], "样式验收不得写入业务数据");
   assert.deepEqual(errors, [], "页面出现浏览器错误");
-  console.log(`通过：${process.env.KNOWLEDGE_UI_SWITCH_ONLY ? "工作域定向回归" : "13 个页面 × 4 个宽度"}、导航、权限、登录与知识库工作域切换（含失败保留原会话）。截图：${artifacts}`);
+  console.log(`通过：${process.env.KNOWLEDGE_UI_SWITCH_ONLY ? "工作域定向回归" : pages.length + " 个页面"}、导航、权限、登录与知识库工作域切换（含失败保留原会话）。截图：${artifacts}`);
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));

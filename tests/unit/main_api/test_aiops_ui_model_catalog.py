@@ -45,7 +45,6 @@ class AIOpsUiModelCatalogTest(unittest.TestCase):
         self.model_rows = [
             {
                 "model_id": str(uuid7()), "display_name": f"测试模型 {category}",
-                "served_model_name": f"test-{category}",
                 "provider_model_name": f"test-{category}", "provider": "test",
                 "category": category, "status": "ACTIVE",
             }

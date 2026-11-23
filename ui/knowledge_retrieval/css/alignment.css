@@ -25,25 +25,6 @@ dialog.knowledge-drawer::backdrop { background: rgb(15 23 42 / 28%); }
 .knowledge-drawer .quick-create-form { padding: 24px; }
 .knowledge-drawer .agent-editor-section { box-shadow: none; }
 .knowledge-drawer .knowledge-form-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-.knowledge-chat-page .knowledge-conversation-panel { min-height: 0; }
-.knowledge-chat-page .knowledge-conversation-list { flex: 1; max-height: none; border: 0; padding: 8px; }
-.knowledge-chat-page .knowledge-conversation-row { border: 0; }
-.knowledge-chat-page .knowledge-conversation-select { min-height: 57px; border-radius: 8px; }
-.knowledge-chat-workspace.sidebar-collapsed .knowledge-session-header .secondary-button { font-size: 0; }
-.knowledge-chat-workspace.sidebar-collapsed .knowledge-session-header .secondary-button::before { content: "+"; font-size: 20px; }
-.knowledge-chat-workspace.sidebar-collapsed .agent-chat-session-toggle-row #knowledge-refresh { display: none; }
-.knowledge-chat-page .knowledge-message-viewport { padding: 0 22px; }
-.knowledge-chat-page .knowledge-message { max-width: 1200px; margin: 24px auto; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.knowledge-chat-page .knowledge-message.user { margin-left: auto; background: transparent; }
-.knowledge-chat-page .knowledge-message-body { min-width: 0; flex: 1; }
-.knowledge-chat-page .knowledge-composer { margin: 0; padding: 0; border: 0; }
-.knowledge-chat-page .knowledge-composer textarea { min-height: 26px; resize: none; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.knowledge-chat-page .knowledge-composer .knowledge-send-button { padding: 0; }
-.knowledge-chat-page .knowledge-conversation-header .chat-session-button { display: inline-flex; }
-.knowledge-chat-page .knowledge-composer-wrap > p { margin-bottom: 0; }
-.knowledge-chat-page .knowledge-chat-welcome { min-height: 100%; }
-.knowledge-chat-page .knowledge-session-header .button-compact { min-height: 30px; }
-.knowledge-chat-page .agent-chat-session-toggle-row { justify-content: space-between; }
 .knowledge-app-shell .knowledge-list-toolbar .control-field { min-width: 0; }
 .upload-drop-zone.dragging { border-color: var(--accent); background: var(--accent-soft); }
 .upload-receipt { display: grid; gap: 6px; margin-bottom: 20px; overflow-wrap: anywhere; }
@@ -52,9 +33,5 @@ dialog.knowledge-drawer::backdrop { background: rgb(15 23 42 / 28%); }
 .table-error { display: block; color: var(--danger); }
 @media (max-width: 800px) {
   .knowledge-drawer .knowledge-form-grid { grid-template-columns: minmax(0,1fr); }
-  .knowledge-chat-page .knowledge-message-viewport { padding: 0 12px; }
-  .knowledge-chat-page .knowledge-message { margin: 18px auto; }
-  .knowledge-chat-page .knowledge-session-overlay:not([hidden]) { display: block; }
-  .knowledge-chat-page .knowledge-agent-picker { min-width: 0; }
   .knowledge-app-shell .section-toolbar { align-items: flex-start; flex-direction: column; }
 }

@@ -30,7 +30,7 @@ class KnowledgeDocumentVersionEntity(BaseEntity):
     published_parse_run_id: Mapped[UUID | None] = mapped_column(UUIDv7Type(), ForeignKey("KBOT_OPS_KNOWLEDGE_PARSE_RUN.parse_run_id", name="FK_OPS_K2_DOCUMENT_VERSION_1", use_alter=True), nullable=True)
     active_generation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type(), ForeignKey("KBOT_OPS_KNOWLEDGE_INDEX_GENERATION.index_generation_id", name="FK_OPS_K2_DOCUMENT_VERSION_2", use_alter=True), nullable=True)
     status: Mapped[str] = mapped_column(String(512), nullable=False)
-    source_descriptor_json: Mapped[dict | list] = mapped_column(OracleNativeJSON, nullable=False)
+    source_descriptor_json: Mapped[dict] = mapped_column(OracleNativeJSON, nullable=False)
     allowed_view_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     allowed_view_manifest_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False)

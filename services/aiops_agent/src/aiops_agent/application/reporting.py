@@ -817,6 +817,12 @@ SYSTEM_REPORT_TEMPLATES = {
     item.template_ref: item
     for item in (
         _system_template(
+            key="recovery-drill", name="空库恢复演练报告",
+            source_kinds=("RECOVERY_DRILL",), periods=("AD_HOC",),
+            report_types=("RECOVERY_DRILL",),
+            sections=("EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS", "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"),
+        ),
+        _system_template(
             key="oracle.workload", name="Oracle 周期快照工作负载报告（非 AWR）",
             source_kinds=("INSPECTION",), periods=("CUSTOM",),
             report_types=("ORACLE_WORKLOAD",),

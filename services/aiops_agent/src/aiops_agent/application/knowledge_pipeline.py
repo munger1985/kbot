@@ -46,7 +46,7 @@ class KnowledgePipelineWorker:
             except Exception as exc:
                 await on_failure(scope, job_id, exc.code.value if isinstance(exc, AlgorithmError) else "PIPELINE_FAILED")
 
-    async def process(self, scope, job_id):
+    async def process(self, scope, job_id, *, projection_profile=None):
         lease = await self.ingestion.get_job(scope, job_id)
         if lease.status in {"FAILED", "CANCELLED"}:
             raise AlgorithmError(ErrorCode.PARSE_QUALITY_INSUFFICIENT, "知识任务已失败或取消", stage="pipeline")
@@ -70,6 +70,7 @@ class KnowledgePipelineWorker:
         document = await self.projection.allowed_document(scope, job_id, policy=self.policy,
                                                           policy_revision=self.policy_revision)
         builder = self.builder_factory(scope, document)
-        generation = await self.projection.prepare(scope, job_id, document=document, builder=builder, profile=self.profile)
+        generation = await self.projection.prepare(scope, job_id, document=document, builder=builder,
+            profile=projection_profile or self.profile)
         return {"document_version_id": str(lease.document_version_id), "generation_id": str(generation),
                 "status": "READY_FOR_APP_PUBLICATION"}

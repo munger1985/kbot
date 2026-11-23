@@ -45,6 +45,12 @@ def compile_test_jsonb(_type, _compiler, **_kwargs):
     return "JSON"
 
 
+@compiles(oracle.RAW, "sqlite")
+def compile_test_raw(_type, _compiler, **_kwargs):
+    """仅离线夹具把 Oracle 固定长度二进制交给 SQLite BLOB，不改变生产类型。"""
+    return "BLOB"
+
+
 class SessionBridge:
     """把同步内存事务交给现有异步仓储；不模拟锁或生产驱动。"""
 

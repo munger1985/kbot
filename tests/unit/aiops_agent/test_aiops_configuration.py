@@ -272,7 +272,7 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
         model_client = AsyncMock()
         model_client.get_model.return_value = {
             "model_id": str(model_id),
-            "served_model_name": "qwen-planner",
+            "provider_model_name": "qwen-planner",
         }
         resolver = AIOpsAgentValidator(
             agent_service,
@@ -302,7 +302,7 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
         model_client = AsyncMock()
         model_client.get_model.return_value = {
             "model_id": str(model_id),
-            "served_model_name": "qwen-diagnosis",
+            "provider_model_name": "qwen-diagnosis",
         }
         resolver = AIOpsAgentValidator(
             agent_service,
@@ -1398,7 +1398,7 @@ class DiagnosticSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationContractTest(unittest.TestCase):
     def test_target_version_must_match_verified_database_profile(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "ORACLE仅支持已验证版本"):
+        with self.assertRaisesRegex(ValidationError, "ORACLE仅支持登记版本"):
             TargetCreate(
                 display_name="错误版本",
                 db_type="ORACLE",

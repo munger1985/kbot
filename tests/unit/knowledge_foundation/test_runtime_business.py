@@ -6,15 +6,17 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(path) for path in ROOT.glob("packages/*/src")] + [str(path) for path in ROOT.glob("services/*/src")]
 from agent_runtime.application.knowledge_query import KnowledgeQueryPlan, plan_knowledge_query
 from agent_runtime.application.runtime_service import AgentRuntimeService, AgentRuntimeNotFound
+from agent_runtime.composition.knowledge_runtime import RuntimeKnowledgeIntegration
 from knowledge_algorithms.contracts.errors import AlgorithmError
 from platform_core.contracts.knowledge_app import KnowledgeLibraryView, KnowledgeSearchResult
+from platform_core.security import AUTH_CONTEXT_HEADER, INTERNAL_TOKEN_HEADER
 
 ORACLE = (ROOT / "database/oracle").exists()
 ID = UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a11")
@@ -57,6 +59,70 @@ class RuntimeBusinessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["max_tokens"], 1234)
         self.assertNotIn("candidates", json.dumps(payload))
         self.assertEqual(query.combination, "ALL")
+
+    async def test_runtime_planning_and_composition_use_model_service_credentials(self):
+        question = "解释一下审计工作管理"
+        plan = self.query_plan(text=question)
+        def endpoint(role):
+            return SimpleNamespace(
+                base_url=f"http://{role}.test", audience=role, timeout_seconds=5)
+        settings = SimpleNamespace(knowledge_retrieval=endpoint("knowledge-app"),
+            aiops=endpoint("aiops"), llm=endpoint("llm"), vlm=endpoint("vlm"),
+            knowledge=SimpleNamespace(payload_bytes=8192, image_token_cost=100))
+        model = {"model_id": str(ID), "max_tokens": 1234, "config_fingerprint": "frozen"}
+        context = SimpleNamespace(original_input=question, input_artifacts=(),
+            config_snapshot={"app_knowledge": {"scope": {}, "delegation": {}},
+                "agent": {"models": {"context_llm": model, "composer_llm": model}}})
+        identity = SimpleNamespace(model_copy=Mock(return_value=object()))
+        requests = []
+
+        @asynccontextmanager
+        async def respond(method, url, *, headers, **kwargs):
+            requests.append((method, url, headers, kwargs["json"]["max_tokens"]))
+            body = plan.model_dump_json() if len(requests) == 1 else "依据资料 [C1]。"
+            async def chunks(size):
+                yield json.dumps({"choices": [{"message": {"content": body}}]}, ensure_ascii=False).encode()
+            yield SimpleNamespace(status=200, content=SimpleNamespace(iter_chunked=chunks))
+
+        def sign(*, audience, caller_service, context):
+            self.assertEqual(caller_service, "agent-runtime")
+            return {INTERNAL_TOKEN_HEADER: "fixture-credential",
+                    AUTH_CONTEXT_HEADER: f"{audience}-context-{len(requests)}"}
+
+        session = SimpleNamespace(request=respond, close=AsyncMock())
+        with patch("agent_runtime.composition.knowledge_runtime.create_knowledge_delegation_codec"), patch(
+                "agent_runtime.composition.knowledge_runtime.decode",
+                return_value=SimpleNamespace(owner_binding_ref="knowledge_retrieval")), patch(
+                "platform_clients.knowledge_computation.aiohttp.ClientSession", return_value=session), patch(
+                "platform_clients.knowledge_model_binding.build_internal_auth_headers", side_effect=sign), patch(
+                "platform_clients.knowledge_computation.build_scoped_internal_auth_headers",
+                side_effect=AssertionError("模型调用不能使用知识计算身份")):
+            runtime = RuntimeKnowledgeIntegration(settings=settings, caller_service="agent-runtime",
+                uow_factory=None, prompt_resolver=SimpleNamespace(resolve=AsyncMock(
+                    return_value=SimpleNamespace(content="合成测试"))))
+            runtime.auth_context = Mock(return_value=identity)
+            runtime.clients["knowledge_retrieval"].for_delegation = Mock()
+            self.assertEqual((await runtime.query(context)).text, question)
+            for role in ("llm", "vlm"):
+                if role == "vlm":
+                    context.config_snapshot["agent"]["models"]["query_vlm"] = model
+                composer = await runtime.composer(context)
+                reply = await composer.gateway.generate(question=question, evidence_parts=[],
+                    model_snapshot_ref="frozen")
+                self.assertEqual(reply.used_labels, ("C1",))
+
+        self.assertEqual([row[1] for row in requests], [
+            "http://llm.test/internal/v1/chat/completions",
+            "http://llm.test/internal/v1/chat/completions",
+            "http://vlm.test/internal/v1/inference",
+        ])
+        self.assertEqual([row[2][AUTH_CONTEXT_HEADER] for row in requests],
+                         ["llm-context-0", "llm-context-1", "vlm-context-2"])
+        self.assertTrue(all(row[2][INTERNAL_TOKEN_HEADER] == "fixture-credential"
+                            and row[3] == 1234 for row in requests))
+        self.assertEqual(identity.model_copy.call_count, 3)
+        identity.model_copy.assert_called_with(
+            update={"scopes": ("model.inference",), "calling_service": "agent-runtime"})
 
     def runtime(self, run=None, conversation=None):
         uow = SimpleNamespace(
@@ -112,10 +178,21 @@ class RuntimeBusinessTests(unittest.IsolatedAsyncioTestCase):
             await runtime.open_knowledge_content(**self.history_scope())
         integration.open_history.assert_not_awaited()
 
+    async def test_history_pdf_requires_an_answer_reference(self):
+        runtime, uow, integration = self.runtime(run=self.run_record(), conversation=SimpleNamespace(status="ACTIVE"))
+        with self.assertRaises(AgentRuntimeNotFound):
+            await runtime.open_knowledge_content(**self.history_scope(), source_pdf=True)
+        integration.open_history.assert_not_awaited()
+        payload = uow.artifacts.get.return_value.payload_json
+        payload["references"] = [{"reference_type": "APP_KNOWLEDGE", "owner_app_id": "knowledge_retrieval",
+                                  "evidence_key": "a" * 64}]
+        self.assertEqual(await runtime.open_knowledge_content(**self.history_scope(), source_pdf=True), "exact-stream")
+        self.assertTrue(integration.open_history.call_args.kwargs["source_pdf"])
+
     async def test_public_output_dto_rejects_internal_handle(self):
         value = {"retrieval_ref": str(ID), "status": "READY", "reason": None, "mode": "RELEVANCE",
             "continuation": None, "primary_hits": [], "items": [], "linked": [], "channels": [],
-            "model_delivery": "NOT_APPLICABLE"}
+            "model_delivery": "NOT_APPLICABLE", "scope_exhausted": False}
         KnowledgeSearchResult.model_validate(value)
         with self.assertRaises(ValueError):
             KnowledgeSearchResult.model_validate({**value, "scope": {"content_handle": "internal"}})

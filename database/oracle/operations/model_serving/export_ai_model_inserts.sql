@@ -65,7 +65,6 @@ BEGIN
     FOR model_row IN (
         SELECT
             RAWTOHEX(MODEL_ID) AS MODEL_ID_HEX,
-            SERVED_MODEL_NAME,
             DISPLAY_NAME,
             PROVIDER_MODEL_NAME,
             CATEGORY,
@@ -92,7 +91,6 @@ BEGIN
         insert_sql :=
             'INSERT INTO KBOT_AI_MODEL ('
             || 'MODEL_ID, '
-            || 'SERVED_MODEL_NAME, '
             || 'DISPLAY_NAME, '
             || 'PROVIDER_MODEL_NAME, '
             || 'CATEGORY, '
@@ -106,8 +104,6 @@ BEGIN
             || 'HEXTORAW('
             || quote_text(model_row.MODEL_ID_HEX)
             || '), '
-            || quote_text(model_row.SERVED_MODEL_NAME)
-            || ', '
             || quote_text(model_row.DISPLAY_NAME)
             || ', '
             || quote_text(model_row.PROVIDER_MODEL_NAME)

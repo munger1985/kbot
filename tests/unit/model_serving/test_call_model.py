@@ -1,6 +1,7 @@
 import asyncio
 import os
 from pathlib import Path
+from uuid import UUID
 from PIL import Image, ImageDraw, ImageFont
 import pytest
 
@@ -11,7 +12,7 @@ pytestmark = pytest.mark.skipif(
 
 # 加载 .env 文件（必须在导入任何使用配置的模块之前）
 from dotenv import load_dotenv
-env_path = Path(__file__).resolve().parent.parent / ".env"
+env_path = Path(__file__).resolve().parents[3] / ".env"
 load_dotenv(env_path)
 
 from platform_clients.model import AIModelClient
@@ -25,6 +26,15 @@ model_client = AIModelClient(
     vlm_config=settings.vlm,
     visual_config=settings.visual,
 )
+
+
+def configured_model_id(kind: str) -> str:
+    name = f"KBOT_SMOKE_{kind}_MODEL_ID"
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"请在 {name} 中设置待测试模型的 UUID")
+    return str(UUID(value))
+
 
 def create_basic_shapes_image() -> Image.Image: # 类型注解可以更精确为 Image.Image
     """
@@ -72,17 +82,13 @@ async def test_call_embedding_model():
     测试调用embedding模型的方法
     """
     # 测试参数
-    embed_model_name = "KBOT_Qwen3-Embedding-4B"
+    model_id = configured_model_id("EMBEDDING")
     embed_input_texts = ["苹果", "香蕉"]
-    topk = 4
-    kwargs = {}
-    kwargs['batch_size'] = 1
-    kwargs["served_model_name"] = embed_model_name
-    kwargs['texts'] = embed_input_texts
-    kwargs['is_query'] = False
-    emb = await model_client.call_embedding_model(**kwargs)
+    emb = await model_client.call_embedding_model(
+        model_id=model_id, texts=embed_input_texts, batch_size=1, is_query=False,
+    )
 
-    print(f"测试开始，使用模型: {embed_model_name}")
+    print(f"测试开始，使用模型: {model_id}")
     print(f"输入文本: {embed_input_texts}")
     print("=" * 50)
     print("\n向量列表: ", emb)
@@ -93,58 +99,29 @@ async def test_call_llm_model():
     测试调用LLM模型的方法
     """
     # 测试参数
-    model_name = "KBOT_DeepSeek-Chat"
+    model_id = configured_model_id("LLM")
     test_prompt = "hello"
 
-    print(f"测试开始，使用模型: {model_name}")
+    print(f"测试开始，使用模型: {model_id}")
     print(f"输入提示: {test_prompt}")
     print("=" * 50)
 
-    try:
-        # # 调用方法1：基本调用（流式）
-        # print("\n测试1：基本流式调用")
-        # async for chunk in model_client.call_llm_model(model_name, test_prompt):
-        #     print(chunk, end="", flush=True)  # 实时打印响应
-
-        # 调用方法2：带额外参数
-        # print("\n\n测试2：带额外参数调用")
-        # async for chunk in model_client.call_llm_model(
-        #     model_name,
-        #     test_prompt,
-        #     temperature=0.7,
-        #     max_tokens=100,
-        #     top_p=Decimal('0.9')  # 测试Decimal参数转换
-        # ):
-        #     print(chunk, end="", flush=True)
-
-        # 调用方法3：非流式模式（需要修改call_llm_model方法支持）
-        print("\n\n测试3：非流式调用")
-        async for chunk in model_client.call_llm_model(
-            model_name,
-            test_prompt,
-            stream=False,
-            max_tokens=10
-        ):
-            result = chunk
-        print(result)
-
-    except Exception as e:
-        print(f"\n测试失败: {str(e)}")
-    finally:
-        print("\n\n测试结束")
+    answer = await model_client.get_llm_answer(model_id, test_prompt)
+    assert answer
+    print(answer)
 
 async def test_call_vlm_model():
     """
     测试调用VLM模型的方法
     """
     # 测试参数
-    model_name = "KBOT_QwenVL"
+    model_id = configured_model_id("VLM")
     image = create_basic_shapes_image()
 
 
-    print(f"测试开始，使用模型: {model_name}")
+    print(f"测试开始，使用模型: {model_id}")
     print("=" * 50)
-    response = await model_client.get_vlm_answer(model_name, image, prompt="描述该图片")
+    response = await model_client.get_vlm_answer(model_id, image, prompt="描述该图片")
     print(f"模型响应: {response}")
 
 

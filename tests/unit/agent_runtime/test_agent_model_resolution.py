@@ -32,7 +32,6 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
                         llm_id: {
                             "category": 1,
                             "status": "ACTIVE",
-                            "served_model_name": "chat-prod",
                             "model_params": {"temperature": 0.1},
                         }
                     }
@@ -42,7 +41,6 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
                         embedding_id: {
                             "category": 2,
                             "status": "ACTIVE",
-                            "served_model_name": "embed-prod",
                         }
                     }
                 ),
@@ -56,12 +54,9 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        self.assertEqual(
-            snapshot["composer_llm"]["model_id"], str(llm_id)
-        )
-        self.assertEqual(
-            snapshot["composer_llm"]["served_model_name"], "chat-prod"
-        )
+        self.assertEqual(snapshot["composer_llm"]["model_id"], str(llm_id))
+        self.assertEqual(snapshot["memory_embedding"]["model_id"], str(embedding_id))
+        self.assertNotIn("served_model_name", snapshot["composer_llm"])
         self.assertEqual(
             len(snapshot["composer_llm"]["config_fingerprint"]), 64
         )
@@ -75,7 +70,6 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
                         model_id: {
                             "category": 2,
                             "status": "ACTIVE",
-                            "served_model_name": "wrong-kind",
                         }
                     }
                 )
@@ -92,7 +86,6 @@ class AgentModelResolutionTest(unittest.IsolatedAsyncioTestCase):
                 model_id: {
                     "category": 1,
                     "status": "ARCHIVED",
-                    "served_model_name": "archived-chat",
                 }
             })
         })

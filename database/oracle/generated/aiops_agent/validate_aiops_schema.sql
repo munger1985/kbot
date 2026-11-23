@@ -98,6 +98,8 @@ BEGIN
             'KBOT_OPS_AGENT_VERSION_KNOW_BASE',
             'KBOT_OPS_RECOVERY_PROFILE',
             'KBOT_OPS_RECOVERY_DRILL',
+            'KBOT_OPS_PROTECTION_PLAN',
+            'KBOT_OPS_PROTECTION_RUN',
             'KBOT_OPS_RESPONSIBILITY_GROUP',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER',
             'KBOT_OPS_WORK_ITEM',
@@ -217,6 +219,8 @@ BEGIN
             'KBOT_OPS_AGENT_VERSION_KNOW_BASE',
             'KBOT_OPS_RECOVERY_PROFILE',
             'KBOT_OPS_RECOVERY_DRILL',
+            'KBOT_OPS_PROTECTION_PLAN',
+            'KBOT_OPS_PROTECTION_RUN',
             'KBOT_OPS_RESPONSIBILITY_GROUP',
             'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER',
             'KBOT_OPS_WORK_ITEM',
@@ -255,7 +259,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 102 项。');
+        dbms_output.put_line('[通过] AIOps 表: 104 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -502,8 +506,8 @@ BEGIN
             'IX_OPS_KNOW_ASSET_CUR_VER',
             'IX_OPS_KNOW_ASSET_SCOPE',
             'IX_OPS_KNOW_BASE_SCOPE',
+            'IX_OPS_KNOW_INDEX_REF',
             'IX_OPS_KNOW_INDEX_STATUS',
-            'IX_OPS_KNOW_INDEX_VER',
             'IX_OPS_KNOW_REVIEW_QUEUE',
             'IX_OPS_KNOW_REVIEW_VER',
             'IX_OPS_KNOW_SCOPE_LOOKUP',
@@ -543,6 +547,7 @@ BEGIN
             'IX_OPS_PROPOSAL_TARGET',
             'IX_OPS_PROPOSAL_TASK',
             'IX_OPS_PROPOSAL_TURN',
+            'IX_OPS_PROT_RUN_PENDING',
             'IX_OPS_REC_DRILL_PROFILE',
             'IX_OPS_REC_DRILL_RESOURCE',
             'IX_OPS_REC_DRILL_RUN',
@@ -672,6 +677,7 @@ BEGIN
             'PK_OPS_AGENT_VER_RES_ACT',
             'PK_OPS_ANSWER_CITATION',
             'PK_OPS_KNOW_CONFIG',
+            'PK_OPS_KNOW_INDEX',
             'PK_OPS_REPORT_SOURCE',
             'PK_OPS_RUN_EVENT',
             'PK_OPS_TURN_EVENT',
@@ -898,8 +904,8 @@ BEGIN
             'IX_OPS_KNOW_ASSET_CUR_VER',
             'IX_OPS_KNOW_ASSET_SCOPE',
             'IX_OPS_KNOW_BASE_SCOPE',
+            'IX_OPS_KNOW_INDEX_REF',
             'IX_OPS_KNOW_INDEX_STATUS',
-            'IX_OPS_KNOW_INDEX_VER',
             'IX_OPS_KNOW_REVIEW_QUEUE',
             'IX_OPS_KNOW_REVIEW_VER',
             'IX_OPS_KNOW_SCOPE_LOOKUP',
@@ -939,6 +945,7 @@ BEGIN
             'IX_OPS_PROPOSAL_TARGET',
             'IX_OPS_PROPOSAL_TASK',
             'IX_OPS_PROPOSAL_TURN',
+            'IX_OPS_PROT_RUN_PENDING',
             'IX_OPS_REC_DRILL_PROFILE',
             'IX_OPS_REC_DRILL_RESOURCE',
             'IX_OPS_REC_DRILL_RUN',
@@ -1068,6 +1075,7 @@ BEGIN
             'PK_OPS_AGENT_VER_RES_ACT',
             'PK_OPS_ANSWER_CITATION',
             'PK_OPS_KNOW_CONFIG',
+            'PK_OPS_KNOW_INDEX',
             'PK_OPS_REPORT_SOURCE',
             'PK_OPS_RUN_EVENT',
             'PK_OPS_TURN_EVENT',
@@ -1135,7 +1143,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 377 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 379 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1289,6 +1297,8 @@ BEGIN
             'FK_OPS_PROPOSAL_TASK',
             'FK_OPS_PROPOSAL_TURN',
             'FK_OPS_PROP_SNAPSHOT_ART',
+            'FK_OPS_PROT_PLAN_RES',
+            'FK_OPS_PROT_RUN_PLAN',
             'FK_OPS_REC_DRILL_DOMAIN',
             'FK_OPS_REC_DRILL_PROFILE',
             'FK_OPS_REC_DRILL_RESOURCE',
@@ -1396,6 +1406,7 @@ BEGIN
             'PK_OPS_AGENT_VER_RES_ACT',
             'PK_OPS_ANSWER_CITATION',
             'PK_OPS_KNOW_CONFIG',
+            'PK_OPS_KNOW_INDEX',
             'PK_OPS_REPORT_SOURCE',
             'PK_OPS_RUN_EVENT',
             'PK_OPS_TURN_EVENT',
@@ -1606,6 +1617,8 @@ BEGIN
             'FK_OPS_PROPOSAL_TASK',
             'FK_OPS_PROPOSAL_TURN',
             'FK_OPS_PROP_SNAPSHOT_ART',
+            'FK_OPS_PROT_PLAN_RES',
+            'FK_OPS_PROT_RUN_PLAN',
             'FK_OPS_REC_DRILL_DOMAIN',
             'FK_OPS_REC_DRILL_PROFILE',
             'FK_OPS_REC_DRILL_RESOURCE',
@@ -1713,6 +1726,7 @@ BEGIN
             'PK_OPS_AGENT_VER_RES_ACT',
             'PK_OPS_ANSWER_CITATION',
             'PK_OPS_KNOW_CONFIG',
+            'PK_OPS_KNOW_INDEX',
             'PK_OPS_REPORT_SOURCE',
             'PK_OPS_RUN_EVENT',
             'PK_OPS_TURN_EVENT',
@@ -1767,7 +1781,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 298 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 301 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -2728,6 +2742,24 @@ BEGIN
                 'KBOT_OPS_POLICY|UPDATED_AT',
                 'KBOT_OPS_POLICY|UPDATED_BY',
                 'KBOT_OPS_POLICY|VERSION_NO',
+                'KBOT_OPS_PROTECTION_PLAN|APPROVAL_JSON',
+                'KBOT_OPS_PROTECTION_PLAN|DOMAIN_ID',
+                'KBOT_OPS_PROTECTION_PLAN|NEXT_BACKUP_AT',
+                'KBOT_OPS_PROTECTION_PLAN|NEXT_DRILL_AT',
+                'KBOT_OPS_PROTECTION_PLAN|RESOURCE_ID',
+                'KBOT_OPS_PROTECTION_PLAN|REVISION',
+                'KBOT_OPS_PROTECTION_PLAN|SETTINGS_JSON',
+                'KBOT_OPS_PROTECTION_RUN|ACTIVE_KEY',
+                'KBOT_OPS_PROTECTION_RUN|COMPLETED_AT',
+                'KBOT_OPS_PROTECTION_RUN|DEADLINE_AT',
+                'KBOT_OPS_PROTECTION_RUN|OPERATION',
+                'KBOT_OPS_PROTECTION_RUN|REPORT_ID',
+                'KBOT_OPS_PROTECTION_RUN|RESOURCE_ID',
+                'KBOT_OPS_PROTECTION_RUN|RESULT_JSON',
+                'KBOT_OPS_PROTECTION_RUN|RUN_ID',
+                'KBOT_OPS_PROTECTION_RUN|SCHEDULED_AT',
+                'KBOT_OPS_PROTECTION_RUN|SNAPSHOT_JSON',
+                'KBOT_OPS_PROTECTION_RUN|STATUS',
                 'KBOT_OPS_RECOVERY_DRILL|ACHIEVED_RPO_SECONDS',
                 'KBOT_OPS_RECOVERY_DRILL|ACHIEVED_RTO_SECONDS',
                 'KBOT_OPS_RECOVERY_DRILL|ASSURANCE_LEVEL',
@@ -2754,7 +2786,11 @@ BEGIN
                 'KBOT_OPS_RECOVERY_DRILL|SCENARIO',
                 'KBOT_OPS_RECOVERY_DRILL|SERVICE_VALIDATED_AT',
                 'KBOT_OPS_RECOVERY_DRILL|SIMULATED_FAILURE_AT',
-                'KBOT_OPS_RECOVERY_DRILL|SOURCE_OPS_RUN_ID',
+                'KBOT_OPS_RECOVERY_DRILL|SOURCE_OPS_RUN_ID'
+              ))
+            UNION ALL
+            SELECT column_value AS object_name
+              FROM TABLE(sys.odcivarchar2list(
                 'KBOT_OPS_RECOVERY_DRILL|SOURCE_TRUST_LEVEL',
                 'KBOT_OPS_RECOVERY_DRILL|STATUS',
                 'KBOT_OPS_RECOVERY_DRILL|UPDATED_AT',
@@ -2772,11 +2808,7 @@ BEGIN
                 'KBOT_OPS_RECOVERY_PROFILE|RECOVERY_PROFILE_ID',
                 'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_ASSURANCE_LEVEL',
                 'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_BACKUP_SOURCE_TYPES_JSON',
-                'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_DRILL_INTERVAL_DAYS'
-              ))
-            UNION ALL
-            SELECT column_value AS object_name
-              FROM TABLE(sys.odcivarchar2list(
+                'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_DRILL_INTERVAL_DAYS',
                 'KBOT_OPS_RECOVERY_PROFILE|RESOURCE_ID',
                 'KBOT_OPS_RECOVERY_PROFILE|RETIRED_AT',
                 'KBOT_OPS_RECOVERY_PROFILE|ROW_VERSION',
@@ -4315,6 +4347,24 @@ BEGIN
                 'KBOT_OPS_POLICY|UPDATED_AT',
                 'KBOT_OPS_POLICY|UPDATED_BY',
                 'KBOT_OPS_POLICY|VERSION_NO',
+                'KBOT_OPS_PROTECTION_PLAN|APPROVAL_JSON',
+                'KBOT_OPS_PROTECTION_PLAN|DOMAIN_ID',
+                'KBOT_OPS_PROTECTION_PLAN|NEXT_BACKUP_AT',
+                'KBOT_OPS_PROTECTION_PLAN|NEXT_DRILL_AT',
+                'KBOT_OPS_PROTECTION_PLAN|RESOURCE_ID',
+                'KBOT_OPS_PROTECTION_PLAN|REVISION',
+                'KBOT_OPS_PROTECTION_PLAN|SETTINGS_JSON',
+                'KBOT_OPS_PROTECTION_RUN|ACTIVE_KEY',
+                'KBOT_OPS_PROTECTION_RUN|COMPLETED_AT',
+                'KBOT_OPS_PROTECTION_RUN|DEADLINE_AT',
+                'KBOT_OPS_PROTECTION_RUN|OPERATION',
+                'KBOT_OPS_PROTECTION_RUN|REPORT_ID',
+                'KBOT_OPS_PROTECTION_RUN|RESOURCE_ID',
+                'KBOT_OPS_PROTECTION_RUN|RESULT_JSON',
+                'KBOT_OPS_PROTECTION_RUN|RUN_ID',
+                'KBOT_OPS_PROTECTION_RUN|SCHEDULED_AT',
+                'KBOT_OPS_PROTECTION_RUN|SNAPSHOT_JSON',
+                'KBOT_OPS_PROTECTION_RUN|STATUS',
                 'KBOT_OPS_RECOVERY_DRILL|ACHIEVED_RPO_SECONDS',
                 'KBOT_OPS_RECOVERY_DRILL|ACHIEVED_RTO_SECONDS',
                 'KBOT_OPS_RECOVERY_DRILL|ASSURANCE_LEVEL',
@@ -4341,7 +4391,11 @@ BEGIN
                 'KBOT_OPS_RECOVERY_DRILL|SCENARIO',
                 'KBOT_OPS_RECOVERY_DRILL|SERVICE_VALIDATED_AT',
                 'KBOT_OPS_RECOVERY_DRILL|SIMULATED_FAILURE_AT',
-                'KBOT_OPS_RECOVERY_DRILL|SOURCE_OPS_RUN_ID',
+                'KBOT_OPS_RECOVERY_DRILL|SOURCE_OPS_RUN_ID'
+              ))
+            UNION ALL
+            SELECT column_value AS object_name
+              FROM TABLE(sys.odcivarchar2list(
                 'KBOT_OPS_RECOVERY_DRILL|SOURCE_TRUST_LEVEL',
                 'KBOT_OPS_RECOVERY_DRILL|STATUS',
                 'KBOT_OPS_RECOVERY_DRILL|UPDATED_AT',
@@ -4359,11 +4413,7 @@ BEGIN
                 'KBOT_OPS_RECOVERY_PROFILE|RECOVERY_PROFILE_ID',
                 'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_ASSURANCE_LEVEL',
                 'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_BACKUP_SOURCE_TYPES_JSON',
-                'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_DRILL_INTERVAL_DAYS'
-              ))
-            UNION ALL
-            SELECT column_value AS object_name
-              FROM TABLE(sys.odcivarchar2list(
+                'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_DRILL_INTERVAL_DAYS',
                 'KBOT_OPS_RECOVERY_PROFILE|RESOURCE_ID',
                 'KBOT_OPS_RECOVERY_PROFILE|RETIRED_AT',
                 'KBOT_OPS_RECOVERY_PROFILE|ROW_VERSION',
@@ -4941,7 +4991,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1564 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1582 项。');
     END IF;
 
     l_issue_count := 0;
@@ -5033,19 +5083,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 60
-           OR l_contract_version <> 'aiops-oracle-v60-exadata-oem' THEN
+           OR l_schema_version <> 62
+           OR l_contract_version <> 'aiops-oracle-v62-single-file-upload' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '60/aiops-oracle-v60-exadata-oem'
+                || '62/aiops-oracle-v62-single-file-upload'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/60/'
-                || 'aiops-oracle-v60-exadata-oem'
+                '[通过] Schema 合同：AIOPS/62/'
+                || 'aiops-oracle-v62-single-file-upload'
             );
         END IF;
     EXCEPTION
@@ -5071,10 +5121,10 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：102 张表、10 个视图、'
+        '验证通过：104 张表、10 个视图、'
         || '1 个属性图、'
-        || '377 个命名索引、298 个命名约束、'
-        || '1564 个表列；Schema 与当前规范一致。'
+        || '379 个命名索引、301 个命名约束、'
+        || '1582 个表列；Schema 与当前规范一致。'
     );
 END;
 /

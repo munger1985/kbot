@@ -78,9 +78,16 @@ class KnowledgeRetrievalAgentService:
         except AlgorithmError as exc:
             raise AgentApplicationError("AGENT_LIBRARY_DENIED", "资料库不存在、已停用或无读取权限", status_code=404) from exc
 
+    @staticmethod
+    async def _lock_library_binding(uow, command, library_id):
+        if library_id is not None:
+            access = RetrievalAccess(command.domain_id, None, str(command.actor_id))
+            try:
+                await uow.library(access).authorized(library_id, "READ", lock=True)
+            except AlgorithmError as exc:
+                raise AgentApplicationError("AGENT_LIBRARY_DENIED", "资料库不存在、已停用或无读取权限", status_code=404) from exc
+
     async def create(self, command: CreateAgentCommand) -> dict[str, Any]:
-        await self._library(domain_id=command.domain_id, actor_id=command.actor_id,
-            library_id=command.library_id, tenant_id=getattr(command, "tenant_id", None))
         await self._validate_x_search_model(command.models)
         self._validate(
             command.status,
@@ -90,6 +97,7 @@ class KnowledgeRetrievalAgentService:
         )
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
+            await self._lock_library_binding(uow, command, command.library_id)
             assert uow.agents is not None
             agent = KnowledgeRetrievalAgentEntity(
                 agent_id=agent_id,
@@ -222,9 +230,8 @@ class KnowledgeRetrievalAgentService:
             }
             version_changed = bool(version_fields.intersection(changes))
             library_id = changes.get("library_id", current.library_id)
-            if library_id and (changes.get("status", agent.status) == "ACTIVE" or "library_id" in changes):
-                await uow.library(RetrievalAccess(command.domain_id, getattr(command, "tenant_id", None),
-                    str(command.actor_id))).detail(library_id)
+            if version_changed or changes.get("status", agent.status) == "ACTIVE":
+                await self._lock_library_binding(uow, command, library_id)
             data_model_ids = changes.get(
                 "data_model_ids", current.data_model_ids_json
             )

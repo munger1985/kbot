@@ -188,6 +188,13 @@ class AIModelConfigClient:
             "GET", f"/{model_id}/references", auth_context=auth_context,
         )
 
+    async def test_model_connection(
+        self, model_id: UUID, *, auth_context: AuthContext | None = None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST", f"/{model_id}:test-connection", auth_context=auth_context,
+        )
+
     async def delete_model(
         self,
         model_id: UUID,
@@ -322,7 +329,7 @@ class AIModelClient():
         return headers
 
     async def call_embedding_model(self,
-                                served_model_name: str,
+                                model_id: str,
                                 texts: list[str],
                                 batch_size: int | None = None,
                                 is_query: bool = True,
@@ -332,7 +339,7 @@ class AIModelClient():
         调用嵌入模型获取文本向量
 
         Args:
-            served_model_name: 模型技术名称
+            model_id: 模型 UUID
             texts: 文本列表
             batch_size: 批处理大小
             is_query: 是否为查询模式
@@ -350,7 +357,7 @@ class AIModelClient():
         url = f"{base_url}{INTERNAL_API_V1}/embeddings"
         headers = self._auth_headers(audience=audience)
         payload = {
-            "served_model_name": served_model_name,
+            "model_id": str(model_id),
             "texts": texts,
             "batch_size": batch_size,
             "is_query": is_query
@@ -406,19 +413,19 @@ class AIModelClient():
             logger.error(msg)
             raise InternalServerError(msg)
 
-    async def get_embedding(self, served_model_name: str, text: str) -> list[float]:
+    async def get_embedding(self, model_id: str, text: str) -> list[float]:
         """
         获取文本的嵌入向量
 
         Args:
-            served_model_name: 模型技术名称
+            model_id: 模型 UUID
             text: 输入文本
 
         Returns:
             嵌入向量列表
         """
         embeddings = await self.call_embedding_model(
-            served_model_name=served_model_name,
+            model_id=model_id,
             texts=[text],
             is_query=True,
             batch_size=1
@@ -426,7 +433,7 @@ class AIModelClient():
         return embeddings[0].embedding
 
     async def compute_similarity(self,
-                                served_model_name: str,
+                                model_id: str,
                                 text1: str,
                                 text2: str,
                                 method: str = "cosine"
@@ -435,7 +442,7 @@ class AIModelClient():
         计算两个文本之间的相似度
 
         Args:
-            served_model_name: 用于计算相似度的模型技术名称
+            model_id: 用于计算相似度的模型 UUID
             text1: 第一个文本
             text2: 第二个文本
             method: 相似度计算方法，支持"cosine"(余弦相似度)和"dot"(点积)
@@ -450,7 +457,7 @@ class AIModelClient():
         url = f"{base_url}{INTERNAL_API_V1}/similarity"
         headers = self._auth_headers(audience=audience)
         payload = {
-            "served_model_name": served_model_name,
+            "model_id": str(model_id),
             "text1": text1,
             "text2": text2,
             "method": method
@@ -475,12 +482,12 @@ class AIModelClient():
             logger.error(msg)
             raise InternalServerError(msg)
 
-    async def call_llm_model(self, served_model_name: str, prompt:  list[dict[str, str]] | str, **kwargs):
+    async def call_llm_model(self, model_id: str, prompt:  list[dict[str, str]] | str, **kwargs):
         """
         调用LLM微服务并处理SSE格式的响应
 
         Args:
-            served_model_name: 模型技术名称
+            model_id: 模型 UUID
             prompt: 输入的提示信息
             **kwargs: 其他可选参数，如stream、temperature等
 
@@ -499,7 +506,7 @@ class AIModelClient():
 
         # 构建请求体
         payload = {
-            "served_model_name": served_model_name,
+            "model_id": str(model_id),
             "messages": prompt,
             "stream": kwargs.get("stream", True)  # 默认为流式
         }
@@ -544,14 +551,14 @@ class AIModelClient():
     async def stream_llm_chunks(
         self,
         *,
-        served_model_name: str,
+        model_id: str,
         prompt: list[dict[str, str]] | str,
         **kwargs,
     ) -> AsyncGenerator[LLMChunk, None]:
         """把模型服务的 SSE 响应归一为正文与推理摘要增量。"""
         pending = ""
         async for raw in self.call_llm_model(
-            served_model_name=served_model_name,
+            model_id=model_id,
             prompt=prompt,
             stream=True,
             **kwargs,
@@ -603,7 +610,7 @@ class AIModelClient():
 
     async def call_vlm_model(
             self,
-            served_model_name: str,
+            model_id: str,
             image: str | Image.Image,
             prompt: str,
             **kwargs
@@ -611,7 +618,7 @@ class AIModelClient():
             """调用视觉语言模型进行图片解析。
 
             Args:
-                served_model_name: 模型技术名称。
+                model_id: 模型 UUID。
                 image: 输入图片（文件路径或 PIL.Image 对象）。
                 prompt: 完整的提示词文本（必填）。
                 **kwargs: 推理的额外参数（如 temperature, max_tokens 等）。
@@ -650,7 +657,7 @@ class AIModelClient():
 
             # 4. 构建请求体
             payload = {
-                "served_model_name": served_model_name,
+                "model_id": str(model_id),
                 "messages": messages,
                 "stream": kwargs.get("stream", False),
                 **kwargs
@@ -690,7 +697,7 @@ class AIModelClient():
                 logger.exception(msg)
                 raise InternalServerError(msg)
 
-    async def get_llm_json(self, served_model_name: str, prompt:  list[dict[str, str]] | str, **kwargs) -> dict:
+    async def get_llm_json(self, model_id: str, prompt:  list[dict[str, str]] | str, **kwargs) -> dict:
         """
         调用 LLM 并强制获取结构化 JSON 结果。
         内部自动处理非流式请求与 JSON 提取。
@@ -706,7 +713,7 @@ class AIModelClient():
         try:
             # 聚合 generator 产出的内容
             # 使用 stream=False 确保 JSON mode 正常工作 + 避免 OCI 流式格式兼容问题
-            async for chunk in self.call_llm_model(served_model_name=served_model_name, prompt=prompt,
+            async for chunk in self.call_llm_model(model_id=model_id, prompt=prompt,
                                                    response_format={"type": "json_object"}, temperature=0, stream=False, **kwargs):
                 line = chunk.strip()
                 if not line or line == "data: [DONE]":
@@ -736,7 +743,7 @@ class AIModelClient():
 
             if not full_text:
                 logger.error(
-                    f"LLM 返回了空响应。model={served_model_name}, "
+                    f"LLM 返回了空响应。model={model_id}, "
                     f"raw_lines_sample={raw_lines_log}"
                 )
                 raise ValueError("LLM returned an empty response")
@@ -751,21 +758,21 @@ class AIModelClient():
             # 打印 raw response 以便排查
             logger.error(
                 f"无法从 LLM 提取 JSON 响应，错误: {e}\n"
-                f"model={served_model_name}, full_text_len={len(full_text)}, "
+                f"model={model_id}, full_text_len={len(full_text)}, "
                 f"raw_lines_sample={raw_lines_log}, "
                 f"full_text_preview={full_text[:500] if full_text else '(空)'}"
             )
             raise
 
     async def get_vlm_json(
-        self, served_model_name: str, image: str | Image.Image, prompt: str, **kwargs
+        self, model_id: str, image: str | Image.Image, prompt: str, **kwargs
     ) -> dict:
         """
         调用 VLM 并强制获取结构化 JSON 结果。
         内部自动处理 API 响应提取与 JSON 解析。
 
         Args:
-            served_model_name: VLM 模型名称
+            model_id: VLM 模型 UUID
             image: 输入图片（文件路径或 PIL.Image 对象）
             prompt: 提示词文本
             **kwargs: 推理额外参数
@@ -790,7 +797,7 @@ class AIModelClient():
 
         try:
             async for chunk in self.call_vlm_model(
-                served_model_name=served_model_name,
+                model_id=model_id,
                 image=image,
                 prompt=prompt,
                 temperature=0,
@@ -811,7 +818,7 @@ class AIModelClient():
                     full_text += line
 
             if not full_text:
-                logger.error(f"VLM 返回了空响应。模型={served_model_name}")
+                logger.error(f"VLM 返回了空响应。模型={model_id}")
                 raise ValueError("VLM returned an empty response")
 
             logger.debug(f"VLM 原始响应（{len(full_text)} 字符）：{full_text[:300]}...")
@@ -820,7 +827,7 @@ class AIModelClient():
         except Exception as e:
             logger.error(
                 f"无法从 VLM 提取 JSON 响应，错误: {e}\n"
-                f"model={served_model_name}, full_text_preview={full_text[:300] if full_text else '(空)'}"
+                f"model={model_id}, full_text_preview={full_text[:300] if full_text else '(空)'}"
             )
             raise
 
@@ -1012,7 +1019,7 @@ class AIModelClient():
 
         return None
 
-    async def get_llm_answer(self, served_model_name: str, prompt:  list[dict[str, str]] | str, **kwargs) -> str:
+    async def get_llm_answer(self, model_id: str, prompt:  list[dict[str, str]] | str, **kwargs) -> str:
         """
         高层封装：直接获取 LLM 聚合后的纯文本字符串。
         自动处理 SSE 解析、过滤 metadata、拼接 Content。
@@ -1022,7 +1029,7 @@ class AIModelClient():
             # 强制开启流式以复用 call_llm_model 的 SSE 解析逻辑
             kwargs["stream"] = True
 
-            async for raw_line in self.call_llm_model(served_model_name, prompt, **kwargs):
+            async for raw_line in self.call_llm_model(model_id, prompt, **kwargs):
                 line = raw_line.strip()
 
                 # 1. 过滤空行、DONE 标志和非 data 行
@@ -1051,7 +1058,7 @@ class AIModelClient():
             logger.error(f"获取 LLM 回答失败：{e}")
             return ""
 
-    async def get_vlm_answer(self, served_model_name: str, image: str | Image.Image, prompt: str, **kwargs) -> str:
+    async def get_vlm_answer(self, model_id: str, image: str | Image.Image, prompt: str, **kwargs) -> str:
         """
         通过复用 call_vlm_model 聚合流式输出。
         """
@@ -1060,7 +1067,7 @@ class AIModelClient():
             # 强制开启流式
             kwargs["stream"] = True
 
-            async for raw_line in self.call_vlm_model(served_model_name, image, prompt, **kwargs):
+            async for raw_line in self.call_vlm_model(model_id, image, prompt, **kwargs):
                 line = raw_line.strip()
 
                 # SSE 协议解析逻辑 (与 get_llm_answer 保持一致)
@@ -1097,7 +1104,7 @@ class AIModelClient():
 
     async def get_llm_stream_parsed(
         self,
-        served_model_name: str,
+        model_id: str,
         prompt: list[dict[str, str]] | str,
         **kwargs
     ) -> AsyncGenerator[LLMChunk, None]:
@@ -1109,7 +1116,7 @@ class AIModelClient():
 
         # 直接复用原有的 call_llm_model 逻辑
         # 注意：原方法返回的是 async for raw_chunk in response.content 的字符串流
-        async for line in self.call_llm_model(served_model_name, prompt, **kwargs):
+        async for line in self.call_llm_model(model_id, prompt, **kwargs):
             # 这里的 line 已经是 decode('utf-8') 后的字符串
             # 但由于 response.content 的迭代可能包含多行或不完整行，需要处理前缀
 
@@ -1141,13 +1148,13 @@ class AIModelClient():
     # ═══════════════════════════════════════════════════════════
 
     async def get_visual_embedding(
-        self, image_base64: str, served_model_name: str,
+        self, image_base64: str, model_id: str,
     ) -> list[float]:
         """图片 → 视觉 embedding（调用 Visual 微服务）
 
         Args:
             image_base64: base64 编码的图片
-            served_model_name: 对外服务模型名称
+            model_id: 视觉 Embedding 模型 UUID
 
         Returns:
             embedding 向量列表
@@ -1171,7 +1178,7 @@ class AIModelClient():
             if missing_padding:
                 image_base64 += "=" * missing_padding
 
-        payload = {"served_model_name": served_model_name, "image_base64": image_base64}
+        payload = {"model_id": str(model_id), "image_base64": image_base64}
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -1188,10 +1195,10 @@ class AIModelClient():
 
                     data = await response.json()
                     returned_model = str(
-                        data.get("served_model_name") or ""
+                        data.get("model_id") or ""
                     )
                     embedding = data.get("embedding", [])
-                    if returned_model != served_model_name:
+                    if returned_model != str(model_id):
                         raise InternalServerError(
                             "视觉嵌入服务返回了错误的模型身份"
                         )

@@ -34,32 +34,12 @@ class AIModelRepository(ModelRepositoryBase[AIModelEntity]):
         except Exception as exc:
             raise DatabaseException("按 ID 读取模型失败", original_error=exc)
 
-    async def get_by_served_name(
-        self, *, served_model_name: str,
-    ) -> AIModelEntity:
-        try:
-            result = await self.session.execute(
-                select(AIModelEntity).where(
-                    AIModelEntity.served_model_name == served_model_name,
-                )
-            )
-            model = result.scalar_one_or_none()
-            if model is None:
-                raise DataNotFoundException(
-                    f"模型不存在：{served_model_name}"
-                )
-            return model
-        except DataNotFoundException:
-            raise
-        except Exception as exc:
-            raise DatabaseException("按服务名读取模型失败", original_error=exc)
-
     async def list_by_scope(
         self, *, category: int | None = None,
     ) -> Sequence[AIModelEntity]:
         try:
             result = await self.session.execute(
-                select(AIModelEntity).order_by(AIModelEntity.served_model_name)
+                select(AIModelEntity).order_by(AIModelEntity.display_name, AIModelEntity.model_id)
             )
             rows = result.scalars().all()
             if category is None:

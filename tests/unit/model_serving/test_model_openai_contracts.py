@@ -1,6 +1,9 @@
 """Model Serving 公开契约与内部语义隔离测试。"""
 
 import unittest
+from uuid import UUID
+
+from pydantic import ValidationError
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -11,51 +14,60 @@ from model_serving.llm.schema import OpenAIChatRequest
 from model_serving.vlm.schema import OpenAIVLMRequest
 
 
+CHAT_ID = "019c0000-0000-7000-8000-000000000001"
+VLM_ID = "019c0000-0000-7000-8000-000000000002"
+EMBED_ID = "019c0000-0000-7000-8000-000000000003"
+
+
 class ModelOpenAIContractTest(unittest.TestCase):
-    def test_chat_model_maps_to_served_model_name(self):
+    def test_chat_model_maps_to_model_id(self):
         request = OpenAIChatRequest(
-            model="chat-prod",
+            model=CHAT_ID,
             messages=[{"role": "user", "content": "你好"}],
         )
         internal = request.to_internal()
-        self.assertEqual("chat-prod", internal.served_model_name)
+        self.assertEqual(UUID(CHAT_ID), internal.model_id)
         self.assertFalse(hasattr(internal, "model"))
 
-    def test_vlm_model_maps_to_served_model_name(self):
+    def test_old_call_name_cannot_select_a_model(self):
+        with self.assertRaises(ValidationError):
+            OpenAIChatRequest(model="chat-prod", messages=[])
+
+    def test_vlm_model_maps_to_model_id(self):
         request = OpenAIVLMRequest(
-            model="vlm-prod",
+            model=VLM_ID,
             messages=[{
                 "role": "user",
                 "content": [{"type": "text", "text": "描述图片"}],
             }],
         )
-        self.assertEqual("vlm-prod", request.to_internal().served_model_name)
+        self.assertEqual(UUID(VLM_ID), request.to_internal().model_id)
 
     def test_embedding_contract_uses_openai_field_names(self):
         request = OpenAIEmbeddingRequest(
-            model="embed-prod",
+            model=EMBED_ID,
             input=["问题一", "问题二"],
         )
-        self.assertEqual("embed-prod", request.model)
+        self.assertEqual(UUID(EMBED_ID), request.model)
         self.assertEqual(["问题一", "问题二"], request.input)
 
-    def test_models_endpoint_exposes_only_enabled_served_names(self):
+    def test_models_endpoint_exposes_only_enabled_model_ids(self):
         class Registry:
             async def list(self, *, category):
                 return [
                     {
                         "model_id": "019c0000-0000-7000-8000-000000000001",
-                        "served_model_name": "chat-prod",
+
                         "status": 1,
                     },
                     {
                         "model_id": "019c0000-0000-7000-8000-000000000003",
-                        "served_model_name": "chat-active",
+
                         "status": "ACTIVE",
                     },
                     {
                         "model_id": "019c0000-0000-7000-8000-000000000002",
-                        "served_model_name": "chat-disabled",
+
                         "status": 0,
                     },
                 ]
@@ -64,7 +76,7 @@ class ModelOpenAIContractTest(unittest.TestCase):
         app.state.model_registry = Registry()
         app.include_router(create_openai_models_router(category=1))
         payload = TestClient(app).get("/api/v1/models").json()
-        self.assertEqual(["chat-prod", "chat-active"], [item["id"] for item in payload["data"]])
+        self.assertEqual([CHAT_ID, EMBED_ID], [item["id"] for item in payload["data"]])
         self.assertNotIn("model_id", payload["data"][0])
 
 

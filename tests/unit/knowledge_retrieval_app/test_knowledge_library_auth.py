@@ -66,7 +66,7 @@ class KnowledgeLibraryAuthTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json(), [])
-        self.list_libraries.assert_awaited_once_with(RetrievalAccess(17, None, "test-user"))
+        self.list_libraries.assert_awaited_once_with(RetrievalAccess(17, None, "test-user"), management=False)
 
     def test_user_scope_cannot_replace_the_service_scope(self) -> None:
         context = self.context.model_copy(update={"scopes": (self.library_scope,)})

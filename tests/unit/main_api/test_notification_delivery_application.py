@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -231,5 +232,12 @@ async def test_authority_uses_current_approver_and_excludes_both_applicants(acto
     authority=NotificationDeliveryAuthority(uow_factory=None,client=client,caller_service="test")
     authority.domain_active=AsyncMock(return_value=True)
     authority.delivery_available=AsyncMock(return_value=True)
-    authority.permissions=AsyncMock(return_value={"aiops:use","aiops:proposal:approve"})
+    # 共享相同的受理语义；当前平台的权限目录保留自己的操作权限码。
+    oracle = (Path(__file__).resolve().parents[3] / "database/oracle").is_dir()
+    approval = "aiops:proposal:approve" if oracle else "aiops:change_manage"
+    other_approval = "aiops:change_manage" if oracle else "aiops:proposal:approve"
+    authority.permissions=AsyncMock(return_value={"aiops:use",other_approval})
+    assert await authority.check(scope=scope,actor_id=actor,entry=entry,actionable=True)=="NOTIFICATION_ACCESS_REVOKED"
+    client.resolve_notification_resource.assert_not_awaited()
+    authority.permissions.return_value={"aiops:use",approval}
     assert await authority.check(scope=scope,actor_id=actor,entry=entry,actionable=True)==expected

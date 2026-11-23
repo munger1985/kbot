@@ -7,6 +7,7 @@
     "business-systems": "aiops:target_manage",
     "business-system-workspace": "aiops:target_manage",
     "recovery-drills": "aiops:work_item_handle",
+    "data-protection": "aiops:use",
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
     "operations-knowledge": "aiops:knowledge_manage", "knowledge-bases": "aiops:knowledge_manage", "knowledge-tags": "aiops:knowledge_manage", agents: "aiops:agent_manage",
@@ -26,7 +27,7 @@
   const navigationGroups = [
     ["operations-work", "运维工作", "data", [
       ["dashboard", "运维总览"], ["monitoring", "实时监控"], ["situations", "告警诊断"],
-      ["inspections", "数据库巡检"], ["recovery-drills", "恢复演练"],
+      ["inspections", "数据库巡检"], ["data-protection", "数据保护"], ["recovery-drills", "恢复演练"],
     ]],
     ["knowledge-assets", "知识资产", "knowledge", [
       ["cases", "诊断案例库"], ["operations-knowledge", "运维资料库"],
@@ -43,7 +44,7 @@
   ];
   const pageIcons = {
     dashboard: "overview", monitoring: "data", situations: "audit", inspections: "data",
-    "recovery-drills": "audit", reports: "knowledge", cases: "knowledge", "operations-knowledge": "knowledge",
+    "recovery-drills": "audit", "data-protection": "audit", reports: "knowledge", cases: "knowledge", "operations-knowledge": "knowledge",
     "business-systems": "models", "diagnostic-sources": "data", "responsibility-groups": "users",
     "knowledge-bases": "knowledge", agents: "agents", "report-templates": "knowledge", runs: "data",
   };
@@ -249,8 +250,8 @@
         });
       }).catch(() => toast("通知中心暂时无法加载，请在对应页面查看生成记录。"));
       document.getElementById("ops-logout").onclick = () => {
-        KBotAIOpsAuth.clear();
-        location.replace("./login.html");
+        void import("../../shared/kbot-platform-session.js?v=20261120_sso")
+          .then(() => KBotPlatformSession.logout()).catch(() => toast("退出失败，请返回 KBot 工作台后重试。"));
       };
       document.getElementById("ops-user").textContent = access.display_name || access.user_id;
       const permissions = new Set(access.permissions || []);

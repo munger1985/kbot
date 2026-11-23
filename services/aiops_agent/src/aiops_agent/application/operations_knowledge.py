@@ -51,6 +51,7 @@ from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops.case_collection import CASE_MODEL_ROLES, CaseCollectionModels
 from platform_core.dictionary import ModelCategory
 from platform_core.identity import uuid7
+from knowledge_algorithms.contracts.identity import fingerprint
 from platform_core.security import create_service_auth_context
 from platform_clients.model import AIModelConfigClient
 
@@ -287,13 +288,30 @@ def _asset_view(entity: OperationsKnowledgeAssetEntity) -> dict[str, Any]:
     }
 
 
+_DEPENDENCY_KEYS = {
+    "assets": "ASSET_RECORDS",
+    "current_agent_versions": "CURRENT_AGENT_VERSION",
+    "historical_agent_versions": "HISTORICAL_AGENT_VERSION",
+}
+_DEPENDENCY_LABELS = {
+    "ASSET_RECORDS": "运维资料",
+    "CURRENT_AGENT_VERSION": "当前 Agent 版本",
+    "HISTORICAL_AGENT_VERSION": "历史 Agent 版本",
+}
+
+
+def _knowledge_base_blockers(usage):
+    return [reason for key, reason in _DEPENDENCY_KEYS.items() if usage.get(key)]
+
+
 def _knowledge_base_view(entity: OperationsKnowledgeBaseEntity) -> dict[str, Any]:
     return {
         "knowledge_base_id": str(entity.knowledge_base_id),
+        "usage": dict.fromkeys(_DEPENDENCY_KEYS, 0),
+        "blockers": [],
         "domain_id": int(entity.domain_id),
         "display_name": entity.display_name,
         "description": entity.description,
-        "configuration": dict(entity.configuration_json or {}),
         "status": entity.status,
         "row_version": int(entity.row_version),
         "created_by": entity.created_by,
@@ -313,7 +331,8 @@ def _version_view(entity: OperationsKnowledgeVersionEntity) -> dict[str, Any]:
         "profile_schema_version": entity.profile_schema_version,
         "profile": entity.profile_json,
         "extraction_warnings": entity.extraction_warnings_json or [],
-        "tag_analysis": entity.tag_analysis_json,
+        "tag_analysis": ({key: value for key, value in entity.tag_analysis_json.items()
+                          if key != "execution_spec"} if entity.tag_analysis_json is not None else None),
         "published_at": entity.published_at,
         "retired_at": entity.retired_at,
         "created_by": entity.created_by,
@@ -477,7 +496,7 @@ class OperationsKnowledgeService:
         self._structured_model = structured_model
         self._prompt_registry = prompt_registry
         self._case_model_catalog = self._llm_model_catalog
-        self._case_model_name_field = "served_model_name"
+        self._case_model_name_field = "provider_model_name"
         self._plan_capture_reader = plan_capture_reader
         self._knowledge_search_budget = knowledge_search_budget
 
@@ -485,21 +504,67 @@ class OperationsKnowledgeService:
     def _actor(context: AuthContext) -> str:
         return context.asserted_user_id or context.client_id
 
+    async def _base_view(self, repository, entity, *, new=False, vocabulary_ready=None):
+        view = _knowledge_base_view(entity)
+        facts = {"total": 0, "ready": 0, "error": False} if new else await repository.knowledge_base_index_facts(
+            domain_id=entity.domain_id, knowledge_base_id=entity.knowledge_base_id,
+        )
+        total, ready = facts["total"], facts["ready"]
+        state = ("EMPTY" if not total else "READY" if ready == total else "PARTIAL" if ready
+                 else "ERROR" if facts["error"] else "NOT_READY")
+        model_id = self._tagging_model_id(entity)
+        if vocabulary_ready is None:
+            vocabulary_ready = await repository.has_active_knowledge_tags(domain_id=entity.domain_id)
+        tagging_state = (
+            "NOT_CONFIGURED" if not model_id else
+            "DEGRADED" if self._prompt_registry is None or self._structured_model is None else
+            "PENDING_VERIFICATION"
+        )
+        configuration = entity.configuration_json or {}
+        view.update(capabilities=self._documents.capability_view(facts,
+                    parse_models=configuration.get("parse_models"), index_models=configuration.get("index_models")),
+                    index={"state": state},
+                    tagging={"model_id": model_id, "state": tagging_state, "vocabulary_ready": vocabulary_ready},
+                    parse_models=(entity.configuration_json or {}).get("parse_models", {}),
+                    index_models=(entity.configuration_json or {}).get("index_models", {}))
+        return view
+
+    @staticmethod
+    def _tagging_model_id(entity):
+        # 只读写现有真实的标签绑定角色，不解释其他旧库级选择。
+        value = ((entity.configuration_json or {}).get("models") or {}).get("parser_llm")
+        return str(value) if value else None
+
+    @staticmethod
+    def _name_conflict():
+        return AIOpsApplicationError(
+            code="AIOPS_KNOWLEDGE_BASE_NAME_CONFLICT",
+            message="当前工作域已存在同名运维知识库",
+            status_code=409,
+        )
+
     async def create_knowledge_base(self, *, domain_id, command, context):
-        await self._validate_knowledge_base_models(context=context, models=command.models)
-        configuration = self._documents.configuration(command.models)
+        if command.tagging_model_id is not None:
+            await self._tagging_model_snapshot(command.tagging_model_id, context=context)
+        configuration = {"models": {"parser_llm": str(command.tagging_model_id)} if command.tagging_model_id else {}}
+        if command.parse_models is not None:
+            configuration["parse_models"] = command.parse_models.model_dump(mode="json", exclude_none=True)
+        if command.index_models is not None:
+            configuration["index_models"] = command.index_models.model_dump(mode="json", exclude_none=True)
         async with self._uow_factory() as uow:
+            if not await uow.operations_knowledge.lock_knowledge_base_names(domain_id=domain_id):
+                raise self._knowledge_base_not_found()
             duplicate = await uow.operations_knowledge.find_knowledge_base_name(
                 domain_id=domain_id, normalized_name=" ".join(command.display_name.casefold().split()))
             if duplicate is not None:
-                raise self._state_conflict("当前 Domain 已存在同名运维知识库")
+                raise self._name_conflict()
             entity = OperationsKnowledgeBaseEntity(domain_id=domain_id,
                 knowledge_base_id=uuid7(), display_name=command.display_name.strip(),
                 description=command.description, configuration_json=configuration, status="ACTIVE",
                 created_by=self._actor(context), updated_by=self._actor(context))
             await uow.operations_knowledge.add_knowledge_base(entity)
             await uow.commit()
-            return _knowledge_base_view(entity)
+            return await self._base_view(uow.operations_knowledge, entity, new=True)
 
     async def list_knowledge_bases(
         self, *, domain_id: int, include_archived: bool = False,
@@ -509,11 +574,13 @@ class OperationsKnowledgeService:
                 domain_id=domain_id, include_archived=include_archived,
             )
             result = []
+            vocabulary_ready = bool(rows) and await uow.operations_knowledge.has_active_knowledge_tags(domain_id=domain_id)
             for row in rows:
-                view = _knowledge_base_view(row)
+                view = await self._base_view(uow.operations_knowledge, row, vocabulary_ready=vocabulary_ready)
                 view["usage"] = await uow.operations_knowledge.knowledge_base_usage(
                     knowledge_base_id=row.knowledge_base_id
                 )
+                view["blockers"] = _knowledge_base_blockers(view["usage"])
                 result.append(view)
             return result
 
@@ -526,10 +593,11 @@ class OperationsKnowledgeService:
             )
             if row is None or row.status == "ARCHIVED":
                 raise self._knowledge_base_not_found()
-            view = _knowledge_base_view(row)
+            view = await self._base_view(uow.operations_knowledge, row)
             view["usage"] = await uow.operations_knowledge.knowledge_base_usage(
                 knowledge_base_id=knowledge_base_id
             )
+            view["blockers"] = _knowledge_base_blockers(view["usage"])
             return view
 
     async def update_knowledge_base(
@@ -542,10 +610,12 @@ class OperationsKnowledgeService:
                 message="修改运维知识库必须提供当前版本",
                 status_code=428,
             )
-        await self._validate_knowledge_base_models(context=context, models=command.models)
-        configuration = self._documents.configuration(command.models)
-        display_name = command.display_name.strip()
+        if command.tagging_model_id is not None:
+            await self._tagging_model_snapshot(command.tagging_model_id, context=context)
+        display_name = command.display_name
         async with self._uow_factory() as uow:
+            if not await uow.operations_knowledge.lock_knowledge_base_names(domain_id=domain_id):
+                raise self._knowledge_base_not_found()
             row = await uow.operations_knowledge.get_knowledge_base(
                 domain_id=domain_id,
                 knowledge_base_id=knowledge_base_id,
@@ -565,12 +635,22 @@ class OperationsKnowledgeService:
                 exclude_knowledge_base_id=knowledge_base_id,
             )
             if duplicate is not None:
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_BASE_NAME_CONFLICT",
-                    message="当前 Domain 已存在同名运维知识库",
-                    status_code=409,
-                )
-            row.configuration_json = configuration
+                raise self._name_conflict()
+            for role_group in ("parse_models", "index_models"):
+                if role_group in command.model_fields_set:
+                    selected_models = getattr(command, role_group)
+                    row.configuration_json = {**(row.configuration_json or {}),
+                        role_group: selected_models.model_dump(mode="json", exclude_none=True) if selected_models else {}}
+            if "tagging_model_id" in command.model_fields_set:
+                models = dict((row.configuration_json or {}).get("models") or {})
+                if command.tagging_model_id is None:
+                    models.pop("parser_llm", None)
+                else:
+                    models["parser_llm"] = str(command.tagging_model_id)
+                row.configuration_json = {
+                    **(row.configuration_json or {}),
+                    "models": models,
+                }
             row.display_name = display_name
             row.description = command.description
             row.updated_by = self._actor(context)
@@ -615,44 +695,62 @@ class OperationsKnowledgeService:
             if row is None or row.status == "ARCHIVED":
                 raise self._knowledge_base_not_found()
             if int(row.row_version) != expected_row_version:
-                raise self._state_conflict("运维知识库版本已经变化")
+                raise AIOpsApplicationError(code="STATE_VERSION_CONFLICT",
+                    message="运维知识库版本已经变化，请刷新后重试", status_code=412)
             usage = await uow.operations_knowledge.knowledge_base_usage(knowledge_base_id=knowledge_base_id)
-            if any(usage.values()):
-                raise self._state_conflict("知识库仍被资料或 Agent 引用，不能删除")
-            await uow.operations_knowledge.delete_knowledge_base(row)
+            blockers = _knowledge_base_blockers(usage)
+            if blockers:
+                reasons = "、".join(_DEPENDENCY_LABELS[reason] for reason in blockers)
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_BASE_IN_USE", message=f"此库仍有关联{reasons}，不能删除。",
+                    status_code=409,
+                )
+            from aiops_agent.application.errors import KnowledgeBaseReferenceConflict
+            try:
+                await uow.operations_knowledge.delete_knowledge_base(row)
+            except KnowledgeBaseReferenceConflict as exc:
+                raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_BASE_IN_USE",
+                    message="此库仍被运维资料或 Agent 版本引用，不能删除。请刷新后查看依赖。",
+                    status_code=409) from exc
             await uow.commit()
 
 
 
 
 
-    async def get_collection_models(self, *, domain_id, knowledge_base_id, context):
-        async with self._uow_factory() as uow:
-            row = await uow.operations_knowledge.get_knowledge_base(
-                domain_id=domain_id, knowledge_base_id=knowledge_base_id)
-            if row is None or row.status != "ACTIVE":
-                raise self._knowledge_base_not_found()
-            return {"knowledge_base_id": str(knowledge_base_id),
-                **dict(row.configuration_json or {})}
+    async def _tagging_model_snapshot(self, model_id, *, context):
+        def invalid():
+            return AIOpsApplicationError(code="AIOPS_KNOWLEDGE_MODEL_UNAVAILABLE",
+                                        message="标签识别模型未启用或不在当前可用模型目录中", status_code=409)
 
-    async def configure_collections(self, *, domain_id, knowledge_base_id, models, context):
-        await self._validate_knowledge_base_models(context=context, models=models)
-        configuration = self._documents.configuration(models)
-        async with self._uow_factory() as uow:
-            row = await uow.operations_knowledge.get_knowledge_base(
-                domain_id=domain_id, knowledge_base_id=knowledge_base_id, for_update=True)
-            if row is None or row.status != "ACTIVE":
-                raise self._knowledge_base_not_found()
-            row.configuration_json, row.updated_by = configuration, self._actor(context)
-            await uow.commit()
-        return {"knowledge_base_id": str(knowledge_base_id), **configuration}
+        def unavailable():
+            return AIOpsApplicationError(code="AIOPS_KNOWLEDGE_MODEL_UNAVAILABLE",
+                                        message="暂时无法读取标签识别模型目录", status_code=503, retryable=True)
 
-    async def _validate_knowledge_base_models(
-        self, *, models: dict[str, UUID], context: AuthContext, required_roles: frozenset[str] | None = None,
+        if self._llm_model_catalog is None:
+            raise unavailable()
+        try:
+            definition = await self._llm_model_catalog.get_model(model_id, auth_context=context)
+        except LookupError as exc:
+            raise invalid() from exc
+        except RuntimeError as exc:
+            raise unavailable() from exc
+        if definition.get("status") != "ACTIVE" or definition.get("category") != int(ModelCategory.LLM):
+            raise invalid()
+        technical_name = str(definition.get("provider_model_name") or "").strip()
+        if not technical_name:
+            raise invalid()
+        # 不存储提供方连接参数；只保存可复核的目录版本摘要和调用身份。
+        revision = fingerprint({key: definition.get(key) for key in (
+            "row_version", "model_revision", "provider", "provider_model_name", "runtime_type",
+            "model_params", "api_endpoint", "effective_max_tokens",
+        )})
+        return {"model_id": str(model_id), "technical_name": technical_name, "revision": revision}
+
+    async def _validate_case_models(
+        self, *, models: dict[str, UUID], context: AuthContext,
     ) -> None:
-        required = ({"parser_ocr", "parser_llm", "retrieval_llm", "embedding"}
-            if required_roles is None else set(required_roles))
-        missing = required - set(models)
+        missing = set(CASE_MODEL_ROLES) - set(models)
         if missing:
             raise AIOpsApplicationError(
                 code="AIOPS_KNOWLEDGE_COLLECTION_MODELS_REQUIRED",
@@ -730,7 +828,7 @@ class OperationsKnowledgeService:
 
     async def configure_case_collection_models(self, *, domain_id, models, context):
         command = CaseCollectionModels(models=models)
-        await self._validate_knowledge_base_models(context=context, models=command.models, required_roles=CASE_MODEL_ROLES)
+        await self._validate_case_models(context=context, models=command.models)
         configuration = self._documents.configuration(models)
         access = self._documents.access(context)
         if str(access.domain_id) != str(domain_id):
@@ -846,7 +944,7 @@ class OperationsKnowledgeService:
     async def analyze_tags(
         self, *, domain_id: int, asset_version_id: UUID, context: AuthContext,
     ) -> dict[str, Any]:
-        """对已审批手册识别受控标签，成功后批准 本 App 开始正式解析。"""
+        """按已批准的冻结规格生成受控标签，成功后进入资料发布前处理。"""
         async with self._uow_factory() as uow:
             version = await uow.operations_knowledge.get_version(
                 domain_id=domain_id, asset_version_id=asset_version_id
@@ -855,91 +953,58 @@ class OperationsKnowledgeService:
                 raise self._not_found()
             asset = await uow.operations_knowledge.get_asset(domain_id=domain_id, asset_id=version.asset_id)
             relations = await uow.operations_knowledge.get_version_relations(asset_version_id=asset_version_id)
-            tags = await uow.operations_knowledge.list_tags(domain_id=domain_id, status="ACTIVE")
             asset_kind = str(asset.asset_kind)
             version_status = str(version.status)
-            index = next(iter(relations["indexes"]), None)
+            tagging_revision = int(version.row_version)
             index_locator = tuple(row.document_version_id for row in relations["indexes"])
-            base_id = asset.knowledge_base_id
-            vocabulary = [{
-                "tag_id": str(tag.tag_id), "category": str(tag.category),
-                "display_name": str(tag.display_name),
-                "description": tag.description,
-            } for tag in tags]
-            approval = dict(
-                getattr(version, "tag_analysis_json", None) or {}
-            ).get("approval") or {}
+            analysis = dict(version.tag_analysis_json or {})
+            approval = analysis.get("approval") or {}
+            execution = analysis.get("execution_spec")
         if asset_kind != "MANUAL" or version_status != "TAGGING":
             return await self.get_version(domain_id=domain_id, asset_version_id=asset_version_id)
-        if approval.get("status") != "APPROVED":
-            async with self._uow_factory() as uow:
-                locked = await uow.operations_knowledge.get_version(
-                    domain_id=domain_id,
-                    asset_version_id=asset_version_id,
-                    for_update=True,
-                )
-                if locked is None:
-                    raise self._not_found()
-                locked_asset = await uow.operations_knowledge.get_asset(
-                    domain_id=domain_id,
-                    asset_id=locked.asset_id,
-                    for_update=True,
-                )
-                if locked.status == "TAGGING":
-                    locked.status = "REVIEW_REQUIRED"
-                    if locked_asset.current_version_id is None:
-                        locked_asset.status = "REVIEW_REQUIRED"
-                    await uow.commit()
-            return await self.get_version(
-                domain_id=domain_id, asset_version_id=asset_version_id
+        if approval.get("status") != "APPROVED" or not execution:
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_TAG_SPEC_MISSING",
+                message="在途标签任务缺少有效审批或冻结执行规格，需先核对存量任务",
+                status_code=409,
             )
-        if self._structured_model is None or self._prompt_registry is None or self._llm_model_catalog is None:
-            return await self._mark_tagging_failed(
-                domain_id=domain_id, asset_version_id=asset_version_id,
-                code="TAG_MODEL_UNAVAILABLE", message="标签识别模型或 Prompt Registry 未初始化",
-            )
-        if not vocabulary:
-            return await self._mark_tagging_failed(
-                domain_id=domain_id, asset_version_id=asset_version_id,
-                code="TAG_VOCABULARY_EMPTY", message="请先在配置与治理中维护至少一个有效知识标签",
-            )
-        if not index_locator:
-            return await self._mark_tagging_failed(
-                domain_id=domain_id, asset_version_id=asset_version_id,
-                code="TAG_SOURCE_MISSING", message="知识版本缺少 本 App 源文件引用",
-            )
+        model_snapshot = execution["model"]
+        vocabulary = execution["vocabulary"]
+        plan = execution["processing_plan"]
         try:
+            if self._structured_model is None or self._prompt_registry is None:
+                raise RuntimeError("标签识别运行服务未装配")
+            if sorted(str(uid) for uid in index_locator) != execution["document_version_ids"]:
+                raise ValueError("已登记的标签任务文档集合发生变化")
+            self._documents.assert_processing_plan(plan)
+            model_id = UUID(model_snapshot["model_id"])
+            if await self._tagging_model_snapshot(model_id, context=context) != model_snapshot:
+                raise ValueError("已冻结标签模型的目录版本发生变化")
+            prompt = await self._prompt_registry.resolve(
+                "knowledge_tag_classify", frozen_prompts={"knowledge_tag_classify": execution["prompt"]},
+            )
             access = self._documents.access(context)
+            processed_documents = {}
             for document_version_id in index_locator:
-                processed = await self._documents.process(access, document_version_id)
+                processed = await self._documents.process(access, document_version_id, expected_plan=plan)
                 if processed["processing_status"] != "PARSED" or not processed["generation_id"]:
                     return await self.get_version(domain_id=domain_id, asset_version_id=asset_version_id)
+                processed_documents[document_version_id] = processed
             projection = await self._documents.excerpts(access, index_locator)
             excerpts = list(projection.get("excerpts") or [])
             if not excerpts:
                 raise ValueError("规范解析结果中没有可用正文")
-            configuration = await self.get_collection_models(domain_id=domain_id,
-                knowledge_base_id=base_id, context=context)
-            model_id = configuration.get("models", {}).get("parser_llm")
-            if model_id is None:
-                raise ValueError("运维知识库尚未配置 parser_llm")
-            definition = await self._llm_model_catalog.get_model(UUID(str(model_id)))
-            technical_name = str(definition.get("served_model_name") or "").strip()
-            if not technical_name:
-                raise ValueError("标签识别模型缺少 served_model_name")
-            prompt = await self._prompt_registry.resolve("knowledge_tag_classify")
             result = await self._structured_model.generate_structured(
                 purpose="operations_knowledge.tag_classify",
                 output_model=KnowledgeTagAnalysisOutput,
-                model_snapshot={
-                    "model_id": str(model_id), "technical_name": technical_name,
-                    "revision": str(model_id),
-                },
+                model_snapshot=model_snapshot,
                 prompt_ref={**prompt.ref(), "content": prompt.content},
                 input_payload={"vocabulary": vocabulary, "documents": excerpts},
                 deadline=None,
                 idempotency_key=f"knowledge-tags:{asset_version_id}",
             )
+            if await self._tagging_model_snapshot(model_id, context=context) != model_snapshot:
+                raise ValueError("标签模型在执行期间发生变化，不能接纳此次输出")
             output = KnowledgeTagAnalysisOutput.model_validate(result.output)
             allowed = {item["tag_id"]: item for item in vocabulary}
             source_by_id = {}
@@ -976,7 +1041,7 @@ class OperationsKnowledgeService:
                 raise ValueError("AI 未识别出具有原文证据的有效受控标签")
             analysis = {
                 "schema_version": "OPS_KNOWLEDGE_TAG_ANALYSIS.v1",
-                "status": "READY", "approval": approval,
+                "status": "READY", "approval": approval, "execution_spec": execution,
                 "suggestions": suggestions,
                 "warnings": list(projection.get("warnings") or []),
                 "vocabulary": vocabulary,
@@ -995,6 +1060,7 @@ class OperationsKnowledgeService:
         except (AIOpsModelError, LookupError, RuntimeError, ValueError) as exc:
             return await self._mark_tagging_failed(
                 domain_id=domain_id, asset_version_id=asset_version_id,
+                expected_revision=tagging_revision,
                 code=getattr(exc, "code", "TAG_ANALYSIS_FAILED"), message=str(exc),
             )
         async with self._uow_factory() as uow:
@@ -1003,12 +1069,18 @@ class OperationsKnowledgeService:
             )
             if locked is None:
                 raise self._not_found()
-            locked_asset = await uow.operations_knowledge.get_asset(
-                domain_id=domain_id, asset_id=locked.asset_id, for_update=True
-            )
-            if locked.status == "TAGGING":
+            if locked.status == "TAGGING" and int(locked.row_version) == tagging_revision:
+                locked_asset = await uow.operations_knowledge.get_asset(
+                    domain_id=domain_id, asset_id=locked.asset_id, for_update=True
+                )
                 relations = await uow.operations_knowledge.get_version_relations(
                     asset_version_id=asset_version_id
+                )
+                if ((locked.tag_analysis_json or {}).get("execution_spec") != execution
+                    or {row.document_version_id for row in relations["indexes"]} != set(processed_documents)):
+                    raise self._state_conflict("标签处理期间冻结规格或文档集合已变化")
+                await self._documents.assert_processed_documents(
+                    uow, access, relations["indexes"], processed_documents, expected_plan=plan,
                 )
                 await uow.operations_knowledge.replace_tag_scopes(
                     version=locked,
@@ -1026,7 +1098,7 @@ class OperationsKnowledgeService:
         return await self.get_version(domain_id=domain_id, asset_version_id=asset_version_id)
 
     async def _mark_tagging_failed(
-        self, *, domain_id: int, asset_version_id: UUID, code: str, message: str,
+        self, *, domain_id: int, asset_version_id: UUID, expected_revision: int, code: str, message: str,
     ) -> dict[str, Any]:
         async with self._uow_factory() as uow:
             version = await uow.operations_knowledge.get_version(
@@ -1034,19 +1106,21 @@ class OperationsKnowledgeService:
             )
             if version is None:
                 raise self._not_found()
-            asset = await uow.operations_knowledge.get_asset(
-                domain_id=domain_id, asset_id=version.asset_id, for_update=True
-            )
-            version.status = "TAGGING_FAILED"
-            previous_analysis = dict(version.tag_analysis_json or {})
-            version.tag_analysis_json = {
-                "schema_version": "OPS_KNOWLEDGE_TAG_ANALYSIS.v1", "status": "FAILED",
-                "approval": previous_analysis.get("approval"),
-                "error_code": str(code), "error_summary": str(message)[:2000], "suggestions": [],
-            }
-            if asset.current_version_id is None:
-                asset.status = "TAGGING_FAILED"
-            await uow.commit()
+            if version.status == "TAGGING" and int(version.row_version) == expected_revision:
+                asset = await uow.operations_knowledge.get_asset(
+                    domain_id=domain_id, asset_id=version.asset_id, for_update=True
+                )
+                version.status = "TAGGING_FAILED"
+                previous_analysis = dict(version.tag_analysis_json or {})
+                version.tag_analysis_json = {
+                    "schema_version": "OPS_KNOWLEDGE_TAG_ANALYSIS.v1", "status": "FAILED",
+                    "approval": previous_analysis.get("approval"),
+                    "execution_spec": previous_analysis.get("execution_spec"),
+                    "error_code": str(code), "error_summary": str(message)[:2000], "suggestions": [],
+                }
+                if asset.current_version_id is None:
+                    asset.status = "TAGGING_FAILED"
+                await uow.commit()
         return await self.get_version(domain_id=domain_id, asset_version_id=asset_version_id)
 
     async def list_assets(
@@ -1100,7 +1174,7 @@ class OperationsKnowledgeService:
             command=command, context=context,
             entity_scope={}, kc_scope={"domain_id": domain_id},
             model_catalog=self._llm_model_catalog, model_scope={},
-            technical_name_field="served_model_name")
+            technical_name_field="provider_model_name")
 
     async def list_cases(
         self, *, domain_id: int, status: str | None, limit: int
@@ -1217,7 +1291,7 @@ class OperationsKnowledgeService:
         display_name, profile = await redact_case_for_index(
             title=command.display_name, profile=profile, collection=collection,
             structured_model=self._structured_model, prompt_registry=self._prompt_registry,
-            model_catalog=self._llm_model_catalog, model_scope={}, technical_name_field="served_model_name",
+            model_catalog=self._llm_model_catalog, model_scope={}, technical_name_field="provider_model_name",
         )
         markdown = _diagnosis_case_markdown(title=display_name, profile=profile)
         source_hash = hashlib.sha256(json.dumps(
@@ -1418,6 +1492,17 @@ class OperationsKnowledgeService:
                 # App 已提交取消栅栏；计算服务故障不能使迟到数据重新落库。
                 logger.warning("运维知识计算取消暂未送达，等待任务截止回收")
 
+    async def manual_parse_options(self, *, domain_id, detail, context):
+        if detail["asset"]["asset_kind"] != "MANUAL" or detail["version"]["status"] != "REVIEW_REQUIRED":
+            return None
+        async with self._uow_factory() as uow:
+            row = await uow.operations_knowledge.get_knowledge_base(domain_id=domain_id,
+                knowledge_base_id=UUID(detail["asset"]["knowledge_base_id"]))
+            if row is None or row.status != "ACTIVE":
+                return []
+            models = (row.configuration_json or {}).get("parse_models", {})
+        return await self._documents.parse_options(context, models)
+
     async def get_version(
         self, *, domain_id: int, asset_version_id: UUID
     ) -> dict[str, Any]:
@@ -1498,74 +1583,47 @@ class OperationsKnowledgeService:
         idempotency_key: str,
     ) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
-        if grouping_mode not in {"EACH_FILE", "SINGLE_ASSET"}:
+        if grouping_mode != "EACH_FILE":
             raise AIOpsApplicationError(
                 code="AIOPS_KNOWLEDGE_UPLOAD_INVALID",
-                message="资料组织方式必须是 EACH_FILE 或 SINGLE_ASSET",
+                message="只支持独立文件上传，不支持将多个文件合并为一份资料",
                 status_code=422,
             )
-        if grouping_mode == "EACH_FILE":
-            for document in documents:
-                try:
-                    result = await self.ingest_manual(
-                        domain_id=domain_id,
-                        knowledge_base_id=knowledge_base_id,
-                        context=context,
-                        file_name=str(document["file_name"]),
-                        media_type=str(document["media_type"]),
-                        body=bytes(document["body"]),
-                        metadata=metadata.model_copy(update={
-                            "display_name": (
-                                metadata.display_name
-                                if len(documents) == 1
-                                else str(document["display_name"])
-                            ),
-                        }),
-                        idempotency_key=(
-                            f"{idempotency_key}:{document['client_file_id']}"
-                        ),
-                        declared_sha256=str(document["content_sha256"]),
-                    )
-                except AIOpsApplicationError as exc:
-                    items.append({
-                        "status": "REJECTED",
-                        "client_file_id": document["client_file_id"],
-                        "message": exc.message,
-                    })
-                    continue
-                items.append({
-                    "status": "ACCEPTED",
-                    "client_file_id": document["client_file_id"],
-                    "asset_id": result["asset"]["asset_id"],
-                    "asset_version_id": result["version"]["asset_version_id"],
-                    "replayed": bool(result.get("replayed")),
-                })
-        else:
+        for document in documents:
             try:
-                result = await self._register_manual_documents(
+                result = await self.ingest_manual(
                     domain_id=domain_id,
                     knowledge_base_id=knowledge_base_id,
                     context=context,
-                    title=metadata.display_name,
-                    documents=documents,
-                    metadata=metadata,
-                    idempotency_key=idempotency_key,
+                    file_name=str(document["file_name"]),
+                    media_type=str(document["media_type"]),
+                    body=bytes(document["body"]),
+                    metadata=metadata.model_copy(update={
+                        "display_name": (
+                            metadata.display_name
+                            if len(documents) == 1
+                            else str(document["display_name"])
+                        ),
+                    }),
+                    idempotency_key=(
+                        f"{idempotency_key}:{document['client_file_id']}"
+                    ),
+                    declared_sha256=str(document["content_sha256"]),
                 )
             except AIOpsApplicationError as exc:
-                items = [{
+                items.append({
                     "status": "REJECTED",
                     "client_file_id": document["client_file_id"],
                     "message": exc.message,
-                } for document in documents]
-            else:
-                items = [{
-                    "status": "ACCEPTED",
-                    "client_file_id": document["client_file_id"],
-                    "asset_id": result["asset"]["asset_id"],
-                    "asset_version_id": result["version"]["asset_version_id"],
-                    "documents": result.get("documents", []),
-                    "replayed": bool(result.get("replayed")),
-                } for document in documents]
+                })
+                continue
+            items.append({
+                "status": "ACCEPTED",
+                "client_file_id": document["client_file_id"],
+                "asset_id": result["asset"]["asset_id"],
+                "asset_version_id": result["version"]["asset_version_id"],
+                "replayed": bool(result.get("replayed")),
+            })
         return {
             "grouping_mode": grouping_mode,
             "items": items,
@@ -1576,45 +1634,35 @@ class OperationsKnowledgeService:
             file_name, media_type, body, metadata, idempotency_key, declared_sha256):
         document = {"file_name": file_name, "media_type": media_type, "body": body,
             "content_sha256": declared_sha256 or hashlib.sha256(body).hexdigest(),
-            "ordinal": 0, "role": "CONTENT", "required_flag": True}
-        return await self._register_manual_documents(domain_id=domain_id,
+        }
+        return await self._register_manual_file(domain_id=domain_id,
             knowledge_base_id=knowledge_base_id, context=context, title=metadata.display_name,
-            documents=[document], metadata=metadata, idempotency_key=idempotency_key)
+            document=document, metadata=metadata, idempotency_key=idempotency_key)
 
     async def ingest_manual_version(self, *, domain_id, asset_id, expected_asset_row_version,
             context, file_name, media_type, body, metadata, idempotency_key, declared_sha256):
         detail = await self.get_asset(domain_id=domain_id, asset_id=asset_id)
         asset = detail.get("asset", detail)
-        return await self._register_manual_documents(domain_id=domain_id,
+        return await self._register_manual_file(domain_id=domain_id,
             knowledge_base_id=UUID(asset["knowledge_base_id"]), context=context,
-            title=metadata.display_name, documents=[{"file_name": file_name, "media_type": media_type,
+            title=metadata.display_name, document={"file_name": file_name, "media_type": media_type,
                 "body": body, "content_sha256": declared_sha256 or hashlib.sha256(body).hexdigest(),
-                "ordinal": 0, "role": "CONTENT", "required_flag": True}],
+            },
             metadata=metadata, idempotency_key=idempotency_key,
             asset_id=asset_id, expected_asset_row_version=expected_asset_row_version)
 
-    def _manual_collection_configuration(self, base):
-        """在写入对象前校验配置，并在登记事务内再次检查冻结 Profile。"""
-        stored = base.configuration_json
-        models = stored.get("models") if isinstance(stored, dict) else None
-        required = {"parser_ocr", "parser_llm", "retrieval_llm", "embedding"}
-        if not isinstance(models, dict) or any(not models.get(role) for role in required):
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_COLLECTION_MODELS_REQUIRED",
-                message="运维知识库尚未完成模型配置，请先到运维知识库管理中编辑并保存模型后再上传",
-                status_code=409,
-            )
-        configuration = self._documents.configuration(models)
-        if configuration != stored:
-            raise self._state_conflict("知识库 Profile 已变化，请显式更新配置后上传")
-        return configuration
+    @staticmethod
+    def _registered_processing_plan(sources):
+        return next(((source.get("locator") or {}).get("processing_plan") for source in sources
+                     if source["source_kind"] == "UPLOAD_REQUEST"), None)
 
-    async def _register_manual_documents(self, *, domain_id, knowledge_base_id, context,
-            title, documents, metadata, idempotency_key, asset_id=None, expected_asset_row_version=None):
+
+    async def _register_manual_file(self, *, domain_id, knowledge_base_id, context,
+            title, document, metadata, idempotency_key, asset_id=None, expected_asset_row_version=None):
         """对象写入在事务外；同库行锁保护幂等、业务登记和摄取任务的原子性。"""
         from knowledge_algorithms.contracts.identity import fingerprint
-        if not idempotency_key or len(idempotency_key) > 256 or not 1 <= len(documents) <= 20:
-            raise self._state_conflict("上传幂等键或文件数量无效")
+        if not idempotency_key or len(idempotency_key) > 256:
+            raise self._state_conflict("上传幂等键无效")
         access = self._documents.access(context)
         if str(access.domain_id) != str(domain_id):
             raise self._state_conflict("上传 Domain 与可信上下文不一致")
@@ -1625,16 +1673,14 @@ class OperationsKnowledgeService:
                 raise self._knowledge_base_not_found()
             existing = await uow.operations_knowledge.find_upload_request(domain_id=domain_id,
                 knowledge_base_id=knowledge_base_id, request_key=idempotency_key)
-            if existing is None:
-                self._manual_collection_configuration(base)
-        staged = []
-        for document in documents:
-            staged.append(await self._documents.stage(file_name=document["file_name"],
-                media_type=document["media_type"], body=document["body"],
-                expected_hash=document["content_sha256"].lower()))
+        staged = await self._documents.stage(file_name=document["file_name"],
+            media_type=document["media_type"], body=document["body"],
+            expected_hash=document["content_sha256"].lower())
+        # 延续已登记的单文件幂等摘要；旧角色标记只参与摘要，不作为文件关系存储。
+        fingerprint_file = {key: value for key, value in document.items() if key != "body"}
+        fingerprint_file.update(ordinal=0, role="CONTENT", required_flag=True)
         digest = fingerprint({"title": title, "metadata": metadata.model_dump(mode="json"),
-            "asset_id": str(asset_id) if asset_id else None,
-            "files": [{key: value for key, value in doc.items() if key != "body"} for doc in documents]})
+            "asset_id": str(asset_id) if asset_id else None, "files": [fingerprint_file]})
         actor = self._actor(context)
         scope = {}
         async with self._uow_factory() as uow:
@@ -1648,7 +1694,6 @@ class OperationsKnowledgeService:
                 if existing[2].content_hash != digest:
                     raise self._state_conflict("同一幂等键不能用于不同文件或业务元数据")
                 return {"asset": _asset_view(existing[0]), "version": _version_view(existing[1]), "replayed": True}
-            configuration = self._manual_collection_configuration(base)
             asset = None
             if asset_id is not None:
                 asset = await uow.operations_knowledge.get_asset(domain_id=domain_id, asset_id=asset_id, for_update=True)
@@ -1664,33 +1709,30 @@ class OperationsKnowledgeService:
             version = OperationsKnowledgeVersionEntity(**scope, asset_version_id=version_id,
                 asset_id=asset.asset_id, version_no=1 if is_new else await uow.operations_knowledge.next_version_no(asset_id=asset.asset_id),
                 status="REVIEW_REQUIRED", source_hash=digest, extraction_warnings_json=[], created_by=actor)
-            sources, indexes = [], []
-            for doc, item in zip(documents, staged, strict=True):
-                identity = await self._documents.register(uow, access, staged=item,
-                    asset_id=asset.asset_id, asset_version_id=version_id)
-                sources.append(OperationsKnowledgeSourceEntity(**scope, asset_version_id=version_id,
-                    source_kind="MANUAL_FILE", source_external_id=doc["file_name"],
-                    content_hash=item["source"].sha256,
-                    source_locator_json={"metadata": metadata.model_dump(mode="json"),
-                        "document_version_id": str(item["document_version_id"]),
-                        "ordinal": doc["ordinal"], "role": doc["role"], "required_flag": doc["required_flag"]}))
-                indexes.append(OperationsKnowledgeIndexEntity(**scope, asset_version_id=version_id,
-                    **identity, index_status="PENDING_APPROVAL"))
+            identity = await self._documents.register(uow, access, staged=staged,
+                asset_id=asset.asset_id, asset_version_id=version_id, awaiting_approval=True)
+            index = OperationsKnowledgeIndexEntity(**scope, asset_version_id=version_id,
+                **identity, index_status="PENDING_APPROVAL")
+            sources = [OperationsKnowledgeSourceEntity(**scope, asset_version_id=version_id,
+                source_kind="MANUAL_FILE", source_external_id=document["file_name"],
+                content_hash=staged["source"].sha256,
+                source_locator_json={"metadata": metadata.model_dump(mode="json"),
+                    "document_version_id": str(staged["document_version_id"])})]
             sources.append(OperationsKnowledgeSourceEntity(**scope, asset_version_id=version_id,
                 source_kind="UPLOAD_REQUEST", source_external_id=idempotency_key, content_hash=digest,
-                source_locator_json={"configuration": configuration}))
+                source_locator_json={}))
             if is_new:
                 await uow.operations_knowledge.add_asset_version(asset=asset, version=version,
-                    scopes=[], sources=sources, indexes=indexes)
+                    scopes=[], sources=sources, indexes=[index])
             else:
-                await uow.operations_knowledge.add_version(version=version, scopes=[], sources=sources, indexes=indexes)
+                await uow.operations_knowledge.add_version(version=version, scopes=[], sources=sources, indexes=[index])
                 asset.display_name, asset.updated_by = title, actor
                 asset.security_level = max(int(asset.security_level), metadata.security_level)
                 if asset.current_version_id is None:
                     asset.status = "REVIEW_REQUIRED"
             await uow.commit()
             return {"asset": _asset_view(asset), "version": _version_view(version),
-                "documents": [_index_view(row) for row in indexes], "replayed": False}
+                "documents": [_index_view(index)], "replayed": False}
 
     async def _validated_case_replay(self, *, uow, domain_id, case):
         """返回已提炼版本也必须复核其自身来源，而不只看新请求的报告。"""
@@ -1760,12 +1802,21 @@ class OperationsKnowledgeService:
             raise self._state_conflict("知识版本缺少本 App 文档引用")
         actor = actor_id if actor_id is not None else self._actor(context)
         is_case = detail["asset"]["asset_kind"] == "DIAGNOSIS_CASE"
+        plan = None if is_case else self._registered_processing_plan(detail["sources"])
+        if not is_case:
+            self._documents.assert_processing_plan(plan)
         if is_case and not await self._case_index_source_fence(domain_id=domain_id, version_id=asset_version_id, actor=actor):
             raise rejected_source()
         access = self._documents.access(context)
         processed = {}
         for index in indexes:
-            processed[index["index_ref_id"]] = await self._documents.process(access, UUID(index["document_version_id"]))
+            if is_case:
+                record = await self._documents.process(access, UUID(index["document_version_id"]))
+            else:
+                record = await self._documents.process(
+                    access, UUID(index["document_version_id"]), expected_plan=plan,
+                )
+            processed[index["index_ref_id"]] = record
         if any(row["processing_status"] != "PARSED" or not row["generation_id"] for row in processed.values()):
             return detail
         excerpts = await self._documents.excerpts(access, tuple(UUID(index["document_version_id"]) for index in indexes))
@@ -1874,6 +1925,7 @@ class OperationsKnowledgeService:
         self, *, domain_id: int, asset_version_id: UUID,
         expected_row_version: int,
         comment: str | None, context: AuthContext,
+        parse_strategy: str | None = None,
     ) -> dict[str, Any]:
         """人工批准上传资料；批准后才允许执行 AI 标签识别。"""
         detail = await self.get_version(domain_id=domain_id, asset_version_id=asset_version_id)
@@ -1886,11 +1938,39 @@ class OperationsKnowledgeService:
                 code="AIOPS_KNOWLEDGE_VERSION_CONFLICT",
                 message="知识版本已被其他请求更新，请刷新后重试", status_code=412,
             )
-        index_payload = next(iter(detail["indexes"]), None)
-        if index_payload is None or index_payload["status"] != "PENDING_APPROVAL":
+        if not detail["indexes"] or any(item["status"] != "PENDING_APPROVAL" for item in detail["indexes"]):
             raise self._state_conflict("当前手册的文档入库状态不能批准")
+        base_id = UUID(detail["asset"]["knowledge_base_id"])
+        async with self._uow_factory() as uow:
+            base = await uow.operations_knowledge.get_knowledge_base(domain_id=domain_id, knowledge_base_id=base_id)
+            if base is None or base.status == "ARCHIVED":
+                raise self._knowledge_base_not_found()
+            model_id = self._tagging_model_id(base)
+        if not model_id:
+            raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_TAG_MODEL_REQUIRED",
+                                        message="请先为此库配置标签识别模型，资料仍保持待审批", status_code=409)
+        if self._structured_model is None or self._prompt_registry is None:
+            raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_TAG_RUNTIME_UNAVAILABLE",
+                                        message="标签识别运行能力暂不可用", status_code=503, retryable=True)
+        model_snapshot = await self._tagging_model_snapshot(UUID(model_id), context=context)
+        try:
+            prompt = await self._prompt_registry.resolve("knowledge_tag_classify")
+        except (LookupError, RuntimeError) as exc:
+            raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_TAG_PROMPT_UNAVAILABLE",
+                                        message="标签识别 Prompt 暂不可用", status_code=503, retryable=True) from exc
         actor = self._actor(context)
         async with self._uow_factory() as uow:
+            base = await uow.operations_knowledge.get_knowledge_base(
+                domain_id=domain_id, knowledge_base_id=base_id, for_update=True,
+            )
+            if base is None or base.status != "ACTIVE":
+                raise self._knowledge_base_not_found()
+            if self._tagging_model_id(base) != model_id:
+                raise self._state_conflict("标签模型配置已变化，请刷新后再审批")
+            parse_profile = await self._documents.approved_parse_profile(context,
+                (base.configuration_json or {}).get("parse_models", {}), parse_strategy)
+            plan = await self._documents.manual_processing_plan(context, parse_profile,
+                (base.configuration_json or {}).get("index_models", {}))
             version = await uow.operations_knowledge.get_version(
                 domain_id=domain_id, asset_version_id=asset_version_id, for_update=True
             )
@@ -1904,7 +1984,31 @@ class OperationsKnowledgeService:
             asset = await uow.operations_knowledge.get_asset(
                 domain_id=domain_id, asset_id=version.asset_id, for_update=True
             )
-            analysis = dict(getattr(version, "tag_analysis_json", None) or {})
+            if asset is None or asset.knowledge_base_id != base_id or asset.asset_kind != "MANUAL":
+                raise self._not_found()
+            relations = await uow.operations_knowledge.get_version_relations(asset_version_id=asset_version_id)
+            indexes = relations["indexes"]
+            if not indexes or any(index.index_status != "PENDING_APPROVAL" for index in indexes):
+                raise self._state_conflict("当前手册的文档入库状态不能批准")
+            requests = [item for item in relations["sources"] if item.source_kind == "UPLOAD_REQUEST"]
+            if len(requests) != 1:
+                raise self._state_conflict("运维资料缺少唯一上传登记")
+            tags = await uow.operations_knowledge.list_tags(domain_id=domain_id, status="ACTIVE")
+            if not tags:
+                raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_TAG_VOCABULARY_EMPTY",
+                                            message="请先维护有效知识标签，资料仍保持待审批", status_code=409)
+            analysis = dict(version.tag_analysis_json or {})
+            await self._documents.approve_parse(uow, self._documents.access(context), indexes, version, parse_profile)
+            requests[0].source_locator_json = {**(requests[0].source_locator_json or {}), "processing_plan": plan}
+            analysis["execution_spec"] = {
+                "model": model_snapshot,
+                "prompt": prompt.ref(),
+                "vocabulary": [{"tag_id": str(tag.tag_id), "category": str(tag.category),
+                                "display_name": str(tag.display_name), "description": tag.description}
+                               for tag in tags],
+                "document_version_ids": sorted(str(index.document_version_id) for index in indexes),
+                "processing_plan": plan,
+            }
             analysis["approval"] = {
                 "status": "APPROVED",
                 "approved_at": _now().isoformat(),
@@ -2052,8 +2156,13 @@ class OperationsKnowledgeService:
                     asset_version_id=asset_version_id
                 )
                 if before == "TAGGING_FAILED":
+                    frozen = version.tag_analysis_json or {}
+                    execution = frozen.get("execution_spec")
+                    if not execution:
+                        raise self._state_conflict("存量标签任务缺少冻结规格，需先核验处理")
+                    self._documents.assert_processing_plan(execution.get("processing_plan"))
                     version.status = "TAGGING"
-                    version.tag_analysis_json = {"approval": dict(version.tag_analysis_json or {}).get("approval", {})}
+                    version.tag_analysis_json = {"approval": frozen.get("approval", {}), "execution_spec": execution}
                     if asset.current_version_id is None:
                         asset.status = "TAGGING"
                     for index in relations["indexes"]:

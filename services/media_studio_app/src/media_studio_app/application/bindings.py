@@ -43,7 +43,6 @@ def binding_view(row: MediaStudioModelBindingEntity) -> dict[str, Any]:
         "role": row.role,
         "model_id": str(row.model_id),
         "display_name": snapshot.get("display_name"),
-        "served_model_name": snapshot.get("served_model_name"),
         "provider": snapshot.get("provider"),
         "status": snapshot.get("status"),
         "ready": _ready(row.role, snapshot),

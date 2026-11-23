@@ -33,7 +33,7 @@ def create_output_job_worker(settings, *, uow_factory, knowledge_service, runtim
         return CaseExecutionOptions(context=context, entity_scope={},
             kc_scope={"domain_id": execution.scope.domain_id},
             model_catalog=knowledge_service._llm_model_catalog,
-            model_scope={}, technical_name_field="served_model_name")
+            model_scope={}, technical_name_field="provider_model_name")
 
     return OutputJobWorker(
         uow_factory=uow_factory, authority=authority,

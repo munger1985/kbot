@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from main_api.api.aiops_events import stream_aiops_event_pages
+from main_api.api.knowledge_parse_models import validate_parse_models
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from main_api.application import (
@@ -41,6 +42,8 @@ from platform_core.contracts.aiops import (
     WorkloadDiffRequest,
 )
 from platform_core.contracts.aiops.workload import PGBADGER_MAX_UPLOAD_BYTES
+from platform_core.contracts.aiops.knowledge_base import KnowledgeBaseList, KnowledgeBaseView, KnowledgeBaseWrite, parse_delete_version
+from platform_core.contracts.aiops.knowledge_search import KnowledgeSearchResponse
 from platform_core.contracts.aiops.knowledge import KnowledgeReuseFeedback
 from platform_core.contracts.aiops.case_collection import CaseCollectionModels
 from platform_core.contracts.aiops.output_jobs import (
@@ -118,6 +121,10 @@ class OperationsKnowledgeReviewPayload(_Payload):
     comment: str | None = Field(default=None, max_length=2000)
 
 
+class OperationsKnowledgeApprovePayload(OperationsKnowledgeReviewPayload):
+    parse_strategy: Literal["TEXT", "AUTO", "VISUAL"]
+
+
 class OperationsDiagnosisCaseDraftPayload(_Payload):
     expected_asset_row_version: int = Field(ge=1)
     base_version_id: UUID
@@ -143,15 +150,7 @@ class DiagnosisClosurePayload(_Payload):
     contraindications: tuple[str, ...] = Field(default=(), max_length=32)
 
 
-class OperationsKnowledgeCollectionModelsPayload(_Payload):
-    models: dict[str, UUID]
 
-
-class OperationsKnowledgeBasePayload(_Payload):
-    display_name: str = Field(min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=1000)
-    models: dict[str, UUID]
-    expected_row_version: int | None = Field(default=None, ge=1)
 
 
 class OperationsKnowledgeBaseStatusPayload(_Payload):
@@ -513,7 +512,7 @@ async def create_operations_diagnosis_case_version(
     )
 
 
-@router.get("/operations-knowledge/knowledge-bases")
+@router.get("/operations-knowledge/knowledge-bases", response_model=KnowledgeBaseList)
 async def list_operations_knowledge_bases(
     request: Request, include_archived: bool = False,
 ):
@@ -524,18 +523,20 @@ async def list_operations_knowledge_bases(
     )
 
 
-@router.post("/operations-knowledge/knowledge-bases", status_code=201)
+@router.post("/operations-knowledge/knowledge-bases", status_code=201, response_model=KnowledgeBaseView)
 async def create_operations_knowledge_base(
-    payload: OperationsKnowledgeBasePayload, request: Request,
+    payload: KnowledgeBaseWrite, request: Request,
 ):
     await _require(request, "aiops:knowledge_manage")
+    await validate_parse_models(request, payload.parse_models)
+    await validate_parse_models(request, payload.index_models)
     return await _client(request).create_operations_knowledge_base(
-        payload=payload.model_dump(mode="json", exclude_none=True),
+        payload=payload.model_dump(mode="json", exclude_unset=True),
         auth_context=request.state.auth_context,
     )
 
 
-@router.post("/operations-knowledge/knowledge-bases/{knowledge_base_id}:enable")
+@router.post("/operations-knowledge/knowledge-bases/{knowledge_base_id}:enable", response_model=KnowledgeBaseView)
 async def enable_operations_knowledge_base(
     knowledge_base_id: UUID, payload: OperationsKnowledgeBaseStatusPayload, request: Request,
 ):
@@ -546,7 +547,7 @@ async def enable_operations_knowledge_base(
     )
 
 
-@router.post("/operations-knowledge/knowledge-bases/{knowledge_base_id}:disable")
+@router.post("/operations-knowledge/knowledge-bases/{knowledge_base_id}:disable", response_model=KnowledgeBaseView)
 async def disable_operations_knowledge_base(
     knowledge_base_id: UUID, payload: OperationsKnowledgeBaseStatusPayload, request: Request,
 ):
@@ -557,7 +558,7 @@ async def disable_operations_knowledge_base(
     )
 
 
-@router.get("/operations-knowledge/knowledge-bases/{knowledge_base_id}")
+@router.get("/operations-knowledge/knowledge-bases/{knowledge_base_id}", response_model=KnowledgeBaseView)
 async def get_operations_knowledge_base(
     knowledge_base_id: UUID, request: Request,
 ):
@@ -568,16 +569,21 @@ async def get_operations_knowledge_base(
     )
 
 
-@router.put("/operations-knowledge/knowledge-bases/{knowledge_base_id}")
+@router.put("/operations-knowledge/knowledge-bases/{knowledge_base_id}", response_model=KnowledgeBaseView)
 async def update_operations_knowledge_base(
     knowledge_base_id: UUID,
-    payload: OperationsKnowledgeBasePayload,
+    payload: KnowledgeBaseWrite,
     request: Request,
 ):
     await _require(request, "aiops:knowledge_manage")
+    if payload.parse_models is not None or payload.index_models is not None:
+        current = await _client(request).get_operations_knowledge_base(
+            knowledge_base_id=knowledge_base_id, auth_context=request.state.auth_context)
+        await validate_parse_models(request, payload.parse_models, current=current.get("parse_models"))
+        await validate_parse_models(request, payload.index_models, current=current.get("index_models"))
     return await _client(request).update_operations_knowledge_base(
         knowledge_base_id=knowledge_base_id,
-        payload=payload.model_dump(mode="json", exclude_none=True),
+        payload=payload.model_dump(mode="json", exclude_unset=True),
         auth_context=request.state.auth_context,
     )
 
@@ -585,6 +591,8 @@ async def update_operations_knowledge_base(
 @router.delete(
     "/operations-knowledge/knowledge-bases/{knowledge_base_id}",
     status_code=204,
+    responses={400: {"description": "Malformed If-Match"}, 409: {"description": "Protected dependency"},
+               412: {"description": "Library version changed"}, 428: {"description": "If-Match required"}},
 )
 async def delete_operations_knowledge_base(
     knowledge_base_id: UUID,
@@ -592,37 +600,19 @@ async def delete_operations_knowledge_base(
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ):
     await _require(request, "aiops:knowledge_manage")
+    if if_match is None:
+        raise HTTPException(428, {"code": "PRECONDITION_REQUIRED", "message": "删除知识库必须提供 If-Match"})
+    try:
+        version = parse_delete_version(if_match)
+    except ValueError as exc:
+        raise HTTPException(400, {"code": "OPS_ETAG_INVALID", "message": str(exc)}) from exc
     await _client(request).delete_operations_knowledge_base(
         knowledge_base_id=knowledge_base_id,
-        expected_row_version=_expected_row_version(if_match),
+        expected_row_version=version,
         auth_context=request.state.auth_context,
     )
     return Response(status_code=204)
 
-
-@router.get("/operations-knowledge/knowledge-bases/{knowledge_base_id}/models")
-async def get_operations_knowledge_collection_models(
-    knowledge_base_id: UUID, request: Request,
-):
-    await _require(request, "aiops:knowledge_manage")
-    return await _client(request).get_operations_knowledge_collection_models(
-        knowledge_base_id=knowledge_base_id,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.put("/operations-knowledge/knowledge-bases/{knowledge_base_id}/models")
-async def configure_operations_knowledge_collection_models(
-    knowledge_base_id: UUID,
-    payload: OperationsKnowledgeCollectionModelsPayload,
-    request: Request,
-):
-    await _require(request, "aiops:knowledge_manage")
-    return await _client(request).configure_operations_knowledge_models(
-        knowledge_base_id=knowledge_base_id,
-        models=payload.models,
-        auth_context=request.state.auth_context,
-    )
 
 
 @router.get("/operations-knowledge/tags")
@@ -745,7 +735,7 @@ async def upload_operations_knowledge(
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ):
-    """把单文件或多文件资料 multipart 原样转发到 AIOps 业务服务。"""
+    """转发包含一个或多个独立文件的 multipart；每个文件登记为一份资料。"""
     await _require(request, "aiops:knowledge_manage")
     content_type = request.headers.get("Content-Type", "")
     if not content_type.lower().startswith("multipart/form-data"):
@@ -881,6 +871,7 @@ async def _review_operations_knowledge(
         asset_version_id, decision=decision,
         expected_row_version=payload.expected_row_version,
         comment=payload.comment,
+        **({"parse_strategy": payload.parse_strategy} if isinstance(payload, OperationsKnowledgeApprovePayload) else {}),
         auth_context=request.state.auth_context,
     )
 
@@ -896,7 +887,7 @@ async def submit_operations_diagnosis_case_review(asset_version_id: UUID, payloa
 
 
 @router.post("/operations-knowledge/versions/{asset_version_id}:approve")
-async def approve_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
+async def approve_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeApprovePayload, request: Request):
     return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="approve", payload=payload, request=request)
 
 
@@ -923,7 +914,7 @@ async def list_operations_knowledge_reviews(request: Request, limit: int = Query
     )
 
 
-@router.post("/operations-knowledge/search-preview")
+@router.post("/operations-knowledge/search-preview", response_model=KnowledgeSearchResponse)
 async def preview_operations_knowledge_search(payload: OperationsKnowledgeSearchPayload, request: Request):
     await _require(request, "aiops:knowledge_manage")
     return await _client(request).search_operations_knowledge(

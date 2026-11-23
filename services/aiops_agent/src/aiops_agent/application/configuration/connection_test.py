@@ -20,15 +20,7 @@ from platform_core.contracts.aiops import (
     TargetConnectionTest,
     TargetConnectionTestResult,
 )
-
-
-_SUPPORTED_VERSION_PREFIXES = {
-    ("ORACLE", "19c"): ("19.",),
-    ("ORACLE", "26ai"): ("23.26.",),
-    ("MYSQL", "5.7"): ("5.7.",),
-    ("MYSQL", "8.4"): ("8.4.",),
-    ("POSTGRESQL", "16"): ("16.",),
-}
+from platform_core.contracts.aiops.configuration import DATABASE_VERSION_PREFIXES
 
 
 def _database_version_error(
@@ -38,12 +30,12 @@ def _database_version_error(
     detected_version: str,
 ) -> str | None:
     """核验实测版本属于已发布且由用户明确选择的版本档案。"""
-    prefixes = _SUPPORTED_VERSION_PREFIXES[(db_type, selected_version)]
+    prefixes = DATABASE_VERSION_PREFIXES[(db_type, selected_version)]
     if detected_version.startswith(prefixes):
         return None
     detected_is_supported = any(
         detected_version.startswith(candidate_prefixes)
-        for (candidate_type, _), candidate_prefixes in _SUPPORTED_VERSION_PREFIXES.items()
+        for (candidate_type, _), candidate_prefixes in DATABASE_VERSION_PREFIXES.items()
         if candidate_type == db_type
     )
     return (

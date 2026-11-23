@@ -56,8 +56,12 @@ class _UnitOfWork:
     def library(self, access):
         async def detail(library_id):
             return {"library_id": str(library_id), "configuration": {"profile_ref": "test-profile"}}
+        async def authorized(library_id, operation, *, lock):
+            if operation != "READ" or not lock:
+                raise AssertionError("绑定资料库时必须在同一事务核验并持有资料库锁")
+            return await detail(library_id)
         from types import SimpleNamespace
-        return SimpleNamespace(detail=detail)
+        return SimpleNamespace(detail=detail, authorized=authorized)
 
     async def __aenter__(self):
         return self

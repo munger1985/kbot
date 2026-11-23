@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 60,
-  "contract_version": "aiops-oracle-v60-exadata-oem",
+  "schema_version": 62,
+  "contract_version": "aiops-oracle-v62-single-file-upload",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "d94357b802a9dd28f1716b76d80d4b4844f6e8d2af82bc43b5aca52a401aeb07"
+      "sha256": "d9f708d5e4dba432d42f11e135f78f386e4b455aec074949277748cfe82d973b"
     },
     {
       "name": "007_ops_agents.sql",
@@ -52,12 +52,12 @@
     {
       "name": "010_ops_knowledge.sql",
       "statements": 30,
-      "sha256": "6322cae1346816911c3bc13ba0bc8f27cf89dd40938e5f7bf9260394b135fbf5"
+      "sha256": "f6cb128cebd0e059c1c7d4aaf9ecd2cb5cf15408993a5dd6c25c636cb7cfeb43"
     },
     {
       "name": "011_ops_recovery.sql",
-      "statements": 9,
-      "sha256": "a95bda2983cd8c8012d8db3d932f07b647e8357487ba0fec0dc1faf40b13a255"
+      "statements": 12,
+      "sha256": "eaae988d34faa7be13bee3d0bfe0f11b4af45468874299325e40f7d228a9357d"
     },
     {
       "name": "012_ops_work_items.sql",
@@ -156,6 +156,8 @@
     "KBOT_OPS_AGENT_VERSION_KNOW_BASE",
     "KBOT_OPS_RECOVERY_PROFILE",
     "KBOT_OPS_RECOVERY_DRILL",
+    "KBOT_OPS_PROTECTION_PLAN",
+    "KBOT_OPS_PROTECTION_RUN",
     "KBOT_OPS_RESPONSIBILITY_GROUP",
     "KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER",
     "KBOT_OPS_WORK_ITEM",

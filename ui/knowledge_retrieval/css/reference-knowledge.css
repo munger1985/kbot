@@ -1,14 +1,41 @@
 /* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
 
-/* business/KnowledgeLibraryWorkspace.vue */
-:is([data-page="knowledge"]) .knowledge-owned-workspace{--knowledge-space:var(--form-label-control-gap);display:grid;gap:var(--knowledge-space);padding:calc(var(--knowledge-space)*2);overflow:auto;max-height:100%;color:var(--ink);background:var(--surface)}
-:is([data-page="knowledge"]) .knowledge-search-form,:is([data-page="knowledge"]) .knowledge-documents,:is([data-page="knowledge"]) .knowledge-result-list{display:grid;gap:var(--knowledge-space)}
-:is([data-page="knowledge"]) .knowledge-search-form label{display:grid;gap:var(--knowledge-space)}
-:is([data-page="knowledge"]) .section-toolbar{flex-wrap:wrap;margin:0}:is([data-page="knowledge"]) .knowledge-capability-note,:is([data-page="knowledge"]) small{color:var(--muted);overflow-wrap:anywhere}
-:is([data-page="knowledge"]) small{display:block}:is([data-page="knowledge"]) .knowledge-query-images{display:flex;flex-wrap:wrap;align-items:center;gap:var(--knowledge-space)}
-:is([data-page="knowledge"]) .knowledge-query-images img{width:80px;height:64px;object-fit:contain}:is([data-page="knowledge"]) .knowledge-evidence-card{border:1px solid var(--line);border-radius:var(--radius);padding:var(--knowledge-space)}
-:is([data-page="knowledge"]) .knowledge-evidence-card header{display:flex;justify-content:space-between;gap:var(--knowledge-space)}
-:is([data-page="knowledge"]) .knowledge-evidence-card img{max-width:100%;max-height:480px;object-fit:contain}
-:is([data-page="knowledge"]) .knowledge-evidence-text,:is([data-page="knowledge"]) .knowledge-linked-evidence p{white-space:pre-wrap;overflow-wrap:anywhere}
-:is([data-page="knowledge"]) .knowledge-linked-evidence{border-left:2px solid var(--line);padding-left:var(--knowledge-space);margin-block:var(--knowledge-space)}
-:is([data-page="knowledge"]) .knowledge-owned-workspace textarea{width:100%}:is([data-page="knowledge"]) .table-actions{flex-wrap:wrap}:is([data-page="knowledge"]) .knowledge-owned-workspace pre{white-space:pre-wrap}
+/* business/KnowledgeRetrievalView.vue */
+:is([data-page="knowledge"]) .knowledge-chat-workspace.agent-chat-workspace { grid-template-columns: 238px minmax(0, 1fr); border-radius: 11px; box-shadow: none; }
+:is([data-page="knowledge"]) .knowledge-chat-workspace.agent-chat-workspace.is-session-collapsed { grid-template-columns: 52px minmax(0, 1fr); }
+:is([data-page="knowledge"]) .knowledge-session-header { min-width: 0; min-height: 0; flex-direction: column; align-items: start; gap: 8px; padding: 8px 10px; }
+:is([data-page="knowledge"]) .knowledge-session-header > .knowledge-session-actions { display: flex; align-items: center; gap: 8px; }
+:is([data-page="knowledge"]) .knowledge-session-create svg { width: 18px; height: 18px; flex: none; }
+:is([data-page="knowledge"]) .knowledge-chat-workspace.is-session-collapsed .knowledge-session-header { align-items: center; padding-inline: 0; }
+:is([data-page="knowledge"]) .knowledge-chat-workspace.is-session-collapsed .knowledge-session-actions { flex-direction: column; }
+:is([data-page="knowledge"]) .knowledge-chat-workspace.is-session-collapsed .knowledge-session-create.secondary-button { display: grid; place-items: center; width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; }
+:is([data-page="knowledge"]) .knowledge-chat-workspace.is-session-collapsed :is(.knowledge-session-create > span, .knowledge-session-meta, .knowledge-session-empty > :not(svg), .knowledge-session-refresh) { display: none; }
+:is([data-page="knowledge"]) .knowledge-conversation-header.agent-chat-conversation-head { display: grid; grid-template-columns: minmax(0, 250px); justify-content: start; align-items: center; min-height: 0; padding: 8px 12px; }
+:is([data-page="knowledge"]) .knowledge-agent-picker.control-field { position: relative; display: block; grid-column: auto; min-width: 0; }
+:is([data-page="knowledge"]) .knowledge-conversation-header.agent-chat-conversation-head .knowledge-agent-picker.control-field > select {
+  width: 100%; min-height: 32px; height: 32px; padding: 0 26px 0 8px; appearance: none;
+  background-image: none; font-size: 12px; text-overflow: ellipsis;
+}
+:is([data-page="knowledge"]) .knowledge-agent-picker > svg {
+  position: absolute; inset-inline-end: 8px; top: 50%; width: 14px; height: 14px; pointer-events: none;
+  transform: translateY(-50%) rotate(90deg); fill: none; stroke: var(--muted); stroke-width: 1.8;
+}
+:is([data-page="knowledge"]) .knowledge-composer-wrap { display: grid; gap: 8px; padding: 10px 16px 8px; background: var(--surface); }
+:is([data-page="knowledge"]) .agent-chat-composer-row.knowledge-composer { grid-template-columns: 42px minmax(0, 1fr) 42px; margin: 0; padding: 5px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-raised); }
+:is([data-page="knowledge"]) .agent-chat-composer-row.knowledge-composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-focus); }
+:is([data-page="knowledge"]) .knowledge-chat-page .knowledge-composer.agent-chat-composer-row .agent-chat-composer-input > .chat-composer-textarea {
+  min-height: 42px; padding: 10px 8px; resize: none; background: transparent; border: 0; box-shadow: none;
+}
+:is([data-page="knowledge"]) .knowledge-chat-page .knowledge-composer.agent-chat-composer-row .agent-chat-composer-input > .chat-composer-textarea:focus { box-shadow: none; }
+:is([data-page="knowledge"]) .knowledge-composer-attachment.icon-button { color: var(--accent-strong); background: var(--surface-subtle); }
+:is([data-page="knowledge"]) .knowledge-chat-attachments:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted); font-size: var(--type-meta); overflow-wrap: anywhere; }
+:is([data-page="knowledge"]) .knowledge-composer-wrap .agent-chat-composer-hint { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; color: var(--faint); font-size: var(--type-meta); }
+:is([data-page="knowledge"]) .knowledge-message.user .chat-message-bubble { width: fit-content; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  :is([data-page="knowledge"]) .knowledge-chat-workspace.agent-chat-workspace:not(.is-session-collapsed) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  :is([data-page="knowledge"]) .knowledge-chat-workspace .knowledge-session-sidebar { position: static; width: auto; max-height: 360px; border-right: 0; border-bottom: 1px solid var(--line); box-shadow: none; transform: none; }
+  :is([data-page="knowledge"]) .knowledge-chat-workspace.is-session-collapsed .knowledge-session-sidebar { max-height: none; visibility: visible; border-right: 1px solid var(--line); border-bottom: 0; }
+  :is([data-page="knowledge"]) .knowledge-chat-workspace.is-session-collapsed .knowledge-session-sidebar > nav { display: none; }
+  :is([data-page="knowledge"]) .knowledge-conversation-header.agent-chat-conversation-head { padding: 8px; }
+  :is([data-page="knowledge"]) .knowledge-composer-wrap { padding-inline: 8px; }
+}

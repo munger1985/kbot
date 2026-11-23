@@ -33,6 +33,6 @@ class AppKnowledgeComposerSkill:
             search_only=configuration.get("search_only", False))
         value = KnowledgeCompositionArtifact(wrapper.retrieval_ref, artifact.evidence_set, result.delivery,
             result.answer, result.labels, result.excluded, result.selection)
-        await composer.recorder.record(artifact.run_ref, artifact.turn_ref, "KNOWLEDGE_COMPOSITION", value)
+        # 组合结果交给 Runtime 的任务结果流程；交付与引用审计已由 Composer 单独记录。
         return SkillResult(artifact=SkillArtifact(artifact_type="KNOWLEDGE_COMPOSITION",
             schema_version="knowledge.composition.v1", payload=encode(value)))

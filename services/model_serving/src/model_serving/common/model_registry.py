@@ -4,7 +4,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
 from loguru import logger
 
@@ -76,7 +75,6 @@ class ModelRegistryService:
         """目录投影不得包含 API Key 等连接密钥。"""
         return {
             "model_id": str(entity.model_id),
-            "served_model_name": entity.served_model_name,
             "display_name": entity.display_name,
             "provider_model_name": entity.provider_model_name,
             "category": int(entity.category),
@@ -124,7 +122,6 @@ class ModelRegistryService:
             assert uow.models
             row = AIModelEntity(
                 model_id=uuid7(),
-                served_model_name=values["served_model_name"],
                 display_name=values["display_name"],
                 provider_model_name=values["provider_model_name"],
                 category=values["category"],
@@ -137,19 +134,13 @@ class ModelRegistryService:
                 created_by=actor_id,
                 updated_by=actor_id,
             )
-            try:
-                await uow.models.add(row)
-                await uow.commit()
-            except IntegrityError as exc:
-                raise ModelRegistryConflict(
-                    "MODEL_NATURAL_KEY_CONFLICT", "模型服务名已经存在",
-                ) from exc
+            await uow.models.add(row)
+            await uow.commit()
             result = self._safe(row)
             logger.info(
-                "模型配置已创建 | model_id={} | category={} | served_model_name={} | requested_status={} | persisted_status={}",
+                "模型配置已创建 | model_id={} | category={} | requested_status={} | persisted_status={}",
                 result["model_id"],
                 result["category"],
-                result["served_model_name"],
                 status,
                 result["status"],
             )
@@ -185,6 +176,7 @@ class ModelRegistryService:
             self._validate(effective)
             mutable = {
                 "display_name": "display_name",
+                "provider_model_name": "provider_model_name",
                 "api_endpoint": "api_endpoint",
                 "api_key": "api_key",
                 "model_params": "model_params",
@@ -304,10 +296,8 @@ class ModelRegistryService:
                 raise ModelRegistryConflict(
                     "MODEL_NOT_ARCHIVED", "只有归档模型可以删除",
                 )
-            if self._is_model_loaded and self._is_model_loaded(row.served_model_name):
-                raise ModelRegistryConflict(
-                    "MODEL_INSTANCE_RUNNING", "模型实例仍在运行",
-                )
+            if self._is_model_loaded and self._is_model_loaded(str(row.model_id)):
+                raise ModelRegistryConflict("MODEL_INSTANCE_RUNNING", "模型实例仍在运行")
             event = self._safe(row)
             await uow.models.delete(row)
             await uow.commit()
@@ -366,7 +356,6 @@ class ModelRegistryService:
                 "api_endpoint": row.api_endpoint,
                 "api_key": row.api_key,
                 "provider_model_name": row.provider_model_name,
-                "served_model_name": row.served_model_name,
                 "model_params": dict(row.model_params or {}),
             }
 
@@ -442,7 +431,6 @@ class ModelRegistryService:
         try:
             await self._on_model_changed({
                 "model_id": model["model_id"],
-                "served_model_name": model["served_model_name"],
                 "category": model["category"],
                 "row_version": model["row_version"],
             })

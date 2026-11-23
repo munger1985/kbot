@@ -55,7 +55,8 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
         prompts = SimpleNamespace(resolve=AsyncMock())
         resolver = AsyncMock()
         evidence = ({"label": "K1", "quote": "已交付证据"},)
-        child = SimpleNamespace(answer=AsyncMock(return_value=("有依据回答。[K1]", evidence)))
+        child = SimpleNamespace(answer=AsyncMock(return_value=("有依据回答。[K1]", evidence,
+            {"retrieval_conclusion": "EVIDENCE_FOUND", "coverage": {"scope": "COMPLETE"}})))
         internal = _internal(uuid7())
         runtime = internal["runtime_context"]
         result = await KnowledgeQuestionAdapter(knowledge_service=knowledge, structured_model=model,
@@ -224,7 +225,10 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_report_case_search_is_repeated_with_each_allowed_target(self):
         targets = (uuid7(), uuid7())
-        knowledge = SimpleNamespace(search=AsyncMock(return_value={"status": "READY", "results": [{"asset_version_id": str(uuid7()), "title": "合成案例", "citation_pack": [{"quote": "已交付证据", "locator": {}}]}]}))
+        knowledge = SimpleNamespace(search=AsyncMock(return_value={"status": "READY",
+            "retrieval_conclusion": "EVIDENCE_FOUND", "coverage": {"scope": "COMPLETE", "ranking": "GLOBAL"},
+            "results": [{"asset_version_id": str(uuid7()), "title": "合成案例",
+                "citation_pack": [{"quote": "已交付证据", "locator": {}}]}]}))
         list_reports = AsyncMock(return_value=SimpleNamespace(items=()))
 
         result = await RuntimeQueryAdapter(

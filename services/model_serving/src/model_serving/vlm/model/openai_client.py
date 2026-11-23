@@ -1,10 +1,31 @@
+import re
 from typing import Any, AsyncGenerator
-from openai import AsyncOpenAI, APIError
+from openai import AsyncOpenAI, APIError, BadRequestError
 from loguru import logger
 from pydantic import Field
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
+from platform_core.dictionary import VLMProvider
 
 from .base import BaseVLM, VLMConfig
+
+
+class VLMImageDimensionsUnsupported(ValueError):
+    """上游明确拒绝图像尺寸，与通用参数错误区分。"""
+
+
+def _is_qwen_image_dimensions_error(provider, error):
+    if provider != VLMProvider.API_QWEN.value or not isinstance(error, BadRequestError):
+        return False
+    body = error.body
+    detail = body.get("error", body) if isinstance(body, dict) else None
+    if not isinstance(detail, dict) or detail.get("code") != "invalid_parameter_error":
+        return False
+    message = detail.get("message")
+    # 该供应商用同一错误码表示多种参数错误，必须同时匹配专用描述。
+    return isinstance(message, str) and re.fullmatch(
+        r"The image length and width do not meet the model restrictions\. "
+        r"\[height:\d+ or width:\d+ must be larger than \d+\]", message,
+    ) is not None
 
 
 class OpenAIVLMConfig(VLMConfig):
@@ -120,6 +141,8 @@ class OpenAIVLM(BaseVLM[OpenAIVLMConfig]):
             response = await self._openai_client.chat.completions.create(**api_params)  # type: ignore
             return response
         except APIError as e:
+            if _is_qwen_image_dimensions_error(self.config.provider, e):
+                raise VLMImageDimensionsUnsupported("视觉模型不接受图像尺寸") from None
             logger.error(f"❌ OpenAI API error: {e.code} - {e.message}")
             raise
         except Exception as e:

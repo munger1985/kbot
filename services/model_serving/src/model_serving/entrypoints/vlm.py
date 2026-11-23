@@ -33,6 +33,8 @@ from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from model_serving.vlm.vlm_service import VLMService
+from model_serving.vlm.model.openai_client import VLMImageDimensionsUnsupported
+from model_serving.common.frozen_binding import FrozenModelConflict, create_frozen_binding_router
 from model_serving.vlm.schema import (
     OpenAIVLMRequest,
     VLMRequest,
@@ -180,7 +182,9 @@ app.middleware("http")(
     )
 )
 app.middleware("http")(create_api_client_auth_middleware())
-app.include_router(create_model_management_router(category=ModelCategory.VLM.value))
+app.include_router(create_model_management_router(
+    category=ModelCategory.VLM.value, probe_service=lambda _: vlm_service,
+))
 app.include_router(create_openai_models_router(category=ModelCategory.VLM.value))
 
 def get_vlm_service() -> VLMService:
@@ -204,6 +208,9 @@ async def health_check() -> dict[str, Any]:
     }
 
 
+app.include_router(create_frozen_binding_router(lambda request: get_vlm_service()._model_pool))
+
+
 @app.post(f"{INTERNAL_API_V1}/inference", response_model=VLMResponse, tags=["Inference"])
 async def run_vlm_inference(
     request: VLMRequest,
@@ -222,8 +229,9 @@ async def run_vlm_inference(
     """
     resp_id = f"vlm-chat-{uuid.uuid4()}"
     created_ts = int(time.time())
-    model = await service.get_vlm_model(request.served_model_name)
-    logger.info(f"收到推理请求 | 模型：{request.served_model_name} | 流式模式：{request.stream}")
+    if request.stream and request.expected_revision is not None:
+        raise HTTPException(422, detail={"code": "FROZEN_MODEL_STREAM_UNSUPPORTED"})
+    logger.info(f"收到推理请求 | 模型：{request.model_id} | 流式模式：{request.stream}")
 
     try:
         if request.stream:
@@ -232,7 +240,7 @@ async def run_vlm_inference(
                 
                 try:
                     stream_raw = await service.inference(
-                        **request.model_dump(exclude={"stream", "served_model_name"}), stream=True, served_model_name=request.served_model_name
+                        **request.model_dump(exclude={"stream", "model_id"}), stream=True, model_id=request.model_id
                     )
                     
                     async for content in stream_raw:  # type: ignore
@@ -254,7 +262,7 @@ async def run_vlm_inference(
                             "id": resp_id,
                             "object": "chat.completion.chunk",
                             "created": created_ts,
-                            "model": request.served_model_name,
+                            "model": str(request.model_id),
                             "choices": [{"delta": {"content": content}, "index": 0, "finish_reason": None}]
                         }
                         yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
@@ -264,7 +272,7 @@ async def run_vlm_inference(
                         "id": resp_id,
                         "object": "chat.completion.chunk",
                         "created": created_ts,
-                        "model": request.served_model_name,
+                        "model": str(request.model_id),
                         "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
                         "usage": usage_stats
                     }
@@ -288,7 +296,7 @@ async def run_vlm_inference(
             id=resp_id,
             object="chat.completion",
             created=created_ts,
-            model=request.served_model_name,
+            model=str(request.model_id),
             choices=[{
                 "message": {"role": "assistant", "content": content},
                 "finish_reason": "stop",
@@ -297,6 +305,10 @@ async def run_vlm_inference(
             usage=usage,
         )
 
+    except FrozenModelConflict as exc:
+        raise HTTPException(409, detail={"code": "MODEL_REVISION_CHANGED"}) from exc
+    except VLMImageDimensionsUnsupported:
+        raise HTTPException(422, detail={"code": "MODEL_IMAGE_DIMENSIONS_UNSUPPORTED"}) from None
     except ValidationError as ve:
         raise HTTPException(status_code=400, detail=ve.errors())
     except TimeoutError:

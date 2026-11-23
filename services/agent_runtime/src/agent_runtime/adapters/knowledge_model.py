@@ -14,8 +14,8 @@ class KnowledgeEvidenceModelGateway:
                  supports_images, clock=time.time):
         require(model_snapshot_ref and system_prompt and isinstance(model_payload, dict),
                 "Composer 缺少冻结模型和 Prompt 配置")
-        require(set(model_payload) <= {"model_id", "served_model_name", "max_tokens", "temperature"}
-                and (("model_id" in model_payload) != ("served_model_name" in model_payload))
+        require(set(model_payload) <= {"model_id", "max_tokens", "temperature"}
+                and "model_id" in model_payload
                 and type(model_payload.get("max_tokens")) is int and model_payload["max_tokens"] > 0,
                 "输出上限必须来自 Model Serving 冻结配置")
         self.client, self.auth_context = client, auth_context
@@ -36,8 +36,10 @@ class KnowledgeEvidenceModelGateway:
                 encoded = base64.b64encode(part["data"]).decode("ascii")
                 content.append({"type": "image_url", "image_url":
                     {"url": "data:" + part["mime_type"] + ";base64," + encoded}})
+        # 纯文本补全接口接收字符串；只有图文推理接口接收多模态内容数组。
+        user_content = content if self.supports_images else "\n\n".join(part["text"] for part in content)
         payload = {**self.model_payload, "stream": False, "messages": [
-            {"role": "system", "content": self.prompt}, {"role": "user", "content": content}]}
+            {"role": "system", "content": self.prompt}, {"role": "user", "content": user_content}]}
         return payload
 
     async def generate(self, *, question, evidence_parts, model_snapshot_ref):

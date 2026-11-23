@@ -183,9 +183,15 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
         self.assertEqual("DIAGNOSTIC_REFERENCE", revised.case_kind)
         self.assertEqual([], revised.actions[1]["evidence_refs"])
 
-    def test_knowledge_base_write_requires_models(self):
+    def test_knowledge_base_write_distinguishes_omission_clear_and_replacement(self):
+        name = "Oracle 运维库"
+        model_id = uuid7()
+        self.assertEqual({"display_name": name}, KnowledgeBaseWrite(display_name=name).model_dump(exclude_unset=True))
+        self.assertIsNone(KnowledgeBaseWrite(display_name=name, tagging_model_id=None).model_dump(
+            exclude_unset=True)["tagging_model_id"])
+        self.assertEqual(model_id, KnowledgeBaseWrite(display_name=name, tagging_model_id=model_id).tagging_model_id)
         with self.assertRaises(ValidationError):
-            KnowledgeBaseWrite(display_name="Oracle 运维库")
+            KnowledgeBaseWrite.model_validate({"display_name": name, "models": {}})
 
     def test_upload_metadata_rejects_internal_collection_fields(self):
         with self.assertRaises(ValidationError):
@@ -271,15 +277,16 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
 
 
 class OperationsKnowledgeRepositoryTest(unittest.IsolatedAsyncioTestCase):
-    async def test_usage_reports_only_assets_and_current_agent_versions(self):
-        session = SimpleNamespace(scalar=AsyncMock(side_effect=[3, 2]))
+    async def test_usage_distinguishes_assets_current_and_historical_agent_versions(self):
+        session = SimpleNamespace(scalar=AsyncMock(return_value=3),
+            execute=AsyncMock(return_value=SimpleNamespace(one=lambda: (7, 2))))
         repository = OperationsKnowledgeRepository(session)  # type: ignore[arg-type]
 
         usage = await repository.knowledge_base_usage(
             knowledge_base_id=uuid7()
         )
 
-        self.assertEqual({"assets": 3, "agent_versions": 2}, usage)
+        self.assertEqual({"assets": 3, "current_agent_versions": 2, "historical_agent_versions": 5}, usage)
         self.assertNotIn("knowledge_assistants", usage)
 
     async def test_asset_version_flushes_parent_rows_before_dependents(self):
@@ -382,19 +389,34 @@ def lifecycle_fixture():
         ingestion_job_id=job, parse_run_id=None, index_generation_id=None, index_status="PROCESSING")
     record = {"document_version_id":str(doc), "ingestion_job_id":str(job), "parse_run_id":str(parse),
         "generation_id":str(generation), "processing_status":"PARSED"}
-    detail = {"asset":{"asset_kind":"MANUAL","row_version":1}, "version":{"status":"PROCESSING","row_version":1},
+    plan = {"projection": "fixture-profile"}
+    model_id = uuid7()
+    model_snapshot = {"model_id": str(model_id), "digest": "fixture-model"}
+    prompt_ref = {"prompt_key": "knowledge_tag_classify", "version": 2}
+    tag = SimpleNamespace(tag_id=uuid7(), category="RESOURCE_CATEGORY", display_name="恢复", description=None)
+    base = SimpleNamespace(status="ACTIVE", configuration_json={"models": {"parser_llm": str(model_id)}})
+    detail = {"asset":{"asset_kind":"MANUAL","row_version":1,"knowledge_base_id":str(asset.knowledge_base_id)},
+        "version":{"status":"PROCESSING","row_version":1},
+        "sources":[{"source_kind":"UPLOAD_REQUEST","locator":{"processing_plan":plan}}],
         "indexes":[{"index_ref_id":str(ref),"document_version_id":str(doc),"status":"PENDING_APPROVAL"}]}
     repository = SimpleNamespace(get_version=AsyncMock(return_value=version), get_asset=AsyncMock(return_value=asset),
-        get_version_relations=AsyncMock(return_value={"indexes":[index],"sources":[],"scopes":[]}), add_review=AsyncMock())
+        get_version_relations=AsyncMock(return_value={"indexes":[index],"sources":[SimpleNamespace(source_kind="UPLOAD_REQUEST", source_locator_json={})],"scopes":[]}), add_review=AsyncMock(),
+        get_knowledge_base=AsyncMock(return_value=base), list_tags=AsyncMock(return_value=[tag]))
     uow = SimpleNamespace(operations_knowledge=repository, commit=AsyncMock())
     @asynccontextmanager
     async def factory():
         yield uow
     documents = SimpleNamespace(access=lambda _: SimpleNamespace(domain_id=domain, tenant_id=tenant),
-        process=AsyncMock(side_effect=lambda *args: dict(record)), excerpts=AsyncMock(return_value={"excerpts":[],"warnings":[]}),
+        assert_processing_plan=MagicMock(), process=AsyncMock(side_effect=lambda *args, **kwargs: dict(record)),
+        approved_parse_profile=AsyncMock(return_value=SimpleNamespace(strategy="TEXT")),
+        approve_parse=AsyncMock(), manual_processing_plan=AsyncMock(return_value=plan),
+        excerpts=AsyncMock(return_value={"excerpts":[],"warnings":[]}),
         publish=AsyncMock(), withdraw=AsyncMock())
     service = OperationsKnowledgeService.__new__(OperationsKnowledgeService)
     service._uow_factory, service._documents = factory, documents
+    service._structured_model = SimpleNamespace(generate_structured=AsyncMock())
+    service._tagging_model_snapshot = AsyncMock(return_value=model_snapshot)
+    service._prompt_registry = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(ref=lambda: prompt_ref)))
     service.get_version = AsyncMock(side_effect=lambda **_: deepcopy(detail))
     service._actor = lambda _: "fixture-user"
     service._manual_profile = MagicMock(return_value=SimpleNamespace(model_dump=lambda **_: {}, schema_version="test"))
@@ -408,6 +430,7 @@ def test_ready_manual_publishes_app_document_and_business_pointer_in_one_transac
     async def run():
         f = lifecycle_fixture()
         await f.service.reconcile_version(**f.kwargs)
+        f.documents.process.assert_awaited_once_with(ANY, f.doc, expected_plan=f.plan)
         f.documents.publish.assert_awaited_once()
         assert f.index.parse_run_id == f.parse and f.index.index_generation_id == f.generation
         assert f.version.status == f.asset.status == "PUBLISHED"
@@ -444,23 +467,122 @@ def test_pending_parse_or_projection_does_not_publish_partial_manual(pending):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("stale", [False, True])
-def test_approval_only_advances_to_tagging_and_never_calls_parser_or_model(stale):
+@pytest.mark.parametrize("failure", [None, "stale", "model", "vocabulary", "prompt"])
+def test_approval_freezes_inputs_or_leaves_review_unchanged(failure):
     async def run():
         f = lifecycle_fixture()
         f.detail["version"]["status"] = f.version.status = "REVIEW_REQUIRED"
         f.asset.status = "REVIEW_REQUIRED"
-        kwargs = {**f.kwargs, "expected_row_version":2 if stale else 1,"comment":"已核对原文"}
-        if stale:
-            with pytest.raises(AIOpsApplicationError):
+        f.index.index_status = "PENDING_APPROVAL"
+        if failure == "model":
+            f.base.configuration_json = {}
+        if failure == "vocabulary":
+            f.repository.list_tags.return_value = []
+        if failure == "prompt":
+            f.service._prompt_registry.resolve.side_effect = LookupError()
+        kwargs = {**f.kwargs, "expected_row_version":2 if failure == "stale" else 1,"comment":"已核对原文", "parse_strategy":"TEXT"}
+        if failure:
+            with pytest.raises(AIOpsApplicationError) as caught:
                 await f.service.approve_manual(**kwargs)
+            assert caught.value.code == {
+                "stale": "AIOPS_KNOWLEDGE_VERSION_CONFLICT", "model": "AIOPS_KNOWLEDGE_TAG_MODEL_REQUIRED",
+                "vocabulary": "AIOPS_KNOWLEDGE_TAG_VOCABULARY_EMPTY", "prompt": "AIOPS_KNOWLEDGE_TAG_PROMPT_UNAVAILABLE",
+            }[failure]
+            assert f.version.status == f.asset.status == "REVIEW_REQUIRED"
+            f.repository.add_review.assert_not_awaited()
             f.uow.commit.assert_not_awaited()
         else:
             await f.service.approve_manual(**kwargs)
             assert f.version.status == "TAGGING"
             assert f.version.tag_analysis_json["approval"]["status"] == "APPROVED"
+            frozen = f.version.tag_analysis_json["execution_spec"]
+            assert frozen["model"] == f.model_snapshot and frozen["prompt"] == f.prompt_ref
+            assert frozen["document_version_ids"] == [str(f.doc)] and frozen["processing_plan"] == f.plan
+            assert frozen["vocabulary"][0]["tag_id"] == str(f.tag.tag_id)
             f.repository.add_review.assert_awaited_once()
+            f.documents.approve_parse.assert_awaited_once_with(f.uow, ANY, [f.index], f.version,
+                f.documents.approved_parse_profile.return_value)
             f.uow.commit.assert_awaited_once()
         f.documents.process.assert_not_awaited()
         f.documents.publish.assert_not_awaited()
+        f.service._structured_model.generate_structured.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_tagging_failure_and_retry_keep_frozen_spec_after_library_changes():
+    async def run():
+        f = lifecycle_fixture()
+        f.detail["version"]["status"] = f.version.status = f.asset.status = "REVIEW_REQUIRED"
+        f.index.index_status = "PENDING_APPROVAL"
+        await f.service.approve_manual(**f.kwargs, expected_row_version=1, comment=None, parse_strategy="TEXT")
+        frozen = deepcopy(f.version.tag_analysis_json["execution_spec"])
+        f.base.configuration_json = {"models":{"parser_llm": str(uuid7())}}
+        f.repository.list_tags.return_value = []
+        f.service._tagging_model_snapshot.return_value = {**f.model_snapshot, "digest": "changed"}
+        await f.service.analyze_tags(**f.kwargs)
+        assert f.version.status == "TAGGING_FAILED"
+        assert f.version.tag_analysis_json["execution_spec"] == frozen
+        f.documents.process.assert_not_awaited()
+
+        f.documents.retry = AsyncMock()
+        f.service._tagging_model_snapshot.return_value = f.model_snapshot
+        f.service._prompt_registry.resolve.return_value.content = "frozen prompt"
+        f.documents.excerpts.return_value = {"excerpts": [{
+            "document_version_id": str(f.doc), "content": "恢复步骤", "locator": {"page": 1},
+        }]}
+        f.service._structured_model.generate_structured.return_value = SimpleNamespace(
+            output={"suggestions": [{"tag_id": str(f.tag.tag_id), "confidence": 0.9,
+                "evidence": [{"document_version_id": str(f.doc), "file_name": "manual.md", "quote": "恢复步骤"}]}]},
+            receipt=SimpleNamespace(model_dump=lambda **_: {}),
+        )
+        f.documents.assert_processed_documents = AsyncMock()
+        f.repository.replace_tag_scopes = AsyncMock()
+        await f.service.review(**f.kwargs, decision="RETRY", expected_row_version=1, comment=None)
+        assert f.version.status == "PROCESSING", f.version.tag_analysis_json.get("error_summary")
+        assert f.version.tag_analysis_json["execution_spec"] == frozen
+        f.service._prompt_registry.resolve.assert_awaited_with(
+            "knowledge_tag_classify", frozen_prompts={"knowledge_tag_classify": frozen["prompt"]},
+        )
+        generation = f.service._structured_model.generate_structured.await_args.kwargs
+        assert generation["model_snapshot"] == frozen["model"]
+        assert generation["input_payload"]["vocabulary"] == frozen["vocabulary"]
+        f.documents.assert_processed_documents.assert_awaited_once()
+    asyncio.run(run())
+
+
+def test_stale_tagging_worker_cannot_mark_new_attempt_failed():
+    async def run():
+        f = lifecycle_fixture()
+        f.version.status, f.version.row_version = "TAGGING", 3
+        await f.service._mark_tagging_failed(
+            domain_id=f.domain, asset_version_id=f.version_id, expected_revision=2,
+            code="TAG_ANALYSIS_FAILED", message="expired attempt",
+        )
+        assert f.version.status == "TAGGING"
+        f.uow.commit.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_index_facts_compile_for_local_dialect_and_do_not_treat_missing_generation_as_ready():
+    async def run():
+        from sqlalchemy.dialects import oracle, postgresql
+
+        f = lifecycle_fixture()
+        rows = [
+            ("PUBLISHED", "PUBLISHED", "READY", "PUBLISHED", "READY", "PARSED", "active-profile"),
+            ("PUBLISHED", "PUBLISHED", "READY", "PUBLISHED", None, "PARSED", "old-profile"),
+            ("REVIEW_REQUIRED", "REVIEW_REQUIRED", "PENDING_APPROVAL", "STAGED", None, "RECEIVED", None),
+        ]
+        session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: rows)))
+        repository = OperationsKnowledgeRepository(session)
+        scope = {} if f.oracle else {"tenant_id": f.tenant}
+        facts = await repository.knowledge_base_index_facts(
+            domain_id=f.domain, knowledge_base_id=f.asset.knowledge_base_id, **scope,
+        )
+        assert facts == {"total": 3, "ready": 1, "error": True, "verified_parse_profiles": {"active-profile", "old-profile"}}
+        statement = session.execute.await_args.args[0]
+        dialect = oracle.dialect() if f.oracle else postgresql.dialect()
+        sql = str(statement.compile(dialect=dialect)).upper()
+        assert "ACTIVE_GENERATION_ID" in sql and "PARSE_RUN_ID" in sql
+        assert "FETCH FIRST" in sql if f.oracle else "LIMIT" in sql
     asyncio.run(run())

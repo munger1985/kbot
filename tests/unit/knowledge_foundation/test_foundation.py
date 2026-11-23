@@ -12,6 +12,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(path) for path in ROOT.glob("packages/*/src")] + [str(path) for path in ROOT.glob("services/*/src")]
@@ -30,7 +31,7 @@ from knowledge_algorithms.projections.contracts import SearchUnit, ProjectedUnit
 from knowledge_algorithms.references.citations import CitationTarget, canonical_identifier, resolve_citations, citation_edges
 from knowledge_algorithms.references.relations import RelationType, ResolvedRelation, direct_figure_manifest
 from knowledge_algorithms.retrieval.engine import RetrievalEngine
-from knowledge_algorithms.retrieval.exact import IndexedUnit, ExactIndex, lexical_tokens
+from knowledge_algorithms.retrieval.exact import IndexedUnit, ExactIndex, is_orphan_letter, lexical_tokens
 from knowledge_algorithms.retrieval.maxsim import TokenMatrix
 from knowledge_algorithms.retrieval.selection import PayloadCost
 from agent_runtime.application.knowledge_delivery import KnowledgeEvidenceComposer, ModelEvidenceReply, EvidenceDeliveryError
@@ -68,6 +69,15 @@ class ExactAndCitationTests(unittest.TestCase):
         with self.assertRaises(AlgorithmError):
             ExactIndex([unit("a", "x"), unit("b", "y")], max_units=1,
                        max_text_chars=100, max_vector_elements=100)
+
+    def test_isolated_letter_is_only_a_result_if_the_query_requests_the_letter(self):
+        standalone = unit("fragment", "（Ａ）")
+        real = unit("paragraph", "A 元素的荧光光谱法")
+        query = QueryInput(QueryMode.RELEVANCE, 5, ("TEXT",), text="荧光光谱法")
+        self.assertTrue(is_orphan_letter(standalone, query))
+        self.assertFalse(is_orphan_letter(real, query))
+        self.assertFalse(is_orphan_letter(standalone, replace(query, text="等级 A")))
+        self.assertTrue(is_orphan_letter(standalone, replace(query, text="Alpha")))
 
     def test_native_multivector_mask_not_mean_pooled(self):
         specification = spec("MULTIVECTOR")
@@ -276,8 +286,9 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
                 inner.payload, inner.path = kwargs["payload"], args[1]
                 return {"choices":[{"message":{"content":"图片 [D1]"}}]}
         client = Client()
+        model_id = uuid4()
         gateway = KnowledgeEvidenceModelGateway(client=client, auth_context=None, model_snapshot_ref="m",
-            model_payload={"served_model_name":"fixture", "max_tokens":77}, system_prompt="合成受控提示",
+            model_payload={"model_id":str(model_id), "max_tokens":77}, system_prompt="合成受控提示",
             supports_images=True, clock=lambda:1000)
         result = await gateway.generate(question="图里是什么", model_snapshot_ref="m",
             evidence_parts=({"label":"D1", "kind":"IMAGE", "data":b"image", "mime_type":"image/png"},))
@@ -286,12 +297,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.payload["max_tokens"],77)
         self.assertEqual(client.path,"/internal/v1/inference")
         from model_serving.vlm.schema import VLMRequest
-        from uuid import uuid4
-        payload = dict(client.payload)
-        if not (ROOT/"database/oracle").is_dir():
-            payload["model_id"] = uuid4()
-            payload.pop("served_model_name")
-        VLMRequest.model_validate(payload)
+        self.assertEqual(VLMRequest.model_validate(client.payload).model_id, model_id)
         self.assertEqual(result.used_labels,("D1",))
 
 

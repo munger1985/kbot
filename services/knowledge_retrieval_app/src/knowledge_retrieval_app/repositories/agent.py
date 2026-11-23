@@ -82,5 +82,6 @@ class KnowledgeRetrievalAgentRepository:
             "resource_id": str(row.library_id), "usage": role, "binding_role": role,
             "display_name": row.display_name, "status": row.status,
             "domain_id": str(row.domain_id)}
-            for row in rows for role, value in row.configuration_json.get("models", {}).items()
+            for row in rows for group in ("parse_models", "index_models")
+            for role, value in ((row.configuration_json or {}).get(group) or {}).items()
             if str(value) == str(model_id)]

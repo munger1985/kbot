@@ -1,0 +1,37 @@
+.knowledge-pdf-viewport {
+  flex: none;
+  min-height: 23rem;
+  height: clamp(24rem, 61dvh, 60rem);
+  overflow: auto;
+  box-sizing: border-box;
+  background: var(--surface-subtle, #edf2f6);
+  padding: .5rem 1rem 1rem;
+  scrollbar-gutter: stable;
+}
+.knowledge-search-expanded .knowledge-pdf-viewport { height: min(81dvh, 75rem); }
+.knowledge-pdf-status { min-height: 1.45rem; color: var(--muted, #526577); font-size: .82rem; padding: 0 0 .45rem; }
+.knowledge-pdf-paper { position: relative; margin-inline: auto; background: white; box-shadow: 0 1px 5px #0002; }
+.knowledge-pdf-paper > canvas { display: block; width: 100%; height: 100%; }
+.knowledge-pdf-highlights { position: absolute; inset: 0; pointer-events: none; }
+.knowledge-pdf-hit { position: absolute; background: rgb(255 222 42 / 50%); mix-blend-mode: multiply; }
+/* PDF.js 文字层的定位与缩放约定；原页只显示 Canvas 与文字，不挂载表单或脚本层。 */
+.knowledge-pdf-text {
+  position: absolute; inset: 0; overflow: clip; opacity: 1; text-align: initial; line-height: 1;
+  letter-spacing: normal; word-spacing: normal; text-size-adjust: none; transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.knowledge-pdf-text :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0 0; user-select: text; }
+.knowledge-pdf-text > :not(.markedContent),
+.knowledge-pdf-text .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.knowledge-pdf-text .markedContent { display: contents; }
+.knowledge-pdf-text[data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
+.knowledge-pdf-text[data-main-rotation="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.knowledge-pdf-text[data-main-rotation="270"] { transform: rotate(270deg) translateX(-100%); }

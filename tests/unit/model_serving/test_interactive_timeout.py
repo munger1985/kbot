@@ -21,7 +21,7 @@ def test_nonstream_timeout_cancels_provider_without_changing_shared_config():
         service = LLMService()
         service.get_llm_model = AsyncMock(return_value=model)
         with pytest.raises(TimeoutError):
-            await service.chat(served_model_name="test", messages="JSON", timeout=0.02)
+            await service.chat(model_id="019c0000-0000-7000-8000-000000000001", messages="JSON", timeout=0.02)
         assert cancelled.is_set() and model.config.max_tokens == 16384
         assert model.chat.await_args.kwargs["timeout"] == 0.02
         assert "max_tokens" not in model.chat.await_args.kwargs

@@ -10,6 +10,7 @@ from platform_core.authorization import (
 )
 
 GLOBAL_ADMIN_USER_ID = "ADMIN"
+MODEL_MANAGEMENT_PERMISSION = "platform:model_manage"
 
 
 def is_reserved_global_admin(user_id: str) -> bool:

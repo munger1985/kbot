@@ -42,7 +42,6 @@ def _material(**params):
         "provider": "OCI",
         "api_endpoint": HOST,
         "provider_model_name": "xai.grok-4.6",
-        "served_model_name": "grok-4.6",
         "model_params": model_params,
     }
 

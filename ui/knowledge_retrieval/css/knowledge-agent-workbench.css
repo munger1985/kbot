@@ -1,0 +1,83 @@
+/* 静态会话轨对应 Portal ConversationList；工作台样式由页面基线同步。 */
+.knowledge-chat-page .knowledge-conversation-list { min-height: 0; flex: 1; max-height: none; border: 0; padding: 8px; }
+.knowledge-session-group h3 { margin: 14px 10px 5px; color: var(--faint); font-size: var(--type-meta); font-weight: 650; }
+.knowledge-session-group:first-child h3 { margin-top: 4px; }
+.knowledge-chat-page .knowledge-conversation-row { position: relative; display: block; margin: 2px 0; border: 0; border-radius: 9px; }
+.knowledge-chat-page .knowledge-conversation-select {
+  display: flex; width: 100%; min-width: 0; min-height: 58px; align-items: center; gap: 9px;
+  padding: 9px 44px 9px 11px; border: 1px solid transparent; border-radius: 9px;
+  color: var(--ink); background: transparent; text-align: left; cursor: pointer;
+}
+.knowledge-chat-page .knowledge-conversation-select:hover { background: var(--surface-raised); }
+.knowledge-chat-page .knowledge-conversation-select.is-selected {
+  border-color: color-mix(in srgb,var(--accent) 22%,var(--line)); background: var(--accent-soft); box-shadow: none;
+}
+.knowledge-session-copy { display: grid; flex: 1; min-width: 0; gap: 3px; }
+.knowledge-session-copy strong { font-size: 13px; font-weight: 650; line-height: 1.4; }
+.knowledge-chat-page .knowledge-session-copy small { margin: 0; color: var(--faint); font-size: var(--type-meta); line-height: 1.35; }
+.knowledge-conversation-more {
+  position: absolute; top: 50%; right: 5px; display: grid; width: 32px; min-width: 32px; height: 32px; min-height: 32px;
+  place-items: center; padding: 0; border: 0; border-radius: 7px; color: var(--muted); background: transparent;
+  opacity: 0; transform: translateY(-50%); cursor: pointer;
+}
+.knowledge-conversation-more span { font-size: 22px; line-height: 1; }
+.knowledge-conversation-row:hover .knowledge-conversation-more,
+.knowledge-conversation-row:focus-within .knowledge-conversation-more,
+.knowledge-conversation-more[aria-expanded="true"] { opacity: 1; }
+.knowledge-conversation-more:hover { color: var(--ink); background: var(--surface-subtle); }
+.knowledge-conversation-menu {
+  position: fixed; z-index: 1000; box-sizing: border-box; width: 144px; padding: 5px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface-raised); box-shadow: var(--shadow-soft);
+}
+.knowledge-conversation-menu button {
+  display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 6px;
+  color: var(--danger); background: transparent; text-align: left; cursor: pointer;
+}
+.knowledge-conversation-menu button:hover:not(:disabled) { background: var(--danger-soft); }
+.knowledge-conversation-menu button:disabled { color: var(--faint); cursor: not-allowed; }
+.knowledge-conversation-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.knowledge-chat-page .knowledge-conversation-panel { min-height: 0; }
+.knowledge-chat-page .knowledge-message-viewport { padding: 18px 22px; }
+.knowledge-chat-page .knowledge-message-viewport .knowledge-message {
+  display: grid; grid-template-columns: 36px minmax(0,1fr); align-items: start; gap: 10px;
+  width: min(88%,1040px); max-width: none; margin: 0 0 21px; padding: 0;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+.knowledge-chat-page .knowledge-message-viewport .knowledge-message.user {
+  grid-template-columns: minmax(0,1fr) 36px; width: min(78%,820px); margin-inline-start: auto;
+}
+.knowledge-message.user > .chat-message-avatar { grid-column: 2; grid-row: 1; }
+.knowledge-message.user > .knowledge-message-body { grid-column: 1; grid-row: 1; justify-items: end; }
+.knowledge-message.assistant > .chat-message-avatar { color: var(--accent-strong); border-color: color-mix(in srgb,var(--accent) 34%,var(--line)); background: var(--accent-soft); }
+.knowledge-message-viewport .knowledge-message-body { display: grid; min-width: 0; gap: 6px; }
+.knowledge-message.user .chat-message-bubble {
+  justify-self: end; padding: 10px 14px; border-color: color-mix(in srgb,var(--accent) 30%,var(--line));
+  border-radius: 12px 12px 4px 12px; background: color-mix(in srgb,var(--accent-soft) 58%,var(--surface));
+}
+@media (min-width: 901px) {
+  .knowledge-chat-page .is-session-collapsed .knowledge-conversation-list { padding: 7px; }
+  .knowledge-chat-page .is-session-collapsed :is(.knowledge-session-group h3,.knowledge-session-copy,.knowledge-conversation-more) { display: none; }
+  .knowledge-chat-page .is-session-collapsed .knowledge-conversation-select { display: grid; min-height: 46px; justify-items: center; padding: 5px 0; }
+}
+@media (hover: none), (pointer: coarse) { .knowledge-conversation-more { opacity: 1; } }
+@media (max-width: 900px) {
+  .knowledge-chat-page .knowledge-message-viewport { padding: 12px; }
+  .knowledge-chat-page .knowledge-message-viewport .knowledge-message { width: 100%; }
+  .knowledge-chat-page .knowledge-message-viewport .knowledge-message.user { width: min(95%,820px); }
+}
+.knowledge-message-references:empty { display: none; }
+dialog.knowledge-reference-dialog.knowledge-drawer { width: min(1120px, 100vw); }
+.knowledge-reference-dialog .knowledge-dialog-body { display: grid; align-content: start; gap: .75rem; }
+.knowledge-reference-dialog :is(h2, .dialog-subtitle) { overflow-wrap: anywhere; }
+.knowledge-reference-dialog .knowledge-pdf-viewport { height: max(16rem, calc(100dvh - 13rem)); min-height: 0; }
+.knowledge-reference-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.knowledge-reference-excerpt, .knowledge-evidence-item, .knowledge-evidence-related { min-width: 0; }
+.knowledge-reference-excerpt summary, .knowledge-retrieval-dialog summary { cursor: pointer; color: var(--accent-strong); }
+.knowledge-evidence-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .75rem; margin: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-subtle); }
+.knowledge-evidence-summary dt { color: var(--muted); font-size: .82rem; }
+.knowledge-evidence-summary dd { margin: .25rem 0 0; font-weight: 650; }
+.knowledge-evidence-hits { display: grid; gap: .75rem; list-style: none; padding: 0; }
+.knowledge-evidence-hits > li { display: grid; gap: .5rem; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; }
+.knowledge-evidence-related .knowledge-evidence-item { margin-block-start: .5rem; padding-inline-start: .75rem; }
+.knowledge-evidence-content pre, .knowledge-evidence-text { margin-block: .5rem; padding: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; background: var(--surface-subtle); }
+.knowledge-evidence-content img, .knowledge-reference-dialog .knowledge-dialog-body > img { max-width: 100%; max-height: 60dvh; object-fit: contain; }

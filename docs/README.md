@@ -10,6 +10,8 @@ Git 历史保存，不再作为有效目标。知识基础组件已按下列新�
 - [App 接入与持久化详细设计](proposals/app-owned-knowledge-integration-detailed-design.md)：固定端口、委托鉴权、流式接收、App 物理表及实际模型交付。
 - [实施计划](operations/app-owned-knowledge-implementation-plan.md)：K0–K7 工作包、依赖门禁、双平台工件和批准后的切换/回退。
 - [首批编码记录](operations/app-owned-knowledge-k0-k1-progress.md)：K0/K1 已实现组件、验证证据和未完成范围；不代表现网已切换。
+- [知识库 App 整体设计](product/knowledge-retrieval-ui-alignment.md)：七页分工、三档解析及资料治理流程。
+- [按库绑定模型与三档文档解析](product/knowledge-library-parse-strategies.md)：创建和编辑只配模型，按文件版本审批选档，任务与重试读取冻结规格；适用于知识库 App 和 AIOps 运维资料库。
 - [K2 实施记录](operations/app-owned-knowledge-k2-progress.md)：App 独占存储、计算协议、接收恢复与索引准备；知识检索 App 的 Oracle/PostgreSQL 定向验收各 18 项通过，AIOps Oracle 实库验收未执行。
 - [基础组件编码与离线接入记录](operations/app-owned-knowledge-foundation-progress.md)：可复用 K3/K4 基础实现、解析器/模型端口、可选 rg、离线闭环与正式 App 配套/真实验收的剩余边界。
 - [可选 ripgrep 组件](proposals/optional-ripgrep-text-scan-design.md)：R1 独立可选扩展，不是核心部署依赖。
@@ -37,6 +39,8 @@ Git 历史保存，不再作为有效目标。知识基础组件已按下列新�
 - [Agent 完整聊天流程](product/agent-chat.md)
 - [知识入库、解析与检索](product/knowledge-lifecycle.md)
 - [AIOps Agent 产品能力](product/aiops-agent.md)
+- [AIOps 数据库备份与空库恢复演练设计（待确认）](proposals/aiops-data-protection-design.md)
+- [AIOps 数据保护实施计划（待确认）](operations/aiops-data-protection-implementation-plan.md)
 - [AIOps Agent 专业 DBA 对话诊断设计](product/aiops-agent-chat-diagnosis.md)
 - [智能运维新会话功能引导](product/aiops-conversation-starters.md)
 - [AIOps 数据库实施方案 Runbook](product/aiops-implementation-runbooks.md)

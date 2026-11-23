@@ -3,7 +3,7 @@
 from collections.abc import Callable, Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, column, delete, func, or_, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.contracts.knowledge import KnowledgeTagScopeSnapshot
@@ -76,6 +76,77 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             ).order_by(OperationsKnowledgeBaseEntity.knowledge_base_id)
         )).all())
 
+    async def has_active_knowledge_tags(self, *, domain_id: int) -> bool:
+        self._check_active()
+        return await self._session.scalar(
+            select(OperationsKnowledgeTagEntity.tag_id).where(
+                OperationsKnowledgeTagEntity.domain_id == domain_id,
+                OperationsKnowledgeTagEntity.status == "ACTIVE",
+            ).limit(1)
+        ) is not None
+
+    async def lock_knowledge_base_names(self, *, domain_id: int) -> bool:
+        """串行化同一工作域的建库及改名；同库行按统一次序后锁。"""
+        self._check_active()
+        domain = table("KBOT_PLATFORM_DOMAIN", column("DOMAIN_ID"))
+        return await self._session.scalar(
+            select(domain.c.DOMAIN_ID).where(domain.c.DOMAIN_ID == domain_id).with_for_update()
+        ) is not None
+
+    async def knowledge_base_index_facts(self, *, domain_id: int, knowledge_base_id: UUID):
+        """读取已发布版本（或尚未发布资料的最新版本）的本 App 索引与解析事实。"""
+        from ..entities.knowledge_document_version import KnowledgeDocumentVersionEntity as DocumentVersion
+        from ..entities.knowledge_index_generation import KnowledgeIndexGenerationEntity as Generation
+        from ..entities.knowledge_ingestion_job import KnowledgeIngestionJobEntity as Job
+        from ..entities.knowledge_parse_run import KnowledgeParseRunEntity as ParseRun
+
+        self._check_active()
+        asset, version, index = (
+            OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity, OperationsKnowledgeIndexEntity
+        )
+
+        def scoped(row):
+            return row.domain_id == domain_id
+
+        latest = (
+            select(version.asset_version_id)
+            .where(version.asset_id == asset.asset_id)
+            .order_by(version.version_no.desc(), version.asset_version_id.desc())
+            .limit(1).correlate(asset).scalar_subquery()
+        )
+        effective = func.coalesce(asset.current_version_id, latest)
+        rows = (await self._session.execute(
+            select(asset.status, version.status, index.index_status, DocumentVersion.status,
+                   Generation.status, Job.status, ParseRun.profile_hash)
+            .select_from(asset)
+            .outerjoin(version, and_(version.asset_version_id == effective, version.asset_id == asset.asset_id))
+            .outerjoin(index, index.asset_version_id == version.asset_version_id)
+            .outerjoin(DocumentVersion, and_(DocumentVersion.document_version_id == index.document_version_id,
+                                            scoped(DocumentVersion)))
+            .outerjoin(Generation, and_(Generation.index_generation_id == DocumentVersion.active_generation_id,
+                                        Generation.index_generation_id == index.index_generation_id,
+                                        Generation.parse_run_id == index.parse_run_id,
+                                        Generation.document_version_id == DocumentVersion.document_version_id, scoped(Generation)))
+            .outerjoin(Job, and_(Job.ingestion_job_id == index.ingestion_job_id,
+                                 Job.document_version_id == DocumentVersion.document_version_id, scoped(Job)))
+            .outerjoin(ParseRun, and_(ParseRun.parse_run_id == Job.parse_run_id,
+                                      ParseRun.document_version_id == DocumentVersion.document_version_id,
+                                      scoped(ParseRun)))
+            .where(scoped(asset), asset.knowledge_base_id == knowledge_base_id)
+        )).all()
+        ready = 0
+        error = False
+        verified = set()
+        for asset_status, version_status, index_status, doc_status, generation_status, job_status, parse_hash in rows:
+            ready += int((asset_status, version_status, index_status, doc_status, generation_status)
+                         == ("PUBLISHED", "PUBLISHED", "READY", "PUBLISHED", "READY"))
+            error |= (job_status == "FAILED" or version_status == "FAILED"
+                      or index_status in {"FAILED", "REJECTED_QUALITY"}
+                      or (index_status == "READY" and generation_status != "READY"))
+            if job_status == "PARSED" and parse_hash:
+                verified.add(parse_hash)
+        return {"total": len(rows), "ready": ready, "error": error, "verified_parse_profiles": verified}
+
     async def find_knowledge_base_name(
         self, *, domain_id: int, normalized_name: str,
         exclude_knowledge_base_id: UUID | None = None,
@@ -90,44 +161,46 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             and row.knowledge_base_id != exclude_knowledge_base_id
         ), None)
 
-    async def knowledge_base_usage(
-        self, *, knowledge_base_id: UUID,
-    ) -> dict[str, int]:
+    async def knowledge_base_usage(self, *, knowledge_base_id: UUID) -> dict[str, int]:
+        """仍存在的资料及 Agent 版本绑定均阻止删除。"""
         self._check_active()
-        from aiops_agent.entities import (
-            AIOpsAgentEntity,
-            AIOpsAgentVersionKnowledgeBaseEntity,
-        )
+        from aiops_agent.entities import AIOpsAgentEntity, AIOpsAgentVersionKnowledgeBaseEntity
 
+        binding = AIOpsAgentVersionKnowledgeBaseEntity
         assets = await self._session.scalar(
             select(func.count()).select_from(OperationsKnowledgeAssetEntity).where(
                 OperationsKnowledgeAssetEntity.knowledge_base_id == knowledge_base_id
             )
         )
-        agents = await self._session.scalar(
-            select(func.count())
-            .select_from(AIOpsAgentVersionKnowledgeBaseEntity)
-            .join(
-                AIOpsAgentEntity,
-                AIOpsAgentEntity.current_version_id
-                == AIOpsAgentVersionKnowledgeBaseEntity.agent_version_id,
-            )
-            .where(
-                AIOpsAgentVersionKnowledgeBaseEntity.knowledge_base_id
-                == knowledge_base_id
-            )
-        )
+        total, current = (await self._session.execute(
+            select(func.count(), func.count(AIOpsAgentEntity.agent_id)).select_from(binding)
+            .outerjoin(AIOpsAgentEntity, AIOpsAgentEntity.current_version_id == binding.agent_version_id)
+            .where(binding.knowledge_base_id == knowledge_base_id)
+        )).one()
         return {
             "assets": int(assets or 0),
-            "agent_versions": int(agents or 0),
+            "current_agent_versions": int(current or 0),
+            "historical_agent_versions": int(total or 0) - int(current or 0),
         }
 
     async def delete_knowledge_base(
         self, entity: OperationsKnowledgeBaseEntity,
     ) -> None:
+        import re
+        from sqlalchemy.exc import IntegrityError
+        from aiops_agent.application.errors import KnowledgeBaseReferenceConflict, _oracle_error_code
+
         self._check_active()
         await self._session.delete(entity)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            if _oracle_error_code(exc) == 2292 and re.search(
+                r"\((?:[\w$#]+\.)?(?:FK_OPS_KNOW_ASSET_BASE|FK_OPS_AGENT_VER_KNOW_BASE)\)",
+                str(exc.orig).upper(),
+            ):
+                raise KnowledgeBaseReferenceConflict() from exc
+            raise
 
     async def add_asset_version(
         self,
@@ -590,6 +663,19 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
+    async def published_index_counts(self, *, asset_version_ids: Sequence[UUID]) -> dict[str, int]:
+        """只统计经当前业务权限筛出的版本；未就绪索引也计入分母。"""
+        self._check_active()
+        if not asset_version_ids:
+            return {}
+        index = OperationsKnowledgeIndexEntity
+        rows = (await self._session.execute(
+            select(index.asset_version_id, func.count()).where(
+                index.asset_version_id.in_(tuple(asset_version_ids))
+            ).group_by(index.asset_version_id)
+        )).all()
+        return {str(version_id): int(count) for version_id, count in rows}
+
     async def list_published_candidates(
         self, *, domain_id: int, target_id: UUID | None,
         source_kinds: Sequence[str], knowledge_base_ids: Sequence[UUID] = (),
@@ -602,17 +688,32 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         self._check_active()
         if limit is not None and limit < 1:
             raise ValueError("知识候选分页大小必须大于零")
+        from ..entities.knowledge_document import KnowledgeDocumentEntity as Document
+        from ..entities.knowledge_document_version import KnowledgeDocumentVersionEntity as DocumentVersion
+        from ..entities.knowledge_index_generation import KnowledgeIndexGenerationEntity as Generation
+
+        index = OperationsKnowledgeIndexEntity
         statement = (
             select(OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity, OperationsKnowledgeIndexEntity)
             .join(OperationsKnowledgeVersionEntity,
                 OperationsKnowledgeVersionEntity.asset_version_id == OperationsKnowledgeAssetEntity.current_version_id)
             .join(OperationsKnowledgeIndexEntity,
                 OperationsKnowledgeIndexEntity.asset_version_id == OperationsKnowledgeVersionEntity.asset_version_id)
+            .join(Document, and_(Document.document_id == index.document_id, Document.domain_id == domain_id,
+                Document.status == "PUBLISHED"))
+            .join(DocumentVersion, and_(DocumentVersion.document_version_id == index.document_version_id,
+                DocumentVersion.domain_id == domain_id, DocumentVersion.document_id == index.document_id,
+                DocumentVersion.published_parse_run_id == index.parse_run_id,
+                DocumentVersion.active_generation_id == index.index_generation_id))
+            .join(Generation, and_(Generation.index_generation_id == index.index_generation_id,
+                Generation.domain_id == domain_id, Generation.document_version_id == index.document_version_id,
+                Generation.parse_run_id == index.parse_run_id))
             .where(
                 OperationsKnowledgeAssetEntity.domain_id == domain_id,
                 OperationsKnowledgeAssetEntity.status == "PUBLISHED",
                 OperationsKnowledgeVersionEntity.status == "PUBLISHED",
                 OperationsKnowledgeIndexEntity.index_status == "READY",
+                DocumentVersion.status == "PUBLISHED", Generation.status == "READY",
                 OperationsKnowledgeAssetEntity.security_level <= max_security_level,
             )
         )

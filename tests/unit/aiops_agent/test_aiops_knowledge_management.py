@@ -88,8 +88,14 @@ def test_search_preview_requires_selected_agent_across_public_client_internal_bo
     async def run():
         oracle = ReportSourceEntity.__tablename__.startswith("KBOT_")
         public = importlib.import_module("main_api.api.aiops_app" if oracle else "main_api.api.ops")
+        from platform_core.contracts.aiops.knowledge_search import KnowledgeSearchResponse
         context, agent_id, target_id = SimpleNamespace(), uuid7(), uuid7()
-        service = SimpleNamespace(search=AsyncMock(return_value={"status": "READY", "results": []}))
+        service = SimpleNamespace(search=AsyncMock(return_value={"status": "READY",
+            "retrieval_conclusion": "EVIDENCE_FOUND", "warnings": [],
+            "coverage": {"scope": "COMPLETE", "ranking": "GLOBAL", "gaps": [], "channel_failures": []},
+            "results": [{"asset_id": uuid7(), "asset_version_id": uuid7(), "asset_kind": "MANUAL",
+                "title": "模拟手册", "version": 1, "applicability": "MATCHED", "citation_pack": [],
+                "document_bindings": [{"private_ticket": "never-public"}]}]}))
         internal_request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(operations_knowledge_service=service)))
         monkeypatch.setattr(internal, "_scope", lambda *_: (1, "manager") if oracle else (uuid7(), uuid7(), uuid7()))
         client = AIOpsManagementClient.__new__(AIOpsManagementClient)
@@ -102,7 +108,8 @@ def test_search_preview_requires_selected_agent_across_public_client_internal_bo
         if oracle:
             monkeypatch.setattr(public, "_require", AsyncMock())
         app = FastAPI()
-        app.add_api_route("/search-preview", public.preview_operations_knowledge_search, methods=["POST"])
+        app.add_api_route("/search-preview", public.preview_operations_knowledge_search, methods=["POST"],
+            response_model=KnowledgeSearchResponse)
         @app.middleware("http")
         async def set_context(req, call_next):
             req.state.auth_context = context
@@ -117,6 +124,8 @@ def test_search_preview_requires_selected_agent_across_public_client_internal_bo
             service.search.assert_not_awaited()
         else:
             assert response.status_code == 200
+            assert response.json()["retrieval_conclusion"] == "EVIDENCE_FOUND"
+            assert "document_bindings" not in response.json()["results"][0]
             args = service.search.await_args.kwargs
             assert args["agent_id"] == str(agent_id) and args["target_id"] == target_id
             assert args["request"].query == payload["query"]

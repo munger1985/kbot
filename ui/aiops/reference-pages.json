@@ -3,7 +3,7 @@
   "policy": "页面结构、控件位置和交互以来源组件为准；样式同步不等于页面验收通过。",
   "pages": {
     "dashboard": { "route": "", "sources": ["business/AIOpsOverviewView.vue", "business/AIOpsWorkItemsView.vue", "business/AIOpsTurnResultView.vue", "business/AIOpsFindingList.vue"] },
-    "chat": { "route": "diagnosis", "sources": ["business/AIOpsDiagnosisView.vue", "business/AIOpsFindingList.vue", "business/AIOpsEffectVerification.vue", "business/AIOpsSqlPlanView.vue"] },
+    "chat": { "route": "diagnosis", "sources": ["business/AIOpsDiagnosisView.vue", "business/AIOpsFindingList.vue", "business/AIOpsEffectVerification.vue", "business/AIOpsSqlPlanView.vue", "business/AIOpsOutputJobs.vue"] },
     "monitoring": { "route": "monitoring", "sources": ["business/AIOpsMonitoringView.vue", "business/AIOpsMonitoringPanelChart.vue"] },
     "situations": { "route": "situations", "sources": ["business/AIOpsSituationsView.vue", "business/AIOpsTurnResultView.vue", "business/AIOpsFindingList.vue"] },
     "inspections": { "route": "inspections?tab=reports", "sources": ["business/AIOpsRecordsView.vue"] },

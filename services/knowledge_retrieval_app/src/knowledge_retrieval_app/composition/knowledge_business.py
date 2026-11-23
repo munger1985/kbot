@@ -1,8 +1,10 @@
 """正式 App API/Worker 共用的知识基础能力装配，无旧 KC fallback。"""
 
+from dataclasses import replace
 from pathlib import Path
 from knowledge_algorithms.contracts.cursor import CursorCodec
 from knowledge_algorithms.projections.builder import ProjectionBuilder
+from knowledge_algorithms.projections.library_models import library_projection
 from platform_clients.knowledge_computation import KnowledgeComputationClient
 from platform_clients.knowledge_models import NativeRepresentationClient
 from platform_core.contracts import AuthContext, PrincipalKind
@@ -16,6 +18,7 @@ from ..application.knowledge_library import KnowledgeLibraryService, LibraryAuth
 from ..application.knowledge_pipeline import KnowledgePipelineWorker
 from ..adapters.knowledge_models import KnowledgeModelGateway
 from ..domain.knowledge_ingestion import BINDING
+from platform_clients.knowledge_model_binding import build_binding_clients
 
 
 def scope_context(scope, *, caller, operation):
@@ -28,6 +31,8 @@ def scope_context(scope, *, caller, operation):
 def install_business_knowledge(app, *, settings, uow_factory, caller_service=None, register_routes=True):
     caller, configuration = caller_service or settings.api.service_name, settings.knowledge
     parse, projection, profiles = configuration.profiles()
+    profiles = {key: replace(profile, channels=tuple(channel for channel in profile.channels
+        if channel.representation_spec is None)) for key, profile in profiles.items()}
     tokenizer = ConservativeTokenizer()
     compute = KnowledgeComputationClient(base_url=settings.computation.base_url, caller_service=caller,
         audience=settings.computation.audience, timeout_seconds=settings.computation.timeout_seconds)
@@ -39,8 +44,9 @@ def install_business_knowledge(app, *, settings, uow_factory, caller_service=Non
         audience=settings.embedding.audience, service_scopes=("model.inference",))
     visual = NativeRepresentationClient(base_url=settings.visual.base_url, caller_service=caller,
         audience=settings.visual.audience, service_scopes=("model.inference",))
+    projection = replace(projection, representations=())
     specs = projection.representations
-    bindings = {spec.space_id: {"model_ref": spec.model_ref, "wire_model_field": "served_model_name"} for spec in specs}
+    bindings = {spec.space_id: {"model_ref": spec.model_ref} for spec in specs}
     def gateway(access, *, image_reader):
         return KnowledgeModelGateway(visual_client=visual, dense_client=dense,
             auth_context=scope_context(access, caller=caller, operation="model.inference"),
@@ -52,9 +58,30 @@ def install_business_knowledge(app, *, settings, uow_factory, caller_service=Non
         uow_factory=uow_factory, object_store=ingestion.store, authorization=LibraryAuthorization(uow_factory),
         profiles=profiles, tokenizer=tokenizer, image_cost=lambda image: configuration.image_token_cost,
         cursor_codec=CursorCodec(knowledge_signing_key("cursor"), max_bytes=8192),
-        model_gateway_factory=gateway)
+        model_gateway_factory=gateway, published_model_spaces=True)
+    parse_models = build_binding_clients(caller=caller, ocr=settings.model_ocr, vlm=settings.model_vlm)
+
+    async def resolve_model(access, role, model_id):
+        return await parse_models[role].binding(model_id,
+            auth_context=scope_context(access, caller=caller, operation="model.inference"))
+
+    async def resolve_index_profile(access, models):
+        async def resolve(role, model_id):
+            client = dense if role == "embedding" else visual
+            return await client.binding(model_id,
+                auth_context=scope_context(access, caller=caller, operation="model.inference"))
+        return await library_projection(projection, models, resolve)
+
     library = KnowledgeLibraryService(uow_factory=uow_factory, ingestion=ingestion, retrieval=retrieval,
-        parse_profile=parse, configurations=profiles)
+        parse_profile=parse, configurations=profiles, resolve_parse_model=resolve_model, model_executor_ready=True,
+        resolve_index_profile=resolve_index_profile)
+
+    async def profile_for_version(access, version_id):
+        async with uow_factory() as uow:
+            models = await uow.library(access).index_models_for_version(version_id)
+        return await resolve_index_profile(access, models)
+
+    app.state.knowledge_profile_for_version = profile_for_version
     app.state.knowledge_library_service = library
     app.state.knowledge_projection_profile = projection
     app.state.knowledge_tokenizer = tokenizer
@@ -80,5 +107,6 @@ def business_pipeline(app, *, settings, worker_id):
     return KnowledgePipelineWorker(ingestion=app.state.knowledge_ingestion_service,
         projection=app.state.knowledge_projection_service, builder_factory=builder,
         profile=app.state.knowledge_projection_profile, allowed_policy=allowed,
+        profile_for_version=app.state.knowledge_profile_for_version,
         policy_revision="knowledge-retrieval-original/v1", worker_id=worker_id,
         lease_seconds=configuration.lease_seconds, poll_interval_seconds=min(configuration.poll_seconds, 1.))

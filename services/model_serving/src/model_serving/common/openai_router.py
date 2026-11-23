@@ -15,7 +15,7 @@ def create_openai_models_router(*, category: int) -> APIRouter:
         rows = await request.app.state.model_registry.list(category=category)
         data = [
             {
-                "id": row["served_model_name"],
+                "id": str(row["model_id"]),
                 "object": "model",
                 "created": 0,
                 "owned_by": "kbot-model-serving",

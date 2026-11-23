@@ -2,18 +2,21 @@
 (function () {
   "use strict";
   const PAGE_PERMISSIONS = {
-    dashboard: "knowledge_retrieval:use", knowledge: "knowledge_retrieval:knowledge_chat",
+    dashboard: "knowledge_retrieval:use", search: "knowledge_retrieval:use", knowledge: "knowledge_retrieval:knowledge_chat",
     "x-search": "knowledge_retrieval:x_search", domains: "knowledge_retrieval:domain_manage",
     "knowledge-cores": "knowledge_retrieval:knowledge_core_manage",
-    upload: "knowledge_retrieval:knowledge_core_manage", reviews: "knowledge_retrieval:knowledge_core_manage",
-    processing: "knowledge_retrieval:knowledge_core_manage", files: "knowledge_retrieval:knowledge_core_manage",
+    processing: ["knowledge_retrieval:upload", "knowledge_retrieval:review", "knowledge_retrieval:knowledge_core_manage"], files: "knowledge_retrieval:use",
     "data-sources": "knowledge_retrieval:data_model_manage",
     "data-models": "knowledge_retrieval:data_model_manage", agents: "knowledge_retrieval:agent_manage",
   };
+  function pageAllowed(id, permissions) {
+    const required = PAGE_PERMISSIONS[id];
+    return !required || (Array.isArray(required) ? required.some(permission => permissions.has(permission)) : permissions.has(required));
+  }
   const sections = [
     ["workspace", "业务功能", "knowledge", [
-      ["knowledge", "知识检索", "knowledge"], ["upload", "上传资料", "upload"],
-      ["reviews", "资料审核", "review"], ["processing", "解析任务", "processing"], ["files", "知识库文件", "files"],
+      ["search", "直接检索", "search"], ["knowledge", "Agent 问答", "knowledge"], ["files", "知识库文件", "files"],
+      ["processing", "解析任务", "processing"],
     ]],
     ["resources", "管理配置", "models", [
       ["knowledge-cores", "知识库管理", "knowledge"], ["data-sources", "数据源", "data"],
@@ -25,8 +28,6 @@
   ];
   // 沿用 AIOps 的线性图标，不引入另一套图标资源。
   const iconPaths = {
-    upload: ["M12 16V3", "m7 8 5-5 5 5", "M4 16v5h16v-5"],
-    review: ["M5 3h14v18H5z", "m8 12 3 3 5-6"],
     processing: ["M12 3a9 9 0 1 0 9 9", "M12 7v5l3 2"],
     files: ["M4 3h10l6 6v12H4z", "M14 3v6h6"],
     overview: ["M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"],
@@ -153,12 +154,12 @@
   function shellMarkup(session, access, current) {
     const granted = new Set(access.permissions || []);
     const navigation = sections.map(([key, title, groupIcon, pages]) => {
-      const visible = pages.filter(([id]) => granted.has(PAGE_PERMISSIONS[id]));
+      const visible = pages.filter(([id]) => pageAllowed(id, granted));
       if (!visible.length) return "";
       const open = visible.some(([id]) => id === current);
       const links = visible.map(([id, label, itemIcon]) => `
         <a class="nav-item business-nav-item${id === current ? " business-route-active" : ""}"
-           href="./${id}.html" data-permission="${PAGE_PERMISSIONS[id]}"${id === current ? ' aria-current="page"' : ""}>
+           href="./${id}.html"${id === current ? ' aria-current="page"' : ""}>
           <span class="nav-item-icon">${icon(itemIcon)}</span><span class="nav-item-label">${escapeHtml(label)}</span>
         </a>`).join("");
       return `<section class="business-nav-group is-collapsible${open ? " is-open" : ""}" data-current="${open}">
@@ -242,8 +243,8 @@
     });
     matchMedia("(max-width: 900px)").addEventListener("change", closeNavigation);
     document.getElementById("knowledge-logout").addEventListener("click", () => {
-      KBotKnowledgeAuth.clear();
-      location.replace("./login.html");
+      void import("../../shared/kbot-platform-session.js?v=20261120_sso")
+        .then(() => KBotPlatformSession.logout()).catch(() => toast("退出失败，请返回 KBot 工作台后重试。", "error"));
     });
     document.querySelectorAll(".business-nav-group-toggle").forEach((button) => {
       button.addEventListener("click", () => {
@@ -284,8 +285,7 @@
     catch (error) { toast(error.message || "无法读取访问权限", "error"); return null; }
     const granted = new Set(access.permissions || []);
     if (!granted.has("knowledge_retrieval:use")) { KBotKnowledgeAuth.clear(); location.replace("./login.html"); return null; }
-    const required = PAGE_PERMISSIONS[page];
-    if (required && !granted.has(required)) { location.replace("./dashboard.html"); return null; }
+    if (!pageAllowed(page, granted)) { location.replace("./dashboard.html"); return null; }
     mount(session, access, page);
     document.querySelectorAll("[data-permission]").forEach((node) => {
       if (!granted.has(node.dataset.permission)) node.remove();
@@ -296,7 +296,7 @@
 
   globalThis.KBotKnowledgeShell = {
     PAGE_PERMISSIONS, badge, capability, capabilityLabel, escapeHtml, icon, toast, switchDomain,
-    confirmAction: options => import("../../shared/kbot-confirm.js?v=20261105_1").then(module => module.confirmAction(options)),
+    confirmAction: options => import("../../shared/kbot-confirm.js?v=20261120_matrix").then(module => module.confirmAction(options)),
     ready: new Promise((resolve, reject) => {
       const start = () => initialize().then(resolve, reject);
       document.readyState === "loading" ? addEventListener("DOMContentLoaded", start, { once: true }) : start();

@@ -109,16 +109,16 @@ class ResolvedMemoryDecision:
 
 @dataclass(frozen=True)
 class MemoryRuntimeConfig:
-    llm_model_name: str
+    llm_model_id: str
     embedding_enabled: bool
-    embedding_model_name: str | None
+    embedding_model_id: str | None
     episodic_enabled: bool
 
 
 @dataclass(frozen=True)
 class MemoryIndexProfile:
     index_profile_id: UUID
-    model_name: str
+    model_id: str
     dimension: int
 
 
@@ -199,7 +199,7 @@ class MemoryConsolidationWorker:
                 "agent_runtime.memory_extract"
             )
             runtime_config = await self._runtime_config(lease)
-            model_name = runtime_config.llm_model_name
+            model_name = runtime_config.llm_model_id
             snapshot_request = StrictPromptRenderer.render(
                 snapshot_prompt,
                 {
@@ -219,11 +219,11 @@ class MemoryConsolidationWorker:
             )
             snapshot_raw, memory_raw = await asyncio.gather(
                 self._model_client.get_llm_json(
-                    served_model_name=model_name,
+                    model_id=model_name,
                     prompt=snapshot_request,
                 ),
                 self._model_client.get_llm_json(
-                    served_model_name=model_name,
+                    model_id=model_name,
                     prompt=memory_request,
                 ),
             )
@@ -329,7 +329,7 @@ class MemoryConsolidationWorker:
                 self._validation_summary(exc),
             )
         corrected = await self._model_client.get_llm_json(
-            served_model_name=model_name,
+            model_id=model_name,
             prompt=(
                 rendered_prompt
                 + "\n\n上一份输出未通过字段校验。"
@@ -481,21 +481,21 @@ class MemoryConsolidationWorker:
         resolved = await self._model_resolver.resolve(
             models, roles={"memory_llm", "memory_embedding"}
         )
-        llm_model_name = str(
-            resolved.get("memory_llm", {}).get("served_model_name") or ""
+        llm_model_id = str(
+            resolved.get("memory_llm", {}).get("model_id") or ""
         ).strip()
-        embedding_model_name = str(
+        embedding_model_id = str(
             resolved.get("memory_embedding", {}).get(
-                "served_model_name"
+                "model_id"
             )
             or ""
         ).strip()
-        if not llm_model_name or not embedding_model_name:
+        if not llm_model_id or not embedding_model_id:
             raise RuntimeError("Agent 记忆模型配置不完整")
         return MemoryRuntimeConfig(
-            llm_model_name=llm_model_name,
+            llm_model_id=llm_model_id,
             embedding_enabled=True,
-            embedding_model_name=embedding_model_name,
+            embedding_model_id=embedding_model_id,
             episodic_enabled=episodic_enabled,
         )
 
@@ -508,12 +508,12 @@ class MemoryConsolidationWorker:
         """建立不可变索引画像；配置漂移时拒绝混用旧向量。"""
         if not runtime_config.embedding_enabled:
             return None
-        model_name = runtime_config.embedding_model_name
+        model_name = runtime_config.embedding_model_id
         if model_name is None:
             raise RuntimeError("记忆向量模型配置不完整")
         config_hash = _hash(
             {
-                "embedding_model_name": model_name,
+                "embedding_model_id": model_name,
                 "embedding_dimension": self._embedding_dimension,
                 "normalization": "L2",
             }
@@ -531,7 +531,7 @@ class MemoryConsolidationWorker:
                     )
                 return MemoryIndexProfile(
                     index_profile_id=active.index_profile_id,
-                    model_name=active.embedding_model_name,
+                    model_id=active.embedding_model_id,
                     dimension=int(active.embedding_dimension),
                 )
             active = await uow.memory_index_profiles.add(
@@ -539,7 +539,7 @@ class MemoryConsolidationWorker:
                     index_profile_id=uuid7(),
                     domain_id=lease.domain_id,
                     agent_id=lease.agent_id,
-                    embedding_model_name=model_name,
+                    embedding_model_id=model_name,
                     embedding_dimension=self._embedding_dimension,
                     normalization="L2",
                     config_sha256=config_hash,
@@ -548,7 +548,7 @@ class MemoryConsolidationWorker:
             await uow.commit()
             return MemoryIndexProfile(
                 index_profile_id=active.index_profile_id,
-                model_name=active.embedding_model_name,
+                model_id=active.embedding_model_id,
                 dimension=int(active.embedding_dimension),
             )
 
@@ -568,7 +568,7 @@ class MemoryConsolidationWorker:
         if not targets:
             return decisions
         vectors = await self._model_client.call_embedding_model(
-            served_model_name=profile.model_name,
+            model_id=profile.model_id,
             texts=[item.candidate.search_text for item in targets],
             batch_size=len(targets),
             is_query=False,
@@ -595,7 +595,7 @@ class MemoryConsolidationWorker:
         if profile is None:
             return None
         rows = await self._model_client.call_embedding_model(
-            served_model_name=profile.model_name,
+            model_id=profile.model_id,
             texts=[text],
             batch_size=1,
             is_query=False,
@@ -999,7 +999,7 @@ class MemoryConsolidationWorker:
                 },
             )
             raw = await self._model_client.get_llm_json(
-                served_model_name=model_name,
+                model_id=model_name,
                 prompt=rendered,
             )
             assessed = MemoryConflictDecision.model_validate(raw)

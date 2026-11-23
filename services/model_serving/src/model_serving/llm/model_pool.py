@@ -2,6 +2,7 @@ from model_serving.config import get_llm_config
 from platform_core.dictionary import ModelCategory, LLMProvider
 from loguru import logger
 from typing import Any
+from model_serving.common.oci_auth import oci_openai_api_base
 from model_serving.common.model_pool import BaseModelPool
 from .model import *
 from .model_factory import create_llm_model
@@ -35,7 +36,7 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         """
         await model.shutdown()
 
-    async def _perform_model_health_check(self, served_model_name: str, model: BaseLLM[Any]):
+    async def _perform_model_health_check(self, model_id: str, model: BaseLLM[Any]):
         """
         Perform health check on LLM instance using minimal chat completion.
         
@@ -44,7 +45,7 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         latency while ensuring the model is operational.
         
         Args:
-            served_model_name: Name of the model to check
+            model_id: Name of the model to check
             model: LLM instance to perform health check on
             
         Raises:
@@ -55,9 +56,9 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
             messages=[{"role": "user", "content": "hi"}],
             stream=False,
         )
-        logger.debug(f"LLM 模型 {served_model_name} 健康检查通过")
+        logger.debug(f"LLM 模型 {model_id} 健康检查通过")
 
-    async def _start_model(self, served_model_name: str, model_data: dict[str, Any]) -> BaseLLM[Any]:
+    async def _start_model(self, model_id: str, model_data: dict[str, Any]) -> BaseLLM[Any]:
         """
         Create and initialize an LLM instance from configuration data.
         
@@ -69,7 +70,7 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         5. Returns ready-to-use model instance
         
         Args:
-            served_model_name: Unique technical name of the model
+            model_id: Unique technical name of the model
             model_data: Dictionary containing model configuration from database/storage
             
         Returns:
@@ -82,13 +83,13 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         # Extract required provider identifier
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"模型 {served_model_name} 缺少 provider")
+            raise ValueError(f"模型 {model_id} 缺少 provider")
 
         # Step 1: Get global default LLM configuration
         global_config = get_llm_config()
         
         # Step 2: Build provider-specific configuration object
-        model_config = self._build_config(served_model_name, provider, model_data, global_config)
+        model_config = self._build_config(model_id, provider, model_data, global_config)
 
         # Step 3: Create model instance via factory pattern
         model = create_llm_model(model_config)
@@ -98,10 +99,10 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
             await model.startup()
             
             # Instance state managed by parent class load_model method
-            logger.success(f"LLM 模型 {served_model_name}（{provider}）启动成功")
+            logger.success(f"LLM 模型 {model_id}（{provider}）启动成功")
             return model
         except Exception as e:
-            logger.error(f"LLM 模型 {served_model_name} 启动失败：{e}")
+            logger.error(f"LLM 模型 {model_id} 启动失败：{e}")
             raise
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> LLMConfig:
@@ -164,6 +165,13 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
 
         # 2. Oracle Cloud Infrastructure (OCI) provider
         if provider == LLMProvider.OCI.value:
+            if api_key:
+                return OpenaiLLMConfig(
+                    **common_kwargs,
+                    api_key=api_key,
+                    api_endpoint=oci_openai_api_base(api_endpoint),
+                    timeout=params.get("timeout", global_cfg.timeout),
+                )
             # Extract OCI-specific parameters
             compartment_id = params.get("compartment_id")
             auth_config = params.get("oci_auth") or params.get("config_file")

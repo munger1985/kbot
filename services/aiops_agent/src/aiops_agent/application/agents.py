@@ -782,10 +782,10 @@ class AIOpsAgentService:
                     f"{role_label}模型目录暂时不可用",
                     status_code=503,
                 ) from exc
-            if not str((definition or {}).get("served_model_name") or "").strip():
+            if not str((definition or {}).get("provider_model_name") or "").strip():
                 raise AIOpsAgentError(
                     "AIOPS_AGENT_MODEL_BINDING_INVALID",
-                    f"{role_label}模型缺少 served_model_name",
+                    f"{role_label}模型缺少 provider_model_name",
                     status_code=422,
                 )
 
@@ -973,10 +973,12 @@ class AIOpsAgentService:
                 "knowledge_policy.enabled 必须与 KNOWLEDGE_QA 能力一致",
                 status_code=422,
             )
-        for knowledge_base_id in knowledge_policy.knowledge_base_ids:
+        # Same library lock as upload/disable/delete; sort multi-library acquisitions.
+        for knowledge_base_id in sorted(set(knowledge_policy.knowledge_base_ids)):
             knowledge_base = await uow.operations_knowledge.get_knowledge_base(
                 domain_id=domain_id,
                 knowledge_base_id=knowledge_base_id,
+                for_update=True,
             )
             if knowledge_base is None or knowledge_base.status != "ACTIVE":
                 raise AIOpsAgentError(

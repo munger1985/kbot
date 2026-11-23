@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import sys
 
-from sqlalchemy import Date, DateTime, Integer, LargeBinary, Numeric, String, Text, text
+from sqlalchemy import Boolean, CHAR, Date, DateTime, Integer, LargeBinary, Numeric, String, Text, text
 from sqlalchemy.dialects.oracle import RAW as OracleRAW
 
 # 支持从仓库根目录直接执行本脚本。
@@ -139,6 +139,11 @@ def entity_column_contract(column) -> ColumnContract:
         return ColumnContract(
             "NUMBER", None, None, None, None, column.nullable
         )
+    if isinstance(column_type, Boolean):
+        # 规范通知 DDL 使用 SMALLINT，即 Oracle NUMBER(*, 0)。
+        return ColumnContract("NUMBER", None, None, 0, None, column.nullable)
+    if isinstance(column_type, CHAR):
+        return ColumnContract("CHAR", column_type.length, None, None, None, column.nullable)
     if isinstance(column_type, String):
         return ColumnContract(
             "VARCHAR2",
@@ -169,8 +174,8 @@ def catalog_column_contract(row) -> ColumnContract:
         family = "RAW"
         length = int(row.data_length)
         timezone = None
-    elif data_type == "VARCHAR2":
-        family = "VARCHAR2"
+    elif data_type in {"VARCHAR2", "CHAR", "NVARCHAR2", "NCHAR"}:
+        family = data_type
         length = int(row.char_length)
         timezone = None
     elif data_type == "CLOB":
@@ -260,10 +265,12 @@ async def check_schema() -> list[str]:
     finally:
         await runtime.close()
 
-    catalog = {
-        (row.table_name, row.column_name): catalog_column_contract(row)
-        for row in rows
-    }
+    return compare_schema_columns(rows, hitl_status_constraint=hitl_status_constraint)
+
+
+def compare_schema_columns(rows, *, hitl_status_constraint=None) -> list[str]:
+    """分开报告额外对象与已映射表的额外列；两者均使严格验收失败。"""
+    catalog = {(row.table_name, row.column_name): row for row in rows}
     expected = {
         (entity.__tablename__, column.name.upper()): entity_column_contract(
             column
@@ -273,16 +280,21 @@ async def check_schema() -> list[str]:
     }
     errors: list[str] = []
     missing = sorted(set(expected) - set(catalog))
-    unexpected = sorted(set(catalog) - set(expected))
+    expected_tables = {table_name for table_name, _ in expected}
+    extra_tables = sorted({table_name for table_name, _ in catalog} - expected_tables)
+    unexpected = sorted(key for key in set(catalog) - set(expected) if key[0] in expected_tables)
     if missing:
         errors.append(f"Oracle 缺少 Entity 列：{missing}")
+    if extra_tables:
+        errors.append(f"Oracle 存在规范外对象：{extra_tables}")
     if unexpected:
-        errors.append(f"Oracle 出现未映射列：{unexpected}")
+        errors.append(f"Oracle 已映射表出现规范外列：{unexpected}")
     for key in sorted(set(expected) & set(catalog)):
-        if expected[key] != catalog[key]:
+        actual = catalog_column_contract(catalog[key])
+        if expected[key] != actual:
             errors.append(
                 f"{key[0]}.{key[1]} 不一致："
-                f"entity={expected[key]} oracle={catalog[key]}"
+                f"entity={expected[key]} oracle={actual}"
             )
     if hitl_status_constraint is not None:
         errors.append("Oracle 仍保留已退役的业务状态 CHECK 约束 CK_OPS_HITL_STATUS")

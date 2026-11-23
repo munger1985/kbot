@@ -18,12 +18,15 @@ from loguru import logger
 
 from model_serving.config import get_model_serving_settings
 from platform_core.contracts import INTERNAL_API_V1
+from platform_core.contracts.model import NATIVE_VISUAL_IMAGE_INPUT_UNSUPPORTED
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from model_serving.visual.visual_service import VisualService
+from model_serving.visual.model.native_representation import VisualImageInputUnsupported
 from model_serving.visual.schema import VisualEmbeddingRequest, VisualEmbeddingResponse
+from model_serving.common.frozen_binding import FrozenModelConflict, create_frozen_binding_router
 from model_serving.visual.schema import NativeVisualRequest, NativeVisualResponse
 from platform_core.security import create_internal_auth_middleware
 from platform_core.platform.port_check import check_port_available
@@ -115,7 +118,9 @@ app.middleware("http")(
     create_internal_auth_middleware(audience=SERVICE_NAME)
 )
 app.middleware("http")(log_requests)
-app.include_router(create_model_management_router(category=ModelCategory.IMG_EMBEDDING.value))
+app.include_router(create_model_management_router(
+    category=ModelCategory.IMG_EMBEDDING.value, probe_service=lambda _: visual_service,
+))
 
 
 @app.get("/health", tags=["System"], summary="健康检查")
@@ -131,23 +136,32 @@ async def health() -> dict[str, Any]:
 async def embed_image(req: VisualEmbeddingRequest):
     """图片 → 视觉 embedding"""
     try:
-        emb = await visual_service.embed(req.served_model_name, req.image_base64)
+        emb = await visual_service.embed(req.model_id, req.image_base64)
         return VisualEmbeddingResponse(
             embedding=emb,
             dimension=len(emb),
-            served_model_name=req.served_model_name,
+            model_id=req.model_id,
         )
     except Exception as e:
         logger.error(f"[VisualService] embed failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
+app.include_router(create_frozen_binding_router(lambda request: visual_service._pool, representation_kind="MULTIVECTOR"))
+
+
 @app.post(f"{INTERNAL_API_V1}/represent", response_model=NativeVisualResponse, tags=["AI Service"])
 async def native_representation(req: NativeVisualRequest):
     """原生多向量文本/图像表示，不混用文本 embedding 空间。"""
     try:
-        return await visual_service.represent(req.served_model_name,
-            input_kind=req.input_kind, direction=req.direction, text=req.text, image_base64=req.image_base64)
+        return await visual_service.represent(req.model_id,
+            input_kind=req.input_kind, direction=req.direction, text=req.text, image_base64=req.image_base64,
+            expected_revision=req.expected_revision)
+    except FrozenModelConflict as exc:
+        raise HTTPException(409, detail={"code": "MODEL_REVISION_CHANGED"}) from exc
+    except VisualImageInputUnsupported as exc:
+        logger.info("视觉嵌入拒绝单图输入规格：reason={}", str(exc))
+        raise HTTPException(422, detail={"code": NATIVE_VISUAL_IMAGE_INPUT_UNSUPPORTED}) from None
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "NATIVE_REPRESENTATION_UNAVAILABLE"}) from exc
     except Exception as exc:

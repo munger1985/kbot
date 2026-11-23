@@ -4,50 +4,112 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>KBot 4 · 应用入口</title>
-  <link rel="stylesheet" href="/ui/portal.css">
+  <link rel="stylesheet" href="/ui/portal.css?v=20261120_sso">
   <script defer src="/ui/runtime-config.js"></script>
-  <script defer src="/ui/portal.js"></script>
+  <script defer src="/ui/shared/kbot-platform-session.js?v=20261120_sso"></script>
+  <script defer src="/ui/portal.js?v=20261120_sso"></script>
 </head>
-<body>
+<body data-portal-view="checking">
   <header class="site-header">
     <div class="page-width brand">
       <span class="brand-mark" aria-hidden="true">K</span>
-      <span>KBot <small>4</small></span>
+      <span>KBot <small>工作台</small></span>
+      <div id="portal-account" class="portal-account" hidden>
+        <span id="portal-user"></span>
+        <button id="portal-logout" type="button">退出登录</button>
+      </div>
     </div>
   </header>
   <main class="page-width">
-    <section class="intro" aria-labelledby="portal-title">
-      <p class="eyebrow">KBOT WORKSPACE</p>
-      <h1 id="portal-title">选择应用</h1>
-      <p>从这里进入对应的工作台，使用该应用的账号登录。</p>
+    <section class="portal-stage" aria-labelledby="portal-title">
+      <div class="portal-cover">
+        <div class="portal-cover-brand"><span class="cover-dot"></span>KBot 4</div>
+        <div class="portal-cover-copy">
+          <p>统一工作台</p>
+          <span>登录一次，即可进入你有权限的业务应用和系统管理。</span>
+        </div>
+        <span class="portal-cover-art" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
+      <div class="portal-pane">
+        <h1 id="portal-title">登录工作台</h1>
+        <p id="portal-description">请使用你的 KBot 账号。</p>
+        <p id="portal-status" role="status">正在核对登录状态…</p>
+        <p id="portal-notification" hidden>要继续查看通知，请进入 AIOps 并选择通知所属的工作域。</p>
+        <p id="portal-error" class="portal-error" role="alert" hidden></p>
+        <button id="portal-retry" type="button" hidden>重新读取入口</button>
+        <section id="portal-sign-in" class="portal-panel" aria-label="统一登录" hidden>
+          <form id="portal-login" method="post">
+            <label>账号<input name="user_id" placeholder="输入账号，区分大小写" required maxlength="256" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+            <label>密码<input name="password" type="password" placeholder="输入密码" required maxlength="256" autocomplete="current-password"></label>
+            <button class="portal-primary" type="submit">登录</button>
+          </form>
+        </section>
+        <form id="portal-password" method="post" class="portal-panel" aria-label="修改初始密码" hidden>
+          <label>当前密码<input name="current_password" type="password" required maxlength="256" autocomplete="current-password"></label>
+          <label>新密码<input name="new_password" type="password" required minlength="12" maxlength="256" autocomplete="new-password"></label>
+          <p>至少 12 位，包含大小写字母、数字和特殊字符。</p>
+          <button class="portal-primary" type="submit">修改密码并继续</button>
+        </form>
+      </div>
     </section>
-    <nav class="app-grid" aria-label="KBot 应用">
-      <a class="app-card app-knowledge" data-app="knowledge_retrieval" href="/ui/knowledge_retrieval/login.html">
+    <nav class="app-grid" aria-label="KBot 工作台">
+      <button type="button" class="app-card app-knowledge" data-app="knowledge_retrieval" hidden>
         <span class="app-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="M4 5h10a2 2 0 0 1 2 2v3M4 5v13a2 2 0 0 0 2 2h5M4 5l2-2h10a2 2 0 0 1 2 2v1M7 9h5m-5 4h3"/><circle cx="16.5" cy="15.5" r="3.5"/><path d="m19 18 2 2"/></svg>
         </span>
         <span class="app-name">知识检索</span>
         <span class="app-description">查找资料、向知识库提问，并查看答案引用的来源。</span>
         <span class="app-link" aria-hidden="true">进入应用 <span>→</span></span>
-      </a>
-      <a class="app-card app-aiops" data-app="aiops" href="/ui/aiops/login.html">
+      </button>
+      <button type="button" class="app-card app-aiops" data-app="aiops" hidden>
         <span class="app-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M6 12h3l2-3 2 6 2-3h3"/></svg>
         </span>
         <span class="app-name">AIOps</span>
         <span class="app-description">监控数据库和业务系统，查看告警并开展运维诊断。</span>
         <span class="app-link" aria-hidden="true">进入应用 <span>→</span></span>
-      </a>
-      <a class="app-card app-media" data-app="media_studio" href="/ui/media_studio/login.html">
+      </button>
+      <button type="button" class="app-card app-media" data-app="media_studio" hidden>
         <span class="app-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 4-4 3 3 4-5 5 6"/></svg>
         </span>
         <span class="app-name">多媒体创作</span>
         <span class="app-description">使用模型生成图像，查看生成记录并管理创作素材。</span>
         <span class="app-link" aria-hidden="true">进入应用 <span>→</span></span>
+      </button>
+      <a id="system-entry" class="app-card app-system" href="/ui/system_management/models.html" hidden>
+        <span class="app-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></svg>
+        </span>
+        <span class="app-name">系统管理</span>
+        <span class="app-description">统一维护 AI 模型配置、凭据和生命周期。</span>
+        <span class="app-link" aria-hidden="true">进入系统管理 <span>→</span></span>
       </a>
     </nav>
-    <p class="empty-state" id="empty-apps" hidden>当前没有可用的应用。</p>
+    <p class="empty-state" id="empty-apps" hidden>当前账号没有可用的入口。</p>
+    <dialog id="portal-domain-dialog" class="portal-dialog" aria-labelledby="portal-domain-title">
+      <form id="portal-domain-form">
+        <h2 id="portal-domain-title">选择工作域</h2>
+        <label>工作域 <select name="domain_id" required></select></label>
+        <div class="portal-dialog-actions">
+          <button type="button" id="portal-domain-cancel">取消</button>
+          <button class="portal-primary" type="submit">进入应用</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="portal-first-domain-dialog" class="portal-dialog" aria-labelledby="portal-first-domain-title">
+      <form id="portal-first-domain-form">
+        <h2 id="portal-first-domain-title">创建首个工作域</h2>
+        <p>知识检索尚未配置工作域。创建后即可进入应用。</p>
+        <label>工作域名称<input name="name" required maxlength="256"></label>
+        <label>说明（可选）<textarea name="description" rows="3" maxlength="1000"></textarea></label>
+        <p id="portal-first-domain-error" class="portal-error" role="alert" hidden></p>
+        <div class="portal-dialog-actions">
+          <button type="button" id="portal-first-domain-cancel">取消</button>
+          <button class="portal-primary" type="submit">创建并进入</button>
+        </div>
+      </form>
+    </dialog>
   </main>
   <footer class="page-width site-footer">KBot 4</footer>
 </body>

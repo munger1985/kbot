@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -236,8 +237,93 @@ class AIOpsManagementConfig(BaseModel):
 from aiops_agent.composition.knowledge_profiles import KnowledgeFoundationConfig
 
 
+class AIOpsOracleLocalBackupConfig(BaseModel):
+    """部署侧登记本机 SYSBACKUP 实例与预先准备的目录；不是用户可写命令配置。"""
+
+    target_id: UUID
+    oracle_home: str = Field(pattern=r"^(/[a-zA-Z0-9_.-]+)+$")
+    oracle_sid: str = Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$")
+    dbid: int = Field(gt=0, le=4294967295)
+    db_unique_name: str = Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_$#]{0,63}$")
+    backup_root: str = Field(pattern=r"^(/[a-zA-Z0-9_.-]+)+$")
+
+
+_LocalBackupPath = Annotated[str, Field(pattern=r"^(/[a-zA-Z0-9_.-]+)+$")]
+
+
+class _AIOpsLocalFileBackupConfig(BaseModel):
+    target_id: UUID
+    executable: _LocalBackupPath
+    data_directory: _LocalBackupPath
+    backup_root: _LocalBackupPath
+
+
+class AIOpsPgBackRestConfig(_AIOpsLocalFileBackupConfig):
+    tool: Literal["PGBACKREST"]
+    config_file: _LocalBackupPath
+    stanza: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$")
+    socket_directory: _LocalBackupPath
+    port: int = Field(default=5432, ge=1, le=65535)
+    system_identifier: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+
+
+class AIOpsXtraBackupConfig(_AIOpsLocalFileBackupConfig):
+    tool: Literal["XTRABACKUP"]
+    checksum_executable: _LocalBackupPath
+    socket: _LocalBackupPath
+    server_uuid: UUID
+
+
+class _AIOpsLocalDrillConfig(BaseModel):
+    """DBA 已准备的独立本机演练位置；不是普通诊断 Target。"""
+
+    source_target_id: UUID
+    machine_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    os_user: str = Field(pattern=r"^[a-zA-Z_][a-zA-Z0-9_.-]{0,63}$")
+    destination_key: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$")
+    drill_root: _LocalBackupPath
+    backup_root: _LocalBackupPath
+    required_free_bytes: int = Field(gt=0)
+    verification_objects: tuple[
+        Annotated[str, Field(pattern=r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}\.[a-zA-Z_][a-zA-Z0-9_]{0,62}$")], ...
+    ] = Field(default=(), max_length=16)
+
+
+class AIOpsLocalOracleDrillConfig(_AIOpsLocalDrillConfig):
+    tool: Literal["RMAN"]
+    oracle_home: _LocalBackupPath
+    oracle_sid: str = Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$")
+    auxiliary_database: str = Field(pattern=r"^[A-Z][A-Z0-9_]{0,7}$")
+
+
+class AIOpsLocalPostgreSQLDrillConfig(_AIOpsLocalDrillConfig):
+    tool: Literal["PGBACKREST"]
+    executable: _LocalBackupPath
+    postgres_bin: _LocalBackupPath
+    system_identifier: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+    verification_database: str = Field(default="postgres", pattern=r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
+
+
+class AIOpsLocalMySQLDrillConfig(_AIOpsLocalDrillConfig):
+    tool: Literal["XTRABACKUP"]
+    executable: _LocalBackupPath
+    mysqld_executable: _LocalBackupPath
+    server_id: int = Field(gt=0, le=4294967295)
+    verification_database: str = Field(default="mysql", pattern=r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
+
+
 class AIOpsSettings(Settings):
     knowledge: KnowledgeFoundationConfig = Field(default_factory=KnowledgeFoundationConfig)
+    oracle_local_backups: dict[UUID, AIOpsOracleLocalBackupConfig] = Field(default_factory=dict)
+    file_local_backups: dict[
+        UUID, Annotated[AIOpsPgBackRestConfig | AIOpsXtraBackupConfig, Field(discriminator="tool")]
+    ] = Field(default_factory=dict)
+    local_drills: dict[
+        UUID, Annotated[
+            AIOpsLocalOracleDrillConfig | AIOpsLocalPostgreSQLDrillConfig | AIOpsLocalMySQLDrillConfig,
+            Field(discriminator="tool"),
+        ]
+    ] = Field(default_factory=dict)
     api: AIOpsApiConfig = Field(default_factory=AIOpsApiConfig)
     runtime: AIOpsRuntimeConfig = Field(default_factory=AIOpsRuntimeConfig)
     worker: AIOpsWorkerConfig = Field(default_factory=AIOpsWorkerConfig)

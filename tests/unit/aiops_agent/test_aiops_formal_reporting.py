@@ -123,6 +123,7 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual(
             {
                 "system:diagnosis.standard",
+                "system:recovery-drill",
                 "system:inspection.daily",
                 "system:inspection.weekly",
                 "system:inspection.custom",
@@ -149,6 +150,7 @@ class FormalReportingTest(unittest.TestCase):
             {
                 "INCIDENT",
                 "PERFORMANCE",
+                "RECOVERY_DRILL",
                 "INSPECTION_DAILY",
                 "INSPECTION_WEEKLY",
                 "INSPECTION_CUSTOM",

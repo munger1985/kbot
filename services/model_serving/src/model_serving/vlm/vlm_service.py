@@ -3,6 +3,8 @@ from loguru import logger
 from typing import Any, AsyncGenerator, Callable
 from .model_pool import VLMModelPool
 from .model import BaseVLM
+from .model.openai_client import VLMImageDimensionsUnsupported
+from model_serving.common.frozen_binding import FrozenModelConflict
 
 
 class VLMService:
@@ -47,19 +49,19 @@ class VLMService:
             self._initialized = False
             logger.info("VLM 服务已正常停止")
 
-    async def invalidate_model(self, served_model_name: str) -> None:
+    async def invalidate_model(self, model_id: str) -> None:
         """配置变更后立即移除旧实例，不触发模型服务初始化。"""
         if self._initialized:
-            await self._model_pool.unload_model(served_model_name)
+            await self._model_pool.unload_model(model_id)
 
-    def is_model_loaded(self, served_model_name: str) -> bool:
-        return self._model_pool.is_model_loaded(served_model_name)
+    def is_model_loaded(self, model_id: str) -> bool:
+        return self._model_pool.is_model_loaded(model_id)
 
-    async def get_vlm_model(self, served_model_name: str) -> BaseVLM:
+    async def get_vlm_model(self, model_id: str, *, expected_revision: str | None = None) -> BaseVLM:
         """Retrieve VLM model instance by unique model name
 
         Args:
-            served_model_name: Unique technical name of the VLM model
+            model_id: Unique technical name of the VLM model
 
         Returns:
             BaseVLM: Initialized VLM model instance from the pool
@@ -67,10 +69,10 @@ class VLMService:
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.load_model(served_model_name)
+        return await self._model_pool.load_model(model_id, expected_revision=expected_revision)
 
     async def inference(self,
-                        served_model_name: str,
+                        model_id: str,
                         messages: list[dict[str, Any]],
                         stream: bool = False,
                         timeout: int | None = None,
@@ -78,7 +80,8 @@ class VLMService:
                         temperature: float | None = None,
                         top_p: float | None = None,
                         frequency_penalty: float | None = None,
-                        presence_penalty: float | None = None
+                        presence_penalty: float | None = None,
+                        *, expected_revision: str | None = None
                     ) -> dict[str, Any] | AsyncGenerator[str, None]:
         """
         Execute inference with a VLM model
@@ -87,7 +90,7 @@ class VLMService:
         parameters, supporting both streaming and non-streaming response modes.
 
         Args:
-            served_model_name: Technical name of the target VLM model
+            model_id: Technical name of the target VLM model
             messages: List of message dictionaries (supports text + image content)
             stream: If True, returns an async generator of response chunks
             timeout: Request timeout in seconds
@@ -109,7 +112,7 @@ class VLMService:
 
         try:
             # Retrieve model instance from pool
-            model = await self.get_vlm_model(served_model_name)
+            model = await self.get_vlm_model(model_id, expected_revision=expected_revision)
 
             # Prepare inference parameters (filter out None values)
             kwargs = {
@@ -124,9 +127,11 @@ class VLMService:
 
             # Execute inference with the model
             try:
-                logger.debug(f"正在向模型发送消息：{served_model_name}")
+                logger.debug(f"正在向模型发送消息：{model_id}")
                 response = await model.inference(messages, stream=stream, **kwargs)
                 logger.debug(f"收到响应类型：{type(response)}")
+            except VLMImageDimensionsUnsupported:
+                raise
             except Exception as e:
                 logger.error(f"生成响应失败：{e}")
                 raise RuntimeError(f"Failed to generate chat response: {e}")
@@ -260,6 +265,8 @@ class VLMService:
                     "service_tier": response.service_tier if hasattr(response, 'service_tier') else None # type: ignore
                 }
 
+        except (FrozenModelConflict, VLMImageDimensionsUnsupported):
+            raise
         except Exception as e:
             logger.error(f"生成对话响应失败：{e}")
             raise RuntimeError(f"Failed to generate chat response: {e}")
@@ -276,14 +283,14 @@ class VLMService:
 
         await self._model_pool.warmup()
 
-    async def load_model(self, served_model_name: str) -> bool:
+    async def load_model(self, model_id: str) -> bool:
         """Load model into memory by technical name
 
         Explicitly loads (or reloads) a specific model into the pool, initializing
         all required resources for inference.
 
         Args:
-            served_model_name: Technical name of the model to load
+            model_id: Technical name of the model to load
 
         Returns:
             bool: True if model loaded successfully, False otherwise
@@ -291,17 +298,17 @@ class VLMService:
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.reload_model(served_model_name)
+        return await self._model_pool.reload_model(model_id)
 
 
-    async def unload_model(self, served_model_name: str) -> bool:
+    async def unload_model(self, model_id: str) -> bool:
         """Unload model from memory by technical name
 
         Gracefully shuts down and removes a specific model from the pool,
         freeing up system resources.
 
         Args:
-            served_model_name: Technical name of the model to unload
+            model_id: Technical name of the model to unload
 
         Returns:
             bool: True if model unloaded successfully, False otherwise
@@ -309,4 +316,4 @@ class VLMService:
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.unload_model(served_model_name)
+        return await self._model_pool.unload_model(model_id)

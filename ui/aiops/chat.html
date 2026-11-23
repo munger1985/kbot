@@ -7,31 +7,33 @@
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/workspaces.css?v=20261029_3">
   <link rel="stylesheet" href="./css/sql-plan-viewer.css?v=20261029_2">
-  <link rel="stylesheet" href="./css/chat.css?v=20261030_1">
-<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261110_release1"><link rel="stylesheet" href="./css/reference-chat.css?v=20261110_release1"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1"></head>
+  <link rel="stylesheet" href="./css/chat.css?v=20261122_agent">
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261110_release1"><link rel="stylesheet" href="./css/reference-chat.css?v=20261122_agent"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1"></head>
 <body data-page="chat">
   <main class="ops-main ops-chat-main">
     <header class="ops-head">
       <div><p class="eyebrow">统一智能运维助手</p><h1>Agent 工作台</h1><p>用一个问答窗口诊断、查知识、看监控告警、巡检报告和业务系统资源。</p></div>
     </header>
 
-    <section id="chat-workspace" class="ops-workspace aiops-diagnosis-workspace is-rail-collapsed">
+    <section id="chat-workspace" class="ops-workspace aiops-diagnosis-workspace session-collapsed is-rail-collapsed">
       <aside id="chat-rail-content" class="aiops-diagnosis-rail" aria-label="诊断会话与上下文">
         <header class="aiops-diagnosis-rail-head">
-          <div><h2>诊断会话</h2><p>历史记录与本次调查上下文。</p></div>
-          <button id="new-conversation" type="button" aria-label="开始新会话" title="开始新会话">开始新会话</button>
+          <div class="aiops-session-actions">
+            <button id="chat-rail-toggle" class="icon-button agent-chat-session-toggle" type="button" aria-label="展开会话列表" title="展开会话列表" aria-controls="chat-rail-content" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14 M5 12h14 M5 17h14"/></svg></button>
+            <button id="new-conversation" class="secondary-button aiops-session-create" type="button" aria-label="新增会话" title="新增会话"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14 M5 12h14"/></svg><span>新增会话</span></button>
+          </div>
+          <h2>诊断会话</h2>
         </header>
         <nav id="conversation-list" class="ops-workspace-items" aria-label="历史诊断会话"></nav>
-        <footer class="agent-chat-session-toggle-row"><button id="chat-rail-toggle" class="icon-button" type="button" aria-label="展开会话列表" aria-controls="chat-rail-content" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14 M5 12h14 M5 17h14"/></svg></button></footer>
       </aside>
       <article class="ops-conversation aiops-chat-conversation">
         <header class="ops-conversation-head agent-chat-conversation-head aiops-diagnosis-conversation-head aiops-chat-toolbar">
-          <div class="aiops-chat-toolbar-title"><h2 id="conversation-title">新运维会话</h2><span id="conversation-eyebrow" class="aiops-chat-toolbar-turn" hidden>新的运维会话</span><p id="conversation-context" hidden></p></div>
           <div class="aiops-diagnosis-head-context">
-            <label class="control-field" for="agent-select"><span class="visually-hidden">AIOps Agent</span><select id="agent-select" aria-label="选择 Agent" aria-describedby="agent-target-context"><option value="">正在读取 Agent…</option></select></label>
+            <label class="control-field" for="agent-select"><span class="visually-hidden">选择 Agent</span><select id="agent-select" aria-describedby="agent-target-context"><option value="">正在读取 Agent…</option></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></label>
             <span id="agent-target-context" class="visually-hidden"></span>
           </div>
-          <div class="button-row"><button id="chat-session-toggle" class="aiops-chat-session-button" type="button" aria-label="会话列表" title="会话列表" aria-controls="chat-rail-content" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14 M5 12h14 M5 17h14"/></svg></button><span id="conversation-actions" class="button-row"></span><section id="conversation-output-jobs" hidden></section></div>
+          <div class="aiops-chat-toolbar-status"><span id="conversation-eyebrow" class="aiops-chat-toolbar-turn" hidden></span></div>
+          <div class="button-row aiops-chat-toolbar-actions"><span id="conversation-actions" class="button-row"></span><section id="conversation-output-jobs" hidden></section></div>
         </header>
         <p id="conversation-output-unavailable" class="aiops-diagnosis-notice" role="status" hidden></p>
         <p id="agent-empty-notice" class="aiops-diagnosis-notice" hidden>暂无已启用的 AIOps Agent。请先配置业务系统、能力与模型角色。</p>
@@ -67,6 +69,6 @@
   <script src="../vendor/echarts.min.js"></script>
   <script src="./js/aiops-chat-charts.js?v=20261030_1"></script>
   <script src="./js/aiops-output-jobs.js?v=20261107_1"></script>
-  <script src="./js/aiops-workspaces.js?v=20261109_common"></script>
+  <script src="./js/aiops-workspaces.js?v=20261122_agent"></script>
 </body>
 </html>

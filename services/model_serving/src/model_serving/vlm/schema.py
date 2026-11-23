@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 from typing import Any
 import uuid
@@ -12,7 +14,8 @@ class VLMRequest(BaseModel):
     streaming and non-streaming responses with configurable sampling parameters.
     """
 
-    served_model_name: str = Field(..., description="Name of the model to use for inference")
+    model_id: UUID
+    expected_revision: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     messages: list[dict[str, Any]] = Field(..., description="List of messages containing text/image content")
     max_tokens: int | None = Field(None, description="Maximum number of tokens to generate")
     temperature: float | None = Field(None, description="Sampling temperature (0.0-1.0, lower = more deterministic)")
@@ -26,7 +29,7 @@ class VLMRequest(BaseModel):
 class OpenAIVLMRequest(BaseModel):
     """OpenAI 兼容的多模态对话请求。"""
 
-    model: str = Field(min_length=1, max_length=128)
+    model: UUID
     messages: list[dict[str, Any]]
     max_tokens: int | None = None
     temperature: float | None = None
@@ -38,7 +41,7 @@ class OpenAIVLMRequest(BaseModel):
 
     def to_internal(self) -> VLMRequest:
         payload = self.model_dump(exclude={"model"})
-        return VLMRequest(served_model_name=self.model, **payload)
+        return VLMRequest(model_id=self.model, **payload)
 
 # Define response models
 class VLMResponse(BaseModel):

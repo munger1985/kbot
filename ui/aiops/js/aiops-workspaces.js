@@ -1315,6 +1315,27 @@
     mount(container) { globalThis.AIOpsChatCharts?.mount(container); },
   };
 
+  function knowledgeEvidenceHtml(blocks) {
+    const coverage = blocks.flatMap(block => values(block.payload?.knowledge_coverage));
+    const citations = blocks.flatMap(block => values(block.payload?.citations)).filter(row => row.knowledge);
+    if (!coverage.length && !citations.length) return "";
+    const conclusions = { EVIDENCE_FOUND: "找到主证据", NO_ELIGIBLE_RESOURCES: "无符合资格的已发布资料",
+      NO_MATCH: "已检索范围无正文匹配", NOT_VERIFIED: "本次未能验证，不表示没有匹配资料" };
+    const lines = [...new Set(coverage.map(row => [conclusions[row.retrieval_conclusion],
+      row.coverage?.scope === "PARTIAL" ? "覆盖部分范围" : "",
+      row.coverage?.ranking === "LIMITED" ? "排序受限" : ""].filter(Boolean).join(" · ")))];
+    const renderReference = (row) => {
+      const related = values(row.knowledge.related);
+      const type = row.knowledge.role === "PRIMARY" ? "父检索主命中" : row.knowledge.role === "RUNTIME_RELATED" ? "子执行关联引用" : "子执行正文引用";
+      const excerpts = related.map(item => {
+        const location = values(item.locators).map(locator => locator.page_no ? `第 ${locator.page_no} 页` : locator.logical_ref).filter(Boolean).join("、");
+        return `<p>${esc(location || "关联材料")} · ${item.readable ? esc(item.excerpt || "可读") : "正文不可读"}</p>`;
+      }).join("");
+      return `<li><strong>${esc(row.label)} · ${esc(row.title || "运维知识")}</strong><span>${type} · 关联证据 ${related.length} 项${values(row.knowledge.relation_gaps).length ? " · 关联材料覆盖不完整" : ""}</span>${excerpts}</li>`;
+    };
+    return `<details class="key-value-card aiops-action-card aiops-citation-card"><summary>运维知识检索与引用</summary><p>手册、历史案例与关联材料仅供参考，不是现场观测。</p>${lines.filter(Boolean).map(line => `<p>${esc(line)}</p>`).join("")}${citations.length ? `<ul class="aiops-plan-list">${citations.map(renderReference).join("")}</ul>` : ""}</details>`;
+  }
+
   function turnEvidenceHtml(blocks, gaps = [], dictionary = {}) {
     const evidence = new Map();
     const dataBlocks = blocks.filter((block) => block.block_type === "TABLE" && block.payload?.presentation_role !== "PRIMARY");
@@ -1775,7 +1796,7 @@
     const blocks = (chat ? globalThis.AIOpsChatCharts.groupBlocks(narrativeBlocks) : narrativeBlocks).map((block) => answerBlockHtml(block, turn)).join("");
     const planMaterial = turn.ops_run_id && ["COMPLETED","PARTIAL"].includes(turn.status) && answerBlocks.some(block => block.payload?.sql_plan_acquisition)
       ? '<details class="key-value-card aiops-action-card"><summary>已有执行计划材料</summary><p>优先读取已有计划；PG 和 MySQL 可通过固定只读工具取得优化器估算计划，不重放业务 SQL、不猜参数、不请求额外权限。已有计划 JSON 也可通过诊断材料上传；来源及匹配边界随材料保留。</p></details>' : "";
-    const evidence = chat ? chatTurnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary, planMaterial) : turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary);
+    const evidence = knowledgeEvidenceHtml(answerBlocks) + (chat ? chatTurnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary, planMaterial) : turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary));
     const orchestration = turnOrchestrationHtml(turn);
     const plan = investigationPlanHtml(turn.investigation_plan, turn.display_dictionary);
     const future = values(turn.events).filter((item) => item.event_type === "evidence.future_observation.scheduled")
@@ -1824,12 +1845,8 @@
     state.conversation = conversation;
     outputTasks?.setConversation(conversation.conversation_id);
     state.turns = turns;
-    document.getElementById("conversation-title").textContent = conversation.title || "诊断对话";
-    document.getElementById("conversation-title").title = conversation.title || "诊断对话";
     document.getElementById("conversation-eyebrow").hidden = !turns.length;
-    document.getElementById("conversation-eyebrow").textContent = turns.length ? `第 ${turns.at(-1).turn_no} 轮` : "新的运维会话";
-    document.getElementById("conversation-context").textContent = "每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。"
-      + (conversation.source_type === "RUN" ? "已继承来源 RUN。" : "");
+    document.getElementById("conversation-eyebrow").textContent = turns.length ? `第 ${turns.at(-1).turn_no} 轮` : "";
     const headerActions = document.getElementById("conversation-actions");
     headerActions.innerHTML = "";
     const panel = document.getElementById("message-list");
@@ -1959,12 +1976,9 @@
     state.turns = [];
     document.querySelectorAll(".ops-workspace-item").forEach((button) => button.removeAttribute("aria-current"));
     syncAgentTargetContext();
-    document.getElementById("conversation-title").textContent = "新运维会话";
-    document.getElementById("conversation-title").title = "新运维会话";
     const source = continuationSource();
     document.getElementById("conversation-eyebrow").hidden = !source;
-    document.getElementById("conversation-eyebrow").textContent = source ? "继续深入诊断" : "新的运维会话";
-    document.getElementById("conversation-context").textContent = "每轮先识别能力和业务范围，再冻结证据链；范围不清晰时会在同一轮请求确认。" + (source ? `已继承来源 ${source.sourceType}。` : "");
+    document.getElementById("conversation-eyebrow").textContent = source ? "继续诊断" : "";
     document.getElementById("conversation-actions").innerHTML = "";
     const outputNotice = document.getElementById("conversation-output-unavailable");
     if (outputNotice) { outputNotice.hidden = true; outputNotice.textContent = ""; }
@@ -2672,15 +2686,14 @@
     starterDialog.addEventListener('cancel', event => { if (starterDialog.dataset.busy === 'true') event.preventDefault(); });
     const workspace = document.getElementById("chat-workspace");
     const railToggle = document.getElementById("chat-rail-toggle");
-    const sessionToggle = document.getElementById("chat-session-toggle");
     const setRailCollapsed = (collapsed) => {
       workspace.classList.toggle("is-rail-collapsed", collapsed);
+      workspace.classList.toggle("session-collapsed", collapsed);
       railToggle.setAttribute("aria-expanded", String(!collapsed));
-      railToggle.setAttribute("aria-label", collapsed ? "展开会话列表" : "收起会话列表");
-      sessionToggle.setAttribute("aria-expanded", String(!collapsed));
+      railToggle.title = collapsed ? "展开会话列表" : "收起会话列表";
+      railToggle.setAttribute("aria-label", railToggle.title);
     };
     railToggle.onclick = () => setRailCollapsed(!workspace.classList.contains("is-rail-collapsed"));
-    sessionToggle.onclick = railToggle.onclick;
     const select = document.getElementById("agent-select");
     await agents();
     renderAgentOptions(state.agents[0]?.agent_id || "");

@@ -178,12 +178,12 @@ class OperationsKnowledgeSourceEntity(BaseEntity):
 class OperationsKnowledgeIndexEntity(BaseEntity):
     __tablename__ = "KBOT_OPS_KNOWLEDGE_INDEX"
     __table_args__ = (
-        Index("IX_OPS_KNOW_INDEX_VER", "asset_version_id"),
+        Index("IX_OPS_KNOW_INDEX_REF", "index_ref_id"),
         Index("IX_OPS_KNOW_INDEX_STATUS", "index_status", "updated_at"),
     )
 
-    index_ref_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
-    asset_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    index_ref_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, default=uuid7)
+    asset_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
     document_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     document_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     ingestion_job_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)

@@ -280,16 +280,16 @@ def _context(
         "agent": {
             "models": {
                 "context_llm": {
-                    "served_model_name": "context-model"
+                    "model_id": "context-model"
                 },
                 "composer_llm": {
-                    "served_model_name": "composer-model"
+                    "model_id": "composer-model"
                 },
                 "memory_llm": {
-                    "served_model_name": "memory-model"
+                    "model_id": "memory-model"
                 },
                 "memory_embedding": {
-                    "served_model_name": "embedding-model"
+                    "model_id": "embedding-model"
                 },
             },
             "instruction": "准确回答。",

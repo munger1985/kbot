@@ -9,7 +9,7 @@ import hashlib
 import json
 from uuid import UUID
 
-from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.domain.model_bindings import snapshot_model_id
 from agent_runtime.language import language_instruction, response_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from platform_core.contracts import AuthContext
@@ -202,8 +202,8 @@ class SemanticDataQueryExecutor:
     async def _create_plan(self, *, context, question, models) -> DataQueryPlanV1:
         agent = context.config_snapshot.get("agent", {})
         model_name = str(
-            agent_model_name(agent, "data_planner_llm")
-            or agent_model_name(agent, "composer_llm")
+            snapshot_model_id(agent, "data_planner_llm")
+            or snapshot_model_id(agent, "composer_llm")
             or ""
         ).strip()
         if not model_name:
@@ -243,7 +243,7 @@ class SemanticDataQueryExecutor:
         last_error = ""
         for attempt in range(2):
             response = await self._model_client.get_llm_json(
-                served_model_name=model_name,
+                model_id=model_name,
                 prompt=messages,
             )
             try:

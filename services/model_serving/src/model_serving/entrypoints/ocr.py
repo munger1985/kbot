@@ -13,6 +13,7 @@ from model_serving.config import get_model_serving_settings
 from model_serving.ocr import OCRRequest, OCRResponse, OCRService
 from model_serving.persistence import create_model_serving_uow_factory
 from platform_core.contracts import INTERNAL_API_V1
+from model_serving.common.frozen_binding import FrozenModelConflict, create_frozen_binding_router
 from platform_core.database.oracle import create_database_runtime
 from platform_core.dictionary import ModelCategory
 from platform_core.platform.port_check import check_port_available
@@ -57,8 +58,13 @@ app.middleware("http")(
     create_internal_auth_middleware(audience=config.service_name)
 )
 app.include_router(
-    create_model_management_router(category=ModelCategory.OCR.value)
+    create_model_management_router(
+        category=ModelCategory.OCR.value, probe_service=lambda request: request.app.state.ocr_service,
+    )
 )
+
+
+app.include_router(create_frozen_binding_router(lambda request: request.app.state.ocr_service._model_pool))
 
 
 @app.get("/health")
@@ -72,7 +78,10 @@ async def inference(body: OCRRequest) -> dict:
         return await app.state.ocr_service.infer(
             model_id=body.model_id,
             image_base64=body.image_base64,
+            expected_revision=body.expected_revision,
         )
+    except FrozenModelConflict as exc:
+        raise HTTPException(409, detail={"code": "MODEL_REVISION_CHANGED"}) from exc
     except (ValueError, LookupError) as exc:
         raise HTTPException(
             422,

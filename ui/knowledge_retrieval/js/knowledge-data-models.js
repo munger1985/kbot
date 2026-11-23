@@ -407,7 +407,7 @@
     const rows = llmModels();
     node.innerHTML = [
       `<option value="">${escapeHtml(emptyLabel)}</option>`,
-      ...rows.map((row) => `<option value="${escapeHtml(row.model_id)}">${escapeHtml(row.display_name || row.served_model_name || row.model_id)}</option>`),
+      ...rows.map((row) => `<option value="${escapeHtml(row.model_id)}">${escapeHtml(row.display_name || row.provider_model_name || row.model_id)}</option>`),
     ].join("");
   }
 

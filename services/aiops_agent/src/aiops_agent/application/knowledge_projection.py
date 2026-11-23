@@ -1,16 +1,18 @@
 """App 允许视图与索引准备；所有文件和模型操作都在数据库事务外。"""
 
 from dataclasses import replace
+from contextlib import aclosing
 import asyncio
 import json
 
 from knowledge_algorithms.contracts.content import ContentKind, ContentNode, VisualAsset
-from knowledge_algorithms.contracts.errors import require
+from knowledge_algorithms.contracts.errors import AlgorithmError, require
 from knowledge_algorithms.contracts.identity import fingerprint
 from knowledge_algorithms.contracts.wire import decode, encode
 from knowledge_algorithms.parsing.events import ParseEventType
 from knowledge_algorithms.parsing.wire import event_from_wire
-from knowledge_algorithms.projections.contracts import AllowedContent, UnitSource
+from knowledge_algorithms.projections.contracts import AllowedContent, ProjectionBatch, UnitSource
+from knowledge_algorithms.projections.splitting import REVISION as SPLIT_REVISION
 from knowledge_algorithms.projections.tables import markdown_table_spans
 from aiops_agent.domain.knowledge_ingestion import BINDING
 
@@ -55,6 +57,14 @@ class KnowledgeProjectionService:
     async def allowed_document(self, scope, job_id, *, policy, policy_revision):
         lease = await self.ingestion.get_job(scope, job_id)
         require(lease.status == "PARSED" and policy_revision, "只有完成解析才能生成允许视图")
+        async with self.ingestion.uow_factory() as uow:
+            checkpoint = await uow.knowledge_ingestion.allowed_view_checkpoint(lease)
+        if checkpoint is not None:
+            ref, view_hash = checkpoint
+            manifest = json.loads(await self.ingestion.store.read(ref, max_bytes=self.max_manifest_bytes))
+            require(manifest["view_hash"] == view_hash and manifest["view_ref"] == "allowed-" + view_hash
+                    and manifest["policy_revision"] == policy_revision, "索引来源与冻结允许视图不一致")
+            return AppAllowedDocument(lease, self.ingestion.store, manifest)
         # 先验证整个终态清单，后构造允许视图；不把部分流当作完整文档。
         validator = await self.ingestion._validator(lease)
         require(validator.completed, "规范解析缺少完成清单")
@@ -124,24 +134,44 @@ class KnowledgeProjectionService:
         lease = await self.ingestion.get_job(scope, job_id)
         require(document.document_version_ref == str(lease.document_version_id)
                 and document.parse_run_ref == lease.identity.parse_run_ref, "投影输入不属于当前任务")
-        generation_id, count, digests = None, 0, []
-        async for batch in builder.build(document, profile):
-            wire = encode(batch)
-            raw = json.dumps(wire, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
-            stored = await self.ingestion.store.put_bytes(raw, area="representations",
-                max_bytes=lease.profile.max_event_bytes * 16)
-            async with self.ingestion.uow_factory() as uow:
-                if generation_id is None:
-                    generation_id = await uow.knowledge_ingestion.prepare_generation(lease,
-                        projection_ref=batch.projection_ref, manifest={"profile": encode(profile),
-                            "allowed_view_hash": document.allowed_view_hash}, now=self.ingestion.clock())
-                await uow.knowledge_ingestion.store_projection(lease, generation_id=generation_id,
-                    batch=batch, payload_ref=stored.handle_ref, profile=profile, now=self.ingestion.clock())
-                await uow.commit()
-            count += len(batch.units)
-            digests.append(batch.payload_hash)
-            require(len(digests) <= profile.max_units, "投影批次超过预算")
-        require(generation_id is not None, "投影未生成任何单元")
+        projection_ref = builder.projection_ref(document, profile)
+        async with self.ingestion.uow_factory() as uow:
+            generation_id = await uow.knowledge_ingestion.prepare_generation(lease, projection_ref=projection_ref,
+                manifest={"profile": encode(profile), "allowed_view_hash": document.allowed_view_hash,
+                          "split_revision": SPLIT_REVISION}, now=self.ingestion.clock())
+            status, state = await uow.knowledge_ingestion.projection_checkpoint(lease, generation_id)
+            await uow.commit()
+        if status == "READY":
+            return generation_id
+        limit = lease.profile.max_event_bytes * 16
+        committed = state.get("batches", {})
+
+        async def load_saved(sequence, deadline):
+            saved = committed.get(str(sequence))
+            if saved is None:
+                return None
+            raw = await deadline.run(self.ingestion.store.read(saved["ref"], max_bytes=limit), stage="index_resume")
+            batch = decode(ProjectionBatch, json.loads(raw))
+            require(batch.projection_ref == projection_ref and batch.sequence == sequence
+                    and len(batch.units) == saved["count"] and batch.payload_hash == saved["hash"]
+                    and batch.payload_hash == fingerprint(encode(batch.units)), "已提交索引批次摘要、身份或数量变化")
+            return batch
+
+        count, digests = 0, []
+        iterator = builder.build(document, profile, max_batch_bytes=limit - 512, load_saved=load_saved)
+        async with aclosing(iterator) as batches:
+            async for batch in batches:
+                if str(batch.sequence) not in committed:
+                    raw = json.dumps(encode(batch), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+                    stored = await self.ingestion.store.put_bytes(raw, area="representations", max_bytes=limit)
+                    async with self.ingestion.uow_factory() as uow:
+                        await uow.knowledge_ingestion.store_projection(lease, generation_id=generation_id,
+                            batch=batch, payload_ref=stored.handle_ref, profile=profile, now=self.ingestion.clock())
+                        await uow.commit()
+                count += len(batch.units)
+                digests.append(batch.payload_hash)
+                require(len(digests) <= profile.max_units, "投影批次超过预算")
+        require(count > 0, "投影未生成任何单元")
         async with self.ingestion.uow_factory() as uow:
             await uow.knowledge_ingestion.complete_generation(lease, generation_id=generation_id,
                 unit_count=count, batch_digest=fingerprint(digests), batch_count=len(digests),
@@ -168,14 +198,15 @@ class KnowledgeProjectionService:
             completed, _ = await asyncio.wait((build_task, renew_task), return_when=asyncio.FIRST_COMPLETED)
             for task in completed:
                 task.result()
-        except Exception:
+        except Exception as exc:
             for task in (build_task, renew_task):
                 if not task.done():
                     task.cancel()
             await asyncio.gather(build_task, renew_task, return_exceptions=True)
             async with self.ingestion.uow_factory() as uow:
                 await uow.knowledge_ingestion.finish_outbox(scope, outbox_id, worker_id=worker_id,
-                    attempt=claim["attempt"], now=self.ingestion.clock(), error_code="PROJECTION_FAILED")
+                    attempt=claim["attempt"], now=self.ingestion.clock(),
+                    error_code=exc.code.value if isinstance(exc, AlgorithmError) else "PROJECTION_FAILED")
                 await uow.commit()
             raise
         finally:

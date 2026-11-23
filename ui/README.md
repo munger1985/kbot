@@ -4,6 +4,18 @@
 AIOps 和多媒体创作的正式页面。浏览器只调用 Main API 的 `/api/v1` 公开 BFF，
 不得直接访问内部服务、保存 App API Key 或伪造可信身份 Header。
 
+## 工作台与系统管理
+
+通过 `/ui/index.html` 统一登录 KBot。平台来源、App 来源账号使用同一表单，
+无需选择账号类型或指定 App。工作台只展示服务器授权且已安装的 App；
+有多个工作域时先选择工作域，再免密换取该 App 的业务会话。原 App 登录地址
+会转到工作台；知识检索管理员仍可在有资格时创建首个工作域。
+
+具有 `platform:model_manage` 权限的平台用户可以从首页进入“系统管理 → AI 模型管理”。
+此处维护平台全局模型，不需要多媒体创作的 App 或 Domain 授权；多媒体创作继续维护
+本 App 的模型绑定。已有 Oracle 环境需要执行
+`database/oracle/operations/upgrade_platform_model_management.sql` 更新权限种子后再验收。
+
 页面使用仓库内锁定的 Marked GFM 与 DOMPurify 渲染流式 Markdown，第三方浏览器
 构建产物位于 `ui/vendor/`，运行时不从 CDN 下载代码。
 
@@ -43,9 +55,7 @@ Portal 业务页面统一使用共享 `TimePicker.vue`，后续备份计划等�
 development 环境执行 `start_kbot.sh` 后，开发服务器同时发布：
 
 - 运行日志：`http://<python-host>:8080/operations-logs.html`
-- 知识检索：`http://<python-host>:8080/ui/knowledge_retrieval/login.html`
-- AIOps：`http://<python-host>:8080/ui/aiops/login.html`
-- 多媒体创作：`http://<python-host>:8080/ui/media_studio/login.html`
+- KBot 工作台：`http://<python-host>:8080/ui/`
 
 浏览器使用的 Main API 地址只从 `configuration/kbot.toml` 的
 `[ui].main_api_base_url` 读取，由开发服务器注入 `/ui/runtime-config.js`。

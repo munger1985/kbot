@@ -1,4 +1,4 @@
-"""平台入口与 App 入口登录公开接口。"""
+"""统一工作台与 App 登录公开接口。"""
 
 from typing import cast
 
@@ -49,9 +49,31 @@ class SessionDomainsResponse(_Payload):
     domains: list[SessionDomainItem]
 
 
+class SessionAppEntry(_Payload):
+    app_id: str
+    display_name: str
+    domains: list[SessionDomainItem]
+    can_create_first_domain: bool = Field(
+        default=False, description="获授权的知识检索管理员可从工作台开通首个工作域。",
+    )
+
+
+class SessionEntriesResponse(_Payload):
+    user_id: str
+    display_name: str | None
+    account_origin: str
+    apps: list[SessionAppEntry]
+    system_management: bool = Field(description="当前平台会话具有全局 AI 模型管理权限。")
+
+
 class ExchangeAppPayload(_Payload):
     app_id: str = Field(min_length=1, max_length=128)
     domain_id: int = Field(gt=0)
+
+
+class FirstDomainPayload(_Payload):
+    name: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
 
 
 class PasswordChangePayload(_Payload):
@@ -80,6 +102,12 @@ def _claims(request: Request) -> UserTokenClaims:
     if claims is None:
         raise HTTPException(401, {"code": "USER_SESSION_REQUIRED", "message": "该接口需要用户登录 Token"})
     return cast(UserTokenClaims, claims)
+
+
+@router.post("/login", openapi_extra={"x-sensitive-input": True})
+async def workspace_login(payload: CredentialPayload, request: Request):
+    """使用现有 KBot 账号登录统一工作台，无需指定账号来源或 App。"""
+    return await _service(request).workspace_login(user_id=payload.user_id.strip(), password=payload.password)
 
 
 @router.post("/platform/login")
@@ -114,9 +142,9 @@ async def get_current_user(request: Request):
     return await _service(request).profile(claims=_claims(request))
 
 
-@router.get("/entries")
+@router.get("/entries", response_model=SessionEntriesResponse)
 async def list_session_entries(request: Request):
-    """使用平台根会话列出可进入的 App 与 Domain。"""
+    """使用工作台根会话列出可进入的 App 与 Domain。"""
     return await _service(request).list_session_entries(
         claims=_claims(request)
     )
@@ -124,11 +152,19 @@ async def list_session_entries(request: Request):
 
 @router.post("/exchange")
 async def exchange_app_session(payload: ExchangeAppPayload, request: Request):
-    """使用平台根会话免密换取显式授权范围内的业务会话。"""
+    """使用工作台根会话免密换取显式授权范围内的业务会话。"""
     return await _service(request).exchange_app_session(
         claims=_claims(request),
         app_id=_canonical_app_id(payload.app_id.strip()),
         domain_id=payload.domain_id,
+    )
+
+
+@router.post("/knowledge-first-domain")
+async def create_knowledge_first_domain(payload: FirstDomainPayload, request: Request):
+    """为获授权的知识检索管理员开通首域并免密进入。"""
+    return await _service(request).create_knowledge_first_domain(
+        claims=_claims(request), name=payload.name, description=payload.description,
     )
 
 

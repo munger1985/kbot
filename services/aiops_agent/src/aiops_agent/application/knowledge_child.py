@@ -8,9 +8,10 @@ import re
 import time
 from uuid import UUID, NAMESPACE_URL, uuid5
 
-from knowledge_algorithms.contracts.errors import require
+from knowledge_algorithms.contracts.errors import AlgorithmError, require
 from knowledge_algorithms.contracts.identity import fingerprint
 from platform_core.contracts.agent import AgentExecutionSpec
+from .knowledge_evidence import coverage_note, coverage_summary
 from .operations_knowledge_authorization import validate_parent
 
 
@@ -18,7 +19,7 @@ def child_id(turn_id, purpose):
     return uuid5(NAMESPACE_URL, "aiops-knowledge:" + str(turn_id) + ":" + purpose)
 
 
-def project_answer(payload, *, run_id, bindings, label_prefix):
+def project_answer(payload, *, run_id, bindings, label_prefix, coverage=None):
     """仅按结构化引用表重编号，不从正文猜来源，也不保留不存在的引用。"""
     references = payload.get("references") or []
     used = payload.get("used_citation_labels") or []
@@ -38,12 +39,22 @@ def project_answer(payload, *, run_id, bindings, label_prefix):
             "知识子执行引用不属于冻结业务选择")
         label = label_prefix + str(len(evidence) + 1)
         labels[ref["citation_label"]] = label
+        group = document.get("primary_groups", {}).get(ref["evidence_key"])
+        related = [{name: value for name, value in relation.items() if name != "evidence_key"}
+            for relation in group["related"]] if group else []
         evidence.append({"label": label, "source_kind": "KNOWLEDGE",
             "source_id": document["asset_version_id"], "asset_version_id": document["asset_version_id"],
             "title": document["title"], "quote": ref.get("quote", ""),
             "record_type": document["asset_kind"], "record_id": document["asset_version_id"],
-            "summary": ref.get("quote", ""), "locator": {**ref,
+            "summary": ref.get("quote", ""), "knowledge": {
+                "role": "PRIMARY" if group is not None else (
+                    "RUNTIME_RELATED" if ref.get("role") == "REFERENCED" else "RUNTIME_REFERENCE"),
+                "related": related,
+                "relation_gaps": group["relation_gaps"] if group else [],
+                **(coverage or {}),
+            }, "locator": {**{name: value for name, value in ref.items() if name not in ("retrieval_ref", "quote")},
                 "asset_id": document["asset_id"], "asset_version_id": document["asset_version_id"],
+                "index_generation_id": document["index_generation_id"],
                 "business_context": document.get("business_context", {})}})
     answer = str(payload.get("answer") or "")
     mentioned = set(re.findall(r"\[([A-Z]+[0-9]+)\]", answer))
@@ -71,8 +82,19 @@ class OperationsKnowledgeChild:
                 domain_id=access.domain_id, agent_id=str(agent_id), context=context,
                 target_id=target_id, request=request)
             selected = result.get("results") or []
+            coverage = coverage_summary(result)
             bindings = [dict(binding, business_context={name: item[name] for name in
-                ("authority", "applicability", "reuse_context", "applicability_decision") if name in item})
+                ("authority", "applicability", "reuse_context", "applicability_decision") if name in item},
+                primary_groups={group["primary"]["evidence_key"]: {
+                    "related": [{"readable": relation["readable"], "evidence_key": relation["evidence_key"],
+                        "locators": relation["locator"].get("locators", [])}
+                        for relation in group["related"]
+                        if relation["document_version_id"] == binding["document_version_id"]],
+                    "relation_gaps": [*group["relation_gaps"], *(
+                        ["RELATION_OUTSIDE_CHILD_SCOPE"] if any(relation["document_version_id"]
+                            != binding["document_version_id"] for relation in group["related"]) else [])],
+                } for group in item.get("evidence_groups", ())
+                    if group["primary"]["document_version_id"] == binding["document_version_id"]})
                 for item in selected for binding in item.get("document_bindings", ())]
             unique = {}
             for binding in bindings:
@@ -81,7 +103,7 @@ class OperationsKnowledgeChild:
                 unique[identity] = binding
             bindings = list(unique.values())
             if not bindings:
-                return "没有检索到可以直接支持回答的已发布运维知识。", ()
+                return coverage_note(coverage) or "本次未生成可核验的运维知识回答。", (), coverage
             require(len(bindings) <= documents.retrieval.limits.max_versions, "知识子执行范围超过预算")
             async with self.service._uow_factory() as uow:
                 version = await validate_parent(uow, access, turn_id, agent_id, agent_version_id, lock=True)
@@ -97,7 +119,8 @@ class OperationsKnowledgeChild:
                         consumer_agent_version_id=agent_version_id, agent_kind="AIOPS_KNOWLEDGE",
                         display_name="运维知识子执行", enabled_capabilities=("document",),
                         models=models, instruction=version.instruction,
-                        resource_context={"business_knowledge": [b["business_context"] for b in bindings]},
+                        resource_context={"business_knowledge": [b["business_context"] for b in bindings],
+                            "parent_knowledge_coverage": coverage},
                         knowledge_binding={"query_ticket": ticket_id, "profile_ref": "default"})
                     delegated = replace(access, run_ref=str(run_id), spec_hash=fingerprint(spec.model_dump(mode="json")))
                     effective = request.model_copy(update={
@@ -107,9 +130,11 @@ class OperationsKnowledgeChild:
                     current = await _current_knowledge_authorization(uow=uow, domain_id=access.domain_id,
                         agent_id=agent_id, target_id=target_id, request=effective)
                     require(not isinstance(current, str), "当前 Agent 知识授权已经撤销")
-                    effective, _ = current
+                    effective, _, current_agent_version_id = current
+                    require(current_agent_version_id == agent_version_id, "父诊断 Agent 已切换版本")
                     await uow.knowledge_documents.create_query_ticket(delegated, ticket_id=ticket_id,
-                        agent_id=agent_id, target_id=target_id, request=effective, snapshots=bindings,
+                        agent_id=agent_id, agent_version_id=agent_version_id, target_id=target_id,
+                        request=effective, snapshots=bindings,
                         filters={"TAG_ID": tuple(str(v).upper() for v in effective.tag_ids)} if effective.tag_ids else {},
                         parent_turn_id=turn_id, execution_spec=spec.model_dump(mode="json"),
                         expires_at=documents.retrieval.clock() + timedelta(seconds=documents.retrieval.limits.scope_ttl_seconds))
@@ -137,6 +162,12 @@ class OperationsKnowledgeChild:
                     artifact = await self.client.get_result(run_id=run_id, auth_context=context)
                     require(artifact["artifact_type"] == "GROUNDED_ANSWER", "知识子执行没有正式回答产物")
                     payload = dict(artifact["payload"])
+                    if not payload.get("references"):
+                        terminal = True
+                        coverage = spec.resource_context.get("parent_knowledge_coverage") or {}
+                        note = coverage_note(coverage)
+                        return ("子执行没有生成可核验的知识引用。" + ("\n\n> " + note if note else ""),
+                            (), coverage)
                     for ref in payload.get("references", ()):
                         # 下载走 Runtime 精确历史证据读取及 App 当前授权，不调用 Top-K 重新搜索。
                         download = await self.client.open_knowledge_content(
@@ -149,11 +180,16 @@ class OperationsKnowledgeChild:
                             ref["quote"] = bytes(body).decode("utf-8") if download.mime_type.startswith("text/") else ""
                         finally:
                             await download.close()
+                    bindings = await self._related_excerpts(documents, access, frozen["snapshots"],
+                        payload["references"])
                     async with self.service._uow_factory() as uow:
                         await validate_parent(uow, access, turn_id, agent_id, agent_version_id)
-                    answer = project_answer(payload, run_id=run_id, bindings=frozen["snapshots"], label_prefix=label_prefix)
+                    coverage = spec.resource_context.get("parent_knowledge_coverage") or {}
+                    answer, evidence = project_answer(payload, run_id=run_id, bindings=bindings,
+                        label_prefix=label_prefix, coverage=coverage)
+                    note = coverage_note(coverage)
                     terminal = True
-                    return answer
+                    return (f"{answer}\n\n> {note}" if note else answer), evidence, coverage
                 await self.sleep(self.poll)
             raise TimeoutError("知识子执行超过本轮等待预算")
         finally:
@@ -162,6 +198,47 @@ class OperationsKnowledgeChild:
                     await asyncio.shield(self._cancel(run_id, context))
                 except Exception as exc:
                     logger.warning("知识子执行取消待恢复：run_id={} error_type={}", run_id, type(exc).__name__)
+
+    @staticmethod
+    async def _related_excerpts(documents, access, snapshots, references):
+        """关联摘录从父回执按精确身份重读；过期或撤权不回退到新检索。"""
+        import copy
+
+        bindings = copy.deepcopy(snapshots)
+        by_document = {row["document_version_id"]: row for row in bindings}
+        remaining = 12
+        for ref in references:
+            row = by_document.get(ref.get("document_version_id"))
+            if row is None or ref.get("parse_run_id") != row["parse_run_id"]:
+                continue
+            key = ref.get("evidence_key")
+            group = row.get("primary_groups", {}).get(key)
+            if group is None:
+                continue
+            receipt = row.get("primary_receipts", {}).get(key)
+            for relation in group["related"]:
+                if not relation["readable"]:
+                    continue
+                try:
+                    require(remaining > 0 and receipt, "无法按父回执读取关联材料")
+                    remaining -= 1
+                    descriptor, chunks = await documents.retrieval.stream_content(
+                        access, retrieval_ref=receipt, stable_key=relation["evidence_key"])
+                    body = bytearray()
+                    try:
+                        require(descriptor.byte_count <= 1024 * 1024, "关联材料超过精确读取预算")
+                        async for block in chunks:
+                            body.extend(block[:4096 - len(body)])
+                    finally:
+                        await chunks.aclose()
+                    relation["excerpt"] = body.decode("utf-8", errors="ignore")
+                    require(relation["excerpt"].strip(), "关联材料正文不可读")
+                except (AlgorithmError, OSError):
+                    relation.pop("excerpt", None)
+                    relation["readable"] = False
+                    group["relation_gaps"].append("RELATION_EXCERPT_UNAVAILABLE")
+            group["relation_gaps"] = list(dict.fromkeys(group["relation_gaps"]))
+        return bindings
 
     async def _cancel(self, run_id, context):
         """取消冲突时重读版本；失败仍由 Runtime 截止时间和证据清理负责回收。"""

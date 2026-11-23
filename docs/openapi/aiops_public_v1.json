@@ -11002,6 +11002,742 @@
         "title": "ProposalView",
         "type": "object"
       },
+      "ProtectionAdvice": {
+        "additionalProperties": false,
+        "properties": {
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "rpo_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpo Seconds"
+          },
+          "rto_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rto Seconds"
+          }
+        },
+        "required": [
+          "explanation"
+        ],
+        "title": "ProtectionAdvice",
+        "type": "object"
+      },
+      "ProtectionBackupIdentityInput": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mode": {
+            "default": "DATABASE_PASSWORD",
+            "enum": [
+              "DATABASE_PASSWORD",
+              "ORACLE_OS"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "title": "ProtectionBackupIdentityInput",
+        "type": "object"
+      },
+      "ProtectionBackupRotation": {
+        "additionalProperties": false,
+        "properties": {
+          "cycle_days": {
+            "maximum": 365.0,
+            "minimum": 2.0,
+            "title": "Cycle Days",
+            "type": "integer"
+          },
+          "full_time": {
+            "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "Full Time",
+            "type": "string"
+          },
+          "incremental_time": {
+            "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "Incremental Time",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "timezone": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone",
+          "start_date",
+          "cycle_days",
+          "full_time",
+          "incremental_time"
+        ],
+        "title": "ProtectionBackupRotation",
+        "type": "object"
+      },
+      "ProtectionBackupScheduleChange": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "enabled"
+        ],
+        "title": "ProtectionBackupScheduleChange",
+        "type": "object"
+      },
+      "ProtectionCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "area": {
+            "enum": [
+              "DATABASE",
+              "HOST",
+              "STORAGE",
+              "NETWORK_TOOL",
+              "VERIFY"
+            ],
+            "title": "Area",
+            "type": "string"
+          },
+          "guidance": {
+            "title": "Guidance",
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "BACKUP",
+              "DRILL"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "MISSING",
+              "UNVERIFIED",
+              "PASS"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "area",
+          "operation",
+          "status",
+          "guidance"
+        ],
+        "title": "ProtectionCheck",
+        "type": "object"
+      },
+      "ProtectionDrillScheduleChange": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "enabled"
+        ],
+        "title": "ProtectionDrillScheduleChange",
+        "type": "object"
+      },
+      "ProtectionIdentityInput": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "ProtectionIdentityInput",
+        "type": "object"
+      },
+      "ProtectionPlanSave": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionBackupIdentityInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "restore_identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionIdentityInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ProtectionPlanSettings"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "settings"
+        ],
+        "title": "ProtectionPlanSave",
+        "type": "object"
+      },
+      "ProtectionPlanSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_directory": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "pattern": "^(/[a-zA-Z0-9_.-]+)+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Directory"
+          },
+          "backup_incremental_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backup_parallelism": {
+            "default": 1,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Backup Parallelism",
+            "type": "integer"
+          },
+          "backup_rotation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionBackupRotation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backup_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "drill_destination_key": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drill Destination Key"
+          },
+          "drill_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CRITICAL",
+                  "HIGH",
+                  "MEDIUM",
+                  "LOWER",
+                  "LOW"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "restore_template_key": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Template Key"
+          },
+          "rpo_seconds": {
+            "anyOf": [
+              {
+                "maximum": 31536000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpo Seconds"
+          },
+          "rto_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 31536000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rto Seconds"
+          },
+          "schedule_window_seconds": {
+            "default": 900,
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Schedule Window Seconds",
+            "type": "integer"
+          },
+          "storage_key": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Key"
+          },
+          "timeout_seconds": {
+            "default": 7200,
+            "maximum": 172800.0,
+            "minimum": 60.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          },
+          "tool": {
+            "enum": [
+              "RMAN",
+              "PGBACKREST",
+              "XTRABACKUP"
+            ],
+            "title": "Tool",
+            "type": "string"
+          },
+          "topology": {
+            "default": "UNKNOWN",
+            "enum": [
+              "UNKNOWN",
+              "SINGLE",
+              "ASYNC_REPLICA",
+              "SYNC_REPLICA"
+            ],
+            "title": "Topology",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool"
+        ],
+        "title": "ProtectionPlanSettings",
+        "type": "object"
+      },
+      "ProtectionPlanView": {
+        "additionalProperties": false,
+        "properties": {
+          "advice": {
+            "$ref": "#/components/schemas/ProtectionAdvice"
+          },
+          "backup_template_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Template Key"
+          },
+          "backup_template_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Template Version"
+          },
+          "backup_tool_requirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Tool Requirement"
+          },
+          "db_role": {
+            "title": "Db Role",
+            "type": "string"
+          },
+          "db_type": {
+            "$ref": "#/components/schemas/DatabaseType"
+          },
+          "db_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Version"
+          },
+          "drill_preflight_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "PENDING",
+                  "REJECTED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drill Preflight Status"
+          },
+          "has_backup_identity": {
+            "default": false,
+            "title": "Has Backup Identity",
+            "type": "boolean"
+          },
+          "has_restore_identity": {
+            "default": false,
+            "title": "Has Restore Identity",
+            "type": "boolean"
+          },
+          "next_backup_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Backup At"
+          },
+          "next_drill_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Drill At"
+          },
+          "readiness": {
+            "items": {
+              "$ref": "#/components/schemas/ProtectionCheck"
+            },
+            "title": "Readiness",
+            "type": "array"
+          },
+          "recent_runs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProtectionRunSummary"
+            },
+            "title": "Recent Runs",
+            "type": "array"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ProtectionPlanSettings"
+          },
+          "status": {
+            "enum": [
+              "NOT_ENROLLED",
+              "DRAFT",
+              "SCHEDULED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "db_type",
+          "db_role",
+          "status",
+          "revision",
+          "settings",
+          "readiness",
+          "advice"
+        ],
+        "title": "ProtectionPlanView",
+        "type": "object"
+      },
+      "ProtectionRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "FULL",
+                  "INCREMENTAL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Kind"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "operation": {
+            "enum": [
+              "BACKUP",
+              "DRILL"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "RUNNING",
+              "SUCCEEDED",
+              "FAILED",
+              "REJECTED",
+              "SKIPPED",
+              "UNKNOWN"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "operation",
+          "scheduled_at",
+          "status"
+        ],
+        "title": "ProtectionRunSummary",
+        "type": "object"
+      },
+      "ProtectionSchedule": {
+        "additionalProperties": false,
+        "properties": {
+          "cron": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cron"
+          },
+          "once_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Once At"
+          },
+          "timezone": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone"
+        ],
+        "title": "ProtectionSchedule",
+        "type": "object"
+      },
       "ReadonlyLifecycleItem": {
         "additionalProperties": false,
         "properties": {
@@ -12149,6 +12885,7 @@
       },
       "ReportType": {
         "enum": [
+          "RECOVERY_DRILL",
           "ORACLE_WORKLOAD",
           "ORACLE_WORKLOAD_DIFF",
           "INCIDENT",
@@ -14736,8 +15473,11 @@
               "19c",
               "26ai",
               "5.7",
+              "8.0",
               "8.4",
-              "16"
+              "16",
+              "17",
+              "18"
             ],
             "title": "Version Code",
             "type": "string"
@@ -14895,8 +15635,11 @@
                   "19c",
                   "26ai",
                   "5.7",
+                  "8.0",
                   "8.4",
-                  "16"
+                  "16",
+                  "17",
+                  "18"
                 ],
                 "type": "string"
               },
@@ -15072,8 +15815,11 @@
               "19c",
               "26ai",
               "5.7",
+              "8.0",
               "8.4",
-              "16"
+              "16",
+              "17",
+              "18"
             ],
             "title": "Version Code",
             "type": "string"
@@ -16035,8 +16781,11 @@
                   "19c",
                   "26ai",
                   "5.7",
+                  "8.0",
                   "8.4",
-                  "16"
+                  "16",
+                  "17",
+                  "18"
                 ],
                 "type": "string"
               },
@@ -18014,6 +18763,7 @@
       },
       "WorkflowKind": {
         "enum": [
+          "RECOVERY_DRILL",
           "RESOURCE_COLLECTION",
           "ALERT_DIAGNOSIS",
           "INSPECTION",
@@ -19677,6 +20427,207 @@
           }
         },
         "summary": "Get Dashboard",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/data-protection/resources/{resource_id}": {
+      "get": {
+        "operationId": "get_data_protection_api_v1_apps_aiops_data_protection_resources__resource_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data Protection",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "put": {
+        "operationId": "save_data_protection_api_v1_apps_aiops_data_protection_resources__resource_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectionPlanSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Data Protection",
+        "tags": [
+          "AIOps"
+        ],
+        "x-sensitive-input": true
+      }
+    },
+    "/api/v1/apps/aiops/data-protection/resources/{resource_id}/backup-schedule": {
+      "put": {
+        "operationId": "change_data_protection_backup_schedule_api_v1_apps_aiops_data_protection_resources__resource_id__backup_schedule_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectionBackupScheduleChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Data Protection Backup Schedule",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/data-protection/resources/{resource_id}/drill-schedule": {
+      "put": {
+        "operationId": "change_data_protection_drill_schedule_api_v1_apps_aiops_data_protection_resources__resource_id__drill_schedule_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectionDrillScheduleChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Data Protection Drill Schedule",
         "tags": [
           "AIOps"
         ]

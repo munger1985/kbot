@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 from pydantic import ValidationError
 
-from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.domain.model_bindings import snapshot_model_id
 from agent_runtime.language import language_instruction, response_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from platform_core.prompts import StrictPromptRenderer
@@ -62,7 +62,7 @@ class ContextRewriteSkill:
             )
 
         model_name = str(
-            agent_model_name(
+            snapshot_model_id(
                 context.config_snapshot.get("agent", {}), "context_llm"
             )
             or ""
@@ -96,7 +96,7 @@ class ContextRewriteSkill:
             },
         ]
         response = await self._model_client.get_llm_json(
-            served_model_name=model_name,
+            model_id=model_name,
             prompt=messages,
         )
         try:
@@ -114,7 +114,7 @@ class ContextRewriteSkill:
                 self._validation_summary(exc),
             )
             corrected_response = await self._model_client.get_llm_json(
-                served_model_name=model_name,
+                model_id=model_name,
                 prompt=[
                     *messages,
                     {

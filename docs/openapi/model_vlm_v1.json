@@ -1,6 +1,42 @@
 {
   "components": {
     "schemas": {
+      "FrozenBinding": {
+        "properties": {
+          "inference_ref": {
+            "title": "Inference Ref",
+            "type": "string"
+          },
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
+          "representation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Representation"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "revision",
+          "inference_ref"
+        ],
+        "title": "FrozenBinding",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -99,10 +135,6 @@
             "title": "Row Version",
             "type": "integer"
           },
-          "served_model_name": {
-            "title": "Served Model Name",
-            "type": "string"
-          },
           "status": {
             "enum": [
               "DRAFT",
@@ -115,7 +147,6 @@
         },
         "required": [
           "model_id",
-          "served_model_name",
           "display_name",
           "provider_model_name",
           "category",
@@ -124,6 +155,21 @@
           "row_version"
         ],
         "title": "ModelCatalogItem",
+        "type": "object"
+      },
+      "ModelConnectionTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "latency_ms": {
+            "minimum": 0.0,
+            "title": "Latency Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "latency_ms"
+        ],
+        "title": "ModelConnectionTestResult",
         "type": "object"
       },
       "ModelCreateRequest": {
@@ -194,13 +240,6 @@
             "title": "Provider Model Name",
             "type": "string"
           },
-          "served_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
-            "title": "Served Model Name",
-            "type": "string"
-          },
           "status": {
             "default": "DRAFT",
             "enum": [
@@ -213,7 +252,6 @@
           }
         },
         "required": [
-          "served_model_name",
           "display_name",
           "provider_model_name",
           "category",
@@ -453,6 +491,12 @@
               }
             ],
             "title": "Model Params"
+          },
+          "provider_model_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Provider Model Name",
+            "type": "string"
           }
         },
         "required": [
@@ -495,8 +539,7 @@
             "type": "array"
           },
           "model": {
-            "maxLength": 128,
-            "minLength": 1,
+            "format": "uuid",
             "title": "Model",
             "type": "string"
           },
@@ -560,6 +603,18 @@
       "VLMRequest": {
         "description": "VLM inference request model\n\nRequest schema for Vision-Language Model inference requests, supporting both\nstreaming and non-streaming responses with configurable sampling parameters.",
         "properties": {
+          "expected_revision": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
           "frequency_penalty": {
             "anyOf": [
               {
@@ -593,6 +648,11 @@
             "title": "Messages",
             "type": "array"
           },
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
           "presence_penalty": {
             "anyOf": [
               {
@@ -604,11 +664,6 @@
             ],
             "description": "Presence penalty (reduces topic repetition)",
             "title": "Presence Penalty"
-          },
-          "served_model_name": {
-            "description": "Name of the model to use for inference",
-            "title": "Served Model Name",
-            "type": "string"
           },
           "stream": {
             "default": false,
@@ -654,7 +709,7 @@
           }
         },
         "required": [
-          "served_model_name",
+          "model_id",
           "messages"
         ],
         "title": "VLMRequest",
@@ -1159,6 +1214,49 @@
         ]
       }
     },
+    "/internal/v1/models/{model_id}/inference-binding": {
+      "get": {
+        "operationId": "resolve_binding_internal_v1_models__model_id__inference_binding_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrozenBinding"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Binding",
+        "tags": [
+          "Model Inference"
+        ]
+      }
+    },
     "/internal/v1/models/{model_id}/references": {
       "get": {
         "operationId": "get_model_references_internal_v1_models__model_id__references_get",
@@ -1250,6 +1348,49 @@
           }
         },
         "summary": "Change Model Status",
+        "tags": [
+          "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/models/{model_id}:test-connection": {
+      "post": {
+        "operationId": "test_model_connection_internal_v1_models__model_id__test_connection_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConnectionTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Model Connection",
         "tags": [
           "Model Configuration"
         ]

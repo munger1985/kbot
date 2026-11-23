@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import math
+from collections import Counter
 from uuid import UUID
 from typing import Any
 
@@ -14,6 +14,7 @@ from aiops_agent.application.case_applicability import (
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.knowledge_ranking import knowledge_rank_scorecard, knowledge_rank_key, RANKING_POLICY
 from aiops_agent.contracts.knowledge import DiagnosisCaseProfile
+from .knowledge_evidence import project_receipt, retrieval_coverage
 
 
 @dataclass(frozen=True)
@@ -75,21 +76,6 @@ def _snapshot(asset, version, index):
     }
 
 
-def _number(value):
-    try:
-        result = float(value)
-        return result if math.isfinite(result) else 0.0
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _evidence_rank(item):
-    ranks = [_number((entry.get("evidence") or {}).get("local_rank"))
-        for entry in item.get("items") or () if isinstance(entry, dict)]
-    ranks = [rank for rank in ranks if rank > 0]
-    return min(ranks) if ranks else 1.0
-
-
 def _lineage(candidate):
     if candidate["asset_kind"] != "DIAGNOSIS_CASE":
         return candidate["asset_id"]
@@ -110,8 +96,10 @@ async def search_published_knowledge(
             uow=uow, domain_id=domain_id, agent_id=agent_id, target_id=target_id, request=request,
         )
     if isinstance(authorization, str):
-        return {"status": authorization, "results": [], "warnings": ["当前 Agent 的知识能力、知识库或来源范围不可用"]}
-    request, knowledge_base_ids = authorization
+        return {"status": authorization, "retrieval_conclusion": "NOT_VERIFIED", "results": [],
+            "warnings": ["当前 Agent 的知识能力、知识库或来源范围不可用"],
+            "coverage": retrieval_coverage(gaps=("KNOWLEDGE_SCOPE_UNAVAILABLE",))}
+    request, knowledge_base_ids, agent_version_id = authorization
     filters = {**filters, "TAG_ID": tuple(str(value).upper() for value in request.tag_ids)}
     filters = {key: values for key, values in filters.items() if values}
     budget = getattr(service, "_knowledge_search_budget", None) or KnowledgeSearchBudget()
@@ -121,19 +109,28 @@ async def search_published_knowledge(
     if request.purpose == "CATALOG":
         return await _published_catalog(service, domain_id=domain_id, agent_id=agent_id,
             target_id=target_id, request=request, knowledge_base_ids=knowledge_base_ids,
-            scope=scope, budget=budget)
-    snapshots, scanned, cursor, exhausted = [], 0, None, False
+            scope=scope, budget=budget, agent_version_id=agent_version_id)
+    eligible = set()
+    async with service._uow_factory() as uow:
+        catalog = await uow.operations_knowledge.list_published_catalog(**scope, limit=budget.max_candidates + 1)
+        for asset, version in catalog[:budget.max_candidates]:
+            if await _eligible_case(service, uow=uow, domain_id=domain_id,
+                agent_id=agent_id, asset=asset, version=version):
+                eligible.add(version.asset_version_id)
+        index_counts = await uow.operations_knowledge.published_index_counts(asset_version_ids=tuple(eligible))
+    catalog_complete = len(catalog) <= budget.max_candidates
+    snapshots, scanned, cursor, exhausted = [], 0, None, not eligible
+    eligible_ids = tuple(sorted(eligible, key=str))
     # 短分页事务；禁止把 ORM 对象带到检索调用后再访问。
-    while scanned < budget.max_candidates:
+    while not exhausted and scanned < budget.max_candidates:
         page_size = min(budget.registry_page_size, budget.max_candidates - scanned)
         async with service._uow_factory() as uow:
             rows = await uow.operations_knowledge.list_published_candidates(
-                **scope, limit=page_size, after_index_id=cursor,
+                **scope, limit=page_size, after_index_id=cursor, asset_version_ids=eligible_ids,
             )
             for asset, version, index in rows:
                 scanned += 1
-                if await _eligible_case(service, uow=uow, domain_id=domain_id,
-                    agent_id=agent_id, asset=asset, version=version):
+                if version.asset_version_id in eligible:
                     snapshots.append(_snapshot(asset, version, index))
             if len(rows) < page_size:
                 exhausted = True
@@ -149,19 +146,43 @@ async def search_published_knowledge(
     if not exhausted:
         async with service._uow_factory() as uow:
             remaining = await uow.operations_knowledge.list_published_candidates(
-                **scope, limit=1, after_index_id=cursor,
+                **scope, limit=1, after_index_id=cursor, asset_version_ids=eligible_ids,
             )
         if remaining:
             warnings.append("候选范围超过本次检索预算，结果仅覆盖已扫描范围；请缩小知识库或问题范围。")
+    coverage_gaps, channel_failures = [], []
+    if warnings or not catalog_complete:
+        coverage_gaps.append("CANDIDATE_BUDGET")
+        warnings.append("候选范围超过本次检索预算，结果仅覆盖已扫描范围；请缩小知识库或问题范围。")
+    by_asset = Counter(row["asset_version_id"] for row in snapshots)
+    if any(not index_counts.get(str(version)) or (
+        "CANDIDATE_BUDGET" not in coverage_gaps
+        and by_asset[str(version)] < index_counts[str(version)]
+    ) for version in eligible):
+        coverage_gaps.append("INDEX_NOT_READY")
+        warnings.append("部分符合资格的资料没有可用索引，本次未覆盖这些正文。")
     diagnostics = {"scanned_candidates": scanned, "candidate_budget": budget.max_candidates,
-        "registry_scope_complete": not warnings, "discovery_shards": 0, "evidence_batches": 0}
+        "eligible_versions": len(eligible), "searchable_documents": len(snapshots),
+        "registry_scope_complete": "CANDIDATE_BUDGET" not in coverage_gaps,
+        "discovery_shards": 0, "evidence_batches": 0}
 
     def response(status, results, extra_warnings=()):
-        return {"status": status, "results": results,
-            "warnings": list(dict.fromkeys([*warnings, *extra_warnings])), "coverage": diagnostics}
-
-    if not snapshots:
-        return response("NO_APPLICABLE_KNOWLEDGE", [])
+        if status == "KNOWLEDGE_SCOPE_CHANGED":
+            coverage_gaps.append("KNOWLEDGE_SCOPE_CHANGED")
+        coverage = retrieval_coverage(gaps=coverage_gaps, channels=channel_failures,
+            shards=diagnostics["discovery_shards"], has_results=bool(results))
+        conclusion = ("EVIDENCE_FOUND" if results else "NOT_VERIFIED" if coverage["scope"] != "COMPLETE"
+            else "NO_ELIGIBLE_RESOURCES" if not eligible else "NO_MATCH")
+        if not results and conclusion == "NOT_VERIFIED" and status != "KNOWLEDGE_SCOPE_CHANGED":
+            status = "KNOWLEDGE_NOT_VERIFIED"
+        elif conclusion == "NO_MATCH":
+            status = "NO_EVIDENCE_MATCH"
+        if results and coverage["ranking"] == "LIMITED":
+            warnings.append("已保留可核验的主证据；本次覆盖或排序有限，不能视为完整结果。")
+        if conclusion == "NOT_VERIFIED":
+            warnings.append("本次检索未能充分核验，不表示没有匹配资料。")
+        return {"status": status, "retrieval_conclusion": conclusion, "results": results,
+            "warnings": list(dict.fromkeys([*warnings, *extra_warnings])), "coverage": {**diagnostics, **coverage}}
 
     case_search_context = None
 
@@ -172,8 +193,10 @@ async def search_published_knowledge(
             checked = await _current_knowledge_authorization(
                 uow=uow, domain_id=domain_id, agent_id=agent_id, target_id=target_id, request=request,
             )
-            if isinstance(checked, str) or checked != (request, knowledge_base_ids):
+            if isinstance(checked, str) or checked != (request, knowledge_base_ids, agent_version_id):
                 return None
+            if not snapshots:
+                return []
             if case_search_context is not None:
                 current_context = await load_case_search_context(
                     uow=uow, domain_id=domain_id, agent_id=agent_id, target_id=target_id,
@@ -188,8 +211,15 @@ async def search_published_knowledge(
             for asset, version, index in rows:
                 if await _eligible_case(service, uow=uow, domain_id=domain_id,
                     agent_id=agent_id, asset=asset, version=version):
-                    current.add((str(version.asset_version_id), str(index.document_version_id), str(index.parse_run_id), str(index.index_generation_id)))
-        return [row for row in snapshots if (row["asset_version_id"], row["document_version_id"], row["parse_run_id"], row["index_generation_id"]) in current]
+                    current.add(tuple(_snapshot(asset, version, index)[key] for key in identity_keys))
+        return [row for row in snapshots if tuple(row[key] for key in identity_keys) in current]
+
+    identity_keys = ("asset_version_id", "index_ref_id", "document_id", "document_version_id",
+        "ingestion_job_id", "parse_run_id", "index_generation_id")
+    if not snapshots:
+        if await revalidate_snapshots() is None:
+            return response("KNOWLEDGE_SCOPE_CHANGED", [])
+        return response("NO_APPLICABLE_KNOWLEDGE", [])
 
     if any(row["asset_kind"] == "DIAGNOSIS_CASE" for row in snapshots):
         async with service._uow_factory() as uow:
@@ -203,50 +233,56 @@ async def search_published_knowledge(
     from datetime import timedelta
     from platform_core.identity import uuid7
     from knowledge_algorithms.contracts.query import QueryInput, QueryMode
-    from knowledge_algorithms.contracts.wire import encode
+    from knowledge_algorithms.contracts.errors import AlgorithmError
     access = service._documents.access(context)
     retrieval = service._documents.retrieval
-    batch_size = min(retrieval.limits.max_versions, budget.discovery_scope_size)
+    batch_size = min(500, retrieval.limits.max_versions, budget.discovery_scope_size)
+    shard_count = (len(snapshots) + batch_size - 1) // batch_size
+    primary_budget, relation_budget = [8 * 1024 * 1024], [2 * 1024 * 1024]
     for offset in range(0, len(snapshots), batch_size):
         shard = snapshots[offset:offset + batch_size]
         async with service._uow_factory() as uow:
             resource_ref = await uow.knowledge_documents.create_query_ticket(access, ticket_id=uuid7(),
-                agent_id=agent_id, target_id=target_id, request=request, snapshots=shard, filters=filters,
+                agent_id=agent_id, agent_version_id=agent_version_id, target_id=target_id, request=request,
+                snapshots=shard, filters=filters,
                 expires_at=retrieval.clock() + timedelta(seconds=retrieval.limits.scope_ttl_seconds))
             await uow.commit()
-        authorized = await retrieval.create_scope(access, resource_ref=resource_ref)
-        receipt = await retrieval.retrieve(access, scope=authorized, profile_ref="default",
-            query=QueryInput(QueryMode.RELEVANCE, min(100, max(request.max_results * 3, len(shard))), ("TEXT", "TABLE"), text=request.query))
         diagnostics["discovery_shards"] += 1
-        diagnostics["evidence_batches"] += 1
         allowed = {row["document_version_id"]: row for row in shard}
-        for rank, evidence in enumerate(receipt.evidence_set.evidence, start=1):
-            candidate = allowed.get(evidence.key.document_version_ref)
-            if (candidate is None or evidence.key.owner_binding_ref != "aiops"
-                or evidence.key.parse_run_ref != candidate["parse_run_id"]):
-                continue
-            if not evidence.mime_type.startswith("text/"):
-                continue
-            descriptor, chunks = await retrieval.stream_content(access, retrieval_ref=receipt.retrieval_ref,
-                stable_key=evidence.key.stable_key)
-            body = b""
-            async for block in chunks:
-                body += block
-            text = body.decode("utf-8")
-            identity = candidate["document_version_id"]
-            discovery_scores[identity] = max(discovery_scores.get(identity, 0.), 1. / (60 + rank))
-            evidence_items.append({"document_version_id": identity, "parse_run_id": evidence.key.parse_run_ref, "quote": text,
-                "locator": {"evidence_key": encode(evidence.key), "locators": encode(evidence.locators),
-                    "source_keys": encode(evidence.source_keys), "source_spans": encode(evidence.source_spans),
-                    "retrieval_ref": receipt.retrieval_ref, "content_hash": descriptor.content_hash,
-                    "scope_hash": authorized.scope_hash, "owner_binding_ref": "aiops"}})
-            if candidate["asset_kind"] == "DIAGNOSIS_CASE":
-                record = await service._documents.inspect(access, UUID(identity))
+        try:
+            authorized = await retrieval.create_scope(access, resource_ref=resource_ref)
+            receipt = await retrieval.retrieve(access, scope=authorized, profile_ref="default",
+                query=QueryInput(QueryMode.RELEVANCE,
+                    min(budget.discovery_per_collection, max(request.max_results * 3, len(shard))),
+                    ("TEXT", "TABLE"), text=request.query))
+            hits, gaps, channels = await project_receipt(retrieval, access, receipt, allowed,
+                primary_budget=primary_budget, relation_budget=relation_budget)
+        except (AlgorithmError, OSError) as exc:
+            coverage_gaps.append("SHARD_UNAVAILABLE")
+            channel_failures.append({"channel": "retrieval", "reason": getattr(getattr(exc, "code", None), "value", "CONTENT_IO_FAILED")})
+            continue
+        diagnostics["evidence_batches"] += 1
+        coverage_gaps.extend(gaps)
+        channel_failures.extend(channels)
+        for citation, group in hits:
+            identity = citation["document_version_id"]
+            candidate = allowed[identity]
+            group["primary"]["shard"] = diagnostics["discovery_shards"]
+            group["_retrieval_ref"] = receipt.retrieval_ref
+            if shard_count == 1:
+                discovery_scores[identity] = max(discovery_scores.get(identity, 0.), 1. / (60 + group["primary"]["rank"]))
+            evidence_items.append((citation, group))
+            if candidate["asset_kind"] == "DIAGNOSIS_CASE" and identity not in case_documents:
+                try:
+                    record = await service._documents.inspect(access, UUID(identity))
+                except (AlgorithmError, OSError):
+                    coverage_gaps.append("CASE_CONTENT_UNAVAILABLE")
+                    continue
                 if record["source_hash"] == candidate["profile"]["knowledge_projection"]["body_sha256"]:
                     case_documents[identity] = {identity}
     # 正文及语义判断完成后统一重验，期间不持有数据库事务。
     grouped, scores = {}, {}
-    for item in evidence_items:
+    for item, evidence_group in evidence_items:
         revision = str(item.get("document_version_id") or "")
         candidate = by_revision.get(revision)
         if candidate is None:
@@ -257,6 +293,7 @@ async def search_published_knowledge(
         if candidate["asset_kind"] == "DIAGNOSIS_CASE":
             document_id = str(item.get("document_version_id") or "")
             if document_id not in case_documents.get(revision, set()):
+                coverage_gaps.append("CASE_CONTENT_UNAVAILABLE")
                 warnings.append("部分案例的精确正文版本或内容哈希无法核对，已从本次结果排除。")
                 continue
             try:
@@ -264,6 +301,7 @@ async def search_published_knowledge(
                     profile=candidate["profile"], citation=item, document_version_id=document_id,
                 )
             except ValueError:
+                coverage_gaps.append("CASE_CONTENT_UNAVAILABLE")
                 warnings.append("部分案例缺少完整可引用上下文，已排除；请在诊断案例库复核。")
                 continue
         key = candidate["asset_version_id"]
@@ -279,7 +317,7 @@ async def search_published_knowledge(
                 "authority": "APPROVED_MANUAL" if candidate["asset_kind"] == "MANUAL" else candidate["profile"].get("case_kind"),
                 "applicability": "CONFLICT" if mismatched else "PARTIAL" if unknown else "MATCHED",
                 "matched_dimensions": matched, "mismatched_dimensions": mismatched,
-                "unknown_dimensions": unknown, "citation_pack": [],
+                "unknown_dimensions": unknown, "citation_pack": [], "evidence_groups": [],
             }
             if candidate["asset_kind"] == "DIAGNOSIS_CASE":
                 profile = candidate["profile"]
@@ -297,7 +335,8 @@ async def search_published_knowledge(
                 }
         if citation not in grouped[key]["citation_pack"]:
             grouped[key]["citation_pack"].append(citation)
-        scores[key] = max(scores.get(key, 0.0), discovery_scores.get(revision, 0.0) / _evidence_rank(item))
+            grouped[key]["evidence_groups"].append(evidence_group)
+        scores[key] = max(scores.get(key, 0.0), discovery_scores.get(revision, 0.0))
     candidates_by_version = {row["asset_version_id"]: row for row in by_revision.values()}
     case_candidates = sorted((row for row in candidates_by_version.values()
         if row["asset_kind"] == "DIAGNOSIS_CASE" and row["asset_version_id"] in grouped),
@@ -310,6 +349,8 @@ async def search_published_knowledge(
         diagnostics.update(semantic_case_budget=budget.semantic_case_budget,
             assessed_cases=len(assessments), semantic_scope_complete=not incomplete)
         if incomplete:
+            if request.purpose in ACTION_PURPOSES:
+                coverage_gaps.append("CASE_APPLICABILITY_UNVERIFIED")
             warnings.append("部分案例的前提或禁忌尚未完成当前环境核验，仅可参考；不能当作处置推荐。")
         for candidate in case_candidates:
             key = candidate["asset_version_id"]
@@ -331,22 +372,40 @@ async def search_published_knowledge(
     checked = await revalidate_snapshots()
     if checked is None:
         return response("KNOWLEDGE_SCOPE_CHANGED", [], ["检索期间 Agent 授权、模型或目标环境已变化，请重新检索。"])
-    current = {(row["asset_version_id"], str(row["document_version_id"])) for row in checked}
+    if len(checked) != len(snapshots):
+        coverage_gaps.append("SNAPSHOT_CHANGED")
+    current = {(row["asset_version_id"], row["document_version_id"]) for row in checked}
+    current_documents = {row["document_version_id"] for row in checked}
     # 多文件版本逐条重验，不能用最后一个文档的授权代替其它文件。
     for key in tuple(grouped):
         row = grouped[key]
         row["citation_pack"] = [citation for citation in row["citation_pack"]
             if (key, str(citation["document_version_id"])) in current]
+        row["evidence_groups"] = [group for group in row["evidence_groups"]
+            if (key, group["primary"]["document_version_id"]) in current]
+        for group in row["evidence_groups"]:
+            related = [item for item in group["related"] if item["document_version_id"] in current_documents]
+            if len(related) != len(group["related"]):
+                group["relation_gaps"].append("RELATION_SCOPE_CHANGED")
+            group["related"] = related
         if not row["citation_pack"]:
             del grouped[key]
         else:
             cited = {item["document_version_id"] for item in row["citation_pack"]}
-            row["document_bindings"] = [{name: value for name, value in item.items() if name != "created_at"}
-                for item in checked if item["asset_version_id"] == key and item["document_version_id"] in cited]
+            row["document_bindings"] = [dict(
+                {name: value for name, value in item.items() if name != "created_at"},
+                primary_receipts={group["primary"]["evidence_key"]: group["_retrieval_ref"]
+                    for group in row["evidence_groups"]
+                    if group["primary"]["document_version_id"] == item["document_version_id"]},
+            ) for item in checked if item["asset_version_id"] == key and item["document_version_id"] in cited]
+            for group in row["evidence_groups"]:
+                del group["_retrieval_ref"]
     ranking_time = datetime.now(UTC)
     for key, row in grouped.items():
+        surviving_score = max((1. / (60 + group["primary"]["rank"])
+            for group in row["evidence_groups"]), default=0.) if shard_count == 1 else 0.
         row["ranking"] = knowledge_rank_scorecard(candidate=candidates_by_version[key], result=row,
-            kc_relevance=scores[key], purpose=request.purpose, now=ranking_time)
+            kc_relevance=surviving_score, purpose=request.purpose, now=ranking_time)
     diagnostics["ranking_policy"] = RANKING_POLICY
     ordered = sorted(grouped.values(), key=knowledge_rank_key)
     results, seen_lineage = [], set()
@@ -355,6 +414,7 @@ async def search_published_knowledge(
         if lineage in seen_lineage:
             continue
         seen_lineage.add(lineage)
+        row["business_rank"] = len(results) + 1
         results.append(row)
         if len(results) >= request.max_results:
             break
@@ -363,7 +423,7 @@ async def search_published_knowledge(
 
 
 async def _published_catalog(
-    service, *, domain_id, agent_id, target_id, request, knowledge_base_ids, scope, budget,
+    service, *, domain_id, agent_id, target_id, request, knowledge_base_ids, scope, budget, agent_version_id,
 ):
     """直接列出发布资料；不检索正文、不调用模型，也不宣称正文检索已就绪。"""
     from aiops_agent.application.operations_knowledge import _catalog_topics_from_profile
@@ -394,8 +454,9 @@ async def _published_catalog(
         checked = await _current_knowledge_authorization(
             uow=uow, domain_id=domain_id, agent_id=agent_id, target_id=target_id, request=request,
         )
-        if isinstance(checked, str) or checked != (request, knowledge_base_ids):
+        if isinstance(checked, str) or checked != (request, knowledge_base_ids, agent_version_id):
             return {"status": "KNOWLEDGE_SCOPE_CHANGED", "results": [],
+                "coverage": retrieval_coverage(gaps=("KNOWLEDGE_SCOPE_CHANGED",)),
                 "warnings": ["读取期间 Agent 知识授权或范围已变化，请重新查询目录。"]}
         if not exhausted:
             remaining = await uow.operations_knowledge.list_published_catalog(
@@ -425,6 +486,7 @@ async def _published_catalog(
     return {"status": "READY" if results else "NO_APPLICABLE_KNOWLEDGE",
         "results": results, "warnings": warnings,
         "coverage": {"scanned_candidates": scanned, "candidate_budget": budget.max_candidates,
+            **retrieval_coverage(gaps=() if exhausted else ("CANDIDATE_BUDGET",), has_results=bool(results)),
             "registry_scope_complete": exhausted, "discovery_shards": 0, "evidence_batches": 0}}
 
 
@@ -462,4 +524,4 @@ async def _current_knowledge_authorization(*, uow, domain_id, agent_id, target_i
     return request.model_copy(update={
         "source_kinds": source_kinds, "knowledge_base_ids": bases, "tag_ids": tags,
         "max_security_level": min(request.max_security_level, int(policy.get("max_security_level") or 1)),
-    }), bases
+    }), bases, agent.current_version_id

@@ -1,5 +1,6 @@
 """AIOps 显式、单次提交的 Unit of Work。"""
 from aiops_agent.repositories.exadata import ExadataRepository
+from aiops_agent.repositories.data_protection import ProtectionPlanRepository
 
 from aiops_agent.repositories.knowledge_ingestion import KnowledgeIngestionRepository
 from aiops_agent.repositories.knowledge_documents import OperationsDocumentRepository
@@ -64,6 +65,7 @@ class AIOpsUnitOfWork:
 
         self.targets: TargetRepository | None = None
         self.recovery: RecoveryRepository | None = None
+        self.protection_plans: ProtectionPlanRepository | None = None
         self.business_systems: BusinessSystemRepository | None = None
         self.managed_credentials: ManagedCredentialRepository | None = None
         self.diagnostic_sources: DiagnosticSourceRepository | None = None
@@ -105,6 +107,7 @@ class AIOpsUnitOfWork:
         self.targets = TargetRepository(self.session, guard)
         self.exadata = ExadataRepository(self.session, guard)
         self.recovery = RecoveryRepository(self.session, guard)
+        self.protection_plans = ProtectionPlanRepository(self.session, guard)
         self.business_systems = BusinessSystemRepository(self.session, guard)
         self.managed_credentials = ManagedCredentialRepository(self.session)
         self.diagnostic_sources = DiagnosticSourceRepository(self.session, guard)
@@ -171,6 +174,7 @@ class AIOpsUnitOfWork:
             self.session = None
             self.targets = None
             self.recovery = None
+            self.protection_plans = None
             self.business_systems = None
             self.managed_credentials = None
             self.diagnostic_sources = None

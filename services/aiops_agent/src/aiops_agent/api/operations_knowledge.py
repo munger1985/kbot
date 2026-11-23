@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
@@ -18,9 +18,9 @@ from aiops_agent.application.report_case_output import submit_report_case
 from aiops_agent.contracts.knowledge import (
     DiagnosisClosureCommand,
     DiagnosisCaseDraft,
-    KnowledgeBaseWrite,
     KnowledgeBaseStatusCommand,
     KnowledgeReviewCommand,
+    ManualKnowledgeApproveCommand,
     KnowledgeSearchPreviewRequest,
     KnowledgeSearchRequest,
     KnowledgeTagStatusCommand,
@@ -28,6 +28,8 @@ from aiops_agent.contracts.knowledge import (
     ManualUploadMetadata,
 )
 from platform_core.contracts import AuthContext
+from platform_core.contracts.aiops.knowledge_base import KnowledgeBaseList, KnowledgeBaseView, KnowledgeBaseWrite
+from platform_core.contracts.aiops.knowledge_search import KnowledgeSearchResponse
 from platform_core.contracts.aiops.knowledge import KnowledgeReuseFeedback
 from platform_core.contracts.aiops.output_jobs import OutputJobReceipt
 from platform_core.contracts.aiops.case_collection import CaseCollectionModels
@@ -42,12 +44,9 @@ _MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 _MAX_UPLOAD_FILES = 20
 
 
-class CollectionModelsPayload(BaseModel):
-    models: dict[str, UUID]
-
 
 class KnowledgeBaseDeletePayload(BaseModel):
-    expected_row_version: int
+    expected_row_version: int = Field(ge=1)
 
 
 class KnowledgeAssetDeletePayload(BaseModel):
@@ -55,7 +54,7 @@ class KnowledgeAssetDeletePayload(BaseModel):
     purge_source_objects: bool = False
 
 
-@router.get("/knowledge-bases")
+@router.get("/knowledge-bases", response_model=KnowledgeBaseList)
 async def list_knowledge_bases(
     request: Request,
     include_archived: bool = False,
@@ -67,7 +66,7 @@ async def list_knowledge_bases(
     )}
 
 
-@router.post("/knowledge-bases", status_code=201)
+@router.post("/knowledge-bases", status_code=201, response_model=KnowledgeBaseView)
 async def create_knowledge_base(
     payload: KnowledgeBaseWrite,
     request: Request,
@@ -78,7 +77,7 @@ async def create_knowledge_base(
         domain_id=domain_id, command=payload, context=context,
     )
 
-@router.get("/knowledge-bases/{knowledge_base_id}")
+@router.get("/knowledge-bases/{knowledge_base_id}", response_model=KnowledgeBaseView)
 async def get_knowledge_base(
     knowledge_base_id: UUID,
     request: Request,
@@ -90,7 +89,7 @@ async def get_knowledge_base(
     )
 
 
-@router.put("/knowledge-bases/{knowledge_base_id}")
+@router.put("/knowledge-bases/{knowledge_base_id}", response_model=KnowledgeBaseView)
 async def update_knowledge_base(
     knowledge_base_id: UUID,
     payload: KnowledgeBaseWrite,
@@ -106,7 +105,7 @@ async def update_knowledge_base(
     )
 
 
-@router.post("/knowledge-bases/{knowledge_base_id}:enable")
+@router.post("/knowledge-bases/{knowledge_base_id}:enable", response_model=KnowledgeBaseView)
 async def enable_knowledge_base(
     knowledge_base_id: UUID, payload: KnowledgeBaseStatusCommand, request: Request,
     context: AuthContext = Depends(get_aiops_auth_context),
@@ -118,7 +117,7 @@ async def enable_knowledge_base(
     )
 
 
-@router.post("/knowledge-bases/{knowledge_base_id}:disable")
+@router.post("/knowledge-bases/{knowledge_base_id}:disable", response_model=KnowledgeBaseView)
 async def disable_knowledge_base(
     knowledge_base_id: UUID, payload: KnowledgeBaseStatusCommand, request: Request,
     context: AuthContext = Depends(get_aiops_auth_context),
@@ -242,31 +241,6 @@ async def configure_case_collection_models(payload: CaseCollectionModels, reques
         domain_id=domain_id, models=payload.models, context=context)
 
 
-@router.get("/knowledge-bases/{knowledge_base_id}/models")
-async def get_collection_models(
-    knowledge_base_id: UUID,
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    domain_id, _ = _scope(request, context)
-    return await request.app.state.operations_knowledge_service.get_collection_models(
-        domain_id=domain_id, knowledge_base_id=knowledge_base_id, context=context,
-    )
-
-
-@router.put("/knowledge-bases/{knowledge_base_id}/models")
-async def configure_collection_models(
-    knowledge_base_id: UUID,
-    payload: CollectionModelsPayload,
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    domain_id, _ = _scope(request, context)
-    return await request.app.state.operations_knowledge_service.configure_collections(
-        domain_id=domain_id, knowledge_base_id=knowledge_base_id,
-        models=payload.models, context=context,
-    )
-
 
 @router.get("/tags")
 async def list_tags(request: Request, include_disabled: bool = True,
@@ -367,9 +341,13 @@ async def get_version(
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
     domain_id, _ = _scope(request, context)
-    return await request.app.state.operations_knowledge_service.get_version(
+    service = request.app.state.operations_knowledge_service
+    detail = await service.get_version(
         domain_id=domain_id, asset_version_id=asset_version_id
     )
+    if detail.get("asset", {}).get("asset_kind") == "MANUAL" and detail.get("version", {}).get("status") == "REVIEW_REQUIRED":
+        detail["parse_strategy_options"] = await service.manual_parse_options(domain_id=domain_id, detail=detail, context=context)
+    return detail
 
 
 @router.get("/versions/{asset_version_id}/preview")
@@ -429,8 +407,8 @@ async def ingest_upload(
     try:
         knowledge_base_id = UUID(str(form.get("knowledge_base_id", "")))
         grouping_mode = str(form.get("grouping_mode", "EACH_FILE")).upper()
-        if grouping_mode not in {"EACH_FILE", "SINGLE_ASSET"}:
-            raise ValueError("资料组织方式必须是 EACH_FILE 或 SINGLE_ASSET")
+        if grouping_mode != "EACH_FILE":
+            raise ValueError("只支持独立文件上传，不支持将多个文件合并为一份资料")
         raw_declarations = json.loads(str(form.get("files", "[]")))
         raw_metadata = json.loads(str(form.get("metadata", "{}")))
         if not isinstance(raw_declarations, list) or not raw_declarations:
@@ -442,7 +420,7 @@ async def ingest_upload(
         total_bytes = 0
         part_names: set[str] = set()
         client_file_ids: set[str] = set()
-        for ordinal, declaration in enumerate(raw_declarations):
+        for declaration in raw_declarations:
             if not isinstance(declaration, dict):
                 raise ValueError("文件声明格式无效")
             part_name = str(declaration.get("part_name", "")).strip()
@@ -467,9 +445,6 @@ async def ingest_upload(
             declared_size = declaration.get("byte_size")
             if not isinstance(declared_size, int) or declared_size != len(body):
                 raise ValueError(f"文件 {upload.filename or part_name} 的大小声明不一致")
-            role = str(declaration.get("role", "CONTENT")).upper()
-            if role not in {"CONTENT", "SUPPLEMENT"}:
-                raise ValueError("文件角色必须是 CONTENT 或 SUPPLEMENT")
             display_name = str(
                 declaration.get("display_name") or upload.filename or part_name
             ).strip()
@@ -486,14 +461,7 @@ async def ingest_upload(
                 ),
                 "body": body,
                 "content_sha256": digest,
-                "ordinal": ordinal,
-                "role": role,
-                "required_flag": bool(declaration.get("required_flag", False)),
             })
-        if grouping_mode == "SINGLE_ASSET" and not any(
-            document["role"] == "CONTENT" for document in documents
-        ):
-            raise ValueError("多文件资料至少需要一个正文文件")
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         raise HTTPException(
             422,
@@ -650,7 +618,7 @@ async def submit_case_review(asset_version_id: UUID, payload: KnowledgeReviewCom
 
 
 @router.post("/versions/{asset_version_id}:approve")
-async def approve_version(asset_version_id: UUID, payload: KnowledgeReviewCommand,
+async def approve_version(asset_version_id: UUID, payload: ManualKnowledgeApproveCommand,
                           request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.approve_manual(
@@ -658,6 +626,7 @@ async def approve_version(asset_version_id: UUID, payload: KnowledgeReviewComman
         asset_version_id=asset_version_id,
         expected_row_version=payload.expected_row_version,
         comment=payload.comment,
+        parse_strategy=payload.parse_strategy,
         context=context,
     )
 
@@ -695,7 +664,7 @@ async def list_reviews(
     )}
 
 
-@router.post(":search")
+@router.post(":search", response_model=KnowledgeSearchResponse)
 async def search(
     payload: KnowledgeSearchPreviewRequest,
     request: Request,

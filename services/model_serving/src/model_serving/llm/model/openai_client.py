@@ -9,6 +9,8 @@ from openai.types.chat import (
     ChatCompletionMessageParam
 )
 from .base import LLMConfig, BaseLLM
+from .oci_client import resolve_oci_chat_profile
+from platform_core.dictionary import LLMProvider
 
 
 class OpenaiLLMConfig(LLMConfig):
@@ -174,6 +176,15 @@ class OpenaiClient(BaseLLM[OpenaiLLMConfig]):
         
         # Filter out None values to use API defaults
         api_params = {k: v for k, v in base_params.items() if v is not None}
+        if self.config.provider == LLMProvider.OCI.value:
+            profile = resolve_oci_chat_profile(self.config.model_name)
+            tokens = api_params.pop("max_tokens")
+            api_params[profile.output_token_field] = (
+                min(tokens, profile.output_token_cap) if profile.output_token_cap else tokens
+            )
+            for name in ("temperature", "top_p", "frequency_penalty", "presence_penalty"):
+                if name not in profile.supported_sampling_params:
+                    api_params.pop(name, None)
         
         # Remove penalty parameters at neutral (0.0) values — some models (e.g.
         # Grok, Claude) reject these parameters entirely, and 0.0 means "no

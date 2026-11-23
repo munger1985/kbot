@@ -6,6 +6,7 @@ from loguru import logger
 from transformers import AutoModel, AutoTokenizer
 
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse
+from ...common.local_embedding_templates import bge_embedding_text
 
 class BGEEmbeddingConfig(EmbeddingConfig):
     """BGE Embedding official adaptation configuration"""
@@ -89,7 +90,7 @@ class BGEEmbedding(BaseEmbedding[BGEEmbeddingConfig]):
 
         # 1. Preprocess texts
         processed_texts = [
-            f"{self.config.query_instruction}{t}" if is_query and self.config.query_instruction else t 
+            bge_embedding_text(t, is_query=is_query, instruction=self.config.query_instruction)
             for t in texts
         ]
 

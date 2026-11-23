@@ -4,41 +4,83 @@
   const shell = globalThis.KBotAIOpsShell;
   let rows = [];
   let editing = null;
+  let confirmingCreate = false;
   let modelCatalog = [];
+  let editorGeneration = 0;
+  const indexFields = [["embedding", 2, "不配置文本 Embedding"], ["visual_embedding", 3, "不配置视觉 Embedding"]];
+  const modelFields = [["tagging_model_id", 1, "不配置标签模型"], ["ocr", 6, "不配置 OCR"], ["vlm", 5, "不配置 VLM"], ...indexFields];
   let saving = false;
-  const modelRoles = {
-    parser_ocr: [6, "请选择 OCR 模型"],
-    parser_vlm: [5, "不启用视觉解析"],
-    parser_llm: [1, "请选择 LLM 解析模型"],
-    retrieval_llm: [1, "请选择检索规划模型"],
-    embedding: [2, "请选择文本向量模型"],
-    visual_embedding: [3, "不启用视觉向量"],
-  };
+  const capabilityLabels = { NOT_ENABLED: "未启用", PENDING_VERIFICATION: "已配置待验证", AVAILABLE: "可用", DEGRADED: "异常" };
+  const indexLabels = { EMPTY: "暂无资料", NOT_READY: "索引待就绪", PARTIAL: "部分资料已就绪", READY: "索引就绪", ERROR: "索引异常" };
+  const directionLabels = { TEXT_TO_TEXT: "文本搜文本", TEXT_TO_IMAGE: "文本搜图", IMAGE_TO_TEXT: "图搜文本", IMAGE_TO_IMAGE: "图搜图" };
+  const taggingLabel = (state) => capabilityLabels[state] || "未配置";
+  const blockerLabels = { ASSET_RECORDS: "仍有运维资料", CURRENT_AGENT_VERSION: "仍被当前 Agent 版本引用", HISTORICAL_AGENT_VERSION: "仍被历史 Agent 版本引用" };
+  const blockerReason = (row) => (row.blockers || []).map(code => blockerLabels[code] || "仍有保留依赖").join("；");
 
   async function loadModelCatalog() {
-    if (!modelCatalog.length) {
-      const catalog = await KBotAIOpsAuth.request("/api/v1/model-catalog");
-      modelCatalog = Array.isArray(catalog) ? catalog : [];
-    }
+    const catalog = await KBotAIOpsAuth.request("/api/v1/model-catalog");
+    return Array.isArray(catalog) ? catalog : [];
   }
-  function fillModelSelect(form, role, selected = "") {
-    const [category, emptyLabel] = modelRoles[role];
-    const options = modelCatalog
-      .filter((item) => Number(item.category) === category)
-      .map((item) => `<option value="${shell.escape(item.model_id)}" ${String(item.model_id) === String(selected) ? "selected" : ""}>${shell.escape(item.display_name)} · ${shell.escape(item.provider)}</option>`)
-      .join("");
-    const selectionAvailable = !selected || modelCatalog.some((item) => String(item.model_id) === String(selected) && Number(item.category) === category);
-    const missing = selectionAvailable ? "" : `<option value="${shell.escape(selected)}" selected disabled>当前绑定模型已不可用</option>`;
-    form.elements[role].innerHTML = `${missing}<option value="">${shell.escape(emptyLabel)}</option>${options}`;
+  function fillModelSelect(form, [name, category, emptyLabel], selected = "", catalogReady = false) {
+    const select = form.elements[name];
+    const models = modelCatalog.filter(item => Number(item.category) === category);
+    select.replaceChildren(new Option(emptyLabel, ""));
+    if (selected && !models.some((item) => String(item.model_id) === selected)) {
+      select.add(new Option(catalogReady ? "当前绑定不在可选目录" : "保留当前绑定", selected));
+    }
+    for (const item of models) {
+      const direction = name === "visual_embedding" ? globalThis.KBotKnowledgeCapabilitiesReview.textToImageLabel(item) : "";
+      select.add(new Option([item.display_name, item.provider, direction].filter(Boolean).join(" · "), item.model_id));
+    }
+    select.value = selected;
+  }
+  function renderCapabilities(row) {
+    const element = document.getElementById("knowledge-base-capabilities");
+    const caps = row?.capabilities;
+    if (!caps) {
+      element.textContent = row ? "能力状态暂不可用。" : "保存知识库后可查看当前实际能力。";
+      return;
+    }
+    const items = [["原生文档解析", capabilityLabels[caps.native_parse]], ["OCR 补强", capabilityLabels[caps.ocr]],
+      ["视觉补强", capabilityLabels[caps.visual_enrichment]], ["词法检索", capabilityLabels[caps.lexical]],
+      ["索引覆盖", indexLabels[row.index?.state]]];
+    for (const { direction, state } of caps.semantic_directions || []) {
+      items.push([directionLabels[direction] || "语义检索", capabilityLabels[state]]);
+    }
+    element.replaceChildren(...items.map(([name, value]) => {
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.textContent = name;
+      dd.textContent = value || "状态未知";
+      const item = document.createElement("div");
+      item.append(dt, dd);
+      return item;
+    }));
   }
   function updateSaveState() {
     const form = document.getElementById("knowledge-base-form");
-    const validModels = Object.entries(modelRoles).every(([role, [category]]) => {
-      const selected = form.elements[role].value;
-      return !form.elements[role].required && !selected || modelCatalog.some(item => String(item.model_id) === selected && Number(item.category) === category);
-    });
-    document.getElementById("save-knowledge-base").disabled = saving || !form.elements.display_name.value.trim() || !validModels;
+    document.getElementById("save-knowledge-base").disabled = saving || !form.elements.display_name.value.trim();
     document.querySelectorAll('#knowledge-base-dialog [data-close]').forEach(button => { button.disabled = saving; });
+    document.getElementById("back-knowledge-base").disabled = saving;
+  }
+
+  function showStep(reviewing) {
+    confirmingCreate = reviewing;
+    const form = document.getElementById("knowledge-base-form");
+    form.querySelectorAll(":scope > .drawer-form-section").forEach(section => { section.hidden = reviewing; });
+    const preview = document.getElementById("knowledge-base-review");
+    preview.hidden = !reviewing;
+    preview.innerHTML = reviewing ? globalThis.KBotKnowledgeCapabilitiesReview.render(
+      form.elements.display_name.value.trim(),
+      { embedding: form.elements.embedding.value, visual_embedding: form.elements.visual_embedding.value },
+      { ocr: form.elements.ocr.value, vlm: form.elements.vlm.value }, modelCatalog, shell.escape) : "";
+    document.getElementById("knowledge-base-editor-step").textContent = editing ? "修改知识库的基本信息与模型。"
+      : reviewing ? "第 2 步，共 2 步 · 确认检索能力" : "第 1 步，共 2 步 · 填写信息与选择模型";
+    document.getElementById("cancel-knowledge-base").hidden = reviewing;
+    document.getElementById("back-knowledge-base").hidden = !reviewing;
+    document.getElementById("save-knowledge-base").textContent = editing ? "保存知识库" : reviewing ? "确认创建" : "下一步";
+    document.getElementById("knowledge-base-result").hidden = true;
+    if (reviewing) preview.querySelector("[data-knowledge-capability-title]").focus();
+    else if (form.closest("dialog").open) document.getElementById("save-knowledge-base").focus();
   }
 
   function render() {
@@ -47,16 +89,18 @@
     const visible = rows.filter((item) => !keyword || [item.display_name, item.description, item.knowledge_base_id].some((value) => String(value || "").toLocaleLowerCase().includes(keyword)));
     document.getElementById("knowledge-base-count").textContent = `${visible.length} 项`;
     const cards = visible.map((item) => {
-      const usage = Number(item.usage?.assets || 0) + Number(item.usage?.agent_versions || 0);
+      const reason = blockerReason(item);
+      const dependentLinks = (item.blockers || []).includes("ASSET_RECORDS") ? '<a class="row-action" href="./operations-knowledge.html">查看运维资料库</a>' : "";
+      const agentLink = (item.blockers || []).some(code => code === "CURRENT_AGENT_VERSION" || code === "HISTORICAL_AGENT_VERSION") ? '<a class="row-action" href="./agents.html">查看 Agent 管理</a>' : "";
       return `<article class="management-catalog-card knowledge-base-card${item.status === 'ACTIVE' ? '' : ' is-disabled'}">
         <header><div><p class="eyebrow">运维知识库</p><h3 title="${shell.escape(item.display_name)}">${shell.escape(item.display_name)}</h3></div><span class="status-pill ${item.status === 'ACTIVE' ? 'status-success' : 'status-muted'}">${item.status === 'ACTIVE' ? '启用' : '停用'}</span></header>
         <div class="aiops-catalog-card-body">
           <p class="knowledge-base-description" title="${shell.escape(item.description || "暂无说明")}">${shell.escape(item.description || "暂无说明")}</p>
           <small class="technical-meta knowledge-base-id" title="${shell.escape(item.knowledge_base_id)}">${shell.escape(item.knowledge_base_id)}</small>
-          <dl><div><dt>运维资料</dt><dd>${Number(item.usage?.assets || 0)} 份</dd></div><div><dt>Agent 版本引用</dt><dd>${Number(item.usage?.agent_versions || 0)} 个</dd></div></dl>
+          <dl><div><dt>运维资料</dt><dd>${Number(item.usage?.assets || 0)} 份</dd></div><div><dt>Agent 版本引用</dt><dd>当前 ${Number(item.usage?.current_agent_versions || 0)} · 历史 ${Number(item.usage?.historical_agent_versions || 0)}</dd></div></dl>
           <p class="knowledge-base-updated">更新于 <time datetime="${shell.escape(item.updated_at)}">${shell.escape(shell.fmt(item.updated_at))}</time></p>
         </div>
-        <footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions"><button class="row-action" type="button" data-edit="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>编辑</button><button class="row-action" type="button" data-toggle-status="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>${item.status === 'ACTIVE' ? '停用' : '启用'}</button></div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" type="button" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden><button class="danger-row-action" type="button" data-delete="${shell.escape(item.knowledge_base_id)}" ${saving || usage ? 'disabled' : ''} title="${usage ? '仍有资料或 Agent 引用' : '删除知识库'}">删除</button></div></div></footer>
+        <footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions"><button class="row-action" type="button" data-edit="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>编辑</button><button class="row-action" type="button" data-toggle-status="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>${item.status === 'ACTIVE' ? '停用' : '启用'}</button></div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" type="button" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden><button class="danger-row-action" type="button" data-delete="${shell.escape(item.knowledge_base_id)}" ${saving || reason ? 'disabled' : ''} title="${shell.escape(reason || '删除知识库')}">删除</button>${reason ? `<small>${shell.escape(reason)}</small>` : ""}${dependentLinks}${agentLink}</div></div></footer>
       </article>`;
     }).join("");
     body.innerHTML = `<div class="management-catalog-grid"><button id="create-knowledge-base" class="management-catalog-add-card" type="button"><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新建知识库</strong><small>为运维资料创建独立的知识索引空间</small></button>${cards}</div>${visible.length ? '' : `<p class="empty-cell" role="status">${keyword ? '没有匹配的知识库，请调整搜索条件。' : '当前 Domain 还没有运维知识库。'}</p>`}`;
@@ -71,41 +115,67 @@
     finally { render(); body.setAttribute("aria-busy", "false"); refresh.disabled = false; refresh.textContent = "刷新"; }
   }
   async function open(row = null) {
+    const generation = ++editorGeneration;
     editing = row;
+    const dialog = document.getElementById("knowledge-base-dialog");
     const form = document.getElementById("knowledge-base-form"); form.reset();
-    const configured = row
-      ? await Promise.all([
-        loadModelCatalog(),
-        KBotAIOpsAuth.request(`${api}/${encodeURIComponent(row.knowledge_base_id)}/models`),
-      ]).then(([, result]) => result)
-      : await loadModelCatalog().then(() => ({ models: {} }));
-    form.elements.display_name.value = row?.display_name || ""; form.elements.description.value = row?.description || "";
-    Object.keys(modelRoles).forEach((role) => fillModelSelect(form, role, configured.models?.[role] || ""));
+    form.elements.display_name.value = row?.display_name || "";
+    form.elements.description.value = row?.description || "";
+    modelCatalog = [];
+    for (const field of modelFields) fillModelSelect(form, field, (field[0] === "tagging_model_id" ? row?.tagging?.model_id : (row?.parse_models?.[field[0]] || row?.index_models?.[field[0]])) || "");
+    renderCapabilities(row);
+    const hint = document.getElementById("knowledge-base-tagging-hint");
+    const status = row ? "当前状态：" + taggingLabel(row.tagging?.state) + "。" : "";
+    hint.textContent = status + "可先上传资料；审批开始标签处理前需要有效模型和标签词表。";
     document.getElementById("knowledge-base-dialog-title").textContent = row ? "编辑运维知识库" : "新建运维知识库";
-    document.getElementById("save-knowledge-base").textContent = "保存知识库";
+    showStep(false);
     document.getElementById("knowledge-base-result").textContent = "";
     document.getElementById("knowledge-base-result").hidden = true;
     updateSaveState();
-    document.getElementById("knowledge-base-dialog").showModal();
+    dialog.showModal();
+    try {
+      const models = await loadModelCatalog();
+      if (dialog.open && editorGeneration === generation) {
+        modelCatalog = models;
+        for (const field of modelFields) fillModelSelect(form, field, form.elements[field[0]].value, true);
+      }
+    } catch (error) {
+      if (dialog.open && editorGeneration === generation) hint.textContent += " 模型目录暂不可用，仍可保存基本信息。";
+    }
   }
+
   async function save(event) {
     event.preventDefault(); const form = event.currentTarget;
     updateSaveState();
     if (saving || document.getElementById("save-knowledge-base").disabled) return;
+    if (!editing && !confirmingCreate) return showStep(true);
     saving = true;
     updateSaveState();
-    const models = Object.fromEntries(Object.keys(modelRoles)
-      .map((role) => [role, form.elements[role].value])
-      .filter(([, value]) => Boolean(value)));
-    const payload = { display_name: form.elements.display_name.value.trim(), description: form.elements.description.value.trim() || null, models };
+    const selectedModel = form.elements.tagging_model_id.value || null;
+    const payload = { display_name: form.elements.display_name.value.trim(), description: form.elements.description.value.trim() || null };
+    if (selectedModel !== (editing?.tagging?.model_id || null)) payload.tagging_model_id = selectedModel;
+    const parseModels = { ocr: form.elements.ocr.value || null, vlm: form.elements.vlm.value || null };
+    if (Object.entries(parseModels).some(([role, value]) => value !== (editing?.parse_models?.[role] || null))) payload.parse_models = parseModels;
+    const indexModels = Object.fromEntries(indexFields.map(([role]) => [role, form.elements[role].value || null]));
+    if (Object.entries(indexModels).some(([role, value]) => value !== (editing?.index_models?.[role] || null))) payload.index_models = indexModels;
     if (editing) payload.expected_row_version = editing.row_version;
     try { await KBotAIOpsAuth.request(editing ? `${api}/${encodeURIComponent(editing.knowledge_base_id)}` : api, { method: editing ? "PUT" : "POST", body: JSON.stringify(payload) }); document.getElementById("knowledge-base-dialog").close(); shell.toast(editing ? "知识库已更新" : "知识库已创建"); await load(); }
     catch (error) { document.getElementById("knowledge-base-result").textContent = error.message; document.getElementById("knowledge-base-result").hidden = false; }
-    finally { saving = false; updateSaveState(); }
+    finally { saving = false; updateSaveState(); render(); }
   }
   async function remove(row) {
-    if (!await shell.confirmAction({ title: "删除知识库？", message: `确认删除知识库“${row.display_name}”？只有无资料且未被统一 Agent 引用的知识库可以删除。`, confirmLabel: "删除知识库", tone: "danger" })) return;
-    try { await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(row.knowledge_base_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${row.row_version}"` } }); shell.toast("知识库已删除"); await load(); } catch (error) { shell.toast(error.message); }
+    if (saving || blockerReason(row)) return;
+    if (!await shell.confirmAction({ title: "删除知识库？", message: `确认删除知识库“${row.display_name}”？只有没有资料且不被任何当前或历史 Agent 版本引用的知识库可以删除。`, confirmLabel: "删除知识库", tone: "danger" })) return;
+    if (saving) return;
+    saving = true;
+    render();
+    try { await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(row.knowledge_base_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${row.row_version}"` } }); shell.toast("知识库已删除"); await load(); }
+    catch (error) {
+      if ([409, 412].includes(error.status)) {
+        await load().catch(refreshError => shell.toast(refreshError.message));
+        shell.toast(error.status === 409 ? "知识库仍有引用，未删除，请查看当前阻塞原因。" : "知识库版本已变化，未删除，请重新确认。");
+      } else shell.toast(error.message);
+    } finally { saving = false; render(); }
   }
   async function toggleStatus(row) {
     if (saving) return;
@@ -132,6 +202,7 @@
     document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
     document.getElementById("knowledge-base-form").onsubmit = save;
     document.getElementById("knowledge-base-form").oninput = updateSaveState;
+    document.getElementById("back-knowledge-base").onclick = () => showStep(false);
     document.getElementById("knowledge-base-dialog").addEventListener("cancel", event => { if (saving) event.preventDefault(); });
     document.addEventListener('pointerdown', event => { if (!event.target.closest('#knowledge-base-list .management-catalog-overflow')) closeMenus(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenus(); });

@@ -198,19 +198,24 @@ class KnowledgeCitationHandler:
                     max_results=8,
                 ),
             )
-            citations = tuple(
-                citation
-                for item in result.get("results", ())
-                for citation in item.get("citation_pack", ())
-            )
+            from aiops_agent.application.knowledge_evidence import coverage_gap_code, coverage_summary
+            coverage = coverage_summary(result)
+            citations = tuple({
+                **group["primary"], "title": item["title"], "asset_version_id": item["asset_version_id"],
+                "asset_kind": item["asset_kind"], "historical_reference": True,
+                "related": group["related"], "relation_gaps": group["relation_gaps"],
+            } for item in result.get("results", ()) for group in item.get("evidence_groups", ()))
             return KnowledgeCitationPack(
                 query=query,
                 citations=citations,
+                gap_code=coverage_gap_code(coverage),
+                knowledge_coverage=coverage,
             )
         except Exception:
             return KnowledgeCitationPack(
                 query=query,
                 gap_code="OPERATIONS_KNOWLEDGE_UNAVAILABLE",
+                knowledge_coverage={"retrieval_conclusion": "NOT_VERIFIED", "coverage": {"scope": "NOT_VERIFIED"}},
             )
 
 

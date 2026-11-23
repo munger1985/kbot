@@ -545,17 +545,55 @@ class AIOpsAgentRepository:
 
     async def knowledge_model_references(self, *, model_id: UUID):
         """手册库与案例配置使用本 App 模型目录引用检查。"""
-        from ..entities.knowledge import OperationsKnowledgeBaseEntity
+        from ..entities.knowledge import (
+            OperationsKnowledgeAssetEntity, OperationsKnowledgeBaseEntity, OperationsKnowledgeIndexEntity,
+            OperationsKnowledgeVersionEntity,
+        )
+        from ..entities.knowledge_document_version import KnowledgeDocumentVersionEntity as DocumentVersion
+        from ..entities.knowledge_index_generation import KnowledgeIndexGenerationEntity as Generation
         from ..entities.knowledge_configuration import OperationsKnowledgeConfigurationEntity
         bases = (await self._session.scalars(select(OperationsKnowledgeBaseEntity))).all()
         configurations = (await self._session.scalars(select(OperationsKnowledgeConfigurationEntity))).all()
         refs = []
         for row in bases:
-            for role, value in row.configuration_json.get("models", {}).items():
+            configuration = row.configuration_json or {}
+            bindings = {"tagging_model": (configuration.get("models") or {}).get("parser_llm"),
+                        **(configuration.get("parse_models") or {}), **(configuration.get("index_models") or {})}
+            for role, value in bindings.items():
                 if str(value) == str(model_id):
                     refs.append({"service": "aiops-agent", "resource_type": "operations_knowledge_base",
-                        "resource_id": str(row.knowledge_base_id), "usage": role, "binding_role": role,
-                        "display_name": row.display_name, "status": row.status, "domain_id": str(row.domain_id)})
+                        "resource_id": str(row.knowledge_base_id), "usage": role,
+                        "binding_role": role, "display_name": row.display_name,
+                        "status": row.status, "domain_id": str(row.domain_id)})
+        asset, version, index = OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity, OperationsKnowledgeIndexEntity
+        tagging = (await self._session.execute(
+            select(version, asset.display_name, asset.domain_id).join(asset, asset.asset_id == version.asset_id)
+            .where(asset.asset_kind == "MANUAL", version.status.in_(("TAGGING", "TAGGING_FAILED")))
+        )).all()
+        for row, name, domain_id in tagging:
+            spec = (row.tag_analysis_json or {}).get("execution_spec") or {}
+            if str(spec.get("model", {}).get("model_id")) == str(model_id):
+                refs.append({"service": "aiops-agent", "resource_type": "operations_knowledge_tagging_task",
+                    "resource_id": str(row.asset_version_id), "usage": "tagging_model",
+                    "binding_role": "tagging_model", "display_name": name,
+                    "status": row.status, "domain_id": str(domain_id)})
+        generations = (await self._session.execute(
+            select(Generation, asset.display_name).select_from(asset)
+            .join(index, index.asset_version_id == asset.current_version_id)
+            .join(DocumentVersion, DocumentVersion.document_version_id == index.document_version_id)
+            .join(Generation, Generation.index_generation_id == DocumentVersion.active_generation_id)
+            .where(asset.status == "PUBLISHED", DocumentVersion.status == "PUBLISHED",
+                   index.index_status == "READY", Generation.status == "READY",
+                   Generation.index_generation_id == index.index_generation_id,
+                   DocumentVersion.domain_id == asset.domain_id, Generation.domain_id == asset.domain_id)
+        )).all()
+        for row, name in generations:
+            specs = (row.manifest_json or {}).get("profile", {}).get("representations", [])
+            if any(str(spec.get("model_ref")) == str(model_id) for spec in specs):
+                refs.append({"service": "aiops-agent", "resource_type": "operations_knowledge_generation",
+                    "resource_id": str(row.index_generation_id), "usage": "representation",
+                    "binding_role": "representation", "display_name": name,
+                    "status": row.status, "domain_id": str(row.domain_id)})
         for row in configurations:
             for role, value in row.models_json.items():
                 if str(value) == str(model_id):

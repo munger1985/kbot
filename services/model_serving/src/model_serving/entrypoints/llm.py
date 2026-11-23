@@ -31,6 +31,7 @@ from platform_core.database.oracle import create_database_runtime
 from platform_core.dictionary import LLMProvider
 from model_serving.llm.llm_service import LLMService
 from model_serving.llm.model.oci_client import extract_oci_text_content
+from model_serving.llm.model import OpenaiLLMConfig
 from model_serving.llm.schema import *
 from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
@@ -150,7 +151,9 @@ app.middleware("http")(
     )
 )
 app.middleware("http")(create_api_client_auth_middleware())
-app.include_router(create_model_management_router(category=ModelCategory.LLM.value))
+app.include_router(create_model_management_router(
+    category=ModelCategory.LLM.value, probe_service=lambda _: llm_service,
+))
 app.include_router(create_openai_models_router(category=ModelCategory.LLM.value))
 app.include_router(create_responses_router())
 
@@ -200,7 +203,7 @@ async def handle_chat_completions(
     created_ts = int(time.time())
 
     # Load model first (triggers async loading if model is not loaded)
-    model = await service.get_llm_model(request.served_model_name)
+    model = await service.get_llm_model(request.model_id)
     provider = model.config.provider
 
     # 请求未指定输出上限时，统一使用当前模型目录配置。
@@ -213,7 +216,7 @@ async def handle_chat_completions(
             async def sse_generator():
                 try:
                     stream_iter = await service.chat(
-                        served_model_name=request.served_model_name,
+                        model_id=request.model_id,
                         messages=request.messages,
                         stream=True,
                         max_tokens=current_max_tokens,
@@ -231,7 +234,7 @@ async def handle_chat_completions(
                         # Unified serialization for different Provider Chunks
                         if hasattr(chunk, "model_dump"):
                             payload = chunk.model_dump()
-                            payload["model"] = request.served_model_name
+                            payload["model"] = str(request.model_id)
                             data = json.dumps(payload, ensure_ascii=False)
                         elif isinstance(chunk, dict):
                             # Check if it's OCI native format and convert to OpenAI format
@@ -252,7 +255,7 @@ async def handle_chat_completions(
                                     "id": resp_id,
                                     "object": "chat.completion.chunk",
                                     "created": created_ts,
-                                    "model": request.served_model_name,
+                                    "model": str(request.model_id),
                                     "choices": [
                                         {
                                             "index": 0,
@@ -267,7 +270,7 @@ async def handle_chat_completions(
                                 if str(payload.get("object", "")).startswith(
                                     "chat.completion"
                                 ):
-                                    payload["model"] = request.served_model_name
+                                    payload["model"] = str(request.model_id)
                                 data = json.dumps(payload, ensure_ascii=False)
                         else:
                             data = str(chunk)
@@ -288,7 +291,7 @@ async def handle_chat_completions(
 
         # --- Non-streaming response logic ---
         raw_resp = await service.chat(
-            served_model_name=request.served_model_name,
+            model_id=request.model_id,
             messages=request.messages,
             stream=False,
             max_tokens=current_max_tokens,
@@ -300,7 +303,7 @@ async def handle_chat_completions(
         )
 
         proc_time = time.time() - start_time
-        logger.info(f"请求处理完成 | 模型：{request.served_model_name} | 耗时：{proc_time:.2f}s")
+        logger.info(f"请求处理完成 | 模型：{request.model_id} | 耗时：{proc_time:.2f}s")
 
         # Parse results from different Providers
         content: str | None = None
@@ -317,12 +320,13 @@ async def handle_chat_completions(
 
         logger.debug(f"开始解析响应 | Provider：{provider} | 原始响应类型：{type(raw_resp)}")
 
-        if provider in openai_family:
+        if provider in openai_family or isinstance(model.config, OpenaiLLMConfig):
             try:
                 msg = raw_resp.choices[0].message # type: ignore
                 content = msg.content
                 logger.debug(f"OpenAI 响应内容长度：{len(content) if content else 0}")
-                usage = raw_resp.usage if isinstance(raw_resp.usage, dict) else raw_resp.usage.model_dump() # type: ignore
+                if raw_resp.usage is not None:
+                    usage = raw_resp.usage if isinstance(raw_resp.usage, dict) else raw_resp.usage.model_dump()
 
                 if hasattr(msg, 'tool_calls') and msg.tool_calls:
                     for tc in msg.tool_calls:
@@ -384,7 +388,7 @@ async def handle_chat_completions(
             id=resp_id,
             object="chat.completion",
             created=created_ts,
-            model=request.served_model_name,
+            model=str(request.model_id),
             choices=[{
                 "message": response_message,
                 "finish_reason": "tool_calls" if tool_calls else "stop",
@@ -409,7 +413,7 @@ async def openai_chat_completions(
     request: OpenAIChatRequest,
     service: LLMService = Depends(get_llm_service),
 ):
-    """把 OpenAI 的 model 字段解析为 served_model_name。"""
+    """OpenAI 兼容请求的 model 字段使用模型 UUID。"""
     try:
         result = await handle_chat_completions(request.to_internal(), service)
     except HTTPException as exc:

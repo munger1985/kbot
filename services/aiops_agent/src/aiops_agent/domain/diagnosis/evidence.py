@@ -148,7 +148,8 @@ def normalize_evidence_artifacts(
                 gaps.append(
                     {
                         "code": payload["gap_code"],
-                        "detail": "Knowledge Core SOP 证据本次不可用",
+                        "detail": "运维知识检索覆盖或排序有限，不代表没有匹配资料",
+                        "knowledge_coverage": payload.get("knowledge_coverage", {}),
                         "retryable": True,
                     }
                 )
@@ -166,7 +167,7 @@ def normalize_evidence_artifacts(
                     )
                     if text:
                         summary_parts.append(str(text)[:400])
-                summary = "；".join(summary_parts) or "知识库引用"
+                summary = str(citation.get("quote") or "；".join(summary_parts) or "知识库引用")
                 pointer = f"/citations/{citation_index}"
                 facts.append(
                     EvidenceFact(
@@ -190,6 +191,12 @@ def normalize_evidence_artifacts(
                                 "citation_label"
                             ),
                             "bundle_id": citation.get("bundle_id"),
+                            "usage": "REFERENCE_ONLY_NOT_CURRENT_OBSERVATION",
+                            "asset_version_id": citation.get("asset_version_id"),
+                            "document_version_id": citation.get("document_version_id"),
+                            "parse_run_id": citation.get("parse_run_id"),
+                            "index_generation_id": citation.get("index_generation_id"),
+                            "evidence_key": citation.get("evidence_key"),
                         },
                         fact_summary=summary[:2000],
                     )

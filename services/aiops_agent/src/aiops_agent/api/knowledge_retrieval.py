@@ -149,5 +149,8 @@ def install_knowledge_errors(app):
     @app.exception_handler(AlgorithmError)
     async def algorithm_error(request, exc):
         del request
-        status = 409 if exc.code.value in {"SNAPSHOT_STALE", "SCOPE_CHANGED"} else 422
+        code = exc.code.value
+        status = (409 if code in {"SNAPSHOT_STALE", "SCOPE_CHANGED"} else
+                  503 if code == "RESOURCE_LIMIT" and exc.stage.startswith("index_") else
+                  504 if code == "TIMEOUT" and exc.stage == "index_read" else 422)
         return JSONResponse(status_code=status, content={"code": exc.code.value, "stage": exc.stage})

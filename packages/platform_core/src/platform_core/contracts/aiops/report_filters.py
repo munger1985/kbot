@@ -27,6 +27,7 @@ REPORT_CATEGORY_TYPES: dict[ReportCategory, tuple[ReportType, ...]] = {
         ReportType.PERFORMANCE,
     ),
     ReportCategory.SPECIAL_ANALYSIS: (
+        ReportType.RECOVERY_DRILL,
         ReportType.COMPARISON,
         ReportType.ORACLE_WORKLOAD,
         ReportType.ORACLE_WORKLOAD_DIFF,

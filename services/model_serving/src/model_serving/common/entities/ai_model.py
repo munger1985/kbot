@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import DateTime, Numeric, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -15,16 +15,10 @@ class AIModelEntity(BaseEntity):
     """模型托管服务拥有的可调用模型定义。"""
 
     __tablename__ = "KBOT_AI_MODEL"
-    __table_args__ = (
-        UniqueConstraint("served_model_name", name="UK_AI_MODEL_SERVED_NAME"),
-    )
 
     model_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7,
         comment="模型定义 UUIDv7",
-    )
-    served_model_name: Mapped[str] = mapped_column(
-        String(128), nullable=False, comment="推理 API 对外暴露的稳定模型名称",
     )
     display_name: Mapped[str] = mapped_column(
         String(256), nullable=False, comment="可修改的界面显示名称",
@@ -61,6 +55,11 @@ class AIModelEntity(BaseEntity):
         DateTime(timezone=True), server_default=text("SYSTIMESTAMP"), onupdate=text("SYSTIMESTAMP"),
         comment="更新时间",
     )
+    row_version: Mapped[int] = mapped_column(
+        Numeric(19, 0), nullable=False, server_default=text("1"),
+        comment="应用层乐观并发控制版本",
+    )
+    __mapper_args__ = {"version_id_col": row_version}
     row_version: Mapped[int] = mapped_column(
         Numeric(19, 0), nullable=False, default=1, comment="并发控制版本",
     )

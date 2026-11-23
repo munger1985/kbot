@@ -70,7 +70,7 @@ async def case_fixture(*, closure=False, result="RESOLVED", action_refs=True):
     f.service._prompt_registry = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(
         ref=lambda: {"prompt_sha256": "prompt-hash"}, content="只识别敏感字面值")))
     catalog = SimpleNamespace(get_model=AsyncMock(return_value={
-        "model_name": "fixture-model", "served_model_name": "fixture-model"}))
+        "model_name": "fixture-model", "provider_model_name": "fixture-model"}))
     f.service._model_catalog = f.service._llm_model_catalog = catalog
     from tests.support.aiops_documents import install_documents
     install_documents(f)
@@ -85,7 +85,7 @@ async def extract(f):
         context=f.context, entity_scope={"tenant_id": tenant} if tenant else {},
         kc_scope={"tenant_id": tenant} if tenant else {"domain_id": f.domain},
         model_catalog=f.service._model_catalog, model_scope={"tenant_id": str(tenant)} if tenant else {},
-        technical_name_field="model_name" if tenant else "served_model_name")
+        technical_name_field="model_name" if tenant else "provider_model_name")
 
 
 def invalidate(f, failure):

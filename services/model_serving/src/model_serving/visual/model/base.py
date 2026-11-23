@@ -1,6 +1,7 @@
 """视觉嵌入模型配置与基类。"""
 
 from pydantic import BaseModel
+from platform_core.contracts.model import NATIVE_VISUAL_MAX_IMAGE_BYTES
 
 
 class VisualModelConfig(BaseModel):
@@ -16,7 +17,7 @@ class VisualModelConfig(BaseModel):
     processor_revision: str | None = None
     input_template: str | None = None
     retrieval_directions: tuple[str, ...] = ()
-    max_image_bytes: int = 8388608
+    max_image_bytes: int = NATIVE_VISUAL_MAX_IMAGE_BYTES
     max_image_pixels: int = 25000000
     max_query_chars: int = 16000
     max_representation_elements: int = 2097152

@@ -9,6 +9,7 @@ from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.operations_documents import OperationsDocuments
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.contracts.knowledge import ManualUploadMetadata
+from aiops_agent.composition.knowledge_profiles import KnowledgeFoundationConfig
 from knowledge_algorithms.contracts.identity import fingerprint
 from knowledge_algorithms.contracts.wire import encode
 from knowledge_algorithms.projections.contracts import ProjectionProfile, RepresentationSpec
@@ -43,17 +44,49 @@ class ConfigurationTests(unittest.TestCase):
             self.assertIn("服务端表示空间", caught.exception.message)
 
 
-class MissingModelsTests(unittest.IsolatedAsyncioTestCase):
-    async def test_missing_models_never_raise_key_error_or_register_documents(self):
+class ManualProcessingPlanTests(unittest.IsolatedAsyncioTestCase):
+    async def test_default_profile_without_vectors_keeps_capabilities_honest(self):
+        parse, projection, profiles = KnowledgeFoundationConfig().profiles()
+        documents = OperationsDocuments(uow_factory=None, ingestion=None, projection=None,
+            retrieval=SimpleNamespace(profiles=profiles), parse_profile=parse,
+            pipeline=SimpleNamespace(profile=projection))
+        capabilities = documents.capability_view({})
+        self.assertEqual({
+            "native_parse": "PENDING_VERIFICATION", "ocr": "NOT_ENABLED",
+            "visual_enrichment": "NOT_ENABLED", "lexical": "PENDING_VERIFICATION",
+            "semantic_directions": [],
+        }, capabilities)
+        self.assertEqual("AVAILABLE", documents.capability_view(
+            {"verified_parse_profiles": {parse.profile_hash}})["native_parse"])
+        self.assertEqual(parse.profile_hash, documents.processing_plan()["parse"])
+
+    async def test_ready_generation_from_incompatible_profile_is_not_reused(self):
+        documents = OperationsDocuments.__new__(OperationsDocuments)
+        plan = {"projection": "current"}
+        documents.processing_plan = lambda **_: plan
+        documents.inspect = AsyncMock(return_value={
+            "status": "STAGED", "processing_status": "PARSED", "generation_id": str(uuid7()),
+            "projection_profile_hash": "different",
+        })
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            await documents.process(None, uuid7(), expected_plan=plan)
+        self.assertEqual("AIOPS_KNOWLEDGE_PROCESSING_PLAN_MISMATCH", caught.exception.code)
+
+    async def test_upload_registers_without_resolving_models_or_index_profile(self):
         from aiops_agent.entities import OperationsKnowledgeAssetEntity
         oracle = OperationsKnowledgeAssetEntity.__tablename__.startswith("KBOT_")
         domain = 42 if oracle else uuid7()
+        version_id = uuid7()
+        plan = {"projection": "registered-profile"}
         documents = SimpleNamespace(access=lambda _: SimpleNamespace(domain_id=domain, tenant_id=uuid7()),
-            stage=AsyncMock(return_value={}), configuration=unittest.mock.Mock(),
+            stage=AsyncMock(return_value={"source":SimpleNamespace(sha256="a"*64), "document_version_id":version_id}),
+            register=AsyncMock(return_value={"document_id":uuid7(), "document_version_id":version_id,
+                "ingestion_job_id":uuid7()}),
+            processing_plan=unittest.mock.Mock(return_value=plan), assert_processing_plan=unittest.mock.Mock(),
             retrieval=SimpleNamespace(authorization=SimpleNamespace(service=None)))
         base = SimpleNamespace(status="ACTIVE", configuration_json={})
         repo = SimpleNamespace(get_knowledge_base=AsyncMock(return_value=base),
-            find_upload_request=AsyncMock(return_value=None))
+            find_upload_request=AsyncMock(return_value=None), add_asset_version=AsyncMock())
         uow = SimpleNamespace(operations_knowledge=repo, commit=AsyncMock())
         @asynccontextmanager
         async def factory():
@@ -61,21 +94,21 @@ class MissingModelsTests(unittest.IsolatedAsyncioTestCase):
         service = OperationsKnowledgeService(uow_factory=factory, documents=documents)
         args = dict(domain_id=domain, knowledge_base_id=uuid7(),
             context=SimpleNamespace(request_id="configuration-test", asserted_user_id="tester"),
-            title="运维资料", documents=[{"file_name":"test.txt", "media_type":"text/plain",
+            title="运维资料", documents=[{"file_name":"test.txt", "media_type":"text/plain", "ordinal":1,
+                "role":"PRIMARY", "required_flag":True,
                 "body":b"test", "content_sha256":"a" * 64}],
             metadata=ManualUploadMetadata(display_name="运维资料"), idempotency_key="configuration-test")
-        if not oracle:
-            args["tenant_id"] = uuid7()
-        for configuration in ({}, None, {"models": None}, {"models": {}},
-                              {"models": {"embedding": str(uuid7())}}):
-            base.configuration_json = configuration
-            with self.subTest(configuration=configuration), self.assertRaises(AIOpsApplicationError) as caught:
-                await service._register_manual_documents(**args)
-            self.assertEqual(caught.exception.code, "AIOPS_KNOWLEDGE_COLLECTION_MODELS_REQUIRED")
-            self.assertEqual(caught.exception.status_code, 409)
-        uow.commit.assert_not_awaited()
-        documents.stage.assert_not_awaited()
-        documents.configuration.assert_not_called()
+        with patch("aiops_agent.application.operations_knowledge._asset_view", side_effect=lambda row: {"status": row.status}), patch(
+                "aiops_agent.application.operations_knowledge._version_view", side_effect=lambda row: {"status": row.status}), patch(
+                "aiops_agent.application.operations_knowledge._index_view", side_effect=lambda row: {"status": row.index_status}):
+            result = await service._register_manual_documents(**args)
+        self.assertEqual("REVIEW_REQUIRED", result["version"]["status"])
+        self.assertEqual([{"status": "PENDING_APPROVAL"}], result["documents"])
+        recorded = repo.add_asset_version.await_args.kwargs["sources"][-1]
+        self.assertFalse((recorded.source_locator_json or {}).get("processing_plan"))
+        self.assertTrue(documents.register.await_args.kwargs["awaiting_approval"])
+        documents.assert_processing_plan.assert_not_called()
+        uow.commit.assert_awaited_once()
 
     async def test_existing_upload_can_replay_after_configuration_is_removed(self):
         from aiops_agent.entities import OperationsKnowledgeAssetEntity

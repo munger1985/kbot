@@ -15,6 +15,175 @@
         "title": "AIOpsCapability",
         "type": "string"
       },
+      "AIOpsKnowledgeSearchResult": {
+        "properties": {
+          "applicability": {
+            "title": "Applicability",
+            "type": "string"
+          },
+          "applicability_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicability Decision"
+          },
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "asset_version_id": {
+            "format": "uuid",
+            "title": "Asset Version Id",
+            "type": "string"
+          },
+          "authority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authority"
+          },
+          "business_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Rank"
+          },
+          "citation_pack": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeCitation"
+            },
+            "title": "Citation Pack",
+            "type": "array"
+          },
+          "evidence_groups": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeEvidenceGroup"
+            },
+            "title": "Evidence Groups",
+            "type": "array"
+          },
+          "matched_dimensions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Dimensions"
+          },
+          "mismatched_dimensions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mismatched Dimensions"
+          },
+          "ranking": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ranking"
+          },
+          "reuse_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reuse Context"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "topics": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topics"
+          },
+          "unknown_dimensions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Dimensions"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset_id",
+          "asset_version_id",
+          "asset_kind",
+          "title",
+          "version",
+          "applicability",
+          "citation_pack"
+        ],
+        "title": "AIOpsKnowledgeSearchResult",
+        "type": "object"
+      },
       "ActivitySamplerPolicy": {
         "additionalProperties": false,
         "properties": {
@@ -2520,23 +2689,6 @@
           "idempotency_key"
         ],
         "title": "ClarificationResponseV1",
-        "type": "object"
-      },
-      "CollectionModelsPayload": {
-        "properties": {
-          "models": {
-            "additionalProperties": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Models",
-            "type": "object"
-          }
-        },
-        "required": [
-          "models"
-        ],
-        "title": "CollectionModelsPayload",
         "type": "object"
       },
       "CompleteOpsTaskCommand": {
@@ -10437,9 +10589,70 @@
         "title": "KnowledgeAssetDeletePayload",
         "type": "object"
       },
+      "KnowledgeBaseCapabilities": {
+        "properties": {
+          "lexical": {
+            "enum": [
+              "NOT_ENABLED",
+              "PENDING_VERIFICATION",
+              "AVAILABLE",
+              "DEGRADED"
+            ],
+            "title": "Lexical",
+            "type": "string"
+          },
+          "native_parse": {
+            "enum": [
+              "NOT_ENABLED",
+              "PENDING_VERIFICATION",
+              "AVAILABLE",
+              "DEGRADED"
+            ],
+            "title": "Native Parse",
+            "type": "string"
+          },
+          "ocr": {
+            "enum": [
+              "NOT_ENABLED",
+              "PENDING_VERIFICATION",
+              "AVAILABLE",
+              "DEGRADED"
+            ],
+            "title": "Ocr",
+            "type": "string"
+          },
+          "semantic_directions": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeSemanticDirection"
+            },
+            "title": "Semantic Directions",
+            "type": "array"
+          },
+          "visual_enrichment": {
+            "enum": [
+              "NOT_ENABLED",
+              "PENDING_VERIFICATION",
+              "AVAILABLE",
+              "DEGRADED"
+            ],
+            "title": "Visual Enrichment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "native_parse",
+          "ocr",
+          "visual_enrichment",
+          "lexical",
+          "semantic_directions"
+        ],
+        "title": "KnowledgeBaseCapabilities",
+        "type": "object"
+      },
       "KnowledgeBaseDeletePayload": {
         "properties": {
           "expected_row_version": {
+            "minimum": 1.0,
             "title": "Expected Row Version",
             "type": "integer"
           }
@@ -10448,6 +10661,42 @@
           "expected_row_version"
         ],
         "title": "KnowledgeBaseDeletePayload",
+        "type": "object"
+      },
+      "KnowledgeBaseIndexStatus": {
+        "properties": {
+          "state": {
+            "enum": [
+              "EMPTY",
+              "NOT_READY",
+              "PARTIAL",
+              "READY",
+              "ERROR"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "KnowledgeBaseIndexStatus",
+        "type": "object"
+      },
+      "KnowledgeBaseList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeBaseView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "KnowledgeBaseList",
         "type": "object"
       },
       "KnowledgeBaseStatusCommand": {
@@ -10463,6 +10712,160 @@
           "expected_row_version"
         ],
         "title": "KnowledgeBaseStatusCommand",
+        "type": "object"
+      },
+      "KnowledgeBaseTaggingStatus": {
+        "properties": {
+          "model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "state": {
+            "enum": [
+              "NOT_CONFIGURED",
+              "PENDING_VERIFICATION",
+              "AVAILABLE",
+              "DEGRADED"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "vocabulary_ready": {
+            "title": "Vocabulary Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state",
+          "model_id",
+          "vocabulary_ready"
+        ],
+        "title": "KnowledgeBaseTaggingStatus",
+        "type": "object"
+      },
+      "KnowledgeBaseUsage": {
+        "properties": {
+          "assets": {
+            "minimum": 0.0,
+            "title": "Assets",
+            "type": "integer"
+          },
+          "current_agent_versions": {
+            "minimum": 0.0,
+            "title": "Current Agent Versions",
+            "type": "integer"
+          },
+          "historical_agent_versions": {
+            "minimum": 0.0,
+            "title": "Historical Agent Versions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assets",
+          "current_agent_versions",
+          "historical_agent_versions"
+        ],
+        "title": "KnowledgeBaseUsage",
+        "type": "object"
+      },
+      "KnowledgeBaseView": {
+        "additionalProperties": true,
+        "properties": {
+          "blockers": {
+            "items": {
+              "enum": [
+                "ASSET_RECORDS",
+                "CURRENT_AGENT_VERSION",
+                "HISTORICAL_AGENT_VERSION"
+              ],
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/KnowledgeBaseCapabilities"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "index": {
+            "$ref": "#/components/schemas/KnowledgeBaseIndexStatus"
+          },
+          "index_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryIndexModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "knowledge_base_id": {
+            "format": "uuid",
+            "title": "Knowledge Base Id",
+            "type": "string"
+          },
+          "parse_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryParseModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tagging": {
+            "$ref": "#/components/schemas/KnowledgeBaseTaggingStatus"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/KnowledgeBaseUsage"
+          }
+        },
+        "required": [
+          "knowledge_base_id",
+          "display_name",
+          "description",
+          "status",
+          "row_version",
+          "capabilities",
+          "index",
+          "tagging",
+          "usage",
+          "blockers"
+        ],
+        "title": "KnowledgeBaseView",
         "type": "object"
       },
       "KnowledgeBaseWrite": {
@@ -10498,20 +10901,233 @@
             ],
             "title": "Expected Row Version"
           },
-          "models": {
-            "additionalProperties": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Models",
-            "type": "object"
+          "index_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryIndexModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parse_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryParseModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tagging_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagging Model Id"
           }
         },
         "required": [
-          "display_name",
-          "models"
+          "display_name"
         ],
         "title": "KnowledgeBaseWrite",
+        "type": "object"
+      },
+      "KnowledgeChannelFailure": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "reason"
+        ],
+        "title": "KnowledgeChannelFailure",
+        "type": "object"
+      },
+      "KnowledgeCitation": {
+        "properties": {
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "index_generation_id": {
+            "format": "uuid",
+            "title": "Index Generation Id",
+            "type": "string"
+          },
+          "locator": {
+            "additionalProperties": true,
+            "title": "Locator",
+            "type": "object"
+          },
+          "parse_run_id": {
+            "format": "uuid",
+            "title": "Parse Run Id",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_version_id",
+          "parse_run_id",
+          "index_generation_id",
+          "quote",
+          "locator"
+        ],
+        "title": "KnowledgeCitation",
+        "type": "object"
+      },
+      "KnowledgeEvidenceGroup": {
+        "properties": {
+          "primary": {
+            "$ref": "#/components/schemas/KnowledgePrimaryEvidence"
+          },
+          "related": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeRelatedEvidence"
+            },
+            "title": "Related",
+            "type": "array"
+          },
+          "relation_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Relation Gaps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "primary",
+          "related",
+          "relation_gaps"
+        ],
+        "title": "KnowledgeEvidenceGroup",
+        "type": "object"
+      },
+      "KnowledgePrimaryEvidence": {
+        "properties": {
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "evidence_key": {
+            "title": "Evidence Key",
+            "type": "string"
+          },
+          "index_generation_id": {
+            "format": "uuid",
+            "title": "Index Generation Id",
+            "type": "string"
+          },
+          "locator": {
+            "additionalProperties": true,
+            "title": "Locator",
+            "type": "object"
+          },
+          "parse_run_id": {
+            "format": "uuid",
+            "title": "Parse Run Id",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "rank": {
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "shard": {
+            "minimum": 1.0,
+            "title": "Shard",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document_version_id",
+          "parse_run_id",
+          "index_generation_id",
+          "quote",
+          "locator",
+          "evidence_key",
+          "rank",
+          "shard"
+        ],
+        "title": "KnowledgePrimaryEvidence",
+        "type": "object"
+      },
+      "KnowledgeRelatedEvidence": {
+        "properties": {
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "evidence_key": {
+            "title": "Evidence Key",
+            "type": "string"
+          },
+          "index_generation_id": {
+            "format": "uuid",
+            "title": "Index Generation Id",
+            "type": "string"
+          },
+          "locator": {
+            "additionalProperties": true,
+            "title": "Locator",
+            "type": "object"
+          },
+          "parse_run_id": {
+            "format": "uuid",
+            "title": "Parse Run Id",
+            "type": "string"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "evidence_key",
+          "document_version_id",
+          "parse_run_id",
+          "index_generation_id",
+          "locator",
+          "readable"
+        ],
+        "title": "KnowledgeRelatedEvidence",
         "type": "object"
       },
       "KnowledgeReuseFeedback": {
@@ -10611,6 +11227,51 @@
           "expected_row_version"
         ],
         "title": "KnowledgeReviewCommand",
+        "type": "object"
+      },
+      "KnowledgeSearchCoverage": {
+        "additionalProperties": true,
+        "properties": {
+          "channel_failures": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeChannelFailure"
+            },
+            "title": "Channel Failures",
+            "type": "array"
+          },
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "ranking": {
+            "enum": [
+              "GLOBAL",
+              "LIMITED",
+              "NOT_APPLICABLE"
+            ],
+            "title": "Ranking",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "COMPLETE",
+              "PARTIAL",
+              "NOT_VERIFIED"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "ranking",
+          "gaps",
+          "channel_failures"
+        ],
+        "title": "KnowledgeSearchCoverage",
         "type": "object"
       },
       "KnowledgeSearchPreviewRequest": {
@@ -10782,6 +11443,86 @@
           "agent_id"
         ],
         "title": "KnowledgeSearchPreviewRequest",
+        "type": "object"
+      },
+      "KnowledgeSearchResponse": {
+        "properties": {
+          "coverage": {
+            "$ref": "#/components/schemas/KnowledgeSearchCoverage"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/AIOpsKnowledgeSearchResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "retrieval_conclusion": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EVIDENCE_FOUND",
+                  "NO_ELIGIBLE_RESOURCES",
+                  "NO_MATCH",
+                  "NOT_VERIFIED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Conclusion"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status",
+          "coverage",
+          "results",
+          "warnings"
+        ],
+        "title": "KnowledgeSearchResponse",
+        "type": "object"
+      },
+      "KnowledgeSemanticDirection": {
+        "properties": {
+          "direction": {
+            "enum": [
+              "TEXT_TO_TEXT",
+              "TEXT_TO_IMAGE",
+              "IMAGE_TO_TEXT",
+              "IMAGE_TO_IMAGE"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "NOT_ENABLED",
+              "PENDING_VERIFICATION",
+              "AVAILABLE",
+              "DEGRADED"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction",
+          "state"
+        ],
+        "title": "KnowledgeSemanticDirection",
         "type": "object"
       },
       "KnowledgeTagStatusCommand": {
@@ -10986,6 +11727,70 @@
           "security_level"
         ],
         "title": "LeasedArtifact",
+        "type": "object"
+      },
+      "LibraryIndexModels": {
+        "additionalProperties": false,
+        "description": "文本与视觉表示独立于解析档位；目录模型身份由各库保存。",
+        "properties": {
+          "embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "visual_embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Embedding"
+          }
+        },
+        "title": "LibraryIndexModels",
+        "type": "object"
+      },
+      "LibraryParseModels": {
+        "additionalProperties": false,
+        "description": "角色可以不绑定；可选档位由审批时的有效绑定决定。",
+        "properties": {
+          "ocr": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr"
+          },
+          "vlm": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vlm"
+          }
+        },
+        "title": "LibraryParseModels",
         "type": "object"
       },
       "ManagedResourcePatch": {
@@ -11211,6 +12016,43 @@
           "row_version"
         ],
         "title": "ManagedResourceView",
+        "type": "object"
+      },
+      "ManualKnowledgeApproveCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "parse_strategy": {
+            "enum": [
+              "TEXT",
+              "AUTO",
+              "VISUAL"
+            ],
+            "title": "Parse Strategy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "parse_strategy"
+        ],
+        "title": "ManualKnowledgeApproveCommand",
         "type": "object"
       },
       "ManualResultCommand": {
@@ -15366,6 +16208,742 @@
         "title": "ProposalView",
         "type": "object"
       },
+      "ProtectionAdvice": {
+        "additionalProperties": false,
+        "properties": {
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "rpo_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpo Seconds"
+          },
+          "rto_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rto Seconds"
+          }
+        },
+        "required": [
+          "explanation"
+        ],
+        "title": "ProtectionAdvice",
+        "type": "object"
+      },
+      "ProtectionBackupIdentityInput": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mode": {
+            "default": "DATABASE_PASSWORD",
+            "enum": [
+              "DATABASE_PASSWORD",
+              "ORACLE_OS"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "title": "ProtectionBackupIdentityInput",
+        "type": "object"
+      },
+      "ProtectionBackupRotation": {
+        "additionalProperties": false,
+        "properties": {
+          "cycle_days": {
+            "maximum": 365.0,
+            "minimum": 2.0,
+            "title": "Cycle Days",
+            "type": "integer"
+          },
+          "full_time": {
+            "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "Full Time",
+            "type": "string"
+          },
+          "incremental_time": {
+            "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "Incremental Time",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "timezone": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone",
+          "start_date",
+          "cycle_days",
+          "full_time",
+          "incremental_time"
+        ],
+        "title": "ProtectionBackupRotation",
+        "type": "object"
+      },
+      "ProtectionBackupScheduleChange": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "enabled"
+        ],
+        "title": "ProtectionBackupScheduleChange",
+        "type": "object"
+      },
+      "ProtectionCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "area": {
+            "enum": [
+              "DATABASE",
+              "HOST",
+              "STORAGE",
+              "NETWORK_TOOL",
+              "VERIFY"
+            ],
+            "title": "Area",
+            "type": "string"
+          },
+          "guidance": {
+            "title": "Guidance",
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "BACKUP",
+              "DRILL"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "MISSING",
+              "UNVERIFIED",
+              "PASS"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "area",
+          "operation",
+          "status",
+          "guidance"
+        ],
+        "title": "ProtectionCheck",
+        "type": "object"
+      },
+      "ProtectionDrillScheduleChange": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "enabled"
+        ],
+        "title": "ProtectionDrillScheduleChange",
+        "type": "object"
+      },
+      "ProtectionIdentityInput": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "ProtectionIdentityInput",
+        "type": "object"
+      },
+      "ProtectionPlanSave": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionBackupIdentityInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "restore_identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionIdentityInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ProtectionPlanSettings"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "settings"
+        ],
+        "title": "ProtectionPlanSave",
+        "type": "object"
+      },
+      "ProtectionPlanSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_directory": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "pattern": "^(/[a-zA-Z0-9_.-]+)+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Directory"
+          },
+          "backup_incremental_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backup_parallelism": {
+            "default": 1,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Backup Parallelism",
+            "type": "integer"
+          },
+          "backup_rotation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionBackupRotation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backup_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "drill_destination_key": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drill Destination Key"
+          },
+          "drill_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtectionSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CRITICAL",
+                  "HIGH",
+                  "MEDIUM",
+                  "LOWER",
+                  "LOW"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "restore_template_key": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Template Key"
+          },
+          "rpo_seconds": {
+            "anyOf": [
+              {
+                "maximum": 31536000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpo Seconds"
+          },
+          "rto_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 31536000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rto Seconds"
+          },
+          "schedule_window_seconds": {
+            "default": 900,
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Schedule Window Seconds",
+            "type": "integer"
+          },
+          "storage_key": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Key"
+          },
+          "timeout_seconds": {
+            "default": 7200,
+            "maximum": 172800.0,
+            "minimum": 60.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          },
+          "tool": {
+            "enum": [
+              "RMAN",
+              "PGBACKREST",
+              "XTRABACKUP"
+            ],
+            "title": "Tool",
+            "type": "string"
+          },
+          "topology": {
+            "default": "UNKNOWN",
+            "enum": [
+              "UNKNOWN",
+              "SINGLE",
+              "ASYNC_REPLICA",
+              "SYNC_REPLICA"
+            ],
+            "title": "Topology",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool"
+        ],
+        "title": "ProtectionPlanSettings",
+        "type": "object"
+      },
+      "ProtectionPlanView": {
+        "additionalProperties": false,
+        "properties": {
+          "advice": {
+            "$ref": "#/components/schemas/ProtectionAdvice"
+          },
+          "backup_template_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Template Key"
+          },
+          "backup_template_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Template Version"
+          },
+          "backup_tool_requirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Tool Requirement"
+          },
+          "db_role": {
+            "title": "Db Role",
+            "type": "string"
+          },
+          "db_type": {
+            "$ref": "#/components/schemas/DatabaseType"
+          },
+          "db_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Version"
+          },
+          "drill_preflight_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "PENDING",
+                  "REJECTED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drill Preflight Status"
+          },
+          "has_backup_identity": {
+            "default": false,
+            "title": "Has Backup Identity",
+            "type": "boolean"
+          },
+          "has_restore_identity": {
+            "default": false,
+            "title": "Has Restore Identity",
+            "type": "boolean"
+          },
+          "next_backup_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Backup At"
+          },
+          "next_drill_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Drill At"
+          },
+          "readiness": {
+            "items": {
+              "$ref": "#/components/schemas/ProtectionCheck"
+            },
+            "title": "Readiness",
+            "type": "array"
+          },
+          "recent_runs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProtectionRunSummary"
+            },
+            "title": "Recent Runs",
+            "type": "array"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ProtectionPlanSettings"
+          },
+          "status": {
+            "enum": [
+              "NOT_ENROLLED",
+              "DRAFT",
+              "SCHEDULED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "db_type",
+          "db_role",
+          "status",
+          "revision",
+          "settings",
+          "readiness",
+          "advice"
+        ],
+        "title": "ProtectionPlanView",
+        "type": "object"
+      },
+      "ProtectionRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "FULL",
+                  "INCREMENTAL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Kind"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "operation": {
+            "enum": [
+              "BACKUP",
+              "DRILL"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "RUNNING",
+              "SUCCEEDED",
+              "FAILED",
+              "REJECTED",
+              "SKIPPED",
+              "UNKNOWN"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "operation",
+          "scheduled_at",
+          "status"
+        ],
+        "title": "ProtectionRunSummary",
+        "type": "object"
+      },
+      "ProtectionSchedule": {
+        "additionalProperties": false,
+        "properties": {
+          "cron": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cron"
+          },
+          "once_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Once At"
+          },
+          "timezone": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone"
+        ],
+        "title": "ProtectionSchedule",
+        "type": "object"
+      },
       "ReadonlyExecutionFenceReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -16692,6 +18270,7 @@
       },
       "ReportType": {
         "enum": [
+          "RECOVERY_DRILL",
           "ORACLE_WORKLOAD",
           "ORACLE_WORKLOAD_DIFF",
           "INCIDENT",
@@ -19614,8 +21193,11 @@
               "19c",
               "26ai",
               "5.7",
+              "8.0",
               "8.4",
-              "16"
+              "16",
+              "17",
+              "18"
             ],
             "title": "Version Code",
             "type": "string"
@@ -19773,8 +21355,11 @@
                   "19c",
                   "26ai",
                   "5.7",
+                  "8.0",
                   "8.4",
-                  "16"
+                  "16",
+                  "17",
+                  "18"
                 ],
                 "type": "string"
               },
@@ -19950,8 +21535,11 @@
               "19c",
               "26ai",
               "5.7",
+              "8.0",
               "8.4",
-              "16"
+              "16",
+              "17",
+              "18"
             ],
             "title": "Version Code",
             "type": "string"
@@ -20968,8 +22556,11 @@
                   "19c",
                   "26ai",
                   "5.7",
+                  "8.0",
                   "8.4",
-                  "16"
+                  "16",
+                  "17",
+                  "18"
                 ],
                 "type": "string"
               },
@@ -23198,6 +24789,7 @@
       },
       "WorkflowKind": {
         "enum": [
+          "RECOVERY_DRILL",
           "RESOURCE_COLLECTION",
           "ALERT_DIAGNOSIS",
           "INSPECTION",
@@ -24668,6 +26260,207 @@
           }
         },
         "summary": "Get Business System Topology",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/data-protection/resources/{resource_id}": {
+      "get": {
+        "operationId": "get_data_protection_internal_v1_aiops_config_data_protection_resources__resource_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data Protection",
+        "tags": [
+          "AIOps Config"
+        ]
+      },
+      "put": {
+        "operationId": "save_data_protection_internal_v1_aiops_config_data_protection_resources__resource_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectionPlanSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Data Protection",
+        "tags": [
+          "AIOps Config"
+        ],
+        "x-sensitive-input": true
+      }
+    },
+    "/internal/v1/aiops/config/data-protection/resources/{resource_id}/backup-schedule": {
+      "put": {
+        "operationId": "change_data_protection_backup_schedule_internal_v1_aiops_config_data_protection_resources__resource_id__backup_schedule_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectionBackupScheduleChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Data Protection Backup Schedule",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/data-protection/resources/{resource_id}/drill-schedule": {
+      "put": {
+        "operationId": "change_data_protection_drill_schedule_internal_v1_aiops_config_data_protection_resources__resource_id__drill_schedule_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectionDrillScheduleChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionPlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Data Protection Drill Schedule",
         "tags": [
           "AIOps Config"
         ]
@@ -32137,7 +33930,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseList"
+                }
               }
             },
             "description": "Successful Response"
@@ -32174,7 +33969,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseView"
+                }
               }
             },
             "description": "Successful Response"
@@ -32259,7 +34056,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseView"
+                }
               }
             },
             "description": "Successful Response"
@@ -32308,7 +34107,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseView"
+                }
               }
             },
             "description": "Successful Response"
@@ -32325,96 +34126,6 @@
           }
         },
         "summary": "Update Knowledge Base",
-        "tags": [
-          "AIOps Operations Knowledge"
-        ]
-      }
-    },
-    "/internal/v1/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}/models": {
-      "get": {
-        "operationId": "get_collection_models_internal_v1_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__models_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "knowledge_base_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Knowledge Base Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Collection Models",
-        "tags": [
-          "AIOps Operations Knowledge"
-        ]
-      },
-      "put": {
-        "operationId": "configure_collection_models_internal_v1_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__models_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "knowledge_base_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Knowledge Base Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CollectionModelsPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Configure Collection Models",
         "tags": [
           "AIOps Operations Knowledge"
         ]
@@ -32449,7 +34160,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseView"
+                }
               }
             },
             "description": "Successful Response"
@@ -32500,7 +34213,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseView"
+                }
               }
             },
             "description": "Successful Response"
@@ -33093,7 +34808,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KnowledgeReviewCommand"
+                "$ref": "#/components/schemas/ManualKnowledgeApproveCommand"
               }
             }
           },
@@ -33438,7 +35153,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSearchResponse"
+                }
               }
             },
             "description": "Successful Response"

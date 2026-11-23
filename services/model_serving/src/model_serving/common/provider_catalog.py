@@ -65,7 +65,7 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
         ("api_endpoint", "model_params.compartment_id"),
         (*_LLM_PARAMS, "project"),
         supports_tool_calling=True, max_context_tokens=131072,
-        secret_fields=("model_params.config_file", "model_params.oci_auth"),
+        secret_fields=("api_key", "model_params.config_file", "model_params.oci_auth"),
     ),
     (ModelCategory.TXT_EMBEDDING.value, "local_bge"): _ProviderSchema(
         ("model_params.model_path", "model_params.embedding_dimension"),
@@ -159,6 +159,12 @@ def validate_provider_config(values: dict[str, Any]) -> None:
         raise ValueError(f"model_params 包含未知参数：{unknown}")
     missing: list[str] = []
     for path in schema.required_fields:
+        if (
+            values.get("api_key")
+            and (category, provider) in {(ModelCategory.LLM, "oci"), (ModelCategory.IMAGE_GENERATION, "api_oci_image")}
+            and path in {"model_params.compartment_id", "model_params.project"}
+        ):
+            continue
         if path.startswith("model_params."):
             value = params.get(path.removeprefix("model_params."))
         else:
@@ -167,7 +173,9 @@ def validate_provider_config(values: dict[str, Any]) -> None:
             missing.append(path)
     if missing:
         raise ValueError(f"Provider 配置缺少必要字段：{missing}")
-    if provider == "api_oci_image" and values.get("api_key"):
+    if (category, provider) in {
+        (ModelCategory.LLM, "oci"), (ModelCategory.IMAGE_GENERATION, "api_oci_image"),
+    } and values.get("api_key"):
         oci_openai_api_base(values.get("api_endpoint"))
     elif provider in {"oci", "api_oci_image"}:
         oci_sdk_service_endpoint(values.get("api_endpoint"))

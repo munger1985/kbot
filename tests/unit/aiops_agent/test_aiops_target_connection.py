@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from pydantic import ValidationError
 
 from aiops_agent.application.configuration.connection_test import (
+    _database_version_error,
     _probe_oracle_controlled_action_options,
     _probe_postgresql_capabilities,
     test_target_connection as run_connection_test,
@@ -188,6 +189,19 @@ class _ConnectivityUow:
 
 
 class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
+    def test_registers_postgresql_17_and_18_without_cross_version_fallback(self):
+        base = _request("POSTGRESQL").model_dump()
+        for selected, detected in (("17", "17.5"), ("18", "18.1")):
+            with self.subTest(selected=selected):
+                request = TargetConnectionTest.model_validate({**base, "version_code": selected})
+                self.assertEqual(request.version_code, selected)
+                self.assertIsNone(_database_version_error(
+                    db_type=request.db_type, selected_version=selected, detected_version=detected,
+                ))
+                self.assertEqual(_database_version_error(
+                    db_type=request.db_type, selected_version=selected, detected_version="16.4",
+                ), "DATABASE_VERSION_MISMATCH")
+
     async def test_postgresql_16_skips_postgresql_17_only_probe(self):
         class TrackingConnection(_PostgreSQLConnection):
             def __init__(self):

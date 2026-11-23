@@ -4,6 +4,8 @@ from pathlib import Path
 import uvicorn
 from knowledge_core.config import get_knowledge_core_settings
 from knowledge_core.adapters.app_sources import FixedAppSourceRegistry
+from knowledge_core.adapters.model_transcription import AuthorizedModelTranscription
+from platform_clients.knowledge_model_binding import build_binding_clients
 from knowledge_core.composition.parse_jobs import create_parse_computation_api
 from platform_clients.knowledge_computation import ControlledAppSourceClient
 from platform_core.logger import LogConfig, LogManager
@@ -18,7 +20,8 @@ def create_app(settings=None):
         for owner, config in {"knowledge_retrieval": settings.knowledge_retrieval, "aiops": settings.aiops}.items()})
     budgets = settings.compute.model_dump(exclude={"spool_root"})
     app = create_parse_computation_api(audience=caller, spool_root=Path(settings.compute.spool_root),
-        source_registry=registry, **budgets)
+        source_registry=registry, model_transcription=AuthorizedModelTranscription(
+            build_binding_clients(caller=caller, ocr=settings.model_ocr, vlm=settings.model_vlm)), **budgets)
     app.state.settings = settings
     return app
 

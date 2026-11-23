@@ -1675,8 +1675,8 @@ class AgentRuntimeService:
                 created_at=row.created_at,
             )
 
-    async def open_knowledge_content(self, *, run_id: UUID, key: str, domain_id: int, actor_id: str, auth_context):
-        """历史引用不重搜、不换版；仅代理本主体 Run 中精确 pin 的原始证据字节。"""
+    async def open_knowledge_content(self, *, run_id: UUID, key: str, domain_id: int, actor_id: str, auth_context, source_pdf=False):
+        """历史引用不重搜、不换版；只读精确 pin 的证据或该引用的已发布原文。"""
         async with self._uow_factory() as uow:
             run = await uow.runs.get_scoped(run_id=run_id, domain_id=domain_id)
             if (run is None or str(run.actor_id) != str(actor_id) or run.result_artifact_id is None
@@ -1696,13 +1696,20 @@ class AgentRuntimeService:
             artifact = await uow.artifacts.get(artifact_id=run.result_artifact_id)
             if artifact is None or artifact.run_id != run.run_id:
                 raise AgentRuntimeNotFound()
-            composition = (artifact.payload_json or {}).get("knowledge_composition")
+            payload = artifact.payload_json or {}
+            composition = payload.get("knowledge_composition")
+            if source_pdf and (owner != "knowledge_retrieval" or not any(
+                row.get("reference_type") == "APP_KNOWLEDGE" and row.get("evidence_key") == key
+                and row.get("owner_app_id") == owner
+                for row in payload.get("references") or [] if isinstance(row, dict)
+            )):
+                raise AgentRuntimeNotFound()
         if not composition or not self._knowledge_integration:
             raise AgentRuntimeNotFound()
         if not any(item["key"] == key for item in composition["items"]):
             raise AgentRuntimeNotFound()
         return await self._knowledge_integration.open_history(snapshot=snapshot, auth_context=auth_context,
-            retrieval_ref=composition["retrieval_ref"], key=key)
+            retrieval_ref=composition["retrieval_ref"], key=key, **({"source_pdf": True} if source_pdf else {}))
 
     @staticmethod
     def _ensure_version(actual: int, expected: int) -> None:

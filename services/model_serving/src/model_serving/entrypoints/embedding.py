@@ -26,6 +26,7 @@ from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from model_serving.embedding.embed_service import EmbeddingService
+from model_serving.common.frozen_binding import FrozenModelConflict, create_frozen_binding_router
 from model_serving.embedding.schema import (
     EmbeddingRequest, OpenAIEmbeddingRequest, SimilarityRequest, DenseRepresentationRequest,
 )
@@ -149,7 +150,9 @@ app.middleware("http")(
     )
 )
 app.middleware("http")(create_api_client_auth_middleware())
-app.include_router(create_model_management_router(category=ModelCategory.TXT_EMBEDDING.value))
+app.include_router(create_model_management_router(
+    category=ModelCategory.TXT_EMBEDDING.value, probe_service=lambda _: embedding_service,
+))
 app.include_router(create_openai_models_router(category=ModelCategory.TXT_EMBEDDING.value))
 
 # --- Dependency Injection ---
@@ -184,11 +187,17 @@ async def health_check() -> dict[str, Any]:
     }
 
 
+app.include_router(create_frozen_binding_router(lambda request: embedding_service._model_pool, representation_kind="DENSE"))
+
+
 @app.post(f"{INTERNAL_API_V1}/represent", tags=["AI Service"])
 async def represent_text(req: DenseRepresentationRequest):
     """返回原生单向量与冻结空间回执；不静默返回空向量。"""
     try:
-        return await embedding_service.represent(req.served_model_name, text=req.text, input_role=req.input_role)
+        return await embedding_service.represent(req.model_id, text=req.text, input_role=req.input_role,
+            expected_revision=req.expected_revision)
+    except FrozenModelConflict as exc:
+        raise HTTPException(409, detail={"code": "MODEL_REVISION_CHANGED"}) from exc
     except ValueError as exc:
         raise HTTPException(422, detail={"code": "MODEL_SPACE_UNAVAILABLE"}) from exc
     except Exception as exc:
@@ -213,9 +222,9 @@ async def handle_embed_texts(
         HTTPException: 500 error when any logical error occurs during processing.
     """
     try:
-        logger.info(f"正在处理 Embedding 请求 | 模型：{request.served_model_name} | 文本数量：{len(request.texts)}")
+        logger.info(f"正在处理 Embedding 请求 | 模型：{request.model_id} | 文本数量：{len(request.texts)}")
         return await embed_service.embed_texts(
-            served_model_name=request.served_model_name,
+            model_id=request.model_id,
             texts=request.texts,
             batch_size=request.batch_size,
             is_query=request.is_query
@@ -255,7 +264,7 @@ async def openai_embeddings(
         )
     try:
         return await embed_service.embed_texts(
-            served_model_name=request.model,
+            model_id=request.model,
             texts=texts,
             is_query=True,
         )
@@ -287,10 +296,10 @@ async def handle_compute_similarity(
         HTTPException: 500 error when exception occurs during calculation.
     """
     try:
-        logger.info(f"正在处理相似度请求 | 模型：{request.served_model_name} | 方法：{request.method}")
-        model = await embed_service.get_embedding_model(request.served_model_name)
+        logger.info(f"正在处理相似度请求 | 模型：{request.model_id} | 方法：{request.method}")
+        model = await embed_service.get_embedding_model(request.model_id)
         score = await embed_service.compute_similarity(
-            served_model_name=request.served_model_name,
+            model_id=request.model_id,
             text1=request.text1,
             text2=request.text2,
             method=request.method

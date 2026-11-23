@@ -305,7 +305,7 @@ async def _agent_semantic_contract(*, plan, model, rows, columns) -> None:
                 "data_query_mode": "SEMANTIC",
                 "models": {
                     "data_planner_llm": {
-                        "served_model_name": "deterministic-smoke-planner"
+                        "model_id": str(uuid7())
                     }
                 },
             }

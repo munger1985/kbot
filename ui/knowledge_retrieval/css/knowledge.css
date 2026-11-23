@@ -611,10 +611,19 @@ dialog.knowledge-dialog.agent-dialog { width: min(980px, calc(100vw - 36px)); }
 .agent-editor-section .knowledge-field textarea { min-height: 116px; }
 .agent-editor-section .knowledge-field select[multiple] { min-height: 132px; padding: 5px; }
 .agent-editor-section .knowledge-field select[multiple] option { padding: 6px 8px; }
-.agent-editor-section textarea.agent-config {
-  min-height: 150px; color: var(--surface); background: var(--surface-code);
-  font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+.agent-editor-section .knowledge-form-grid > .knowledge-field { align-content: start; }
+.agent-field-help { position: relative; display: flex; align-items: center; gap: 6px; }
+.agent-field-help .agent-field-help-trigger {
+  width: 18px; height: 18px; min-height: 0; padding: 0; border: 1px solid var(--knowledge-line-strong);
+  border-radius: 50%; font-size: 12px; line-height: 1; cursor: help;
 }
+.agent-field-help > [role="tooltip"] {
+  position: absolute; z-index: 1; inset-block-start: 100%; inset-inline-start: 0; visibility: hidden;
+  width: max-content; max-width: min(280px, 100%); padding: 8px 10px; border: 1px solid var(--knowledge-line);
+  border-radius: var(--knowledge-radius); color: var(--ink); background: var(--surface-raised);
+  box-shadow: var(--shadow-soft); font-size: 13px;
+}
+.agent-field-help:not([data-help-dismissed]) > :is(.agent-field-help-trigger:is(:hover, :focus) + [role="tooltip"], [role="tooltip"]:hover) { visibility: visible; }
 
 
 .x-search-result {

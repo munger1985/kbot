@@ -24,7 +24,7 @@ from tests.unit.aiops_agent.test_aiops_agent_creation import _UnitOfWork, _datab
 ACTOR_ID = "kbotui_dev"
 SCOPE = {"domain_id": 100}
 RESOLUTION_SCOPE = SCOPE
-MODEL_NAME_FIELD = "served_model_name"
+MODEL_NAME_FIELD = "provider_model_name"
 
 
 def _unit_of_work():

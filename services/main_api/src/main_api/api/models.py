@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from platform_clients import AIModelConfigClient
 from platform_core.contracts import AuthContext, PUBLIC_API_V1
 from platform_core.dictionary import coerce_model_category, is_enabled_model_status
+from platform_core.model_representation import ImageSearchDirection, registered_image_search_directions
 
 
 router = APIRouter(
@@ -21,13 +22,15 @@ router = APIRouter(
 
 class PublicModelCatalogItem(BaseModel):
     model_id: UUID
-    served_model_name: str
     display_name: str
     provider_model_name: str
     category: int
     provider: str
     status: str
     model_params: dict[str, Any] = Field(default_factory=dict)
+    image_search_directions: list[ImageSearchDirection] | None = Field(
+        default=None, description="模型登记的图片检索方向；null 表示没有可用的表示规格，不代表索引状态。",
+    )
 
 
 def _clients(request: Request) -> tuple[AIModelConfigClient, ...]:
@@ -96,7 +99,7 @@ async def load_managed_model_catalog(
         key=lambda row: (
             int(row.get("category") or 0),
             str(row.get("display_name") or ""),
-            str(row.get("served_model_name") or ""),
+            str(row.get("model_id") or ""),
         )
     )
     return rows
@@ -140,6 +143,7 @@ def _normalize_catalog_row(row: dict[str, Any]) -> dict[str, Any] | None:
         **row,
         "category": int(category),
         "status": "ACTIVE",
+        "image_search_directions": registered_image_search_directions({**row, "category": category}),
         "model_params": {
             key: value
             for key, value in (row.get("model_params") or {}).items()
@@ -178,7 +182,7 @@ async def load_model_catalog(request: Request) -> list[dict[str, Any]]:
         key=lambda row: (
             int(row.get("category") or 0),
             str(row.get("display_name") or ""),
-            str(row.get("served_model_name") or ""),
+            str(row.get("model_id") or ""),
         )
     )
     return rows

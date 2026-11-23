@@ -19,6 +19,7 @@ class OperationsDocumentRepository(KnowledgeIngestionRepository):
             jobs.entity.document_version_id == version_id))).all()
         require(document is not None and len(rows) == 1, "文档来源或任务身份断裂")
         job = rows[0]
+        parse_run = await repos["knowledge_parse_run"].get(job.parse_run_id)
         generation_repo = repos["knowledge_index_generation"]
         generations = (await self._session.scalars(generation_repo.statement().where(
             generation_repo.entity.document_version_id == version_id,
@@ -37,13 +38,16 @@ class OperationsDocumentRepository(KnowledgeIngestionRepository):
             "status": version.status, "processing_status": job.status,
             "error_code": job.error_code, "revision": int(version.row_version),
             "generation_id": str(generation.index_generation_id) if generation else None,
+            "parse_profile_hash": parse_run.profile_hash if parse_run else None,
+            "projection_profile_hash": fingerprint(generation.manifest_json.get("profile")) if generation else None,
             "active_generation_id": str(version.active_generation_id) if version.active_generation_id else None,
             "allowed_view_hash": version.allowed_view_hash}
 
-    async def create_query_ticket(self, access, *, ticket_id, agent_id, target_id, request, snapshots, expires_at, filters=None, parent_turn_id=None, execution_spec=None):
+    async def create_query_ticket(self, access, *, ticket_id, agent_id, agent_version_id, target_id, request, snapshots, expires_at, filters=None, parent_turn_id=None, execution_spec=None):
         require(snapshots and len(snapshots) <= 500, "知识查询范围为空或超过预算")
         snapshots = [{key: value for key, value in row.items() if key != "created_at"} for row in snapshots]
         values = {"parent_turn_id": str(parent_turn_id) if parent_turn_id else None, "agent_id": str(agent_id), "target_id": str(target_id) if target_id else None,
+            "agent_version_id": str(agent_version_id),
             "request": request.model_dump(mode="json"), "snapshots": snapshots, "filters": filters or {},
             "execution_spec": execution_spec,
             "run_ref": getattr(access, "run_ref", None), "spec_hash": getattr(access, "spec_hash", None)}
@@ -62,7 +66,9 @@ class OperationsDocumentRepository(KnowledgeIngestionRepository):
         require(row.status == "QUERY_TICKET" and row.subject_ref == access.subject_ref
             and row.expires_at > now and fingerprint(row.policy_json) == row.scope_hash,
             "原知识子执行委托已经过期或被篡改")
-        require(row.policy_json.get("execution_spec"), "查询不是可重放的知识子执行")
+        spec = row.policy_json.get("execution_spec")
+        require(spec and row.policy_json.get("agent_version_id") == spec.get("consumer_agent_version_id"),
+            "查询不是冻结了当前 Agent 版本的知识子执行")
         return row.policy_json
 
     async def query_ticket(self, access, identity, *, now, allow_expired=False):

@@ -113,9 +113,9 @@ test("实际 Shell 与页面脚本完成列表渲染和事件绑定", async () =
       allowed_business_system_ids: ["system"], capabilities: ["RESOURCE_CATALOG_QUERY"] }],
     [paths[1]]: { items: [{ business_system_id: "system", display_name: "生产系统", status: "ENABLED" }] },
     [paths[2]]: [
-      { model_id: "model", display_name: "测试模型", category: 1, served_model_name: "test" },
-      { model_id: "ocr", display_name: "测试 OCR", category: 6, served_model_name: "ocr" },
-      { model_id: "vlm", display_name: "测试 VLM", category: 5, served_model_name: "vlm" },
+      { model_id: "model", display_name: "测试模型", category: 1, provider_model_name: "test" },
+      { model_id: "ocr", display_name: "测试 OCR", category: 6, provider_model_name: "ocr" },
+      { model_id: "vlm", display_name: "测试 VLM", category: 5, provider_model_name: "vlm" },
     ],
   } });
   await app.start();

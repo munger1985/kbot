@@ -29,6 +29,7 @@ from aiops_agent.application.configuration.instance_discovery import (
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
+from aiops_agent.application.data_protection_jobs import ProtectionBackend
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
@@ -115,6 +116,8 @@ class ConfigurationServiceBase:
         credential_cipher: ManagedCredentialCipher,
         managed_credential_service: AIOpsManagedCredentialService,
         target_connection_tester: TargetConnectionTester,
+        protection_backend: ProtectionBackend | None = None,
+        local_drill_resource_ids: frozenset[UUID] = frozenset(),
         diagnostic_source_catalog: DiagnosticSourceAdapterCatalogPort | None = None,
         diagnostic_source_registry: DiagnosticSourceAdapterRegistryPort | None = None,
         now: Callable[[], datetime] | None = None,
@@ -130,6 +133,8 @@ class ConfigurationServiceBase:
             cipher=credential_cipher
         )
         self._managed_credentials = managed_credential_service
+        self._protection_backend = protection_backend
+        self._local_drill_resource_ids = local_drill_resource_ids
         self._target_connection_tester = target_connection_tester
         self._diagnostic_source_catalog = diagnostic_source_catalog
         self._diagnostic_source_registry = diagnostic_source_registry

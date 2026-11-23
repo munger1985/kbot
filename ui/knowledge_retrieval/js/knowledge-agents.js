@@ -12,6 +12,9 @@
     x_search_llm: "agent-x-search-llm",
     data_planner_llm: "agent-data-planner-llm",
   });
+  const ROUTER_THRESHOLDS = [
+    [0.4, "较宽松（40%）"], [0.6, "标准（60%，默认）"], [0.8, "较严格（80%）"],
+  ];
   const state = {
     rows: [],
     options: { libraries: [], data_models: [], models: [] },
@@ -84,7 +87,7 @@
   }
 
   function modelLabel(row) {
-    return row.display_name || row.served_model_name || row.model_id;
+    return row.display_name || row.provider_model_name || row.model_id;
   }
 
   function setSelectOptions(select, rows, currentId, emptyLabel) {
@@ -130,6 +133,42 @@
     });
   }
 
+  function objectValue(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
+  function configuredThreshold(config) {
+    const raw = config.router_confidence_threshold;
+    const number = typeof raw === "number" || (typeof raw === "string" && raw.trim()) ? Number(raw) : NaN;
+    return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : 0.6;
+  }
+
+  function configuredMemory(config) {
+    const value = objectValue(config.memory).episodic_enabled;
+    return typeof value === "boolean" ? value : true;
+  }
+
+  function fillRuntimeOptions(config) {
+    const base = objectValue(config);
+    const threshold = configuredThreshold(base), select = element("agent-router-threshold");
+    select.replaceChildren(...ROUTER_THRESHOLDS.map(([value, name]) => new Option(name, String(value))));
+    if (!ROUTER_THRESHOLDS.some(([value]) => value === threshold)) {
+      select.add(new Option(`当前自定义（${new Intl.NumberFormat("zh-CN", { style: "percent", maximumFractionDigits: 2 }).format(threshold)}）`, String(threshold)));
+    }
+    select.value = String(threshold);
+    element("agent-episodic-memory").value = String(configuredMemory(base));
+  }
+
+  function selectedConfig() {
+    const base = objectValue(state.editing?.config);
+    const selected = { ...base };
+    const threshold = Number(element("agent-router-threshold").value);
+    const episodic = element("agent-episodic-memory").value === "true";
+    if (threshold !== configuredThreshold(base)) selected.router_confidence_threshold = threshold;
+    if (episodic !== configuredMemory(base)) selected.memory = { ...objectValue(base.memory), episodic_enabled: episodic };
+    return selected;
+  }
+
   function resetForm() {
     state.editing = null;
     element("agent-form").reset();
@@ -140,7 +179,7 @@
     element("agent-submit").textContent = "保存草稿";
     element("agent-status").value = "DRAFT";
     element("agent-status").disabled = true;
-    element("agent-config").value = "{}";
+    fillRuntimeOptions(null);
     fillResourceOptions(null);
   }
 
@@ -156,7 +195,7 @@
     element("agent-instruction").value = row.instruction || "";
     element("agent-status").disabled = false;
     element("agent-status").value = row.status === "ACTIVE" ? "ACTIVE" : row.status === "DISABLED" ? "DISABLED" : "DRAFT";
-    element("agent-config").value = JSON.stringify(row.config || {}, null, 2);
+    fillRuntimeOptions(row.config);
     fillResourceOptions(row);
   }
 
@@ -171,14 +210,6 @@
     }));
   }
 
-  function parseConfig() {
-    const source = String(element("agent-config").value || "").trim();
-    if (!source) return {};
-    const value = JSON.parse(source);
-    if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("高级配置必须是 JSON 对象。");
-    return value;
-  }
-
   function stable(value) {
     if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
     if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stable(value[key])}`).join(",")}}`;
@@ -191,7 +222,7 @@
       data_model_ids: selectedDataModels(),
       models: selectedModels(),
       instruction: String(element("agent-instruction").value || "").trim() || null,
-      config: parseConfig(),
+      config: selectedConfig(),
     };
   }
 
@@ -213,13 +244,7 @@
       toast("请填写 Agent 名称。", "error");
       return;
     }
-    let version;
-    try {
-      version = versionValues();
-    } catch (error) {
-      toast(error.message || "高级配置不是有效 JSON。", "error");
-      return;
-    }
+    const version = versionValues();
     submit.disabled = true;
     try {
       const description = String(element("agent-description").value || "").trim() || null;
@@ -327,6 +352,16 @@
 
   KBotKnowledgeShell.ready.then(async (access) => {
     if (!access) return;
+    const help = element("agent-x-search-help"), tooltip = element("agent-x-search-tooltip");
+    const helpLabel = help.parentElement;
+    const resetHelp = () => { delete helpLabel.dataset.helpDismissed; };
+    helpLabel.addEventListener("pointerleave", resetHelp);
+    help.addEventListener("blur", resetHelp);
+    element("agent-dialog").addEventListener("keydown", event => {
+      if (event.key !== "Escape" || getComputedStyle(tooltip).visibility !== "visible") return;
+      event.preventDefault();
+      helpLabel.dataset.helpDismissed = "";
+    });
     element("agent-create")?.addEventListener("click", () => {
       resetForm();
       openDialog();

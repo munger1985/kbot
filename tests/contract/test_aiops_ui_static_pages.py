@@ -134,7 +134,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("data-topology-relation", (AIOPS_ROOT / "js" / "aiops-topology-view.js").read_text(encoding="utf-8"))
         self.assertIn("function renderTopology()", systems)
         self.assertIn('searchParams.get("id")', systems)
-        self.assertFalse((AIOPS_ROOT / "data-protection.html").exists())
+        self.assertIn('id="system-protection-summary"', workspace)
+        self.assertIn("./data-protection.html?", systems)
 
     def test_chat_owns_evidence_based_target_fact_confirmation(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(encoding="utf-8")
@@ -808,7 +809,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261029_3", "20261109_common"),
+            "chat": ("20261029_3", "20261120_knowledge"),
             "situations": ("20261029_3", "20261105_confirm1"),
         }
         for page_name, (stylesheet_version, script_version) in versions.items():
@@ -926,20 +927,24 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('class="reference-drawer admin-drawer admin-drawer-sectioned knowledge-detail-drawer"', page)
         self.assertIn('id="upload-knowledge-base"', page)
         self.assertIn("/operations-knowledge", script)
-        self.assertIn('groupingMode: "EACH_FILE"', script)
-        self.assertIn('"SINGLE_ASSET"', script)
-        self.assertIn('value="SINGLE_ASSET"', page)
-        self.assertIn("多文件资料", page)
+        self.assertIn('type="file" multiple', page)
+        self.assertNotIn("SINGLE_ASSET", page)
+        self.assertNotIn("SINGLE_ASSET", script)
+        self.assertIn("每个文件独立提交和审核", page)
         self.assertIn("资料内容指纹", script)
         self.assertIn("文档解析", script)
         for obsolete in ("Bundle", "bundle", "KC 解析"):
             self.assertNotIn(obsolete, page)
             self.assertNotIn(obsolete, script)
-        self.assertIn('body.set("grouping_mode", state.groupingMode)', script)
-        self.assertIn('body.set("knowledge_base_id", document.getElementById("upload-knowledge-base").value)', script)
-        self.assertIn('body.set("metadata", JSON.stringify(metadata))', script)
+        self.assertIn('body.set("knowledge_base_id", base)', script)
+        self.assertIn('body.set("metadata", JSON.stringify({ display_name, security_level }))', script)
+        self.assertIn('"Idempotency-Key": id', script)
         self.assertIn('`${api}/uploads`', script)
         self.assertIn("X-Expected-Asset-Row-Version", script)
+        self.assertIn('id="manual-parse-strategy"', script)
+        self.assertIn('data-review="approve" disabled', script)
+        self.assertIn('option.selectable && option.strategy === strategy', script)
+        self.assertIn('parse_strategy: action === "approve" ? strategy : undefined', script)
         self.assertNotIn('data-review="publish"', script)
         self.assertNotIn('id="knowledge-overview"', page)
         self.assertNotIn('class="knowledge-cards"', page)
@@ -972,7 +977,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("Embedding", page)
         self.assertNotIn("/api/v1/knowledge", script)
 
-    def test_knowledge_base_editor_manages_model_bindings(self):
+    def test_knowledge_base_editor_has_separate_model_bindings_and_read_only_capabilities(self):
         page = (AIOPS_ROOT / "knowledge-bases.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-knowledge-bases.js").read_text(
             encoding="utf-8"
@@ -981,12 +986,18 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("knowledge-answering/binding", script)
         for role in (
             "parser_ocr", "parser_vlm", "parser_llm", "retrieval_llm",
-            "embedding", "visual_embedding",
+            "parse_strategy",
         ):
+            self.assertNotIn(f'name="{role}"', page)
+        for role in ("ocr", "vlm", "embedding", "visual_embedding", "tagging_model_id"):
             self.assertIn(f'name="{role}"', page)
-            self.assertIn(role, script)
+        self.assertIn("data-knowledge-parse-help", page)
+        self.assertIn("payload.parse_models", script)
+        self.assertIn("payload.index_models", script)
+        self.assertIn('id="knowledge-base-capabilities"', page)
+        self.assertIn('row?.capabilities', script)
         self.assertIn('/api/v1/model-catalog', script)
-        self.assertIn('/models`)', script)
+        self.assertNotIn('/models`', script)
         self.assertIn('const payload = { display_name:', script)
 
     def test_knowledge_answering_is_part_of_the_unified_agent(self):
@@ -1004,14 +1015,14 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertFalse((AIOPS_ROOT / "knowledge-answering-agent.html").exists())
         self.assertFalse((AIOPS_ROOT / "js" / "aiops-knowledge-answering-agent.js").exists())
 
-    def test_login_uses_fixed_aiops_domain_contract(self):
+    def test_aiops_login_uses_the_unified_workspace(self):
         login = (AIOPS_ROOT / "login.html").read_text(encoding="utf-8")
         auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("aiops_portal", login)
-        self.assertNotIn('name="domain_id"', login)
-        self.assertIn("/api/v1/apps/aiops/auth/login", auth)
+        self.assertIn('content="0;url=../index.html"', login)
+        self.assertNotIn("<form", login)
+        self.assertNotIn("/api/v1/apps/aiops/auth/login", auth)
 
     def test_request_id_falls_back_without_crypto_random_uuid(self):
         script = """
@@ -1315,6 +1326,15 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("IntersectionObserver", script)
         self.assertIn("state.observer?.disconnect()", script)
 
+    def test_data_protection_drill_schedule_requires_saved_identity_and_preflight(self):
+        page = (AIOPS_ROOT / "data-protection.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-data-protection.js").read_text(encoding="utf-8")
+        self.assertIn('id="protection-toggle-drill"', page)
+        self.assertIn('changeSchedule("drill")', script)
+        self.assertIn("view.settings.restore_template_key && view.has_restore_identity", script)
+        self.assertIn("未核验专用隔离空环境时，不会启用", script)
+        self.assertIn("expected_revision:previous.revision, enabled", script)
+
     def test_recovery_drills_use_independent_operations_workspace(self):
         workspace_page = (AIOPS_ROOT / "business-system-workspace.html").read_text(
             encoding="utf-8"
@@ -1355,7 +1375,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         systems = (AIOPS_ROOT / "js" / "aiops-business-systems.js").read_text(encoding="utf-8")
         self.assertNotIn("protection-profile", systems)
         self.assertIn("/business-systems?limit=200", systems)
-        self.assertFalse((AIOPS_ROOT / "data-protection.html").exists())
+        protection = (AIOPS_ROOT / "data-protection.html").read_text(encoding="utf-8")
+        self.assertIn("生产主库和备库不提供 Agent 恢复入口", protection)
 
 
     def test_configuration_pages_open_real_create_and_edit_dialogs(self):
@@ -1565,6 +1586,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             '["dashboard", "运维总览"]',
             '["monitoring", "实时监控"]', '["situations", "告警诊断"]',
             '["inspections", "数据库巡检"]',
+            '["data-protection", "数据保护"]',
             '["recovery-drills", "恢复演练"]', '["reports", "报告中心", "knowledge"]',
             '["operations-knowledge", "运维资料库"]',
             '["business-systems", "业务系统"]', '["diagnostic-sources", "监控源"]',
@@ -1576,7 +1598,6 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             self.assertIn(item, navigation)
         self.assertNotIn('["resource-management", "资源管理"', navigation)
         self.assertNotIn('["operations-knowledge-chat", "知识问答"]', navigation)
-        self.assertNotIn('["data-protection", "数据保护"]', navigation)
         self.assertNotIn('["knowledge-answering-agent", "知识问答 Agent"]', navigation)
         self.assertNotIn('["api-clients", "API 客户端"]', navigation)
         self.assertIn("bindNavigationGroups", shell)

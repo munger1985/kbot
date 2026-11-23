@@ -3,83 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>登录 · 知识检索</title>
-  <link rel="stylesheet" href="./css/knowledge.css?v=20261105_3">
-  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261105_3">
-  <link rel="stylesheet" href="./css/alignment.css?v=20261105_3">
+  <meta http-equiv="refresh" content="0;url=../index.html">
+  <title>KBot · 统一登录</title>
 </head>
-<body class="knowledge-login business-app-knowledge_retrieval" data-page="login">
-  <main class="knowledge-main">
-    <div class="knowledge-login-card">
-      <a class="knowledge-brand" href="./login.html" aria-label="知识检索登录">
-        <span class="knowledge-brand-mark">K</span>
-        <span><strong>知识检索</strong><small>KBot · Knowledge Retrieval</small></span>
-      </a>
-      <section id="login-section">
-        <h1>登录知识检索</h1>
-        <p>使用知识检索账号登录。首次部署的应用管理员可在登录后创建首个工作域。</p>
-        <form id="login-form">
-          <div class="knowledge-field">
-            <label for="login-user">用户 ID</label>
-            <input id="login-user" name="user_id" value="knowledgeadmin" required autocomplete="username">
-          </div>
-          <div class="knowledge-field">
-            <label for="login-password">密码</label>
-            <input id="login-password" name="password" type="password" required autocomplete="current-password">
-          </div>
-          <p id="login-error" class="knowledge-form-error" hidden></p>
-          <button class="primary" type="submit">登录</button>
-        </form>
-      </section>
-      <section id="entry-section" hidden>
-        <form id="select-domain-form" hidden>
-          <h1>选择工作域</h1>
-          <p>请选择要进入的工作域。</p>
-          <div class="knowledge-field">
-            <label for="entry-domain">工作域</label>
-            <select id="entry-domain" name="domain_id" required></select>
-          </div>
-          <button class="primary" type="submit">进入工作域</button>
-        </form>
-        <form id="first-domain-form" hidden>
-          <h1>创建首个工作域</h1>
-          <p>知识检索尚未配置工作域。创建后即可进入并配置知识库。</p>
-          <div class="knowledge-field">
-            <label for="first-domain-name">工作域名称</label>
-            <input id="first-domain-name" name="name" required maxlength="256">
-          </div>
-          <div class="knowledge-field">
-            <label for="first-domain-description">说明（可选）</label>
-            <textarea id="first-domain-description" name="description" maxlength="1000"></textarea>
-          </div>
-          <button class="primary" type="submit">创建并进入</button>
-        </form>
-        <p id="entry-error" class="knowledge-form-error" aria-live="polite" hidden></p>
-        <button id="entry-back" type="button">返回登录</button>
-      </section>
-      <section id="password-section" hidden>
-        <h1>修改初始密码</h1>
-        <p>当前账号必须先修改密码后才能进入知识检索。新密码至少 12 位，并同时包含大小写字母、数字和特殊字符。</p>
-        <form id="password-form">
-          <div class="knowledge-field">
-            <label for="current-password">当前密码</label>
-            <input id="current-password" name="current_password" type="password" required autocomplete="current-password">
-          </div>
-          <div class="knowledge-field">
-            <label for="new-password">新密码</label>
-            <input id="new-password" name="new_password" type="password" required autocomplete="new-password">
-          </div>
-          <div class="knowledge-field">
-            <label for="confirm-password">确认新密码</label>
-            <input id="confirm-password" name="confirm_password" type="password" required autocomplete="new-password">
-          </div>
-          <p id="password-error" class="knowledge-form-error" hidden></p>
-          <button class="primary" type="submit">保存并进入工作台</button>
-        </form>
-      </section>
-    </div>
-  </main>
-  <script src="../runtime-config.js"></script>
-  <script src="./js/knowledge-auth.js?v=20261120_entry"></script>
+<body>
+  <p>登录已统一到 KBot 工作台。<a href="../index.html">前往工作台</a></p>
 </body>
 </html>

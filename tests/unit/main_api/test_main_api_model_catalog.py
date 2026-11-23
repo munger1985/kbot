@@ -23,6 +23,31 @@ class _ModelClient:
 
 
 class MainApiModelCatalogTest(unittest.TestCase):
+    def test_public_catalog_distinguishes_registered_image_search_directions(self):
+        params = {
+            "dimension": 128,
+            "retrieval_directions": ["TEXT_TO_IMAGE", "IMAGE_TO_IMAGE", "IMAGE_TO_TEXT"],
+        }
+        vision = {
+            "category": "VISUAL_EMBEDDING", "provider": "local_qwen", "status": "ACTIVE",
+            "provider_model_name": "vision",
+        }
+        app = FastAPI()
+        app.state.model_config_clients = (_ModelClient([
+            {**vision, "model_id": str(uuid7()), "display_name": "A", "model_params": params},
+            {**vision, "model_id": str(uuid7()), "display_name": "B",
+             "model_params": {**params, "retrieval_directions": ["IMAGE_TO_IMAGE"]}},
+            {**vision, "model_id": str(uuid7()), "display_name": "C",
+             "model_params": {"retrieval_directions": ["TEXT_TO_IMAGE"]}},
+        ]),)
+        app.include_router(router)
+        response = TestClient(app).get("/api/v1/model-catalog")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(
+            [["IMAGE_TO_IMAGE", "TEXT_TO_IMAGE"], ["IMAGE_TO_IMAGE"], None],
+            [row["image_search_directions"] for row in response.json()],
+        )
+
     def test_startup_configures_all_model_catalog_clients(self):
         app = FastAPI()
 
@@ -73,7 +98,6 @@ class MainApiModelCatalogTest(unittest.TestCase):
                 [
                     {
                         "model_id": str(llm_id),
-                        "served_model_name": "chat-prod",
                         "provider_model_name": "chat-prod",
                         "display_name": "Chat Prod",
                         "category": 1,
@@ -82,7 +106,6 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     },
                     {
                         "model_id": str(uuid7()),
-                        "served_model_name": "chat-disabled",
                         "provider_model_name": "chat-disabled",
                         "display_name": "Chat Disabled",
                         "category": 1,
@@ -95,7 +118,6 @@ class MainApiModelCatalogTest(unittest.TestCase):
                 [
                     {
                         "model_id": str(embedding_id),
-                        "served_model_name": "embed-prod",
                         "provider_model_name": "embed-prod",
                         "display_name": "Embedding Prod",
                         "category": 2,
@@ -109,7 +131,6 @@ class MainApiModelCatalogTest(unittest.TestCase):
                 [
                     {
                         "model_id": str(ocr_id),
-                        "served_model_name": "ocr-prod",
                         "provider_model_name": "ocr-prod",
                         "display_name": "OCR Prod",
                         "category": 6,
@@ -118,7 +139,6 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     },
                     {
                         "model_id": str(uuid7()),
-                        "served_model_name": "ocr-draft",
                         "provider_model_name": "ocr-draft",
                         "display_name": "OCR Draft",
                         "category": 6,
@@ -149,7 +169,6 @@ class MainApiModelCatalogTest(unittest.TestCase):
                 [
                     {
                         "model_id": str(text_id),
-                        "served_model_name": "embed-prod",
                         "provider_model_name": "embed-prod",
                         "display_name": "文本向量",
                         "category": Decimal("2"),
@@ -158,7 +177,6 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     },
                     {
                         "model_id": str(uuid7()),
-                        "served_model_name": "embed-draft",
                         "provider_model_name": "embed-draft",
                         "display_name": "草稿向量",
                         "category": "TXT_EMBEDDING",
@@ -171,7 +189,6 @@ class MainApiModelCatalogTest(unittest.TestCase):
                 [
                     {
                         "model_id": str(visual_id),
-                        "served_model_name": "visual-prod",
                         "provider_model_name": "visual-prod",
                         "display_name": "视觉向量",
                         "category": "VISUAL_EMBEDDING",

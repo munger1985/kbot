@@ -55,13 +55,12 @@ class ImageEvidenceModelClient:
             )
             raise
         logger.info(
-            "图片模型定义已读取 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | served_model_name={} | provider={}",
+            "图片模型定义已读取 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | provider={}",
             run_id,
             agent_id,
             trace_id,
             mode,
             model_id,
-            definition.get("served_model_name"),
             definition.get("provider"),
         )
         headers = {
@@ -82,7 +81,7 @@ class ImageEvidenceModelClient:
             if not prompt:
                 raise ValueError("VLM 图片解析必须提供已登记 Prompt")
             payload = {
-                "served_model_name": definition["served_model_name"],
+                "model_id": str(model_id),
                 "stream": False,
                 "messages": [
                     {
@@ -104,13 +103,12 @@ class ImageEvidenceModelClient:
             }
         timeout = aiohttp.ClientTimeout(total=config.timeout_seconds)
         logger.info(
-            "开始图片模型推理 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | served_model_name={}",
+            "开始图片模型推理 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={}",
             run_id,
             agent_id,
             trace_id,
             mode,
             model_id,
-            definition.get("served_model_name"),
         )
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:

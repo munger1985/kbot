@@ -1,6 +1,7 @@
 """知识检索应用配置。"""
 
 from functools import lru_cache
+from typing import ClassVar
 from knowledge_retrieval_app.composition.knowledge_profiles import KnowledgeFoundationConfig
 
 from pydantic import Field
@@ -21,6 +22,9 @@ class KnowledgeRetrievalAppWorkerConfig(ServiceConfig):
 
 
 class KnowledgeRetrievalAppSettings(Settings):
+    topology_client_endpoints: ClassVar[dict[str, str]] = {"model_ocr": "model_ocr", "model_vlm": "model_vlm"}
+    model_ocr: ServiceDependencyConfig
+    model_vlm: ServiceDependencyConfig
     knowledge: KnowledgeFoundationConfig = Field(default_factory=KnowledgeFoundationConfig)
     computation: ServiceDependencyConfig = Field(default_factory=lambda: ServiceDependencyConfig(
         base_url="http://127.0.0.1:18090", audience="kbot-knowledge-core-api", timeout_seconds=600))

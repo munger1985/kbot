@@ -11,7 +11,7 @@ class _RecordingModelClient(AIModelClient):
         super().__init__(caller_service="unit-test")
         self.request_kwargs = None
 
-    async def call_llm_model(self, served_model_name, prompt, **kwargs):
+    async def call_llm_model(self, model_id, prompt, **kwargs):
         self.request_kwargs = kwargs
         yield json.dumps(
             {
@@ -27,7 +27,7 @@ class AIModelClientJsonTest(unittest.IsolatedAsyncioTestCase):
         client = _RecordingModelClient()
 
         result = await client.get_llm_json(
-            served_model_name="configured-model",
+            model_id="configured-model",
             prompt="返回状态",
         )
 

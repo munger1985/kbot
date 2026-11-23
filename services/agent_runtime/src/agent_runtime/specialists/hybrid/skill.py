@@ -2,7 +2,7 @@
 
 import json
 
-from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.domain.model_bindings import snapshot_model_id
 from agent_runtime.language import language_instruction, response_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 
@@ -20,7 +20,7 @@ class _HybridExtractSkill:
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
         model_name = str(
-            agent_model_name(
+            snapshot_model_id(
                 context.config_snapshot.get("agent", {}),
                 "composer_llm",
             )
@@ -45,7 +45,7 @@ class _HybridExtractSkill:
             context.config_snapshot, context.original_input
         )
         response = await self._model_client.get_llm_json(
-            served_model_name=model_name,
+            model_id=model_name,
             prompt=[
                 {"role": "system", "content": prompt.content},
                 {

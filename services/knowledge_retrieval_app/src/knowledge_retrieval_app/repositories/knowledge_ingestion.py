@@ -10,6 +10,7 @@ from knowledge_algorithms.contracts.errors import require
 from knowledge_algorithms.contracts.wire import decode, encode
 from knowledge_algorithms.parsing.contracts import ParseProfile, SourceDescriptor
 from knowledge_algorithms.parsing.events import ParseEventType, ParseRunIdentity, local_key
+from knowledge_algorithms.projections.contracts import ProjectionProfile
 from knowledge_algorithms.references.figures import FigureResolution
 from knowledge_algorithms.references.relations import ResolvedRelation
 
@@ -70,7 +71,7 @@ class KnowledgeIngestionRepository:
             job.status, job.compute_ref)
 
     async def register(self, scope, *, document_id, document_version_id, source, profile, business_asset_ref,
-                       business_version_ref, title, now):
+                       business_version_ref, title, now, awaiting_approval=False):
         repositories = self._repos(scope)
         BINDING.check_owner(source.owner_binding_ref)
         require(source.document_version_ref == str(document_version_id), "文档版本与源描述不符")
@@ -84,25 +85,134 @@ class KnowledgeIngestionRepository:
             require(version.document_id == document_id and version.source_descriptor_json == encode(source)
                     and version.business_version_ref == business_version_ref,
                     "同版本不得绑定其他源内容")
-            rows = (await self._session.scalars(repositories["knowledge_ingestion_job"].statement().where(
-                KnowledgeIngestionJobRepository.entity.document_version_id == document_version_id))).all()
-            require(len(rows) == 1, "文档版本的摄取任务身份不唯一")
-            require(rows[0].context_json.get("subject_ref") == scope.subject_ref, "摄取任务不属于当前主体")
-            run = await repositories["knowledge_parse_run"].get(rows[0].parse_run_id)
+            jobs = repositories["knowledge_ingestion_job"]
+            original = (await self._session.scalars(jobs.statement().where(
+                jobs.entity.document_version_id == document_version_id
+            ).order_by(jobs.entity.attempt, jobs.entity.ingestion_job_id).limit(1))).first()
+            require(original is not None and original.context_json.get("subject_ref") == scope.subject_ref,
+                    "摄取任务不属于当前主体")
+            run = await repositories["knowledge_parse_run"].get(original.parse_run_id)
             require(run.profile_hash == profile.profile_hash, "同文档版本不得隐式切换解析 Profile")
-            return rows[0].ingestion_job_id
+            return original.ingestion_job_id
         version = await repositories["knowledge_document_version"].add(dict(
             document_version_id=document_version_id, document_id=document_id, source_sha256=source.sha256,
             mime_type=source.mime_type, byte_count=source.byte_count, source_object_ref=source.source_handle,
             business_version_ref=business_version_ref, source_descriptor_json=encode(source), status="RECEIVED"))
+        initial = "AWAITING_APPROVAL" if awaiting_approval else "RECEIVED"
         run = await repositories["knowledge_parse_run"].add(dict(document_version_id=document_version_id,
             source_sha256=source.sha256, profile_hash=profile.profile_hash, parser_revision="PENDING",
-            model_snapshot_json={}, attempt=1, fence=1, status="RECEIVED", profile_json=encode(profile),
+            model_snapshot_json={}, attempt=1, fence=1, status=initial, profile_json=encode(profile),
             checkpoint_json={}))
         job = await repositories["knowledge_ingestion_job"].add(dict(document_version_id=document_version_id,
             parse_run_id=run.parse_run_id, attempt=1, fence=1, lease_owner=None, lease_until=now,
-            retry_at=now, recovery_sequence=0, status="RECEIVED", context_json={"subject_ref": scope.subject_ref}))
+            retry_at=now, recovery_sequence=0, status=initial, context_json={"subject_ref": scope.subject_ref}))
         return job.ingestion_job_id
+
+    async def decide_approval(self, scope, job_id, *, document_version_id, profile, now):
+        """只可冻结尚未领取的精确任务；拒绝后永远不会入队。"""
+        repositories = self._repos(scope)
+        version = await repositories["knowledge_document_version"].get(document_version_id, lock=True)
+        job = await repositories["knowledge_ingestion_job"].get(job_id, lock=True)
+        require(version is not None and job is not None and job.document_version_id == document_version_id
+                and job.status == "AWAITING_APPROVAL" and job.lease_owner is None and not job.compute_ref,
+                "当前任务已不处于待审批状态")
+        run = await repositories["knowledge_parse_run"].get(job.parse_run_id, lock=True)
+        require(run is not None and run.status == "AWAITING_APPROVAL", "解析快照已被登记")
+        if profile is not None:
+            require(profile.strategy is not None, "缺少经批准的解析方案")
+            run.profile_hash, run.profile_json = profile.profile_hash, encode(profile)
+            run.model_snapshot_json = {
+                role: encode(binding) for role, binding in (("ocr", profile.ocr_model), ("vlm", profile.vlm_model))
+                if binding is not None}
+            run.status = job.status = "RECEIVED"
+            job.lease_until = job.retry_at = now
+        else:
+            run.status = job.status = "REJECTED"
+        await self._session.flush()
+
+    async def restart_parse(self, scope, job_id, *, document_version_id, profile, initiated_by, now):
+        repositories = self._repos(scope)
+        version = await repositories["knowledge_document_version"].get(document_version_id, lock=True)
+        jobs = repositories["knowledge_ingestion_job"]
+        previous = await jobs.get(job_id, lock=True)
+        require(version is not None and version.status not in {"WITHDRAWN", "CANCELLED"}
+                and previous is not None and previous.document_version_id == document_version_id
+                and previous.context_json.get("subject_ref") == scope.subject_ref, "原文件或解析任务已变更")
+        # 同一原文件只允许由当前任务发起下一次解析。
+        active = (await self._session.scalars(jobs.statement().where(
+            jobs.entity.document_version_id == document_version_id
+        ).order_by(jobs.entity.attempt.desc(), jobs.entity.ingestion_job_id.desc()).limit(1))).first()
+        require(active is not None and active.ingestion_job_id == job_id, "当前任务已变化")
+        old_run = await repositories["knowledge_parse_run"].get(previous.parse_run_id)
+        require(old_run is not None, "当前任务缺少解析代次")
+        published = version.status == "PUBLISHED" and version.active_generation_id is not None
+        parse_failed = previous.status == "FAILED" and old_run.status != "PARSED"
+        published_success = (published and previous.status == old_run.status == "PARSED"
+                             and previous.parse_run_id == version.published_parse_run_id)
+        indexed_success = False
+        if version.status == previous.status == old_run.status == "PARSED" and version.active_generation_id is None:
+            outboxes = repositories["knowledge_outbox"]
+            delivered = self._session.scalar(outboxes.statement().where(
+                outboxes.entity.document_version_id == document_version_id,
+                outboxes.entity.idempotency_key == str(old_run.parse_run_id) + ":projection",
+                outboxes.entity.status == "DELIVERED"))
+            indexed_success = (await delivered is not None and
+                               await self.ready_initial_projection(self._lease(scope, previous, old_run, version)) is not None)
+        require(parse_failed or published_success or indexed_success, "只能重新解析已完成索引或当前解析失败的文件")
+        context = {"subject_ref": scope.subject_ref, "restarted_from": str(job_id), "requested_by": initiated_by}
+        if published:
+            generation = await repositories["knowledge_index_generation"].get(version.active_generation_id)
+            require(generation is not None and generation.status == "READY"
+                    and generation.document_version_id == document_version_id
+                    and generation.parse_run_id == version.published_parse_run_id, "当前发布索引不完整")
+            context.update(replaces_generation_id=str(generation.index_generation_id),
+                           replacement_index_profile=generation.manifest_json["profile"])
+        else:
+            require(version.active_generation_id is None and version.status != "PUBLISHED", "文件发布状态不一致")
+        attempt = int(previous.attempt) + 1
+        run = await repositories["knowledge_parse_run"].add(dict(
+            document_version_id=document_version_id, source_sha256=version.source_sha256,
+            profile_hash=profile.profile_hash, parser_revision="PENDING",
+            model_snapshot_json={role: encode(binding) for role, binding in
+                (("ocr", profile.ocr_model), ("vlm", profile.vlm_model)) if binding is not None},
+            attempt=attempt, fence=attempt, status="RECEIVED", profile_json=encode(profile), checkpoint_json={}))
+        job = await jobs.add(dict(document_version_id=document_version_id, parse_run_id=run.parse_run_id,
+            attempt=attempt, fence=attempt, lease_owner=None, lease_until=now, retry_at=now,
+            recovery_sequence=0, status="RECEIVED", context_json=context))
+        if not published:
+            version.status = "RECEIVED"
+            version.allowed_view_hash = version.allowed_view_manifest_ref = None
+        await self._session.flush()
+        return job.ingestion_job_id
+
+    async def restart_failed_index(self, scope, job_id, *, document_version_id, now):
+        repositories = self._repos(scope)
+        version = await repositories["knowledge_document_version"].get(document_version_id, lock=True)
+        job = await repositories["knowledge_ingestion_job"].get(job_id, lock=True)
+        require(version is not None and version.status not in {"WITHDRAWN", "CANCELLED"} and job is not None
+                and job.document_version_id == document_version_id and job.context_json.get("subject_ref") == scope.subject_ref,
+                "原文件或索引任务已变更")
+        require(job.context_json.get("replaces_generation_id") ==
+                (str(version.active_generation_id) if version.active_generation_id is not None else None),
+                "发布指针已经改变")
+        run = await repositories["knowledge_parse_run"].get(job.parse_run_id)
+        require(run is not None and run.status == "PARSED"
+                and (job.context_json.get("pipeline_status") == "INDEX_FAILED"
+                     or (job.status == "FAILED" and job.context_json.get("pipeline_error"))),
+                "当前任务不处于索引失败状态")
+        outboxes = repositories["knowledge_outbox"]
+        outbox = (await self._session.scalars(outboxes.statement().where(
+            outboxes.entity.document_version_id == document_version_id,
+            outboxes.entity.idempotency_key == str(run.parse_run_id) + ":projection"
+        ).with_for_update())).one_or_none()
+        require(outbox is not None and outbox.status in {"PENDING", "FAILED"}
+                and (outbox.lease_until is None or outbox.lease_until <= now), "索引任务尚不可重新排队")
+        outbox.status, outbox.error_code = "PENDING", None
+        outbox.retry_at, outbox.lease_until, outbox.lease_owner = now, None, None
+        job.status, job.retry_at, job.error_code = "PARSED", now, None
+        job.context_json = {key: value for key, value in job.context_json.items()
+                            if key not in {"pipeline_failures", "pipeline_error", "pipeline_status"}}
+        return job_id
 
     async def get_job(self, scope, job_id):
         repositories = self._repos(scope)
@@ -141,7 +251,7 @@ class KnowledgeIngestionRepository:
             run.status = "SUPERSEDED"
             run = await repositories["knowledge_parse_run"].add(dict(
                 document_version_id=version.document_version_id, source_sha256=version.source_sha256,
-                profile_hash=run.profile_hash, parser_revision="PENDING", model_snapshot_json={},
+                profile_hash=run.profile_hash, parser_revision="PENDING", model_snapshot_json=run.model_snapshot_json,
                 attempt=int(job.attempt) + 1, fence=int(job.fence) + 1, status="PARSING",
                 profile_json=run.profile_json, checkpoint_json={}))
             job.parse_run_id = run.parse_run_id
@@ -149,7 +259,9 @@ class KnowledgeIngestionRepository:
             job.fence = int(job.fence) + 1
             job.recovery_sequence, job.last_event_digest, job.compute_ref = 0, None, None
         job.lease_owner, job.lease_until, job.status = worker_id, now + timedelta(seconds=lease_seconds), "PARSING"
-        run.status, version.status = "PARSING", "PARSING"
+        run.status = "PARSING"
+        if not job.context_json.get("replaces_generation_id"):
+            version.status = "PARSING"
         await self._session.flush()
         return self._lease(scope, job, run, version)
 
@@ -211,13 +323,17 @@ class KnowledgeIngestionRepository:
                 job.error_code = failure.get("error_code", "CHANNEL_FAILED")
                 run.quality_report_json = {"status":"FAILED", "error_code":job.error_code,
                                            "stage":failure.get("stage", "parse")}
-                run.status = job.status = version.status = "FAILED"
+                run.status = job.status = "FAILED"
+                if not job.context_json.get("replaces_generation_id"):
+                    version.status = job.status
             elif event.event_type == ParseEventType.RUN_COMPLETED:
                 import json
                 payload = json.loads(event.payload_json)
                 run.quality_report_json, run.manifest_hash = payload["quality_report"], event.payload_hash
-                run.status = job.status = version.status = (
+                run.status = job.status = (
                     "FAILED" if payload["quality_report"]["status"] == "FAILED" else "PARSED")
+                if not job.context_json.get("replaces_generation_id"):
+                    version.status = job.status
                 if run.status == "PARSED":
                     await repositories["knowledge_outbox"].add(dict(
                         document_version_id=version.document_version_id, event_type="BUILD_PROJECTION",
@@ -369,12 +485,13 @@ class KnowledgeIngestionRepository:
         _, version, job, run, _ = await self._locked(lease, now, require_live=False)
         if job.status == "CANCELLED":
             return
-        require(job.status not in {"PARSED", "FAILED"}, "已终止任务不能被改写")
+        require(job.status not in {"PARSED", "FAILED", "REJECTED"}, "已终止任务不能被改写")
+        require(not job.context_json.get("replaces_generation_id"), "不能通过取消上传改写已发布版本")
         job.status = run.status = version.status = "CANCELLED"
         job.fence = int(job.fence) + 1
         job.cancelled_at = now
 
-    async def prepare_generation(self, lease, *, projection_ref, manifest, now):
+    async def prepare_generation(self, lease, *, projection_ref, manifest, now, planned_batch_count=None):
         repositories, version, job, run, _ = await self._locked(lease, now, require_live=False)
         require(run.status == job.status == "PARSED", "未完成解析不能准备索引代次")
         repo = repositories["knowledge_index_generation"]
@@ -383,7 +500,15 @@ class KnowledgeIngestionRepository:
         if rows:
             require(len(rows) == 1 and all(rows[0].manifest_json.get(key) == value
                     for key, value in manifest.items()), "索引代次幂等身份冲突")
+            if planned_batch_count is not None:
+                current = rows[0].manifest_json
+                require(current.get("planned_batch_count", planned_batch_count) == planned_batch_count
+                        and len(current.get("batches", {})) <= planned_batch_count, "索引规划批次数与恢复点冲突")
+                if rows[0].status == "PREPARING" and "planned_batch_count" not in current:
+                    rows[0].manifest_json = {**current, "planned_batch_count": planned_batch_count}
             return rows[0].index_generation_id
+        if planned_batch_count is not None:
+            manifest = {**manifest, "planned_batch_count": planned_batch_count}
         row = await repo.add(dict(document_version_id=version.document_version_id, parse_run_id=run.parse_run_id,
             projection_ref=projection_ref, manifest_json=manifest, channel_indexes_json={}, status="PREPARING", active_revision=0))
         return row.index_generation_id
@@ -398,24 +523,65 @@ class KnowledgeIngestionRepository:
         row.status, row.lease_owner, row.lease_until = "RUNNING", worker_id, now + timedelta(seconds=lease_seconds)
         row.attempt = int(row.attempt or 0) + 1
         return {"outbox_id": row.outbox_id, "attempt": int(row.attempt), "payload_ref": row.payload_ref,
+                "event_type": row.event_type, "idempotency_key": row.idempotency_key,
                 "document_version_id": row.document_version_id}
 
-    async def renew_outbox(self, scope, outbox_id, *, worker_id, attempt, now, lease_seconds):
-        require(1 <= lease_seconds <= 3600, "索引续租参数无效")
+    async def assert_outbox_claim(self, scope, outbox_id, *, worker_id, attempt, now):
         row = await self._repos(scope)["knowledge_outbox"].get(outbox_id, lock=True)
         require(row is not None and row.status == "RUNNING" and row.lease_owner == worker_id
                 and int(row.attempt) == attempt and row.lease_until > now, "索引任务续租栅栏失效")
+        return row
+
+    async def renew_outbox(self, scope, outbox_id, *, worker_id, attempt, now, lease_seconds):
+        require(1 <= lease_seconds <= 3600, "索引续租参数无效")
+        row = await self.assert_outbox_claim(scope, outbox_id, worker_id=worker_id, attempt=attempt, now=now)
         row.lease_until = now + timedelta(seconds=lease_seconds)
+
+    async def defer_outbox(self, scope, outbox_id, *, worker_id, attempt, now):
+        row = await self.assert_outbox_claim(scope, outbox_id, worker_id=worker_id, attempt=attempt, now=now)
+        row.status, row.error_code, row.lease_until = "PENDING", None, now
+        row.retry_at = now + timedelta(seconds=15)
 
     async def finish_outbox(self, scope, outbox_id, *, worker_id, attempt, now, error_code=None):
         repo = self._repos(scope)["knowledge_outbox"]
         row = await repo.get(outbox_id, lock=True)
         require(row is not None and row.status == "RUNNING" and row.lease_owner == worker_id
                 and int(row.attempt) == attempt and row.lease_until > now, "索引任务栅栏失效")
-        row.status = "PENDING" if error_code else "DELIVERED"
+        terminal = error_code and row.event_type == "REBUILD_PROJECTION" and (
+            error_code in {"RESOURCE_LIMIT", "INVALID_CONTRACT"} or attempt % 5 == 0)
+        row.status = "FAILED" if terminal else "PENDING" if error_code else "DELIVERED"
         row.error_code, row.delivered_at = error_code, None if error_code else now
         row.lease_until = now
-        row.retry_at = now + timedelta(seconds=min(300, 2 ** min(attempt, 8))) if error_code else None
+        row.retry_at = now + timedelta(seconds=min(300, 2 ** min(attempt, 8))) if error_code and not terminal else None
+
+    async def projection_manifest(self, lease, generation_id):
+        generation = await self._repos(lease.scope)["knowledge_index_generation"].get(generation_id)
+        require(generation is not None and generation.parse_run_id == UUID(lease.identity.parse_run_ref)
+                and generation.document_version_id == lease.document_version_id, "索引与解析版本不一致")
+        return generation.status, generation.manifest_json
+
+    async def initial_projection_checkpoint(self, lease, projection_ref):
+        repo = self._repos(lease.scope)["knowledge_index_generation"]
+        rows = (await self._session.scalars(repo.statement().where(
+            repo.entity.parse_run_id == UUID(lease.identity.parse_run_ref),
+            repo.entity.document_version_id == lease.document_version_id,
+            repo.entity.projection_ref == projection_ref))).all()
+        require(len(rows) <= 1, "初始索引代次身份冲突")
+        if not rows:
+            return None
+        row = rows[0]
+        require("rebuild_id" not in row.manifest_json and row.status in {"PREPARING", "READY"},
+                "初始索引代次不可恢复")
+        return row.index_generation_id, row.status, row.manifest_json
+
+    async def ready_initial_projection(self, lease):
+        repo = self._repos(lease.scope)["knowledge_index_generation"]
+        rows = (await self._session.scalars(repo.statement().where(
+            repo.entity.parse_run_id == UUID(lease.identity.parse_run_ref),
+            repo.entity.document_version_id == lease.document_version_id,
+            repo.entity.status == "READY"))).all()
+        return next((row.index_generation_id for row in rows
+                     if not {"rebuild_id", "adopted_from_batch"} & row.manifest_json.keys()), None)
 
 
     async def batch_artifacts(self, lease, sequences):
@@ -426,12 +592,42 @@ class KnowledgeIngestionRepository:
             repo.entity.sequence.in_(sequences)))).all()
         return {int(row.sequence): row.artifact_manifest_json or {} for row in rows}
 
+    async def allowed_view_checkpoint(self, lease):
+        repositories = self._repos(lease.scope)
+        version = await repositories["knowledge_document_version"].get(lease.document_version_id)
+        run = await repositories["knowledge_parse_run"].get(UUID(lease.identity.parse_run_ref))
+        job = await repositories["knowledge_ingestion_job"].get(UUID(lease.identity.job_ref))
+        require(version is not None and run is not None and job is not None
+                and job.parse_run_id == run.parse_run_id and job.document_version_id == lease.document_version_id,
+                "允许视图的解析任务或文件已变化")
+        if job.context_json.get("replaces_generation_id"):
+            staged = (run.checkpoint_json or {}).get("replacement_view")
+            if staged:
+                return staged["manifest_ref"], staged["hash"]
+            return None
+        if version.allowed_view_manifest_ref:
+            return version.allowed_view_manifest_ref, version.allowed_view_hash
+        return None
+
     async def set_allowed_view(self, lease, *, manifest_ref, view_hash, now):
         _, version, job, run, _ = await self._locked(lease, now, require_live=False)
         require(run.status == job.status == "PARSED", "未完成解析不能准备允许视图")
+        if job.context_json.get("replaces_generation_id"):
+            staged = {"hash": view_hash, "manifest_ref": manifest_ref}
+            require(run.checkpoint_json.get("replacement_view") in (None, staged),
+                    "同一解析代次允许视图冲突")
+            run.checkpoint_json = {**run.checkpoint_json, "replacement_view": staged}
+            return
         require(version.allowed_view_hash in {None, view_hash}
                 and version.allowed_view_manifest_ref in {None, manifest_ref}, "同一解析代次允许视图冲突")
         version.allowed_view_hash, version.allowed_view_manifest_ref = view_hash, manifest_ref
+
+    async def replacement_projection_profile(self, lease):
+        repo = self._repos(lease.scope)["knowledge_ingestion_job"]
+        job = await repo.get(UUID(lease.identity.job_ref))
+        require(job is not None and job.parse_run_id == UUID(lease.identity.parse_run_ref), "解析任务已变化")
+        profile = job.context_json.get("replacement_index_profile")
+        return decode(ProjectionProfile, profile) if profile is not None else None
 
     async def store_projection(self, lease, *, generation_id, batch, payload_ref, profile, now):
         from knowledge_algorithms.contracts.identity import fingerprint
@@ -452,10 +648,19 @@ class KnowledgeIngestionRepository:
                     "投影重放内容冲突")
             return
         require(generation.status == "PREPARING" and batch.sequence == len(batches) + 1, "投影批次乱序或已封闭")
+        require(batch.sequence <= manifest.get("planned_batch_count", batch.sequence), "投影批次超出规划")
         node_repo = repositories["knowledge_node"]
-        catalog = {n.local_key: n for n in (await self._session.scalars(node_repo.statement().where(
-            node_repo.entity.parse_run_id == run.parse_run_id))).all()}
+        source_keys = sorted({item.unit.source_key.object_key for item in batch.units}
+            | {source.source_key.object_key for item in batch.units for source in item.unit.sources})
+        catalog = {}
+        for offset in range(0, len(source_keys), 500):
+            nodes = await self._session.scalars(node_repo.statement().where(
+                node_repo.entity.parse_run_id == run.parse_run_id,
+                node_repo.entity.local_key.in_(source_keys[offset:offset + 500])))
+            catalog.update((node.local_key, node) for node in nodes)
         unit_repo = repositories["knowledge_search_unit"]
+        view_hash = (run.checkpoint_json.get("replacement_view", {}).get("hash")
+                     if job.context_json.get("replaces_generation_id") else version.allowed_view_hash)
         for projected in batch.units:
             unit = projected.unit
             require(unit.key.owner_binding_ref == BINDING.binding_ref
@@ -467,7 +672,7 @@ class KnowledgeIngestionRepository:
                     and unit.source_key.parse_run_ref == str(run.parse_run_id)
                     and unit.source_key.projection_ref is None
                     and unit.source_key.object_key in catalog
-                    and unit.allowed_view_hash == version.allowed_view_hash, "检索单元来源或允许视图不一致")
+                    and unit.allowed_view_hash == view_hash, "检索单元来源或允许视图不一致")
             duplicate = (await self._session.scalars(unit_repo.statement().where(
                 unit_repo.entity.parse_run_id == run.parse_run_id,
                 unit_repo.entity.projection_ref == batch.projection_ref,
@@ -497,6 +702,9 @@ class KnowledgeIngestionRepository:
                 await repositories["knowledge_unit_source"].add(dict(search_unit_id=row.search_unit_id,
                     source_asset_id=assets[0].visual_asset_id, locator_json=encode(unit.locators)))
             specs = {spec.space_id: spec for spec in profile.representations}
+            require((projected.skipped_image_spaces or frozenset()) <=
+                    {space for space, spec in specs.items() if spec.input_kind == "IMAGE"},
+                    "图像表示缺口必须属于已绑定的图像空间")
             require(len({r.space_id for r in projected.representations}) == len(projected.representations),
                     "投影模型空间重复")
             for representation in projected.representations:
@@ -511,10 +719,14 @@ class KnowledgeIngestionRepository:
                     tensor_ref=payload_ref if representation.matrix is not None else None,
                     mask_ref=payload_ref if representation.matrix is not None else None))
         batches[key] = {"hash": batch.payload_hash, "count": len(batch.units), "ref": payload_ref}
+        skipped = sum(len(item.skipped_image_spaces or ()) for item in batch.units)
+        if skipped:
+            batches[key]["skipped_image_representation_count"] = skipped
         manifest["batches"] = batches
         generation.manifest_json = manifest
 
-    async def complete_generation(self, lease, *, generation_id, unit_count, batch_digest, batch_count, now):
+    async def complete_generation(self, lease, *, generation_id, unit_count, batch_digest, batch_count, now,
+                                  has_images=None, candidate_only=False):
         from knowledge_algorithms.contracts.identity import fingerprint
         repositories, _, job, run, _ = await self._locked(lease, now, require_live=False)
         generation = await repositories["knowledge_index_generation"].get(generation_id, lock=True)
@@ -524,11 +736,17 @@ class KnowledgeIngestionRepository:
         manifest = dict(generation.manifest_json)
         batches = manifest.get("batches", {})
         require(batch_count == len(batches) and batch_count > 0
+                and batch_count == manifest.get("planned_batch_count", batch_count)
                 and unit_count == sum(item["count"] for item in batches.values())
                 and batch_digest == fingerprint([batches[str(i)]["hash"] for i in range(1, batch_count + 1)]),
                 "投影最终清单不匹配")
         manifest.update(unit_count=unit_count, batch_digest=batch_digest, batch_count=batch_count)
-        generation.manifest_json, generation.status = manifest, "READY"
+        skipped = sum(item.get("skipped_image_representation_count", 0) for item in batches.values())
+        if skipped:
+            manifest["skipped_image_representation_count"] = skipped
+        if has_images is not None:
+            manifest["has_images"] = has_images
+        generation.manifest_json, generation.status = manifest, "CANDIDATE" if candidate_only else "READY"
         # READY 只表示投影完整，不切换 published_parse_run/current_generation。
 
     async def pin(self, scope, *, owner_run_ref, evidence_key, expires_at, now):

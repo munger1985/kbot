@@ -111,6 +111,12 @@ def inventory(connection, tables, indexes, constraints):
         "SYS_CONTEXT('USERENV','CURRENT_SCHEMA') FROM DUAL")
     result = {"target": digest(list(cursor.fetchone())), "columns": {}, "indexes": [], "constraints": [],
         "counts": {}, "versions": [], "assets": [], "asset_versions": {}, "protected": {}}
+    cursor.execute(
+        "SELECT cc.COLUMN_NAME FROM USER_CONSTRAINTS c JOIN USER_CONS_COLUMNS cc "
+        "ON cc.CONSTRAINT_NAME=c.CONSTRAINT_NAME "
+        "WHERE c.TABLE_NAME=:table_name AND c.CONSTRAINT_TYPE='P' AND c.STATUS='ENABLED' "
+        "ORDER BY cc.POSITION", table_name=INDEX)
+    result["index_primary_key"] = [row[0] for row in cursor]
     for table in tables:
         result["columns"][table] = columns(cursor, table)
         if result["columns"][table]:
@@ -151,6 +157,8 @@ def inventory(connection, tables, indexes, constraints):
 
 def build_plan(before, tables, indexes, constraints):
     """新增缺少表/索引，只有已核对的旧列允许删除。"""
+    if before["index_primary_key"] != ["ASSET_VERSION_ID"]:
+        raise ValueError("AIOps 知识索引不是单文件主键；请先采用经审核的 Schema 62 升级路径")
     creation, alteration = [], []
     for table, expected in tables.items():
         actual = before["columns"][table]

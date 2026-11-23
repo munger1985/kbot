@@ -6,10 +6,13 @@ import json
 from uuid import UUID
 
 from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
-from knowledge_algorithms.contracts.identity import AuthorizedScope, RetrievalSnapshot, fingerprint
+from knowledge_algorithms.contracts.identity import AuthorizedScope, RetrievalSnapshot, canonical_json, fingerprint
 from knowledge_algorithms.contracts.retrieval import EvidenceSet
 from knowledge_algorithms.contracts.wire import decode, encode
+from knowledge_algorithms.execution import Deadline
 from knowledge_algorithms.retrieval.engine import RetrievalEngine
+from knowledge_algorithms.retrieval.published_metadata import PublishedMetadataCache
+from knowledge_algorithms.projections.library_models import published_profile
 from .knowledge_hydration import hydrate_published
 from ..adapters.knowledge_backend import PublishedKnowledgeBackend
 from ..domain.knowledge_ingestion import BINDING, utcnow
@@ -24,13 +27,16 @@ class RetrievalReceipt:
 
 class KnowledgeRetrievalService:
     def __init__(self, *, uow_factory, object_store, authorization, profiles, tokenizer,
-                 image_cost, cursor_codec, model_gateway_factory=None, text_scan_factory=None, limits=None, clock=utcnow):
+                 image_cost, cursor_codec, model_gateway_factory=None, text_scan_factory=None, limits=None, clock=utcnow,
+                 published_model_spaces=False):
         require(profiles and all(name for name in profiles), "必须在组合根登记检索 Profile")
         self.uow_factory, self.store, self.authorization = uow_factory, object_store, authorization
         self.profiles, self.tokenizer, self.image_cost = dict(profiles), tokenizer, image_cost
         self.cursor_codec, self.model_gateway_factory = cursor_codec, model_gateway_factory
         self.text_scan_factory = text_scan_factory
         self.limits, self.clock = limits or RetrievalLimits(), clock
+        self.published_model_spaces = published_model_spaces
+        self._published_metadata = PublishedMetadataCache()
 
     async def grant(self, access, resource_ref):
         grant = await self.authorization.authorize(access, resource_ref)
@@ -82,19 +88,36 @@ class KnowledgeRetrievalService:
     async def backend(self, access, scope, profile_ref, *, cursor=None, expected_snapshot=None):
         require(profile_ref in self.profiles, "检索 Profile 未在组合根登记")
         frozen, snapshot = await self.validate(access, scope, expected_snapshot=expected_snapshot)
-        async with self.uow_factory() as uow:
-            bundle = await uow.knowledge_retrieval.published_bundle(access, scope, now=self.clock(), limits=self.limits)
-        # 防止读取对象前后发生代次切换。
-        await self.validate(access, scope, expected_snapshot=snapshot)
-        index, items, relations = await hydrate_published(bundle, store=self.store, tokenizer=self.tokenizer,
-            image_cost=self.image_cost, limits=self.limits)
+        profile = self.profiles[profile_ref]
+
         async def validate():
             await self.validate(access, scope, expected_snapshot=snapshot)
-        profile = self.profiles[profile_ref]
+
+        async def load():
+            async with self.uow_factory() as uow:
+                bundle = await uow.knowledge_retrieval.published_bundle(access, scope, now=self.clock(), limits=self.limits)
+            versions = bundle["versions"]
+            manifest = canonical_json(versions).encode("utf-8")
+            if sha256(manifest).hexdigest() != snapshot.snapshot_ref:
+                raise AlgorithmError(ErrorCode.SNAPSHOT_STALE, "加载元数据时索引快照已经改变", stage="snapshot")
+            metadata = await hydrate_published(bundle, store=self.store, tokenizer=self.tokenizer,
+                                               image_cost=self.image_cost, limits=self.limits)
+            return (metadata, versions), metadata.estimated_bytes + len(manifest)
+
+        cache_key = (access.domain_id, access.tenant_id, snapshot.snapshot_ref)
+        metadata, versions = await Deadline(profile.timeout_seconds).run(
+            self._published_metadata.get(cache_key, load), stage="index_read")
+        # 等锁、读取对象或命中缓存都不替代当前请求的权限与发布快照校验。
+        await validate()
+        if self.published_model_spaces:
+            profile = published_profile(profile, versions, retain_registered=True)
+        index, items, relations, vectors, materialize = metadata.bind(
+            store=self.store, max_bytes=self.limits.max_object_bytes, expires_at=frozen["expires_at"])
         backend = PublishedKnowledgeBackend(index=index, items=items, relations=relations, scope=scope,
             snapshot=snapshot, subject_ref=access.subject_ref, expires_at=frozen["expires_at"],
             profile_hash=fingerprint(encode(profile)), cursor_codec=self.cursor_codec,
-            validate=validate, clock=self.clock, primary_cursor=cursor)
+            validate=validate, clock=self.clock, primary_cursor=cursor, vector_batches=vectors,
+            materialize=materialize)
         if self.text_scan_factory is not None:
             backend.text_scan, backend.scan_policy = self.text_scan_factory(backend)
         return backend, profile

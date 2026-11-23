@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, ClassVar, TypeVar
 
 import tomli
 from dotenv import load_dotenv
@@ -130,6 +130,7 @@ class VectorConfig(BaseModel):
 
 
 class Settings(BaseModel):
+    topology_client_endpoints: ClassVar[dict[str, str]] = {}
     """仅包含可被所有独立服务复用的配置。"""
 
     model_config = ConfigDict(extra="forbid")
@@ -392,6 +393,9 @@ def load_settings(
     unknown_aiops = set(aiops) - {
         "agent_execution_enabled",
         "mutation_enabled",
+        "oracle_local_backups",
+        "file_local_backups",
+        "local_drills",
     }
     if unknown_aiops:
         names = "、".join(sorted(unknown_aiops))
@@ -399,6 +403,9 @@ def load_settings(
     for name in ("agent_execution_enabled", "mutation_enabled"):
         if name in aiops and not isinstance(aiops[name], bool):
             raise ValueError(f"[aiops].{name} 必须是布尔值")
+    for name in ("oracle_local_backups", "file_local_backups", "local_drills"):
+        if not isinstance(aiops.get(name, {}), dict):
+            raise ValueError(f"[aiops].{name} 必须是对象")
     resource_dir = Path(
         os.getenv("KBOT_RESOURCE_DIR")
         or Path.cwd() / "resources"
@@ -430,7 +437,8 @@ def load_settings(
     if service:
         merged = _deep_merge(merged, _process_settings(topology, service))
         endpoints = _endpoint_catalog(topology, endpoints_override)
-        bindings = (topology.get("dependencies") or {}).get(service) or {}
+        bindings = {**{field: {"endpoint": endpoint} for field, endpoint in model.topology_client_endpoints.items()},
+                    **((topology.get("dependencies") or {}).get(service) or {})}
         merged = _deep_merge(
             merged, _resolve_dependencies(bindings, endpoints)
         )
@@ -463,6 +471,9 @@ def load_settings(
             },
             "aiops_agent": {
                 "knowledge": {"storage_root": str(data_dir / "aiops" / "knowledge")},
+                "oracle_local_backups": aiops.get("oracle_local_backups", {}),
+                "file_local_backups": aiops.get("file_local_backups", {}),
+                "local_drills": aiops.get("local_drills", {}),
                 "runtime": {},
                 "executor": {
                     "mutation_enabled": bool(

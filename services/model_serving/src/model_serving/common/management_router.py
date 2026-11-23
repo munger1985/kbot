@@ -1,9 +1,14 @@
-"""四类模型进程共享的目录管理 HTTP 适配器。"""
+"""各类模型进程共享的目录管理 HTTP 适配器。"""
 
+import asyncio
+from collections.abc import Callable
+from time import perf_counter
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from loguru import logger
 
+from model_serving.common.connection_probe import MODEL_PROBE_TIMEOUT_SECONDS, probe_model
 from model_serving.common.model_registry import (
     ModelDefinitionNotFound,
     ModelRegistryConflict,
@@ -14,6 +19,7 @@ from platform_core.contracts import (
     INTERNAL_API_V1,
     ModelArchiveRequest,
     ModelCatalogItem,
+    ModelConnectionTestResult,
     ModelCreateRequest,
     ModelDeleteRequest,
     ModelProviderOption,
@@ -54,7 +60,9 @@ def _raise_registry_error(exc: Exception) -> None:
     ) from exc
 
 
-def create_model_management_router(*, category: int) -> APIRouter:
+def create_model_management_router(
+    *, category: int, probe_service: Callable[[Request], object] | None = None,
+) -> APIRouter:
     router = APIRouter(
         prefix=f"{INTERNAL_API_V1}/models",
         tags=["Model Configuration"],
@@ -86,6 +94,42 @@ def create_model_management_router(*, category: int) -> APIRouter:
             )
         except Exception as exc:
             _raise_registry_error(exc)
+
+    @router.post("/{model_id}:test-connection", response_model=ModelConnectionTestResult)
+    async def test_model_connection(model_id: UUID, request: Request):
+        context = _auth_context(request)
+        try:
+            model = await _service(request).get(model_id, category=category)
+        except ModelDefinitionNotFound as exc:
+            _raise_registry_error(exc)
+        if model["status"] != "ACTIVE":
+            raise HTTPException(409, {
+                "code": "MODEL_NOT_ACTIVE", "message": "请先启用模型，再测试连通性。",
+            })
+        if probe_service is None:
+            raise HTTPException(501, {
+                "code": "MODEL_CONNECTION_TEST_UNAVAILABLE", "message": "当前模型服务未提供连接测试。",
+            })
+        started = perf_counter()
+        try:
+            await asyncio.wait_for(probe_model(
+                category=category, service=probe_service(request), model=model,
+                model_id=model_id, trace_id=context.trace_id,
+            ), timeout=MODEL_PROBE_TIMEOUT_SECONDS)
+        except TimeoutError as exc:
+            raise HTTPException(504, {
+                "code": "MODEL_CONNECTION_TEST_TIMEOUT", "message": "模型测试超时，请检查模型地址或稍后重试。",
+            }) from exc
+        except Exception as exc:
+            logger.warning(
+                "模型测试失败 | model_id={} | category={} | request_id={} | error_type={}",
+                model_id, category, context.request_id, type(exc).__name__,
+            )
+            raise HTTPException(502, {
+                "code": "MODEL_CONNECTION_TEST_FAILED",
+                "message": "模型未能完成测试推理，请检查模型地址、厂商模型名称、凭据或本地模型资源。",
+            }) from exc
+        return ModelConnectionTestResult(latency_ms=round((perf_counter() - started) * 1000))
 
     @router.post("", status_code=201, response_model=ModelCatalogItem)
     async def create_model(payload: ModelCreateRequest, request: Request):

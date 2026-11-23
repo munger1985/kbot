@@ -1412,20 +1412,22 @@ async def preview_knowledge_reference(run_id: UUID, citation_label: str, request
         key=reference.evidence_key, auth_context=request.state.auth_context)
     mime_type = download.mime_type
     await download.close()
+    content_url = f"{PUBLIC_API_V1}/apps/knowledge-retrieval/runs/{run_id}/references/{citation_label}/content"
     return {"reference_type": "APP_KNOWLEDGE", "citation_label": reference.citation_label,
         "title": reference.title, "mime_type": mime_type, "preview_type": _preview_type(mime_type),
         "locators": reference.locators, "download_available": True,
-        "content_url": f"{PUBLIC_API_V1}/apps/knowledge-retrieval/runs/{run_id}/references/{citation_label}/content"}
+        "content_url": content_url,
+        "pdf_url": content_url + "?source_pdf=true" if any(loc.get("page_no") for loc in reference.locators) else None}
 
 
 @router.get("/runs/{run_id}/references/{citation_label}/content")
-async def stream_knowledge_reference_content(run_id: UUID, citation_label: str, request: Request):
+async def stream_knowledge_reference_content(run_id: UUID, citation_label: str, request: Request, source_pdf: bool = False):
     from starlette.background import BackgroundTask
     domain_id, _, _ = await _require(request, "knowledge_retrieval:knowledge_chat")
     reference = await _knowledge_document_reference(request, domain_id=domain_id,
         run_id=run_id, citation_label=citation_label)
     download = await _runtime(request).open_knowledge_content(run_id=run_id,
-        key=reference.evidence_key, auth_context=request.state.auth_context)
+        key=reference.evidence_key, auth_context=request.state.auth_context, **({"source_pdf": True} if source_pdf else {}))
     return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
                              background=BackgroundTask(download.close))
 

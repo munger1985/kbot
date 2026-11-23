@@ -68,7 +68,6 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
                 row = {
                     "model_id": str(model_id),
                     "display_name": "图片模型",
-                    "served_model_name": "image-model",
                     "provider": "api_oci_image",
                     "status": status,
                     "category": category,
@@ -97,7 +96,6 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
             catalog_client=_Catalog({
                 "model_id": str(model_id),
                 "display_name": "图片模型",
-                "served_model_name": "image-model",
                 "provider": "api_oci_image",
                 "status": "ACTIVE",
                 "category": 8,
@@ -125,7 +123,6 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
         catalog = _Catalog({
             "model_id": str(model_id),
             "display_name": "图片模型",
-            "served_model_name": "image-model",
             "provider": "api_oci_image",
             "status": "ACTIVE",
             "category": 8,
@@ -154,7 +151,6 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
         catalog = _Catalog({
             "model_id": str(model_id),
             "display_name": "图片模型",
-            "served_model_name": "image-model",
             "provider": "api_oci_image",
             "status": "ACTIVE",
             "category": 8,

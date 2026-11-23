@@ -57,16 +57,8 @@ class AgentModelCatalogResolver:
                 )
             if definition.get("status") != "ACTIVE":
                 raise ValueError(f"模型角色 {role} 绑定的模型未启用")
-            served_name = str(
-                definition.get("served_model_name") or ""
-            ).strip()
-            if not served_name:
-                raise ValueError(
-                    f"模型角色 {role} 缺少 served_model_name"
-                )
             fingerprint_source = {
                 "model_id": str(model_id),
-                "served_model_name": served_name,
                 "category": int(category),
                 "model_params": definition.get("model_params") or {},
                 "effective_max_tokens": definition.get("effective_max_tokens"),
@@ -82,7 +74,6 @@ class AgentModelCatalogResolver:
             ).hexdigest()
             resolved[role] = {
                 "model_id": str(model_id),
-                "served_model_name": served_name,
                 "category": int(category),
                 "config_fingerprint": fingerprint,
                 "max_tokens": definition.get("effective_max_tokens"),

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.domain.model_bindings import snapshot_model_id
 from agent_runtime.language import (
     language_instruction,
     localized_message,
@@ -67,7 +67,7 @@ class ConversationResponseSkill:
             )
             return
         model_name = str(
-            agent_model_name(
+            snapshot_model_id(
                 context.config_snapshot.get("agent", {}), "composer_llm"
             )
             or ""
@@ -105,7 +105,7 @@ class ConversationResponseSkill:
         parts: list[str] = []
         index = 0
         async for chunk in self._model_client.stream_llm_chunks(
-            served_model_name=model_name,
+            model_id=model_name,
             prompt=messages,
             temperature=0.2,
         ):

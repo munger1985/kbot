@@ -140,7 +140,8 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
             user_id="mediaadmin",
         )
 
-        self.assertIn("media_studio:model_manage", snapshot.permissions)
+        self.assertIn("media_studio:model_binding_manage", snapshot.permissions)
+        self.assertNotIn("platform:model_manage", snapshot.permissions)
         self.assertIn("media_studio:member_manage", snapshot.permissions)
         self.assertIn("media_studio:custom_permission", snapshot.permissions)
 

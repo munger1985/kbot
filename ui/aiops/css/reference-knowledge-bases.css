@@ -2,11 +2,4 @@
 
 /* management/AIOpsKnowledgeBasesView.vue */
 :is([data-page="knowledge-bases"]) .knowledge-bases-page { display:grid; min-width:0; gap:20px; }
-:is([data-page="knowledge-bases"]) .aiops-page .management-catalog-grid .knowledge-base-card { --aiops-card-header-height:80px; gap:8px; }
-:is([data-page="knowledge-bases"]) .knowledge-base-card .aiops-catalog-card-body { gap:8px; overflow:visible; scrollbar-gutter:auto; }
-:is([data-page="knowledge-bases"]) .knowledge-base-card .knowledge-base-description { display:-webkit-box; min-height:3em; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; font-size:var(--type-supporting); line-height:1.5; }
-:is([data-page="knowledge-bases"]) .knowledge-base-id { display:block; min-width:0; font-size:12px; }
-:is([data-page="knowledge-bases"]) .knowledge-base-card dl > div { padding:8px 12px; }
-:is([data-page="knowledge-bases"]) .knowledge-base-card dd { font-size:var(--type-supporting); }
-:is([data-page="knowledge-bases"]) .knowledge-base-card .knowledge-base-updated { font-size:12px; white-space:nowrap; }
 :is([data-page="knowledge-bases"]) .knowledge-base-drawer{width:min(820px,100vw)}:is([data-page="knowledge-bases"]) .knowledge-base-form{display:grid;align-content:start;gap:18px;margin:0;padding:22px 28px 0}:is([data-page="knowledge-bases"]) .knowledge-base-form>.admin-drawer-footer{margin:0 -28px}@media(max-width:700px){:is([data-page="knowledge-bases"]) .knowledge-base-form{padding:18px 18px 0}:is([data-page="knowledge-bases"]) .knowledge-base-form>.admin-drawer-footer{margin-right:-18px;margin-left:-18px}}

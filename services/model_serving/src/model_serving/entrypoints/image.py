@@ -62,7 +62,10 @@ app.middleware("http")(
     create_internal_auth_middleware(audience=config.service_name)
 )
 app.include_router(
-    create_model_management_router(category=ModelCategory.IMAGE_GENERATION.value)
+    create_model_management_router(
+        category=ModelCategory.IMAGE_GENERATION.value,
+        probe_service=lambda request: request.app.state.image_service,
+    )
 )
 app.include_router(create_image_router())
 

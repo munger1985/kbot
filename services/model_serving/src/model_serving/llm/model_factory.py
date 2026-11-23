@@ -42,6 +42,8 @@ def create_llm_model(config: LLMConfig) -> BaseLLM:
             
     # 2. Oracle Cloud Infrastructure (OCI) provider
     elif provider == LLMProvider.OCI.value:
+        if isinstance(config, OpenaiLLMConfig):
+            return OpenaiClient(config)
         if isinstance(config, OCILLMConfig):
             return OCIClient(config)
         else:

@@ -146,7 +146,7 @@ class AIOpsStructuredModelClient:
             if on_text_delta is not None:
                 await on_text_delta(ModelTextDelta(reset=True))
             request_payload = {
-                "served_model_name": technical_name,
+                "model_id": str(model_snapshot["model_id"]),
                 "messages": messages,
                 "stream": on_text_delta is not None,
                 "temperature": 0,
@@ -410,7 +410,7 @@ class AIOpsStructuredModelClient:
             raise AIOpsModelError("PROMPT_HASH_MISMATCH")
         technical_name = str(model_snapshot["technical_name"])
         request_payload = {
-            "served_model_name": technical_name,
+            "model_id": str(model_snapshot["model_id"]),
             "messages": [
                 {"role": "system", "content": prompt_content},
                 {

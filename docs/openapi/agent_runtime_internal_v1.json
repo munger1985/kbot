@@ -2749,6 +2749,16 @@
               "title": "Key",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "source_pdf",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Source Pdf",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

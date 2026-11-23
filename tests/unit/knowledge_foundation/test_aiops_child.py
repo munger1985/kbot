@@ -62,7 +62,9 @@ class ChildTests(unittest.IsolatedAsyncioTestCase):
         self.service = SimpleNamespace(_uow_factory=factory,
             _documents=SimpleNamespace(access=lambda context: self.access, retrieval=SimpleNamespace(
                 clock=lambda: datetime.now(timezone.utc), limits=SimpleNamespace(max_versions=256, scope_ttl_seconds=900))),
-            search=AsyncMock(return_value={"results": [{"document_bindings": [self.binding]}]}))
+            search=AsyncMock(return_value={"retrieval_conclusion": "EVIDENCE_FOUND",
+                "coverage": {"scope": "COMPLETE", "ranking": "GLOBAL"},
+                "results": [{"document_bindings": [self.binding]}]}))
         self.client = SimpleNamespace(create_aiops_knowledge_run=AsyncMock(),
             get_run=AsyncMock(return_value={"status": "COMPLETED", "row_version": 1}),
             get_result=AsyncMock(), cancel_run=AsyncMock())
@@ -76,7 +78,7 @@ class ChildTests(unittest.IsolatedAsyncioTestCase):
         self.request = KnowledgeSearchRequest(query="如何处理合成问题？")
         self.context = SimpleNamespace()
         self.authorization = patch("aiops_agent.application.knowledge_search._current_knowledge_authorization",
-            AsyncMock(return_value=(self.request, ())))
+            AsyncMock(return_value=(self.request, (), self.version)))
         self.authorization.start()
         self.addCleanup(self.authorization.stop)
 
@@ -90,7 +92,7 @@ class ChildTests(unittest.IsolatedAsyncioTestCase):
             agent_version_id=self.version, request=self.request)
 
     async def test_freezes_real_agent_and_exact_source_then_replays_without_reselection(self):
-        answer, references = await self.answer()
+        answer, references, coverage = await self.answer()
         self.assertEqual(answer, "合成结论 [K1]")
         self.assertEqual(references[0]["quote"], "合成证据正文")
         spec = self.client.create_aiops_knowledge_run.call_args.kwargs["payload"]["execution_spec"]
@@ -105,9 +107,42 @@ class ChildTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_business_candidates_does_not_create_runtime(self):
         self.service.search.return_value = {"results": []}
-        answer, references = await self.answer()
+        answer, references, coverage = await self.answer()
+        self.assertEqual(coverage["retrieval_conclusion"], "NOT_VERIFIED")
         self.assertFalse(references)
         self.client.create_aiops_knowledge_run.assert_not_awaited()
+
+    async def test_child_completion_does_not_upgrade_parent_coverage(self):
+        self.service.search.return_value["coverage"] = {"scope": "PARTIAL", "ranking": "LIMITED",
+            "gaps": ["INDEX_NOT_READY"], "channel_failures": []}
+        answer, citations, coverage = await self.answer()
+        self.assertIn("不代表完整覆盖", answer)
+        self.assertEqual(citations[0]["knowledge"]["coverage"]["scope"], "PARTIAL")
+        self.assertEqual(coverage["coverage"]["scope"], "PARTIAL")
+        self.assertEqual(self.uow.knowledge_documents.create_query_ticket.call_args.kwargs["agent_version_id"], self.version)
+
+    async def test_exact_parent_hit_reloads_related_text_without_new_search(self):
+        primary = self.payload["references"][0]["evidence_key"]
+        related = "b" * 64
+        self.binding["primary_receipts"] = {primary: "private-receipt"}
+        self.service.search.return_value["results"][0]["evidence_groups"] = [{
+            "primary": {"document_version_id": self.binding["document_version_id"], "evidence_key": primary},
+            "related": [{"document_version_id": self.binding["document_version_id"], "evidence_key": related,
+                "readable": True, "locator": {"locators": [{"page_no": 3}]}}],
+            "relation_gaps": [],
+        }]
+        async def chunks():
+            yield "合成关联段落".encode()
+        stream = self.service._documents.retrieval.stream_content = AsyncMock(
+            return_value=(SimpleNamespace(byte_count=24), chunks()))
+        _, citations, _ = await self.answer()
+        self.assertEqual(citations[0]["knowledge"]["role"], "PRIMARY")
+        link, = citations[0]["knowledge"]["related"]
+        self.assertEqual(link["excerpt"], "合成关联段落")
+        self.assertNotIn("evidence_key", link)
+        self.assertNotIn("private-receipt", str(citations))
+        stream.assert_awaited_once_with(self.access, retrieval_ref="private-receipt", stable_key=related)
+        self.service.search.assert_awaited_once()
 
     async def test_deleted_parent_rejects_before_search(self):
         self.conversation.status = "DELETED"

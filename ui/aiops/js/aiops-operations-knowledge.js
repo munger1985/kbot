@@ -7,7 +7,6 @@
     assets: [],
     detail: null,
     detailTab: "overview",
-    groupingMode: "EACH_FILE",
     entries: [],
     uploadAsset: null,
     tags: [],
@@ -26,8 +25,9 @@
   const reviewLabel = (value) => value === "REVIEW_REQUIRED" ? "待审批" : ["TAGGING", "TAGGING_FAILED", "PROCESSING", "PUBLISHED", "RETIRED"].includes(value) ? "已通过" : value === "REJECTED" ? "已拒绝" : value === "DRAFT" ? "待审核" : "—";
   const parseLabel = (value, kind = "MANUAL") => value === "TAGGING" ? "AI 识别中" : value === "TAGGING_FAILED" ? "AI 识别失败" : value === "REVIEW_REQUIRED" || (kind === "MANUAL" && ["DRAFT", "REJECTED"].includes(value)) ? "未开始" : value === "PROCESSING" ? "解析中" : value === "FAILED" ? "解析失败" : ["PUBLISHED", "RETIRED"].includes(value) ? "解析完成" : "—";
   const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB` : `${(bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 1 : 0)} MB`;
-  const totalBytes = () => state.entries.reduce((sum, item) => sum + item.file.size, 0);
-  const isMultiFileAsset = () => !state.uploadAsset && state.groupingMode === "SINGLE_ASSET";
+  const pendingUploads = () => state.entries.filter(entry => !entry.accepted);
+  const totalBytes = () => pendingUploads().reduce((sum, item) => sum + item.file.size, 0);
+  const uploadLocked = () => state.entries.some(entry => entry.started);
   const selectedKnowledgeBaseId = () => document.getElementById("knowledge-base-filter").value;
 
   const digest = (file) => KBotSha256.file(file);
@@ -73,6 +73,19 @@
   async function loadTags() {
     const result = await KBotAIOpsAuth.request(`${api}/tags?include_disabled=true`);
     state.tags = result.items || [];
+  }
+
+  function renderUploadTaggingHint() {
+    const id = state.uploadAsset?.knowledge_base_id || document.getElementById("upload-knowledge-base").value;
+    const tagging = state.knowledgeBases.find(item => item.knowledge_base_id === id)?.tagging;
+    const hint = document.getElementById("upload-tagging-hint");
+    if (!hint) return;
+    const missing = [];
+    if (tagging?.state === "NOT_CONFIGURED") missing.push("标签识别模型");
+    if (tagging?.state === "DEGRADED") missing.push("可用的标签识别能力");
+    if (tagging?.vocabulary_ready === false) missing.push("有效标签词表");
+    hint.hidden = !missing.length;
+    hint.textContent = missing.length ? "可以上传待审资料；审批开始标签处理前需要补齐：" + missing.join("、") + "。" : "";
   }
 
   function stageClass(stage, status, kind = "MANUAL") {
@@ -121,9 +134,10 @@
   }
 
   function renderFiles(detail) {
-    const sources = detail.sources?.length ? detail.sources.map((source, index) => `<article class="knowledge-source-card"><span>${Number(source.locator?.ordinal ?? index) + 1}</span><div><strong>${escape(source.external_id || detail.asset.display_name)}</strong><small>${source.locator?.role === "SUPPLEMENT" ? "补充材料" : "正文内容"}${source.locator?.required_flag ? " · 必要文件" : ""}</small><code>${escape(source.content_hash)}</code></div></article>`).join("") : '<p class="ops-empty">尚未登记原始文件。</p>';
+    const files = (detail.sources || []).filter(source => source.source_kind === "MANUAL_FILE");
+    const sources = files.length ? files.map(source => `<article class="knowledge-source-card"><div><strong>${escape(source.external_id || detail.asset.display_name)}</strong><code>${escape(source.content_hash)}</code></div></article>`).join("") : '<p class="ops-empty">尚未登记上传原文。</p>';
     const indexes = detail.indexes?.length ? detail.indexes.map((item) => `<tr><td><code>${escape(item.index_ref_id)}</code></td><td>${badge(item.status, item.status)}</td><td>${escape(item.error_summary || "—")}</td></tr>`).join("") : '<tr><td colspan="3" class="ops-empty">尚未登记索引结果。</td></tr>';
-    return `<section class="drawer-form-section"><header><span>01</span><div><strong>原始文件</strong><small>展示当前版本包含的文件及其角色。</small></div></header><div class="knowledge-source-list">${sources}</div><div class="knowledge-source-actions">${(detail.indexes || []).map((item, index) => `<button type="button" data-download-source="${escape(item.document_version_id)}">下载文件 ${index + 1}</button>`).join("")}</div><dl class="knowledge-technical-list"><dt>资料内容指纹</dt><dd><code>${escape(detail.version.source_hash)}</code></dd></dl></section><section class="drawer-form-section"><header><span>02</span><div><strong>索引状态</strong><small>用于判断当前版本是否已经形成可检索知识。</small></div></header><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>索引</th><th>状态</th><th>异常</th></tr></thead><tbody>${indexes}</tbody></table></div></section>${detail.version.profile ? `<section class="drawer-form-section"><header><span>03</span><div><strong>提炼结果</strong><small>结构化结果仅辅助导航，运维结论仍应以原文为准。</small></div></header><pre class="knowledge-profile">${escape(JSON.stringify(detail.version.profile, null, 2))}</pre></section>` : ""}`;
+    return `<section class="drawer-form-section"><header><span>01</span><div><strong>原始文件</strong><small>查看上传原文，可下载核验。</small></div></header><div class="knowledge-source-list">${sources}</div><div class="knowledge-source-actions">${(detail.indexes || []).map((item, index) => `<button type="button" data-download-source="${escape(item.document_version_id)}">下载文件 ${index + 1}</button>`).join("")}</div><dl class="knowledge-technical-list"><dt>资料内容指纹</dt><dd><code>${escape(detail.version.source_hash)}</code></dd></dl></section><section class="drawer-form-section"><header><span>02</span><div><strong>索引状态</strong><small>用于判断当前版本是否已经形成可检索知识。</small></div></header><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>索引</th><th>状态</th><th>异常</th></tr></thead><tbody>${indexes}</tbody></table></div></section>${detail.version.profile ? `<section class="drawer-form-section"><header><span>03</span><div><strong>提炼结果</strong><small>结构化结果仅辅助导航，运维结论仍应以原文为准。</small></div></header><pre class="knowledge-profile">${escape(JSON.stringify(detail.version.profile, null, 2))}</pre></section>` : ""}`;
   }
 
   function renderHistory(detail) {
@@ -143,10 +157,22 @@
     if (["TAGGING", "PROCESSING"].includes(detail.version.status)) actions.push('<button type="button" data-review="reconcile">立即处理</button>');
     if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING", "TAGGING_FAILED", "PROCESSING", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-delete-asset>删除资料</button>');
     if (["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-review="reject">拒绝</button>');
-    if (detail.asset.asset_kind === "MANUAL" && detail.version.status === "REVIEW_REQUIRED") actions.push('<button class="primary" type="button" data-review="approve">批准并开始 AI 识别</button>');
+    if (detail.asset.asset_kind === "MANUAL" && detail.version.status === "REVIEW_REQUIRED") {
+      const labels = { TEXT: "原生解析", AUTO: "自动判断", VISUAL: "视觉增强" };
+      const options = (detail.parse_strategy_options || []).map(option => {
+        const reason = option.executor_unavailable ? "模型解析执行端未启用" : (option.unavailable_roles || []).map(role => role.toUpperCase()).join("、") + " 不可用";
+        return `<option value="${escape(option.strategy)}"${option.selectable ? "" : " disabled"}>${escape(labels[option.strategy] + (option.selectable ? "" : `（${reason}）`))}</option>`;
+      });
+      actions.push(`<label class="control-field">批准时选择解析方案<select id="manual-parse-strategy"><option value="" disabled selected>选择解析方案</option>${options.join("")}</select></label>`);
+      actions.push('<button class="primary" type="button" data-review="approve" disabled>批准并开始 AI 识别</button>');
+    }
     if (detail.version.status === "PUBLISHED") actions.push('<button class="danger" type="button" data-review="retire">退役</button>');
     if (["FAILED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push(`<button class="primary" type="button" data-review="retry">${detail.version.status === "TAGGING_FAILED" ? "重试标签识别" : "重试解析"}</button>`);
     document.getElementById("detail-actions").innerHTML = actions.join("");
+    const strategy = document.getElementById("manual-parse-strategy");
+    if (strategy) strategy.onchange = () => {
+      document.querySelector('#detail-actions [data-review="approve"]').disabled = !strategy.value;
+    };
   }
 
   async function openAsset(assetId) {
@@ -169,33 +195,37 @@
   function renderUploadLedger() {
     const ledger = document.getElementById("upload-ledger");
     ledger.hidden = !state.entries.length;
-    document.getElementById("upload-total").textContent = `${state.entries.length} 个 · ${formatBytes(totalBytes())}`;
-    document.getElementById("upload-files").innerHTML = state.entries.map((entry, index) => `<article class="upload-file-row" data-entry-id="${escape(entry.id)}"><span>${index + 1}</span><div><strong>${escape(entry.file.name)}</strong><small>${escape(entry.file.type || "未知类型")} · ${formatBytes(entry.file.size)}</small></div>${isMultiFileAsset() ? `<div class="upload-file-settings"><label><span>文件角色</span><select data-role><option value="CONTENT" ${entry.role === "CONTENT" ? "selected" : ""}>正文内容</option><option value="SUPPLEMENT" ${entry.role === "SUPPLEMENT" ? "selected" : ""}>补充材料</option></select></label><label class="upload-required-toggle"><input data-required type="checkbox" ${entry.required ? "checked" : ""}><span>必要文件</span></label></div>` : '<span class="ops-badge">单个文件</span>'}<button type="button" data-remove-file>移除</button></article>`).join("");
-    document.getElementById("submit-upload").disabled = state.uploading || !state.entries.length || (!state.uploadAsset && !document.getElementById("upload-knowledge-base").value) || totalBytes() > 64 * 1024 * 1024 || state.entries.length > 20;
+    const pending = pendingUploads();
+    const disabled = state.uploading ? " disabled" : "";
+    document.getElementById("upload-total").textContent = `${state.entries.length} 个 · 已接收 ${state.entries.length - pending.length} 个 · 待提交 ${formatBytes(totalBytes())}`;
+    document.getElementById("upload-files").innerHTML = state.entries.map((entry, index) =>
+      `<article class="upload-file-row" data-entry-id="${escape(entry.id)}"><span>${index + 1}</span><div><strong>${escape(entry.file.name)}</strong><small>${formatBytes(entry.file.size)}</small></div>
+      ${state.uploadAsset ? "" : `<label class="control-field"><span>资料名称</span><input data-file-name value="${escape(entry.name)}" maxlength="256"${entry.started ? " disabled" : disabled}></label>`}
+      <span class="status-pill">${escape(entry.accepted ? "已接收，等待审批" : entry.error || "待提交")}</span><button type="button" data-remove-file${disabled}>移除</button></article>`).join("");
+    document.getElementById("clear-files").disabled = state.uploading;
+    document.getElementById("choose-files").disabled = state.uploading || Boolean(state.uploadAsset && uploadLocked());
+    document.getElementById("upload-knowledge-base").disabled = state.uploading || Boolean(state.uploadAsset) || uploadLocked();
+    document.getElementById("manual-security").disabled = state.uploading || uploadLocked();
+    document.getElementById("manual-name").disabled = !state.uploadAsset || state.uploading || uploadLocked();
+    updateSubmitUpload();
   }
 
-  function setGroupingMode(mode) {
-    state.groupingMode = mode;
-    if (mode === "EACH_FILE" && state.entries.length > 1) state.entries = state.entries.slice(0, 1);
-    document.querySelectorAll(".upload-mode-picker label").forEach((label) => label.classList.toggle("selected", label.querySelector("input").value === mode));
-    document.getElementById("manual-file").multiple = mode === "SINGLE_ASSET";
-    document.getElementById("manual-name-label").textContent = "资料名称";
-    document.getElementById("manual-name").placeholder = mode === "SINGLE_ASSET" ? "例如：Oracle RAC 故障处置手册包" : "例如：Oracle Data Guard 运维手册";
-    document.getElementById("file-step-help").textContent = mode === "SINGLE_ASSET" ? "文件顺序、角色和必要性会随资料版本保存。" : "上传后可在详情中下载原文核验。";
-    document.getElementById("drop-help").textContent = mode === "SINGLE_ASSET" ? "可多次选择并追加文件，最多 20 个、总计 64 MB。" : "每次上传一个文件，重新选择会替换当前文件。";
-    renderUploadLedger();
+  function updateSubmitUpload() {
+    const pending = pendingUploads();
+    document.getElementById("submit-upload").disabled = state.uploading || !pending.length ||
+      (state.uploadAsset ? !document.getElementById("manual-name").value.trim() :
+        !document.getElementById("upload-knowledge-base").value || pending.some(entry => !entry.name.trim())) ||
+      totalBytes() > 64 * 1024 * 1024 || state.entries.length > 20;
   }
 
   function addFiles(files) {
-    const selected = state.groupingMode === "EACH_FILE" ? files.slice(0, 1) : files;
-    if (state.groupingMode === "EACH_FILE") {
-      state.entries = selected.map((file) => ({ id: newId(), file, role: "CONTENT", required: false }));
-      if (selected[0] && !document.getElementById("manual-name").value.trim()) document.getElementById("manual-name").value = selected[0].name.replace(/\.[^.]+$/, "") || selected[0].name;
-    } else {
-      const known = new Set(state.entries.map(({ file }) => `${file.name}:${file.size}:${file.lastModified}`));
-      state.entries.push(...selected.filter((file) => !known.has(`${file.name}:${file.size}:${file.lastModified}`)).map((file) => ({ id: newId(), file, role: "CONTENT", required: false })));
-    }
-    document.getElementById("manual-result").textContent = state.entries.length > 20 || totalBytes() > 64 * 1024 * 1024 ? "请将文件数量控制在 20 个以内，总大小不超过 64 MB。" : "";
+    if (state.uploading || !files.length || (state.uploadAsset && uploadLocked())) return;
+    const entries = (state.uploadAsset ? files.slice(0, 1) : files).map(file => ({
+      id: newId(), file, name: (file.name.replace(/\.[^.]+$/, "") || file.name).trim().slice(0, 256) || "未命名文件"
+    }));
+    if (state.uploadAsset) state.entries = entries;
+    else state.entries.push(...entries);
+    document.getElementById("manual-result").textContent = state.entries.length > 20 || totalBytes() > 64 * 1024 * 1024 ? "最多 20 个文件，总计不超过 64 MiB。" : "";
     renderUploadLedger();
   }
 
@@ -206,50 +236,65 @@
     document.getElementById("manual-result").textContent = "";
     document.getElementById("manual-name").value = asset?.display_name || "";
     document.getElementById("manual-security").value = String(asset?.security_level || 1);
-    document.getElementById("upload-mode-section").hidden = Boolean(asset);
     document.getElementById("upload-title").textContent = asset ? "上传新版本" : "上传资料";
-    document.getElementById("upload-subtitle").textContent = asset ? "新版本上传后先等待人工审批；批准后才调用 AI 识别标签并进入文档解析，当前发布版本继续参与检索。" : "上传后先进入人工审批；批准后才调用 AI 识别标签并解析。可提交单个文件或由多个关联文件组成的一份资料。";
+    document.getElementById("upload-subtitle").textContent = asset ? "新版本上传后先等待人工审批；批准后才调用 AI 识别标签并进入文档解析，当前发布版本继续参与检索。" : "上传后先进入人工审批；批准后才调用 AI 识别标签并解析。可选择一个或多个文件，每个文件独立提交和审核。";
     document.getElementById("upload-knowledge-base-section").hidden = Boolean(asset);
     const activeBases = state.knowledgeBases.filter(item => item.status === 'ACTIVE');
     document.getElementById("upload-knowledge-base").value = asset?.knowledge_base_id || activeBases.find(item => item.knowledge_base_id === selectedKnowledgeBaseId())?.knowledge_base_id || activeBases[0]?.knowledge_base_id || "";
     document.getElementById("upload-knowledge-base").disabled = Boolean(asset);
-    document.getElementById("file-step").textContent = asset ? "01" : "03";
-    document.getElementById("metadata-step").textContent = asset ? "02" : "04";
-    setGroupingMode("EACH_FILE");
+    renderUploadTaggingHint();
+    document.getElementById("file-step").textContent = asset ? "01" : "02";
+    document.getElementById("metadata-step").textContent = asset ? "02" : "03";
+    document.getElementById("manual-file").multiple = !asset;
+    document.getElementById("manual-name-field").hidden = !asset;
+    document.getElementById("drop-help").textContent = asset ? "上传新版本只选择一个文件。" : "可多次选择并追加文件，最多 20 个、总计 64 MiB。";
+    renderUploadLedger();
   }
 
   async function submitUpload(event) {
     event.preventDefault();
-    if (state.uploading || !state.entries.length || state.entries.length > 20 || totalBytes() > 64 * 1024 * 1024) return;
-    if (!state.uploadAsset && !document.getElementById("upload-knowledge-base").value) throw new Error("请选择运维知识库");
-    const name = document.getElementById("manual-name").value.trim();
-    if (!name) return;
-    const button = document.getElementById("submit-upload");
-    const metadata = { display_name: name, security_level: Number(document.getElementById("manual-security").value) };
-    button.disabled = true;
+    if (document.getElementById("submit-upload").disabled) return;
+    const base = document.getElementById("upload-knowledge-base").value;
+    const security_level = Number(document.getElementById("manual-security").value);
+    const versionTitle = document.getElementById("manual-name").value.trim();
     state.uploading = true;
     document.querySelectorAll('#upload-drawer [data-close]').forEach(control => { control.disabled = true; });
-    document.getElementById("manual-result").textContent = "正在上传原文，完成后将等待人工审批…";
+    document.getElementById("manual-result").textContent = "正在上传…";
+    renderUploadLedger();
+    let accepted = 0;
     try {
       if (state.uploadAsset) {
-        const file = state.entries[0].file;
-        const hash = await digest(file);
-        await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(state.uploadAsset.asset_id)}/versions`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "Idempotency-Key": newId(), "X-File-Name": encodeURIComponent(file.name), "X-Content-SHA256": hash, "X-Upload-Metadata": encodeURIComponent(JSON.stringify(metadata)), "X-Expected-Asset-Row-Version": String(state.uploadAsset.row_version) }, body: file });
+        const entry = pendingUploads()[0];
+        entry.started = true;
+        const { id, file } = entry;
+        const metadata = { display_name: versionTitle, security_level };
+        await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(state.uploadAsset.asset_id)}/versions`, { method: "POST",
+          headers: { "Content-Type": file.type || "application/octet-stream", "Idempotency-Key": id, "X-File-Name": encodeURIComponent(file.name),
+            "X-Content-SHA256": await digest(file), "X-Upload-Metadata": encodeURIComponent(JSON.stringify(metadata)), "X-Expected-Asset-Row-Version": String(state.uploadAsset.row_version) }, body: file });
+        accepted = 1;
       } else {
-        const declarations = await Promise.all(state.entries.map(async (entry, ordinal) => ({ part_name: `file-${ordinal}`, client_file_id: entry.id, display_name: entry.file.name, declared_mime_type: entry.file.type || "application/octet-stream", byte_size: entry.file.size, content_sha256: await digest(entry.file), ordinal, role: isMultiFileAsset() ? entry.role : "CONTENT", required_flag: isMultiFileAsset() ? entry.required : false })));
-        const body = new FormData();
-        body.set("knowledge_base_id", document.getElementById("upload-knowledge-base").value);
-        body.set("grouping_mode", state.groupingMode);
-        body.set("metadata", JSON.stringify(metadata));
-        body.set("files", JSON.stringify(declarations));
-        declarations.forEach((item, index) => body.append(item.part_name, state.entries[index].file));
-        const receipt = await KBotAIOpsAuth.request(`${api}/uploads`, { method: "POST", headers: { "Idempotency-Key": newId() }, body });
-        const rejected = (receipt.items || []).filter((item) => item.status === "REJECTED");
-        if (rejected.length) throw new Error(rejected.map((item) => item.message).filter(Boolean).join("；") || "部分资料未被受理");
+        for (const entry of pendingUploads()) {
+          entry.started = true;
+          try {
+            const { id, file } = entry, display_name = entry.name.trim();
+            const body = new FormData();
+            body.set("knowledge_base_id", base);
+            body.set("metadata", JSON.stringify({ display_name, security_level }));
+            body.set("files", JSON.stringify([{ part_name: "file", client_file_id: id, display_name,
+              declared_mime_type: file.type || "application/octet-stream", byte_size: file.size, content_sha256: await digest(file) }]));
+            body.append("file", file);
+            const receipt = await KBotAIOpsAuth.request(`${api}/uploads`, { method: "POST", headers: { "Idempotency-Key": id }, body });
+            const result = receipt.items.find(item => item.client_file_id === id);
+            if (result?.status !== "ACCEPTED") throw new Error(result?.message || "未确认接收，可使用原提交标识重试。");
+            entry.accepted = true; entry.error = ""; accepted++;
+          } catch (error) {
+            entry.error = error?.message || "未确认接收，可使用原提交标识重试。";
+          }
+        }
       }
-      document.getElementById("upload-drawer").close();
-      shell.toast(isMultiFileAsset() ? "多文件资料已上传，等待人工审批" : "资料已上传，等待人工审批");
-      await loadAssets();
+      document.getElementById("manual-result").textContent = pendingUploads().length && !state.uploadAsset ? "未接收的文件可单独重试。" : "";
+      if (state.uploadAsset || !pendingUploads().length) document.getElementById("upload-drawer").close();
+      if (accepted) { shell.toast(`已接收 ${accepted} 个文件，等待人工审批`); await loadAssets(); }
     } finally {
       state.uploading = false;
       document.querySelectorAll('#upload-drawer [data-close]').forEach(control => { control.disabled = false; });
@@ -292,7 +337,10 @@
       return;
     }
     const version = state.detail.version;
-    const options = action === "reconcile" ? { method: "POST" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_row_version: Number(version.row_version), comment: null }) };
+    const strategy = document.getElementById("manual-parse-strategy")?.value;
+    if (action === "approve" && !state.detail.parse_strategy_options?.some(option => option.selectable && option.strategy === strategy)) return;
+    const options = action === "reconcile" ? { method: "POST" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      expected_row_version: Number(version.row_version), comment: null, parse_strategy: action === "approve" ? strategy : undefined }) };
     state.detail = await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}:${action}`, options);
     shell.toast("知识版本状态已更新");
     document.getElementById("detail-drawer").close();
@@ -301,7 +349,7 @@
 
   shell.ready.then(async () => {
     document.getElementById("upload-drawer").addEventListener("cancel", event => { if (state.uploading) event.preventDefault(); });
-    document.getElementById("upload-knowledge-base").onchange = renderUploadLedger;
+    document.getElementById("upload-knowledge-base").onchange = () => { renderUploadLedger(); renderUploadTaggingHint(); };
     document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
     document.getElementById("open-upload").onclick = () => { resetUpload(); document.getElementById("upload-drawer").showModal(); };
     document.getElementById("refresh-knowledge").onclick = () => loadAssets().catch((error) => shell.toast(error.message));
@@ -309,7 +357,6 @@
     document.getElementById("knowledge-status").onchange = () => loadAssets().catch((error) => shell.toast(error.message));
     document.getElementById("knowledge-base-filter").onchange = () => loadAssets().catch((error) => shell.toast(error.message));
     document.getElementById("knowledge-assets").onclick = (event) => { const button = event.target.closest("[data-asset-id]"); if (button) openAsset(button.dataset.assetId).catch((error) => shell.toast(error.message)); };
-    document.querySelectorAll('[name="grouping-mode"]').forEach((input) => { input.onchange = () => setGroupingMode(input.value); });
     document.getElementById("choose-files").onclick = () => document.getElementById("manual-file").click();
     document.getElementById("manual-file").onchange = (event) => { addFiles(Array.from(event.target.files || [])); event.target.value = ""; };
     const zone = document.getElementById("upload-drop-zone");
@@ -317,7 +364,14 @@
     ["dragleave", "drop"].forEach((name) => zone.addEventListener(name, (event) => { event.preventDefault(); zone.classList.remove("dragging"); }));
     zone.addEventListener("drop", (event) => addFiles(Array.from(event.dataTransfer?.files || [])));
     document.getElementById("clear-files").onclick = () => { state.entries = []; renderUploadLedger(); };
-    document.getElementById("upload-files").onchange = (event) => { const row = event.target.closest("[data-entry-id]"); const entry = state.entries.find((item) => item.id === row?.dataset.entryId); if (!entry) return; if (event.target.matches("[data-role]")) entry.role = event.target.value; if (event.target.matches("[data-required]")) entry.required = event.target.checked; };
+    document.getElementById("manual-name").oninput = updateSubmitUpload;
+    document.getElementById("upload-files").oninput = (event) => {
+      if (state.uploading || !event.target.matches("[data-file-name]")) return;
+      const row = event.target.closest("[data-entry-id]");
+      const entry = state.entries.find(item => item.id === row?.dataset.entryId);
+      if (entry && !entry.started) entry.name = event.target.value;
+      updateSubmitUpload();
+    };
     document.getElementById("upload-files").onclick = (event) => { const button = event.target.closest("[data-remove-file]"); if (!button) return; const row = button.closest("[data-entry-id]"); state.entries = state.entries.filter((item) => item.id !== row.dataset.entryId); renderUploadLedger(); };
     document.getElementById("manual-form").onsubmit = (event) => submitUpload(event).catch((error) => { document.getElementById("manual-result").textContent = error.message; shell.toast(error.message); });
     document.getElementById("detail-tabs").onclick = (event) => { const button = event.target.closest("[data-tab]"); if (!button) return; state.detailTab = button.dataset.tab; renderDetailBody(); };

@@ -36,6 +36,9 @@ class KnowledgeRetrievalUiStyleTest(unittest.TestCase):
         self.assertEqual({page.stem for page in pages}, set(manifest["pages"]))
         for page in pages:
             with self.subTest(page=page.name):
+                if page.stem == "login":
+                    self.assertIn('content="0;url=../index.html"', page.read_text(encoding="utf-8"))
+                    continue
                 parser = PageParser()
                 parser.feed(page.read_text(encoding="utf-8"))
                 self.assertRegex(parser.styles[0], r"^\./css/knowledge\.css\?v=\d+")
@@ -68,7 +71,8 @@ class KnowledgeRetrievalUiStyleTest(unittest.TestCase):
         self.assertIn('KBotKnowledgeApi.json("/access", "GET")', script)
         self.assertIn("session.must_change_password", script)
         self.assertIn("KBotKnowledgeAuth.clear()", script)
-        self.assertIn("pages.filter(([id]) => granted.has(PAGE_PERMISSIONS[id]))", script)
+        self.assertIn("pages.filter(([id]) => pageAllowed(id, granted))", script)
+        self.assertIn("if (!pageAllowed(page, granted))", script)
         self.assertIn("if (!visible.length) return", script)
         self.assertNotIn("KBotAIOpsAuth", script)
         self.assertNotIn("/apps/aiops", script)
@@ -88,12 +92,22 @@ class KnowledgeRetrievalUiStyleTest(unittest.TestCase):
         collections = (UI / "knowledge-cores.html").read_text(encoding="utf-8")
         self.assertNotIn('id="kc-approval-rows"', collections)
         self.assertNotIn('id="kc-processing-rows"', collections)
-        for name in ("upload", "reviews", "processing", "files"):
+        for name in ("search", "reviews", "processing", "files"):
             self.assertIn('id="knowledge-owned-workspace"', (UI / f"{name}.html").read_text(encoding="utf-8"))
+        self.assertFalse((UI / "upload.html").exists())
         library = (UI / "js/knowledge-library-workspace.js").read_text(encoding="utf-8")
-        for marker in ("Object.entries(document.versions)", "/knowledge/libraries", "epoch !== state.epoch",
-                       "state.uploads", "relations:continue", "knowledge-context-restored"):
+        for marker in ("Object.entries(item.versions)", '"/libraries/"', "epoch !== state.epoch",
+                       "knowledge-files-layout", "knowledge-file-upload", '"Idempotency-Key": entry.key',
+                       "原文预览", "relations:continue", "knowledge-context-restored"):
             self.assertIn(marker, library)
+
+    def test_library_model_editor_explains_optional_text_embedding(self):
+        explanation = "不配置文本 Embedding，新资料不支持文本语义检索，仍可按关键词检索。"
+        library = (UI / "js/knowledge-library-workspace.js").read_text(encoding="utf-8")
+        ops = (ROOT / "ui/aiops/knowledge-bases.html").read_text(encoding="utf-8")
+        self.assertIn(explanation, library)
+        self.assertIn(explanation, ops)
+        self.assertIn('文本 Embedding（可选）</span><select name="embedding">', ops)
 
     def test_generated_styles_are_current(self):
         result = subprocess.run(["node", "tests/contract/sync_knowledge_reference_styles.mjs"], cwd=ROOT, capture_output=True, text=True)

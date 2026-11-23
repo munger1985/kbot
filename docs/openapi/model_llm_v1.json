@@ -50,6 +50,11 @@
             "description": "List of chat messages or single prompt string",
             "title": "Messages"
           },
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
           "presence_penalty": {
             "anyOf": [
               {
@@ -77,11 +82,6 @@
             ],
             "description": "Response format specification",
             "title": "Response Format"
-          },
-          "served_model_name": {
-            "description": "Name of the LLM model to use",
-            "title": "Served Model Name",
-            "type": "string"
           },
           "stream": {
             "default": false,
@@ -159,7 +159,7 @@
           }
         },
         "required": [
-          "served_model_name",
+          "model_id",
           "messages"
         ],
         "title": "ChatRequest",
@@ -263,10 +263,6 @@
             "title": "Row Version",
             "type": "integer"
           },
-          "served_model_name": {
-            "title": "Served Model Name",
-            "type": "string"
-          },
           "status": {
             "enum": [
               "DRAFT",
@@ -279,7 +275,6 @@
         },
         "required": [
           "model_id",
-          "served_model_name",
           "display_name",
           "provider_model_name",
           "category",
@@ -288,6 +283,21 @@
           "row_version"
         ],
         "title": "ModelCatalogItem",
+        "type": "object"
+      },
+      "ModelConnectionTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "latency_ms": {
+            "minimum": 0.0,
+            "title": "Latency Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "latency_ms"
+        ],
+        "title": "ModelConnectionTestResult",
         "type": "object"
       },
       "ModelCreateRequest": {
@@ -358,13 +368,6 @@
             "title": "Provider Model Name",
             "type": "string"
           },
-          "served_model_name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
-            "title": "Served Model Name",
-            "type": "string"
-          },
           "status": {
             "default": "DRAFT",
             "enum": [
@@ -377,7 +380,6 @@
           }
         },
         "required": [
-          "served_model_name",
           "display_name",
           "provider_model_name",
           "category",
@@ -617,6 +619,12 @@
               }
             ],
             "title": "Model Params"
+          },
+          "provider_model_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Provider Model Name",
+            "type": "string"
           }
         },
         "required": [
@@ -720,8 +728,7 @@
             "type": "array"
           },
           "model": {
-            "maxLength": 128,
-            "minLength": 1,
+            "format": "uuid",
             "title": "Model",
             "type": "string"
           },
@@ -1117,7 +1124,7 @@
   "paths": {
     "/api/v1/chat/completions": {
       "post": {
-        "description": "把 OpenAI 的 model 字段解析为 served_model_name。",
+        "description": "OpenAI 兼容请求的 model 字段使用模型 UUID。",
         "operationId": "openai_chat_completions_api_v1_chat_completions_post",
         "requestBody": {
           "content": {
@@ -1611,6 +1618,49 @@
           }
         },
         "summary": "Change Model Status",
+        "tags": [
+          "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/models/{model_id}:test-connection": {
+      "post": {
+        "operationId": "test_model_connection_internal_v1_models__model_id__test_connection_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConnectionTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Model Connection",
         "tags": [
           "Model Configuration"
         ]

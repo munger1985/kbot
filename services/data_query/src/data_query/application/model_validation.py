@@ -102,7 +102,7 @@ async def create_model_validation_run(
         if int(model_config.get("category", 0)) != 1 or model_config.get("status") != "ACTIVE":
             raise SemanticModelValidationError("SEMANTIC_AI_MODEL_NOT_AVAILABLE")
         response = await model_client.get_llm_json(
-            served_model_name=str(model_config["served_model_name"]),
+            model_id=str(command.ai_model_id),
             prompt=[
                 {
                     "role": "system",

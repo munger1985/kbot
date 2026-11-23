@@ -37,21 +37,35 @@ NotificationStage = Literal[
     "REPORT_READY",
     "SITUATION_RECOVERED",
 ]
-SupportedDatabaseVersion = Literal["19c", "26ai", "5.7", "8.4", "16"]
+SupportedDatabaseVersion = Literal["19c", "26ai", "5.7", "8.0", "8.4", "16", "17", "18"]
 SUPPORTED_DATABASE_VERSIONS: dict[DatabaseType, tuple[SupportedDatabaseVersion, ...]] = {
     DatabaseType.ORACLE: ("19c", "26ai"),
-    DatabaseType.MYSQL: ("5.7", "8.4"),
-    DatabaseType.POSTGRESQL: ("16",),
+    DatabaseType.MYSQL: ("5.7", "8.0", "8.4"),
+    DatabaseType.POSTGRESQL: ("16", "17", "18"),
 }
-# 多个已验证版本可复用同一档案；仅当系统视图合同变化时新增SQL档案。
+# 版本登记与原生工具现场验收分开；诊断 SQL 仍按现有版本及能力选择。
 DATABASE_SQL_PROFILES: dict[
     tuple[DatabaseType, SupportedDatabaseVersion], str
 ] = {
     (DatabaseType.ORACLE, "19c"): "oracle_19c",
     (DatabaseType.ORACLE, "26ai"): "oracle_26ai",
     (DatabaseType.MYSQL, "5.7"): "mysql_5_7",
+    (DatabaseType.MYSQL, "8.0"): "mysql_8_0",
     (DatabaseType.MYSQL, "8.4"): "mysql_8_4",
     (DatabaseType.POSTGRESQL, "16"): "postgresql_16",
+    (DatabaseType.POSTGRESQL, "17"): "postgresql_17",
+    (DatabaseType.POSTGRESQL, "18"): "postgresql_18",
+}
+
+DATABASE_VERSION_PREFIXES = {
+    ("ORACLE", "19c"): ("19.",),
+    ("ORACLE", "26ai"): ("23.26.",),
+    ("MYSQL", "5.7"): ("5.7.",),
+    ("MYSQL", "8.0"): ("8.0.",),
+    ("MYSQL", "8.4"): ("8.4.",),
+    ("POSTGRESQL", "16"): ("16.",),
+    ("POSTGRESQL", "17"): ("17.",),
+    ("POSTGRESQL", "18"): ("18.",),
 }
 
 
@@ -59,11 +73,11 @@ def validate_supported_database_version(
     db_type: DatabaseType | str,
     version_code: str,
 ) -> None:
-    """只允许已经过端到端验证的数据库版本组合。"""
+    """只允许明确登记并绑定诊断档案的数据库版本。"""
     database_type = DatabaseType(db_type)
     if version_code not in SUPPORTED_DATABASE_VERSIONS[database_type]:
         supported = "、".join(SUPPORTED_DATABASE_VERSIONS[database_type])
-        raise ValueError(f"{database_type.value}仅支持已验证版本：{supported}")
+        raise ValueError(f"{database_type.value}仅支持登记版本：{supported}")
     if (database_type, version_code) not in DATABASE_SQL_PROFILES:
         raise ValueError("数据库版本缺少固定SQL档案")
 

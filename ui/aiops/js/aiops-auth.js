@@ -35,11 +35,6 @@
     }
   }
 
-  function save(value) {
-    sessionStorage.setItem(storageKey, JSON.stringify(value));
-    return value;
-  }
-
   const clear = () => sessionStorage.removeItem(storageKey);
 
   function errorMessage(payload, status) {
@@ -88,13 +83,6 @@
       throw error;
     }
     return payload;
-  }
-
-  async function login(body) {
-    return save(await raw("/api/v1/apps/aiops/auth/login", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }));
   }
 
   async function request(path, options = {}) {
@@ -215,5 +203,5 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  globalThis.KBotAIOpsAuth = { clear, load, login, request, requestBlob, stream, download, uuid, uuid7 };
+  globalThis.KBotAIOpsAuth = { clear, load, request, requestBlob, stream, download, uuid, uuid7 };
 })();

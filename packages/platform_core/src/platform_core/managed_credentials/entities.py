@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import DateTime, Index, LargeBinary, Numeric, String, UniqueConstraint, func
+from sqlalchemy.dialects.oracle import RAW
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -44,7 +45,7 @@ class ManagedCredentialEntity(BaseEntity):
     credential_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     external_key: Mapped[str] = mapped_column(String(256), nullable=False)
     ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    nonce: Mapped[bytes] = mapped_column(LargeBinary(12), nullable=False)
+    nonce: Mapped[bytes] = mapped_column(RAW(12), nullable=False)
     key_version: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)

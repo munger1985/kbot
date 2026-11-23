@@ -38,10 +38,11 @@ class CompletionTests(unittest.IsolatedAsyncioTestCase):
         header, rows = markdown_table_spans(text)
         content = replace(allowed(node("table", text)),kind=ContentKind.TABLE,table_header=header,table_rows=rows)
         builder = ProjectionBuilder(FakeBackend().binding,CharacterTokenizer(),None)
-        spans = builder._chunks(content,replace(projection_profile(),max_tokens=45))
-        self.assertGreater(len(spans),1)
-        self.assertTrue(all(group[0]==header for group in spans))
-        self.assertEqual(tuple(row for group in spans for row in group[1:]),rows)
+        chunks = tuple(builder._chunks(content, replace(projection_profile(), max_tokens=45)))
+        self.assertGreater(len(chunks), 1)
+        self.assertEqual("".join(text[a:b] for a, b, _ in chunks), text)
+        self.assertTrue(all("名称" in ctx and "单位" in ctx for _, _, ctx in chunks[1:]))
+        self.assertTrue(all(not any(a < end < b for _, end, _ in chunks) for a, b in rows))
 
 
     async def test_partial_empty_channel_is_not_exhaustive_no_match(self):
@@ -81,8 +82,7 @@ class CompletionTests(unittest.IsolatedAsyncioTestCase):
             "similarity": specification.similarity, "normalization": specification.normalization}
         client = SimpleNamespace(represent=AsyncMock(return_value=receipt))
         gateway = KnowledgeModelGateway(visual_client=None, dense_client=client, auth_context=None, image_reader=None,
-            models={specification.space_id: {"model_ref": specification.model_ref,
-                                             "wire_model_field": "served_model_name"}}, max_elements=100)
+            models={specification.space_id: {"model_ref": specification.model_ref}}, max_elements=100)
         result = await gateway.represent(ModelInput("TEXT", text="合成正文", input_role="DOCUMENT"), specification)
         self.assertEqual(result.vector, (1., 0.))
         self.assertEqual(client.represent.call_args.args[0]["input_role"], "DOCUMENT")

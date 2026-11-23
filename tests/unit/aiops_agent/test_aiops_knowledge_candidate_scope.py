@@ -35,9 +35,9 @@ def setup_search(*, size=5, max_results=1, budget=None):
         if after_index_id is not None:
             values = [row for row in values if row[2].index_ref_id > after_index_id]
         if asset_version_ids:
-            state.rechecks += 1
             values = [row for row in values if row[1].asset_version_id in asset_version_ids]
         if document_version_ids:
+            state.rechecks += 1
             values = [row for row in values if str(row[2].document_version_id) in {str(v) for v in document_version_ids}]
         return values if limit is None else values[:limit]
     repo = SimpleNamespace(list_published_candidates=AsyncMock(side_effect=list_candidates))
@@ -51,6 +51,9 @@ def setup_search(*, size=5, max_results=1, budget=None):
             values = [row for row in values if row[1].asset_version_id in asset_version_ids]
         return values if limit is None else values[:limit]
     repo.list_published_catalog = AsyncMock(side_effect=list_catalog)
+    repo.published_index_counts = AsyncMock(side_effect=lambda *, asset_version_ids: {
+        str(version): sum(row[1].asset_version_id == version for row in state.rows)
+        for version in asset_version_ids})
     active_knowledge_bases_fixture(repo)
     async def ticket(access, **kwargs):
         assert state.transaction_open
@@ -76,8 +79,10 @@ def setup_search(*, size=5, max_results=1, budget=None):
             for index in range(state.copies):
                 key = EvidenceKey("aiops", str(wanted[2].document_version_id), str(wanted[2].parse_run_id), "node-" + str(index))
                 values.append(SimpleNamespace(key=key, mime_type="text/plain", locators=(),
-                    source_keys=(key,), source_spans=()))
-        return SimpleNamespace(retrieval_ref="receipt", evidence_set=SimpleNamespace(evidence=tuple(values)))
+                    source_keys=(key,), source_spans=(), payload_status="READABLE"))
+        hits = tuple(SimpleNamespace(rank=number, evidence_key=item.key) for number, item in enumerate(values, 1))
+        return SimpleNamespace(retrieval_ref="receipt", evidence_set=SimpleNamespace(evidence=tuple(values),
+            primary_hits=hits, groups=(), channel_status=(), status="COMPLETE", scope_exhausted=True))
     async def stream(access, **kwargs):
         assert not state.transaction_open
         body = state.quote.encode()
@@ -207,6 +212,7 @@ def test_keyset_pages_and_kc_shards_keep_exact_authorized_revisions():
         result = await f.service.search(**f.kwargs)
         assert result["results"]
         assert result["coverage"]["discovery_shards"] == 3
+        assert result["coverage"]["ranking"] == "LIMITED"
         pages = f.repo.list_published_candidates.await_args_list[:3]
         assert pages[0].kwargs["after_index_id"] is None
         assert pages[1].kwargs["after_index_id"] == f.rows[1][2].index_ref_id
@@ -269,6 +275,100 @@ def test_two_citations_to_one_asset_are_one_result_not_two_requested_results():
         result = await f.service.search(**f.kwargs)
         assert len(result["results"]) == 1
         assert len(result["results"][0]["citation_pack"]) == 2
+    asyncio.run(run())
+
+
+def test_evidence_lookup_order_and_related_do_not_change_primary_rank():
+    async def run():
+        f = setup_search()
+        f.state.copies = 2
+        original = f.retrieval.retrieve.side_effect
+        async def permute(*args, **kwargs):
+            receipt = await original(*args, **kwargs)
+            manifest = receipt.evidence_set
+            primary, related = manifest.primary_hits
+            manifest.primary_hits = (primary,)
+            manifest.groups = (SimpleNamespace(anchor_key=primary.evidence_key,
+                manifest_status="COMPLETE", linked_keys=(related.evidence_key,)),)
+            manifest.evidence = tuple(reversed(manifest.evidence))
+            return receipt
+        f.retrieval.retrieve.side_effect = permute
+        row = (await f.service.search(**f.kwargs))["results"][0]
+        assert len(row["citation_pack"]) == 1
+        group, = row["evidence_groups"]
+        assert group["primary"]["rank"] == 1
+        assert group["primary"]["locator"]["evidence_key"]["object_key"] == "node-0"
+        assert group["related"][0]["locator"]["evidence_key"]["object_key"] == "node-1"
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(("eligible", "failed", "expected"), [
+    (False, False, "NO_ELIGIBLE_RESOURCES"),
+    (True, False, "NO_MATCH"),
+    (True, True, "NOT_VERIFIED"),
+])
+def test_search_conclusion_distinguishes_empty_from_failure(eligible, failed, expected):
+    async def run():
+        f = setup_search()
+        if not eligible:
+            f.state.rows = []
+        original = f.retrieval.retrieve.side_effect
+        async def retrieve(*args, **kwargs):
+            manifest = (receipt := await original(*args, **kwargs)).evidence_set
+            manifest.evidence = manifest.primary_hits = ()
+            if failed:
+                manifest.status = "FAILED"
+                manifest.channel_status = (SimpleNamespace(channel_key="lexical", status="FAILED",
+                    reason="UNAVAILABLE"),)
+            return receipt
+        f.retrieval.retrieve.side_effect = retrieve
+        result = await f.service.search(**f.kwargs)
+        assert result["retrieval_conclusion"] == expected
+        assert not result["results"]
+    asyncio.run(run())
+
+
+def test_qualified_without_ready_index_is_not_verified():
+    async def run():
+        f = setup_search()
+        f.repo.list_published_candidates = AsyncMock(return_value=[])
+        result = await f.service.search(**f.kwargs)
+        assert result["retrieval_conclusion"] == "NOT_VERIFIED"
+        assert "INDEX_NOT_READY" in result["coverage"]["gaps"]
+        f.retrieval.retrieve.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_other_shards_survive_channel_failure():
+    async def run():
+        from knowledge_algorithms.contracts.errors import require
+
+        f = setup_search(budget=KnowledgeSearchBudget(discovery_scope_size=2))
+        original = f.retrieval.create_scope.side_effect
+        async def open_scope(*args, **kwargs):
+            require(len(f.state.tickets) != 1, "模拟分片失效")
+            return await original(*args, **kwargs)
+        f.retrieval.create_scope.side_effect = open_scope
+        result = await f.service.search(**f.kwargs)
+        assert result["retrieval_conclusion"] == "EVIDENCE_FOUND"
+        assert result["coverage"]["scope"] == "PARTIAL"
+        assert result["coverage"]["ranking"] == "LIMITED"
+        assert result["coverage"]["channel_failures"]
+    asyncio.run(run())
+
+
+def test_same_policy_under_new_agent_version_does_not_authorize_old_evidence():
+    async def run():
+        f = setup_search()
+        original = f.retrieval.stream_content.side_effect
+        async def replace_agent_version(*args, **kwargs):
+            f.agents.get.return_value.current_version_id = uuid7()
+            return await original(*args, **kwargs)
+        f.retrieval.stream_content.side_effect = replace_agent_version
+        result = await f.service.search(**f.kwargs)
+        assert result["status"] == "KNOWLEDGE_SCOPE_CHANGED"
+        assert not result["results"]
+        assert result["retrieval_conclusion"] == "NOT_VERIFIED"
     asyncio.run(run())
 
 

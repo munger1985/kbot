@@ -7,6 +7,14 @@ import math
 import warnings
 
 
+# 与 ColQwen2 所用 Qwen2-VL 图像预处理器的长宽比上限一致，仅约束这个模型。
+_COLQWEN2_MAX_ASPECT_RATIO = 200
+
+
+class VisualImageInputUnsupported(ValueError):
+    """单张图的输入规格不受支持，与模型配置、推理与存储错误区分。"""
+
+
 class NativeColQwenRepresentation:
     async def represent(self, *, input_kind, text=None, image_base64=None, direction):
         config = self.config
@@ -24,16 +32,25 @@ class NativeColQwenRepresentation:
         image = None
         if image_base64 is not None:
             if len(image_base64) > config.max_image_bytes * 4 // 3 + 8:
-                raise ValueError("图像超过字节预算")
+                raise VisualImageInputUnsupported("BYTE_LIMIT")
             raw = base64.b64decode(image_base64, validate=True)
             if len(raw) > config.max_image_bytes:
-                raise ValueError("图像超过字节预算")
+                raise VisualImageInputUnsupported("BYTE_LIMIT")
             from PIL import Image
             with warnings.catch_warnings():
                 warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(BytesIO(raw)) as source:
-                    if source.width * source.height > config.max_image_pixels or getattr(source, "n_frames", 1) != 1:
-                        raise ValueError("图像像素或帧数超过预算")
+                try:
+                    opened = Image.open(BytesIO(raw))
+                except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+                    raise VisualImageInputUnsupported("PIXEL_LIMIT") from None
+                with opened as source:
+                    width, height = source.size
+                    if width * height > config.max_image_pixels:
+                        raise VisualImageInputUnsupported("PIXEL_LIMIT")
+                    if max(width, height) > _COLQWEN2_MAX_ASPECT_RATIO * min(width, height):
+                        raise VisualImageInputUnsupported("ASPECT_RATIO")
+                    if getattr(source, "n_frames", 1) != 1:
+                        raise VisualImageInputUnsupported("FRAME_COUNT")
                     source.load()
                     image = source.convert("RGB")
         elif not isinstance(text, str) or not text.strip() or len(text) > config.max_query_chars:

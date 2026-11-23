@@ -7,13 +7,14 @@
 
 前端必须遵守以下结论：
 
-1. KBot 当前有两类登录上下文：平台会话和业务 App 会话。两类 Token 不能混用。
+1. KBot 工作台使用无 App/Domain 的根会话（`PLATFORM` 或 `WORKSPACE`）；业务 App 使用
+   `BUSINESS` 会话。根会话和业务 Token 不能混用。
 2. 业务 Token 固定绑定一个 `user_id + app_id + domain_id`。同一用户可以在浏览器会话中
    同时保存多个业务上下文，切换页面时选择正确 Token，不需要重复查询权限。
 3. 权限不是组件级接口，也不是 Agent 级接口。进入一个 App 上下文时只调用一次该 App
    的 `/access`，后续路由、菜单和按钮读取前端缓存的权限快照。
 4. Agent 列表接口已经执行服务端授权过滤。前端不得为列表中的每个 Agent 再请求一次授权。
-5. 平台 Token 是 SSO 根会话。平台登录后通过 `/auth/entries` 免密发现入口，通过
+5. 平台和 App 来源账号统一登录。登录后通过 `/auth/entries` 免密发现入口，通过
    `/auth/exchange` 换取显式授权范围内的业务 Token，不再为每个 App 重复提交密码。
 6. 当前使用“有效 Access Token 主动续签”而不是浏览器持有 refresh token。前端在过期前
    调用 `/auth/refresh` 原子替换 Token；已经过期后必须重新登录。
@@ -24,24 +25,26 @@
 
 - 重复调用 `/access`、逐 Agent 查 Grant、页面串行加载属于前端实现问题，应按本文缓存和
   并发规则修复；
-- 平台来源账号使用 SSO 根会话完成入口发现和 Token Exchange；App 来源账号仍可使用独立
-  业务登录页。两种流程都不得由前端保存密码。
+- 两种来源都使用工作台根会话完成入口发现和 Token Exchange；前端不得保存密码。
 
 ## 2. 身份与会话模型
 
-### 2.1 平台会话
+### 2.1 统一工作台根会话
 
 调用：
 
 ```http
-POST /api/v1/auth/platform/login
+POST /api/v1/auth/login
 Content-Type: application/json
 
 {"user_id":"ADMIN","password":"..."}
 ```
 
-响应中的 `entry_kind` 为 `PLATFORM`，`app_id` 和 `domain_id` 均为空。该 Token 只用于
-`/api/v1/platform/*` 等平台管理接口，不能用于业务 App 接口。
+登录不需要指定 App、工作域或账号来源。`app_id` 和 `domain_id` 均为空。平台来源账号获得
+`PLATFORM`，可访问自身有权执行的平台功能；App 来源账号获得 `WORKSPACE`，只可发现入口、
+换取所属 App 的业务会话、续签、改密，以及在具备资格时开通知识检索首域。首次登录需要
+改密时，在工作台调用 `POST /api/v1/auth/password`，改密后再发现入口。这里使用 KBot
+现有账号库，不依赖外部身份提供方。
 
 平台管理员给自己或其他平台用户授予 App 资格时，使用：
 
@@ -53,7 +56,7 @@ App Grant 必须包含有效角色和 Domain 范围。平台管理员身份本�
 
 ### 2.2 业务 App 会话
 
-App 来源账号或独立业务登录页使用以下流程：
+工作台一律使用免密换票。已有直接使用凭据的 API 客户端仍可使用以下业务登录流程：
 
 ```text
 POST /api/v1/auth/apps
@@ -104,25 +107,32 @@ X-Request-ID: <每次请求的新 UUID>
 浏览器不得发送或覆盖受信的 Actor、App、Domain、角色、安全等级或内部认证 Header。
 业务 App 和 Domain 以已签名 Token 为准。
 
-平台来源账号登录后使用 SSO 流程，不再重复提交账号密码：
+两种来源的账号登录后都使用 SSO 流程，不再重复提交账号密码：
 
 ```http
 GET /api/v1/auth/entries
-Authorization: Bearer <PLATFORM Token>
+Authorization: Bearer <PLATFORM 或 WORKSPACE Token>
 ```
 
 该接口返回当前用户具有显式资格的 App 及其 Domain。用户选择入口后调用：
 
 ```http
 POST /api/v1/auth/exchange
-Authorization: Bearer <PLATFORM Token>
+Authorization: Bearer <PLATFORM 或 WORKSPACE Token>
 Content-Type: application/json
 
 {"app_id":"knowledge_retrieval","domain_id":1}
 ```
 
-服务端再次校验用户状态、平台账号来源、App 状态、显式 App Grant 和 Domain Scope，
+服务端再次校验用户状态、账号来源、App 状态、显式 App Grant 和 Domain Scope，
 校验通过后签发 BUSINESS Token。`ADMIN` 不会因为是全局管理员而绕过 App Grant。
+
+KBot 工作台 `/ui/index.html` 使用此流程。默认只有具备有效工作域的 App 会出现在
+`/auth/entries` 的 `apps` 中，页面再与部署的 `enabledApps` 取交集。获授权的知识检索
+管理员在尚无首域时也能看到该入口（`can_create_first_domain: true`），并可使用根会话
+调用 `POST /api/v1/auth/knowledge-first-domain` 创建后进入。系统管理与 App 并列显示；
+`system_management` 表示当前平台用户是否具备 `platform:model_manage`，无需业务工作域，
+模型管理接口只接受具有该权限的 PLATFORM Token。
 
 ### 2.3 App ID 与 URL 的映射
 
@@ -130,6 +140,7 @@ Content-Type: application/json
 | --- | --- | --- |
 | 知识检索 | `knowledge_retrieval` | `knowledge-retrieval` |
 | AIOps | `aiops` | `aiops` |
+| 多媒体创作 | `media_studio` | `media-studio` |
 
 不要用字符串替换临时推导。前端应维护一份只读常量映射，避免下划线 ID 和连字符 URL
 混用导致 `APP_CONTEXT_MISMATCH`。
@@ -141,7 +152,7 @@ Content-Type: application/json
 推荐将 Token 按上下文保存，而不是只保留一个全局 `token`：
 
 ```ts
-type EntryKind = "PLATFORM" | "BUSINESS";
+type EntryKind = "PLATFORM" | "WORKSPACE" | "BUSINESS";
 
 type UserSession = {
   access_token: string;
@@ -154,9 +165,9 @@ type UserSession = {
 };
 
 const contextKey = (session: UserSession) =>
-  session.entry_kind === "PLATFORM"
-    ? `${session.user_id}:PLATFORM`
-    : `${session.user_id}:${session.app_id}:${session.domain_id}`;
+  session.entry_kind === "BUSINESS"
+    ? `${session.user_id}:${session.app_id}:${session.domain_id}`
+    : `${session.user_id}:${session.entry_kind}`;
 ```
 
 至少维护：
@@ -368,7 +379,7 @@ const routes = [{
 守卫逻辑：
 
 1. 选择与路由 `appId`、当前 `domainId` 匹配的 Token；
-2. 无 Token 时进入业务登录/上下文选择页；
+2. 无业务 Token 时回到统一工作台登录或选择有权进入的入口；
 3. 有 Token 但权限快照尚未加载时调用共享的 `ensureAccess`；
 4. 快照存在后只做 `Set.has()`；
 5. 无权限进入统一 403 页面，不发起更多权限查询。
@@ -392,8 +403,8 @@ Content-Type: application/json
 快照；不得继续沿用旧 Domain 的 `/access`、列表数据、查询缓存或 SSE 连接。
 
 切换到另一个 App 时，优先查找浏览器会话中是否已有目标
-`user_id + app_id + domain_id` 的有效 Token。有则直接激活；没有则使用 PLATFORM Token
-调用 `/auth/exchange`。平台 Token 不能直接传给目标 App 试探权限。
+`user_id + app_id + domain_id` 的有效 Token。有则直接激活；没有则使用根会话 Token
+调用 `/auth/exchange`。根会话 Token 不能直接传给目标 App 试探权限。
 
 ## 7. 统一 API Client 与错误处理
 
@@ -438,8 +449,9 @@ const message = typeof payload?.detail === "string"
 | 403 `DOMAIN_CONTEXT_REQUIRED` | 当前不是有效业务 Token；返回上下文选择页 |
 | 403 `APP_ACCESS_DENIED` | 账号没有目标 App 资格；提示管理员配置 App Grant |
 | 403 `APP_DISABLED` | 清理目标 App 上下文并返回 App 选择页 |
-| 409 `BUSINESS_SESSION_REQUIRED` | 平台 Token 调用了业务会话操作；选择 BUSINESS Token |
-| 409 `PLATFORM_SESSION_REQUIRED` | 业务 Token 调用了 SSO 根会话操作；选择 PLATFORM Token |
+| 403 `WORKSPACE_SCOPE_DENIED` | WORKSPACE Token 调用了入口范围以外的接口 |
+| 409 `BUSINESS_SESSION_REQUIRED` | 根会话 Token 调用了业务会话操作；选择 BUSINESS Token |
+| 409 `WORKSPACE_SESSION_REQUIRED` | 业务 Token 调用了 SSO 根会话操作；选择根会话 Token |
 
 401 和 403 都最多由统一客户端处理一次。写操作、对话发送和长任务创建不能自动重放，
 避免重复提交。
@@ -484,7 +496,7 @@ Scope 和 Agent，且只能保存在第三方服务端；浏览器仍使用用�
 - 一次返回用户全部 App/Domain/权限/Agent 的全局业务数据 bootstrap；
 - 授权变更推送。
 
-当前 `/auth/entries` 与 `/auth/exchange` 已支持“一次平台登录，在有 Grant 的 App 间免密
+当前 `/auth/entries` 与 `/auth/exchange` 已支持“一次统一登录，在有 Grant 的 App 间免密
 切换”。后续可以继续增强：
 
 1. 更长周期的安全刷新机制：使用服务端会话或旋转的 HttpOnly、Secure、SameSite Cookie，
@@ -492,17 +504,17 @@ Scope 和 Agent，且只能保存在第三方服务端；浏览器仍使用用�
 2. 授权版本或变更事件：前端按版本精确失效权限快照，替代固定 TTL 轮询。
 
 长期 refresh cookie 属于新的认证契约，需要单独设计、OpenAPI、威胁建模和测试。当前
-前端应使用平台根会话、受控交换、主动续签、多上下文 Token 和权限 single-flight。
+前端应使用工作台根会话、受控交换、主动续签、多上下文 Token 和权限 single-flight。
 
 ## 11. 前端验收清单
 
-- [ ] PLATFORM Token 从未用于 `/api/v1/apps/*` 业务接口。
+- [ ] 根会话 Token 从未用于 `/api/v1/apps/*` 业务接口。
 - [ ] 每个 BUSINESS Token 的 App 和 Domain 与当前路由一致。
 - [ ] Token 按上下文保存，切换 App 不会覆盖其他 App 的有效 Token。
-- [ ] 平台用户通过 `/auth/entries` 与 `/auth/exchange` 免密进入已授权 App。
+- [ ] 用户通过 `/auth/entries` 与 `/auth/exchange` 免密进入已授权 App。
 - [ ] 续签请求按上下文 single-flight，成功后原子替换 Token。
 - [ ] 密码没有写入任何浏览器持久化、日志、Store 或请求重试队列。
-- [ ] `/auth/me` 每个 Token 最多请求一次。
+- [ ] 支持 `/auth/me` 的 Token 最多请求一次；WORKSPACE 不调用该接口。
 - [ ] `/access` 每个业务上下文只初始化一次，并有 single-flight。
 - [ ] 路由、菜单、按钮共享同一个权限 `Set`。
 - [ ] Agent 列表没有逐 Agent 权限或 Grant 请求。

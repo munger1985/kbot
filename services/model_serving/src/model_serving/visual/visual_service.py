@@ -34,27 +34,27 @@ class VisualService:
             self._initialized = False
             logger.info("[VisualService] shutdown complete")
 
-    async def invalidate_model(self, served_model_name: str) -> None:
+    async def invalidate_model(self, model_id: str) -> None:
         """配置变更后立即移除旧实例，不触发模型服务初始化。"""
         if self._initialized:
-            await self._pool.unload_model(served_model_name)
+            await self._pool.unload_model(model_id)
 
-    def is_model_loaded(self, served_model_name: str) -> bool:
-        return self._pool.is_model_loaded(served_model_name)
+    def is_model_loaded(self, model_id: str) -> bool:
+        return self._pool.is_model_loaded(model_id)
 
-    async def embed(self, served_model_name: str, image_base64: str) -> list[float]:
+    async def embed(self, model_id: str, image_base64: str) -> list[float]:
         """图片 → 视觉 embedding"""
         if not self._initialized:
             await self.initialize()
 
-        model = await self._pool.load_model(served_model_name)
+        model = await self._pool.load_model(model_id)
         return await model.embed(image_base64)
 
-    async def represent(self, served_model_name, *, input_kind, direction, text=None, image_base64=None):
+    async def represent(self, model_id, *, input_kind, direction, text=None, image_base64=None, expected_revision=None):
         """传递模型原生 token 矩阵及有效 mask。"""
         if not self._initialized:
             await self.initialize()
-        model = await self._pool.load_model(served_model_name)
+        model = await self._pool.load_model(model_id, expected_revision=expected_revision)
         if not hasattr(model, "represent"):
             raise ValueError("当前视觉模型未登记原生多向量能力")
         return await model.represent(input_kind=input_kind, direction=direction, text=text, image_base64=image_base64)

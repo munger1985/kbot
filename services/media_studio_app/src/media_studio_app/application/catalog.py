@@ -11,7 +11,6 @@ from media_studio_app.application.errors import MediaStudioApplicationError
 SAFE_SNAPSHOT_FIELDS = (
     "model_id",
     "display_name",
-    "served_model_name",
     "provider",
     "status",
     "category",
@@ -25,7 +24,6 @@ def safe_model_snapshot(row: dict[str, Any]) -> dict[str, Any]:
     snapshot = {
         "model_id": str(row.get("model_id") or ""),
         "display_name": row.get("display_name"),
-        "served_model_name": row.get("served_model_name"),
         "provider": row.get("provider"),
         "status": row.get("status"),
         "category": int(row["category"]) if row.get("category") is not None else None,

@@ -24,13 +24,16 @@ class PublishedKnowledgeBackend:
 
     def __init__(self, *, index, items, relations, scope, snapshot, subject_ref,
                  expires_at, profile_hash, cursor_codec, validate, clock,
-                 primary_cursor=None, image_fingerprints=None):
+                 primary_cursor=None, image_fingerprints=None, vector_batches=None, materialize=None,
+                 candidate_filter=None):
         self.index, self.items, self.relations = index, items, tuple(relations)
         self.scope, self.fixed_snapshot, self.subject_ref = scope, snapshot, subject_ref
         self.expires_at, self.profile_hash = expires_at, profile_hash
         self.codec, self.validate, self.clock = cursor_codec, validate, clock
         self.primary_cursor = primary_cursor
         self.image_fingerprints = image_fingerprints or {}
+        self.vector_batches, self.materialize = vector_batches, materialize
+        self.candidate_filter = candidate_filter
         self.text_scan = None
         self.scan_policy = None
 
@@ -75,7 +78,11 @@ class PublishedKnowledgeBackend:
             handle = request.query.image_handles[request.input_index]
             require(handle in self.image_fingerprints, "查询图像未获当前主体授权")
             image_hash, visual_hash = self.image_fingerprints[handle]
-        hits = self.index.search(request, image_sha256=image_hash, visual_hash=visual_hash)
+        if self.vector_batches is not None and request.channel.kind in {"DENSE", "MULTIVECTOR"}:
+            hits = await self.vector_batches.search(self.index, request, candidate_filter=self.candidate_filter)
+        else:
+            hits = self.index.search(request, image_sha256=image_hash, visual_hash=visual_hash,
+                                     candidate_filter=self.candidate_filter)
         scan_complete, scan_reason = True, None
         if request.channel.kind == "LEXICAL" and self.text_scan is not None and self.scan_policy is not None:
             from knowledge_algorithms.ports.text_scan import lexical_family_order
@@ -89,7 +96,8 @@ class PublishedKnowledgeBackend:
                 try:
                     scanned = await self.text_scan.scan(scan_request, scope, snapshot)
                     require(all(match.key in self.items for match in scanned.matches), "扫描返回未授权对象")
-                    eligible = {indexed.key for indexed in self.index.units if self.index.eligible(indexed, request.query)}
+                    eligible = {indexed.key for indexed in self.index.units if self.index.eligible(indexed, request.query)
+                                and (self.candidate_filter is None or self.candidate_filter(indexed))}
                     matches = tuple(match for match in scanned.matches if match.key in eligible)
                     keys = lexical_family_order(tuple(hit.key for hit in hits), matches,
                         pattern_count=len(scan_request.patterns), combination=scan_request.combination)
@@ -115,7 +123,11 @@ class PublishedKnowledgeBackend:
         await self.check(scope, snapshot)
         for key in keys:
             self.binding.check_owner(key.owner_binding_ref)
-        return EvidenceBatch(tuple(self.items[key] for key in keys if key in self.items),
+        items = tuple(self.items[key] for key in keys if key in self.items)
+        if self.materialize is not None:
+            for item in items:
+                await self.materialize(item)
+        return EvidenceBatch(items,
                              tuple((key, "EVIDENCE_NOT_IN_ALLOWED_VIEW") for key in keys if key not in self.items))
 
     async def revalidate(self, keys, scope, snapshot):

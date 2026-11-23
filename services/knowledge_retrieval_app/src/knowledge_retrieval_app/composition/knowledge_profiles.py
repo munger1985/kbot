@@ -13,6 +13,7 @@ class KnowledgeFoundationConfig(BaseModel):
     storage_root: str = "./var/data/app_knowledge"
     max_input_bytes: int = Field(default=67108864, ge=1024, le=268435456)
     parse_timeout_seconds: float = Field(default=180.0, ge=10, le=1800)
+    index_batch_timeout_seconds: float = Field(default=180.0, ge=10, le=1800)
     max_pages: int = Field(default=1000, ge=1, le=10000)
     max_units: int = Field(default=20000, ge=1, le=100000)
     max_tokens_per_unit: int = Field(default=1024, ge=64, le=8192)
@@ -30,7 +31,7 @@ class KnowledgeFoundationConfig(BaseModel):
             self.max_input_bytes, self.max_pages, self.max_units, self.max_input_bytes,
             1048576, 64, self.parse_timeout_seconds, 0, (), .05, .8, False, LayoutProfile(.8, .05))
         projection = ProjectionProfile("app-projection/v1", self.max_tokens_per_unit,
-            self.max_input_bytes, self.max_units, 64, 16000000, self.parse_timeout_seconds, specs)
+            self.max_input_bytes, self.max_units, 64, 16000000, self.index_batch_timeout_seconds, specs)
         channels = [ChannelSpec("lexical", "lexical", "LEXICAL", "TEXT_TO_TEXT", 1.0, 100, 30., True),
                     ChannelSpec("exact-image", "image-identity", "NEAR_DUPLICATE", "IMAGE_TO_IMAGE",
                                 1.0, 100, 30., False)]

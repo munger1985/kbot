@@ -1,5 +1,5 @@
 /* 自动同步自 Ammolite shared/ui/styles.css；请修改源文件后重新生成。
- * 源文件 SHA-256: d03c058bb42649e6fb999f2857d54be2f5a672ee959092bbab12a64ff7dac641
+ * 源文件 SHA-256: ed1927c102115108c32868a39abe228a6054c664da69d35a2a267c45979fd2c8
  * 仅保留 AIOps 及其公共控件；字体使用同一系统回退栈，不从 CDN 加载。
  */
 button { all: revert; }
@@ -1622,12 +1622,12 @@ html[data-theme="dark"] :is(.nav-item:hover .nav-item-icon,.nav-item.router-link
   width: calc(100% - var(--app-page-inline-gutter));
   margin-left: var(--app-page-inline-gutter);
 }
-.aiops-page .management-catalog-grid {
+:is(.aiops-page, .knowledge-management-page) .management-catalog-grid {
   grid-template-columns: repeat(auto-fill, min(100%, var(--aiops-catalog-card-width)));
   align-items: start;
   gap: var(--aiops-card-gap);
 }
-.aiops-page .management-catalog-grid :is(.management-catalog-card, .management-catalog-add-card) {
+:is(.aiops-page, .knowledge-management-page) .management-catalog-grid :is(.management-catalog-card, .management-catalog-add-card) {
   width: 100%;
   height: auto;
   min-width: 0;
@@ -1635,12 +1635,12 @@ html[data-theme="dark"] :is(.nav-item:hover .nav-item-icon,.nav-item.router-link
   aspect-ratio: var(--aiops-catalog-card-ratio);
   padding: var(--aiops-card-padding);
 }
-.aiops-page .management-catalog-grid .management-catalog-card {
+:is(.aiops-page, .knowledge-management-page) .management-catalog-grid .management-catalog-card {
   display: grid;
   grid-template-rows: var(--aiops-card-header-height) minmax(0, 1fr) auto;
   gap: 16px;
 }
-.aiops-page .management-catalog-card > header {
+:is(.aiops-page, .knowledge-management-page) .management-catalog-card > header {
   height: var(--aiops-card-header-height);
   min-height: 0;
 }
@@ -1662,6 +1662,13 @@ html[data-theme="dark"] :is(.nav-item:hover .nav-item-icon,.nav-item.router-link
 }
 .aiops-catalog-card-body > p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .aiops-catalog-card-body:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: -2px; }
+:is(.aiops-page, .knowledge-management-page) .management-catalog-grid .knowledge-base-card { --aiops-card-header-height: 80px; gap: 8px; }
+.knowledge-base-card .aiops-catalog-card-body { gap: 8px; overflow: visible; scrollbar-gutter: auto; }
+.knowledge-base-card .knowledge-base-description { display: -webkit-box; min-height: 3em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: var(--type-supporting); line-height: 1.5; }
+.knowledge-base-id { display: block; min-width: 0; font-size: 12px; }
+.knowledge-base-card dl > div { padding: 8px 12px; }
+.knowledge-base-card dd { font-size: var(--type-supporting); }
+.knowledge-base-card .knowledge-base-updated { font-size: 12px; white-space: nowrap; }
 .aiops-page .aiops-summary-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, min(100%, var(--aiops-summary-card-width)));

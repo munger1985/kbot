@@ -122,10 +122,10 @@ class MemoryRecallService:
             if profile is None:
                 return None
             profile_id = profile.index_profile_id
-            model_name = profile.embedding_model_name
+            model_name = profile.embedding_model_id
             dimension = int(profile.embedding_dimension)
         rows = await self._model_client.call_embedding_model(
-            served_model_name=model_name,
+            model_id=model_name,
             texts=[query],
             batch_size=1,
             is_query=True,

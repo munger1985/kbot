@@ -24,6 +24,7 @@ class ReportContent(BaseModel):
         "INSPECTION_ANNUAL",
         "INSPECTION_CUSTOM",
         "COMPARISON",
+        "RECOVERY_DRILL",
         "ORACLE_WORKLOAD",
         "ORACLE_WORKLOAD_DIFF",
         "MYSQL_WORKLOAD",

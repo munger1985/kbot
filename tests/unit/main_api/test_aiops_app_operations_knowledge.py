@@ -10,11 +10,13 @@ from urllib.parse import quote
 from main_api.api.aiops_app import (
     router,
     delete_operations_knowledge_asset,
+    update_operations_knowledge_base,
     operations_knowledge_overview,
     upload_operations_knowledge,
     upload_operations_manual_version,
 )
 from platform_core.identity import uuid7
+from platform_core.contracts.aiops.knowledge_base import KnowledgeBaseWrite
 from platform_core.contracts import AuthContext, PrincipalKind
 
 
@@ -31,10 +33,13 @@ class _AIOpsClient:
 
     async def upload_operations_knowledge(self, **kwargs):
         self.uploaded = kwargs
-        return {"grouping_mode": "SINGLE_ASSET", "items": []}
+        return {"grouping_mode": "EACH_FILE", "items": []}
 
     async def delete_operations_knowledge_asset(self, asset_id, **kwargs):
         self.deleted = {"asset_id": asset_id, **kwargs}
+
+    async def update_operations_knowledge_base(self, knowledge_base_id, payload, **kwargs):
+        return payload
 
 
 def _context():
@@ -83,6 +88,15 @@ class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
         ):
             result = await operations_knowledge_overview(_request(client))
         self.assertEqual(2, result["published_manuals"])
+
+    async def test_update_preserves_optional_label_model_field(self):
+        client = _AIOpsClient()
+        model_id = uuid7()
+        for field in ({}, {"tagging_model_id": None}, {"tagging_model_id": str(model_id)}):
+            payload = KnowledgeBaseWrite(display_name="手册", **field)
+            with patch("main_api.api.aiops_app._require", AsyncMock(return_value=(42, "aiopsadmin", object()))):
+                result = await update_operations_knowledge_base(uuid7(), payload, _request(client))
+            self.assertEqual({"display_name": "手册", **field}, result)
 
     async def test_delete_asset_forwards_optimistic_row_version(self):
         client = _AIOpsClient()
@@ -143,7 +157,7 @@ class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="aiops-upload-test",
             )
 
-        self.assertEqual("SINGLE_ASSET", result["grouping_mode"])
+        self.assertEqual("EACH_FILE", result["grouping_mode"])
         self.assertEqual("multipart/form-data; boundary=test", client.uploaded["content_type"])
         self.assertEqual("aiops-upload-test", client.uploaded["idempotency_key"])
         self.assertEqual(

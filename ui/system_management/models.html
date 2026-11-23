@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>系统管理 · AI 模型管理</title>
+  <link rel="stylesheet" href="../media_studio/css/media.css">
+  <link rel="stylesheet" href="./system-management.css?v=20261120_model_fields_2">
+</head>
+<body class="system-management">
+  <header class="media-topbar">
+    <div class="media-context"><a href="/ui/index.html">返回工作台</a><strong>系统管理</strong></div>
+    <div class="media-session" id="system-user"></div>
+  </header>
+  <p class="system-status" id="system-status" role="status">正在核对系统管理权限…</p>
+  <main class="media-main" id="system-content" hidden>
+    <header class="media-page-head">
+      <div>
+        <h1>AI 模型管理</h1>
+        <p>统一管理全部模型配置及生命周期。Secret 只允许写入，不会从服务端回显；业务 App 仍只保存模型引用。</p>
+      </div>
+      <div class="media-actions">
+        <button type="button" id="models-refresh">刷新</button>
+        <button type="button" id="model-create" class="primary" disabled>新增模型</button>
+      </div>
+    </header>
+
+    <section class="media-grid model-summary-grid" aria-label="模型配置摘要">
+      <article class="media-panel span-3 model-summary-card"><small>全部配置</small><strong id="model-total">—</strong></article>
+      <article class="media-panel span-3 model-summary-card"><small>已启用</small><strong id="model-active">—</strong></article>
+      <article class="media-panel span-3 model-summary-card"><small>草稿</small><strong id="model-draft">—</strong></article>
+      <article class="media-panel span-3 model-summary-card"><small>已归档</small><strong id="model-archived">—</strong></article>
+    </section>
+
+    <section class="media-grid">
+      <article class="media-panel span-12">
+        <div class="media-filter-bar">
+          <div class="media-field">
+            <label for="model-keyword">搜索</label>
+            <input id="model-keyword" type="search" placeholder="显示名称、模型 UUID、厂商模型或 API 地址">
+          </div>
+          <div class="media-field compact">
+            <label for="model-category-filter">类别</label>
+            <select id="model-category-filter">
+              <option value="">全部类别</option>
+              <option value="1">LLM</option>
+              <option value="2">文本向量</option>
+              <option value="3">视觉向量</option>
+              <option value="5">VLM</option>
+              <option value="6">OCR</option>
+              <option value="8">图像生成</option>
+            </select>
+          </div>
+          <div class="media-field compact">
+            <label for="model-status-filter">状态</label>
+            <select id="model-status-filter">
+              <option value="">全部状态</option>
+              <option value="ACTIVE">已启用</option>
+              <option value="DRAFT">草稿</option>
+              <option value="ARCHIVED">已归档</option>
+            </select>
+          </div>
+        </div>
+        <div class="media-table-wrap">
+          <table class="media-table model-table">
+            <thead><tr><th>模型</th><th>类别 / Provider</th><th>Endpoint</th><th>状态</th><th>版本</th><th>操作</th></tr></thead>
+            <tbody id="model-rows"><tr><td colspan="6"><div class="media-empty"><div><strong>正在读取模型配置</strong><p>等待六类模型服务返回完整目录。</p></div></div></td></tr></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <dialog class="media-dialog wide model-dialog" id="model-dialog">
+    <form id="model-form">
+      <div class="media-dialog-head">
+        <div><h2 id="model-dialog-title">新增模型</h2><p class="dialog-subtitle" id="model-dialog-subtitle">先选择类别与 Provider，再填写其声明的必要字段。</p></div>
+        <button class="media-close" type="button" data-close-model-dialog>×</button>
+      </div>
+      <div class="media-dialog-body">
+        <input id="model-id" type="hidden">
+        <input id="model-row-version" type="hidden">
+        <div class="media-form-grid">
+          <div class="media-field">
+            <label for="model-category">类别</label>
+            <select id="model-category" required>
+              <option value="1">LLM</option>
+              <option value="2">文本向量</option>
+              <option value="3">视觉向量</option>
+              <option value="5">VLM</option>
+              <option value="6">OCR</option>
+              <option value="8">图像生成</option>
+            </select>
+          </div>
+          <div class="media-field">
+            <label for="model-provider">Provider</label>
+            <select id="model-provider" required></select>
+          </div>
+          <div class="media-field model-name-field">
+            <label for="model-provider-name">厂商模型名称 / ID</label>
+            <input id="model-provider-name" required maxlength="256" placeholder="例如 deepseek-chat，或厂商提供的模型 ID" aria-describedby="model-provider-name-help">
+            <small class="model-field-help" id="model-provider-name-help">KBot 调用厂商时传入的值。按厂商文档填写，可在编辑时修改。</small>
+          </div>
+          <div class="media-field model-name-field">
+            <label for="model-display-name">列表显示名称</label>
+            <input id="model-display-name" required maxlength="256" aria-describedby="model-display-name-help">
+            <small class="model-field-help" id="model-display-name-help">只用于界面显示。模型 UUID 由系统生成。</small>
+          </div>
+          <div class="media-field">
+            <label for="model-status">初始状态</label>
+            <select id="model-status"><option value="DRAFT">草稿</option><option value="ACTIVE">已启用</option></select>
+          </div>
+          <div class="media-field full" id="model-endpoint-field" hidden>
+            <label for="model-api-endpoint">API 地址</label>
+            <input id="model-api-endpoint" maxlength="1024" placeholder="例如 https://api.example.com/v1" aria-describedby="model-oci-endpoint-help">
+            <small class="model-field-help" id="model-oci-endpoint-help" hidden>OCI 令牌模式填写包含基础路径的 API Base URL；OCI 签名模式填写不带路径的服务地址。程序不会截断或补写路径。</small>
+          </div>
+          <div class="media-field full" id="model-api-key-field" hidden>
+            <label for="model-api-key" id="model-api-key-label">API Key / Token</label>
+            <input id="model-api-key" type="password" maxlength="4096" autocomplete="new-password" placeholder="编辑时留空表示保留现有 Secret">
+          </div>
+          <fieldset class="model-fieldset full" id="model-params" hidden>
+            <legend>模型参数</legend>
+            <p class="model-field-help">选填参数留空时由模型服务决定默认值。</p>
+            <div class="media-form-grid" id="model-parameter-fields"></div>
+          </fieldset>
+          <div class="media-field full" id="model-oci-secret-field" hidden>
+            <label>OCI 签名认证</label>
+            <small class="model-field-help">config 文件可选：可以上传标准 OCI config 自动解析，也可以直接填写下列参数。认证材料保存后不回显。</small>
+            <div class="oci-auth-upload-grid">
+              <label class="oci-auth-upload">OCI config 文件（可选）<input id="model-oci-config-upload" type="file" accept=".config,.ini,.txt,.json,text/plain,application/json"></label>
+              <label class="oci-auth-upload">API 私钥文件（可选）<input id="model-oci-key-upload" type="file" accept=".pem,.key,text/plain,application/x-pem-file"></label>
+            </div>
+            <div class="media-form-grid oci-auth-fields">
+              <div class="media-field"><label for="model-oci-tenancy">Tenancy OCID</label><input id="model-oci-tenancy" autocomplete="off" placeholder="ocid1.tenancy..."></div>
+              <div class="media-field"><label for="model-oci-user">User OCID</label><input id="model-oci-user" autocomplete="off" placeholder="ocid1.user..."></div>
+              <div class="media-field"><label for="model-oci-fingerprint">Fingerprint</label><input id="model-oci-fingerprint" autocomplete="off" placeholder="xx:xx:xx:..."></div>
+              <div class="media-field"><label for="model-oci-region">Region</label><input id="model-oci-region" autocomplete="off" placeholder="us-ashburn-1"></div>
+              <div class="media-field full"><label for="model-oci-key-content">API 私钥内容</label><textarea id="model-oci-key-content" class="model-json secret" spellcheck="false" autocomplete="off" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></div>
+              <div class="media-field full"><label for="model-oci-pass-phrase">私钥口令（可选）</label><input id="model-oci-pass-phrase" type="password" autocomplete="new-password"></div>
+            </div>
+          </div>
+          <div class="media-field full">
+            <label for="model-description">说明</label>
+            <textarea id="model-description" maxlength="512" class="model-description-input"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="media-dialog-foot">
+        <button type="button" data-close-model-dialog>取消</button>
+        <button class="primary" id="model-submit" type="submit">保存模型</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="media-dialog" id="model-references-dialog">
+    <div class="media-dialog-head"><h2>模型引用</h2><button class="media-close" type="button" data-close-reference-dialog>×</button></div>
+    <div class="media-dialog-body" id="model-reference-content"></div>
+    <div class="media-dialog-foot"><button type="button" data-close-reference-dialog>关闭</button></div>
+  </dialog>
+
+  <script src="../runtime-config.js"></script>
+  <div id="system-toast" class="media-toast-region" aria-live="polite"></div>
+  <script src="../shared/kbot-platform-session.js?v=20261120_sso"></script>
+  <script type="module" src="./models.js?v=20261122_local_embedding_metadata"></script>
+</body>
+</html>

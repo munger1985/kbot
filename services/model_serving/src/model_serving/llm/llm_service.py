@@ -3,7 +3,7 @@ import json
 from typing import Any, Callable
 from loguru import logger
 from .model_pool import LLMModelPool
-from .model import BaseLLM
+from .model import BaseLLM, OpenaiLLMConfig
 from platform_core.dictionary import LLMProvider
 
 
@@ -54,24 +54,24 @@ class LLMService:
             self._initialized = False
             logger.info("LLM 服务已正常停止。")
 
-    async def invalidate_model(self, served_model_name: str) -> None:
+    async def invalidate_model(self, model_id: str) -> None:
         """配置变更后立即移除旧实例，不触发模型服务初始化。"""
         if self._initialized:
-            await self._model_pool.unload_model(served_model_name)
+            await self._model_pool.unload_model(model_id)
 
-    def is_model_loaded(self, served_model_name: str) -> bool:
-        return self._model_pool.is_model_loaded(served_model_name)
+    def is_model_loaded(self, model_id: str) -> bool:
+        return self._model_pool.is_model_loaded(model_id)
 
-    async def get_llm_model(self, served_model_name: str) -> BaseLLM:
+    async def get_llm_model(self, model_id: str) -> BaseLLM:
         """Get llm model instance by its unique name."""
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.load_model(served_model_name)
+        return await self._model_pool.load_model(model_id)
     
     async def chat(
         self,
-        served_model_name: str,
+        model_id: str,
         messages: list[dict[str, Any]] | str,
         stream: bool = False,
         timeout: int | None = None,
@@ -91,7 +91,7 @@ class LLMService:
         streaming logic, and error handling.
         
         Args:
-            served_model_name: Technical name of the model to use
+            model_id: Technical name of the model to use
             messages: Input messages - either a list of role/content dictionaries
                 or a single string (interpreted as user message)
             stream: If True, returns async generator of response chunks;
@@ -116,10 +116,10 @@ class LLMService:
         """
         try:
             # Step 1: Get model instance (ensures model is loaded and initialized)
-            model = await self.get_llm_model(served_model_name)
+            model = await self.get_llm_model(model_id)
             current_provider = model.config.provider  # Unified provider access
         except Exception as e:
-            raise RuntimeError(f"从模型池中获取模型 {served_model_name} 失败: {e}")
+            raise RuntimeError(f"从模型池中获取模型 {model_id} 失败: {e}")
         
         # Step 2: Prepare and filter generation parameters (remove None values)
         kwargs = {
@@ -160,7 +160,7 @@ class LLMService:
             # 诊断证据和用户输入不得写入模型服务日志。
             logger.debug(
                 "正在向模型 {} 发送请求：message_count={}",
-                served_model_name,
+                model_id,
                 len(processed_messages),
             )
             if tools:
@@ -176,7 +176,9 @@ class LLMService:
                     LLMProvider.API_DEEPSEEK.value
                 ]
 
-                if current_provider in openai_compatible_providers:
+                if current_provider in openai_compatible_providers or isinstance(
+                    model.config, OpenaiLLMConfig,
+                ):
                     response = await model.chat(processed_messages, stream=True,** kwargs)
                     logger.debug(f"收到 OpenAI 兼容流式响应（{current_provider}）")
                     
@@ -217,11 +219,11 @@ class LLMService:
                 
         # General error handling with context
         except TimeoutError:
-            logger.warning("模型调用超过本次执行预算：served_model_name={} timeout_seconds={}", served_model_name, timeout)
+            logger.warning("模型调用超过本次执行预算：model_id={} timeout_seconds={}", model_id, timeout)
             raise
         except Exception as e:
             error_context = (
-                f"模型：{served_model_name}，消息数：{len(processed_messages)}，"
+                f"模型：{model_id}，消息数：{len(processed_messages)}，"
                 f"流式：{stream}，工具数：{len(tools) if tools else 0}"
             )
             logger.exception(f"生成对话响应失败，{error_context}，错误：{e}")
@@ -240,13 +242,13 @@ class LLMService:
         
         await self._model_pool.warmup()
 
-    async def load_model(self, served_model_name: str) -> bool:
+    async def load_model(self, model_id: str) -> bool:
         """Load a specific model into memory by its technical name.
         
         Explicitly loads a model into the pool if not already present.
         
         Args:
-            served_model_name: Technical name of the model to load
+            model_id: Technical name of the model to load
             
         Returns:
             bool: True if model loaded successfully, False otherwise
@@ -254,16 +256,16 @@ class LLMService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.reload_model(served_model_name)
+        return await self._model_pool.reload_model(model_id)
 
         
-    async def unload_model(self, served_model_name: str) -> bool:
+    async def unload_model(self, model_id: str) -> bool:
         """Unload a specific model from memory to free resources.
         
         Gracefully shuts down the model client and removes it from the pool.
         
         Args:
-            served_model_name: Technical name of the model to unload
+            model_id: Technical name of the model to unload
             
         Returns:
             bool: True if model unloaded successfully, False otherwise
@@ -271,6 +273,6 @@ class LLMService:
         if not self._initialized:
             await self.initialize()
         
-        return await self._model_pool.unload_model(served_model_name)
+        return await self._model_pool.unload_model(model_id)
     
     

@@ -3,6 +3,7 @@
 from pathlib import Path
 from knowledge_algorithms.contracts.cursor import CursorCodec
 from knowledge_algorithms.projections.builder import ProjectionBuilder
+from knowledge_algorithms.projections.library_models import library_projection
 from platform_clients.knowledge_computation import KnowledgeComputationClient
 from platform_clients.knowledge_models import NativeRepresentationClient
 from platform_core.contracts import AuthContext, PrincipalKind
@@ -12,6 +13,7 @@ from .knowledge_ingestion import install_app_knowledge
 from .knowledge_retrieval import install_knowledge_retrieval
 from .knowledge_profiles import ConservativeTokenizer
 from ..application.operations_documents import OperationsDocuments
+from platform_clients.knowledge_model_binding import build_binding_clients
 from ..application.operations_knowledge_authorization import OperationsKnowledgeAuthorization
 from ..application.knowledge_pipeline import KnowledgePipelineWorker
 from ..adapters.knowledge_models import KnowledgeModelGateway
@@ -40,8 +42,7 @@ def install_business_knowledge(app, *, settings, uow_factory, caller_service=Non
     visual = NativeRepresentationClient(base_url=settings.clients.model_visual.base_url, caller_service=caller,
         audience=settings.clients.model_visual.audience, service_scopes=("model.inference",))
     specs = projection.representations
-    bindings = {spec.space_id: {"model_ref": spec.model_ref,
-        "served_model_name": configuration.served_model_names[spec.model_ref]} for spec in specs}
+    bindings = {spec.space_id: {"model_ref": spec.model_ref} for spec in specs}
     def gateway(access, *, image_reader):
         return KnowledgeModelGateway(visual_client=visual, dense_client=dense,
             auth_context=scope_context(access, caller=caller, operation="model.inference"),
@@ -53,14 +54,27 @@ def install_business_knowledge(app, *, settings, uow_factory, caller_service=Non
         uow_factory=uow_factory, object_store=ingestion.store, authorization=OperationsKnowledgeAuthorization(service=None),
         profiles=profiles, tokenizer=tokenizer, image_cost=lambda image: configuration.image_token_cost,
         cursor_codec=CursorCodec(knowledge_signing_key("cursor"), max_bytes=8192),
-        model_gateway_factory=gateway)
+        model_gateway_factory=gateway, published_model_spaces=True)
     app.state.knowledge_projection_profile = projection
     app.state.knowledge_tokenizer = tokenizer
     app.state.knowledge_gateway_factory = gateway
     app.openapi_schema = None
+    parse_models = build_binding_clients(caller=caller, ocr=settings.clients.model_ocr, vlm=settings.clients.model_vlm)
+
+    async def resolve_model(context, role, model_id):
+        return await parse_models[role].binding(model_id, auth_context=context)
+
+    async def resolve_index_model(context, role, model_id):
+        return await (dense if role == "embedding" else visual).binding(model_id, auth_context=context)
+
+    async def project_library(context, models):
+        return await library_projection(projection, models,
+            lambda role, model_id: resolve_index_model(context, role, model_id))
+
     documents = OperationsDocuments(uow_factory=uow_factory, ingestion=ingestion,
         projection=app.state.knowledge_projection_service, retrieval=retrieval,
-        parse_profile=parse, pipeline=business_pipeline(app, settings=settings, worker_id=caller + "-knowledge"))
+        parse_profile=parse, pipeline=business_pipeline(app, settings=settings, worker_id=caller + "-knowledge"),
+        representation_bindings=bindings, resolve_parse_model=resolve_model, project_library=project_library)
     app.state.operations_documents = documents
     return documents
 

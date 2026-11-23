@@ -390,13 +390,13 @@ async def enrich_semantic_candidate(
         model = await model_config_client.get_model(command.ai_model_id)
         if int(model.get("category", 0)) != 1 or model.get("status") != "ACTIVE":
             raise ValueError("SEMANTIC_AI_MODEL_NOT_AVAILABLE")
-        served_model_name = str(model["served_model_name"])
+        model_id = str(command.ai_model_id)
         definition = candidate.definition.model_dump(mode="json")
         metadata_context = await _load_ai_metadata_context(
             uow_factory=uow_factory, candidate=candidate,
         )
         response = await model_client.get_llm_json(
-            served_model_name=served_model_name,
+            model_id=model_id,
             prompt=[
                 {
                     "role": "system",

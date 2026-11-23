@@ -24,7 +24,8 @@ from platform_core.database import create_database_runtime
 
 async def main() -> None:
     runtime = create_database_runtime()
-    served_name = f"s4-smoke-{uuid4().hex[:12]}"
+    display_name = f"S4 Smoke {uuid4().hex}"
+    model_id = None
     events: list[dict] = []
 
     async def capture(event):
@@ -63,7 +64,7 @@ async def main() -> None:
             "knowledge-retrieval-app": resolve_knowledge_agent,
             "data-query": resolve_data_query,
         },
-        is_model_loaded=lambda _name: False,
+        is_model_loaded=lambda _model_id: False,
     )
     context = AuthContext(
         principal_kind=PrincipalKind.SERVICE,
@@ -74,8 +75,7 @@ async def main() -> None:
     )
     try:
         created = await service.create({
-            "served_model_name": served_name,
-            "display_name": "S4 Smoke",
+            "display_name": display_name,
             "provider_model_name": "qwen-smoke",
             "category": 1,
             "provider": "api_qwen",
@@ -129,11 +129,11 @@ async def main() -> None:
         )
     finally:
         async with runtime.session_factory() as session:
-            await session.execute(
-                delete(AIModelEntity).where(
-                    AIModelEntity.served_model_name == served_name
-                )
+            criterion = (
+                AIModelEntity.model_id == model_id if model_id is not None
+                else AIModelEntity.display_name == display_name
             )
+            await session.execute(delete(AIModelEntity).where(criterion))
             await session.commit()
         await runtime.close()
 

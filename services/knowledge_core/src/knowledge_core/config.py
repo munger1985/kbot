@@ -24,6 +24,9 @@ class KnowledgeCoreApiConfig(ServiceConfig):
 
 
 class KnowledgeCoreSettings(Settings):
+    topology_client_endpoints: ClassVar[dict[str, str]] = {"model_ocr": "model_ocr", "model_vlm": "model_vlm"}
+    model_ocr: ServiceDependencyConfig
+    model_vlm: ServiceDependencyConfig
     topology_service: ClassVar[str] = "knowledge_core"
     api: KnowledgeCoreApiConfig = Field(default_factory=lambda: KnowledgeCoreApiConfig(service_name="kbot-knowledge-core-api", service_port=18090))
     compute: ParseComputeConfig = Field(default_factory=ParseComputeConfig)

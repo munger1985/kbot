@@ -10,6 +10,16 @@ import aiohttp
 from platform_core.contracts import AuthContext, INTERNAL_API_V1
 from platform_core.security import build_internal_auth_headers
 
+from .knowledge_computation import KnowledgeComputationClient, KnowledgeComputationClientError
+
+
+class _AgentRuntimeContentTransport(KnowledgeComputationClient):
+    """复用有界流传输，但与 Agent Runtime 的其他 Run 请求使用同一内部认证。"""
+
+    def _auth_headers(self, auth_context):
+        return build_internal_auth_headers(audience=self.audience, caller_service=self.caller_service,
+                                           context=auth_context)
+
 
 class AgentRuntimeClientError(RuntimeError):
     def __init__(self, *, status_code: int, code: str, message: str):
@@ -245,17 +255,23 @@ class AgentRuntimeClient:
             auth_context=auth_context,
         )
 
-    async def open_knowledge_content(self, *, run_id: UUID, key: str, auth_context):
-        from .knowledge_computation import KnowledgeComputationClient
+    async def open_knowledge_content(self, *, run_id: UUID, key: str, auth_context, source_pdf: bool = False):
         from .knowledge_library import KnowledgeLibraryClient
         import re
         if re.fullmatch(r"[0-9a-f]{64}", key) is None:
             raise ValueError("历史证据身份无效")
-        transport = KnowledgeComputationClient(base_url=self._base_url, caller_service=self._caller_service,
-            audience=self._audience, session=self._session, service_scopes=("agent.run.read",))
-        return await KnowledgeLibraryClient.open_download(transport,
-            "/internal/v1/runs/" + str(run_id) + "/knowledge/content/" + key,
-            auth_context=auth_context, max_bytes=8388608)
+        transport = _AgentRuntimeContentTransport(base_url=self._base_url, caller_service=self._caller_service,
+            audience=self._audience, session=self._session)
+        try:
+            return await KnowledgeLibraryClient.open_download(transport,
+                f"{INTERNAL_API_V1}/runs/{run_id}/knowledge/content/{key}" + ("?source_pdf=true" if source_pdf else ""),
+                auth_context=auth_context, max_bytes=67108864 if source_pdf else 8388608,
+                require_preview_type=source_pdf)
+        except KnowledgeComputationClientError as exc:
+            if exc.status_code == 401:
+                # 内部服务认证失败不是浏览器会话失效，不能让前端清除用户登录。
+                raise KnowledgeComputationClientError(502, "AGENT_EVIDENCE_SERVICE_AUTH_FAILED") from exc
+            raise
 
     async def get_result(
         self, *, run_id: UUID, auth_context: AuthContext

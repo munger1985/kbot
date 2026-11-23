@@ -401,6 +401,17 @@
             "title": "Byte Count",
             "type": "integer"
           },
+          "chapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter"
+          },
           "content_ref": {
             "anyOf": [
               {
@@ -410,6 +421,10 @@
                 "type": "null"
               }
             ]
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
           },
           "key": {
             "pattern": "^[0-9a-f]{64}$",
@@ -431,6 +446,32 @@
             "title": "Mime Type",
             "type": "string"
           },
+          "passage_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgePassageDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "passage_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passage Key"
+          },
+          "source_title": {
+            "title": "Source Title",
+            "type": "string"
+          },
           "text": {
             "anyOf": [
               {
@@ -441,6 +482,10 @@
               }
             ],
             "title": "Text"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
           }
         },
         "required": [
@@ -449,9 +494,283 @@
           "mime_type",
           "byte_count",
           "locators",
-          "text"
+          "text",
+          "version_id",
+          "source_title",
+          "document_id",
+          "passage_key",
+          "chapter"
         ],
         "title": "KnowledgeEvidenceView",
+        "type": "object"
+      },
+      "KnowledgeIndexBatchProgress": {
+        "additionalProperties": false,
+        "properties": {
+          "committed_batches": {
+            "minimum": 0,
+            "title": "Committed Batches",
+            "type": "integer"
+          },
+          "total_batches": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Batches"
+          },
+          "validated": {
+            "title": "Validated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "committed_batches",
+          "total_batches",
+          "validated"
+        ],
+        "title": "KnowledgeIndexBatchProgress",
+        "type": "object"
+      },
+      "KnowledgeIndexMaintenance": {
+        "additionalProperties": false,
+        "properties": {
+          "active_file_rebuild_count": {
+            "minimum": 0,
+            "title": "Active File Rebuild Count",
+            "type": "integer"
+          },
+          "batch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeIndexRebuild"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "library_revision": {
+            "title": "Library Revision",
+            "type": "integer"
+          },
+          "pending_roles": {
+            "items": {
+              "enum": [
+                "embedding",
+                "visual_embedding"
+              ],
+              "type": "string"
+            },
+            "title": "Pending Roles",
+            "type": "array"
+          },
+          "published_file_count": {
+            "title": "Published File Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "published_file_count",
+          "library_revision",
+          "pending_roles",
+          "active_file_rebuild_count",
+          "batch"
+        ],
+        "title": "KnowledgeIndexMaintenance",
+        "type": "object"
+      },
+      "KnowledgeIndexRebuild": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeIndexRebuildItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "enum": [
+                "embedding",
+                "visual_embedding"
+              ],
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "scope": {
+            "default": "LIBRARY",
+            "enum": [
+              "LIBRARY",
+              "FILE"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_published": {
+            "default": true,
+            "title": "Source Published",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "RUNNING",
+              "READY",
+              "FAILED",
+              "STALE",
+              "PUBLISHED",
+              "DISCARDED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id",
+          "status",
+          "roles",
+          "items"
+        ],
+        "title": "KnowledgeIndexRebuild",
+        "type": "object"
+      },
+      "KnowledgeIndexRebuildItem": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "index_progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeIndexBatchProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "RUNNING",
+              "READY",
+              "FAILED",
+              "CANCELLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          },
+          "visual_not_applicable": {
+            "title": "Visual Not Applicable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "version_id",
+          "title",
+          "status",
+          "error_code",
+          "visual_not_applicable"
+        ],
+        "title": "KnowledgeIndexRebuildItem",
+        "type": "object"
+      },
+      "KnowledgeIndexRebuildRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "START",
+              "RETRY",
+              "DISCARD"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "expected_generation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Generation Id"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "KnowledgeIndexRebuildRequest",
         "type": "object"
       },
       "KnowledgeLibraryCreate": {
@@ -475,12 +794,25 @@
             "title": "Display Name",
             "type": "string"
           },
-          "profile_ref": {
-            "default": "default",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Profile Ref",
-            "type": "string"
+          "index_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryIndexModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parse_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryParseModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -532,13 +864,13 @@
                       "UPLOAD",
                       "REVIEW",
                       "MANAGE",
-                      "PUBLISH",
                       "WITHDRAW"
                     ],
                     "type": "string"
                   },
                   "type": "array"
                 },
+                "maxProperties": 500,
                 "type": "object"
               },
               {
@@ -546,6 +878,31 @@
               }
             ],
             "title": "Grants"
+          },
+          "index_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryIndexModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parse_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryParseModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rebuild_indexes": {
+            "default": false,
+            "title": "Rebuild Indexes",
+            "type": "boolean"
           },
           "status": {
             "anyOf": [
@@ -579,6 +936,21 @@
             "title": "Configuration",
             "type": "object"
           },
+          "delete_block": {
+            "anyOf": [
+              {
+                "enum": [
+                  "HAS_DOCUMENTS",
+                  "AGENT_REFERENCE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delete Block"
+          },
           "description": {
             "anyOf": [
               {
@@ -611,9 +983,43 @@
             ],
             "title": "Grants"
           },
+          "index_maintenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeIndexMaintenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "index_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryIndexModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "library_id": {
             "title": "Library Id",
             "type": "string"
+          },
+          "ocr_enabled": {
+            "title": "Ocr Enabled",
+            "type": "boolean"
+          },
+          "parse_models": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryParseModels"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "permissions": {
             "items": {
@@ -640,6 +1046,21 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "upload_formats": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Upload Formats",
+            "type": "object"
+          },
+          "upload_max_bytes": {
+            "title": "Upload Max Bytes",
+            "type": "integer"
           }
         },
         "required": [
@@ -648,10 +1069,14 @@
           "description",
           "status",
           "row_version",
+          "updated_at",
           "permissions",
           "configuration",
           "grants",
-          "search_capabilities"
+          "search_capabilities",
+          "upload_max_bytes",
+          "upload_formats",
+          "ocr_enabled"
         ],
         "title": "KnowledgeLibraryView",
         "type": "object"
@@ -771,6 +1196,25 @@
         "title": "KnowledgeLocator",
         "type": "object"
       },
+      "KnowledgeMaintenanceReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "job_id"
+        ],
+        "title": "KnowledgeMaintenanceReceipt",
+        "type": "object"
+      },
       "KnowledgeOrder": {
         "additionalProperties": false,
         "properties": {
@@ -793,6 +1237,204 @@
           "field"
         ],
         "title": "KnowledgeOrder",
+        "type": "object"
+      },
+      "KnowledgeParseTaskHistory": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "error_code",
+          "created_at"
+        ],
+        "title": "KnowledgeParseTaskHistory",
+        "type": "object"
+      },
+      "KnowledgePassageBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "title": "Anchor",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "locators": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeLocator"
+            },
+            "title": "Locators",
+            "type": "array"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePassageSegment"
+            },
+            "title": "Segments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "anchor",
+          "locators",
+          "segments"
+        ],
+        "title": "KnowledgePassageBlock",
+        "type": "object"
+      },
+      "KnowledgePassageContext": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePassageBlock"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "has_after": {
+            "title": "Has After",
+            "type": "boolean"
+          },
+          "has_before": {
+            "title": "Has Before",
+            "type": "boolean"
+          },
+          "pdf_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Page"
+          }
+        },
+        "required": [
+          "blocks",
+          "has_before",
+          "has_after",
+          "pdf_page"
+        ],
+        "title": "KnowledgePassageContext",
+        "type": "object"
+      },
+      "KnowledgePassageDisplay": {
+        "additionalProperties": false,
+        "properties": {
+          "chapter_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Chapter Key"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "pages": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "order",
+          "kind",
+          "title",
+          "text",
+          "pages"
+        ],
+        "title": "KnowledgePassageDisplay",
+        "type": "object"
+      },
+      "KnowledgePassageSegment": {
+        "additionalProperties": false,
+        "properties": {
+          "matched": {
+            "title": "Matched",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "matched"
+        ],
+        "title": "KnowledgePassageSegment",
         "type": "object"
       },
       "KnowledgePredicate": {
@@ -943,6 +1585,61 @@
         "title": "KnowledgeRelationsRequest",
         "type": "object"
       },
+      "KnowledgeReprocessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_job_id": {
+            "format": "uuid",
+            "title": "Expected Job Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "ORIGINAL",
+              "CURRENT"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "parse_strategy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "TEXT",
+                  "AUTO",
+                  "VISUAL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Strategy"
+          }
+        },
+        "required": [
+          "expected_job_id",
+          "mode"
+        ],
+        "title": "KnowledgeReprocessRequest",
+        "type": "object"
+      },
+      "KnowledgeRetryIndexRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_job_id": {
+            "format": "uuid",
+            "title": "Expected Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_job_id"
+        ],
+        "title": "KnowledgeRetryIndexRequest",
+        "type": "object"
+      },
       "KnowledgeReviewRequest": {
         "additionalProperties": false,
         "properties": {
@@ -965,6 +1662,22 @@
             ],
             "title": "Decision",
             "type": "string"
+          },
+          "parse_strategy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "TEXT",
+                  "AUTO",
+                  "VISUAL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Strategy"
           }
         },
         "required": [
@@ -1162,6 +1875,10 @@
             "title": "Retrieval Ref",
             "type": "string"
           },
+          "scope_exhausted": {
+            "title": "Scope Exhausted",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -1177,7 +1894,8 @@
           "items",
           "linked",
           "channels",
-          "model_delivery"
+          "model_delivery",
+          "scope_exhausted"
         ],
         "title": "KnowledgeSearchResult",
         "type": "object"
@@ -1229,6 +1947,17 @@
       "KnowledgeVersionView": {
         "additionalProperties": false,
         "properties": {
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
           "comment": {
             "anyOf": [
               {
@@ -1239,6 +1968,10 @@
               }
             ],
             "title": "Comment"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
           },
           "error_code": {
             "anyOf": [
@@ -1251,21 +1984,140 @@
             ],
             "title": "Error Code"
           },
+          "generation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Id"
+          },
           "generation_ready": {
             "title": "Generation Ready",
             "type": "boolean"
           },
+          "index_progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeIndexBatchProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "job_id": {
             "title": "Job Id",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
             "type": "string"
           },
           "name": {
             "title": "Name",
             "type": "string"
           },
+          "original_parse_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Parse Available"
+          },
+          "parse_status": {
+            "title": "Parse Status",
+            "type": "string"
+          },
+          "parse_strategy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "TEXT",
+                  "AUTO",
+                  "VISUAL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Strategy"
+          },
+          "parse_strategy_options": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ParseStrategyOption"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Strategy Options"
+          },
+          "parse_task_history": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/KnowledgeParseTaskHistory"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Task History"
+          },
           "processing_status": {
             "title": "Processing Status",
             "type": "string"
+          },
+          "progress_stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "AWAITING_APPROVAL",
+                  "PARSE_QUEUED",
+                  "PREPARING",
+                  "EXTRACTING",
+                  "ORGANIZING",
+                  "PARSE_RETRY",
+                  "INDEX_QUEUED",
+                  "INDEXING",
+                  "INDEX_RETRY",
+                  "INDEX_CONFIRMING",
+                  "READY",
+                  "PARSE_FAILED",
+                  "INDEX_FAILED",
+                  "CANCELLED",
+                  "REJECTED",
+                  "REBUILD_QUEUED",
+                  "REBUILDING",
+                  "REBUILD_RETRY",
+                  "REBUILD_CONFIRMING",
+                  "REBUILD_READY",
+                  "REBUILD_FAILED",
+                  "REBUILD_COMPLETE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Stage"
           },
           "review": {
             "title": "Review",
@@ -1298,10 +2150,120 @@
           "status",
           "job_id",
           "processing_status",
+          "parse_status",
           "error_code",
-          "generation_ready"
+          "generation_ready",
+          "generation_id",
+          "created_at",
+          "mime_type",
+          "byte_count",
+          "allowed_actions"
         ],
         "title": "KnowledgeVersionView",
+        "type": "object"
+      },
+      "LibraryIndexModels": {
+        "additionalProperties": false,
+        "description": "文本与视觉表示独立于解析档位；目录模型身份由各库保存。",
+        "properties": {
+          "embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "visual_embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Embedding"
+          }
+        },
+        "title": "LibraryIndexModels",
+        "type": "object"
+      },
+      "LibraryParseModels": {
+        "additionalProperties": false,
+        "description": "角色可以不绑定；可选档位由审批时的有效绑定决定。",
+        "properties": {
+          "ocr": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr"
+          },
+          "vlm": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vlm"
+          }
+        },
+        "title": "LibraryParseModels",
+        "type": "object"
+      },
+      "ParseStrategyOption": {
+        "properties": {
+          "executor_unavailable": {
+            "default": false,
+            "title": "Executor Unavailable",
+            "type": "boolean"
+          },
+          "selectable": {
+            "title": "Selectable",
+            "type": "boolean"
+          },
+          "strategy": {
+            "enum": [
+              "TEXT",
+              "AUTO",
+              "VISUAL"
+            ],
+            "title": "Strategy",
+            "type": "string"
+          },
+          "unavailable_roles": {
+            "default": [],
+            "items": {
+              "enum": [
+                "ocr",
+                "vlm"
+              ],
+              "type": "string"
+            },
+            "title": "Unavailable Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "strategy",
+          "selectable"
+        ],
+        "title": "ParseStrategyOption",
         "type": "object"
       },
       "ResearchCreateRequest": {
@@ -1841,6 +2803,16 @@
               "title": "Stable Key",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "source_pdf",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Source Pdf",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -1872,6 +2844,18 @@
     "/internal/v1/knowledge-retrieval/knowledge/libraries": {
       "get": {
         "operationId": "listing_internal_v1_knowledge_retrieval_knowledge_libraries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "management",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Management",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1886,6 +2870,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Listing",
@@ -1934,6 +2928,57 @@
       }
     },
     "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}": {
+      "delete": {
+        "operationId": "delete_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Expected Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeActionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      },
       "get": {
         "operationId": "detail_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__get",
         "parameters": [
@@ -1945,6 +2990,16 @@
               "format": "uuid",
               "title": "Library Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "management",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Management",
+              "type": "boolean"
             }
           }
         ],
@@ -2063,6 +3118,87 @@
               "title": "Page Size",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "files",
+              "enum": [
+                "files",
+                "processing",
+                "reviews"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Title",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 32,
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mine",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Mine",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "document_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Id"
+            }
           }
         ],
         "responses": {
@@ -2140,6 +3276,117 @@
           }
         },
         "summary": "Upload",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/index-rebuild": {
+      "get": {
+        "operationId": "index_rebuild_status_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__index_rebuild_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexMaintenance"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Index Rebuild Status",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      },
+      "post": {
+        "operationId": "operate_index_rebuild_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__index_rebuild_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeIndexRebuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexMaintenance"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Operate Index Rebuild",
         "tags": [
           "app-knowledge-business"
         ]
@@ -2302,9 +3549,9 @@
         ]
       }
     },
-    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/versions/{version_id}:publish": {
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/versions/{version_id}:reprocess": {
       "post": {
-        "operationId": "publish_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__versions__version_id__publish_post",
+        "operationId": "reprocess_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__versions__version_id__reprocess_post",
         "parameters": [
           {
             "in": "path",
@@ -2327,12 +3574,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeReprocessRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KnowledgeActionReceipt"
+                  "$ref": "#/components/schemas/KnowledgeMaintenanceReceipt"
                 }
               }
             },
@@ -2349,7 +3606,70 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Publish",
+        "summary": "Reprocess",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/libraries/{library_id}/versions/{version_id}:retry-index": {
+      "post": {
+        "operationId": "retry_index_internal_v1_knowledge_retrieval_knowledge_libraries__library_id__versions__version_id__retry_index_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeRetryIndexRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeMaintenanceReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Index",
         "tags": [
           "app-knowledge-business"
         ]
@@ -2535,6 +3855,137 @@
           }
         },
         "summary": "Content",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/results/{retrieval_ref}/context/{key}": {
+      "get": {
+        "operationId": "passage_context_internal_v1_knowledge_retrieval_knowledge_results__retrieval_ref__context__key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "maximum": 10,
+              "minimum": 0,
+              "title": "Before",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "maximum": 10,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePassageContext"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Passage Context",
+        "tags": [
+          "app-knowledge-business"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/knowledge/results/{retrieval_ref}/context/{key}/pdf": {
+      "get": {
+        "operationId": "passage_pdf_internal_v1_knowledge_retrieval_knowledge_results__retrieval_ref__context__key__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "retrieval_ref",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Retrieval Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Passage Pdf",
         "tags": [
           "app-knowledge-business"
         ]
@@ -2832,47 +4283,6 @@
         "summary": "Read",
         "tags": [
           "app-knowledge-source"
-        ]
-      }
-    },
-    "/internal/v1/knowledge-retrieval/knowledge/versions/{version_id}:publish": {
-      "post": {
-        "operationId": "publish_internal_v1_knowledge_retrieval_knowledge_versions__version_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "version_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Version Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Publish",
-        "tags": [
-          "app-owned-knowledge"
         ]
       }
     },

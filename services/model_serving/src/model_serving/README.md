@@ -24,6 +24,6 @@ Key；数据库 UUID 和上游凭据不会进入公开推理契约。
 模型字段语义：
 
 - `model_id`：UUIDv7 内部身份；
-- `served_model_name`：公开 `model` 参数和模型池缓存键；
+- `model_id`：公开 `model` 参数和模型池缓存键；
 - `display_name`：可修改显示名称；
 - `provider_model_name`：上游厂商或本地引擎名称。

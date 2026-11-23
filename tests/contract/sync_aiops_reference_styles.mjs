@@ -63,14 +63,16 @@ const hash = createHash("sha256").update(sharedSource).digest("hex");
 const header = `/* 自动同步自 Ammolite shared/ui/styles.css；请修改源文件后重新生成。\n * 源文件 SHA-256: ${hash}\n * 仅保留 AIOps 及其公共控件；字体使用同一系统回退栈，不从 CDN 加载。\n */\n`;
 // 旧静态页的裸 button 规则不能泄漏到 Portal 控件；随后按源样式恢复字体与各类按钮。
 const outputs = [["css/ammolite-shared.css", header + "button { all: revert; }\n" + shared.toString().trim() + "\n"]];
-assert.ok(shared.toString().includes('.upload-mode-option {'), '动态 class 引用的上传组织方式控件必须保留完整样式');
-assert.ok(shared.toString().includes('.confirm-dialog--warning .confirm-dialog-mark'), '动态生成的确认框警告主题必须与源端一致');
+if (!selectedPage) {
+  assert.ok(shared.toString().includes('.upload-mode-option {'), '动态 class 引用的上传组织方式控件必须保留完整样式');
+  assert.ok(shared.toString().includes('.confirm-dialog--warning .confirm-dialog-mark'), '动态生成的确认框警告主题必须与源端一致');
+}
 for (const [page, entry] of Object.entries(manifest.pages)) {
-  if (!entry.sources.length) continue;
+  if (!entry.sources.length || sharedOnly || (selectedPage && selectedPage !== page)) continue;
   let css = "/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */\n";
   for (const source of entry.sources) {
     const content = read(resolve(portal, `src/features/aiops/${source}`));
-    const match = content.match(/<style scoped>([\s\S]*?)<\/style>/);
+    const match = content.match(/<style(?: scoped)?>([\s\S]*?)<\/style>/);
     const external = content.match(/<style src="([^"]+)"><\/style>/);
     if (!match && !external) continue;
     // 子组件的外置样式须在父页面之后恢复，防止静态化后的父级选择器穿透原 scoped 边界。
@@ -103,5 +105,10 @@ for (const [file, content] of outputs) {
   else assert.equal(read(path), content, `${file} 与 Ammolite 基线不同，请重新同步并验证布局`);
 }
 const actual = readdirSync(resolve(root, "ui/aiops")).filter((name) => name.endsWith(".html")).map((name) => name.slice(0, -5)).sort();
-assert.deepEqual(Object.keys(manifest.pages).sort(), actual, "所有页面必须声明 Ammolite 对应页面或平台差异");
-console.log(`AIOps 样式基线：${selectedPage || sharedOnly ? 1 : outputs.length} 份工件，${actual.length} 个页面已登记。`);
+if (selectedPage) {
+  assert.ok(actual.includes(selectedPage), "指定页面必须有对应的静态 HTML");
+  console.log(`AIOps 样式基线：${selectedPage} 单页检查通过。`);
+} else {
+  assert.deepEqual(Object.keys(manifest.pages).sort(), actual, "所有页面必须声明 Ammolite 对应页面或平台差异");
+  console.log(`AIOps 样式基线：${outputs.length} 份工件，${actual.length} 个页面已登记。`);
+}

@@ -8,6 +8,7 @@ from transformers import AutoModel, AutoTokenizer
 
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse
 from ...common.utils import get_optimal_attn_implementation
+from ...common.local_embedding_templates import qwen_embedding_text
 
 class Qwen3EmbeddingConfig(EmbeddingConfig):
     """Qwen3 Embedding official adaptation configuration"""
@@ -109,7 +110,7 @@ class Qwen3Embedding(BaseEmbedding[Qwen3EmbeddingConfig]):
 
         # 1. Construct instruction (follow Qwen official format)
         processed_texts = [
-            f"Instruct: {self.config.instruction}\nQuery: {t}" if is_query else t 
+            qwen_embedding_text(t, is_query=is_query, instruction=self.config.instruction)
             for t in texts
         ]
 

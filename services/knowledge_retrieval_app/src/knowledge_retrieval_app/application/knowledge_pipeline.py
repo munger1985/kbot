@@ -1,18 +1,20 @@
-"""App 摄取到投影的可恢复驱动；发布决定仍由 App 授权/审核用例作出。"""
+"""驱动可恢复解析与建索引；首次索引完成时按已保存的库审批自动发布。"""
 
 import asyncio
 import time
+from uuid import UUID
 
 from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
 
 
 class KnowledgePipelineWorker:
     def __init__(self, *, ingestion, projection, builder_factory, profile, allowed_policy,
-                 policy_revision, worker_id, lease_seconds=360, poll_interval_seconds=0.25):
+                 policy_revision, worker_id, lease_seconds=360, poll_interval_seconds=0.25, profile_for_version=None):
         require(worker_id and 15 <= lease_seconds <= 600 and 0 < poll_interval_seconds <= 10,
                 "知识流水线 Worker 配置无效")
         self.ingestion, self.projection, self.builder_factory = ingestion, projection, builder_factory
         self.profile, self.policy, self.policy_revision = profile, allowed_policy, policy_revision
+        self.profile_for_version = profile_for_version
         self.worker_id, self.lease_seconds, self.poll_interval = worker_id, lease_seconds, poll_interval_seconds
 
     async def process_projection(self, scope, outbox_id, job_id):
@@ -20,11 +22,51 @@ class KnowledgePipelineWorker:
         result = {}
         lease = await self.ingestion.get_job(scope, job_id)
         require(lease.status == "PARSED", "索引 outbox 不能隐式创建新的解析任务")
-        async def build(version_id):
-            require(version_id == lease.document_version_id, "索引任务与解析版本不一致")
-            result.update(await self.process(scope, job_id))
+        async def build(claim):
+            require(claim["document_version_id"] == lease.document_version_id
+                    and claim["idempotency_key"].split(":", 1)[0] == lease.identity.parse_run_ref,
+                    "索引任务与解析版本不一致")
+            if claim["event_type"] == "REBUILD_PROJECTION":
+                builder = self.builder_factory(scope, None)
+                generation = await self.projection.rebuild(lease, UUID(claim["payload_ref"]), builder=builder,
+                    fence={"outbox_id": outbox_id, "worker_id": self.worker_id, "attempt": claim["attempt"]})
+                result["generation_id"] = str(generation)
+                return
+            async with self.ingestion.uow_factory() as uow:
+                ready = await uow.knowledge_ingestion.ready_initial_projection(lease)
+            if ready is not None:
+                result["generation_id"] = str(ready)
+                return
+            result.update(await self.process(scope, job_id, projection_fence={
+                "outbox_id": outbox_id, "worker_id": self.worker_id, "attempt": claim["attempt"],
+            }))
+        async def publish_completed(uow, claim):
+            library = uow.library(scope)
+            if claim["event_type"] == "REBUILD_PROJECTION":
+                row = await library.lock_library_for_version(lease.document_version_id)
+                if row is not None and row.status == "ACTIVE":
+                    async def publish_rebuild():
+                        await library.complete_rebuild(row, publish=uow.knowledge_retrieval.publish,
+                            now=self.ingestion.clock(), batch_id=claim["idempotency_key"].rsplit(":", 1)[-1],
+                            outbox_id=outbox_id, version_id=lease.document_version_id)
+                    return publish_rebuild
+                return
+            if claim["event_type"] != "BUILD_PROJECTION":
+                return
+            approved, expected_generation, defer = await library.lock_approved_projection_publication(
+                lease.document_version_id, job_id)
+            if defer:
+                return False
+            if not approved:
+                return
+            now = self.ingestion.clock()
+            await uow.knowledge_ingestion.assert_outbox_claim(scope, outbox_id, worker_id=self.worker_id,
+                attempt=claim["attempt"], now=now)
+            await uow.knowledge_retrieval.publish(scope, version_id=lease.document_version_id,
+                generation_id=UUID(result["generation_id"]), expected_generation_id=expected_generation, now=now)
+
         await self.projection.process_outbox(scope, outbox_id, worker_id=self.worker_id,
-            lease_seconds=self.lease_seconds, build=build)
+            lease_seconds=self.lease_seconds, build=build, pass_claim=True, on_success=publish_completed)
         return result
 
     async def run_forever(self, scope, *, next_job, on_failure, stop_event):
@@ -46,7 +88,7 @@ class KnowledgePipelineWorker:
             except Exception as exc:
                 await on_failure(scope, job_id, exc.code.value if isinstance(exc, AlgorithmError) else "PIPELINE_FAILED")
 
-    async def process(self, scope, job_id, *, parse_only=False):
+    async def process(self, scope, job_id, *, projection_profile=None, parse_only=False, projection_fence=None):
         lease = await self.ingestion.get_job(scope, job_id)
         if lease.status in {"FAILED", "CANCELLED"}:
             if parse_only:
@@ -77,6 +119,12 @@ class KnowledgePipelineWorker:
         document = await self.projection.allowed_document(scope, job_id, policy=self.policy,
                                                           policy_revision=self.policy_revision)
         builder = self.builder_factory(scope, document)
-        generation = await self.projection.prepare(scope, job_id, document=document, builder=builder, profile=self.profile)
+        if projection_profile is None:
+            async with self.ingestion.uow_factory() as uow:
+                projection_profile = await uow.knowledge_ingestion.replacement_projection_profile(lease)
+        if projection_profile is None and self.profile_for_version is not None:
+            projection_profile = await self.profile_for_version(scope, lease.document_version_id)
+        generation = await self.projection.prepare(scope, job_id, document=document, builder=builder,
+            profile=projection_profile or self.profile, fence=projection_fence)
         return {"document_version_id": str(lease.document_version_id), "generation_id": str(generation),
                 "status": "READY_FOR_APP_PUBLICATION"}

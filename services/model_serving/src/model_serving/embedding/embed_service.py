@@ -30,24 +30,24 @@ class EmbeddingService:
             self._initialized = False
             logger.info("Embedding 服务已停止")
 
-    async def invalidate_model(self, served_model_name: str) -> None:
+    async def invalidate_model(self, model_id: str) -> None:
         """配置变更后立即移除旧实例，不触发模型服务初始化。"""
         if self._initialized:
-            await self._model_pool.unload_model(served_model_name)
+            await self._model_pool.unload_model(model_id)
 
-    def is_model_loaded(self, served_model_name: str) -> bool:
-        return self._model_pool.is_model_loaded(served_model_name)
+    def is_model_loaded(self, model_id: str) -> bool:
+        return self._model_pool.is_model_loaded(model_id)
 
-    async def get_embedding_model(self, served_model_name: str) -> BaseEmbedding:
+    async def get_embedding_model(self, model_id: str) -> BaseEmbedding:
         """Get embedding model instance by its unique name."""
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.load_model(served_model_name)
+        return await self._model_pool.load_model(model_id)
 
     async def embed_texts(
         self,
-        served_model_name: str,
+        model_id: str,
         texts: list[str],
         batch_size: int | None = None,
         is_query: bool = True
@@ -55,7 +55,7 @@ class EmbeddingService:
         """Generate embeddings for a list of texts using the specified model.
 
         Args:
-            served_model_name: Unique name of the embedding model
+            model_id: Unique name of the embedding model
             texts: List of texts to generate embeddings for
             batch_size: Batch size for processing (model-determined if None)
             is_query: Whether the texts are query inputs (default: True)
@@ -70,34 +70,34 @@ class EmbeddingService:
         if not texts:
             return EmbeddingResponse(
                 data=[],
-                model=served_model_name,
+                model=str(model_id),
                 object="list",
                 usage={"prompt_tokens": 0, "total_tokens": 0}
             )
 
         try:
-            model = await self.get_embedding_model(served_model_name)
+            model = await self.get_embedding_model(model_id)
             response = await model.embed(texts=texts, batch_size=batch_size, is_query=is_query)
 
             # Validate response data validity
             if not response.data or len(response.data) == 0:
                 return EmbeddingResponse(
                     data=[],
-                    model=served_model_name,
+                    model=str(model_id),
                     object="list",
                     usage={"prompt_tokens": 0, "total_tokens": 0}
                 )
-            return response.model_copy(update={"model": served_model_name})
+            return response.model_copy(update={"model": str(model_id)})
 
         except Exception as e:
             logger.exception(
-                f"文本向量生成失败，模型：{served_model_name}，错误：{e}"
+                f"文本向量生成失败，模型：{model_id}，错误：{e}"
             )
             # Handle 0-dimensional tensor errors returned by underlying models
             if "0-d tensor" in str(e):
                 return EmbeddingResponse(
                     data=[],
-                    model=served_model_name,
+                    model=str(model_id),
                     object="list",
                     usage={"prompt_tokens": 0, "total_tokens": 0}
                 )
@@ -105,7 +105,7 @@ class EmbeddingService:
 
     async def compute_similarity(
         self,
-        served_model_name: str,
+        model_id: str,
         text1: str,
         text2: str,
         method: str = "cosine"
@@ -113,7 +113,7 @@ class EmbeddingService:
         """Compute similarity score between two embedding vectors.
 
         Args:
-            served_model_name: Unique name of the embedding model
+            model_id: Unique name of the embedding model
             text1: First text string
             text2: Second text string
             method: Similarity calculation method - supports "cosine" (cosine similarity)
@@ -128,7 +128,7 @@ class EmbeddingService:
         """
         # Get embeddings for both texts
         embed_texts = [text1, text2]
-        response = await self.embed_texts(served_model_name, embed_texts, batch_size=2)
+        response = await self.embed_texts(model_id, embed_texts, batch_size=2)
 
         # Check if response data is empty
         if not response.data or len(response.data) < 2:
@@ -160,10 +160,12 @@ class EmbeddingService:
         else:
             raise ValueError(f"Unsupported similarity calculation method: {method}")
 
-    async def represent(self, served_model_name, *, text, input_role):
+    async def represent(self, model_id, *, text, input_role, expected_revision=None):
         """使用同一模型实例生成向量与实际配置回执。"""
         from .representation import dense_representation
-        model = await self.get_embedding_model(served_model_name)
+        if not self._initialized:
+            await self.initialize()
+        model = await self._model_pool.load_model(model_id, expected_revision=expected_revision)
         return await dense_representation(model, text=text, input_role=input_role)
 
     async def warmup(self):
@@ -177,11 +179,11 @@ class EmbeddingService:
 
         await self._model_pool.warmup()
 
-    async def load_model(self, served_model_name: str) -> bool:
+    async def load_model(self, model_id: str) -> bool:
         """Load model into memory by its unique identifier
 
         Args:
-            served_model_name: Unique identifier of the model
+            model_id: Unique identifier of the model
 
         Returns:
             bool: Whether the model was loaded successfully
@@ -189,14 +191,14 @@ class EmbeddingService:
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.reload_model(served_model_name)
+        return await self._model_pool.reload_model(model_id)
 
 
-    async def unload_model(self, served_model_name: str) -> bool:
+    async def unload_model(self, model_id: str) -> bool:
         """Unload model from memory by its unique identifier.
 
         Args:
-            served_model_name: Unique identifier of the model
+            model_id: Unique identifier of the model
 
         Returns:
             bool: Whether the model was unloaded successfully
@@ -204,4 +206,4 @@ class EmbeddingService:
         if not self._initialized:
             await self.initialize()
 
-        return await self._model_pool.unload_model(served_model_name)
+        return await self._model_pool.unload_model(model_id)

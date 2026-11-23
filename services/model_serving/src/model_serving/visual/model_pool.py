@@ -6,6 +6,7 @@ from platform_core.dictionary import ModelCategory, EmbeddingProvider
 from loguru import logger
 from typing import Any
 from model_serving.common.model_pool import BaseModelPool
+from model_serving.common.local_embedding_templates import colqwen_input_template
 from .model import *
 from .model_factory import create_visual_model
 
@@ -16,10 +17,13 @@ class VisualModelPool(BaseModelPool[BaseVisualEmbedding]):
     def _get_model_category(self) -> int:
         return ModelCategory.IMG_EMBEDDING.value
 
+    def _local_input_template(self, data: dict) -> str:
+        return colqwen_input_template()
+
     async def _shutdown_model_instance(self, model: BaseVisualEmbedding) -> None:
         await model.shutdown()
 
-    async def _perform_model_health_check(self, served_model_name: str, model: BaseVisualEmbedding) -> None:
+    async def _perform_model_health_check(self, model_id: str, model: BaseVisualEmbedding) -> None:
         # 用一个小 blank 图片做健康检查
         blank_b64 = (
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
@@ -36,19 +40,19 @@ class VisualModelPool(BaseModelPool[BaseVisualEmbedding]):
                 await model.represent(input_kind="TEXT", text="probe", direction=directions[0])
         else:
             await model.embed(blank_b64)
-        logger.debug(f"视觉模型 {served_model_name} 健康检查通过")
+        logger.debug(f"视觉模型 {model_id} 健康检查通过")
 
-    async def _start_model(self, served_model_name: str, model_data: dict[str, Any]) -> BaseVisualEmbedding:
+    async def _start_model(self, model_id: str, model_data: dict[str, Any]) -> BaseVisualEmbedding:
         provider = model_data.get("provider")
         if not provider:
-            raise ValueError(f"视觉模型 {served_model_name} 缺少 provider")
+            raise ValueError(f"视觉模型 {model_id} 缺少 provider")
 
         global_config = get_visual_config()
-        model_config = self._build_config(served_model_name, provider, model_data, global_config)
+        model_config = self._build_config(model_id, provider, model_data, global_config)
 
         model = create_visual_model(model_config)
         await model.startup()
-        logger.success(f"视觉模型 {served_model_name}（{provider}）启动成功")
+        logger.success(f"视觉模型 {model_id}（{provider}）启动成功")
         return model
 
     def _build_config(self, name: str, provider: str, data: dict[str, Any], global_cfg: Any) -> VisualModelConfig:

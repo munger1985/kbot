@@ -1,16 +1,22 @@
 """知识检索 App 自有资料库的公开 BFF；不向浏览器暴露内部策略与存储句柄。"""
 
+from typing import Annotated
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from fastapi.routing import APIRoute
 from platform_core.contracts.knowledge_app import (
     KnowledgeLibraryCreate, KnowledgeLibraryUpdate, KnowledgeReviewRequest,
+    KnowledgeReprocessRequest, KnowledgeRetryIndexRequest, KnowledgeMaintenanceReceipt,
+    KnowledgeIndexMaintenance, KnowledgeIndexRebuildRequest,
     KnowledgeSearchRequest, KnowledgeContinuationRequest, KnowledgeRelationsRequest,
     KnowledgeLibraryView, KnowledgeDocumentPage, KnowledgeUploadReceipt, KnowledgeActionReceipt,
-    KnowledgeSearchResult)
+    KnowledgeSearchResult, KnowledgeDirectoryQuery, KnowledgeMemberOption, KnowledgePassageContext,
+    KnowledgePassageQuery, parse_library_revision)
 from platform_core.security import get_auth_context
+from main_api.application import knowledge_library_members
+from main_api.api.knowledge_parse_models import validate_parse_models
 from main_api.application import authorize_app_request
 
 
@@ -30,9 +36,12 @@ class KnowledgeBodyLimitRoute(APIRoute):
         return limited
 
 
-PERMISSIONS = {"create_library": "knowledge_core_manage", "update_library": "knowledge_core_manage",
-    "upload_document": "upload", "review_version": "review", "publish_version": "knowledge_core_manage",
-    "withdraw_version": "knowledge_core_manage", "cancel_version": "upload"}
+PERMISSIONS = {"create_library": "knowledge_core_manage", "update_library": "knowledge_core_manage", "delete_library": "knowledge_core_manage",
+    "member_options": "knowledge_core_manage",
+    "upload_document": "upload", "review_version": "review",
+    "withdraw_version": "knowledge_core_manage", "cancel_version": "upload",
+    "reprocess_version": "review", "retry_version_index": "knowledge_core_manage",
+    "index_rebuild_status": "knowledge_core_manage", "operate_index_rebuild": "knowledge_core_manage"}
 
 
 async def require_access(request: Request):
@@ -51,31 +60,82 @@ def client(request):
 
 
 @router.get("/libraries", response_model=list[KnowledgeLibraryView])
-async def list_libraries(request: Request):
-    return await client(request).libraries(auth_context=get_auth_context(request))
+async def list_libraries(request: Request, management: bool = False):
+    if management:
+        await authorize_app_request(request, app_id="knowledge_retrieval", permission="knowledge_retrieval:knowledge_core_manage")
+    return await client(request).libraries(management=management, auth_context=get_auth_context(request))
 
 
 @router.post("/libraries", status_code=201, response_model=KnowledgeLibraryView)
 async def create_library(payload: KnowledgeLibraryCreate, request: Request):
+    await validate_parse_models(request, payload.parse_models)
+    await validate_parse_models(request, payload.index_models)
     return await client(request).create_library(payload.model_dump(mode="json"),
                                                 auth_context=get_auth_context(request))
 
 
 @router.get("/libraries/{library_id}", response_model=KnowledgeLibraryView)
-async def get_library(library_id: UUID, request: Request):
-    return await client(request).library(library_id, auth_context=get_auth_context(request))
+async def get_library(library_id: UUID, request: Request, management: bool = False):
+    if management:
+        await authorize_app_request(request, app_id="knowledge_retrieval", permission="knowledge_retrieval:knowledge_core_manage")
+    return await client(request).library(library_id, management=management, auth_context=get_auth_context(request))
+
+
+@router.delete("/libraries/{library_id}", response_model=KnowledgeActionReceipt)
+async def delete_library(library_id: UUID, request: Request, if_match: Annotated[str | None, Header(alias="If-Match")] = None):
+    if not if_match:
+        raise HTTPException(428, {"code": "IF_MATCH_REQUIRED", "message": "请刷新知识库后重试"})
+    try:
+        version = parse_library_revision(if_match)
+    except ValueError as exc:
+        raise HTTPException(422, {"code": "IF_MATCH_INVALID", "message": str(exc)}) from exc
+    return await client(request).delete_library(library_id, expected_revision=version, auth_context=get_auth_context(request))
 
 
 @router.patch("/libraries/{library_id}", response_model=KnowledgeLibraryView)
 async def update_library(library_id: UUID, payload: KnowledgeLibraryUpdate, request: Request):
+    if payload.parse_models is not None or payload.index_models is not None:
+        current = await client(request).library(library_id, management=True, auth_context=get_auth_context(request))
+        await validate_parse_models(request, payload.parse_models, current=current.get("parse_models"))
+        await validate_parse_models(request, payload.index_models, current=current.get("index_models"))
+    if payload.grants is not None:
+        await client(request).library(library_id, management=True, auth_context=get_auth_context(request))
+        options = await knowledge_library_members.options(request.app.state, get_auth_context(request))
+        if not knowledge_library_members.grants_allowed(payload.grants, options):
+            raise HTTPException(409, {"code": "KNOWLEDGE_MEMBER_INELIGIBLE",
+                "message": "请只保留当前工作域有效成员，并至少保留一名有管理资格的成员"})
     return await client(request).update_library(library_id, payload.model_dump(mode="json", exclude_unset=True),
                                                auth_context=get_auth_context(request))
 
 
+@router.get("/libraries/{library_id}/index-rebuild", response_model=KnowledgeIndexMaintenance)
+async def index_rebuild_status(library_id: UUID, request: Request, version_id: UUID | None = None):
+    return await client(request).index_rebuild(library_id, auth_context=get_auth_context(request), version_id=version_id)
+
+
+@router.post("/libraries/{library_id}/index-rebuild", response_model=KnowledgeIndexMaintenance)
+async def operate_index_rebuild(library_id: UUID, payload: KnowledgeIndexRebuildRequest, request: Request):
+    return await client(request).index_rebuild(library_id, auth_context=get_auth_context(request),
+                                               payload=payload.model_dump(mode="json"))
+
+
+@router.get("/libraries/{library_id}/member-options", response_model=list[KnowledgeMemberOption])
+async def member_options(library_id: UUID, request: Request):
+    await client(request).library(library_id, management=True, auth_context=get_auth_context(request))
+    return await knowledge_library_members.options(request.app.state, get_auth_context(request))
+
+
 @router.get("/libraries/{library_id}/documents", response_model=KnowledgeDocumentPage)
-async def list_documents(library_id: UUID, request: Request, page: int = Query(1, ge=1),
-                         page_size: int = Query(20, ge=1, le=100)):
-    return await client(request).files(library_id, page=page, page_size=page_size,
+async def list_documents(library_id: UUID, request: Request, filters: Annotated[KnowledgeDirectoryQuery, Query()]):
+    _, _, snapshot = await authorize_app_request(request, app_id="knowledge_retrieval",
+        permission="knowledge_retrieval:use")
+    governance = bool({"knowledge_retrieval:review", "knowledge_retrieval:knowledge_core_manage"} & set(snapshot.permissions))
+    if filters.view == "reviews" and not governance:
+        raise HTTPException(403, {"code": "KNOWLEDGE_REVIEW_DENIED", "message": "当前角色不能查看审核队列"})
+    if filters.view == "processing" and not governance:
+        await authorize_app_request(request, app_id="knowledge_retrieval", permission="knowledge_retrieval:upload")
+        filters.mine = True
+    return await client(request).files(library_id, **filters.model_dump(mode="json", exclude_none=True, exclude_defaults=True),
                                       auth_context=get_auth_context(request))
 
 
@@ -95,11 +155,6 @@ async def review_version(library_id: UUID, version_id: UUID, payload: KnowledgeR
         payload=payload.model_dump(mode="json"), auth_context=get_auth_context(request))
 
 
-@router.post("/libraries/{library_id}/versions/{version_id}:publish", response_model=KnowledgeActionReceipt)
-async def publish_version(library_id: UUID, version_id: UUID, request: Request):
-    return await client(request).version_action(library_id, version_id, "publish", auth_context=get_auth_context(request))
-
-
 @router.post("/libraries/{library_id}/versions/{version_id}:withdraw", response_model=KnowledgeActionReceipt)
 async def withdraw_version(library_id: UUID, version_id: UUID, request: Request):
     return await client(request).version_action(library_id, version_id, "withdraw", auth_context=get_auth_context(request))
@@ -108,6 +163,22 @@ async def withdraw_version(library_id: UUID, version_id: UUID, request: Request)
 @router.post("/libraries/{library_id}/versions/{version_id}:cancel", response_model=KnowledgeActionReceipt)
 async def cancel_version(library_id: UUID, version_id: UUID, request: Request):
     return await client(request).version_action(library_id, version_id, "cancel", auth_context=get_auth_context(request))
+
+
+@router.post("/libraries/{library_id}/versions/{version_id}:reprocess", status_code=202,
+             response_model=KnowledgeMaintenanceReceipt)
+async def reprocess_version(library_id: UUID, version_id: UUID, payload: KnowledgeReprocessRequest,
+                            request: Request):
+    return await client(request).version_action(library_id, version_id, "reprocess",
+        payload=payload.model_dump(mode="json"), auth_context=get_auth_context(request))
+
+
+@router.post("/libraries/{library_id}/versions/{version_id}:retry-index", status_code=202,
+             response_model=KnowledgeMaintenanceReceipt)
+async def retry_version_index(library_id: UUID, version_id: UUID, payload: KnowledgeRetryIndexRequest,
+                              request: Request):
+    return await client(request).version_action(library_id, version_id, "retry-index",
+        payload=payload.model_dump(mode="json"), auth_context=get_auth_context(request))
 
 
 @router.post("/libraries/{library_id}/search", response_model=KnowledgeSearchResult)
@@ -135,7 +206,23 @@ async def evidence_content(retrieval_ref: UUID, key: str, request: Request):
 
 
 @router.get("/libraries/{library_id}/versions/{version_id}/source")
-async def source_file(library_id: UUID, version_id: UUID, request: Request):
-    download = await client(request).open_source(library_id, version_id, auth_context=get_auth_context(request))
+async def source_file(library_id: UUID, version_id: UUID, request: Request, preview: bool = False):
+    download = await client(request).open_source(library_id, version_id, auth_context=get_auth_context(request), preview=preview)
+    return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
+                             background=BackgroundTask(download.close))
+
+
+@router.get("/retrievals/{retrieval_ref}/context/{key}", response_model=KnowledgePassageContext)
+async def passage_context(retrieval_ref: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")],
+                          query: Annotated[KnowledgePassageQuery, Query()], request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await client(request).passage_context(retrieval_ref, key, **query.model_dump(),
+                                                 auth_context=get_auth_context(request))
+
+
+@router.get("/retrievals/{retrieval_ref}/context/{key}/pdf", response_class=StreamingResponse,
+            responses={200: {"content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}})
+async def passage_pdf(retrieval_ref: UUID, key: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")], request: Request):
+    download = await client(request).open_passage_pdf(retrieval_ref, key, auth_context=get_auth_context(request))
     return StreamingResponse(download.blocks, media_type=download.mime_type, headers=download.headers,
                              background=BackgroundTask(download.close))

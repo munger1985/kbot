@@ -866,7 +866,7 @@ KBot 相关资源／模型和初始化合同 47 passed、5 skipped（仅 Postgre
 Prompt：
 
 新增 aiops_agent.case_applicability，并更新知识问答／答案合成 Prompt，要求保留引用中的复用限制。
-文件开发基线均保持 1.0.0；Ammolite 使用 model_name、KBot 使用 served_model_name 的目录适配。
+文件开发基线均保持 1.0.0；Ammolite 和 KBot 都通过模型 UUID 推理，目录中的厂商模型名称仅作元数据。
 未同步任何实际数据库 Prompt。部署前须按来源／Hash 定向同步基线、保留人工网页版本与历史运行；
 真实环境缺少新 Prompt 时保守降为未知，不能称为语义链已经在该环境启用。
 

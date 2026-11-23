@@ -74,7 +74,7 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path in {"/ui", "/ui/"}:
             self.send_response(302)
-            self.send_header("Location", "/ui/knowledge_retrieval/login.html")
+            self.send_header("Location", "/ui/index.html")
             self.end_headers()
             return True
         return False

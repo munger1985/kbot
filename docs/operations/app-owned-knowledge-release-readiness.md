@@ -73,7 +73,11 @@ payload_bytes = 16777216
 
 解析子进程默认使用 6 GiB 的虚拟地址空间硬上限（不是固定物理内存预留），为 Docling 模型权重映射保留空间；显式部署预算仍优先。子进程限制数值计算线程，资源耗尽单独报告，不归为协议错误。本次修复不需要改动系统级 TOML。实际部署仍需验证并发峰值与转换开销。App 和 Runtime 预算共同约束交付，模型输出 token 上限继续取自 Model Serving。
 
-representations 需要完整 RepresentationSpec：model_ref、revision、processor_revision、input_template、dimension、kind、input_kind、similarity、normalization、directions。KBot 模型引用使用 served_model_name，Ammolite 使用 model_id；模型生命周期与部署配置变更应共同审查，不能只检查 Agent 回答模型的引用。不得复制合成模型参数到真实配置。
+知识库 App 首次建索引和重建按批处理：每批最多 64 个检索单元，单批载荷逐单元核算（默认上限约 16 MiB）；同时保留整份文档的输入、单元数及单向量表示预算。建索引每批默认 180 秒，与解析截止时间独立；批次写入和最终校验也分别有时限。重试按当前文档版本、解析代次和索引规格定位同一代索引，校验已提交批次的数量和摘要后跳过重算，仍用租约防止过期 Worker 提交。未完成的索引不会被发布，不需要修改系统配置或表结构。
+
+representations 需要完整 RepresentationSpec：model_ref、revision、processor_revision、input_template、dimension、kind、input_kind、similarity、normalization、directions。KBot 和 Ammolite 的推理请求均使用 model_id；模型生命周期与部署配置变更应共同审查，不能只检查 Agent 回答模型的引用。不得复制合成模型参数到真实配置。
+
+本地文本 Embedding（Qwen／BGE）和本地 ColQwen2 视觉 Embedding 的模型版本、预处理器版本及输入模板标识均由 Model Serving 自动生成，无需手填。版本取自实际权重、配置和预处理制品；ColQwen2 的模型版本也覆盖基础权重及 adapter。文本输入模板取自实际生效的查询与文档格式及截断规则；视觉输入模板取自实际预处理规则及运行库版本。绑定和模型加载使用同一份规则：换权重、预处理器或输入规则后，旧索引不会被当成新向量空间使用。维度与视觉检索方向仍按模型规格登记；外部 API 模型继续使用目录中按供应商规格登记的版本和输入模板。
 
 - 每个方向单独准入：TEXT_TO_TEXT、TEXT_TO_IMAGE、IMAGE_TO_IMAGE、IMAGE_TO_TEXT，方向必须指向该索引表示的模态。
 - 模型回执须匹配冻结 revision／processor／template／维度／归一化／方向，空间不一致明确失败。

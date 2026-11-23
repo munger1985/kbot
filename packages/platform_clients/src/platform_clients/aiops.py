@@ -565,25 +565,6 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def get_operations_knowledge_collection_models(
-        self, *, knowledge_base_id: UUID, auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        return await self._json(
-            "GET",
-            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}/models",
-            auth_context=auth_context,
-        )
-
-    async def configure_operations_knowledge_models(
-        self, *, knowledge_base_id: UUID, models: dict[str, UUID],
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        return await self._json(
-            "PUT",
-            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}/models",
-            payload={"models": {role: str(model_id) for role, model_id in models.items()}},
-            auth_context=auth_context,
-        )
 
     async def get_case_collection_models(self, *, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json(
@@ -868,6 +849,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         self, asset_version_id: UUID, *, decision: str,
         expected_row_version: int, comment: str | None,
         auth_context: AuthContext,
+        parse_strategy: str | None = None,
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
@@ -875,6 +857,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             payload={
                 "expected_row_version": expected_row_version,
                 "comment": comment,
+                **({"parse_strategy": parse_strategy} if parse_strategy is not None else {}),
             },
             auth_context=auth_context,
         )
@@ -1192,6 +1175,35 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             if_match=if_match,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
+        )
+
+    async def get_data_protection(self, resource_id: UUID, *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"{self._CONFIG}/data-protection/resources/{resource_id}", auth_context=auth_context,
+        )
+
+    async def save_data_protection(
+        self, resource_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT", f"{self._CONFIG}/data-protection/resources/{resource_id}",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def change_data_protection_backup_schedule(
+        self, resource_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT", f"{self._CONFIG}/data-protection/resources/{resource_id}/backup-schedule",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def change_data_protection_drill_schedule(
+        self, resource_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT", f"{self._CONFIG}/data-protection/resources/{resource_id}/drill-schedule",
+            payload=payload, auth_context=auth_context,
         )
 
     async def get_recovery_profile(

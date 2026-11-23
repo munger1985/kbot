@@ -16,7 +16,8 @@ WHEN NOT MATCHED THEN INSERT (
 
 MERGE INTO KBOT_PERMISSION target
 USING (
-    SELECT 'knowledge_retrieval:knowledge_chat' PERMISSION_CODE, 'knowledge_retrieval' APP_ID, '使用知识问答' DISPLAY_NAME FROM DUAL UNION ALL
+    SELECT 'platform:model_manage' PERMISSION_CODE, 'platform' APP_ID, '管理全局 AI 模型' DISPLAY_NAME FROM DUAL UNION ALL
+    SELECT 'knowledge_retrieval:knowledge_chat', 'knowledge_retrieval', '使用知识问答' FROM DUAL UNION ALL
     SELECT 'knowledge_retrieval:x_search', 'knowledge_retrieval', '使用 X 实时搜索' FROM DUAL UNION ALL
     SELECT 'knowledge_retrieval:domain_manage', 'knowledge_retrieval', '管理知识 Domain' FROM DUAL UNION ALL
     SELECT 'knowledge_retrieval:knowledge_core_manage', 'knowledge_retrieval', '管理 Knowledge Core' FROM DUAL UNION ALL
@@ -25,7 +26,6 @@ USING (
     SELECT 'media_studio:image_generate', 'media_studio', '使用图片生成' FROM DUAL UNION ALL
     SELECT 'media_studio:media_read', 'media_studio', '查看媒体资产' FROM DUAL UNION ALL
     SELECT 'media_studio:model_binding_manage', 'media_studio', '管理媒体模型绑定' FROM DUAL UNION ALL
-    SELECT 'media_studio:model_manage', 'media_studio', '管理模型配置' FROM DUAL UNION ALL
     SELECT 'media_studio:run_read', 'media_studio', '查看生成运行和用量' FROM DUAL UNION ALL
     SELECT 'media_studio:member_manage', 'media_studio', '管理多媒体创作工作台成员' FROM DUAL UNION ALL
     SELECT 'media_studio:role_manage', 'media_studio', '管理多媒体创作工作台角色' FROM DUAL
@@ -34,6 +34,14 @@ ON (target.PERMISSION_CODE = source.PERMISSION_CODE)
 WHEN MATCHED THEN UPDATE SET target.APP_ID = source.APP_ID, target.DISPLAY_NAME = source.DISPLAY_NAME
 WHEN NOT MATCHED THEN INSERT (PERMISSION_CODE, APP_ID, DISPLAY_NAME)
 VALUES (source.PERMISSION_CODE, source.APP_ID, source.DISPLAY_NAME);
+
+MERGE INTO KBOT_APP_ROLE_PERMISSION target
+USING (SELECT 'platform' APP_ID, 'platform_admin' ROLE_CODE,
+              'platform:model_manage' PERMISSION_CODE FROM DUAL) source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE
+    AND target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
+VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
 
 MERGE INTO KBOT_APP_ROLE target
 USING (

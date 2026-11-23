@@ -91,10 +91,10 @@ class AIOpsAgentValidator:
             raise dependency_unavailable(
                 f"{role_label}模型目录暂时不可用"
             ) from exc
-        served_name = str(definition.get("served_model_name") or "").strip()
-        if not served_name:
-            raise validation_failed(f"{role_label}模型缺少 served_model_name")
-        return {"technical_name": served_name, "revision": str(model_id)}
+        provider_name = str(definition.get("provider_model_name") or "").strip()
+        if not provider_name:
+            raise validation_failed(f"{role_label}模型缺少 provider_model_name")
+        return {"model_id": str(model_id), "technical_name": provider_name, "revision": str(model_id)}
 
     async def resolve_runtime_binding(
         self,

@@ -500,6 +500,9 @@ PY
 
 ### 14.1 App 页面
 
+安装入口 `/` 默认进入 `/ui/index.html`。平台账号登录后按显式授权显示 App；
+拥有 `platform:model_manage` 的账号同时看到系统管理。
+
 只检查已启用的 App：
 
 ```text
@@ -515,7 +518,7 @@ AIOps:               /ui/aiops/login.html
 
 初始化器不会预置真实模型。技术验收后按以下顺序配置：
 
-1. 录入模型 Provider 和模型；
+1. 使用平台账号进入“系统管理 → AI 模型管理”，录入模型 Provider 和模型；
 2. 配置 LLM、Embedding、OCR、VLM 或图片生成绑定；
 3. 创建业务 Domain、用户、成员和角色；
 4. Knowledge Retrieval 完成小文件上传、解析、索引和问答；

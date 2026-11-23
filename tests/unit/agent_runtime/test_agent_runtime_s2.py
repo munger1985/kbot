@@ -69,7 +69,7 @@ def _context() -> ExecutionContext:
         config_snapshot={
             "agent": {
                 "models": {
-                    "composer_llm": {"served_model_name": "composer"}
+                    "composer_llm": {"model_id": "composer"}
                 }
             }
         },
