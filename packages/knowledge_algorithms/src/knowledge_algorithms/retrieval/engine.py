@@ -179,11 +179,12 @@ anchor_kind == "TEXT" and edge.relation_type in {RelationType.REFERS_TO, Relatio
         all_targets = targets + input_targets
         # 输入图片覆盖由原生子查询记录；业务目标匹配器不能再为同一对身份追加 UNKNOWN。
         mapped = await backend.match_targets(tuple(items), targets, scope, snapshot) if targets else ()
-        # 输入方向命中仅是覆盖线索，不是答案支持判断。
-        matches = tuple(mapped) + tuple(m for m in input_matches if m.evidence_key in items)
         groups = tuple(EvidenceGroup(m.anchor_key.stable_key, m.anchor_key,
             tuple(PayloadUnit(items[k].key, items[k].estimated_cost) for k in (m.anchor_key,) + m.linked_keys),
             tuple(edge.relation_key for edge in m.relations)) for m in final_manifests)
+        # 直接检索只展开首批主结果的关系，覆盖线索不能引用未进入选择组的候选。
+        selectable = {member.key for group in groups for member in group.members}
+        matches = tuple(mapped) + tuple(m for m in input_matches if m.evidence_key in selectable)
         selection = select_evidence_groups(groups, targets=all_targets, matches=matches,
             budget=profile.payload_budget, max_cover_states=profile.max_cover_states)
         presentation_keys = tuple(key for key in relation_anchors if key in items)[:query.requested_count]

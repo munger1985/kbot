@@ -349,6 +349,22 @@ class RetrievalEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.primary_hits[0].evidence_key, f)
         self.assertEqual(model.calls[0].image_handle, "image-query")
 
+    async def test_direct_image_search_handles_more_candidates_than_display_limit(self):
+        a, b, c = (self.backend.add(name, ContentKind.FIGURE) for name in ("a", "b", "c"))
+        self.backend.rows = {"visual": ((a, 3), (b, 2), (c, 1))}
+        visual = ChannelSpec("visual", "visual", "MULTIVECTOR", "IMAGE_TO_IMAGE", 1, 10, 1, False,
+                             spec(kind="MULTIVECTOR", input_kind="IMAGE", direction="IMAGE_TO_IMAGE"))
+        exact = ChannelSpec("exact", "image-identity", "NEAR_DUPLICATE", "IMAGE_TO_IMAGE", 1, 10, 1, False)
+        query = QueryInput(QueryMode.RELEVANCE, 2, ("FIGURE",), image_handles=("image-query",))
+
+        result = await RetrievalEngine(self.backend, FakeModel()).retrieve(
+            query, self.backend.scope, retrieval_profile(channels=(exact, visual)), primary_relations_only=True)
+
+        self.assertEqual(tuple(hit.evidence_key for hit in result.primary_hits), (a, b))
+        self.assertEqual({match.evidence_key for match in result.matches}, {a, b})
+        self.assertEqual({item.key for item in result.evidence}, {a, b, c})
+        self.assertEqual(result.status, "COMPLETE")
+
     async def test_multiple_images_one_signal_vote_and_all_target_coverage(self):
         a, b = self.backend.add("a", ContentKind.FIGURE), self.backend.add("b", ContentKind.FIGURE)
         self.backend.rows = {("image", 0): ((a, 1),), ("image", 1): ((b, 1),)}
