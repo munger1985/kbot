@@ -28,8 +28,14 @@ def order_and_structure(
 
         def band_order(band: list[ContentNode]) -> list[ContentNode]:
             vertical = lambda n: (n.locators[0].bbox[1], n.locators[0].bbox[0], n.reading_order, n.native_ref)
-            centers = sorted((n.locators[0].bbox[0] + n.locators[0].bbox[2]) / 2 for n in band)
-            gaps = [(b - a, (a + b) / 2) for a, b in zip(centers, centers[1:])]
+            # 短末行的中心偏向左侧，不等于多一栏；先看横向覆盖是否真的断开。
+            extents = []
+            for left, right in sorted((n.locators[0].bbox[0], n.locators[0].bbox[2]) for n in band):
+                if extents and left <= extents[-1][1]:
+                    extents[-1] = (extents[-1][0], max(right, extents[-1][1]))
+                else:
+                    extents.append((left, right))
+            gaps = [((c + d - a - b) / 2, (b + c) / 2) for (a, b), (c, d) in zip(extents, extents[1:])]
             if not gaps or max(gaps)[0] < profile.column_gap:
                 return sorted(band, key=vertical)
             split = max(gaps)[1]

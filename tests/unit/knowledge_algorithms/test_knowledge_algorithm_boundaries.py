@@ -34,7 +34,7 @@ class BoundaryTests(unittest.TestCase):
 
     def test_only_neutral_standard_library_imports(self):
         allowed = {"dataclasses", "enum", "hashlib", "json", "math", "re", "typing", "types",
-                   "asyncio", "time", "base64", "hmac", "codecs", "collections", "unicodedata", "urllib"}
+                   "asyncio", "time", "base64", "hmac", "codecs", "collections", "unicodedata", "urllib", "contextlib"}
         for path in PACKAGE.rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):

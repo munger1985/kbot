@@ -1,6 +1,6 @@
 """允许视图、精确源映射、单/多向量空间与模型端口。"""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import math
 from typing import AsyncIterator, Protocol
 
@@ -78,9 +78,14 @@ class RepresentationSpec:
     similarity: str
     normalization: str
     directions: frozenset[str]
+    inference_ref: str | None = field(default=None, metadata={"omit_none": True})
+    binding_revision: str | None = field(default=None, metadata={"omit_none": True})
 
     def __post_init__(self) -> None:
         nonempty(self.model_ref, self.revision, self.processor_revision, self.input_template)
+        require((self.inference_ref is None) == (self.binding_revision is None), "冻结推理地址与版本必须同时登记")
+        if self.inference_ref is not None:
+            nonempty(self.inference_ref, self.binding_revision)
         require(type(self.dimension) is int and self.dimension > 0, "表示维度无效")
         require(self.kind in {"DENSE", "MULTIVECTOR"} and self.input_kind in {"TEXT", "IMAGE"}, "表示类型无效")
         require(self.similarity in {"DOT", "COSINE"} and self.normalization in {"NONE", "L2"}, "评分空间无效")
@@ -93,7 +98,7 @@ class RepresentationSpec:
     def space_id(self) -> str:
         value = asdict(self)
         value["directions"] = sorted(self.directions)
-        return fingerprint(value)
+        return fingerprint({key: item for key, item in value.items() if item is not None})
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +187,14 @@ class SearchUnit:
 class ProjectedUnit:
     unit: SearchUnit
     representations: tuple[Representation, ...]
+    # 无缺口时不写入，保证已提交批次的合同与摘要不变。
+    skipped_image_spaces: frozenset[str] | None = field(default=None, metadata={"omit_none": True})
+
+    def __post_init__(self) -> None:
+        if self.skipped_image_spaces is not None:
+            require(bool(self.skipped_image_spaces) and bool(self.unit.content_handle)
+                    and self.skipped_image_spaces.isdisjoint(r.space_id for r in self.representations),
+                    "图像表示缺口必须绑定原图，不能与实际表示重叠")
 
 
 @dataclass(frozen=True, slots=True)

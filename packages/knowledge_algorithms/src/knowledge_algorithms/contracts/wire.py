@@ -13,7 +13,8 @@ def encode(value: object) -> object:
     if isinstance(value, Enum):
         return value.value
     if is_dataclass(value) and not isinstance(value, type):
-        return {field.name: encode(getattr(value, field.name)) for field in fields(value)}
+        return {field.name: encode(getattr(value, field.name)) for field in fields(value)
+                if not (field.metadata.get("omit_none") and getattr(value, field.name) is None)}
     if isinstance(value, (tuple, frozenset, list)):
         items = sorted(value) if isinstance(value, frozenset) else value
         return [encode(item) for item in items]

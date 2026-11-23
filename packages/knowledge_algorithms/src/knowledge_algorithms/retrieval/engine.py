@@ -29,16 +29,19 @@ class RetrievalEngine:
         self.binding = backend.binding
 
     async def retrieve(self, query: QueryInput, scope: AuthorizedScope, profile: RetrievalProfile,
-                       *, targets: tuple[CoverageTarget, ...] = ()) -> EvidenceSet:
+                       *, targets: tuple[CoverageTarget, ...] = (), primary_relations_only=False,
+                       skip_directions: frozenset[str] = frozenset()) -> EvidenceSet:
         self.binding.check_owner(scope.owner_binding_ref)
         self.backend.capabilities.validate(query)
         require(query.requested_count <= profile.max_primary_count, "用户数量超过服务上限，不得静默截断")
         require(len(query.image_handles) <= profile.candidate_budget, "查询图片数超过显式工作预算")
         if query.combination == "COMPOSED" or query.text and query.image_handles:
             raise AlgorithmError(ErrorCode.MODALITY_UNAVAILABLE, "尚未登记已评测的组合输入能力", stage="plan")
-        return await Deadline(profile.timeout_seconds).run(self._retrieve(query, scope, profile, targets), stage="retrieval")
+        require(not primary_relations_only or not targets, "按主结果展开关联仅适用于无目标的直接检索")
+        return await Deadline(profile.timeout_seconds).run(
+            self._retrieve(query, scope, profile, targets, primary_relations_only, skip_directions), stage="retrieval")
 
-    async def _retrieve(self, query, scope, profile, targets):
+    async def _retrieve(self, query, scope, profile, targets, primary_relations_only, skip_directions):
         backend = self.backend
         snapshot = await backend.snapshot(scope)
         snapshot.validate_scope(self.binding, scope)
@@ -47,7 +50,7 @@ class RetrievalEngine:
                                   "scope": scope.scope_hash, "snapshot": snapshot.snapshot_ref,
                                   "profile": profile_hash, "targets": encode(targets)})
         channels, statuses, input_matches, trace, representation_hashes = [], [], [], [], []
-        planned_channels = tuple(channel for channel in profile.channels if (
+        planned_channels = tuple(channel for channel in profile.channels if channel.direction not in skip_directions and (
             channel.direction.startswith("TEXT_") and query.text
             or channel.direction.startswith("IMAGE_") and query.image_handles))
         continuation, scope_exhausted = None, False
@@ -108,7 +111,8 @@ class RetrievalEngine:
                      tuple((key, "OUTPUT_TYPE_MISMATCH") for key in items if key not in legal)))
         items = {key: items[key] for key in legal}
         manifests, relation_failed = [], False
-        for key in legal:
+        relation_anchors = legal[:query.requested_count] if primary_relations_only else legal
+        for key in relation_anchors:
             item = items[key]
             anchor_kind = "FIGURE" if item.kind in {ContentKind.FIGURE, ContentKind.IMAGE, ContentKind.PHOTO, ContentKind.PAGE} else (
                 "REGION" if item.kind == ContentKind.REGION else "CAPTION" if item.kind == ContentKind.CAPTION else "TEXT")
@@ -182,9 +186,11 @@ anchor_kind == "TEXT" and edge.relation_type in {RelationType.REFERS_TO, Relatio
             tuple(edge.relation_key for edge in m.relations)) for m in final_manifests)
         selection = select_evidence_groups(groups, targets=all_targets, matches=matches,
             budget=profile.payload_budget, max_cover_states=profile.max_cover_states)
+        presentation_keys = tuple(key for key in relation_anchors if key in items)[:query.requested_count]
         primary = tuple(PrimaryHit(key, index, key.stable_key, scores.get(key))
-                        for index, key in enumerate(legal[:query.requested_count], 1))
-        dropped = tuple((key, "USER_RESULT_COUNT") for key in legal[query.requested_count:])
+                        for index, key in enumerate(presentation_keys, 1))
+        primary_set = set(presentation_keys)
+        dropped = tuple((key, "USER_RESULT_COUNT") for key in legal if key not in primary_set)
         trace.append(StageRecord("presentation", legal, tuple(hit.evidence_key for hit in primary), dropped))
         trace.append(StageRecord("context_selection", tuple(items), selection.selected_evidence_keys,
                      tuple((key, "CONTEXT_BUDGET_OR_COVERAGE") for key in items if key not in selection.selected_evidence_keys)))

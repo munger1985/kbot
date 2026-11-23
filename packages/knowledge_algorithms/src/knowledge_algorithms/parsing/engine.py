@@ -14,6 +14,7 @@ from ..references.figures import FigureIdentity, FigureResolution, ReferenceOccu
 from ..references.relations import RelationType, ResolvedRelation
 from .contracts import ExtractedRegion, ParseProfile, ParsingAdapter, RepairAdapter, SourceReader
 from .events import ParseEvent, ParseEventType, ParseRunIdentity, ParseStreamValidator, local_key
+from .pdf_paragraphs import REVISION as PDF_PARAGRAPH_REVISION, restore_pdf_paragraphs
 from .structure import order_and_structure
 
 
@@ -29,8 +30,8 @@ def quality(region: ExtractedRegion) -> tuple[float, float, bool]:
 
 def passes(region: ExtractedRegion, profile: ParseProfile) -> bool:
     bad, coverage, usable = quality(region)
-    visual_only = all(n.kind in _VISUAL for n in region.nodes)
-    return usable and (visual_only or bad <= profile.max_bad_char_ratio and coverage >= profile.min_region_coverage)
+    legacy_visual_only = profile.strategy is None and all(node.kind in _VISUAL for node in region.nodes)
+    return usable and (legacy_visual_only or bad <= profile.max_bad_char_ratio and coverage >= profile.min_region_coverage)
 
 
 class VerifiedReader:
@@ -83,9 +84,10 @@ class ParsedDocument:
 
 class ParseEngine:
     def __init__(self, binding: AppBackendBinding, adapters: tuple[ParsingAdapter, ...],
-                 repair_adapter: RepairAdapter | None = None, *, artifact_provider=None):
+                 repair_adapter: RepairAdapter | None = None, *, artifact_provider=None, diagnostics=None):
         self.binding, self.adapters, self.repair_adapter = binding, adapters, repair_adapter
         self.artifact_provider = artifact_provider
+        self.diagnostics = diagnostics
         mime_types = [mime for adapter in adapters for mime in adapter.mime_types]
         require(len(set(mime_types)) == len(mime_types), "格式路由必须在组合根唯一登记")
 
@@ -114,7 +116,9 @@ class ParseEngine:
             validator.accept(result)
             return result
 
-        yield event(ParseEventType.RUN_STARTED, {"profile_hash": profile.profile_hash, "parser_revision": adapter.revision})
+        pdf_source = source.descriptor.mime_type == "application/pdf"
+        revision = adapter.revision + "+" + PDF_PARAGRAPH_REVISION if pdf_source else adapter.revision
+        yield event(ParseEventType.RUN_STARTED, {"profile_hash": profile.profile_hash, "parser_revision": revision})
         verified = VerifiedReader(source, profile.max_input_bytes)
         iterator = adapter.extract(verified, profile, run)
         nodes, assets, pages, alternatives, failed_regions = [], [], [], [], []
@@ -134,12 +138,15 @@ class ParseEngine:
                 require(node.key.object_key == local_key(algorithm_version=profile.algorithm_version,
                         native_ref=node.native_ref, kind=node.kind.value), "提取节点未使用规范本地身份")
 
+        stage = "extract"
         try:
             while True:
+                stage = "extract"
                 try:
                     batch = await deadline.run(anext(iterator), stage="extract")
                 except StopAsyncIteration:
                     break
+                stage = "region_validation"
                 pages.extend(batch.pages)
                 assets.extend(batch.assets)
                 if len(pages) > profile.max_pages:
@@ -154,6 +161,7 @@ class ParseEngine:
                         if passes(active, profile) or self.repair_adapter is None or not profile.repair_strategies:
                             break
                         strategy = profile.repair_strategies[min(attempt, len(profile.repair_strategies) - 1)]
+                        stage = "repair"
                         candidate = await deadline.run(self.repair_adapter.repair(
                             active, strategy=strategy, profile=profile, run=run), stage="repair")
                         check_nodes(candidate.nodes)
@@ -175,6 +183,7 @@ class ParseEngine:
                     if len(nodes) + len(assets) + len(pages) > profile.max_objects:
                         raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "解析对象数超过预算", stage="parse")
                 await deadline.checkpoint(stage="parse")
+            stage = "structure"
             require(verified.complete, "解析器未完成源内容校验", stage="source")
             require(bool(nodes), "解析没有产生可定位内容", stage="parse")
             require(len({p.page_no for p in pages}) == len(pages), "页面序号重复")
@@ -182,6 +191,12 @@ class ParseEngine:
             require(all(loc.page_no is None or loc.page_no in page_numbers for node in nodes for loc in node.locators),
                     "节点引用了不存在的页面")
             structured, warnings = order_and_structure(tuple(nodes), profile.layout)
+            if pdf_source:
+                # 修复候选与原图依赖继续引用原节点；只合并未被依赖的版面续行。
+                protected = frozenset(n.key.object_key for candidate in alternatives for n in candidate.nodes)
+                protected |= frozenset(asset.figure_key.object_key for asset in assets)
+                structured = restore_pdf_paragraphs(structured, tuple(pages), protected_keys=protected)
+                await deadline.checkpoint(stage="structure")
             figures = tuple(FigureIdentity(n.key, n.display_label, n.numbering_scope or "document", n.native_anchor)
                             for n in structured if n.kind == ContentKind.FIGURE and n.display_label is not None)
             occurrences, relations = [], []
@@ -215,6 +230,7 @@ class ParseEngine:
                 require(asset.figure_key in {n.key for n in structured}, "原图缺少对应逻辑对象")
                 relations.append(ResolvedRelation(fingerprint([asset.key.stable_key, "asset"]), RelationType.HAS_ASSET,
                                                   asset.figure_key, asset.key, "EXPLICIT_ASSET"))
+            stage = "event_emission"
             items = [(ParseEventType.PAGE_BATCH, [encode(p) for p in pages]),
                      (ParseEventType.NODE_BATCH, [{"local_key": n.key.object_key, **encode(n)} for n in structured]),
                      (ParseEventType.ASSET_BATCH, [{"local_key": a.key.object_key, **encode(a)} for a in assets]),
@@ -233,8 +249,12 @@ class ParseEngine:
                         "event_count": validator.event_count, "ordered_digest": validator.ordered_digest,
                         "quality_report": {"status": status, "failed_regions": failed_regions}})
         except AlgorithmError as exc:
+            if self.diagnostics is not None:
+                self.diagnostics(stage if exc.stage == "contract" else exc.stage, exc.code.value, exc.__cause__ or exc)
             yield event(ParseEventType.RUN_FAILED, {"error_code": exc.code.value, "stage": exc.stage})
-        except Exception:
+        except Exception as exc:
+            if self.diagnostics is not None:
+                self.diagnostics(stage, "PARSE_QUALITY_INSUFFICIENT", exc)
             yield event(ParseEventType.RUN_FAILED, {"error_code": "PARSE_QUALITY_INSUFFICIENT", "stage": "adapter"})
         finally:
             close = getattr(iterator, "aclose", None)

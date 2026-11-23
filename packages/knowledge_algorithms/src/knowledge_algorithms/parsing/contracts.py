@@ -1,7 +1,9 @@
 """解析输入、区域提取和有界局部修复合同。"""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
+from enum import Enum
 import math
+import re
 from typing import AsyncIterator, Protocol
 
 from ..contracts.content import ContentNode, Page, VisualAsset
@@ -43,6 +45,26 @@ class LayoutProfile:
 
 
 @dataclass(frozen=True, slots=True)
+class ParseModelBinding:
+    """本次审批为解析职责冻结的目录身份，不含地址或凭据。"""
+
+    model_id: str
+    revision: str
+    inference_ref: str
+
+    def __post_init__(self) -> None:
+        require(re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", self.model_id) is not None, "解析模型目录身份无效")
+        nonempty(self.revision, self.inference_ref)
+        require(len(self.revision) <= 256 and len(self.inference_ref) <= 256, "解析模型身份超过预算")
+
+
+class ParseStrategy(str, Enum):
+    TEXT = "TEXT"
+    AUTO = "AUTO"
+    VISUAL = "VISUAL"
+
+
+@dataclass(frozen=True, slots=True)
 class ParseProfile:
     profile_version: str
     algorithm_version: str
@@ -60,6 +82,9 @@ class ParseProfile:
     min_region_coverage: float
     allow_partial: bool
     layout: LayoutProfile
+    strategy: str | None = field(default=None, metadata={"omit_none": True})
+    ocr_model: ParseModelBinding | None = field(default=None, metadata={"omit_none": True})
+    vlm_model: ParseModelBinding | None = field(default=None, metadata={"omit_none": True})
 
     def __post_init__(self) -> None:
         nonempty(self.profile_version, self.algorithm_version, *self.languages)
@@ -72,10 +97,35 @@ class ParseProfile:
             self.max_bad_char_ratio, self.min_region_coverage)), "质量参数无效")
         require(math.isfinite(self.timeout_seconds) and self.timeout_seconds > 0, "解析超时无效")
         require(type(self.allow_partial) is bool, "局部失败策略无效")
+        if self.strategy is None or self.strategy == ParseStrategy.TEXT:
+            require(self.ocr_model is None and self.vlm_model is None, "原生解析不得冻结模型")
+            if self.strategy == ParseStrategy.TEXT:
+                require(not self.repair_strategies and self.max_repair_attempts == 0, "原生解析不得执行模型转写")
+        else:
+            require(self.ocr_model is not None, "自动判断与视觉增强必须冻结 OCR 模型")
+            require(self.strategy != ParseStrategy.VISUAL or self.vlm_model is not None,
+                    "视觉增强必须冻结 VLM 模型")
+        if self.strategy is not None:
+            require(self.strategy in {value.value for value in ParseStrategy}, "解析档位无效")
 
     @property
     def profile_hash(self) -> str:
-        return fingerprint(asdict(self))
+        value = asdict(self)
+        if self.strategy is None:
+            # 已冻结任务的摘要不随新审批字段扩展而变化。
+            for name in ("strategy", "ocr_model", "vlm_model"):
+                value.pop(name)
+        return fingerprint(value)
+
+    def for_approval(self, strategy: ParseStrategy, *, ocr: ParseModelBinding | None = None,
+                     vlm: ParseModelBinding | None = None) -> "ParseProfile":
+        require(isinstance(strategy, ParseStrategy), "审批必须明确选择解析档位")
+        native = strategy is ParseStrategy.TEXT
+        return replace(self, strategy=strategy.value, ocr_model=None if native else ocr,
+                       vlm_model=None if native else vlm,
+                       max_repair_attempts=0 if native else 1,
+                       repair_strategies=() if native else ("OCR",),
+                       allow_partial=True)
 
 
 @dataclass(frozen=True, slots=True)

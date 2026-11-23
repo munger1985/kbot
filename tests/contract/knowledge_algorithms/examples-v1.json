@@ -566,7 +566,7 @@
   },
   "knowledge.projection_batch.v1": {
     "schema_version": "knowledge.projection_batch.v1",
-    "projection_ref": "4fcf9d5982fcf9cee4cfaa95ba2e1378e29a672a10cd300524694334e24026de",
+    "projection_ref": "3d1d03d1c30510acc2fbce58e55a3d52f10a7a72a3afd551756d1816a51eb043",
     "sequence": 1,
     "units": [
       {
@@ -575,8 +575,8 @@
             "owner_binding_ref": "app-a",
             "document_version_ref": "doc-v1",
             "parse_run_ref": "parse-1",
-            "object_key": "42dc5804ba2b6e830e3ff27bf90f4d3ab8018fe95c15935e982ed717a5fe7ec5",
-            "projection_ref": "4fcf9d5982fcf9cee4cfaa95ba2e1378e29a672a10cd300524694334e24026de",
+            "object_key": "e79f65c2f3fde45121252c6ee0b2f366a1aaa0f3d9ef52f5e98b8253a88c241c",
+            "projection_ref": "3d1d03d1c30510acc2fbce58e55a3d52f10a7a72a3afd551756d1816a51eb043",
             "source_span": null
           },
           "source_key": {
@@ -587,7 +587,7 @@
             "projection_ref": null,
             "source_span": null
           },
-          "unit_key": "42dc5804ba2b6e830e3ff27bf90f4d3ab8018fe95c15935e982ed717a5fe7ec5",
+          "unit_key": "e79f65c2f3fde45121252c6ee0b2f366a1aaa0f3d9ef52f5e98b8253a88c241c",
           "kind": "PARAGRAPH",
           "text": "如图 1-1 所示。",
           "context": "",
@@ -627,7 +627,7 @@
         "representations": []
       }
     ],
-    "payload_hash": "2d75c8d5c53c18de34737a78e773ab7518800a04f05b3a297daede34831663e4"
+    "payload_hash": "bc55dbac2d4496432502f99abf651100bc69e8109e9c8e843461871a53149078"
   },
   "knowledge.representation_spec.v1": {
     "schema_version": "knowledge.representation_spec.v1",

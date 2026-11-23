@@ -29,6 +29,19 @@ def lexical_tokens(text: str) -> tuple[str, ...]:
     return tuple(result)
 
 
+def is_orphan_letter(indexed, query: QueryInput) -> bool:
+    """不是本次查找对象的独立字母不应以正文命中；保留原始索引和页内上下文。"""
+    unit = indexed.projected.unit
+    if unit.kind.value not in {"PARAGRAPH", "LIST_ITEM"}:
+        return False
+    text = unicodedata.normalize("NFKC", unit.text).strip()
+    marker = re.fullmatch(r"[\[(]?([A-Za-z])[\])、.:]?", text)
+    if marker is None:
+        return False
+    query_text = unicodedata.normalize("NFKC", query.text or "").lower()
+    return marker.group(1).lower() not in re.findall(r"[a-z0-9]+", query_text)
+
+
 @dataclass(frozen=True, slots=True)
 class IndexedUnit:
     projected: ProjectedUnit
@@ -47,6 +60,21 @@ def output_type(kind):
     if kind in {"PHOTO", "TABLE", "PAGE", "REGION"}:
         return kind
     return "TEXT"
+
+
+def vector_score(request, representation):
+    spec = request.channel.representation_spec
+    require(request.representation is not None, "查询表示缺失")
+    if request.channel.kind == "DENSE":
+        require(representation.vector is not None and request.representation.vector is not None
+                and len(representation.vector) == len(request.representation.vector) == spec.dimension,
+                "查询和索引向量维度或种类不一致")
+        return _similarity(request.representation.vector, representation.vector, spec.similarity)
+    require(representation.matrix is not None and request.representation.matrix is not None,
+            "多向量通道不能使用单向量")
+    return maxsim(request.representation.matrix, representation.matrix,
+                  spec=MaxSimSpec(spec.space_id, spec.dimension, spec.similarity, spec.directions),
+                  direction=request.channel.direction)
 
 
 class ExactIndex:
@@ -107,11 +135,11 @@ class ExactIndex:
                 return False
         return True
 
-    def search(self, request: ChannelRequest, *, image_sha256=None, visual_hash=None):
+    def search(self, request: ChannelRequest, *, image_sha256=None, visual_hash=None, candidate_filter=None):
         channel, scores = request.channel, []
         query_terms = Counter(self.tokenizer(request.query.text or ""))
         for indexed in self.units:
-            if not self.eligible(indexed, request.query):
+            if not self.eligible(indexed, request.query) or (candidate_filter and not candidate_filter(indexed)):
                 continue
             score = None
             if channel.kind == "LEXICAL":
@@ -135,19 +163,7 @@ class ExactIndex:
                 require(len(representations) <= 1, "同单元的表示空间重复")
                 if not representations:
                     continue
-                representation = representations[0]
-                require(request.representation is not None, "查询表示缺失")
-                if channel.kind == "DENSE":
-                    require(representation.vector is not None and request.representation.vector is not None
-                            and len(representation.vector) == len(request.representation.vector) == spec.dimension,
-                            "查询和索引向量维度或种类不一致")
-                    score = _similarity(request.representation.vector, representation.vector, spec.similarity)
-                else:
-                    require(representation.matrix is not None and request.representation.matrix is not None,
-                            "多向量通道不能使用单向量")
-                    score = maxsim(request.representation.matrix, representation.matrix,
-                        spec=MaxSimSpec(spec.space_id, spec.dimension, spec.similarity, spec.directions),
-                        direction=channel.direction)
+                score = vector_score(request, representations[0])
             elif channel.kind == "NEAR_DUPLICATE":
                 require(image_sha256 is not None, "近重复需要受控图片指纹")
                 if indexed.image_sha256 == image_sha256:

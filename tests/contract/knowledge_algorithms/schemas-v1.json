@@ -568,6 +568,28 @@
           ]
         },
         "required": true
+      },
+      {
+        "name": "inference_ref",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "binding_revision",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
       }
     ],
     "PayloadCost": [
@@ -1469,6 +1491,43 @@
           "contract": "LayoutProfile"
         },
         "required": true
+      },
+      {
+        "name": "strategy",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            "str",
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "ocr_model",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "contract": "ParseModelBinding"
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
+      },
+      {
+        "name": "vlm_model",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "contract": "ParseModelBinding"
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
       }
     ],
     "LayoutProfile": [
@@ -1480,6 +1539,23 @@
       {
         "name": "column_gap",
         "type": "float",
+        "required": true
+      }
+    ],
+    "ParseModelBinding": [
+      {
+        "name": "model_id",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "revision",
+        "type": "str",
+        "required": true
+      },
+      {
+        "name": "inference_ref",
+        "type": "str",
         "required": true
       }
     ],
@@ -2101,6 +2177,22 @@
           ]
         },
         "required": true
+      },
+      {
+        "name": "skipped_image_spaces",
+        "type": {
+          "container": "UnionType",
+          "args": [
+            {
+              "container": "frozenset",
+              "args": [
+                "str"
+              ]
+            },
+            "NoneType"
+          ]
+        },
+        "required": false
       }
     ],
     "SearchUnit": [
@@ -2692,12 +2784,14 @@
             "SCOPE_CLOSURE_BROKEN",
             "SNAPSHOT_STALE",
             "MODEL_SPACE_MISMATCH",
+            "MODEL_REVISION_CHANGED",
             "MODALITY_UNAVAILABLE",
             "EVENT_CONFLICT",
             "EVENT_SEQUENCE_INVALID",
             "MANIFEST_INVALID",
             "INCOMPARABLE_CHANNEL",
             "UNSUPPORTED_INPUT",
+            "IMAGE_INPUT_UNSUPPORTED",
             "PARSE_QUALITY_INSUFFICIENT",
             "ARTIFACT_EXPIRED",
             "SCOPE_CHANGED",

@@ -138,6 +138,28 @@ class ProjectionEngineTests(unittest.IsolatedAsyncioTestCase):
         return [batch async for batch in ProjectionBuilder(document.binding, CharacterTokenizer(), model).build(
             document, profile or projection_profile())]
 
+    async def test_each_projection_batch_has_its_own_deadline(self):
+        class SlowModel(FakeModel):
+            async def represent(self, value, specification):
+                await asyncio.sleep(.10)
+                return await super().represent(value, specification)
+
+        contents = [allowed(node(name=str(index))) for index in range(4)]
+        profile = projection_profile(batch_size=1, timeout_seconds=.25, representations=(spec(),))
+        batches = await self.build(contents, profile, SlowModel())
+        self.assertEqual([batch.sequence for batch in batches], [1, 2, 3, 4])
+
+    async def test_projection_stops_before_retaining_an_oversized_batch(self):
+        contents = [allowed(node(name=str(index))) for index in range(3)]
+        document = AllowedReader(contents)
+        model = FakeModel()
+        with self.assertRaises(AlgorithmError) as failure:
+            _ = [batch async for batch in ProjectionBuilder(document.binding, CharacterTokenizer(), model).build(
+                document, projection_profile(batch_size=3, representations=(spec(),)), max_batch_bytes=1)]
+        self.assertEqual(failure.exception.code, ErrorCode.RESOURCE_LIMIT)
+        self.assertEqual(len(model.calls), 0)
+        self.assertTrue(document.closed)
+
     async def test_sentence_split_has_exact_source_mapping(self):
         content = allowed(node(text="第一句。第二句。第三句。"))
         batches = await self.build([content], projection_profile(max_tokens=8))
@@ -162,13 +184,14 @@ class ProjectionEngineTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AlgorithmError):
             await self.build([allowed(node(kind=ContentKind.CODE, text="x" * 50))], projection_profile(max_tokens=10))
 
-    async def test_table_row_groups_keep_repeated_header(self):
+    async def test_table_row_groups_keep_original_header_once(self):
         content = replace(allowed(node(kind=ContentKind.TABLE, text="单位mm\nrow1\nrow2\nrow3")),
                           table_header=(0, 4), table_rows=((5, 9), (10, 14), (15, 19)))
         batches = await self.build([content], projection_profile(max_tokens=10))
         units = [p.unit for b in batches for p in b.units]
         self.assertEqual(len(units), 3)
-        self.assertTrue(all(u.text.startswith("单位mm\n") for u in units))
+        self.assertEqual("".join(unit.text for unit in units), content.text)
+        self.assertEqual(sum(unit.text.count("单位mm") for unit in units), 1)
 
     async def test_allowed_view_hash_changes_projection_not_source(self):
         content = allowed(node())
