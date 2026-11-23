@@ -4,6 +4,7 @@ import asyncio
 import base64
 from hashlib import sha256
 from io import BytesIO
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -18,10 +19,13 @@ from knowledge_algorithms.contracts.identity import Locator
 from knowledge_algorithms.parsing.contracts import ParseModelBinding, ParseStrategy, SourceDescriptor
 from knowledge_algorithms.parsing.events import ParseRunIdentity
 from knowledge_core.adapters.document_parsing import DoclingParsingAdapter, WorkerArtifactWriter
+from knowledge_core.adapters.bounded_parse_executor import BoundedParseExecutor, OptionalTranscriptionBudget
 from knowledge_core.adapters.model_transcription import (
     IMAGE_DIMENSIONS_ERROR,
     AuthorizedModelTranscription,
     ImageDimensionsUnsupported,
+    TranscriptionBudgetExhausted,
+    WorkerModelTranscriber,
 )
 from knowledge_retrieval_app.composition.knowledge_profiles import KnowledgeFoundationConfig
 from platform_clients.knowledge_computation import KnowledgeComputationClientError
@@ -107,6 +111,150 @@ def test_complex_region_retains_ocr_if_vlm_refuses_dimensions():
 
     assert result.image_input_unsupported
     assert [(n.text, n.provenance.kind) for n in result.nodes] == [("已有 OCR 文字", ProvenanceKind.OCR)]
+
+
+@pytest.mark.parametrize("exhaust_budget", [False, True])
+def test_required_pdf_page_precedes_optional_figures_and_originals_survive(tmp_path, monkeypatch, exhaust_budget):
+    from knowledge_core.adapters import document_parsing
+
+    raw = b"%PDF-1.7 fixture"
+    monkeypatch.setattr(document_parsing, "restore_pdf_word_spacing", lambda raw, regions: regions)
+
+    class Source:
+        descriptor = SourceDescriptor("knowledge_retrieval", "doc-v1", sha256(raw).hexdigest(),
+                                      "application/pdf", len(raw), "source-1")
+
+        async def chunks(self):
+            yield raw
+
+    bounds = SimpleNamespace(l=.1, t=.1, r=.3, b=.3)
+    bbox = SimpleNamespace(to_top_left_origin=lambda _: SimpleNamespace(normalized=lambda _: bounds))
+    on_page_one = [SimpleNamespace(page_no=1, bbox=bbox)]
+    small = picture("small", size=(17, 17), varied=True)
+    table_crop = picture("table_crop", size=(450, 89), semantic=True)
+    later = picture("later", size=(90, 90))
+    line = picture("line")
+    for figure in (small, table_crop, later, line):
+        figure.prov = on_page_one
+    body = SimpleNamespace(label="text", self_ref="body", text="可靠原生正文", prov=on_page_one)
+    scan = Image.new("RGB", (200, 300))
+    size = SimpleNamespace(width=200, height=300)
+    doc = SimpleNamespace(pages={1: SimpleNamespace(size=size),
+                                2: SimpleNamespace(size=size, image=SimpleNamespace(pil_image=scan))},
+                          iterate_items=lambda: ((n, 0) for n in (small, body, table_crop, later, line)))
+    converter = SimpleNamespace(convert=lambda *args, **kwargs: SimpleNamespace(status="success", document=doc))
+    profile = profile_for()
+    writer = WorkerArtifactWriter(tmp_path, expires_at=2000000000, max_bytes=100000, max_total_bytes=100000)
+    calls = []
+
+    async def transcribe(image, *, role, region, **kwargs):
+        calls.append((image.size, role, region))
+        if region == "page":
+            return "扫描页补回的文字"
+        if role == "vlm":
+            if exhaust_budget:
+                raise TranscriptionBudgetExhausted()
+            return "表格补回的文字"
+        return ""
+
+    async def extract():
+        reader = Source()
+        run = ParseRunIdentity("knowledge_retrieval", "job-1", "parse-1", 1, 1,
+                               reader.descriptor.sha256, profile.profile_hash)
+        adapter = DoclingParsingAdapter(writer, converter_factory=lambda: converter,
+                                        transcriber=SimpleNamespace(transcribe_region=transcribe))
+        return [batch async for batch in adapter.extract(reader, profile, run)]
+
+    try:
+        batch, = asyncio.run(extract())
+    finally:
+        scan.close()
+    assert len(batch.assets) == len(writer.artifacts) == 5
+    assert calls[:3] == [((200, 300), "ocr", "page"),
+                         ((450, 89), "ocr", "figure"), ((450, 89), "vlm", "figure")]
+    coverage = {reg.region_key: reg.text_coverage for reg in batch.regions}
+    assert coverage["body"] == coverage["#/pages/2/image"] == coverage["line"] == 1
+    if exhaust_budget:
+        assert len(calls) == 3
+        assert coverage["small"] == coverage["later"] == coverage["table_crop"] == 0
+    else:
+        assert calls[3:] == [((17, 17), "ocr", "figure"), ((90, 90), "ocr", "figure")]
+        assert coverage["table_crop:model_transcription"] == 1
+
+
+def test_optional_budget_cancels_only_its_window_and_keeps_real_failures():
+    async def verify():
+        loop = asyncio.get_running_loop()
+        budget = OptionalTranscriptionBudget(timeout_seconds=0.05, deadline=loop.time() + 10)
+        cancelled = asyncio.Event()
+
+        async def blocked():
+            try:
+                await asyncio.Future()
+            finally:
+                cancelled.set()
+
+        with pytest.raises(TranscriptionBudgetExhausted):
+            await budget.run(blocked)
+        assert cancelled.is_set()
+        unused = AsyncMock()
+        with pytest.raises(TranscriptionBudgetExhausted):
+            await budget.run(unused)
+        unused.assert_not_called()
+        fresh = OptionalTranscriptionBudget(timeout_seconds=180, deadline=loop.time() + 180)
+        with pytest.raises(TimeoutError):
+            await fresh.run(AsyncMock(side_effect=TimeoutError()))
+        late = OptionalTranscriptionBudget(timeout_seconds=180, deadline=loop.time() + 14)
+        with pytest.raises(TranscriptionBudgetExhausted):
+            await late.run(unused)
+
+    asyncio.run(verify())
+    profile = profile_for()
+    assert BoundedParseExecutor._optional_request(profile, {
+        "role": "ocr", "region": "figure", "image": "", "location": {
+            "object": "", "page": 1, "origin": "CONVERTER_FIGURE", "width": 1, "height": 1, "optional": True},
+    })
+    with pytest.raises(AlgorithmError):
+        BoundedParseExecutor._optional_request(profile, {
+            "role": "ocr", "region": "page", "image": "", "location": {
+                "object": "", "page": 1, "origin": "PAGE_IMAGE", "width": 1, "height": 1, "optional": True},
+        })
+
+
+def test_same_image_reuses_frozen_model_output_but_keeps_both_locations(monkeypatch):
+    from io import StringIO
+    from knowledge_core.adapters import model_transcription
+    from knowledge_core.adapters.document_parsing import bound_transcription_nodes
+
+    profile = profile_for()
+    source = SimpleNamespace(descriptor=SimpleNamespace(mime_type="application/pdf",
+        owner_binding_ref="knowledge_retrieval", document_version_ref="doc-v1", sha256="a" * 64))
+    run = SimpleNamespace(parse_run_ref="parse-1")
+    transcriber = WorkerModelTranscriber()
+    replies = BytesIO(b'{"text":"same text"}\n')
+    requests = StringIO()
+
+    async def verify(image):
+        nodes = []
+        for page in (2, 4):
+            fig = SimpleNamespace(kind=ContentKind.FIGURE, native_ref=f"#/pictures/{page}",
+                key=SimpleNamespace(object_key=str(page)), reading_order=page,
+                locators=(Locator(page, (.1, .1, .3, .3)),))
+            parsed = await bound_transcription_nodes(image, source, run, profile, figure=fig,
+                transcriber=transcriber, max_nodes=10, optional=True)
+            nodes.extend(parsed.nodes)
+        return nodes
+
+    with monkeypatch.context() as patch:
+        patch.setattr(model_transcription.sys, "stdin", SimpleNamespace(buffer=replies))
+        patch.setattr(model_transcription.sys, "stdout", requests)
+        with Image.new("RGB", (100, 100)) as image:
+            nodes = asyncio.run(verify(image))
+    request, = [json.loads(line)["model_request"] for line in requests.getvalue().splitlines()]
+    assert request["location"]["page"] == 2
+    assert [(node.text, node.locators[0].page_no, node.parent_key) for node in nodes] == [
+        ("same text", 2, "2"), ("same text", 4, "4"),
+    ]
 
 
 def test_image_exceeding_transcription_transport_keeps_original_and_marks_gap(tmp_path, monkeypatch):

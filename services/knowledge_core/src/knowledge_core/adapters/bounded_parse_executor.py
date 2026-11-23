@@ -16,7 +16,10 @@ from loguru import logger
 from knowledge_algorithms.contracts.errors import AlgorithmError, ErrorCode, require
 from knowledge_algorithms.contracts.wire import encode
 from knowledge_algorithms.parsing.wire import event_from_wire
-from .model_transcription import IMAGE_DIMENSIONS_ERROR, MAX_REQUEST_LINE, ImageDimensionsUnsupported
+from .model_transcription import (
+    IMAGE_DIMENSIONS_ERROR, MAX_REQUEST_LINE, OPTIONAL_BUDGET_ERROR,
+    ImageDimensionsUnsupported, TranscriptionBudgetExhausted,
+)
 
 
 async def _stderr_tail(stream):
@@ -38,6 +41,31 @@ def _safe_label(value):
     return value if isinstance(value, str) and re.fullmatch(r"[a-zA-Z0-9_]{1,64}", value) else "UNKNOWN"
 
 
+class OptionalTranscriptionBudget:
+    """可选区域不得耗尽任务的整形、物化与事件交付时间。"""
+
+    def __init__(self, *, timeout_seconds, deadline):
+        self.deadline = deadline - min(15.0, timeout_seconds * 0.15)
+        self.remaining = timeout_seconds * 0.20
+
+    async def run(self, transcribe):
+        clock = asyncio.get_running_loop().time
+        started = clock()
+        available = min(self.remaining, self.deadline - started)
+        if available <= 0:
+            raise TranscriptionBudgetExhausted()
+        window = asyncio.timeout_at(started + available)
+        try:
+            async with window:
+                return await transcribe()
+        except TimeoutError:
+            if window.expired():
+                raise TranscriptionBudgetExhausted() from None
+            raise
+        finally:
+            self.remaining -= clock() - started
+
+
 class BoundedParseExecutor:
     def __init__(self, *, memory_bytes=536870912, cpu_seconds=120, max_file_bytes=67108864,
                  max_artifact_bytes=134217728, converter_artifacts_path=None, ocr=None, model_transcription=None):
@@ -57,7 +85,7 @@ class BoundedParseExecutor:
                 "该执行器未登记此格式适配器")
         process = stderr_task = None
         try:
-            async with asyncio.timeout(job.profile.timeout_seconds):
+            async with asyncio.timeout(job.profile.timeout_seconds) as deadline:
                 fd = os.open(directory / "source.bin", os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
                 digest, count = sha256(), 0
                 iterator = source.chunks()
@@ -102,6 +130,8 @@ class BoundedParseExecutor:
                 if not enhanced:
                     process.stdin.close()
                 remaining = min(job.profile.max_objects, job.profile.max_pages * 4 + 32)
+                optional_budget = OptionalTranscriptionBudget(timeout_seconds=job.profile.timeout_seconds,
+                                                              deadline=deadline.when())
                 while line := await process.stdout.readline():
                     require(len(line) <= line_limit, "子进程事件超过预算")
                     value = json.loads(line)
@@ -112,13 +142,25 @@ class BoundedParseExecutor:
                             job.run.job_ref, job.run.parse_run_ref, *map(_safe_label, diagnostic))
                         continue
                     if isinstance(value, dict) and set(value) == {"model_request"}:
-                        require(enhanced and remaining > 0, "模型转写次数超过任务预算")
-                        remaining -= 1
+                        require(enhanced, "该任务没有冻结转写模型")
+                        request = value["model_request"]
+                        optional = self._optional_request(job.profile, request)
                         try:
-                            text = await self._transcribe(job, source.context, value["model_request"])
+                            if optional and remaining <= 0:
+                                raise TranscriptionBudgetExhausted()
+                            require(remaining > 0, "模型转写次数超过任务预算")
+                            remaining -= 1
+                            if optional:
+                                text = await optional_budget.run(lambda: self._transcribe(job, source.context, request))
+                            else:
+                                text = await self._transcribe(job, source.context, request)
                             reply = {"text": text}
                         except ImageDimensionsUnsupported:
                             reply = {"error_code": IMAGE_DIMENSIONS_ERROR}
+                        except TranscriptionBudgetExhausted:
+                            logger.info("可选图片补识别预算耗尽，保留原图和已完成内容：job_id={} run_id={}",
+                                        job.run.job_ref, job.run.parse_run_ref)
+                            reply = {"error_code": OPTIONAL_BUDGET_ERROR}
                         process.stdin.write(json.dumps(reply, ensure_ascii=False).encode() + b"\n")
                         await process.stdin.drain()
                         continue
@@ -150,14 +192,22 @@ class BoundedParseExecutor:
                 stderr_task.cancel()
                 await asyncio.gather(stderr_task, return_exceptions=True)
 
-    async def _transcribe(self, job, context, request):
+    @staticmethod
+    def _optional_request(profile, request):
         require(isinstance(request, dict) and set(request) == {"role", "region", "image", "location"},
                 "解析模型子进程协议无效", stage="model_transcription")
+        location = request["location"]
+        require(isinstance(location, dict) and set(location) == {"object", "page", "origin", "width", "height", "optional"}
+                and type(location["optional"]) is bool, "解析模型区域诊断无效")
+        optional = location["optional"]
+        require(not optional or (request["region"] == "figure" and location["origin"] == "CONVERTER_FIGURE"
+                                and profile.allow_partial), "原图或整页转写不得使用可选预算")
+        return optional
+
+    async def _transcribe(self, job, context, request):
         role, region = request["role"], request["region"]
         require(role in {"ocr", "vlm"} and region in {"page", "figure"}, "解析模型区域无效")
         location = request["location"]
-        require(isinstance(location, dict) and set(location) == {"object", "page", "origin", "width", "height"},
-                "解析模型区域诊断无效")
         image = request["image"]
         require(isinstance(image, str) and len(image) >= 32, "解析模型图像诊断无效")
         # 只读 PNG 头的前 24 字节，记录缩放后的实际尺寸，不打开或记录整图。
@@ -166,7 +216,7 @@ class BoundedParseExecutor:
         request_id = str(uuid4())
         key = location["object"]
         metadata = dict(job_id=job.run.job_ref, run_id=job.run.parse_run_ref, request_id=request_id,
-                        role=role, region=region, origin=_safe_label(location["origin"]),
+                        role=role, region=region, origin=_safe_label(location["origin"]), optional=location["optional"],
                         node=key if isinstance(key, str) and re.fullmatch(r"[a-f0-9]{64}", key) else None,
                         page=location["page"] if type(location["page"]) is int else None,
                         original=tuple(location[axis] if type(location[axis]) is int else None
@@ -181,7 +231,8 @@ class BoundedParseExecutor:
             logger.info("视觉模型不接受区域图像尺寸，保留原图和已识别文字：{} code={}", metadata, IMAGE_DIMENSIONS_ERROR)
             raise
         except (Exception, asyncio.CancelledError) as exc:
-            logger.warning("解析模型转写未完成：{} code={} type={} elapsed_ms={}", metadata,
+            level = "INFO" if location["optional"] and isinstance(exc, asyncio.CancelledError) else "WARNING"
+            logger.log(level, "解析模型转写未完成：{} code={} type={} elapsed_ms={}", metadata,
                 exc.code.value if isinstance(exc, AlgorithmError) else "MODEL_CALL_ABORTED",
                 _safe_label(type(exc).__name__), round((monotonic() - started) * 1000))
             raise

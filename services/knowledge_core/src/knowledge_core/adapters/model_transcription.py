@@ -1,6 +1,8 @@
 """隔离转换与模型推理之间的有界协议；子进程不持有服务客户端。"""
 
 import base64
+from collections import OrderedDict
+from hashlib import sha256
 from io import BytesIO
 import json
 import re
@@ -15,6 +17,7 @@ MAX_IMAGE_BYTES = 6 * 1024 * 1024
 MAX_REQUEST_LINE = MAX_IMAGE_BYTES * 4 // 3 + 1024
 MAX_TEXT_BYTES = 65536
 IMAGE_DIMENSIONS_ERROR = "MODEL_IMAGE_DIMENSIONS_UNSUPPORTED"
+OPTIONAL_BUDGET_ERROR = "OPTIONAL_TRANSCRIPTION_BUDGET_EXHAUSTED"
 
 
 class ImageDimensionsUnsupported(Exception):
@@ -23,6 +26,10 @@ class ImageDimensionsUnsupported(Exception):
 
 class TranscriptionImageTooLarge(Exception):
     """单张图超出转写传输大小，已保存的原图不受影响。"""
+
+
+class TranscriptionBudgetExhausted(Exception):
+    """可选区域的识别预算耗尽；原生结果和原图仍可交付。"""
 
 
 def requested_binding(profile, role, region):
@@ -38,15 +45,16 @@ def requested_binding(profile, role, region):
 class WorkerModelTranscriber:
     def __init__(self):
         self.location = {}
+        self.cache = OrderedDict()
 
-    def set_region(self, object_key, page, page_image, native_image):
+    def set_region(self, object_key, page, page_image, native_image, *, optional=False):
         self.location = {
-            "object": object_key, "page": page,
+            "object": object_key, "page": page, "optional": optional,
             "origin": "NATIVE_IMAGE" if native_image else "PAGE_IMAGE" if page_image else "CONVERTER_FIGURE",
         }
 
     async def transcribe_region(self, image, *, profile, role, region):
-        requested_binding(profile, role, region)
+        binding = requested_binding(profile, role, region)
         raw = BytesIO()
         copy = image.copy()
         try:
@@ -58,6 +66,11 @@ class WorkerModelTranscriber:
         require(bool(data), "转写图像编码为空")
         if len(data) > MAX_IMAGE_BYTES:
             raise TranscriptionImageTooLarge()
+        # 只复用本任务同一冻结模型、同一区域类型、同一实际输入；定位按每个原图单独生成。
+        cache_key = (binding, role, region, sha256(data).digest())
+        if cache_key in self.cache:
+            self.cache.move_to_end(cache_key)
+            return self.cache[cache_key]
         request = {"model_request": {"role": role, "region": region, "image": base64.b64encode(data).decode("ascii"),
                                      "location": {**self.location, "width": image.width, "height": image.height}}}
         sys.stdout.write(json.dumps(request, separators=(",", ":")) + "\n")
@@ -65,6 +78,9 @@ class WorkerModelTranscriber:
         response = sys.stdin.buffer.readline(MAX_TEXT_BYTES * 6 + 1024)
         require(bool(response) and response.endswith(b"\n"), "模型转写回执不存在或超过预算")
         result = json.loads(response)
+        if result == {"error_code": OPTIONAL_BUDGET_ERROR}:
+            require(self.location["optional"], "必须识别的区域不能用可选预算跳过")
+            raise TranscriptionBudgetExhausted()
         if result == {"error_code": IMAGE_DIMENSIONS_ERROR}:
             require(role == "vlm", "非视觉模型返回了不支持的尺寸回执")
             raise ImageDimensionsUnsupported()
@@ -72,7 +88,11 @@ class WorkerModelTranscriber:
         text = result.get("text")
         require(isinstance(text, str) and len(text.encode("utf-8")) <= min(profile.max_text_bytes, MAX_TEXT_BYTES),
                 "模型转写内容无效或超过预算")
-        return text.strip()
+        text = text.strip()
+        self.cache[cache_key] = text
+        if len(self.cache) > 32:
+            self.cache.popitem(last=False)
+        return text
 
 
 class AuthorizedModelTranscription:

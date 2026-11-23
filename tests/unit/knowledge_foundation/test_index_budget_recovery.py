@@ -119,7 +119,8 @@ def test_model_call_diagnostics_correlate_request_without_logging_image():
     try:
         with pytest.raises(RuntimeError):
             asyncio.run(executor._transcribe(job, context, {"role": "vlm", "region": "figure", "image": encoded,
-                "location": {"object": "a" * 64, "origin": "CONVERTER_FIGURE", "page": 2, "width": 963, "height": 2}}))
+                "location": {"object": "a" * 64, "origin": "CONVERTER_FIGURE", "page": 2,
+                             "width": 963, "height": 2, "optional": False}}))
     finally:
         logger.remove(sink)
     request_id = call.await_args.args[1].request_id

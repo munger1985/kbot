@@ -18,7 +18,9 @@ from knowledge_algorithms.parsing.events import ParseArtifact, local_key
 from knowledge_algorithms.parsing.formats import DOCUMENT_TYPES, IMAGE_TYPES, OFFICE_TYPES
 from knowledge_algorithms.references.figures import extract_figure_references
 from .markdown_parsing import guarded_markdown_backend, validate_markdown
-from .model_transcription import ImageDimensionsUnsupported, TranscriptionImageTooLarge, WorkerModelTranscriber
+from .model_transcription import (
+    ImageDimensionsUnsupported, TranscriptionBudgetExhausted, TranscriptionImageTooLarge, WorkerModelTranscriber,
+)
 from .pdf_text_spacing import REVISION as PDF_SPACING_REVISION, restore_pdf_word_spacing
 
 
@@ -120,14 +122,22 @@ def image_asset(image, source, run, profile, *, figure, locator, provenance, wri
 class RegionTranscription:
     nodes: tuple[ContentNode, ...] = ()
     image_input_unsupported: bool = False
+    budget_exhausted: bool = False
+
+    @property
+    def incomplete(self):
+        return self.image_input_unsupported or self.budget_exhausted
 
 
-def is_office_separator(image, item, mime, *, is_page_image):
-    """仅过滤无语义标记且像素形态明确的 Office 线条。"""
+def has_visual_evidence(item):
     label = getattr(item.label, "value", item.label)
-    if (mime not in OFFICE_TYPES or is_page_image or label != "picture"
-            or any(getattr(item, name, None) for name in
-                   ("captions", "references", "footnotes", "children", "meta", "text"))):
+    return label != "picture" or any(getattr(item, name, None) for name in
+        ("captions", "references", "footnotes", "children", "meta", "text"))
+
+
+def is_decorative_separator(image, item, *, is_page_image):
+    """只跳过无语义标记、像素形态明确的装饰线，不把小图一律视为装饰。"""
+    if is_page_image or has_visual_evidence(item):
         return False
     short, long = sorted(image.size)
     if not (0 < short <= 4 and short * 64 <= long <= 8192):
@@ -142,12 +152,14 @@ def is_office_separator(image, item, mime, *, is_page_image):
     return True
 
 
-async def transcribe_nodes(image, source, run, profile, *, figure, transcriber, max_nodes, complex_layout=False):
+async def transcribe_nodes(image, source, run, profile, *, figure, transcriber, max_nodes,
+                           complex_layout=False, optional=False, visual_evidence=True):
     if transcriber is None or "OCR" not in profile.repair_strategies:
         return RegionTranscription()
     if profile.ocr_model is not None:
         return await bound_transcription_nodes(image, source, run, profile, figure=figure,
-                                               transcriber=transcriber, max_nodes=max_nodes, complex_layout=complex_layout)
+            transcriber=transcriber, max_nodes=max_nodes, complex_layout=complex_layout,
+            optional=optional, visual_evidence=visual_evidence)
     lines = await transcriber.transcribe(image, profile=profile)
     require(len(lines) <= max_nodes, "OCR 区域超过节点预算")
     result = []
@@ -172,27 +184,35 @@ def readable(text, profile):
     return any(char.isalnum() for char in text) and bad / max(len(text), 1) <= profile.max_bad_char_ratio
 
 
-async def bound_transcription_nodes(image, source, run, profile, *, figure, transcriber, max_nodes, complex_layout=False):
+async def bound_transcription_nodes(image, source, run, profile, *, figure, transcriber, max_nodes,
+                                    complex_layout=False, optional=False, visual_evidence=True):
     locator = figure.locators[0]
     box = locator.bbox
     full_page = figure.kind == ContentKind.PAGE or (box is not None and (box[2] - box[0]) * (box[3] - box[1]) >= 0.9)
     region = "page" if full_page else "figure"
     if isinstance(transcriber, WorkerModelTranscriber):
         transcriber.set_region(figure.key.object_key, locator.page_no, figure.kind == ContentKind.PAGE,
-                               source.descriptor.mime_type in IMAGE_TYPES)
+                               source.descriptor.mime_type in IMAGE_TYPES, optional=optional)
     try:
         text = await transcriber.transcribe_region(image, profile=profile, role="ocr", region=region)
     except TranscriptionImageTooLarge:
         # OCR 与 VLM 使用同一传输编码和上限，无须重复尝试同一张图。
         return RegionTranscription(image_input_unsupported=True)
+    except TranscriptionBudgetExhausted:
+        return RegionTranscription(budget_exhausted=True)
     transcripts = [(text, profile.ocr_model, ProvenanceKind.OCR)] if readable(text, profile) else []
     image_input_unsupported = False
+    budget_exhausted = False
+    # 可靠的原生内容已覆盖时，OCR 空结果不等于有文字缺口。仅凭它不触发自动档 VLM。
+    needs_visual = profile.strategy == "VISUAL" or not optional or visual_evidence or bool(text.strip())
     if (profile.vlm_model is not None and (not full_page or profile.strategy == "VISUAL")
-            and (not transcripts or (complex_layout and profile.strategy == "VISUAL"))):
+            and needs_visual and (not transcripts or (complex_layout and profile.strategy == "VISUAL"))):
         try:
             visual = await transcriber.transcribe_region(image, profile=profile, role="vlm", region=region)
         except (ImageDimensionsUnsupported, TranscriptionImageTooLarge):
             image_input_unsupported = True
+        except TranscriptionBudgetExhausted:
+            budget_exhausted = True
         else:
             if readable(visual, profile) and visual != text:
                 transcripts.append((visual, profile.vlm_model, ProvenanceKind.MODEL_TRANSCRIPTION))
@@ -204,7 +224,7 @@ async def bound_transcription_nodes(image, source, run, profile, *, figure, tran
         result.append(ContentNode(key, ContentKind.PARAGRAPH, value, (locator,),
             Provenance(kind, binding.model_id, binding.revision, source.descriptor.sha256),
             native, figure.reading_order + order + 1, parent_key=figure.key.object_key))
-    return RegionTranscription(tuple(result), image_input_unsupported)
+    return RegionTranscription(tuple(result), image_input_unsupported, budget_exhausted)
 
 
 class NativeImageAdapter:
@@ -237,7 +257,7 @@ class NativeImageAdapter:
 
 class DoclingParsingAdapter:
     mime_types = frozenset(DOCUMENT_TYPES)
-    revision = "docling-native/v1"
+    revision = "docling-native/v2"
 
     def __init__(self, writer, *, converter_factory=None, artifacts_path=None, max_pixels=25000000, transcriber=None):
         self.writer, self.factory, self.artifacts_path = writer, converter_factory, artifacts_path
@@ -340,7 +360,7 @@ class DoclingParsingAdapter:
                     captions[ref.cref] = item.self_ref
         revision = self.revision + "+" + PDF_SPACING_REVISION if mime == "application/pdf" else self.revision
         provenance = Provenance(ProvenanceKind.NATIVE, "docling", revision, source.descriptor.sha256)
-        regions, assets = [], []
+        regions, assets, figures = [], [], []
         table_gaps = set()
         for order, (item, _) in enumerate(entries):
             if item.self_ref not in kinds:
@@ -376,36 +396,19 @@ class DoclingParsingAdapter:
                 parent_key=parent_key, numbering_scope="document", display_label=label, native_anchor=native)
             if profile.strategy is not None and kind == ContentKind.TABLE and not readable(text, profile):
                 table_gaps.update(loc.page_no for loc in locators)
-            regions.append(ExtractedRegion(native, (node,), 1.0))
             if kind == ContentKind.FIGURE:
-                image = item.get_image(document)
-                if image is not None:
-                    try:
-                        require(image.width * image.height <= self.max_pixels, "Docling 图像超过像素预算")
-                        assets.append(image_asset(image, source, run, profile, figure=node, locator=locators[0],
-                                                 provenance=provenance, writer=self.writer))
-                        box = locators[0].bbox
-                        is_page_image = box is not None and (box[2] - box[0]) * (box[3] - box[1]) >= 0.9
-                        if not ((profile.strategy is not None and is_page_image)
-                                or is_office_separator(image, item, mime, is_page_image=is_page_image)):
-                            transcribed = await transcribe_nodes(image, source, run, profile, figure=node,
-                                transcriber=self.transcriber, max_nodes=profile.max_objects - len(regions) - len(assets))
-                            if transcribed.image_input_unsupported:
-                                regions[-1] = ExtractedRegion(native, (node,), 0.0)
-                            regions.extend(ExtractedRegion(text_node.native_ref, (text_node,), 1.0)
-                                           for text_node in transcribed.nodes)
-                    finally:
-                        image.close()
+                figures.append((item, node))
+            else:
+                regions.append(ExtractedRegion(native, (node,), 1.0))
             await asyncio.sleep(0)
         if mime == "application/pdf":
             regions = restore_pdf_word_spacing(raw, regions)
-        covered_pages = {locator.page_no for region in regions for node in region.nodes
-                         if node.kind not in {ContentKind.HEADER, ContentKind.FOOTER} for locator in node.locators}
-        if profile.strategy is not None:
-            covered_pages = {loc.page_no for region in regions for node in region.nodes
-                if node.kind not in {ContentKind.HEADER, ContentKind.FOOTER, ContentKind.FIGURE}
-                and node.provenance.kind == ProvenanceKind.NATIVE
-                and readable(node.text, profile) for loc in node.locators}
+        covered_pages = {loc.page_no for region in regions for node in region.nodes
+            if node.kind not in {ContentKind.HEADER, ContentKind.FOOTER}
+            and (profile.strategy is None or readable(node.text, profile)) for loc in node.locators}
+        if profile.strategy is None:
+            covered_pages.update(loc.page_no for _, node in figures for loc in node.locators)
+        # 缺文字页先于可选插图补识别。已覆盖的复杂页仍可按视觉增强档整页补强。
         for number, page in sorted(pages.items()):
             complex_layout = number in table_gaps
             if number in covered_pages and not (profile.strategy == "VISUAL" and complex_layout):
@@ -427,9 +430,53 @@ class DoclingParsingAdapter:
                     transcriber=self.transcriber, max_nodes=profile.max_objects-len(regions)-len(assets)-1,
                     complex_layout=complex_layout)
                 coverage = 1.0 if profile.strategy is None or transcribed.nodes and not transcribed.image_input_unsupported else 0.0
+                if coverage:
+                    covered_pages.add(number)
                 regions.append(ExtractedRegion(native, (page_node,), coverage))
                 regions.extend(ExtractedRegion(node.native_ref, (node,), 1.0) for node in transcribed.nodes)
             finally:
                 image.close()
+        logical_text_available = not pages and any(readable(node.text, profile)
+            for region in regions for node in region.nodes if node.kind not in {ContentKind.HEADER, ContentKind.FOOTER})
+
+        def optional_figure(node):
+            return profile.allow_partial and all(
+                logical_text_available if loc.page_no is None else loc.page_no in covered_pages for loc in node.locators
+            )
+
+        optional_budget_exhausted = False
+        # 未覆盖区域及明确有语义线索的图片先处理，节点仍用原始阅读顺序和定位。
+        for item, node in sorted(figures, key=lambda figure: (
+            optional_figure(figure[1]), not has_visual_evidence(figure[0])
+        )):
+            locator = node.locators[0]
+            region = ExtractedRegion(node.native_ref, (node,), 1.0)
+            regions.append(region)
+            image = item.get_image(document)
+            if image is None:
+                continue
+            try:
+                require(image.width * image.height <= self.max_pixels, "Docling 图像超过像素预算")
+                assets.append(image_asset(image, source, run, profile, figure=node, locator=locator,
+                                         provenance=provenance, writer=self.writer))
+                box = locator.bbox
+                is_page_image = box is not None and (box[2] - box[0]) * (box[3] - box[1]) >= 0.9
+                if not ((profile.strategy is not None and is_page_image)
+                        or is_decorative_separator(image, item, is_page_image=is_page_image)):
+                    optional = optional_figure(node)
+                    if optional and optional_budget_exhausted:
+                        transcribed = RegionTranscription(budget_exhausted=True)
+                    else:
+                        transcribed = await transcribe_nodes(image, source, run, profile, figure=node,
+                            transcriber=self.transcriber, max_nodes=profile.max_objects - len(regions) - len(assets),
+                            optional=optional, visual_evidence=has_visual_evidence(item))
+                    if transcribed.incomplete:
+                        regions[-1] = ExtractedRegion(node.native_ref, (node,), 0.0)
+                    optional_budget_exhausted |= transcribed.budget_exhausted
+                    regions.extend(ExtractedRegion(text_node.native_ref, (text_node,), 1.0)
+                                   for text_node in transcribed.nodes)
+            finally:
+                image.close()
+            await asyncio.sleep(0)
         require(bool(regions), "文档没有可定位内容")
         yield ExtractionBatch(page_objects, tuple(regions), tuple(assets))
