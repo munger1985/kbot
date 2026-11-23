@@ -16,6 +16,7 @@ from knowledge_algorithms.retrieval.exact import ExactIndex, IndexedUnit
 from knowledge_algorithms.retrieval.published_batches import PublishedBatch, PublishedVectorBatches
 from knowledge_algorithms.retrieval.published_metadata import PublishedMetadata
 from knowledge_algorithms.retrieval.selection import PayloadCost
+from ..adapters.knowledge_maxsim import prepare_maxsim
 from ..domain.knowledge_ingestion import BINDING
 
 
@@ -24,7 +25,7 @@ async def hydrate_published(bundle, *, store, tokenizer, image_cost, limits):
     assets, text_payloads = {}, {}
     consumed = text_chars = 0
     vectors = PublishedVectorBatches(store=store, max_bytes=limits.max_object_bytes,
-                                     max_elements=limits.max_vector_elements)
+                                     max_elements=limits.max_vector_elements, prepare_multivector=prepare_maxsim)
 
     def account(count):
         nonlocal consumed

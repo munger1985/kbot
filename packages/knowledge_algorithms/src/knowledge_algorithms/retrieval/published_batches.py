@@ -49,8 +49,9 @@ class PublishedBatch:
 
 
 class PublishedVectorBatches:
-    def __init__(self, *, store, max_bytes, max_elements):
+    def __init__(self, *, store, max_bytes, max_elements, prepare_multivector=None):
         self.store, self.max_bytes, self.max_elements = store, max_bytes, max_elements
+        self.prepare_multivector = prepare_multivector
         self._by_space = {}
         self._lock = asyncio.Lock()
 
@@ -60,13 +61,15 @@ class PublishedVectorBatches:
 
     def fork(self):
         # 缓存只复用空间目录。每个检索保留自己的评分锁和解码缓冲区。
-        view = PublishedVectorBatches(store=self.store, max_bytes=self.max_bytes, max_elements=self.max_elements)
+        view = PublishedVectorBatches(store=self.store, max_bytes=self.max_bytes, max_elements=self.max_elements,
+                                      prepare_multivector=self.prepare_multivector)
         view._by_space = self._by_space
         return view
 
     async def search(self, index, request, *, candidate_filter=None):
         spec = request.channel.representation_spec
         hits = []
+        score_multivector = None
         # 同一检索的多个表示空间不同时占用解码缓冲区。
         async with self._lock:
             for batch, positions in self._by_space.get(spec.space_id, ()):
@@ -87,7 +90,12 @@ class PublishedVectorBatches:
                     if elements > self.max_elements:
                         raise AlgorithmError(ErrorCode.RESOURCE_LIMIT, "单个索引批次超过表示预算",
                                              stage="index_batch")
-                    score = vector_score(request, representation)
+                    if request.channel.kind == "MULTIVECTOR" and self.prepare_multivector is not None:
+                        if score_multivector is None:
+                            score_multivector = self.prepare_multivector(request)
+                        score = await score_multivector(representation)
+                    else:
+                        score = vector_score(request, representation)
                     require(math.isfinite(score), "召回分数溢出")
                     hits.append(NativeHit(indexed.key, score))
                     del representation, matches

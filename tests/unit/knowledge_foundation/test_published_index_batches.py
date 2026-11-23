@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import replace
 from pathlib import Path
+from random import Random
 import sys
 
 import pytest
@@ -20,10 +21,11 @@ from knowledge_algorithms.contracts.retrieval import ChannelRequest, ChannelSpec
 from knowledge_algorithms.contracts.wire import encode
 from knowledge_algorithms.projections.builder import ProjectionBuilder
 from knowledge_algorithms.projections.contracts import Representation
-from knowledge_algorithms.retrieval.exact import ExactIndex
+from knowledge_algorithms.retrieval.exact import ExactIndex, vector_score
 from knowledge_algorithms.retrieval.maxsim import TokenMatrix
 from knowledge_algorithms.retrieval.published_metadata import PublishedMetadataCache
 from knowledge_retrieval_app.application.knowledge_hydration import hydrate_published
+from knowledge_retrieval_app.adapters.knowledge_maxsim import prepare_maxsim
 from knowledge_retrieval_app.adapters.knowledge_store import LocalKnowledgeStore
 from knowledge_retrieval_app.domain.knowledge_ingestion import OWNER
 from knowledge_retrieval_app.domain.knowledge_retrieval import RetrievalLimits
@@ -133,7 +135,9 @@ def test_published_vectors_over_cumulative_budget_rank_across_batches(tmp_path, 
         request = ChannelRequest(query, ChannelSpec(kind, kind, kind, "TEXT_TO_TEXT", 1.0, 3, 5, False, specification),
                                  model.output(1., specification, kind))
         hits = await vectors.search(index, request)
-        assert hits == baseline.search(request)
+        expected = baseline.search(request)
+        assert [hit.key for hit in hits] == [hit.key for hit in expected]
+        assert [hit.score for hit in hits] == pytest.approx([hit.score for hit in expected], rel=1e-12, abs=1e-12)
         assert hits[0].key == index.units[2].key and len(store.reads) == 4
         unsupported = replace(query, output_types=("FIGURE",))
         store.reads.clear()
@@ -150,6 +154,41 @@ def test_published_vectors_over_cumulative_budget_rank_across_batches(tmp_path, 
         assert (error.value.code, error.value.stage) == (ErrorCode.RESOURCE_LIMIT, "index_batch")
 
     asyncio.run(verify())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("similarity", ["DOT", "COSINE"])
+async def test_image_maxsim_matches_reference_across_tiles(similarity):
+    rng = Random(7)
+    specification = replace(spec(kind="MULTIVECTOR"), dimension=8, input_kind="IMAGE",
+                            similarity=similarity, directions=frozenset({"IMAGE_TO_IMAGE"}))
+    space = specification.space_id
+
+    def representation(size, offset):
+        # 有效点积始终为负；被掩盖的零向量和高分向量不得参与最大值。
+        rows = tuple(tuple(offset * rng.uniform(.25, 1) for _ in range(specification.dimension)) for _ in range(size))
+        return Representation(space, matrix=TokenMatrix(space, rows + ((0.,) * 8, (-offset,) * 8),
+                                                         (True,) * size + (False, False)))
+
+    query = QueryInput(QueryMode.RELEVANCE, 3, ("FIGURE",), image_handles=("query-image",))
+    channel = ChannelSpec("visual", "visual", "MULTIVECTOR", "IMAGE_TO_IMAGE", 1., 3, 5, False, specification)
+    request = ChannelRequest(query, channel, representation(262, 1.), input_index=0)
+    document = representation(273, -1.)
+    score = prepare_maxsim(request)
+    expected = vector_score(request, document)
+    assert expected < 0
+    assert await score(document) == pytest.approx(expected, rel=1e-12, abs=1e-12)
+    wrong_space = replace(document, matrix=replace(document.matrix, space_id="wrong-space"))
+    with pytest.raises(AlgorithmError) as error:
+        await score(wrong_space)
+    assert error.value.code == ErrorCode.MODEL_SPACE_MISMATCH
+
+    pending = asyncio.create_task(score(document))
+    await asyncio.sleep(0)
+    assert not pending.done(), "单张多 token 图片的计算也必须有取消检查点"
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
 
 
 @pytest.mark.asyncio
