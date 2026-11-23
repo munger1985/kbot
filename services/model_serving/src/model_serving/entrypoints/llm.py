@@ -30,7 +30,7 @@ from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from platform_core.dictionary import LLMProvider
 from model_serving.llm.llm_service import LLMService
-from model_serving.llm.model.oci_client import extract_oci_text_content
+from model_serving.llm.model.oci_client import extract_oci_text_content, normalize_oci_chat_stream_chunk
 from model_serving.llm.model import OpenaiLLMConfig
 from model_serving.llm.schema import *
 from platform_core.platform.port_check import check_port_available
@@ -237,41 +237,19 @@ async def handle_chat_completions(
                             payload["model"] = str(request.model_id)
                             data = json.dumps(payload, ensure_ascii=False)
                         elif isinstance(chunk, dict):
-                            # Check if it's OCI native format and convert to OpenAI format
-                            text = None
-
-                            # 1. OCI Cohere format: {"apiFormat": "COHERE", "text": "Hello", "pad": "..."}
-                            if 'apiFormat' in chunk and chunk.get('apiFormat') == 'COHERE':
-                                text = chunk.get('text', '')
-
-                            # 2. OCI Generic/Grok format: {"index": 0, "message": {"role": "ASSISTANT", "content": [{"type": "TEXT", "text": "Hello"}]}, "pad": "..."}
-                            elif 'message' in chunk and isinstance(chunk.get('message'), dict):
-                                message = chunk['message']
-                                text = extract_oci_text_content(message.get('content', []))
-
-                            if text is not None:
-                                # Convert to OpenAI standard format
-                                openai_chunk = {
+                            if provider == LLMProvider.OCI.value:
+                                payload = {
                                     "id": resp_id,
                                     "object": "chat.completion.chunk",
                                     "created": created_ts,
                                     "model": str(request.model_id),
-                                    "choices": [
-                                        {
-                                            "index": 0,
-                                            "delta": {"content": text},
-                                            "finish_reason": None
-                                        }
-                                    ]
+                                    **normalize_oci_chat_stream_chunk(chunk),
                                 }
-                                data = json.dumps(openai_chunk, ensure_ascii=False)
                             else:
                                 payload = dict(chunk)
-                                if str(payload.get("object", "")).startswith(
-                                    "chat.completion"
-                                ):
+                                if str(payload.get("object", "")).startswith("chat.completion"):
                                     payload["model"] = str(request.model_id)
-                                data = json.dumps(payload, ensure_ascii=False)
+                            data = json.dumps(payload, ensure_ascii=False)
                         else:
                             data = str(chunk)
 
@@ -279,8 +257,8 @@ async def handle_chat_completions(
 
                     yield "data: [DONE]\n\n"
                 except Exception as stream_err:
-                    logger.exception(f"Streaming response interrupted: {stream_err}")
-                    yield f"data: {json.dumps({'error': str(stream_err)})}\n\n"
+                    logger.warning("文本模型流式响应中断 | error_type={}", type(stream_err).__name__)
+                    yield 'data: {"error":"MODEL_STREAM_FAILED"}\n\n'
                     yield "data: [DONE]\n\n"
 
             return StreamingResponse(

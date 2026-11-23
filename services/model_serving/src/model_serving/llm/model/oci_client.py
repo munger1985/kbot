@@ -90,6 +90,67 @@ def extract_oci_text_content(content_items: Any) -> str:
             text_parts.append(text)
     return "".join(text_parts)
 
+
+def normalize_oci_chat_stream_chunk(chunk: dict[str, Any]) -> dict[str, Any]:
+    """将 OCI 的正文、结束原因和独立用量帧统一成 ChatCompletionChunk。"""
+    if "error" in chunk:
+        raise ValueError("OCI 聊天流返回错误帧")
+    if "choices" in chunk:
+        choices = chunk["choices"]
+        if not isinstance(choices, list):
+            raise ValueError("OCI 聊天流的候选格式无效")
+    elif {"message", "finishReason", "finish_reason"} & chunk.keys() or (
+        chunk.get("apiFormat") == "COHERE" and "text" in chunk
+    ):
+        choices = [chunk]
+    elif "usage" in chunk or (chunk and set(chunk) <= {"apiFormat", "index", "pad"}):
+        choices = []
+    else:
+        raise ValueError("OCI 聊天流帧格式无效")
+
+    normalized = []
+    for choice in choices:
+        if not isinstance(choice, dict):
+            raise ValueError("OCI 聊天流的候选格式无效")
+        reason = choice.get("finish_reason", choice.get("finishReason"))
+        if reason is not None:
+            if not isinstance(reason, str):
+                raise ValueError("OCI 聊天流的结束原因格式无效")
+            reason = {"complete": "stop", "max_tokens": "length",
+                      "error_toxic": "content_filter"}.get(reason.lower(), reason.lower())
+        if "delta" in choice:
+            delta = choice["delta"]
+            if not isinstance(delta, dict):
+                raise ValueError("OCI 聊天流的增量格式无效")
+        elif choice.get("message") is not None:
+            message = choice["message"]
+            if not isinstance(message, dict):
+                raise ValueError("OCI 聊天流的消息格式无效")
+            content = message.get("content")
+            if content is not None and not isinstance(content, (str, list)):
+                raise ValueError("OCI 聊天流的正文格式无效")
+            text = content if isinstance(content, str) else extract_oci_text_content(content)
+            delta = {"content": text} if text else {}
+        elif choice.get("apiFormat") == "COHERE" and "text" in choice:
+            text = choice["text"]
+            if not isinstance(text, str):
+                raise ValueError("OCI 聊天流的正文格式无效")
+            delta = {"content": text}
+        elif reason is not None:
+            delta = {}
+        else:
+            raise ValueError("OCI 聊天流的候选缺少消息或结束原因")
+        normalized.append({"index": choice.get("index", 0), "delta": delta, "finish_reason": reason})
+
+    result = {"choices": normalized}
+    usage = chunk.get("usage")
+    if isinstance(usage, dict):
+        names = {"prompt_tokens": "promptTokens", "completion_tokens": "completionTokens",
+                 "total_tokens": "totalTokens"}
+        result["usage"] = {name: value for name, native in names.items()
+                           if type(value := usage.get(name, usage.get(native))) is int and value >= 0}
+    return result
+
 class OCILLMConfig(LLMConfig):
     """Configuration class for OCI Generative AI LLM client.
     

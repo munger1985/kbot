@@ -202,6 +202,8 @@ class LLMService:
                         try:
                             # OCI SDK uses event stream with JSON payloads
                             for event in response.data.events():  # type: ignore
+                                if event.data.strip() == "[DONE]":
+                                    break
                                 output = json.loads(event.data)
                                 yield output
                         except Exception as e:
