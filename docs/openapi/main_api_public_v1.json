@@ -11178,6 +11178,7 @@
         "additionalProperties": true,
         "properties": {
           "blockers": {
+            "description": "资料及 Agent 版本引用不阻止归档，当前返回空列表。",
             "items": {
               "enum": [
                 "ASSET_RECORDS",
@@ -38190,8 +38191,8 @@
           "400": {
             "description": "Malformed If-Match"
           },
-          "409": {
-            "description": "Protected dependency"
+          "404": {
+            "description": "Library not found or archived"
           },
           "412": {
             "description": "Library version changed"
@@ -38210,7 +38211,7 @@
             "description": "If-Match required"
           }
         },
-        "summary": "Delete Operations Knowledge Base",
+        "summary": "归档运维知识库",
         "tags": [
           "AIOps App"
         ]

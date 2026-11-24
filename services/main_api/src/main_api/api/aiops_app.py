@@ -591,7 +591,8 @@ async def update_operations_knowledge_base(
 @router.delete(
     "/operations-knowledge/knowledge-bases/{knowledge_base_id}",
     status_code=204,
-    responses={400: {"description": "Malformed If-Match"}, 409: {"description": "Protected dependency"},
+    summary="归档运维知识库",
+    responses={400: {"description": "Malformed If-Match"}, 404: {"description": "Library not found or archived"},
                412: {"description": "Library version changed"}, 428: {"description": "If-Match required"}},
 )
 async def delete_operations_knowledge_base(
@@ -601,7 +602,7 @@ async def delete_operations_knowledge_base(
 ):
     await _require(request, "aiops:knowledge_manage")
     if if_match is None:
-        raise HTTPException(428, {"code": "PRECONDITION_REQUIRED", "message": "删除知识库必须提供 If-Match"})
+        raise HTTPException(428, {"code": "PRECONDITION_REQUIRED", "message": "归档知识库必须提供 If-Match"})
     try:
         version = parse_delete_version(if_match)
     except ValueError as exc:

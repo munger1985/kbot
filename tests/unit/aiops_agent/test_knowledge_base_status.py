@@ -1,4 +1,4 @@
-"""知识库启停只改变使用资格，保留模型配置、资料、索引和绑定。"""
+"""知识库启停和归档保留模型配置、资料、索引和绑定。"""
 import asyncio
 import importlib
 from contextlib import asynccontextmanager
@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
-from aiops_agent.application.errors import AIOpsApplicationError, KnowledgeBaseReferenceConflict
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.contracts.knowledge import KnowledgeBaseStatusCommand
 from aiops_agent.entities import OperationsKnowledgeBaseEntity
 from platform_clients.aiops import AIOpsManagementClient
@@ -129,29 +129,26 @@ def test_public_client_internal_route_preserves_scope_permission_and_version(mon
     asyncio.run(run())
 
 
-@pytest.mark.parametrize(("dependency", "expected"), [
-    ("assets", 409), ("current_agent_versions", 409), ("historical_agent_versions", 409),
-    ("stale", 412), (None, 204),
-])
-def test_delete_rechecks_dependencies_only_after_lock_and_version_check(dependency, expected):
+@pytest.mark.parametrize("status", ["ACTIVE", "DISABLED"])
+def test_archive_keeps_configuration_assets_and_agent_version_references(status):
     async def run():
-        f = fixture(status="DISABLED", version=8 if dependency == "stale" else 7)
-        usage = {key: int(key == dependency) for key in ("assets", "current_agent_versions", "historical_agent_versions")}
-        order = []
-        f.repo.get_knowledge_base.side_effect = lambda **kwargs: order.append("lock") or f.row
-        f.repo.knowledge_base_usage = AsyncMock(side_effect=lambda **_: order.append("usage") or usage)
-        f.repo.delete_knowledge_base = AsyncMock(side_effect=lambda _: order.append("delete"))
-        f.uow.commit.side_effect = lambda: order.append("commit")
-        if expected != 204:
-            with pytest.raises(AIOpsApplicationError) as error:
-                await f.service.delete_knowledge_base(**f.kwargs)
-            assert error.value.status_code == expected
-            f.uow.commit.assert_not_awaited()
-        else:
-            await f.service.delete_knowledge_base(**f.kwargs)
-        assert f.repo.get_knowledge_base.await_args.kwargs["for_update"]
-        assert order == (["lock", "usage", "delete", "commit"] if expected == 204
-            else ["lock", "usage"] if expected == 409 else ["lock"])
+        f = fixture(status)
+        original = deepcopy(f.row.configuration_json)
+        f.repo.knowledge_base_usage = AsyncMock(return_value={
+            "assets": 3, "current_agent_versions": 2, "historical_agent_versions": 6})
+        f.repo.delete_knowledge_base = AsyncMock()
+        await f.service.archive_knowledge_base(**f.kwargs)
+        assert f.row.status == "ARCHIVED"
+        assert f.row.configuration_json == original
+        assert f.row.updated_by == (str(f.actor) if ORACLE else f.actor)
+        assert f.row.updated_at is not None
+        if ORACLE:
+            assert f.row.row_version == 8
+        f.repo.get_knowledge_base.assert_awaited_once_with(
+            domain_id=f.kwargs["domain_id"], knowledge_base_id=f.kwargs["knowledge_base_id"], for_update=True)
+        f.repo.knowledge_base_usage.assert_not_awaited()
+        f.repo.delete_knowledge_base.assert_not_awaited()
+        f.uow.commit.assert_awaited_once()
     asyncio.run(run())
 
 
@@ -179,15 +176,32 @@ def test_public_delete_requires_strong_version_etag(monkeypatch, if_match, expec
     asyncio.run(run())
 
 
-def test_delete_maps_final_foreign_key_protection_without_committing():
+@pytest.mark.parametrize("mode,code", [("stale", 412), ("missing", 404), ("archived", 404)])
+def test_archive_rejects_stale_or_unavailable_library_without_changes(mode, code):
     async def run():
-        f = fixture()
-        f.repo.knowledge_base_usage = AsyncMock(return_value={
-            "assets": 0, "current_agent_versions": 0, "historical_agent_versions": 0})
-        f.repo.delete_knowledge_base = AsyncMock(side_effect=KnowledgeBaseReferenceConflict)
+        f = fixture("ARCHIVED" if mode == "archived" else "ACTIVE",
+            8 if mode == "stale" else 7, mode == "missing")
+        original = dict(vars(f.row))
         with pytest.raises(AIOpsApplicationError) as error:
-            await f.service.delete_knowledge_base(**f.kwargs)
-        assert error.value.status_code == 409
-        assert error.value.code == "AIOPS_KNOWLEDGE_BASE_IN_USE"
+            await f.service.archive_knowledge_base(**f.kwargs)
+        assert error.value.status_code == code
+        assert vars(f.row) == original
         f.uow.commit.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_internal_delete_delegates_to_archive(monkeypatch):
+    async def run():
+        internal = importlib.import_module("aiops_agent.api.operations_knowledge")
+        context, identity = object(), uuid7()
+        tenant = uuid7()
+        domain = 1 if ORACLE else uuid7()
+        service = SimpleNamespace(archive_knowledge_base=AsyncMock())
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(operations_knowledge_service=service)))
+        monkeypatch.setattr(internal, "_scope", lambda *_: (domain, "actor") if ORACLE else (tenant, domain, uuid7()))
+        await internal.delete_knowledge_base(identity, internal.KnowledgeBaseDeletePayload(expected_row_version=7),
+            request, context)
+        scope = {} if ORACLE else {"tenant_id": tenant}
+        service.archive_knowledge_base.assert_awaited_once_with(domain_id=domain, knowledge_base_id=identity,
+            expected_row_version=7, context=context, **scope)
     asyncio.run(run())

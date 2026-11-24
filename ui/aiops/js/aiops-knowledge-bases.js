@@ -14,8 +14,6 @@
   const indexLabels = { EMPTY: "暂无资料", NOT_READY: "索引待就绪", PARTIAL: "部分资料已就绪", READY: "索引就绪", ERROR: "索引异常" };
   const directionLabels = { TEXT_TO_TEXT: "文本搜文本", TEXT_TO_IMAGE: "文本搜图", IMAGE_TO_TEXT: "图搜文本", IMAGE_TO_IMAGE: "图搜图" };
   const taggingLabel = (state) => capabilityLabels[state] || "未配置";
-  const blockerLabels = { ASSET_RECORDS: "仍有运维资料", CURRENT_AGENT_VERSION: "仍被当前 Agent 版本引用", HISTORICAL_AGENT_VERSION: "仍被历史 Agent 版本引用" };
-  const blockerReason = (row) => (row.blockers || []).map(code => blockerLabels[code] || "仍有保留依赖").join("；");
 
   async function loadModelCatalog() {
     const catalog = await KBotAIOpsAuth.request("/api/v1/model-catalog");
@@ -104,9 +102,6 @@
     const visible = rows.filter((item) => !keyword || [item.display_name, item.description, item.knowledge_base_id].some((value) => String(value || "").toLocaleLowerCase().includes(keyword)));
     document.getElementById("knowledge-base-count").textContent = `${visible.length} 项`;
     const cards = visible.map((item) => {
-      const reason = blockerReason(item);
-      const dependentLinks = (item.blockers || []).includes("ASSET_RECORDS") ? '<a class="row-action" href="./operations-knowledge.html">查看运维资料库</a>' : "";
-      const agentLink = (item.blockers || []).some(code => code === "CURRENT_AGENT_VERSION" || code === "HISTORICAL_AGENT_VERSION") ? '<a class="row-action" href="./agents.html">查看 Agent 管理</a>' : "";
       return `<article class="management-catalog-card knowledge-base-card${item.status === 'ACTIVE' ? '' : ' is-disabled'}">
         <header><div><p class="eyebrow">运维知识库</p><h3 title="${shell.escape(item.display_name)}">${shell.escape(item.display_name)}</h3></div><span class="status-pill ${item.status === 'ACTIVE' ? 'status-success' : 'status-muted'}">${item.status === 'ACTIVE' ? '启用' : '停用'}</span></header>
         <div class="aiops-catalog-card-body">
@@ -115,7 +110,7 @@
           <dl><div><dt>运维资料</dt><dd>${Number(item.usage?.assets || 0)} 份</dd></div><div><dt>Agent 版本引用</dt><dd>当前 ${Number(item.usage?.current_agent_versions || 0)} · 历史 ${Number(item.usage?.historical_agent_versions || 0)}</dd></div></dl>
           <p class="knowledge-base-updated">更新于 <time datetime="${shell.escape(item.updated_at)}">${shell.escape(shell.fmt(item.updated_at))}</time></p>
         </div>
-        <footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions"><button class="row-action" type="button" data-edit="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>编辑</button><button class="row-action" type="button" data-toggle-status="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>${item.status === 'ACTIVE' ? '停用' : '启用'}</button></div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" type="button" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden><button class="danger-row-action" type="button" data-delete="${shell.escape(item.knowledge_base_id)}" ${saving || reason ? 'disabled' : ''} title="${shell.escape(reason || '删除知识库')}">删除</button>${reason ? `<small>${shell.escape(reason)}</small>` : ""}${dependentLinks}${agentLink}</div></div></footer>
+        <footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions"><button class="row-action" type="button" data-edit="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>编辑</button><button class="row-action" type="button" data-toggle-status="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>${item.status === 'ACTIVE' ? '停用' : '启用'}</button></div><div class="management-catalog-overflow"><button class="row-action management-catalog-more" type="button" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden><button class="danger-row-action" type="button" data-archive="${shell.escape(item.knowledge_base_id)}" ${saving ? 'disabled' : ''}>归档</button></div></div></footer>
       </article>`;
     }).join("");
     body.innerHTML = `<div class="management-catalog-grid"><button id="create-knowledge-base" class="management-catalog-add-card" type="button"><span class="management-catalog-add-mark" aria-hidden="true">+</span><strong>新建知识库</strong><small>为运维资料创建独立的知识索引空间</small></button>${cards}</div>${visible.length ? '' : `<p class="empty-cell" role="status">${keyword ? '没有匹配的知识库，请调整搜索条件。' : '当前 Domain 还没有运维知识库。'}</p>`}`;
@@ -180,17 +175,17 @@
     catch (error) { document.getElementById("knowledge-base-result").textContent = error.message; document.getElementById("knowledge-base-result").hidden = false; }
     finally { saving = false; updateSaveState(); render(); }
   }
-  async function remove(row) {
-    if (saving || blockerReason(row)) return;
-    if (!await shell.confirmAction({ title: "删除知识库？", message: `确认删除知识库“${row.display_name}”？只有没有资料且不被任何当前或历史 Agent 版本引用的知识库可以删除。`, confirmLabel: "删除知识库", tone: "danger" })) return;
+  async function archive(row) {
+    if (saving) return;
+    if (!await shell.confirmAction({ title: "归档运维知识库？", message: `归档“${row.display_name}”后，它将从知识库目录移除，不能再上传新资料或供 Agent 检索。已有资料、索引和 Agent 版本绑定会保留。`, confirmLabel: "归档知识库", tone: "danger" })) return;
     if (saving) return;
     saving = true;
     render();
-    try { await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(row.knowledge_base_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${row.row_version}"` } }); shell.toast("知识库已删除"); await load(); }
+    try { await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(row.knowledge_base_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${row.row_version}"` } }); shell.toast("知识库已归档"); await load(); }
     catch (error) {
-      if ([409, 412].includes(error.status)) {
+      if (error.status === 404 || error.status === 412) {
         await load().catch(refreshError => shell.toast(refreshError.message));
-        shell.toast(error.status === 409 ? "知识库仍有引用，未删除，请查看当前阻塞原因。" : "知识库版本已变化，未删除，请重新确认。");
+        shell.toast(error.status === 404 ? "知识库已不可用，目录已刷新。" : "知识库版本已变化，未归档，请重新确认。");
       } else shell.toast(error.message);
     } finally { saving = false; render(); }
   }
@@ -237,7 +232,7 @@
       if (event.target.closest("#create-knowledge-base")) { void open().catch((error) => shell.toast(error.message)); return; }
       const toggle = event.target.closest('[data-toggle-status]');
       if (toggle && !toggle.disabled) { const row = rows.find(item => item.knowledge_base_id === toggle.dataset.toggleStatus); if (row) void toggleStatus(row); return; }
-      const edit = event.target.closest("[data-edit]"); const deletion = event.target.closest("[data-delete]"); const id = edit?.dataset.edit || deletion?.dataset.delete; const row = rows.find((item) => item.knowledge_base_id === id); if (edit && row) void open(row).catch((error) => shell.toast(error.message)); if (deletion && row && !deletion.disabled) void remove(row);
+      const edit = event.target.closest("[data-edit]"); const archiveButton = event.target.closest("[data-archive]"); const id = edit?.dataset.edit || archiveButton?.dataset.archive; const row = rows.find((item) => item.knowledge_base_id === id); if (edit && row) void open(row).catch((error) => shell.toast(error.message)); if (archiveButton && row && !archiveButton.disabled) void archive(row);
     };
     try { await load(); } catch (error) { shell.toast(error.message); }
   });

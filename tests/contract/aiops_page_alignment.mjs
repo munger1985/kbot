@@ -29,7 +29,7 @@ const fixture = {
   permissions,
   system: { business_system_id: "system-1", system_code: "MES", display_name: "MES 生产系统", environment: "PROD", importance_level: 3, status: "ENABLED", protection_status: "CONFIGURED", resource_count: 2, resource_type_summary: [{ resource_type_key: "DATABASE", display_name: "数据库", count: 2 }], architecture_labels: ["RAC"], responsibility_group_id: "group-1", row_version: 1, updated_at: "2026-10-30T03:00:00Z" },
   group: { responsibility_group_id: "group-1", name: "生产数据库组", description: "核心业务数据库保障", status: "ACTIVE", lead_user_id: "user-1", active_member_count: 2, row_version: 1, members: [{user_id:'user-1',member_role:'LEAD',status:'ACTIVE',active_work_item_count:0},{user_id:'user-2',member_role:'MEMBER',status:'ACTIVE',active_work_item_count:1}] },
-  knowledgeBase: { knowledge_base_id: "kb-1", display_name: "Oracle 运维手册", description: "生产数据库操作规程", status: "ACTIVE", usage: { assets: 3, current_agent_versions: 1, historical_agent_versions: 0 }, blockers: ["ASSET_RECORDS", "CURRENT_AGENT_VERSION"], row_version: 1, updated_at: "2026-10-30T03:00:00Z" },
+  knowledgeBase: { knowledge_base_id: "kb-1", display_name: "Oracle 运维手册", description: "生产数据库操作规程", status: "ACTIVE", usage: { assets: 3, current_agent_versions: 1, historical_agent_versions: 6 }, blockers: [], row_version: 1, updated_at: "2026-10-30T03:00:00Z" },
   tag: { tag_id: "tag-1", category: "TECHNOLOGY_STACK", display_name: "Oracle Database", description: "Oracle 数据库技术", sort_order: 1, status: "ACTIVE", row_version: 1 },
   agent: { agent_id: "agent-1", display_name: "统一运维助手", description: "生产数据库诊断", status: "ACTIVE", version_no: 1, allowed_business_system_ids: ["system-1"], capabilities: ["MONITORING_QUERY", "RESOURCE_CATALOG_QUERY"], knowledge_policy: { enabled: false }, execution_policy: { monitoring_enabled: true, readonly_database_enabled: false, change_database_enabled: false }, auto_trigger_policy: { enabled: false }, models: {}, updated_at: "2026-10-30T03:00:00Z" },
   diagnosisCase: { asset_id: 'case-1', display_name: '归档空间告警诊断', case_kind: 'DIAGNOSTIC_REFERENCE', problem_class: '归档空间', database_type: 'ORACLE', database_version: '19c', topology: 'RAC', source_report_id: 'report-1', status: 'PUBLISHED', version_no: 1, security_level: 1, updated_at: '2026-10-30T03:00:00Z' },
@@ -1063,17 +1063,17 @@ try {
         await Promise.all([kbot,reference].map(async page => {
           await page.setViewportSize({width,height:1000});
           const card = page.locator('.knowledge-base-card').first();
-          assert.equal(await card.getByRole('button',{name:'删除',exact:true}).isVisible(),false);
+          assert.equal(await card.getByRole('button',{name:'归档',exact:true}).isVisible(),false);
           await card.getByRole('button',{name:'更多',exact:true}).click();
           assert.equal(await card.getByRole('button',{name:'更多',exact:true}).textContent(),'更多⌄');
-          assert.equal(await card.getByRole('button',{name:'删除',exact:true}).isDisabled(),true);
+          assert.equal(await card.getByRole('button',{name:'归档',exact:true}).isEnabled(),true);
           // 对齐滚动起点，避免点击自动滚动导致相同菜单出现视口坐标差异。
           await page.evaluate(() => {
             document.querySelectorAll('.business-app-content').forEach(node => { node.scrollTop = 0; });
             scrollTo(0,0);
           });
         }));
-        await compareRegions(kbot,reference,['.management-catalog-more','.management-catalog-menu','.management-catalog-menu button'],{page:name,width,empty,state:'delete-menu'});
+        await compareRegions(kbot,reference,['.management-catalog-more','.management-catalog-menu','.management-catalog-menu button'],{page:name,width,empty,state:'archive-menu'});
         for (const page of [kbot,reference]) {
           await page.keyboard.press('Escape');
           await page.locator('.management-catalog-menu:visible').waitFor({state:'hidden'});

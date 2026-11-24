@@ -10,11 +10,7 @@ from uuid import UUID
 FIXTURES = Path(__file__).with_name("fixtures") / "aiops_knowledge_alignment_v1.json"
 STATES = {"NOT_ENABLED", "PENDING_VERIFICATION", "AVAILABLE", "DEGRADED"}
 DIRECTIONS = {"TEXT_TO_TEXT", "TEXT_TO_IMAGE", "IMAGE_TO_TEXT", "IMAGE_TO_IMAGE"}
-USAGE_REASONS = {
-    "assets": "ASSET_RECORDS",
-    "current_agent_versions": "CURRENT_AGENT_VERSION",
-    "historical_agent_versions": "HISTORICAL_AGENT_VERSION",
-}
+USAGE_FIELDS = {"assets", "current_agent_versions", "historical_agent_versions"}
 PRIVATE_KEYS = {"query_ticket", "ticket_id", "scope_ref", "scope_hash", "cursor", "continuation"}
 
 
@@ -109,15 +105,13 @@ def validate_search(payload):
 
 def validate_usage(payload):
     usage = payload["usage"]
-    require(set(USAGE_REASONS) <= set(usage), "missing protected dependency count")
-    for name in USAGE_REASONS:
+    require(USAGE_FIELDS <= set(usage), "missing usage count")
+    for name in USAGE_FIELDS:
         require(type(usage[name]) is int and usage[name] >= 0, "invalid usage count")
-    expected = {reason for name, reason in USAGE_REASONS.items() if usage[name]}
-    require(set(payload["blockers"]).intersection(USAGE_REASONS.values()) == expected,
-            "usage and blockers disagree")
+    require(payload["blockers"] == [], "archive is not blocked by references")
 
 
-def deletion_outcome(if_match, row_version, blockers):
+def archive_outcome(if_match, row_version):
     """核权并取得目标库之后的错误优先级示例；不模拟数据库锁。"""
     if if_match is None:
         return {"status": 428, "code": "PRECONDITION_REQUIRED"}
@@ -126,8 +120,6 @@ def deletion_outcome(if_match, row_version, blockers):
         return {"status": 400}
     if int(match[1]) != row_version:
         return {"status": 412, "code": "STATE_VERSION_CONFLICT"}
-    if blockers:
-        return {"status": 409, "code": "AIOPS_KNOWLEDGE_BASE_IN_USE", "blockers": blockers}
     return {"status": 204}
 
 
@@ -161,13 +153,13 @@ class TestAIOpsKnowledgeAlignmentStage0(unittest.TestCase):
     def test_primary_related_coverage_and_no_match(self):
         self.check_cases("search", lambda case: validate_search(case["payload"]))
 
-    def test_current_history_and_asset_blockers(self):
+    def test_usage_does_not_block_archive(self):
         self.check_cases("usage", lambda case: validate_usage(case["payload"]))
 
-    def test_delete_status_and_precondition_priority(self):
-        for case in self.cases["deletion"]:
+    def test_archive_status_and_precondition_priority(self):
+        for case in self.cases["archive"]:
             with self.subTest(case=case["name"]):
-                response = deletion_outcome(case["if_match"], case["row_version"], case["blockers"])
+                response = archive_outcome(case["if_match"], case["row_version"])
                 self.assertEqual(response, case["expected"])
 
 

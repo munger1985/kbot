@@ -288,6 +288,9 @@ class OperationsKnowledgeRepositoryTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual({"assets": 3, "current_agent_versions": 2, "historical_agent_versions": 5}, usage)
         self.assertNotIn("knowledge_assistants", usage)
+        query = session.execute.await_args.args[0]
+        self.assertIn("status !=", str(query))
+        self.assertIn("ARCHIVED", query.compile().params.values())
 
     async def test_asset_version_flushes_parent_rows_before_dependents(self):
         session = _OrderedFlushSession()

@@ -486,9 +486,7 @@
           "current_agent_versions": 0,
           "historical_agent_versions": 1
         },
-        "blockers": [
-          "HISTORICAL_AGENT_VERSION"
-        ]
+        "blockers": []
       }
     },
     {
@@ -499,9 +497,7 @@
           "current_agent_versions": 1,
           "historical_agent_versions": 0
         },
-        "blockers": [
-          "CURRENT_AGENT_VERSION"
-        ]
+        "blockers": []
       }
     },
     {
@@ -512,56 +508,37 @@
           "current_agent_versions": 0,
           "historical_agent_versions": 0
         },
-        "blockers": [
-          "ASSET_RECORDS"
-        ]
+        "blockers": []
       }
     },
     {
-      "name": "reject_hidden_history_blocker",
+      "name": "reject_history_as_archive_blocker",
       "payload": {
         "usage": {
           "assets": 0,
           "current_agent_versions": 0,
           "historical_agent_versions": 1
         },
-        "blockers": []
+        "blockers": [
+          "HISTORICAL_AGENT_VERSION"
+        ]
       },
-      "error": "usage and blockers disagree"
+      "error": "archive is not blocked by references"
     }
   ],
-  "deletion": [
+  "archive": [
     {
       "name": "matching_etag_and_empty",
       "row_version": 7,
       "if_match": "\"rv-7\"",
-      "blockers": [],
       "expected": {
         "status": 204
       }
     },
     {
-      "name": "matching_etag_and_historical_binding",
-      "row_version": 7,
-      "if_match": "\"rv-7\"",
-      "blockers": [
-        "HISTORICAL_AGENT_VERSION"
-      ],
-      "expected": {
-        "status": 409,
-        "code": "AIOPS_KNOWLEDGE_BASE_IN_USE",
-        "blockers": [
-          "HISTORICAL_AGENT_VERSION"
-        ]
-      }
-    },
-    {
-      "name": "stale_etag_takes_priority_over_usage",
+      "name": "stale_etag",
       "row_version": 7,
       "if_match": "\"rv-6\"",
-      "blockers": [
-        "HISTORICAL_AGENT_VERSION"
-      ],
       "expected": {
         "status": 412,
         "code": "STATE_VERSION_CONFLICT"
@@ -571,7 +548,6 @@
       "name": "missing_etag",
       "row_version": 7,
       "if_match": null,
-      "blockers": [],
       "expected": {
         "status": 428,
         "code": "PRECONDITION_REQUIRED"
@@ -581,7 +557,6 @@
       "name": "malformed_etag",
       "row_version": 7,
       "if_match": "rv-7",
-      "blockers": [],
       "expected": {
         "status": 400
       }

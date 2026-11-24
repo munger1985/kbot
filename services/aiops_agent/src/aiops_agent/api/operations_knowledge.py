@@ -129,7 +129,7 @@ async def disable_knowledge_base(
     )
 
 
-@router.delete("/knowledge-bases/{knowledge_base_id}", status_code=204)
+@router.delete("/knowledge-bases/{knowledge_base_id}", status_code=204, summary="归档运维知识库")
 async def delete_knowledge_base(
     knowledge_base_id: UUID,
     payload: KnowledgeBaseDeletePayload,
@@ -137,7 +137,7 @@ async def delete_knowledge_base(
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
     domain_id, _ = _scope(request, context)
-    await request.app.state.operations_knowledge_service.delete_knowledge_base(
+    await request.app.state.operations_knowledge_service.archive_knowledge_base(
         domain_id=domain_id,
         knowledge_base_id=knowledge_base_id,
         expected_row_version=payload.expected_row_version,

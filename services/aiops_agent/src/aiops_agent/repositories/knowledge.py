@@ -162,7 +162,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         ), None)
 
     async def knowledge_base_usage(self, *, knowledge_base_id: UUID) -> dict[str, int]:
-        """仍存在的资料及 Agent 版本绑定均阻止删除。"""
+        """汇总保留的资料和版本引用；已归档 Agent 的绑定计入历史。"""
         self._check_active()
         from aiops_agent.entities import AIOpsAgentEntity, AIOpsAgentVersionKnowledgeBaseEntity
 
@@ -174,7 +174,10 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         )
         total, current = (await self._session.execute(
             select(func.count(), func.count(AIOpsAgentEntity.agent_id)).select_from(binding)
-            .outerjoin(AIOpsAgentEntity, AIOpsAgentEntity.current_version_id == binding.agent_version_id)
+            .outerjoin(AIOpsAgentEntity, and_(
+                AIOpsAgentEntity.current_version_id == binding.agent_version_id,
+                AIOpsAgentEntity.status != "ARCHIVED",
+            ))
             .where(binding.knowledge_base_id == knowledge_base_id)
         )).one()
         return {
@@ -182,25 +185,6 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             "current_agent_versions": int(current or 0),
             "historical_agent_versions": int(total or 0) - int(current or 0),
         }
-
-    async def delete_knowledge_base(
-        self, entity: OperationsKnowledgeBaseEntity,
-    ) -> None:
-        import re
-        from sqlalchemy.exc import IntegrityError
-        from aiops_agent.application.errors import KnowledgeBaseReferenceConflict, _oracle_error_code
-
-        self._check_active()
-        await self._session.delete(entity)
-        try:
-            await self._session.flush()
-        except IntegrityError as exc:
-            if _oracle_error_code(exc) == 2292 and re.search(
-                r"\((?:[\w$#]+\.)?(?:FK_OPS_KNOW_ASSET_BASE|FK_OPS_AGENT_VER_KNOW_BASE)\)",
-                str(exc.orig).upper(),
-            ):
-                raise KnowledgeBaseReferenceConflict() from exc
-            raise
 
     async def add_asset_version(
         self,

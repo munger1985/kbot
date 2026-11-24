@@ -46,11 +46,11 @@
 - 常见覆盖缺口：`CANDIDATE_BUDGET_EXCEEDED`、`INDEX_NOT_READY`、`AUTHORIZATION_CHANGED`、`GENERATION_CHANGED`、`RETRIEVAL_CHANNEL_FAILED`。真正影响有效范围时用部分覆盖；独立分片不具备全局名次，用 `LIMITED`，即便该次候选范围完整。只有同一次逻辑查询完成共同通道归并与融合且对应覆盖充分，才用 `GLOBAL`。
 - 每个 `results` 项的 `evidence_groups` 含 `primary`（`evidence_key`、`document_version_id`、`rank`、`quote`、`locator`）及 `related`、`relation_gaps`。主命中以引擎身份和名次为准；关联按锚点分组，不设置主名次。对关联给出可读性及经授权的引用位置，不能用不可读内容补正文；无权内容不提供身份、原文或定位。产品不输出内部 Scope、Ticket、游标。父子执行应携带同一有界覆盖判断，不重搜排名来替换精确引用。
 
-### C. 删除保护与并发
+### C. 知识库归档与并发
 
-- 库详情和列表的 `usage` 使用 `assets`、`current_agent_versions`、`historical_agent_versions`，各计数互不重叠；`blockers` 提供 `ASSET_RECORDS / CURRENT_AGENT_VERSION / HISTORICAL_AGENT_VERSION` 和实际确认的其他保护原因。仍保留的资料记录不按发布状态排除。未确认的其他关系不能伪造计数。
-- 公共 DELETE：缺少前置版本为 `428 PRECONDITION_REQUIRED`，格式无效为 `400`（沿用正式 ETag 格式），版本过期为 `412 STATE_VERSION_CONFLICT`，确有依赖为 `409 AIOPS_KNOWLEDGE_BASE_IN_USE` 并提供当前阻止原因，删除成功为无正文 `204`。核权、锁目标库后先检查版本再查依赖，越权不披露依赖；数据库只映射已知保护约束异常。
-- 卡片用最近一次依赖汇总作提示，不能作为删除依据；禁止自动解绑、级联删除或把历史当作可清理对象。上传登记、Agent 版本写入、删除必须用一致事务门闩；保持停用可管理但不可新使用。
+- 库详情和列表的 `usage` 仍统计资料、当前和历史 Agent 版本。已归档 Agent 的绑定一律计入历史，仍保留的资料不按发布状态排除。资料和版本引用不是归档门槛，`blockers` 保持空列表。
+- 公共 DELETE 归档而不物理删除：核权后锁定库，验证当前版本，把状态更新为 `ARCHIVED`，成功返回无正文 `204`。缺少 If-Match 返回 `428 PRECONDITION_REQUIRED`，格式无效返回 `400`，版本过期返回 `412 STATE_VERSION_CONFLICT`，未找到或已经归档返回 `404`。
+- 默认库目录不显示归档库；归档后不再接受新资料或 Agent 绑定，也不参与新的 Agent 检索。不清理资料、索引或版本绑定，不重写历史执行。上传登记、Agent 版本绑定和归档沿用同一库行锁；停用仍可通过启用恢复，归档不提供恢复入口。
 
 ## G0.4 存量盘点与评审
 

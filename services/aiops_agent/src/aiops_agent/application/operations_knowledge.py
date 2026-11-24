@@ -288,26 +288,10 @@ def _asset_view(entity: OperationsKnowledgeAssetEntity) -> dict[str, Any]:
     }
 
 
-_DEPENDENCY_KEYS = {
-    "assets": "ASSET_RECORDS",
-    "current_agent_versions": "CURRENT_AGENT_VERSION",
-    "historical_agent_versions": "HISTORICAL_AGENT_VERSION",
-}
-_DEPENDENCY_LABELS = {
-    "ASSET_RECORDS": "运维资料",
-    "CURRENT_AGENT_VERSION": "当前 Agent 版本",
-    "HISTORICAL_AGENT_VERSION": "历史 Agent 版本",
-}
-
-
-def _knowledge_base_blockers(usage):
-    return [reason for key, reason in _DEPENDENCY_KEYS.items() if usage.get(key)]
-
-
 def _knowledge_base_view(entity: OperationsKnowledgeBaseEntity) -> dict[str, Any]:
     return {
         "knowledge_base_id": str(entity.knowledge_base_id),
-        "usage": dict.fromkeys(_DEPENDENCY_KEYS, 0),
+        "usage": {"assets": 0, "current_agent_versions": 0, "historical_agent_versions": 0},
         "blockers": [],
         "domain_id": int(entity.domain_id),
         "display_name": entity.display_name,
@@ -580,7 +564,6 @@ class OperationsKnowledgeService:
                 view["usage"] = await uow.operations_knowledge.knowledge_base_usage(
                     knowledge_base_id=row.knowledge_base_id
                 )
-                view["blockers"] = _knowledge_base_blockers(view["usage"])
                 result.append(view)
             return result
 
@@ -597,7 +580,6 @@ class OperationsKnowledgeService:
             view["usage"] = await uow.operations_knowledge.knowledge_base_usage(
                 knowledge_base_id=knowledge_base_id
             )
-            view["blockers"] = _knowledge_base_blockers(view["usage"])
             return view
 
     async def update_knowledge_base(
@@ -688,7 +670,8 @@ class OperationsKnowledgeService:
                 await uow.commit()
         return await self.get_knowledge_base(domain_id=domain_id, knowledge_base_id=knowledge_base_id)
 
-    async def delete_knowledge_base(self, *, domain_id, knowledge_base_id, expected_row_version, context):
+    async def archive_knowledge_base(self, *, domain_id, knowledge_base_id, expected_row_version, context):
+        """归档知识库，保留资料、索引和 Agent 版本绑定。"""
         async with self._uow_factory() as uow:
             row = await uow.operations_knowledge.get_knowledge_base(
                 domain_id=domain_id, knowledge_base_id=knowledge_base_id, for_update=True)
@@ -697,21 +680,10 @@ class OperationsKnowledgeService:
             if int(row.row_version) != expected_row_version:
                 raise AIOpsApplicationError(code="STATE_VERSION_CONFLICT",
                     message="运维知识库版本已经变化，请刷新后重试", status_code=412)
-            usage = await uow.operations_knowledge.knowledge_base_usage(knowledge_base_id=knowledge_base_id)
-            blockers = _knowledge_base_blockers(usage)
-            if blockers:
-                reasons = "、".join(_DEPENDENCY_LABELS[reason] for reason in blockers)
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_BASE_IN_USE", message=f"此库仍有关联{reasons}，不能删除。",
-                    status_code=409,
-                )
-            from aiops_agent.application.errors import KnowledgeBaseReferenceConflict
-            try:
-                await uow.operations_knowledge.delete_knowledge_base(row)
-            except KnowledgeBaseReferenceConflict as exc:
-                raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_BASE_IN_USE",
-                    message="此库仍被运维资料或 Agent 版本引用，不能删除。请刷新后查看依赖。",
-                    status_code=409) from exc
+            row.status = "ARCHIVED"
+            row.updated_by = self._actor(context)
+            row.updated_at = _now()
+            row.row_version = int(row.row_version) + 1
             await uow.commit()
 
 

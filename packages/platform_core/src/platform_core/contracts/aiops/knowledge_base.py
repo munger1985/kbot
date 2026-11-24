@@ -74,7 +74,7 @@ class KnowledgeBaseView(BaseModel):
     parse_models: LibraryParseModels | None = None
     index_models: LibraryIndexModels | None = None
     usage: KnowledgeBaseUsage
-    blockers: list[KnowledgeBaseBlocker]
+    blockers: list[KnowledgeBaseBlocker] = Field(description="资料及 Agent 版本引用不阻止归档，当前返回空列表。")
 
 
 class KnowledgeBaseList(BaseModel):

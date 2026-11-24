@@ -10781,6 +10781,7 @@
         "additionalProperties": true,
         "properties": {
           "blockers": {
+            "description": "资料及 Agent 版本引用不阻止归档，当前返回空列表。",
             "items": {
               "enum": [
                 "ASSET_RECORDS",
@@ -34033,7 +34034,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Knowledge Base",
+        "summary": "归档运维知识库",
         "tags": [
           "AIOps Operations Knowledge"
         ]

@@ -73,10 +73,6 @@ def is_schema_or_integrity_error(exc: BaseException) -> bool:
     return False
 
 
-class KnowledgeBaseReferenceConflict(RuntimeError):
-    """已知的非级联外键保护知识库免于删除。"""
-
-
 class AIOpsApplicationError(RuntimeError):
     """可安全映射到 HTTP 的 AIOps 用例错误。"""
 
