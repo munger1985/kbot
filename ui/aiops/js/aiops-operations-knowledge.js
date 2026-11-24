@@ -13,8 +13,12 @@
     selectedTagIds: [],
     knowledgeBases: [],
     uploading: false,
+    submittingReview: false,
   };
 
+  const isProcessing = (status) => ["TAGGING", "PROCESSING"].includes(status);
+  let assetRequest = 0;
+  let loadingAssets = false;
   const escape = (value) => shell.escape(value == null ? "" : value);
   const newId = () => KBotAIOpsAuth.uuid();
   const kindLabel = (value) => value === "MANUAL" ? "运维手册" : "诊断案例";
@@ -50,9 +54,16 @@
     if (knowledgeBaseId) query.set("knowledge_base_id", knowledgeBaseId);
     const status = document.getElementById("knowledge-status").value;
     if (status) query.set("status", status);
-    const result = await KBotAIOpsAuth.request(`${api}/assets?${query}`);
-    state.assets = result.items || [];
-    renderAssets();
+    const requestId = ++assetRequest;
+    loadingAssets = true;
+    try {
+      const result = await KBotAIOpsAuth.request(`${api}/assets?${query}`);
+      if (requestId !== assetRequest) return;
+      state.assets = result.items || [];
+      renderAssets();
+    } finally {
+      if (requestId === assetRequest) loadingAssets = false;
+    }
   }
 
   async function loadKnowledgeBases() {
@@ -153,26 +164,30 @@
 
   function renderDetailActions(detail) {
     const actions = [];
-    if (detail.asset.asset_kind === "MANUAL") actions.push('<button type="button" data-upload-version>上传新版本</button>');
-    if (["TAGGING", "PROCESSING"].includes(detail.version.status)) actions.push('<button type="button" data-review="reconcile">立即处理</button>');
-    if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING", "TAGGING_FAILED", "PROCESSING", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-delete-asset>删除资料</button>');
-    if (["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-review="reject">拒绝</button>');
+    if (detail.asset.asset_kind === "MANUAL") actions.push('<button class="secondary-button" type="button" data-upload-version>上传新版本</button>');
+    if (detail.version.status === "PROCESSING") actions.push('<button class="secondary-button" type="button" data-review="reconcile">立即处理</button>');
+    if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING", "TAGGING_FAILED", "PROCESSING", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger-button" type="button" data-delete-asset>删除资料</button>');
+    if (["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push('<button class="danger-button" type="button" data-review="reject">拒绝</button>');
     if (detail.asset.asset_kind === "MANUAL" && detail.version.status === "REVIEW_REQUIRED") {
       const labels = { TEXT: "原生解析", AUTO: "自动判断", VISUAL: "视觉增强" };
       const options = (detail.parse_strategy_options || []).map(option => {
         const reason = option.executor_unavailable ? "模型解析执行端未启用" : (option.unavailable_roles || []).map(role => role.toUpperCase()).join("、") + " 不可用";
         return `<option value="${escape(option.strategy)}"${option.selectable ? "" : " disabled"}>${escape(labels[option.strategy] + (option.selectable ? "" : `（${reason}）`))}</option>`;
       });
-      actions.push(`<label class="control-field">批准时选择解析方案<select id="manual-parse-strategy"><option value="" disabled selected>选择解析方案</option>${options.join("")}</select></label>`);
-      actions.push('<button class="primary" type="button" data-review="approve" disabled>批准并开始 AI 识别</button>');
+      actions.unshift(`<label class="control-field knowledge-detail-strategy"><span class="field-label">批准时选择解析方案</span><select id="manual-parse-strategy"><option value="" disabled selected>选择解析方案</option>${options.join("")}</select></label>`);
+      actions.push('<button class="primary-button" type="button" data-review="approve" disabled>批准并开始 AI 识别</button>');
     }
-    if (detail.version.status === "PUBLISHED") actions.push('<button class="danger" type="button" data-review="retire">退役</button>');
-    if (["FAILED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push(`<button class="primary" type="button" data-review="retry">${detail.version.status === "TAGGING_FAILED" ? "重试标签识别" : "重试解析"}</button>`);
+    if (detail.version.status === "PUBLISHED") actions.push('<button class="danger-button" type="button" data-review="retire">退役</button>');
+    if (["FAILED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push(`<button class="primary-button" type="button" data-review="retry">${detail.version.status === "TAGGING_FAILED" ? "重试标签识别" : "重试解析"}</button>`);
     document.getElementById("detail-actions").innerHTML = actions.join("");
     const strategy = document.getElementById("manual-parse-strategy");
-    if (strategy) strategy.onchange = () => {
-      document.querySelector('#detail-actions [data-review="approve"]').disabled = !strategy.value;
-    };
+    if (strategy) {
+      strategy.value = detail.parse_strategy_options?.some(option => option.strategy === "AUTO" && option.selectable) ? "AUTO" : "";
+      const approve = document.querySelector('#detail-actions [data-review="approve"]');
+      const syncApproval = () => { approve.disabled = !strategy.value; };
+      strategy.onchange = syncApproval;
+      syncApproval();
+    }
   }
 
   async function openAsset(assetId) {
@@ -184,12 +199,14 @@
     state.selectedTagIds = assigned.length ? assigned : (state.detail.version.tag_analysis?.suggestions || []).map((item) => item.tag_id);
     state.detailTab = "overview";
     document.getElementById("detail-eyebrow").textContent = `${kindLabel(state.detail.asset.asset_kind)} · v${state.detail.version.version_no}`;
-    document.getElementById("detail-title").textContent = state.detail.asset.display_name;
+    const title = document.getElementById("detail-title");
+    title.textContent = title.title = state.detail.asset.display_name;
     document.getElementById("detail-subtitle").textContent = state.detail.asset.asset_id;
     document.getElementById("detail-status").innerHTML = badge(state.detail.version.status);
     renderDetailBody();
     renderDetailActions(state.detail);
     document.getElementById("detail-drawer").showModal();
+    document.getElementById("detail-body").scrollTop = 0;
   }
 
   function renderUploadLedger() {
@@ -317,7 +334,7 @@
   }
 
   async function runDetailAction(action) {
-    if (!state.detail) return;
+    if (!state.detail || state.submittingReview) return;
     if (action === "download") return downloadSource();
     if (action === "upload-version") {
       document.getElementById("detail-drawer").close();
@@ -336,14 +353,27 @@
       await loadAssets();
       return;
     }
-    const version = state.detail.version;
+    const detail = state.detail;
+    const version = detail.version;
     const strategy = document.getElementById("manual-parse-strategy")?.value;
     if (action === "approve" && !state.detail.parse_strategy_options?.some(option => option.selectable && option.strategy === strategy)) return;
     const options = action === "reconcile" ? { method: "POST" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
       expected_row_version: Number(version.row_version), comment: null, parse_strategy: action === "approve" ? strategy : undefined }) };
-    state.detail = await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}:${action}`, options);
-    shell.toast("知识版本状态已更新");
-    document.getElementById("detail-drawer").close();
+    const submitsTagging = action === "approve" || (action === "retry" && version.status === "TAGGING_FAILED");
+    const button = document.querySelector(`#detail-actions [data-review="${action}"]`);
+    state.submittingReview = true;
+    if (button) button.disabled = true;
+    try {
+      await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}:${action}`, options);
+      if (state.detail === detail) {
+        document.getElementById("detail-drawer").close();
+        state.detail = null;
+      }
+      shell.toast(submitsTagging ? "标签识别已提交，可在资料列表查看结果" : "知识版本状态已更新");
+    } finally {
+      state.submittingReview = false;
+      if (button) button.disabled = action === "approve" && !document.getElementById("manual-parse-strategy")?.value;
+    }
     await loadAssets();
   }
 
@@ -377,6 +407,11 @@
     document.getElementById("detail-tabs").onclick = (event) => { const button = event.target.closest("[data-tab]"); if (!button) return; state.detailTab = button.dataset.tab; renderDetailBody(); };
     document.getElementById("detail-body").onclick = (event) => { if (event.target.closest("[data-download-source]")) downloadSource(event.target.closest("[data-download-source]").dataset.downloadSource).catch((error) => shell.toast(error.message)); };
     document.getElementById("detail-actions").onclick = (event) => { const review = event.target.closest("[data-review]"); const upload = event.target.closest("[data-upload-version]"); const download = event.target.closest("[data-download-source]"); const remove = event.target.closest("[data-delete-asset]"); const action = review?.dataset.review || (upload ? "upload-version" : download ? "download" : remove ? "delete" : ""); if (action) runDetailAction(action).catch((error) => shell.toast(error.message)); };
+    setInterval(() => {
+      if (!document.hidden && !loadingAssets && state.assets.some(item => isProcessing(item.status))) {
+        loadAssets().catch(() => { /* 手动刷新时呈现错误，后台刷新保留当前列表。 */ });
+      }
+    }, 5000);
     try { await Promise.all([loadTags(), loadKnowledgeBases()]); await loadAssets(); } catch (error) { shell.toast(error.message); }
   });
 })();

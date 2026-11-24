@@ -173,9 +173,14 @@ class OperationsDocuments:
                 asset_version_id=asset_version_id, for_update=True)
             require(version is not None and version.status in {"PROCESSING", "TAGGING"}, "业务版本不能重试")
             relations = await uow.operations_knowledge.get_version_relations(asset_version_id=asset_version_id)
-            for index in relations["indexes"]:
-                await uow.knowledge_documents.retry_document(access, index.document_version_id, now=self.ingestion.clock())
+            await self.retry_documents(uow, access, relations["indexes"])
             await uow.commit()
+
+    async def retry_documents(self, uow, access, indexes):
+        """重置可重试的解析任务，事务由调用方管理。"""
+        now = self.ingestion.clock()
+        for index in indexes:
+            await uow.knowledge_documents.retry_document(access, index.document_version_id, now=now)
 
     async def inspect(self, access, version_id):
         async with self.uow_factory() as uow:

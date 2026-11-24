@@ -4,7 +4,7 @@
   const shell = globalThis.KBotAIOpsShell;
   let rows = [];
   let editing = null;
-  let confirmingCreate = false;
+  let reviewingCapabilities = false;
   let modelCatalog = [];
   let editorGeneration = 0;
   const indexFields = [["embedding", 2, "不配置文本 Embedding"], ["visual_embedding", 3, "不配置视觉 Embedding"]];
@@ -36,9 +36,12 @@
   }
   function renderCapabilities(row) {
     const element = document.getElementById("knowledge-base-capabilities");
+    const empty = document.getElementById("knowledge-base-capabilities-empty");
     const caps = row?.capabilities;
+    element.hidden = !caps;
+    empty.hidden = Boolean(caps);
     if (!caps) {
-      element.textContent = row ? "能力状态暂不可用。" : "保存知识库后可查看当前实际能力。";
+      element.replaceChildren();
       return;
     }
     const items = [["原生文档解析", capabilityLabels[caps.native_parse]], ["OCR 补强", capabilityLabels[caps.ocr]],
@@ -63,24 +66,36 @@
     document.getElementById("back-knowledge-base").disabled = saving;
   }
 
-  function showStep(reviewing) {
-    confirmingCreate = reviewing;
-    const form = document.getElementById("knowledge-base-form");
-    form.querySelectorAll(":scope > .drawer-form-section").forEach(section => { section.hidden = reviewing; });
-    const preview = document.getElementById("knowledge-base-review");
-    preview.hidden = !reviewing;
-    preview.innerHTML = reviewing ? globalThis.KBotKnowledgeCapabilitiesReview.render(
+  function renderReview(form, preview) {
+    const restoreFocus = preview.contains(document.activeElement);
+    preview.innerHTML = globalThis.KBotKnowledgeCapabilitiesReview.render(
       form.elements.display_name.value.trim(),
       { embedding: form.elements.embedding.value, visual_embedding: form.elements.visual_embedding.value },
-      { ocr: form.elements.ocr.value, vlm: form.elements.vlm.value }, modelCatalog, shell.escape) : "";
-    document.getElementById("knowledge-base-editor-step").textContent = editing ? "修改知识库的基本信息与模型。"
-      : reviewing ? "第 2 步，共 2 步 · 确认检索能力" : "第 1 步，共 2 步 · 填写信息与选择模型";
+      { ocr: form.elements.ocr.value, vlm: form.elements.vlm.value }, modelCatalog, shell.escape);
+    if (restoreFocus) preview.querySelector("[data-knowledge-capability-title]").focus({ preventScroll: true });
+  }
+
+  function showStep(reviewing) {
+    reviewingCapabilities = reviewing;
+    const form = document.getElementById("knowledge-base-form");
+    form.querySelectorAll(":scope > section.drawer-form-section").forEach(section => { section.hidden = reviewing; });
+    const preview = document.getElementById("knowledge-base-review");
+    const liveCapabilities = document.getElementById("knowledge-base-live-capabilities");
+    preview.hidden = !reviewing;
+    liveCapabilities.hidden = !reviewing || !editing;
+    liveCapabilities.open = false;
+    if (reviewing) renderReview(form, preview);
+    else preview.replaceChildren();
+    document.getElementById("knowledge-base-editor-step").textContent = reviewing
+      ? "第 2 步，共 2 步 · 确认检索能力" : "第 1 步，共 2 步 · 填写信息与选择模型";
     document.getElementById("cancel-knowledge-base").hidden = reviewing;
     document.getElementById("back-knowledge-base").hidden = !reviewing;
-    document.getElementById("save-knowledge-base").textContent = editing ? "保存知识库" : reviewing ? "确认创建" : "下一步";
+    const submit = document.getElementById("save-knowledge-base");
+    submit.textContent = !reviewing ? "下一步" : editing ? "保存知识库" : "确认创建";
     document.getElementById("knowledge-base-result").hidden = true;
-    if (reviewing) preview.querySelector("[data-knowledge-capability-title]").focus();
-    else if (form.closest("dialog").open) document.getElementById("save-knowledge-base").focus();
+    form.scrollTop = 0;
+    if (reviewing) preview.querySelector("[data-knowledge-capability-title]").focus({ preventScroll: true });
+    else if (form.closest("dialog").open) submit.focus({ preventScroll: true });
   }
 
   function render() {
@@ -133,11 +148,13 @@
     document.getElementById("knowledge-base-result").hidden = true;
     updateSaveState();
     dialog.showModal();
+    form.scrollTop = 0;
     try {
       const models = await loadModelCatalog();
       if (dialog.open && editorGeneration === generation) {
         modelCatalog = models;
         for (const field of modelFields) fillModelSelect(form, field, form.elements[field[0]].value, true);
+        if (reviewingCapabilities) renderReview(form, document.getElementById("knowledge-base-review"));
       }
     } catch (error) {
       if (dialog.open && editorGeneration === generation) hint.textContent += " 模型目录暂不可用，仍可保存基本信息。";
@@ -148,7 +165,7 @@
     event.preventDefault(); const form = event.currentTarget;
     updateSaveState();
     if (saving || document.getElementById("save-knowledge-base").disabled) return;
-    if (!editing && !confirmingCreate) return showStep(true);
+    if (!reviewingCapabilities) return showStep(true);
     saving = true;
     updateSaveState();
     const selectedModel = form.elements.tagging_model_id.value || null;

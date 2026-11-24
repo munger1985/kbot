@@ -6,7 +6,7 @@
   <title>AIOps 运维知识库</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/aiops-forms.css?v=20261120_create_review">
-<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261120_catalog"><link rel="stylesheet" href="./css/reference-knowledge-bases.css?v=20261120_catalog"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1"></head>
+<link rel="stylesheet" href="./css/ammolite-shared.css?v=20261120_catalog"><link rel="stylesheet" href="./css/reference-knowledge-bases.css?v=20261124_edit_review"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1"></head>
 <body data-page="knowledge-bases">
   <main class="ops-main knowledge-bases-page">
     <header class="ops-head"><div><p class="eyebrow">AIOps 配置</p><h1>运维知识库</h1><p>运维资料和 Agent 按知识库划分使用范围。</p></div><a class="secondary-button related-page-link" href="./operations-knowledge.html"><span class="related-page-link-copy"><small>关联页面</small><strong>查看运维知识</strong></span><span class="related-page-link-arrow" aria-hidden="true">→</span></a></header>
@@ -30,19 +30,21 @@
         <label class="control-field form-span"><span class="field-label">视觉 Embedding（可选）</span><select name="visual_embedding"></select></label>
       </section>
       <section class="drawer-form-section">
-        <header><span>04</span><div><strong>生效能力</strong><small>由服务端实际方案与索引状态决定。</small></div></header>
-        <dl id="knowledge-base-capabilities" class="form-span"></dl>
-      </section>
-      <section class="drawer-form-section">
-        <header><span>05</span><div><strong>运维资料治理</strong><small>只影响后续的资料标签识别，不改变解析与索引。</small></div></header>
+        <header><span>04</span><div><strong>运维资料治理</strong><small>只影响后续的资料标签识别，不改变解析与索引。</small></div></header>
         <label class="control-field form-span"><span class="field-label">标签识别模型（可选）</span><select name="tagging_model_id"></select></label>
         <p id="knowledge-base-tagging-hint" class="form-span" role="status"></p>
       </section>
-      <div id="knowledge-base-review" hidden></div>
+      <div id="knowledge-base-review" class="knowledge-base-review" hidden></div>
+      <details id="knowledge-base-live-capabilities" class="drawer-form-section knowledge-base-live-capabilities" hidden>
+        <summary>当前生效能力</summary>
+        <p class="field-help">由服务端实际方案与索引状态决定，不包含本次未保存的改动。保存模型变更不会重建旧索引。</p>
+        <dl id="knowledge-base-capabilities" class="key-value-table form-span" hidden></dl>
+        <p id="knowledge-base-capabilities-empty" class="field-help" hidden>能力状态暂不可用。</p>
+      </details>
       <p id="knowledge-base-result" class="form-error" role="status" hidden></p>
       <footer class="admin-drawer-footer"><button id="cancel-knowledge-base" class="secondary-button" type="button" data-close>取消</button><button id="back-knowledge-base" class="secondary-button" type="button" hidden>上一步</button><button id="save-knowledge-base" class="primary-button" type="submit">下一步</button></footer>
     </form>
   </dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261111_center2"></script><script src="../shared/knowledge-parse-strategy-help.js"></script><script src="../shared/knowledge-search-capabilities-review.js?v=20261120_search_directions"></script><script src="./js/aiops-knowledge-bases.js?v=20261120_search_directions"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261111_center2"></script><script src="../shared/knowledge-parse-strategy-help.js"></script><script src="../shared/knowledge-search-capabilities-review.js?v=20261120_search_directions"></script><script src="./js/aiops-knowledge-bases.js?v=20261124_edit_review"></script>
 </body>
 </html>

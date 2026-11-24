@@ -1793,8 +1793,6 @@ class OperationsKnowledgeService:
     async def reconcile_version(self, *,  domain_id, asset_version_id, context, actor_id=None):
         """解析、投影在事务外；最后核对精确索引身份并原子提交业务发布。"""
         detail = await self.get_version(domain_id=domain_id, asset_version_id=asset_version_id)
-        if detail["version"]["status"] == "TAGGING":
-            return await self.analyze_tags( domain_id=domain_id, asset_version_id=asset_version_id, context=context)
         if detail["version"]["status"] != "PROCESSING":
             return detail
         indexes = detail["indexes"]
@@ -2160,7 +2158,11 @@ class OperationsKnowledgeService:
                     execution = frozen.get("execution_spec")
                     if not execution:
                         raise self._state_conflict("存量标签任务缺少冻结规格，需先核验处理")
+                    if not relations["indexes"]:
+                        raise self._state_conflict("标签任务缺少可重试的索引引用")
                     self._documents.assert_processing_plan(execution.get("processing_plan"))
+                    # 与 TAGGING 一起提交，避免 Worker 读到尚未重置的解析任务。
+                    await self._documents.retry_documents(uow, self._documents.access(context), relations["indexes"])
                     version.status = "TAGGING"
                     version.tag_analysis_json = {"approval": frozen.get("approval", {}), "execution_spec": execution}
                     if asset.current_version_id is None:
@@ -2190,14 +2192,7 @@ class OperationsKnowledgeService:
                 )
             )
             await uow.commit()
-        if decision == "RETRY":
-            if before == "TAGGING_FAILED":
-                await self._documents.retry(self._documents.access(context), asset_version_id)
-                return await self.analyze_tags(
-                    domain_id=domain_id,
-                    asset_version_id=asset_version_id,
-                    context=context,
-                )
+        if decision == "RETRY" and before != "TAGGING_FAILED":
             if retry_index is None:
                 raise AIOpsApplicationError(
                     code="AIOPS_KNOWLEDGE_INDEX_STALE",
@@ -2394,19 +2389,21 @@ class OperationsKnowledgeService:
             return True
 
     async def reconcile_next(self, *, caller_service: str) -> bool:
-        """由 Worker 小步对账一个 KC 索引，未就绪时按正常空闲处理。"""
+        """由 Worker 小步完成标签识别或 KC 索引对账。"""
         async with self._uow_factory() as uow:
             pending = await uow.operations_knowledge.next_processing_version()
         if pending is None:
             return False
         domain_id, version_id = pending
-        detail = await self.reconcile_version(
-            domain_id=domain_id,
-            asset_version_id=version_id,
-            context=create_service_auth_context(caller_service=caller_service).model_copy(update={
-                "app_id": "aiops", "domain_id": str(domain_id)}),
-        )
-        return detail["version"]["status"] != "PROCESSING"
+        context = create_service_auth_context(caller_service=caller_service).model_copy(update={
+            "app_id": "aiops", "domain_id": str(domain_id),
+        })
+        detail = await self.get_version(domain_id=domain_id, asset_version_id=version_id)
+        if detail["version"]["status"] == "TAGGING":
+            detail = await self.analyze_tags(domain_id=domain_id, asset_version_id=version_id, context=context)
+        else:
+            detail = await self.reconcile_version(domain_id=domain_id, asset_version_id=version_id, context=context)
+        return detail["version"]["status"] not in {"TAGGING", "PROCESSING"}
 
     @staticmethod
     def _not_found() -> AIOpsApplicationError:

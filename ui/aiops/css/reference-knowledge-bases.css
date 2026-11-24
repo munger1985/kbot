@@ -3,3 +3,6 @@
 /* management/AIOpsKnowledgeBasesView.vue */
 :is([data-page="knowledge-bases"]) .knowledge-bases-page { display:grid; min-width:0; gap:20px; }
 :is([data-page="knowledge-bases"]) .knowledge-base-drawer{width:min(820px,100vw)}:is([data-page="knowledge-bases"]) .knowledge-base-form{display:grid;align-content:start;gap:18px;margin:0;padding:22px 28px 0}:is([data-page="knowledge-bases"]) .knowledge-base-form>.admin-drawer-footer{margin:0 -28px}@media(max-width:700px){:is([data-page="knowledge-bases"]) .knowledge-base-form{padding:18px 18px 0}:is([data-page="knowledge-bases"]) .knowledge-base-form>.admin-drawer-footer{margin-right:-18px;margin-left:-18px}}
+:is([data-page="knowledge-bases"]) .knowledge-base-review { min-width:0; overflow-wrap:anywhere; }
+:is([data-page="knowledge-bases"]) .knowledge-base-live-capabilities > summary { cursor:pointer; font-weight:600; }
+:is([data-page="knowledge-bases"]) .knowledge-base-live-capabilities > .field-help { margin:8px 0 0; }

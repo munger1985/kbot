@@ -524,7 +524,15 @@ def test_tagging_failure_and_retry_keep_frozen_spec_after_library_changes():
         assert f.version.tag_analysis_json["execution_spec"] == frozen
         f.documents.process.assert_not_awaited()
 
-        f.documents.retry = AsyncMock()
+        f.uow.commit.reset_mock()
+        async def reset_documents(*_):
+            assert f.version.status == "TAGGING_FAILED"
+            f.uow.commit.assert_not_awaited()
+
+        f.documents.retry_documents = AsyncMock(side_effect=reset_documents)
+        f.service.get_version.side_effect = lambda **_: {
+            **f.detail, "version": {**f.detail["version"], "status": f.version.status},
+        }
         f.service._tagging_model_snapshot.return_value = f.model_snapshot
         f.service._prompt_registry.resolve.return_value.content = "frozen prompt"
         f.documents.excerpts.return_value = {"excerpts": [{
@@ -537,7 +545,22 @@ def test_tagging_failure_and_retry_keep_frozen_spec_after_library_changes():
         )
         f.documents.assert_processed_documents = AsyncMock()
         f.repository.replace_tag_scopes = AsyncMock()
-        await f.service.review(**f.kwargs, decision="RETRY", expected_row_version=1, comment=None)
+        accepted = await f.service.review(**f.kwargs, decision="RETRY", expected_row_version=1, comment=None)
+        assert accepted["version"]["status"] == f.version.status == f.asset.status == "TAGGING"
+        assert f.index.index_status == "PENDING_APPROVAL"
+        assert f.version.tag_analysis_json["execution_spec"] == frozen
+        f.documents.retry_documents.assert_awaited_once_with(f.uow, ANY, [f.index])
+        f.uow.commit.assert_awaited_once()
+        f.documents.process.assert_not_awaited()
+        f.service._structured_model.generate_structured.assert_not_awaited()
+
+        # 旧客户端仍可查询对账，但只有后台 Worker 可以执行标签生成。
+        detail = await f.service.reconcile_version(**f.kwargs)
+        assert detail["version"]["status"] == "TAGGING"
+        f.service._structured_model.generate_structured.assert_not_awaited()
+        pending = (f.domain, f.version_id) if f.oracle else (f.tenant, f.domain, f.version_id)
+        f.repository.next_processing_version = AsyncMock(return_value=pending)
+        await f.service.reconcile_next(caller_service="test-aiops-worker")
         assert f.version.status == "PROCESSING", f.version.tag_analysis_json.get("error_summary")
         assert f.version.tag_analysis_json["execution_spec"] == frozen
         f.service._prompt_registry.resolve.assert_awaited_with(
@@ -547,6 +570,22 @@ def test_tagging_failure_and_retry_keep_frozen_spec_after_library_changes():
         assert generation["model_snapshot"] == frozen["model"]
         assert generation["input_payload"]["vocabulary"] == frozen["vocabulary"]
         f.documents.assert_processed_documents.assert_awaited_once()
+    asyncio.run(run())
+
+
+def test_tagging_retry_does_not_queue_when_reset_fails():
+    async def run():
+        f = lifecycle_fixture()
+        f.version.status = f.asset.status = "TAGGING_FAILED"
+        f.version.tag_analysis_json = {"approval": {"status": "APPROVED"},
+                                       "execution_spec": {"processing_plan": f.plan}}
+        f.documents.retry_documents = AsyncMock(side_effect=ValueError("解析任务正在被占用"))
+        with pytest.raises(ValueError, match="解析任务正在被占用"):
+            await f.service.review(**f.kwargs, decision="RETRY", expected_row_version=1, comment=None)
+        assert f.version.status == f.asset.status == "TAGGING_FAILED"
+        f.repository.add_review.assert_not_awaited()
+        f.uow.commit.assert_not_awaited()
+        f.service._structured_model.generate_structured.assert_not_awaited()
     asyncio.run(run())
 
 

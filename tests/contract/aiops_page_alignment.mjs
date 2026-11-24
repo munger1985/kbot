@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import {templateAlignmentFixture,verifyInspectionTemplateEditor} from './aiops_template_alignment.mjs';
 import {verifyMonitoringNavigation} from './aiops_monitoring_alignment.mjs';
 import {verifyOperationsKnowledgeUpload} from './aiops_operations_knowledge_upload.mjs';
+import {verifyOperationsKnowledgeTagging} from './aiops_operations_knowledge_tagging.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const portal = resolve(process.env.AMMOLITE_ROOT || resolve(root, "../ammolite_cube"), "apps/portal-web");
@@ -35,7 +36,7 @@ const fixture = {
   inspectionTemplate: { inspection_template_id: 'template-1', display_name: '生产数据库巡检', status: 'ACTIVE', version_no: 1, selected_check_ids: ['availability'], row_version: 1, updated_at: '2026-10-30T03:00:00Z' },
   inspectionCatalog: {catalog_hash:'fixture',groups:[{group_id:'health',display_name:'可用性与容量',checks:[{check_id:'availability',display_name:'数据库可用性',availability:'READY',trend_required:false,finding_types:[]},{check_id:'capacity-trend',display_name:'容量增长趋势',availability:'READY',trend_required:true,finding_types:[]},{check_id:'planned-check',display_name:'规划检查项',availability:'PLANNED',trend_required:false,finding_types:[]}]}]},
   sessionTemplate: { template_id: 'session-template-1', template_ref: 'fixture-template', display_name: '生产诊断报告', status: 'ACTIVE', version_no: 1, row_version: 1, system_defined: false, is_default: true, usage_count: 2, sections: ['EXECUTIVE_SUMMARY', 'FINDINGS', 'EVIDENCE_BOUNDARY'] },
-  knowledgeAsset: { asset_id: 'asset-1', knowledge_base_id: 'kb-1', display_name: 'Oracle 日常运维手册', asset_kind: 'MANUAL', security_level: 1, status: 'PUBLISHED', created_at: '2026-10-30T03:00:00Z', updated_at: '2026-10-30T03:00:00Z' },
+  knowledgeAsset: { asset_id: 'asset-1', knowledge_base_id: 'kb-1', display_name: 'Oracle 日常运维手册', asset_kind: 'MANUAL', security_level: 1, status: 'REVIEW_REQUIRED', created_at: '2026-10-30T03:00:00Z', updated_at: '2026-10-30T03:00:00Z' },
   monitoringSource: { source_id: 'source-1', display_name: '生产 Prometheus', source_type: 'PROMETHEUS', monitoring_readiness: 'READY', diagnostic_readiness: 'READY', capability_gaps: [] },
   source:{source_id:'source-1',display_name:'生产 Prometheus',source_type:'PROMETHEUS',endpoint:'https://monitor.example.com',status:'ENABLED',connectivity_status:'CONNECTED',config:{},row_version:3,updated_at:'2026-10-30T03:00:00Z',webhook_configured:false,webhook_secret:{configured:false}},
   monitoringInstance: { instance_id: 'instance-1', display_name: '生产 Oracle', resource_name: 'MES 数据库', business_system_id: 'system-1', business_system_name: 'MES 生产系统', resource_id: 'resource-1', resource_type_key: 'DATABASE', db_type: 'ORACLE', monitoring_readiness: 'READY', diagnostic_readiness: 'READY', capability_gaps: [] },
@@ -85,6 +86,19 @@ fixture.inspectionTemplate={...fixture.inspectionTemplate,source_kind:'CUSTOM',t
 fixture.inspectionPreview=templateFixture.preview;
 
 function installFixture(data) {
+  const knowledgeAsset = () => ({...data.knowledgeAsset, status:globalThis.fixtureKnowledgeTagStatus || data.knowledgeAsset.status});
+  const knowledgeDetail = () => ({
+    asset: { ...knowledgeAsset(), row_version:1, display_name:'Oracle_Operations_Manual_'.repeat(10) },
+    version: { asset_version_id:'knowledge-version-1', version_no:1, row_version:globalThis.fixtureKnowledgeTagRevision || 1,
+      status:knowledgeAsset().status, source_hash:'a'.repeat(64),
+      extraction_warnings:['需要人工核验：' + 'LongIdentifierWithoutSpaces'.repeat(60)] },
+    scopes:[], sources:[], indexes:[], reviews:[],
+    parse_strategy_options:[
+      { strategy:'TEXT', selectable:true, unavailable_roles:[] },
+      { strategy:'AUTO', selectable:!globalThis.fixtureAutoParseUnavailable, unavailable_roles:globalThis.fixtureAutoParseUnavailable?['ocr']:[] },
+      { strategy:'VISUAL', selectable:false, executor_unavailable:true, unavailable_roles:[] },
+    ],
+  });
   const monitoringInstances = () => [
     data.monitoringInstance,
     {...data.monitoringInstance,instance_id:'instance-2',display_name:'生产 Oracle 备库',resource_id:'resource-2',resource_name:'MES 备库'},
@@ -133,6 +147,11 @@ function installFixture(data) {
         if(rejected) globalThis.fixtureRejectAppendix=false;
         return {items:files.map(file=>({client_file_id:file.client_file_id,status:rejected?'REJECTED':'ACCEPTED',
           message:rejected?'隔离拒绝':'',asset_id:file.client_file_id,asset_version_id:file.client_file_id}))};
+      }
+      if (globalThis.fixtureKnowledgeTagStatus && /\/operations-knowledge\/versions\/knowledge-version-1:(approve|retry)$/.test(path)) {
+        globalThis.fixtureKnowledgeTagStatus = 'TAGGING';
+        globalThis.fixtureKnowledgeTagRevision = JSON.parse(init.body).expected_row_version + 1;
+        return knowledgeDetail();
       }
       if(globalThis.fixtureWebhookWrites) {
         if(init.method==='PATCH' && path.endsWith('/diagnostic-sources/source-1')) return {...data.source,source_type:fixtureSourceType,row_version:4,webhook_secret:{configured:true}};
@@ -281,7 +300,14 @@ function installFixture(data) {
     if (suffix.endsWith('/session-report-templates')) return rows(data.sessionTemplate);
     if (suffix.endsWith('/session-report-templates/session-template-1')) return {...data.sessionTemplate,definition:{sections:['EXECUTIVE_SUMMARY','RECOMMENDATIONS','TREND','FINDINGS','EVIDENCE_BOUNDARY'].map(kind=>({kind}))}};
     if (suffix.endsWith('/session-report-templates/session-template-1/versions')) return [{template_version_id:'version-1',version_no:1,current:true,created_at:'2026-10-30T03:00:00Z',content_hash:'fixture-template-content-hash',definition:{sections:['EXECUTIVE_SUMMARY','FINDINGS','EVIDENCE_BOUNDARY'].map(kind=>({kind}))}}];
-    if (suffix.endsWith('/assets')) return { items: rows(data.knowledgeAsset) };
+    if (suffix.endsWith('/assets')) {
+      if (globalThis.fixtureHoldKnowledgeAssets) await new Promise(resolve => {
+        globalThis.fixtureReleaseKnowledgeAssets = () => { globalThis.fixtureHoldKnowledgeAssets = false; resolve(); };
+      });
+      return { items: rows(knowledgeAsset()) };
+    }
+    if (suffix.endsWith('/operations-knowledge/assets/asset-1')) return { ...knowledgeAsset(), versions: [{ asset_version_id:'knowledge-version-1' }] };
+    if (suffix.endsWith('/operations-knowledge/versions/knowledge-version-1')) return knowledgeDetail();
     if (suffix.endsWith('/monitoring/sources')) return location.search.includes('empty=1')?[]:[data.monitoringSource,{...data.monitoringSource,source_id:'source-2',display_name:'备用 Zabbix',source_type:'ZABBIX'}];
     if (suffix.endsWith('/instances')) {
       if (globalThis.fixtureMonitoringFailure) throw new Error('隔离测试：实例目录暂不可用');
@@ -1055,7 +1081,57 @@ try {
       }
     }
     if (name==='operations-knowledge' && !empty) {
-      for (const page of [kbot,reference]) await verifyOperationsKnowledgeUpload(page);
+      for (const [platform,page] of [['kbot',kbot],['ammolite',reference]]) {
+        await verifyOperationsKnowledgeUpload(page);
+        const drawer = page.getByRole('dialog').filter({ has:page.getByRole('button',{name:'批准并开始 AI 识别'}) });
+        for (const [width,height,autoUnavailable] of [[1440,900,false],[320,520,true]]) {
+          await page.setViewportSize({width,height});
+          await page.evaluate(value => { globalThis.fixtureAutoParseUnavailable = value; }, autoUnavailable);
+          await page.getByRole('button',{name:'审批资料',exact:true}).click();
+          const approval = drawer.getByRole('button',{name:'批准并开始 AI 识别',exact:true});
+          const strategy = drawer.getByRole('combobox',{name:'批准时选择解析方案'});
+          assert.equal(await strategy.inputValue(),autoUnavailable?'':'AUTO');
+          assert.equal(await approval.isDisabled(),autoUnavailable);
+          assert.equal(await strategy.locator('option[value="AUTO"]').evaluate(option=>option.disabled),autoUnavailable);
+          assert.equal(await strategy.locator('option[value="VISUAL"]').evaluate(option=>option.disabled),true);
+          await strategy.selectOption('TEXT');
+          assert.equal(await approval.isEnabled(),true);
+          await page.waitForFunction(() => !document.querySelector('.drawer-enter-from .knowledge-detail-drawer'));
+          const body = drawer.locator('.admin-drawer-body');
+          const geometry = await drawer.evaluate(node => {
+            const rect = element => element.getBoundingClientRect();
+            const body = node.querySelector('.admin-drawer-body');
+            const footer = node.querySelector('.admin-drawer-footer');
+            return { panel:rect(node).toJSON(), body:rect(body).toJSON(), footer:rect(footer).toJSON(),
+              bodyOverflow:body.scrollWidth-body.clientWidth, bodyScroll:body.scrollHeight-body.clientHeight,
+              footerOverflow:footer.scrollWidth-footer.clientWidth, panelOverflow:node.scrollWidth-node.clientWidth,
+              strategyInFooter:footer.contains(node.querySelector('select')) };
+          });
+          const context = page.url() + ' @ ' + width + '×' + height + ' ' + JSON.stringify(geometry);
+          assert.equal(Math.round(geometry.panel.width),Math.min(820,width),context);
+          assert.ok(Math.abs(geometry.panel.right-width)<=1 && Math.abs(geometry.panel.bottom-height)<=1,context);
+          assert.ok(geometry.body.height>0 && geometry.body.bottom<=geometry.footer.top+1,context);
+          assert.ok(geometry.bodyScroll>0,context);
+          assert.ok(geometry.bodyOverflow<=1 && geometry.footerOverflow<=1 && geometry.panelOverflow<=1,context);
+          assert.ok(geometry.strategyInFooter && geometry.footer.bottom<=height+1,context);
+          assert.equal(await body.evaluate(node => node.scrollTop),0,context);
+          await page.screenshot({path:resolve(artifacts,`${platform}-operations-knowledge-approval-${width}.png`)});
+          await body.evaluate(node => { node.scrollTop = node.scrollHeight; });
+          assert.ok(await body.evaluate(node => node.scrollTop>0),context);
+          assert.ok(await approval.evaluate(node => {
+            const box = node.getBoundingClientRect();
+            return document.elementFromPoint(box.x+box.width/2,box.y+box.height/2) === node;
+          }),context);
+          await drawer.getByRole('button',{name:'文件与解析',exact:true}).click();
+          assert.equal(await strategy.inputValue(),'TEXT');
+          assert.equal(await approval.isEnabled(),true);
+          await drawer.locator('.admin-drawer-header .icon-button').click();
+          await drawer.waitFor({state:'hidden'});
+        }
+        await page.evaluate(() => { globalThis.fixtureAutoParseUnavailable = false; });
+        await verifyOperationsKnowledgeTagging(page);
+        assert.deepEqual(await page.evaluate(()=>fixtureFailures),[]);
+      }
     }
     if (name==='dashboard' && !empty) {
       // 仅持有并拒绝写请求，验证载荷、提交互斥和失败后的草稿恢复。
