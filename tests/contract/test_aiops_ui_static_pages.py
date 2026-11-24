@@ -178,7 +178,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             "aiops-agents.js", "aiops-agents.css", "aiops-cases.js",
             "aiops-business-systems.js", "aiops-business-system-workspace.js",
             "aiops-monitoring.js", "aiops-knowledge-bases.js", "aiops-knowledge-tags.js",
-            "aiops-operations-knowledge.js", "aiops-responsibility-groups.js", "aiops-api-clients.js",
+            "aiops-operations-knowledge.js", "aiops-knowledge-search.js", "aiops-responsibility-groups.js", "aiops-api-clients.js",
         }
         referenced = set()
         for path in AIOPS_ROOT.glob("*.html"):
@@ -259,6 +259,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 self.assertNotIn("<dialog", page)
             elif path.name == "report-detail.html":
                 self.assertIn('class="app-page-head"', page)
+            elif path.name == "knowledge-search.html":
+                self.assertIn('class="platform-home-hero app-page-head"', page)
             elif path.name == "business-system-workspace.html":
                 self.assertIn('class="workspace-head"', page)
             elif path.name == "notification-open.html":
@@ -280,7 +282,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "runs", "run-detail", "report-detail", "reports", "inspections", "inspection-detail",
         "business-systems", "business-system-workspace",
         "recovery-drills",
-        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "cases", "knowledge-bases", "knowledge-tags",
+        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "knowledge-search", "cases", "knowledge-bases", "knowledge-tags",
         "agents",
         "inspection-plans", "inspection-plan-detail",
         "report-templates",
@@ -303,7 +305,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261111_center2"
+        expected = "./js/aiops-shell.js?v=20261124_knowledge_search"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name not in {"login.html", "notification-open.html"}]
         for path in pages:
             parser = _Parser()
@@ -817,7 +819,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn(f"workspaces.css?v={stylesheet_version}", page)
-            self.assertIn("aiops-shell.js?v=20261111_center2", page)
+            self.assertIn("aiops-shell.js?v=20261124_knowledge_search", page)
             self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         inspections = (AIOPS_ROOT / "inspections.html").read_text(encoding="utf-8")
         self.assertIn("reference-inspections.css?v=20261103_1", inspections)
@@ -920,11 +922,12 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("<h1>运维资料库</h1>", page)
         self.assertIn('class="table-card knowledge-table-card"', page)
         self.assertIn('<th>知识库</th>', page)
-        self.assertIn('colspan="6"', page)
+        self.assertIn('colspan="7"', page)
         self.assertIn('id="knowledge-search"', page)
         self.assertIn('id="knowledge-status"', page)
         self.assertIn('class="reference-drawer admin-drawer admin-drawer-sectioned knowledge-upload-drawer"', page)
         self.assertIn('class="reference-drawer admin-drawer admin-drawer-sectioned knowledge-detail-drawer"', page)
+        self.assertIn('class="reference-drawer admin-drawer admin-drawer-sectioned knowledge-batch-drawer"', page)
         self.assertIn('id="upload-knowledge-base"', page)
         self.assertIn("/operations-knowledge", script)
         self.assertIn('type="file" multiple', page)
@@ -1589,6 +1592,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             '["data-protection", "数据保护"]',
             '["recovery-drills", "恢复演练"]', '["reports", "报告中心", "knowledge"]',
             '["operations-knowledge", "运维资料库"]',
+            '["knowledge-search", "资料检索"]',
             '["business-systems", "业务系统"]', '["diagnostic-sources", "监控源"]',
             '["responsibility-groups", "责任组"]', '["knowledge-bases", "运维知识库"]',
             '["agents", "Agent 管理"]', '["report-templates", "模板中心"]',

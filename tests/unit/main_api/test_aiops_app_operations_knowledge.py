@@ -7,16 +7,20 @@ import unittest
 from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
 
+from fastapi import HTTPException, Response
+
 from main_api.api.aiops_app import (
     router,
     delete_operations_knowledge_asset,
     update_operations_knowledge_base,
     operations_knowledge_overview,
+    search_managed_operations_knowledge,
     upload_operations_knowledge,
     upload_operations_manual_version,
 )
 from platform_core.identity import uuid7
 from platform_core.contracts.aiops.knowledge_base import KnowledgeBaseWrite
+from platform_core.contracts.aiops.knowledge_search import KnowledgeManagementSearchRequest
 from platform_core.contracts import AuthContext, PrincipalKind
 
 
@@ -73,6 +77,32 @@ def _request(client, *, body: bytes = b"", headers=None):
 
 
 class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
+    async def test_management_search_requires_user_and_knowledge_manage(self):
+        context = _context().model_copy(update={"app_id": None})
+        client = SimpleNamespace(search_managed_operations_knowledge=AsyncMock(return_value={}))
+        request = _request(client)
+        request.state.auth_context = context
+        response = Response()
+        payload = KnowledgeManagementSearchRequest(query="等待", source_kind="MANUAL")
+        with patch("main_api.api.aiops_app._require", AsyncMock(side_effect=HTTPException(403))) as authorize:
+            with self.assertRaises(HTTPException):
+                await search_managed_operations_knowledge(payload, request, response)
+            authorize.assert_awaited_once_with(request, "aiops:knowledge_manage")
+        client.search_managed_operations_knowledge.assert_not_awaited()
+        with patch("main_api.api.aiops_app._require", AsyncMock()):
+            await search_managed_operations_knowledge(payload, request, response)
+        self.assertEqual("no-store", response.headers["cache-control"])
+        forwarded = client.search_managed_operations_knowledge.await_args
+        self.assertEqual({"query": "等待", "source_kind": "MANUAL", "knowledge_base_id": None}, forwarded.args[0])
+        self.assertEqual(context.domain_id, forwarded.kwargs["auth_context"].domain_id)
+        self.assertEqual("aiops", forwarded.kwargs["auth_context"].app_id)
+        self.assertEqual(("aiops:knowledge_manage",), forwarded.kwargs["auth_context"].scopes)
+        request.state.auth_context = context.model_copy(update={"principal_kind": PrincipalKind.APP_API_CLIENT})
+        with self.assertRaises(HTTPException) as caught:
+            await search_managed_operations_knowledge(payload, request, Response())
+        self.assertEqual(403, caught.exception.status_code)
+        self.assertEqual(1, client.search_managed_operations_knowledge.await_count)
+
     async def test_knowledge_uses_unified_agent_conversation_not_fixed_assistant(self):
         paths = {route.path for route in router.routes}
         self.assertTrue(any(path.endswith("/conversations/{conversation_id}/turns") for path in paths))

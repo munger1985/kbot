@@ -719,6 +719,10 @@ class OperationsKnowledgeService:
         )})
         return {"model_id": str(model_id), "technical_name": technical_name, "revision": revision}
 
+    async def _management_relevance_model_snapshot(self, model_id, *, access, context):
+        """复用正文分类模型的目录授权校验，不借用 Agent 或其他资料源的绑定。"""
+        return await self._tagging_model_snapshot(model_id, context=context)
+
     async def _validate_case_models(
         self, *, models: dict[str, UUID], context: AuthContext,
     ) -> None:

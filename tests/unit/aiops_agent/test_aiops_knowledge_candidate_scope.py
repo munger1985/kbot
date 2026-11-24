@@ -123,6 +123,243 @@ def test_final_top_k_does_not_truncate_registry_before_body_search():
     asyncio.run(run())
 
 
+def managed_search_fixture(f):
+    from aiops_agent.domain.knowledge_retrieval import RetrievalAccess
+    domain_id = f.kwargs["domain_id"]
+    context = RetrievalAccess(domain_id, f.kwargs.get("tenant_id"), "knowledge-manager")
+    base_id = f.request.knowledge_base_ids[0]
+    f.repo.list_knowledge_bases = AsyncMock(return_value=[
+        SimpleNamespace(knowledge_base_id=base_id, status="ACTIVE"),
+        SimpleNamespace(knowledge_base_id=uuid7(), status="ARCHIVED"),
+    ])
+    return {"domain_id": domain_id, "context": context}
+
+
+@pytest.mark.parametrize("selection", ["all", "chosen", "outside", "withdrawn"])
+def test_management_search_freezes_only_current_domain_active_manuals(selection):
+    from aiops_agent.application.knowledge_search import management_knowledge_search
+    from platform_core.contracts.aiops.knowledge_search import KnowledgeManagementSearchRequest
+
+    async def run():
+        f = setup_search()
+        f.state.quote = "存储系统的运维说明"
+        kwargs = managed_search_fixture(f)
+        active_id = f.request.knowledge_base_ids[0]
+        selected = {"all": None, "outside": uuid7()}.get(selection, active_id)
+        if selection == "withdrawn":
+            stream = f.retrieval.stream_content.side_effect
+            async def withdraw(*args, **kwargs):
+                result = await stream(*args, **kwargs)
+                f.state.rows = f.rows[:-1]
+                return result
+            f.retrieval.stream_content.side_effect = withdraw
+        payload = KnowledgeManagementSearchRequest(query="  存储  ", source_kind="MANUAL", knowledge_base_id=selected)
+        value = await management_knowledge_search(f.service, payload=payload, **kwargs)
+        assert f.repo.list_knowledge_bases.await_args.kwargs == {"domain_id": kwargs["domain_id"]}
+        f.agents.get.assert_not_awaited()
+        if selection == "outside":
+            assert value["retrieval_conclusion"] == "NO_ELIGIBLE_RESOURCES"
+            f.repo.list_published_candidates.assert_not_awaited()
+            return
+        search_scope = f.repo.list_published_candidates.await_args.kwargs
+        assert search_scope["knowledge_base_ids"] == (active_id,)
+        assert search_scope["target_id"] is None
+        assert f.retrieval.create_scope.await_args.args[0].management_search
+        assert f.state.tickets[0]["agent_id"] is None
+        assert f.retrieval.retrieve.await_args.kwargs["query"].text == "存储"
+        if selection == "withdrawn":
+            assert value["retrieval_conclusion"] == "NOT_VERIFIED"
+            assert value["results"] == []
+        else:
+            row, = value["results"]
+            assert row["asset_version_id"] == str(f.wanted[1].asset_version_id)
+            assert row["passages"] == [{"quote": f.state.quote, "truncated": False}]
+            assert "citation_pack" not in row and "document_bindings" not in row
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("source_ok", [True, False])
+def test_management_case_search_rechecks_source_without_applicability_model(monkeypatch, source_ok):
+    from aiops_agent.application.case_knowledge_projection import case_knowledge_markdown, compile_case_knowledge
+    from aiops_agent.application.knowledge_search import management_knowledge_search
+    from platform_core.contracts.aiops.knowledge_search import KnowledgeManagementSearchRequest
+    from tests.unit.aiops_agent.test_aiops_case_knowledge_projection import profile
+
+    sources = AsyncMock(return_value=source_ok)
+    assessment = AsyncMock(side_effect=AssertionError("资料检索不评估环境适用性"))
+    monkeypatch.setattr("aiops_agent.application.knowledge_search.validate_case_sources", sources)
+    monkeypatch.setattr("aiops_agent.application.knowledge_search.validate_case_effect", AsyncMock(return_value=True))
+    monkeypatch.setattr("aiops_agent.application.knowledge_search.assess_case_candidates", assessment)
+    async def run():
+        f = setup_search(size=1)
+        kwargs = managed_search_fixture(f)
+        asset, version, _ = f.wanted
+        profile_value = profile()
+        case_knowledge_markdown(title="复盘", profile=profile_value)
+        projection = compile_case_knowledge(title="复盘", profile=profile_value)
+        unit = next(unit for unit in projection.units if unit.unit_id == "case-action-1")
+        asset.asset_kind = "DIAGNOSIS_CASE"
+        version.profile_json = profile_value.model_dump(mode="json")
+        f.state.quote = projection.body.decode()[unit.start:unit.end]
+        f.state.source_hash = profile_value.knowledge_projection.body_sha256
+        result = await management_knowledge_search(f.service,
+            payload=KnowledgeManagementSearchRequest(query="调整调用频率", source_kind="DIAGNOSIS_CASE"), **kwargs)
+        assert bool(result["results"]) is source_ok
+        assert all(call.kwargs["agent_id"] is None for call in sources.await_args_list)
+        if source_ok:
+            assert sources.await_count >= 2
+        else:
+            f.retrieval.retrieve.assert_not_awaited()
+        f.repo.list_knowledge_bases.assert_not_awaited()
+        assessment.assert_not_awaited()
+    asyncio.run(run())
+
+
+
+@pytest.mark.parametrize("mode", [
+    "no_model", "semantic", "invalid_witness", "invalid_identity", "missing_prompt",
+    "all_rejected", "none_verified", "withdrawn_during_model",
+])
+def test_management_search_requires_body_support_and_does_not_pad_results(mode):
+    from hashlib import sha256
+    from knowledge_algorithms.contracts.identity import EvidenceKey
+    from aiops_agent.application.knowledge_search import management_knowledge_search
+    from platform_core.contracts.aiops.knowledge_search import KnowledgeManagementSearchRequest
+
+    async def run():
+        f = setup_search(size=3)
+        kwargs = managed_search_fixture(f)
+        library = f.request.knowledge_base_ids[0]
+        irrelevant = "Oracle 19c 主要的新特性包括实时统计信息收集和自动化索引。"
+        exact = "exadata X10M-2 数据库计算节点硬件配置是什么？每节点两颗处理器。"
+        synonym = "在 Exadata X10M 中，数据库服务器与存储服务器分别部署。"
+        titles = ["Oracle 19c 通用特性", "计算节点配置", "数据库服务器拓扑"]
+        quotes = ([irrelevant, exact, synonym] if mode not in {"all_rejected", "none_verified"}
+                  else [irrelevant] * 3)
+        by_doc, by_key = {}, {}
+        for (asset, _, refs), title, quote in zip(f.rows, titles, quotes, strict=True):
+            asset.display_name = title
+            asset.knowledge_base_id = library
+            by_doc[str(refs.document_version_id)] = quote
+        async def retrieve(access, *, scope, **_):
+            assert not f.state.transaction_open
+            evidence = []
+            for snapshot in scope.snapshots:
+                key = EvidenceKey("aiops", snapshot["document_version_id"], snapshot["parse_run_id"], "node")
+                by_key[key.stable_key] = by_doc[key.document_version_ref]
+                evidence.append(SimpleNamespace(key=key, mime_type="text/plain", locators=(),
+                    source_keys=(key,), source_spans=(), payload_status="READABLE"))
+            hits = tuple(SimpleNamespace(rank=i, evidence_key=item.key) for i, item in enumerate(evidence, 1))
+            return SimpleNamespace(retrieval_ref="receipt", evidence_set=SimpleNamespace(
+                evidence=evidence, primary_hits=hits, groups=(), channel_status=(), status="COMPLETE", scope_exhausted=True))
+        async def stream(access, *, stable_key, **_):
+            body = by_key[stable_key].encode()
+            async def chunks():
+                yield body
+            return SimpleNamespace(content_hash=sha256(body).hexdigest(), byte_count=len(body)), chunks()
+        f.retrieval.retrieve.side_effect = retrieve
+        f.retrieval.stream_content.side_effect = stream
+        model_id = uuid7()
+        f.repo.list_knowledge_bases.return_value[0].configuration_json = {"models": {"parser_llm": str(model_id)}}
+        async def generate(**call):
+            assert not f.state.transaction_open
+            assert call["model_snapshot"]["model_id"] == str(model_id)
+            assert call["input_payload"]["query"] == "Exadata 计算节点"
+            passages = call["input_payload"]["passages"]
+            assert all(item["text"] != exact for item in passages)
+            judgments = [{"passage_id": item["passage_id"], "support":
+                synonym if item["text"] == synonym and mode in {"semantic", "withdrawn_during_model"} else
+                "资料中找不到这段文字" if item["text"] == synonym and mode == "invalid_witness" else None}
+                for item in passages]
+            if mode == "invalid_identity":
+                judgments[-1]["passage_id"] = judgments[0]["passage_id"]
+            if mode == "withdrawn_during_model":
+                f.state.rows = f.rows[:-1]
+            return SimpleNamespace(output={"judgments": judgments})
+        if mode not in {"no_model", "none_verified"}:
+            f.service._structured_model = SimpleNamespace(generate_structured=AsyncMock(side_effect=generate))
+            f.service._prompt_registry = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(
+                content="正文相关性审核", ref=lambda: {"prompt_id": "passage_relevance"})))
+            if mode == "missing_prompt":
+                f.service._prompt_registry.resolve.side_effect = LookupError("未初始化")
+            f.service._management_relevance_model_snapshot = AsyncMock(return_value={"model_id": str(model_id)})
+        result = await management_knowledge_search(f.service, payload=KnowledgeManagementSearchRequest(
+            query="Exadata 计算节点", source_kind="MANUAL", knowledge_base_id=library), **kwargs)
+        expected = ([] if mode in {"all_rejected", "none_verified"}
+                    else titles[1:] if mode == "semantic" else titles[1:2])
+        assert [row["title"] for row in result["results"]] == expected
+        assert result["retrieval_conclusion"] == {
+            "all_rejected": "NO_MATCH", "none_verified": "NOT_VERIFIED",
+        }.get(mode, "EVIDENCE_FOUND")
+        assert ("PASSAGE_RELEVANCE_NOT_VERIFIED" in result["coverage"]["gaps"]) == (
+            mode in {"no_model", "invalid_witness", "invalid_identity", "missing_prompt", "none_verified"})
+        if mode == "withdrawn_during_model":
+            assert "SNAPSHOT_CHANGED" in result["coverage"]["gaps"]
+        if expected:
+            assert result["results"][0]["passages"] == [{"quote": exact, "truncated": False}]
+
+    asyncio.run(run())
+
+
+def test_management_ticket_cannot_be_used_in_regular_retrieval():
+    from aiops_agent.application.operations_knowledge_authorization import OperationsKnowledgeAuthorization
+    from knowledge_algorithms.contracts.errors import AlgorithmError
+
+    async def run():
+        f = setup_search()
+        kwargs = managed_search_fixture(f)
+        f.query_tickets.query_ticket = AsyncMock(return_value={"management_search": True})
+        authorizer = OperationsKnowledgeAuthorization(service=f.service)
+        with pytest.raises(AlgorithmError, match="不得跨入口使用"):
+            await authorizer.authorize(kwargs["context"], "ops-query:" + str(uuid7()))
+        f.repo.list_published_candidates.assert_not_awaited()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("extra", [{"agent_id": str(uuid7())}, {"max_security_level": 5},
+    {"domain_id": str(uuid7())}, {"knowledge_base_id": str(uuid7())}])
+def test_management_search_rejects_external_authority_fields(extra):
+    from pydantic import ValidationError
+    from platform_core.contracts.aiops.knowledge_search import KnowledgeManagementSearchRequest
+
+    with pytest.raises(ValidationError):
+        KnowledgeManagementSearchRequest(query="复盘", source_kind="DIAGNOSIS_CASE", **extra)
+
+
+@pytest.mark.parametrize("denied", [None, "service_scope", "user_scope", "app", "principal"])
+def test_internal_management_search_requires_trusted_management_user(monkeypatch, denied):
+    from datetime import UTC, datetime, timedelta
+    from fastapi import HTTPException
+    from aiops_agent.api.operations_knowledge import management_search
+    from platform_core.contracts import PrincipalKind, ServiceIdentity
+    from platform_core.contracts.aiops.knowledge_search import KnowledgeManagementSearchRequest
+
+    domain_id = 42
+    context = SimpleNamespace(domain_id=str(domain_id), tenant_id=str(uuid7()),
+        principal_id=uuid7(), asserted_user_id="manager", client_id="portal",
+        principal_kind=PrincipalKind.SERVICE if denied == "principal" else PrincipalKind.PORTAL,
+        app_id="other-app" if denied == "app" else "aiops",
+        scopes=() if denied == "user_scope" else ("aiops:knowledge_manage",))
+    clock = datetime.now(UTC)
+    identity = ServiceIdentity(issuer="platform", subject="main-api", audience="aiops",
+        scopes=("aiops.run",) if denied == "service_scope" else ("aiops.manage",),
+        issued_at=clock, expires_at=clock + timedelta(minutes=1), token_id=uuid7())
+    service = object()
+    request = SimpleNamespace(state=SimpleNamespace(service_identity=identity),
+        app=SimpleNamespace(state=SimpleNamespace(operations_knowledge_service=service)))
+    forward = AsyncMock(return_value={})
+    monkeypatch.setattr("aiops_agent.application.knowledge_search.management_knowledge_search", forward)
+    payload = KnowledgeManagementSearchRequest(query="等待", source_kind="MANUAL")
+    if denied:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(management_search(payload, request, context))
+        assert error.value.status_code == 403
+        forward.assert_not_awaited()
+    else:
+        asyncio.run(management_search(payload, request, context))
+        forward.assert_awaited_once_with(service, domain_id=domain_id, context=context, payload=payload)
+
+
 @pytest.mark.parametrize("failure,expected", [
     ("disabled", "KNOWLEDGE_DISABLED"), ("source_kind", "NO_AUTHORIZED_KNOWLEDGE_SOURCES"),
     ("unbound_base", "NO_KNOWLEDGE_BASE_BOUND"), ("target", "TARGET_NOT_AUTHORIZED"),

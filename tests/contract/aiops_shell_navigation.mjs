@@ -64,6 +64,13 @@ test("业务空间显示接口返回的真实名称，不显示数字 ID", () =>
   }
 });
 
+test("资料检索只在知识管理权限下显示，并归入知识资产", () => {
+  const allowed = setup("knowledge-search");
+  assert.deepEqual(allowed.openKeys(), ["knowledge-assets"]);
+  assert.match(allowed.markup, /href="\.\/knowledge-search\.html" aria-current="page"/);
+  assert.doesNotMatch(setup("chat", ["aiops:use"]).markup, /knowledge-search\.html/);
+});
+
 test("名称缺失或为空时明确显示不可用，不退回 ID", () => {
   for (const domain_name of [undefined, null, "", "   "]) {
     const app = setup("chat", permissions, { domain_id: 87, domain_name });
@@ -164,7 +171,7 @@ test("配置与治理保留原七项并追加通知入口，知识内容入口�
 test("固定入口与组内链接都保留源模板的图标结构，当前主题决定可见性", () => {
   const app = setup("chat", permissions, undefined, ["app_admin"]);
   const links = [...app.markup.matchAll(/<a class="nav-item business-nav-item[^>]*>([\s\S]*?)<\/a>/g)];
-  assert.equal(links.length, 18);
+  assert.equal(links.length, 20);
   for (const [, content] of links) {
     assert.match(content, /<span class="nav-item-icon"><svg[^>]*>[\s\S]*?<path d="[^"]+"/);
     assert.match(content, /<span class="nav-item-label">/);

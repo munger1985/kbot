@@ -10,7 +10,7 @@
     "data-protection": "aiops:use",
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
-    "operations-knowledge": "aiops:knowledge_manage", "knowledge-bases": "aiops:knowledge_manage", "knowledge-tags": "aiops:knowledge_manage", agents: "aiops:agent_manage",
+    "operations-knowledge": "aiops:knowledge_manage", "knowledge-search": "aiops:knowledge_manage", "knowledge-bases": "aiops:knowledge_manage", "knowledge-tags": "aiops:knowledge_manage", agents: "aiops:agent_manage",
     "inspection-plans": "aiops:plan_manage",
     "inspection-plan-detail": "aiops:plan_manage",
     "report-templates": "aiops:plan_manage",
@@ -30,7 +30,7 @@
       ["inspections", "数据库巡检"], ["data-protection", "数据保护"], ["recovery-drills", "恢复演练"],
     ]],
     ["knowledge-assets", "知识资产", "knowledge", [
-      ["cases", "诊断案例库"], ["operations-knowledge", "运维资料库"],
+      ["knowledge-search", "资料检索"], ["cases", "诊断案例库"], ["operations-knowledge", "运维资料库"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
       ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"], ["notification-channels", "通知渠道"], ["notification-delivery", "通知投递"], ["users", "用户管理"],
@@ -44,11 +44,12 @@
   ];
   const pageIcons = {
     dashboard: "overview", monitoring: "data", situations: "audit", inspections: "data",
-    "recovery-drills": "audit", "data-protection": "audit", reports: "knowledge", cases: "knowledge", "operations-knowledge": "knowledge",
+    "recovery-drills": "audit", "data-protection": "audit", reports: "knowledge", cases: "knowledge", "operations-knowledge": "knowledge", "knowledge-search": "search",
     "business-systems": "models", "diagnostic-sources": "data", "responsibility-groups": "users",
     "knowledge-bases": "knowledge", agents: "agents", "report-templates": "knowledge", runs: "data",
   };
   const iconPaths = {
+    search: ["M21 21l-5-5", "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z"],
     overview: ["M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"],
     agents: ["M8 9h8", "M8 13h5", "M9 3h6l1 3h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2z"],
     knowledge: ["M5 4.5A2.5 2.5 0 0 1 7.5 2H11v17H7.5A2.5 2.5 0 0 0 5 21z", "M19 4.5A2.5 2.5 0 0 0 16.5 2H13v17h3.5A2.5 2.5 0 0 1 19 21z"],

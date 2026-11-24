@@ -43,7 +43,12 @@ from platform_core.contracts.aiops import (
 )
 from platform_core.contracts.aiops.workload import PGBADGER_MAX_UPLOAD_BYTES
 from platform_core.contracts.aiops.knowledge_base import KnowledgeBaseList, KnowledgeBaseView, KnowledgeBaseWrite, parse_delete_version
-from platform_core.contracts.aiops.knowledge_search import KnowledgeSearchResponse
+from platform_core.contracts.aiops.knowledge_search import (
+    KNOWLEDGE_MANAGEMENT_SEARCH_SCOPE,
+    KnowledgeManagementSearchRequest,
+    KnowledgeManagementSearchResponse,
+    KnowledgeSearchResponse,
+)
 from platform_core.contracts.aiops.knowledge import KnowledgeReuseFeedback
 from platform_core.contracts.aiops.case_collection import CaseCollectionModels
 from platform_core.contracts.aiops.output_jobs import (
@@ -913,6 +918,20 @@ async def list_operations_knowledge_reviews(request: Request, limit: int = Query
     return await _client(request).list_operations_knowledge_reviews(
         limit=limit, auth_context=request.state.auth_context
     )
+
+
+@router.post("/operations-knowledge/search", response_model=KnowledgeManagementSearchResponse)
+async def search_managed_operations_knowledge(payload: KnowledgeManagementSearchRequest, request: Request, response: Response):
+    context = request.state.auth_context
+    if context.principal_kind != PrincipalKind.PORTAL:
+        raise HTTPException(403, {"code": "APP_PRINCIPAL_UNSUPPORTED", "message": "资料检索仅供知识管理人员使用"})
+    await _require(request, KNOWLEDGE_MANAGEMENT_SEARCH_SCOPE)
+    result = await _client(request).search_managed_operations_knowledge(
+        payload.model_dump(mode="json"),
+        auth_context=context.model_copy(update={"app_id": "aiops", "scopes": (KNOWLEDGE_MANAGEMENT_SEARCH_SCOPE,)}),
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return result
 
 
 @router.post("/operations-knowledge/search-preview", response_model=KnowledgeSearchResponse)

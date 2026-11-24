@@ -53,11 +53,18 @@ class OperationsDocumentRepository(KnowledgeIngestionRepository):
     async def create_query_ticket(self, access, *, ticket_id, agent_id, agent_version_id, target_id, request, snapshots, expires_at, filters=None, parent_turn_id=None, execution_spec=None):
         require(snapshots and len(snapshots) <= 500, "知识查询范围为空或超过预算")
         snapshots = [{key: value for key, value in row.items() if key != "created_at"} for row in snapshots]
-        values = {"parent_turn_id": str(parent_turn_id) if parent_turn_id else None, "agent_id": str(agent_id), "target_id": str(target_id) if target_id else None,
-            "agent_version_id": str(agent_version_id),
+        management_search = access.management_search
+        require(not management_search or all(value is None for value in
+            (agent_id, agent_version_id, target_id, parent_turn_id, execution_spec)),
+            "资料检索委托不能包含 Agent、目标或运行规格")
+        values = {"parent_turn_id": str(parent_turn_id) if parent_turn_id else None,
+            "agent_id": None if management_search else str(agent_id), "target_id": str(target_id) if target_id else None,
+            "agent_version_id": None if management_search else str(agent_version_id),
             "request": request.model_dump(mode="json"), "snapshots": snapshots, "filters": filters or {},
             "execution_spec": execution_spec,
             "run_ref": getattr(access, "run_ref", None), "spec_hash": getattr(access, "spec_hash", None)}
+        if management_search:
+            values["management_search"] = True
         digest = fingerprint(values)
         await self._repos(access)["knowledge_scope_snapshot"].add(dict(
             scope_snapshot_id=ticket_id, subject_ref=access.subject_ref, scope_hash=digest,

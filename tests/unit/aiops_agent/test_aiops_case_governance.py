@@ -111,11 +111,14 @@ def test_source_health_rechecks_versions_hashes_target_and_source_authorization(
 def test_case_search_filters_invalid_source_before_kc_reads_body():
     async def run():
         uow, domain, version, agent = source_uow("source_revoked")
-        uow.operations_knowledge.list_published_candidates.return_value = [(
+        candidate = (
             SimpleNamespace(asset_id=str(uuid7()), asset_kind="DIAGNOSIS_CASE", display_name="case"),
             SimpleNamespace(asset_version_id=version, version_no=1, profile_json=profile().model_dump()),
             SimpleNamespace(index_ref_id=uuid7()),
-        )]
+        )
+        uow.operations_knowledge.list_published_catalog = AsyncMock(return_value=[candidate[:2]])
+        uow.operations_knowledge.published_index_counts = AsyncMock(return_value={})
+        uow.operations_knowledge.list_published_candidates.return_value = [candidate]
         class Uow:
             async def __aenter__(self): return uow
             async def __aexit__(self, *args): pass
@@ -131,6 +134,7 @@ def test_case_search_filters_invalid_source_before_kc_reads_body():
             kwargs["tenant_id"] = uuid7()
         result = await service.search(**kwargs)
         assert not result["results"]
+        uow.operations_knowledge.list_published_candidates.assert_not_awaited()
         service._documents.retrieval.retrieve.assert_not_awaited()
     asyncio.run(run())
 

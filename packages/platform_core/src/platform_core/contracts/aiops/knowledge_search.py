@@ -1,9 +1,27 @@
 """AIOps 检索响应；不公开 App 委托或 Runtime 授权绑定。"""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+
+KNOWLEDGE_MANAGEMENT_SEARCH_SCOPE = "aiops:knowledge_manage"
+
+
+class KnowledgeManagementSearchRequest(BaseModel):
+    """资料检索只接受用户筛选，不接受授权、模型或 Agent 绑定。"""
+
+    model_config = ConfigDict(extra="forbid")
+    query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
+    source_kind: Literal["MANUAL", "DIAGNOSIS_CASE"]
+    knowledge_base_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_knowledge_base(self):
+        if self.source_kind == "DIAGNOSIS_CASE" and self.knowledge_base_id is not None:
+            raise ValueError("诊断案例不按运维知识库筛选")
+        return self
 
 
 class KnowledgeChannelFailure(BaseModel):
@@ -74,4 +92,25 @@ class KnowledgeSearchResponse(BaseModel):
     retrieval_conclusion: Literal["EVIDENCE_FOUND", "NO_ELIGIBLE_RESOURCES", "NO_MATCH", "NOT_VERIFIED"] | None = None
     coverage: KnowledgeSearchCoverage
     results: list[AIOpsKnowledgeSearchResult]
+    warnings: list[str]
+
+
+class KnowledgeManagementPassage(BaseModel):
+    quote: str
+    truncated: bool
+
+
+class KnowledgeManagementSearchHit(BaseModel):
+    asset_id: UUID
+    asset_version_id: UUID
+    asset_kind: Literal["MANUAL", "DIAGNOSIS_CASE"]
+    title: str
+    version: int
+    passages: list[KnowledgeManagementPassage]
+
+
+class KnowledgeManagementSearchResponse(BaseModel):
+    retrieval_conclusion: Literal["EVIDENCE_FOUND", "NO_ELIGIBLE_RESOURCES", "NO_MATCH", "NOT_VERIFIED"]
+    coverage: KnowledgeSearchCoverage
+    results: list[KnowledgeManagementSearchHit]
     warnings: list[str]

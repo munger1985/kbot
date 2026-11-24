@@ -1,6 +1,6 @@
 """发布资格与正文相关性分离的知识检索；所有外部调用均在数据库事务之外。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from collections import Counter
 from uuid import UUID
@@ -14,7 +14,9 @@ from aiops_agent.application.case_applicability import (
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.knowledge_ranking import knowledge_rank_scorecard, knowledge_rank_key, RANKING_POLICY
 from aiops_agent.contracts.knowledge import DiagnosisCaseProfile
+from aiops_agent.contracts.knowledge import KnowledgeSearchRequest
 from .knowledge_evidence import project_receipt, retrieval_coverage
+from .management_relevance import PASSAGE_CHARS, qualify_passages
 
 
 @dataclass(frozen=True)
@@ -85,16 +87,24 @@ def _lineage(candidate):
 
 
 async def search_published_knowledge(
-    service, *, domain_id, agent_id, request, context, target_id, filters, kc_scope,
+    service, *, domain_id, agent_id, request, context, target_id, filters, kc_scope, management_search=False,
 ):
     from aiops_agent.application.operations_knowledge import (
         _profile_dimensions_from_profile,
     )
 
-    async with service._uow_factory() as uow:
-        authorization = await _current_knowledge_authorization(
+    async def authorize(uow):
+        if management_search:
+            return await current_management_authorization(uow=uow, domain_id=domain_id, request=request)
+        return await _current_knowledge_authorization(
             uow=uow, domain_id=domain_id, agent_id=agent_id, target_id=target_id, request=request,
         )
+
+    async with service._uow_factory() as uow:
+        authorization = await authorize(uow)
+    if management_search and authorization == "NO_ACTIVE_MANUAL_LIBRARY":
+        return {"status": "NO_APPLICABLE_KNOWLEDGE", "retrieval_conclusion": "NO_ELIGIBLE_RESOURCES",
+            "results": [], "warnings": [], "coverage": retrieval_coverage()}
     if isinstance(authorization, str):
         return {"status": authorization, "retrieval_conclusion": "NOT_VERIFIED", "results": [],
             "warnings": ["当前 Agent 的知识能力、知识库或来源范围不可用"],
@@ -120,6 +130,7 @@ async def search_published_knowledge(
         index_counts = await uow.operations_knowledge.published_index_counts(asset_version_ids=tuple(eligible))
     catalog_complete = len(catalog) <= budget.max_candidates
     snapshots, scanned, cursor, exhausted = [], 0, None, not eligible
+    base_by_document = {}
     eligible_ids = tuple(sorted(eligible, key=str))
     # 短分页事务；禁止把 ORM 对象带到检索调用后再访问。
     while not exhausted and scanned < budget.max_candidates:
@@ -132,6 +143,8 @@ async def search_published_knowledge(
                 scanned += 1
                 if version.asset_version_id in eligible:
                     snapshots.append(_snapshot(asset, version, index))
+                    if management_search:
+                        base_by_document[str(index.document_version_id)] = getattr(asset, "knowledge_base_id", None)
             if len(rows) < page_size:
                 exhausted = True
             elif rows:
@@ -190,9 +203,7 @@ async def search_published_knowledge(
         """正文输出复核当前授权和精确文档版本。"""
         current = set()
         async with service._uow_factory() as uow:
-            checked = await _current_knowledge_authorization(
-                uow=uow, domain_id=domain_id, agent_id=agent_id, target_id=target_id, request=request,
-            )
+            checked = await authorize(uow)
             if isinstance(checked, str) or checked != (request, knowledge_base_ids, agent_version_id):
                 return None
             if not snapshots:
@@ -221,7 +232,7 @@ async def search_published_knowledge(
             return response("KNOWLEDGE_SCOPE_CHANGED", [])
         return response("NO_APPLICABLE_KNOWLEDGE", [])
 
-    if any(row["asset_kind"] == "DIAGNOSIS_CASE" for row in snapshots):
+    if not management_search and any(row["asset_kind"] == "DIAGNOSIS_CASE" for row in snapshots):
         async with service._uow_factory() as uow:
             case_search_context = await load_case_search_context(
                 uow=uow, domain_id=domain_id, agent_id=agent_id, target_id=target_id,
@@ -235,6 +246,8 @@ async def search_published_knowledge(
     from knowledge_algorithms.contracts.query import QueryInput, QueryMode
     from knowledge_algorithms.contracts.errors import AlgorithmError
     access = service._documents.access(context)
+    if management_search:
+        access = replace(access, management_search=True)
     retrieval = service._documents.retrieval
     batch_size = min(500, retrieval.limits.max_versions, budget.discovery_scope_size)
     shard_count = (len(snapshots) + batch_size - 1) // batch_size
@@ -256,7 +269,7 @@ async def search_published_knowledge(
                     min(budget.discovery_per_collection, max(request.max_results * 3, len(shard))),
                     ("TEXT", "TABLE"), text=request.query))
             hits, gaps, channels = await project_receipt(retrieval, access, receipt, allowed,
-                primary_budget=primary_budget, relation_budget=relation_budget)
+                primary_budget=primary_budget, relation_budget=relation_budget, include_related=not management_search)
         except (AlgorithmError, OSError) as exc:
             coverage_gaps.append("SHARD_UNAVAILABLE")
             channel_failures.append({"channel": "retrieval", "reason": getattr(getattr(exc, "code", None), "value", "CONTENT_IO_FAILED")})
@@ -337,11 +350,34 @@ async def search_published_knowledge(
             grouped[key]["citation_pack"].append(citation)
             grouped[key]["evidence_groups"].append(evidence_group)
         scores[key] = max(scores.get(key, 0.0), discovery_scores.get(revision, 0.0))
+    direct_evidence = set()
+    if management_search and grouped:
+        passages = [(citation, group) for row in grouped.values()
+                    for citation, group in zip(row["citation_pack"], row["evidence_groups"], strict=True)]
+        verified, direct, incomplete = await qualify_passages(
+            service, access=access, context=context, query=request.query, source_kind=request.source_kinds[0],
+            evidence_items=passages, base_by_document=base_by_document,
+        )
+        kept_keys = {passages[position - 1][1]["primary"]["evidence_key"] for position in verified}
+        direct_evidence = {passages[position - 1][1]["primary"]["evidence_key"] for position in direct}
+        for key, row in tuple(grouped.items()):
+            kept = [(citation, group) for citation, group in
+                    zip(row["citation_pack"], row["evidence_groups"], strict=True)
+                    if group["primary"]["evidence_key"] in kept_keys]
+            if not kept:
+                del grouped[key]
+                continue
+            kept.sort(key=lambda pair: pair[1]["primary"]["evidence_key"] not in direct_evidence)
+            row["citation_pack"] = [citation for citation, _ in kept]
+            row["evidence_groups"] = [group for _, group in kept]
+        if incomplete:
+            coverage_gaps.append("PASSAGE_RELEVANCE_NOT_VERIFIED")
+            warnings.append("部分候选未能核验正文相关性，未作为命中返回。")
     candidates_by_version = {row["asset_version_id"]: row for row in by_revision.values()}
     case_candidates = sorted((row for row in candidates_by_version.values()
         if row["asset_kind"] == "DIAGNOSIS_CASE" and row["asset_version_id"] in grouped),
         key=lambda row: (-scores[row["asset_version_id"]], row["asset_version_id"]))
-    if case_candidates:
+    if case_candidates and not management_search:
         assessments, semantic_status, incomplete, semantic_provenance = await assess_case_candidates(
             service, candidates=case_candidates, context=case_search_context, request=request,
             model_scope=kc_scope, max_cases=budget.semantic_case_budget,
@@ -371,7 +407,9 @@ async def search_published_knowledge(
     # 所有外部调用之后重新核验确切发布版本、Agent 模型和当前 Target，不能重取 Top-K。
     checked = await revalidate_snapshots()
     if checked is None:
-        return response("KNOWLEDGE_SCOPE_CHANGED", [], ["检索期间 Agent 授权、模型或目标环境已变化，请重新检索。"])
+        message = ("检索期间可检索的资料范围已变化，请重新检索。" if management_search
+            else "检索期间 Agent 授权、模型或目标环境已变化，请重新检索。")
+        return response("KNOWLEDGE_SCOPE_CHANGED", [], [message])
     if len(checked) != len(snapshots):
         coverage_gaps.append("SNAPSHOT_CHANGED")
     current = {(row["asset_version_id"], row["document_version_id"]) for row in checked}
@@ -407,7 +445,13 @@ async def search_published_knowledge(
         row["ranking"] = knowledge_rank_scorecard(candidate=candidates_by_version[key], result=row,
             kc_relevance=surviving_score, purpose=request.purpose, now=ranking_time)
     diagnostics["ranking_policy"] = RANKING_POLICY
-    ordered = sorted(grouped.values(), key=knowledge_rank_key)
+    if management_search:
+        ordered = sorted(grouped.values(), key=lambda row: (
+            not any(group["primary"]["evidence_key"] in direct_evidence for group in row["evidence_groups"]),
+            *knowledge_rank_key(row),
+        ))
+    else:
+        ordered = sorted(grouped.values(), key=knowledge_rank_key)
     results, seen_lineage = [], set()
     for row in ordered:
         lineage = _lineage(candidates_by_version[row["asset_version_id"]])
@@ -420,6 +464,37 @@ async def search_published_knowledge(
             break
     return response("READY" if results else "NO_APPLICABLE_KNOWLEDGE" if case_candidates else "NO_EVIDENCE_MATCH", results,
         () if results else ("当前发布范围没有形成可安全用于本次用途的正文结果",))
+
+
+async def management_knowledge_search(service, *, domain_id, context, payload):
+    """管理人员检索发布正文；只返回命中片段，不产生处置建议或 Runtime 委托。"""
+    request = KnowledgeSearchRequest(query=payload.query, purpose="EXPLAIN",
+        source_kinds=(payload.source_kind,),
+        knowledge_base_ids=(payload.knowledge_base_id,) if payload.knowledge_base_id else (),
+        max_security_level=5)
+    result = await search_published_knowledge(
+        service, domain_id=domain_id, agent_id=None, target_id=None, request=request,
+        context=context, filters={}, kc_scope={}, management_search=True,
+    )
+    return {
+        "retrieval_conclusion": result["retrieval_conclusion"],
+        "coverage": result["coverage"], "warnings": result["warnings"],
+        "results": [{
+            **{name: item[name] for name in ("asset_id", "asset_version_id", "asset_kind", "title", "version")},
+            "passages": [{"quote": citation["quote"][:PASSAGE_CHARS], "truncated": len(citation["quote"]) > PASSAGE_CHARS}
+                for citation in item["citation_pack"][:4]],
+        } for item in result["results"]],
+    }
+
+
+async def current_management_authorization(*, uow, domain_id, request):
+    """当前工作域内的启用手册库；案例独立并逐条验证原始来源。"""
+    if request.source_kinds == ("DIAGNOSIS_CASE",):
+        return request, (), None
+    bases = await uow.operations_knowledge.list_knowledge_bases(domain_id=domain_id)
+    active = tuple(sorted((row.knowledge_base_id for row in bases if row.status == "ACTIVE"
+        and (not request.knowledge_base_ids or row.knowledge_base_id in request.knowledge_base_ids)), key=str))
+    return (request, active, None) if active else "NO_ACTIVE_MANUAL_LIBRARY"
 
 
 async def _published_catalog(

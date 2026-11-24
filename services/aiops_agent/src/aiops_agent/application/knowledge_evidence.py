@@ -51,7 +51,7 @@ def coverage_gap_code(summary):
     return None
 
 
-async def project_receipt(retrieval, access, receipt, allowed, *, primary_budget, relation_budget):
+async def project_receipt(retrieval, access, receipt, allowed, *, primary_budget, relation_budget, include_related=True):
     """证据清单只用于按键查取；关联证据不计入主命中。"""
     manifest = receipt.evidence_set
     evidence_by_key = {item.key: item for item in manifest.evidence}
@@ -127,7 +127,7 @@ async def project_receipt(retrieval, access, receipt, allowed, *, primary_budget
     hits = []
     for hit, item, citation in primary_rows:
         primary = {**citation, "rank": hit.rank, "evidence_key": item.key.stable_key}
-        linked = groups_by_key.get(hit.evidence_key)
+        linked = groups_by_key.get(hit.evidence_key) if include_related else None
         related, relation_gaps = [], []
         if linked is not None:
             if linked.manifest_status != "COMPLETE":

@@ -12387,6 +12387,148 @@
         "title": "KnowledgeMaintenanceReceipt",
         "type": "object"
       },
+      "KnowledgeManagementPassage": {
+        "properties": {
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "quote",
+          "truncated"
+        ],
+        "title": "KnowledgeManagementPassage",
+        "type": "object"
+      },
+      "KnowledgeManagementSearchHit": {
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "asset_kind": {
+            "enum": [
+              "MANUAL",
+              "DIAGNOSIS_CASE"
+            ],
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "asset_version_id": {
+            "format": "uuid",
+            "title": "Asset Version Id",
+            "type": "string"
+          },
+          "passages": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeManagementPassage"
+            },
+            "title": "Passages",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset_id",
+          "asset_version_id",
+          "asset_kind",
+          "title",
+          "version",
+          "passages"
+        ],
+        "title": "KnowledgeManagementSearchHit",
+        "type": "object"
+      },
+      "KnowledgeManagementSearchRequest": {
+        "additionalProperties": false,
+        "description": "资料检索只接受用户筛选，不接受授权、模型或 Agent 绑定。",
+        "properties": {
+          "knowledge_base_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Base Id"
+          },
+          "query": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "MANUAL",
+              "DIAGNOSIS_CASE"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "source_kind"
+        ],
+        "title": "KnowledgeManagementSearchRequest",
+        "type": "object"
+      },
+      "KnowledgeManagementSearchResponse": {
+        "properties": {
+          "coverage": {
+            "$ref": "#/components/schemas/KnowledgeSearchCoverage"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeManagementSearchHit"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "retrieval_conclusion": {
+            "enum": [
+              "EVIDENCE_FOUND",
+              "NO_ELIGIBLE_RESOURCES",
+              "NO_MATCH",
+              "NOT_VERIFIED"
+            ],
+            "title": "Retrieval Conclusion",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "retrieval_conclusion",
+          "coverage",
+          "results",
+          "warnings"
+        ],
+        "title": "KnowledgeManagementSearchResponse",
+        "type": "object"
+      },
       "KnowledgeMemberOption": {
         "additionalProperties": false,
         "properties": {
@@ -38572,6 +38714,47 @@
           }
         },
         "summary": "List Operations Knowledge Reviews",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/search": {
+      "post": {
+        "operationId": "search_managed_operations_knowledge_api_v1_apps_aiops_operations_knowledge_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeManagementSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeManagementSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Managed Operations Knowledge",
         "tags": [
           "AIOps App"
         ]

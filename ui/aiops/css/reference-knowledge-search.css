@@ -1,0 +1,20 @@
+/* 自动同步自 reference-pages.json 中声明的 Ammolite 生产组件。 */
+
+/* business/AIOpsKnowledgeSearchView.vue */
+:is([data-page="knowledge-search"]) .aiops-search-form { display:flex; flex-wrap:wrap; align-items:end; gap:12px; padding:16px; }
+:is([data-page="knowledge-search"]) .aiops-search-form .control-field { min-width:0; }
+:is([data-page="knowledge-search"]) .aiops-search-query { flex:1 1 270px; }
+:is([data-page="knowledge-search"]) .aiops-search-split { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 2fr); gap:14px; align-items:start; }
+:is([data-page="knowledge-search"]) .aiops-search-panel, :is([data-page="knowledge-search"]) .aiops-search-empty { padding:16px; min-width:0; }
+:is([data-page="knowledge-search"]) .aiops-search-panel h2 { margin:0 0 12px; font-size:16px; overflow-wrap:anywhere; }
+:is([data-page="knowledge-search"]) .aiops-search-panel small { color:var(--muted); }
+:is([data-page="knowledge-search"]) .aiops-search-hits { display:grid; grid-template-columns:minmax(0, 1fr); gap:8px; margin:0; padding:0; list-style:none; }
+:is([data-page="knowledge-search"]) .aiops-search-panel .aiops-search-hit { width:100%; min-width:0; height:auto; padding-block:8px; justify-content:space-between; gap:8px; text-align:left; line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
+:is([data-page="knowledge-search"]) .aiops-search-hit small { flex:none; }
+:is([data-page="knowledge-search"]) .aiops-search-hit[aria-pressed="true"] { border-color:var(--accent); background:var(--surface-subtle); }
+:is([data-page="knowledge-search"]) .aiops-search-quote { margin:0 0 12px; padding:10px 12px; border-left:3px solid var(--line); background:var(--surface-subtle); overflow-wrap:anywhere; white-space:pre-wrap; }
+:is([data-page="knowledge-search"]) .aiops-search-quote small { display:block; margin-top:6px; }
+:is([data-page="knowledge-search"]) .aiops-search-warnings { padding-inline-start:32px; }
+@media (max-width:760px) {
+  :is([data-page="knowledge-search"]) .aiops-search-split { grid-template-columns:minmax(0, 1fr); }
+}

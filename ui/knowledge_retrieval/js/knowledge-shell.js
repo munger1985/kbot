@@ -15,7 +15,7 @@
   }
   const sections = [
     ["workspace", "业务功能", "knowledge", [
-      ["search", "直接检索", "search"], ["knowledge", "Agent 问答", "knowledge"], ["files", "知识库文件", "files"],
+      ["search", "资料检索", "search"], ["knowledge", "Agent 问答", "knowledge"], ["files", "知识库文件", "files"],
       ["processing", "解析任务", "processing"],
     ]],
     ["resources", "管理配置", "models", [

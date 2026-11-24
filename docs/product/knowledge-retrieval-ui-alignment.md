@@ -8,7 +8,7 @@
 
 | 导航 | 页面设计 | KBot4 / Ammolite App 子路由 | 进入条件与唯一职责 |
 |---|---|---|---|
-| 查找与问答 | [直接检索](knowledge-retrieval-pages/01-direct-search.md) | 新增 `search.html` / `search` | App 使用权限 + 启用库 READ，提交查询、续页、看证据；不创建 Agent 会话。 |
+| 查找与问答 | [资料检索](knowledge-retrieval-pages/01-direct-search.md) | 新增 `search.html` / `search` | App 使用权限 + 启用库 READ，提交查询、续页、看证据；不创建 Agent 会话。 |
 | 查找与问答 | [Agent 问答](knowledge-retrieval-pages/02-agent-qa.md) | `knowledge.html` / 根路由 | 现行问答权限及 Agent 资格；保留会话、问文／问数／混合及引用。不内嵌直接检索。 |
 | 资料治理 | [解析任务](knowledge-retrieval-pages/04-processing.md) | `processing.html` / `processing` | 上传者看本人任务，授权治理人员看职责范围；看阶段、错误及真实可执行操作。 |
 | 资料治理 | [知识库文件](knowledge-retrieval-pages/06-files.md) | `files.html` / `files` | App 使用权限 + READ，左侧选库、右侧浏览和预览，不提供原件下载。按权限显示上传及[审批、撤回](knowledge-retrieval-pages/05-review.md)，待审批支持批量决定。 |

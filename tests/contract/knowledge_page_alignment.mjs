@@ -448,6 +448,10 @@ try{
    await kbot.waitForFunction(()=>document.body.dataset.access==="ready");
    await reference.waitForFunction(()=>globalThis.referenceMounted);
    await Promise.all(pair.map(page=>page.waitForLoadState("networkidle")));
+   if(name==="search"){
+     for(const page of pair) await page.getByRole("heading",{level:1,name:"资料检索",exact:true}).waitFor();
+     assert.equal(await kbot.locator('a[aria-current="page"][href="./search.html"]').innerText(),"资料检索");
+   }
    for(const page of pair)await page.addStyleTag({content:"*,*::before,*::after{transition:none!important;animation:none!important}"});
    for(const width of name==="knowledge-cores" ? [2040,1440,1024,390,320] : [1440,1024,390,320]){
      await Promise.all(pair.map(page=>page.setViewportSize({width,height:1000})));

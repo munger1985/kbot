@@ -880,6 +880,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def search_managed_operations_knowledge(
+        self, payload: dict[str, Any], *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/operations-knowledge/search",
+            payload=payload, auth_context=auth_context,
+        )
+
     async def search_operations_knowledge(
         self, payload: dict[str, Any], *, auth_context: AuthContext
     ) -> dict[str, Any]:

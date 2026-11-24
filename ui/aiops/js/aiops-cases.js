@@ -18,17 +18,7 @@
     document.getElementById("case-count").textContent = `${items.length} 项`;
     document.getElementById("case-rows").innerHTML = items.length ? items.map((item) => `<tr><td><button class="table-primary-button" type="button" data-case-id="${escape(item.asset_id)}">${escape(item.display_name)}</button><small class="table-secondary">v${escape(item.version_no)} · L${escape(item.security_level)}</small></td><td>${escape(kindLabel(item.case_kind))}<small class="table-secondary">${escape(item.problem_class || "未分类")}</small></td><td>${escape([item.database_type, item.database_version, item.topology].filter(Boolean).join(" · ") || "通用")}</td><td class="technical-value">${escape(item.source_report_id || "—")}</td><td>${badge(item.status)}</td><td>${escape(shell.fmt(item.updated_at))}</td><td><button class="row-action" type="button" data-case-id="${escape(item.asset_id)}">查看</button></td></tr>`).join("") : '<tr><td colspan="7" class="empty-cell">当前条件下没有诊断案例。</td></tr>';
   }
-  async function loadResource() {
-    const node = document.getElementById("case-resource-status");
-    try {
-      const resource = await KBotAIOpsAuth.request(`${api}/case-collection/resource`);
-      const configuration = resource.configuration_status === "CONFIGURED" ? "已配置（尚未验证运行效果）"
-        : "待显式配置：" + (resource.missing_model_roles || []).join("、");
-      node.textContent = "案例资料由 AIOps 本域独占存储；" + configuration + "。审核发布后参与检索。";
-    } catch (_) { node.textContent = "案例库资源状态暂不可用；案例列表仍可独立查看。"; }
-  }
   async function load() {
-    void loadResource();
     const query = new URLSearchParams({ limit: "200" });
     const status = document.getElementById("case-status").value;
     if (status) query.set("status", status);
@@ -166,8 +156,6 @@
     document.getElementById("refresh-cases").onclick = () => load().catch((error) => shell.toast(error.message));
     document.getElementById("case-rows").onclick = (event) => { const button = event.target.closest("[data-case-id]"); if (button) openCase(button.dataset.caseId).catch((error) => shell.toast(error.message)); };
     document.getElementById("case-detail-actions").onclick = (event) => { const button = event.target.closest("[data-action]"); if (button) runAction(button.dataset.action).catch((error) => shell.toast(error.message)); };
-    const resourceTimer = setInterval(() => { void loadResource(); }, 10000);
-    window.addEventListener("pagehide", () => clearInterval(resourceTimer), { once: true });
     await load();
     globalThis.KBotAIOpsOutputJobs.mount(document.getElementById("case-output-jobs"), {
       jobType: "CASE_EXTRACTION", onCompleted: () => load().catch(error => shell.toast(error.message)),

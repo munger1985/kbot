@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>资料检索 · AIOps</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
+  <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261110_release1">
+  <link rel="stylesheet" href="./css/reference-knowledge-search.css?v=20261124_knowledge_search">
+  <link rel="stylesheet" href="./css/alignment.css?v=20261124_knowledge_search">
+</head>
+<body data-page="knowledge-search">
+  <main class="ops-main platform-home-page aiops-knowledge-search-page">
+    <header class="platform-home-hero app-page-head"><div><p class="eyebrow">KNOWLEDGE SEARCH</p><h1>资料检索</h1><p>检索已发布的运维资料和诊断案例，直接查看命中的正文片段。</p></div></header>
+    <form class="table-card aiops-search-form" aria-label="检索条件" role="search">
+      <label class="control-field">检索范围<select id="aiops-search-scope"><option value="MANUAL">运维资料</option><option value="DIAGNOSIS_CASE">诊断案例</option></select></label>
+      <label id="aiops-search-library-field" class="control-field">运维知识库<select id="aiops-search-library"><option value="">全部启用的知识库</option></select></label>
+      <label class="control-field aiops-search-query">查询内容<input id="aiops-search-query" type="search" required maxlength="4000" placeholder="输入要查的内容…"></label>
+      <button class="primary-button" type="submit" disabled>检索</button>
+    </form>
+    <p id="aiops-search-library-error" class="notice notice-warning" hidden>暂时无法读取知识库列表，仍可检索全部启用的知识库。</p>
+    <p id="aiops-search-error" class="notice notice-error" role="alert" hidden></p>
+    <p id="aiops-search-case-hint" class="field-help" hidden>历史案例仅供参考，不代表当前故障的诊断结论。</p>
+    <ul id="aiops-search-warnings" class="notice notice-warning aiops-search-warnings" hidden></ul>
+    <p id="aiops-search-empty" class="table-card aiops-search-empty" role="status">输入要查的内容，查看匹配的正文片段。</p>
+    <div id="aiops-search-split" class="aiops-search-split" hidden>
+      <section class="table-card aiops-search-panel" aria-label="检索结果">
+        <h2>检索结果 <small id="aiops-search-count"></small></h2>
+        <ul id="aiops-search-hits" class="aiops-search-hits"></ul>
+      </section>
+      <section class="table-card aiops-search-panel" aria-label="命中片段">
+        <h2 id="aiops-search-hit-title"></h2>
+        <div id="aiops-search-passages"></div>
+      </section>
+    </div>
+  </main>
+  <script src="../runtime-config.js"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js?v=20261124_knowledge_search"></script>
+  <script src="./js/aiops-knowledge-search.js?v=20261124_knowledge_search"></script>
+</body>
+</html>

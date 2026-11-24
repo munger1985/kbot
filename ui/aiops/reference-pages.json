@@ -15,6 +15,7 @@
     "report-detail": { "route": "reports/:reportId", "sources": ["business/AIOpsReportDetailView.vue"] },
     "cases": { "route": "cases", "sources": ["business/AIOpsDiagnosisCasesView.vue"] },
     "operations-knowledge": { "route": "knowledge", "sources": ["business/AIOpsOperationsKnowledgeView.vue"] },
+    "knowledge-search": { "route": "knowledge-search", "sources": ["business/AIOpsKnowledgeSearchView.vue"] },
     "business-systems": { "route": "manage/business-systems", "sources": ["management/AIOpsBusinessSystemsView.vue"] },
     "business-system-workspace": { "route": "manage/business-systems/:businessSystemId", "sources": ["management/BusinessSystemWorkspace.vue", "management/BusinessSystemTopology.vue", "management/WorkloadSnapshotSettings.vue"] },
     "diagnostic-sources": { "route": "manage/diagnostic-sources", "sources": ["management/AIOpsConfigurationView.vue"] },

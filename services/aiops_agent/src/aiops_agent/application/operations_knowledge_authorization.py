@@ -7,7 +7,7 @@ from knowledge_algorithms.contracts.identity import fingerprint
 from aiops_agent.domain.knowledge_ingestion import utcnow
 from aiops_agent.domain.knowledge_retrieval import KnowledgeGrant
 from aiops_agent.contracts.knowledge import KnowledgeSearchRequest
-from .knowledge_search import _current_knowledge_authorization, _eligible_case
+from .knowledge_search import _current_knowledge_authorization, _eligible_case, current_management_authorization
 
 
 class OperationsKnowledgeAuthorization:
@@ -19,20 +19,28 @@ class OperationsKnowledgeAuthorization:
         identity = UUID(resource_ref[len("ops-query:"):])
         async with self.service._uow_factory() as uow:
             ticket = await uow.knowledge_documents.query_ticket(access, identity, now=self.clock(), allow_expired=access.historical_read)
+            management_search = ticket.get("management_search") is True
+            require(management_search == getattr(access, "management_search", False), "资料检索委托不得跨入口使用")
             if ticket.get("parent_turn_id"):
                 version = await validate_parent(uow, access, UUID(ticket["parent_turn_id"]),
                     UUID(ticket["agent_id"]), UUID(ticket["execution_spec"]["consumer_agent_version_id"]))
                 require(fingerprint(ticket["execution_spec"]) == access.spec_hash,
                     "知识查询委托与当前执行规格不一致")
             request = KnowledgeSearchRequest.model_validate(ticket["request"])
-            agent_id = UUID(ticket["agent_id"])
-            target_id = UUID(ticket["target_id"]) if ticket["target_id"] else None
-            current = await _current_knowledge_authorization(uow=uow, domain_id=access.domain_id,
-                agent_id=agent_id, target_id=target_id, request=request)
-            require(not isinstance(current, str), "Agent 知识策略、绑定或目标权限已撤销")
-            effective, base_ids, agent_version_id = current
-            require(str(agent_version_id) == ticket.get("agent_version_id"), "Agent 版本已切换，原查询委托不再有效")
-            require(effective == request, "Agent 知识策略已改变，原查询委托不再有效")
+            if management_search:
+                agent_id = target_id = None
+                current = await current_management_authorization(uow=uow, domain_id=access.domain_id, request=request)
+                require(not isinstance(current, str), "管理检索的运维知识库已停用或归档")
+                _, base_ids, _ = current
+            else:
+                agent_id = UUID(ticket["agent_id"])
+                target_id = UUID(ticket["target_id"]) if ticket["target_id"] else None
+                current = await _current_knowledge_authorization(uow=uow, domain_id=access.domain_id,
+                    agent_id=agent_id, target_id=target_id, request=request)
+                require(not isinstance(current, str), "Agent 知识策略、绑定或目标权限已撤销")
+                effective, base_ids, agent_version_id = current
+                require(str(agent_version_id) == ticket.get("agent_version_id"), "Agent 版本已切换，原查询委托不再有效")
+                require(effective == request, "Agent 知识策略已改变，原查询委托不再有效")
             expected = {row["index_ref_id"]: row for row in ticket["snapshots"]}
             rows = await uow.operations_knowledge.list_published_candidates(
                 domain_id=access.domain_id, target_id=target_id,

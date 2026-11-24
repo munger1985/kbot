@@ -27,9 +27,14 @@ from aiops_agent.contracts.knowledge import (
     KnowledgeTagWrite,
     ManualUploadMetadata,
 )
-from platform_core.contracts import AuthContext
+from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.aiops.knowledge_base import KnowledgeBaseList, KnowledgeBaseView, KnowledgeBaseWrite
-from platform_core.contracts.aiops.knowledge_search import KnowledgeSearchResponse
+from platform_core.contracts.aiops.knowledge_search import (
+    KNOWLEDGE_MANAGEMENT_SEARCH_SCOPE,
+    KnowledgeManagementSearchRequest,
+    KnowledgeManagementSearchResponse,
+    KnowledgeSearchResponse,
+)
 from platform_core.contracts.aiops.knowledge import KnowledgeReuseFeedback
 from platform_core.contracts.aiops.output_jobs import OutputJobReceipt
 from platform_core.contracts.aiops.case_collection import CaseCollectionModels
@@ -662,6 +667,23 @@ async def list_reviews(
     return {"items": await request.app.state.operations_knowledge_service.list_reviews(
         domain_id=domain_id, limit=limit
     )}
+
+
+@router.post("/search", response_model=KnowledgeManagementSearchResponse)
+async def management_search(
+    payload: KnowledgeManagementSearchRequest,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    if (context.principal_kind != PrincipalKind.PORTAL or context.app_id != "aiops"
+            or KNOWLEDGE_MANAGEMENT_SEARCH_SCOPE not in context.scopes):
+        raise HTTPException(403, {"code": "APP_PERMISSION_DENIED", "permission": KNOWLEDGE_MANAGEMENT_SEARCH_SCOPE})
+    from aiops_agent.application.knowledge_search import management_knowledge_search
+
+    return await management_knowledge_search(
+        request.app.state.operations_knowledge_service, domain_id=domain_id, context=context, payload=payload,
+    )
 
 
 @router.post(":search", response_model=KnowledgeSearchResponse)

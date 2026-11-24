@@ -9,11 +9,11 @@
     detailTab: "overview",
     entries: [],
     uploadAsset: null,
-    tags: [],
-    selectedTagIds: [],
     knowledgeBases: [],
     uploading: false,
     submittingReview: false,
+    batchIds: new Set(),
+    batch: null,
   };
 
   const isProcessing = (status) => ["TAGGING", "PROCESSING"].includes(status);
@@ -23,6 +23,7 @@
   const newId = () => KBotAIOpsAuth.uuid();
   const kindLabel = (value) => value === "MANUAL" ? "运维手册" : "诊断案例";
   const tagCategories = [["RESOURCE_CATEGORY", "资源分类"], ["TECHNOLOGY_STACK", "技术栈"], ["VENDOR", "厂商"]];
+  const strategyLabels = { TEXT: "原生解析", AUTO: "自动判断", VISUAL: "视觉增强" };
   const statusLabel = (value) => ({ TAGGING: "标签识别中", TAGGING_FAILED: "标签识别失败", PROCESSING: "解析中", DRAFT: "待发布审核", REVIEW_REQUIRED: "待审批", PUBLISHED: "已发布", RETIRED: "已退役", REJECTED: "已拒绝", FAILED: "解析失败" }[value] || value || "—");
   const statusTone = (value) => ["FAILED", "TAGGING_FAILED", "REJECTED"].includes(value) ? "bad" : ["TAGGING", "PROCESSING", "DRAFT", "REVIEW_REQUIRED"].includes(value) ? "warn" : ["PUBLISHED", "READY"].includes(value) ? "good" : "";
   const badge = (value, label = statusLabel(value)) => `<span class="status-pill ${({ good: "status-success", bad: "status-danger", warn: "status-warning" })[statusTone(value)] || "status-muted"}">${escape(label)}</span>`;
@@ -38,14 +39,35 @@
 
   function assetRow(item) {
     const action = item.status === "REVIEW_REQUIRED" ? "审批资料" : ["TAGGING", "PROCESSING"].includes(item.status) ? "查看进度" : ["FAILED", "TAGGING_FAILED"].includes(item.status) ? "处理异常" : item.status === "DRAFT" ? "审核" : "查看";
-    return `<tr><td><button class="table-primary-button" type="button" data-asset-id="${escape(item.asset_id)}">${escape(item.display_name)}</button><small class="table-secondary">${escape(kindLabel(item.asset_kind))} · L${escape(item.security_level)} · ${escape(item.asset_id)}</small></td><td>${escape(state.knowledgeBases.find(base => base.knowledge_base_id === item.knowledge_base_id)?.display_name || "知识库已不可用")}</td><td>${badge(item.status, reviewLabel(item.status))}</td><td>${badge(item.status, parseLabel(item.status, item.asset_kind))}</td><td><span class="knowledge-submitted-time">${escape(shell.fmt(item.created_at))}</span>${item.updated_at !== item.created_at ? `<small class="table-secondary">更新于 ${escape(shell.fmt(item.updated_at))}</small>` : ""}</td><td><button class="row-action" type="button" data-asset-id="${escape(item.asset_id)}">${action}</button></td></tr>`;
+    const selection = item.status === "REVIEW_REQUIRED" ? `<input type="checkbox" data-batch-id="${escape(item.asset_id)}" aria-label="选择待审批资料：${escape(item.display_name)}"${state.batchIds.has(item.asset_id) ? " checked" : ""}>` : "";
+    return `<tr><td class="knowledge-select-cell">${selection}</td><td><button class="table-primary-button" type="button" data-asset-id="${escape(item.asset_id)}">${escape(item.display_name)}</button><small class="table-secondary">${escape(kindLabel(item.asset_kind))} · L${escape(item.security_level)} · ${escape(item.asset_id)}</small></td><td>${escape(state.knowledgeBases.find(base => base.knowledge_base_id === item.knowledge_base_id)?.display_name || "知识库已不可用")}</td><td>${badge(item.status, reviewLabel(item.status))}</td><td>${badge(item.status, parseLabel(item.status, item.asset_kind))}</td><td><span class="knowledge-submitted-time">${escape(shell.fmt(item.created_at))}</span>${item.updated_at !== item.created_at ? `<small class="table-secondary">更新于 ${escape(shell.fmt(item.updated_at))}</small>` : ""}</td><td><button class="row-action" type="button" data-asset-id="${escape(item.asset_id)}">${action}</button></td></tr>`;
+  }
+
+  function visibleAssets() {
+    const keyword = document.getElementById("knowledge-search").value.trim().toLowerCase();
+    return keyword ? state.assets.filter((item) => [item.display_name, item.asset_id, kindLabel(item.asset_kind)].some((value) => String(value).toLowerCase().includes(keyword))) : state.assets;
+  }
+
+  const pendingAssets = () => visibleAssets().filter(item => item.status === "REVIEW_REQUIRED");
+
+  function syncBatchSelection() {
+    const pending = pendingAssets();
+    const selected = pending.filter(item => state.batchIds.has(item.asset_id)).length;
+    const all = document.getElementById("knowledge-select-all");
+    all.disabled = loadingAssets || !pending.length;
+    all.checked = pending.length > 0 && selected === pending.length;
+    all.indeterminate = selected > 0 && selected < pending.length;
+    document.getElementById("open-batch-review").disabled = loadingAssets || selected === 0;
+    document.getElementById("knowledge-batch-count").textContent = selected ? `已选 ${selected} 项` : "";
   }
 
   function renderAssets() {
-    const keyword = document.getElementById("knowledge-search").value.trim().toLowerCase();
-    const items = keyword ? state.assets.filter((item) => [item.display_name, item.asset_id, kindLabel(item.asset_kind)].some((value) => String(value).toLowerCase().includes(keyword))) : state.assets;
+    const items = visibleAssets();
+    const eligible = new Set(items.filter(item => item.status === "REVIEW_REQUIRED").map(item => item.asset_id));
+    state.batchIds = new Set([...state.batchIds].filter(id => eligible.has(id)));
     document.getElementById("knowledge-count").textContent = `${items.length} 项`;
-    document.getElementById("knowledge-assets").innerHTML = items.length ? items.map(assetRow).join("") : '<tr><td colspan="6" class="empty-cell">当前条件下没有运维资料。</td></tr>';
+    document.getElementById("knowledge-assets").innerHTML = items.length ? items.map(assetRow).join("") : '<tr><td colspan="7" class="empty-cell">当前条件下没有运维资料。</td></tr>';
+    syncBatchSelection();
   }
 
   async function loadAssets() {
@@ -56,13 +78,17 @@
     if (status) query.set("status", status);
     const requestId = ++assetRequest;
     loadingAssets = true;
+    syncBatchSelection();
     try {
       const result = await KBotAIOpsAuth.request(`${api}/assets?${query}`);
       if (requestId !== assetRequest) return;
       state.assets = result.items || [];
       renderAssets();
     } finally {
-      if (requestId === assetRequest) loadingAssets = false;
+      if (requestId === assetRequest) {
+        loadingAssets = false;
+        syncBatchSelection();
+      }
     }
   }
 
@@ -79,11 +105,6 @@
     document.getElementById("upload-knowledge-base").innerHTML = '<option value="" disabled>请选择</option>' + activeBases.map(item => `<option value="${escape(item.knowledge_base_id)}">${escape(item.display_name)}</option>`).join("");
     document.getElementById("upload-no-knowledge-base").hidden = Boolean(activeBases.length);
     document.getElementById("open-upload").disabled = false;
-  }
-
-  async function loadTags() {
-    const result = await KBotAIOpsAuth.request(`${api}/tags?include_disabled=true`);
-    state.tags = result.items || [];
   }
 
   function renderUploadTaggingHint() {
@@ -107,41 +128,46 @@
     return ["PUBLISHED", "RETIRED"].includes(status) ? "is-complete" : "";
   }
 
-  function tagCatalog(detail) {
-    const catalog = new Map(state.tags.map((item) => [item.tag_id, item]));
-    for (const item of detail.version.tag_analysis?.vocabulary || []) {
-      if (!catalog.has(item.tag_id)) catalog.set(item.tag_id, { ...item, status: "DISABLED" });
-    }
-    return [...catalog.values()];
-  }
-
   function renderTags(detail) {
     if (detail.asset.asset_kind !== "MANUAL") return "";
     const analysis = detail.version.tag_analysis || {};
     const suggestions = new Map((analysis.suggestions || []).map((item) => [item.tag_id, item]));
-    const catalog = tagCatalog(detail);
+    const assigned = new Set(analysis.assigned_tag_ids || []);
+    const recognized = new Map();
+    for (const scope of detail.scopes || []) {
+      if (!scope.tag_id) continue;
+      assigned.add(scope.tag_id);
+      recognized.set(scope.tag_id, { tag_id: scope.tag_id, category: scope.kind, display_name: scope.value });
+    }
+    for (const tag of analysis.vocabulary || []) {
+      if (assigned.has(tag.tag_id) || suggestions.has(tag.tag_id)) recognized.set(tag.tag_id, tag);
+    }
+    for (const tag of suggestions.values()) {
+      recognized.set(tag.tag_id, { ...recognized.get(tag.tag_id), ...tag });
+    }
     const groups = tagCategories.map(([category, label]) => {
-      const tags = catalog.filter((item) => item.category === category && (item.status === "ACTIVE" || state.selectedTagIds.includes(item.tag_id) || suggestions.has(item.tag_id)));
-      const options = tags.length ? tags.map((tag) => {
+      const tags = [...recognized.values()].filter((item) => item.category === category);
+      if (!tags.length) return "";
+      const options = tags.map((tag) => {
         const suggestion = suggestions.get(tag.tag_id);
-        const evidence = (suggestion?.evidence || []).map((item) => `<article class="knowledge-tag-evidence"><small>${escape(item.file_name || "原始文件")}</small><q>${escape(item.quote)}</q></article>`).join("");
-        return `<label class="knowledge-tag-option${suggestion ? " suggested" : ""}"><input type="checkbox" ${state.selectedTagIds.includes(tag.tag_id) ? "checked" : ""} disabled><span><strong>${escape(tag.display_name)}</strong><small>${escape(tag.description || "暂无说明")}</small>${suggestion ? `<em>AI 识别 · ${Math.round(Number(suggestion.confidence || 0) * 100)}%</em>` : ""}</span></label>${evidence}`;
-      }).join("") : '<p class="ops-empty">该分类尚未配置有效标签。</p>';
+        return `<label class="knowledge-tag-option${suggestion ? " suggested" : ""}"><input type="checkbox" checked disabled><span><strong>${escape(tag.display_name)}</strong><small>${escape(tag.description || "暂无说明")}</small>${suggestion ? `<em>AI 识别 · ${Math.round(Number(suggestion.confidence || 0) * 100)}%</em>` : ""}</span></label>`;
+      }).join("");
       return `<fieldset class="knowledge-tag-group"><legend>${escape(label)}</legend>${options}</fieldset>`;
     }).join("");
     const failure = analysis.status === "FAILED" ? `<div class="knowledge-warning knowledge-error"><strong>标签识别失败</strong><p>${escape(analysis.error_summary || analysis.error_code || "未知错误")}</p></div>` : "";
     const warnings = analysis.warnings?.length ? `<div class="knowledge-warning"><strong>识别提示</strong><p>${escape(analysis.warnings.join("；"))}</p></div>` : "";
-    const hint = detail.version.status === "REVIEW_REQUIRED" ? "资料审批通过后才会调用 AI 识别标签。" : "展示 AI 根据原文证据自动冻结的标签。";
-    return `<section class="drawer-form-section knowledge-tag-review"><header><span>02</span><div><strong>受控标签</strong><small>${hint}</small></div></header>${failure}${groups}${warnings}</section>`;
+    const hint = ({ REVIEW_REQUIRED: "资料审批通过后才会调用 AI 识别标签。", REJECTED: "该版本已被拒绝，不会调用 AI 识别标签。", TAGGING: "AI 正在根据原文证据识别受控标签。", TAGGING_FAILED: "AI 标签识别未完成，可在修复原因后重试。" })[detail.version.status] || "展示 AI 根据原文证据自动冻结的标签。";
+    const empty = !groups && !failure ? '<p class="ops-empty">暂无识别标签。</p>' : "";
+    return `<section class="drawer-form-section knowledge-tag-review"><header><span>02</span><div><strong>受控标签</strong><small>${hint}</small></div></header>${failure}${groups}${empty}${warnings}</section>`;
   }
 
   function renderOverview(detail) {
     const status = detail.version.status;
-    const scope = detail.scopes.map((item) => `${item.kind}=${item.value}`).join("；") || "通用";
+    const caseScope = detail.asset.asset_kind === "DIAGNOSIS_CASE" ? detail.scopes.map((item) => `${item.kind}=${item.value}`).join("；") || "通用" : "";
     const stages = detail.asset.asset_kind === "MANUAL"
       ? `<section class="knowledge-stage-track"><div class="${stageClass("uploaded", status)}"><span>1</span><strong>上传</strong></div><div class="${stageClass("approved", status)}"><span>2</span><strong>审批</strong></div><div class="${stageClass("tagged", status)}"><span>3</span><strong>标签识别</strong></div><div class="${stageClass("parsed", status)}"><span>4</span><strong>文档解析</strong></div><div class="${stageClass("published", status)}"><span>5</span><strong>发布</strong></div></section>`
       : `<section class="knowledge-stage-track four-steps"><div class="${stageClass("uploaded", status, "DIAGNOSIS_CASE")}"><span>1</span><strong>生成</strong></div><div class="${stageClass("parsed", status, "DIAGNOSIS_CASE")}"><span>2</span><strong>文档解析</strong></div><div class="${stageClass("approved", status, "DIAGNOSIS_CASE")}"><span>3</span><strong>审批</strong></div><div class="${stageClass("published", status, "DIAGNOSIS_CASE")}"><span>4</span><strong>发布</strong></div></section>`;
-    return `${stages}<section class="drawer-form-section"><header><span>01</span><div><strong>资料概览</strong><small>当前资料及其最新知识版本。</small></div></header><dl class="knowledge-summary-grid"><div><dt>资料类型</dt><dd>${escape(kindLabel(detail.asset.asset_kind))}</dd></div><div><dt>安全级</dt><dd>L${escape(detail.asset.security_level)}</dd></div><div><dt>当前版本</dt><dd>v${escape(detail.version.version_no)}</dd></div><div><dt>受控标签</dt><dd>${escape(scope)}</dd></div><div><dt>提交时间</dt><dd>${escape(shell.fmt(detail.asset.created_at))}</dd></div><div><dt>最近更新</dt><dd>${escape(shell.fmt(detail.asset.updated_at))}</dd></div></dl></section>${renderTags(detail)}${detail.version.extraction_warnings?.length ? `<section class="knowledge-warning"><strong>解析提示</strong><ul>${detail.version.extraction_warnings.map((item) => `<li>${escape(item)}</li>`).join("")}</ul></section>` : ""}`;
+    return `${stages}<section class="drawer-form-section"><header><span>01</span><div><strong>资料概览</strong><small>当前资料及其最新知识版本。</small></div></header><dl class="knowledge-summary-grid"><div><dt>资料类型</dt><dd>${escape(kindLabel(detail.asset.asset_kind))}</dd></div><div><dt>安全级</dt><dd>L${escape(detail.asset.security_level)}</dd></div><div><dt>当前版本</dt><dd>v${escape(detail.version.version_no)}</dd></div>${caseScope ? `<div><dt>适用范围</dt><dd>${escape(caseScope)}</dd></div>` : ""}<div><dt>提交时间</dt><dd>${escape(shell.fmt(detail.asset.created_at))}</dd></div><div><dt>最近更新</dt><dd>${escape(shell.fmt(detail.asset.updated_at))}</dd></div></dl></section>${renderTags(detail)}${detail.version.extraction_warnings?.length ? `<section class="knowledge-warning"><strong>解析提示</strong><ul>${detail.version.extraction_warnings.map((item) => `<li>${escape(item)}</li>`).join("")}</ul></section>` : ""}`;
   }
 
   function renderFiles(detail) {
@@ -169,10 +195,9 @@
     if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING", "TAGGING_FAILED", "PROCESSING", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger-button" type="button" data-delete-asset>删除资料</button>');
     if (["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push('<button class="danger-button" type="button" data-review="reject">拒绝</button>');
     if (detail.asset.asset_kind === "MANUAL" && detail.version.status === "REVIEW_REQUIRED") {
-      const labels = { TEXT: "原生解析", AUTO: "自动判断", VISUAL: "视觉增强" };
       const options = (detail.parse_strategy_options || []).map(option => {
         const reason = option.executor_unavailable ? "模型解析执行端未启用" : (option.unavailable_roles || []).map(role => role.toUpperCase()).join("、") + " 不可用";
-        return `<option value="${escape(option.strategy)}"${option.selectable ? "" : " disabled"}>${escape(labels[option.strategy] + (option.selectable ? "" : `（${reason}）`))}</option>`;
+        return `<option value="${escape(option.strategy)}"${option.selectable ? "" : " disabled"}>${escape(strategyLabels[option.strategy] + (option.selectable ? "" : `（${reason}）`))}</option>`;
       });
       actions.unshift(`<label class="control-field knowledge-detail-strategy"><span class="field-label">批准时选择解析方案</span><select id="manual-parse-strategy"><option value="" disabled selected>选择解析方案</option>${options.join("")}</select></label>`);
       actions.push('<button class="primary-button" type="button" data-review="approve" disabled>批准并开始 AI 识别</button>');
@@ -190,13 +215,15 @@
     }
   }
 
-  async function openAsset(assetId) {
+  async function fetchAssetDetail(assetId) {
     const asset = await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(assetId)}`);
     const version = asset.versions?.[0];
     if (!version) throw new Error("该资料尚未形成知识版本");
-    state.detail = await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}`);
-    const assigned = state.detail.version.tag_analysis?.assigned_tag_ids || state.detail.scopes.map((item) => item.tag_id).filter(Boolean);
-    state.selectedTagIds = assigned.length ? assigned : (state.detail.version.tag_analysis?.suggestions || []).map((item) => item.tag_id);
+    return KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}`);
+  }
+
+  async function openAsset(assetId) {
+    state.detail = await fetchAssetDetail(assetId);
     state.detailTab = "overview";
     document.getElementById("detail-eyebrow").textContent = `${kindLabel(state.detail.asset.asset_kind)} · v${state.detail.version.version_no}`;
     const title = document.getElementById("detail-title");
@@ -333,6 +360,93 @@
     return { confirmed: result.confirmed, purgeSourceObjects: result.optionSelected };
   }
 
+  async function mapBatch(items, run) {
+    const results = [];
+    for (let offset = 0; offset < items.length; offset += 4) {
+      results.push(...await Promise.all(items.slice(offset, offset + 4).map(async item => {
+        try { return { item, value: await run(item) }; }
+        catch (error) { return { item, error: error?.message || "未确认成功，请刷新后核对" }; }
+      })));
+    }
+    return results;
+  }
+
+  function renderBatchReview(batch) {
+    const preparing = batch.phase === "preparing";
+    const submitting = batch.phase === "submitting";
+    const ready = batch.phase === "ready";
+    const status = document.getElementById("batch-review-status");
+    status.textContent = preparing ? "正在核对待审批版本和可用解析模式…" : submitting ? "正在提交审批…" : batch.notice;
+    document.getElementById("batch-review-title").textContent = `批量审批 · ${batch.assets.length} 项`;
+    document.getElementById("batch-review-items").innerHTML = batch.assets.map(asset => `<li>${escape(asset.display_name)}</li>`).join("");
+    const failures = document.getElementById("batch-review-failures");
+    document.getElementById("batch-review-failure-section").hidden = !batch.failures.length;
+    failures.innerHTML = batch.failures.map(({item, error}) => `<li>${escape(item.display_name)}：${escape(error)}</li>`).join("");
+    document.getElementById("batch-review-strategy-field").hidden = !ready && !submitting;
+    const picker = document.getElementById("batch-review-strategy");
+    picker.disabled = !ready;
+    picker.innerHTML = '<option value="" disabled>选择解析模式</option>' +
+      batch.strategies.map(value => `<option value="${value}">${strategyLabels[value]}</option>`).join("");
+    picker.value = batch.strategy;
+    const confirm = document.getElementById("submit-batch-review");
+    confirm.hidden = !ready && !submitting;
+    confirm.disabled = !ready || !batch.strategies.includes(batch.strategy);
+    document.querySelectorAll("#batch-review-drawer [data-batch-close]").forEach(button => { button.disabled = submitting; });
+  }
+
+  async function openBatchReview() {
+    const assets = pendingAssets().filter(item => state.batchIds.has(item.asset_id));
+    if (loadingAssets || !assets.length) return;
+    const batch = { assets, phase: "preparing", entries: [], strategies: [], strategy: "", notice: "", failures: [] };
+    state.batch = batch;
+    renderBatchReview(batch);
+    const drawer = document.getElementById("batch-review-drawer");
+    drawer.showModal();
+    drawer.querySelector(".admin-drawer-body").scrollTop = 0;
+    const results = await mapBatch(assets, async asset => {
+      const detail = await fetchAssetDetail(asset.asset_id);
+      if (detail.version?.status !== "REVIEW_REQUIRED") throw new Error("资料已不处于待审批状态，请刷新后重试");
+      return detail;
+    });
+    if (state.batch !== batch) return;
+    batch.failures = results.filter(result => result.error);
+    batch.entries = results.filter(result => result.value);
+    batch.strategies = Object.keys(strategyLabels).filter(strategy => batch.entries.every(({value}) =>
+      value.parse_strategy_options?.some(option => option.strategy === strategy && option.selectable)));
+    batch.phase = batch.failures.length || !batch.strategies.length ? "blocked" : "ready";
+    batch.strategy = batch.strategies.includes("AUTO") ? "AUTO" : "";
+    batch.notice = batch.failures.length ? "有资料无法审批，请关闭后刷新或取消勾选这些资料。" :
+      !batch.strategies.length ? "所选资料没有共同可用的解析模式，请分开审批。" : "";
+    renderBatchReview(batch);
+  }
+
+  async function submitBatchReview() {
+    const batch = state.batch;
+    if (batch?.phase !== "ready" || !batch.strategies.includes(batch.strategy)) return;
+    batch.phase = "submitting";
+    renderBatchReview(batch);
+    const results = await mapBatch(batch.entries.map(entry => ({ ...entry.item, version: entry.value.version })), async item => {
+      const version = item.version;
+      return KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}:approve`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          expected_row_version: Number(version.row_version), comment: null, parse_strategy: batch.strategy,
+        }),
+      });
+    });
+    batch.failures = results.filter(result => result.error);
+    const accepted = results.length - batch.failures.length;
+    results.filter(result => !result.error).forEach(({item}) => state.batchIds.delete(item.asset_id));
+    batch.phase = "done";
+    batch.notice = `已受理 ${accepted} 项，未确认受理 ${batch.failures.length} 项。`;
+    if (batch.failures.length) renderBatchReview(batch);
+    else {
+      state.batch = null;
+      document.getElementById("batch-review-drawer").close();
+      shell.toast(`已提交 ${accepted} 项审批，标签识别将在后台执行`);
+    }
+    await loadAssets();
+  }
+
   async function runDetailAction(action) {
     if (!state.detail || state.submittingReview) return;
     if (action === "download") return downloadSource();
@@ -378,6 +492,31 @@
   }
 
   shell.ready.then(async () => {
+    const batchDrawer = document.getElementById("batch-review-drawer");
+    batchDrawer.addEventListener("cancel", event => {
+      if (state.batch?.phase === "submitting") event.preventDefault();
+    });
+    batchDrawer.addEventListener("close", () => { if (!batchDrawer.open) state.batch = null; });
+    document.querySelectorAll("[data-batch-close]").forEach(button => { button.onclick = () => batchDrawer.close(); });
+    document.getElementById("knowledge-select-all").onchange = (event) => {
+      state.batchIds = new Set(event.target.checked ? pendingAssets().map(item => item.asset_id) : []);
+      document.querySelectorAll("[data-batch-id]").forEach(input => { input.checked = state.batchIds.has(input.dataset.batchId); });
+      syncBatchSelection();
+    };
+    document.getElementById("knowledge-assets").onchange = (event) => {
+      const id = event.target.dataset.batchId;
+      if (!id) return;
+      if (event.target.checked) state.batchIds.add(id);
+      else state.batchIds.delete(id);
+      syncBatchSelection();
+    };
+    document.getElementById("open-batch-review").onclick = () => openBatchReview().catch((error) => shell.toast(error.message));
+    document.getElementById("batch-review-strategy").onchange = (event) => {
+      if (state.batch?.phase !== "ready") return;
+      state.batch.strategy = event.target.value;
+      document.getElementById("submit-batch-review").disabled = !state.batch.strategies.includes(state.batch.strategy);
+    };
+    document.getElementById("submit-batch-review").onclick = () => submitBatchReview().catch((error) => shell.toast(error.message));
     document.getElementById("upload-drawer").addEventListener("cancel", event => { if (state.uploading) event.preventDefault(); });
     document.getElementById("upload-knowledge-base").onchange = () => { renderUploadLedger(); renderUploadTaggingHint(); };
     document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
@@ -412,6 +551,6 @@
         loadAssets().catch(() => { /* 手动刷新时呈现错误，后台刷新保留当前列表。 */ });
       }
     }, 5000);
-    try { await Promise.all([loadTags(), loadKnowledgeBases()]); await loadAssets(); } catch (error) { shell.toast(error.message); }
+    try { await loadKnowledgeBases(); await loadAssets(); } catch (error) { shell.toast(error.message); }
   });
 })();

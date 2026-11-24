@@ -30,10 +30,13 @@ class RetrievalAccess(IngestionScope):
     spec_hash: str | None = None
     delegated_scope_hash: str | None = None
     historical_read: bool = False
+    management_search: bool = False
 
     def __post_init__(self):
         IngestionScope.__post_init__(self)
         require((self.run_ref is None) == (self.spec_hash is None), "知识访问的 Run/Spec 必须同时存在")
+        require(not self.management_search or (self.run_ref is None and not self.historical_read),
+                "资料检索权限不能用于运行委托或历史读取")
 
 
 

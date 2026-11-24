@@ -1,4 +1,4 @@
-# 01 · 直接检索
+# 01 · 资料检索
 
 [整体设计](../knowledge-retrieval-ui-alignment.md) · KBot4：新增 `search.html`；Ammolite：新增 `search` 子路由。使用权限 + 启用库 READ，用户无需问答资格。页面不创建会话，不放上传、审核或跨库检索。
 

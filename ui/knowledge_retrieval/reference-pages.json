@@ -10,7 +10,7 @@
       ]
     },
     "search": {
-      "title": "直接检索",
+      "title": "资料检索",
       "route": "search",
       "sources": [
         "business/KnowledgeDirectSearchView.vue",
