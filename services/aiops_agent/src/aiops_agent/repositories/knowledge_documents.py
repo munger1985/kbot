@@ -5,6 +5,8 @@ from sqlalchemy import select
 from ..entities.knowledge_configuration import OperationsKnowledgeConfigurationEntity
 from knowledge_algorithms.contracts.errors import require
 from knowledge_algorithms.contracts.identity import fingerprint
+from knowledge_algorithms.contracts.wire import decode, encode
+from knowledge_algorithms.projections.contracts import ProjectionProfile
 from .knowledge_ingestion import KnowledgeIngestionRepository
 
 
@@ -28,6 +30,11 @@ class OperationsDocumentRepository(KnowledgeIngestionRepository):
         ).order_by(generation_repo.entity.created_at.desc(),
                    generation_repo.entity.index_generation_id.desc()).limit(1))).all()
         generation = generations[0] if generations else None
+        # 先按合同恢复 JSON 数字类型，再与审批时冻结的摘要比较。
+        projection_hash = (
+            fingerprint(encode(decode(ProjectionProfile, generation.manifest_json.get("profile"))))
+            if generation else None
+        )
         return {"document_id": str(document.document_id), "document_version_id": str(version_id),
             "ingestion_job_id": str(job.ingestion_job_id), "parse_run_id": str(job.parse_run_id),
             "subject_ref": job.context_json["subject_ref"], "source_hash": version.source_sha256,
@@ -39,7 +46,7 @@ class OperationsDocumentRepository(KnowledgeIngestionRepository):
             "error_code": job.error_code, "revision": int(version.row_version),
             "generation_id": str(generation.index_generation_id) if generation else None,
             "parse_profile_hash": parse_run.profile_hash if parse_run else None,
-            "projection_profile_hash": fingerprint(generation.manifest_json.get("profile")) if generation else None,
+            "projection_profile_hash": projection_hash,
             "active_generation_id": str(version.active_generation_id) if version.active_generation_id else None,
             "allowed_view_hash": version.allowed_view_hash}
 

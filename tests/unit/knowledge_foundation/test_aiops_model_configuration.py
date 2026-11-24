@@ -10,6 +10,9 @@ from aiops_agent.application.operations_documents import OperationsDocuments
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.contracts.knowledge import ManualUploadMetadata
 from aiops_agent.composition.knowledge_profiles import KnowledgeFoundationConfig
+from aiops_agent.repositories.knowledge_documents import OperationsDocumentRepository
+from aiops_agent.repositories.knowledge_index_generation import KnowledgeIndexGenerationRepository
+from aiops_agent.repositories.knowledge_ingestion_job import KnowledgeIngestionJobRepository
 from knowledge_algorithms.contracts.identity import fingerprint
 from knowledge_algorithms.contracts.wire import encode
 from knowledge_algorithms.projections.contracts import ProjectionProfile, RepresentationSpec
@@ -45,6 +48,45 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class ManualProcessingPlanTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ready_generation_reuses_profile_with_oracle_json_numbers(self):
+        profile = ProjectionProfile("test/v1", 100, 1000, 100, 1, 1000, 180.0, (dense_spec(),))
+        parse_hash = "parse-profile"
+        plan = {"projection": fingerprint(encode(profile)), "parse": parse_hash}
+        manifest_profile = {**encode(profile), "timeout_seconds": 180}
+        self.assertNotEqual(plan["projection"], fingerprint(manifest_profile))
+
+        version_id, document_id = uuid7(), uuid7()
+        version = SimpleNamespace(document_id=document_id, source_sha256="a" * 64,
+            source_object_ref="source", mime_type="text/plain", byte_count=16,
+            business_version_ref="business-version", status="STAGED", row_version=1,
+            active_generation_id=None, allowed_view_hash="view")
+        document = SimpleNamespace(document_id=document_id, title="运维资料", business_asset_ref="asset")
+        job = SimpleNamespace(ingestion_job_id=uuid7(), parse_run_id=uuid7(),
+            context_json={"subject_ref": "tester"}, status="PARSED", error_code=None)
+        generation = SimpleNamespace(index_generation_id=uuid7(), manifest_json={"profile": manifest_profile})
+        session = SimpleNamespace(scalars=AsyncMock(side_effect=[
+            SimpleNamespace(all=lambda: [job]), SimpleNamespace(all=lambda: [generation]),
+        ]))
+        repo = OperationsDocumentRepository(session)
+        def find(row):
+            return SimpleNamespace(get=AsyncMock(return_value=row))
+
+        access = SimpleNamespace(domain_id=1, tenant_id=None, subject_ref="tester")
+        with patch.object(repo, "_repos", return_value={
+            "knowledge_document_version": find(version),
+            "knowledge_document": find(document),
+            "knowledge_parse_run": find(SimpleNamespace(profile_hash=parse_hash)),
+            "knowledge_ingestion_job": KnowledgeIngestionJobRepository(session, access),
+            "knowledge_index_generation": KnowledgeIndexGenerationRepository(session, access),
+        }):
+            documents = OperationsDocuments.__new__(OperationsDocuments)
+            documents.processing_plan = lambda **_: plan
+            documents.inspect = repo.inspect
+            recorded = await documents.process(access, version_id, expected_plan=plan)
+
+        self.assertEqual(str(generation.index_generation_id), recorded["generation_id"])
+        self.assertEqual(plan["projection"], recorded["projection_profile_hash"])
+
     async def test_default_profile_without_vectors_keeps_capabilities_honest(self):
         parse, projection, profiles = KnowledgeFoundationConfig().profiles()
         documents = OperationsDocuments(uow_factory=None, ingestion=None, projection=None,

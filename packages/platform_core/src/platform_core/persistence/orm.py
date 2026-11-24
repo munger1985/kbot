@@ -4,6 +4,8 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import DateTime, Dialect, LargeBinary, Text, TypeDecorator
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.functions import FunctionElement
 from sqlalchemy.types import UserDefinedType
 import array as array_module
 from sqlalchemy.dialects.oracle import (
@@ -82,6 +84,35 @@ class UniversalTimestamp(TypeDecorator):
             # Oracle Session 已由 DatabaseRuntime 固定为 +00:00。
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+
+
+class _UtcTimestampRead(FunctionElement):
+    inherit_cache = True
+
+    def __init__(self, column):
+        super().__init__(column)
+        self.type = column.type
+
+
+@compiles(_UtcTimestampRead)
+def _compile_timestamp_read(element, compiler, **kwargs):
+    return compiler.process(element.clauses, **kwargs)
+
+
+@compiles(_UtcTimestampRead, "oracle")
+def _compile_oracle_timestamp_read(element, compiler, **kwargs):
+    return f"SYS_EXTRACT_UTC({_compile_timestamp_read(element, compiler, **kwargs)})"
+
+
+class OracleUtcTimestamp(UniversalTimestamp):
+    """在 Oracle 保留原始时间点，避免 Thin 驱动丢失列中存储的时区。"""
+
+    cache_ok = True
+
+    def column_expression(self, column):
+        if not self.timezone:
+            return column
+        return _UtcTimestampRead(column)
 
 
 class UniversalVector(TypeDecorator):

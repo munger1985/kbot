@@ -11,6 +11,7 @@ from platform_core.identity import uuid7
 from platform_core.persistence.orm import (
     BaseEntity,
     OracleNativeJSON,
+    OracleUtcTimestamp,
     UniversalTimestamp,
     UUIDv7Type,
 )
@@ -65,10 +66,10 @@ class OperationsKnowledgeAssetEntity(BaseEntity):
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
     updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+        OracleUtcTimestamp(), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        UniversalTimestamp(timezone=True), server_default=func.now(),
+        OracleUtcTimestamp(), server_default=func.now(),
         onupdate=func.now(), nullable=False,
     )
     row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
@@ -99,7 +100,7 @@ class OperationsKnowledgeVersionEntity(BaseEntity):
     retired_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+        OracleUtcTimestamp(), server_default=func.now(), nullable=False
     )
     row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
     __mapper_args__ = {"version_id_col": row_version}
