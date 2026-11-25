@@ -12,6 +12,7 @@ import {verifyMonitoringNavigation} from './aiops_monitoring_alignment.mjs';
 import {verifyOperationsKnowledgeUpload} from './aiops_operations_knowledge_upload.mjs';
 import {verifyOperationsKnowledgeTagging} from './aiops_operations_knowledge_tagging.mjs';
 import {verifyOperationsKnowledgeBatchReview} from './aiops_operations_knowledge_batch_review.mjs';
+import {verifyOperationsKnowledgeSource, verifyOperationsKnowledgeRetirement} from './aiops_operations_knowledge_source.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const portal = resolve(process.env.AMMOLITE_ROOT || resolve(root, "../ammolite_cube"), "apps/portal-web");
@@ -37,7 +38,7 @@ const fixture = {
   inspectionTemplate: { inspection_template_id: 'template-1', display_name: '生产数据库巡检', status: 'ACTIVE', version_no: 1, selected_check_ids: ['availability'], row_version: 1, updated_at: '2026-10-30T03:00:00Z' },
   inspectionCatalog: {catalog_hash:'fixture',groups:[{group_id:'health',display_name:'可用性与容量',checks:[{check_id:'availability',display_name:'数据库可用性',availability:'READY',trend_required:false,finding_types:[]},{check_id:'capacity-trend',display_name:'容量增长趋势',availability:'READY',trend_required:true,finding_types:[]},{check_id:'planned-check',display_name:'规划检查项',availability:'PLANNED',trend_required:false,finding_types:[]}]}]},
   sessionTemplate: { template_id: 'session-template-1', template_ref: 'fixture-template', display_name: '生产诊断报告', status: 'ACTIVE', version_no: 1, row_version: 1, system_defined: false, is_default: true, usage_count: 2, sections: ['EXECUTIVE_SUMMARY', 'FINDINGS', 'EVIDENCE_BOUNDARY'] },
-  knowledgeAsset: { asset_id: 'asset-1', knowledge_base_id: 'kb-1', display_name: 'Oracle 日常运维手册', asset_kind: 'MANUAL', security_level: 1, status: 'REVIEW_REQUIRED', created_at: '2026-10-30T03:00:00Z', updated_at: '2026-10-30T03:00:00Z' },
+  knowledgeAsset: { asset_id: 'asset-1', knowledge_base_id: 'kb-1', display_name: 'Oracle 日常运维手册', asset_kind: 'MANUAL', security_level: 1, status: 'REVIEW_REQUIRED', created_at: '2026-10-30T03:00:00Z', updated_at: '2026-11-25T01:38:58Z' },
   monitoringSource: { source_id: 'source-1', display_name: '生产 Prometheus', source_type: 'PROMETHEUS', monitoring_readiness: 'READY', diagnostic_readiness: 'READY', capability_gaps: [] },
   source:{source_id:'source-1',display_name:'生产 Prometheus',source_type:'PROMETHEUS',endpoint:'https://monitor.example.com',status:'ENABLED',connectivity_status:'CONNECTED',config:{},row_version:3,updated_at:'2026-10-30T03:00:00Z',webhook_configured:false,webhook_secret:{configured:false}},
   monitoringInstance: { instance_id: 'instance-1', display_name: '生产 Oracle', resource_name: 'MES 数据库', business_system_id: 'system-1', business_system_name: 'MES 生产系统', resource_id: 'resource-1', resource_type_key: 'DATABASE', db_type: 'ORACLE', monitoring_readiness: 'READY', diagnostic_readiness: 'READY', capability_gaps: [] },
@@ -103,10 +104,15 @@ function installFixture(data) {
     asset: { ...knowledgeAsset(), row_version:1, display_name:'Oracle_Operations_Manual_'.repeat(10) },
     version: { asset_version_id:'knowledge-version-1', version_no:1, row_version:globalThis.fixtureKnowledgeTagRevision || 1,
       status:knowledgeAsset().status, source_hash:'a'.repeat(64), tag_analysis:knowledgeTagAnalysis(),
-      extraction_warnings:['需要人工核验：' + 'LongIdentifierWithoutSpaces'.repeat(60)] },
+      extraction_warnings:['需要人工核验：' + 'LongIdentifierWithoutSpaces'.repeat(60)],
+      profile:globalThis.fixtureKnowledgeSource ? {schema_version:'OPS_MANUAL_PROFILE.v1', source:{publisher:'示例发布方'},
+        topics:['计算节点规格'], procedures:[{procedure_key:'spec-check', title:'核对硬件', steps:[{ordinal:1,description:'核对节点数量'}]}]} : null },
     scopes:globalThis.fixtureKnowledgeTagStatus === 'PUBLISHED' ? [knowledgeStorageTag,knowledgeServerTag,knowledgeVendorTag]
       .map(tag => ({scope_id:`scope-${tag.tag_id}`,tag_id:tag.tag_id,kind:tag.category,value:tag.display_name})) : [],
-    sources:[], indexes:[], reviews:[],
+    sources:globalThis.fixtureKnowledgeSource ? [{source_kind:'MANUAL_FILE',source_id:'source-manual',external_id:'数据库计算节点硬件规格说明.txt',
+      locator:globalThis.fixtureKnowledgeSource === 'ready' ? {document_version_id:'doc-manual'} : {}}] : [],
+    indexes:globalThis.fixtureKnowledgeSource === 'ready' ? [{index_ref_id:'index-manual',document_version_id:'doc-manual',status:'READY',last_checked_at:data.knowledgeAsset.updated_at}] : [],
+    reviews:[],
     parse_strategy_options:[
       { strategy:'TEXT', selectable:true, unavailable_roles:[] },
       { strategy:'AUTO', selectable:!globalThis.fixtureAutoParseUnavailable, unavailable_roles:globalThis.fixtureAutoParseUnavailable?['ocr']:[] },
@@ -152,7 +158,7 @@ function installFixture(data) {
         const hit = (title, quote, version) => ({asset_version_id:title, title, version, asset_kind:body.source_kind,
           passages:[{quote,truncated:false}]});
         if (body.query === '暂缓') return {retrieval_conclusion:'EVIDENCE_FOUND', warnings:[], results:[hit('过期结果','不能在切换范围后显示',1)]};
-        if (body.query === '不完整') return {retrieval_conclusion:'NOT_VERIFIED', warnings:['索引仍在处理'], results:[]};
+        if (body.query === '不完整') return {retrieval_conclusion:'NOT_VERIFIED', warnings:['索引仍在处理','部分正文尚未核验'], results:[]};
         if (location.search.includes('empty=1')) return {retrieval_conclusion:'NO_ELIGIBLE_RESOURCES', warnings:[], results:[]};
         return {retrieval_conclusion:'EVIDENCE_FOUND', warnings:[], results:body.source_kind === 'MANUAL'
           ? [hit('Exadata 运维手册','存储节点支持在线扩容。',2), {
@@ -186,6 +192,11 @@ function installFixture(data) {
       }
       if (globalThis.fixtureKnowledgeTagStatus && /\/operations-knowledge\/versions\/knowledge-version-1:(approve|retry)$/.test(path)) {
         globalThis.fixtureKnowledgeTagStatus = 'TAGGING';
+        globalThis.fixtureKnowledgeTagRevision = JSON.parse(init.body).expected_row_version + 1;
+        return knowledgeDetail();
+      }
+      if (globalThis.fixtureKnowledgeTagStatus === 'PUBLISHED' && path.endsWith('/operations-knowledge/versions/knowledge-version-1:retire')) {
+        globalThis.fixtureKnowledgeTagStatus = 'RETIRED';
         globalThis.fixtureKnowledgeTagRevision = JSON.parse(init.body).expected_row_version + 1;
         return knowledgeDetail();
       }
@@ -343,7 +354,9 @@ function installFixture(data) {
       if (globalThis.fixtureHoldKnowledgeAssets) await new Promise(resolve => {
         globalThis.fixtureReleaseKnowledgeAssets = () => { globalThis.fixtureHoldKnowledgeAssets = false; resolve(); };
       });
-      return { items: globalThis.fixtureKnowledgeBatch ? fixtureKnowledgeBatch.map(batchAsset) : rows(knowledgeAsset()) };
+      const status = new URL(path, 'http://fixture').searchParams.get('status');
+      const items = globalThis.fixtureKnowledgeBatch ? fixtureKnowledgeBatch.map(batchAsset) : rows(knowledgeAsset());
+      return { items: status ? items.filter(item => item.status === status) : items };
     }
     const batchAssetKey = suffix.match(/\/operations-knowledge\/assets\/asset-batch-([a-z]+)$/)?.[1];
     if (batchAssetKey && globalThis.fixtureKnowledgeBatch) {
@@ -383,7 +396,14 @@ function installFixture(data) {
     throw new Error(`未定义的对照请求：${path}`);
   };
   globalThis.KBotAIOpsAuth = { load: () => ({ access_token: "isolated-fixture" }), request: fixtureRequest, uuid: () => crypto.randomUUID(), uuid7: () => crypto.randomUUID() };
+  const manualSource = async (path) => {
+    fixtureRequests.push({path,method:'SOURCE'});
+    return {blob:new Blob(['示例原文\n<img src=x onerror="globalThis.manualSourceInjected=true">'], {type:'text/plain'}),
+      filename:'数据库计算节点硬件规格说明.txt', contentType:'text/plain'};
+  };
+  globalThis.KBotAIOpsAuth.requestBlob=async path=>(await manualSource(path)).blob;
   globalThis.fixtureDownload=async(path)=>{
+    if (path.includes('/versions/knowledge-version-1/source?')) return manualSource(path);
     fixtureRequests.push({path,method:'DOWNLOAD'});
     await new Promise(resolve=>{globalThis.fixtureReleaseDownload=resolve;});
     throw new Error('页面对照不下载真实业务文件');
@@ -556,6 +576,15 @@ try {
         await query.fill('不完整');
         await search.click();
         await page.getByText('本次检索未能充分核验，不表示没有匹配资料。',{exact:true}).waitFor();
+        const warnings = await page.locator('.aiops-search-warnings').evaluate(list => {
+          const [first, second] = [...list.children].map(node => node.getBoundingClientRect());
+          return {
+            inset: first.left - list.getBoundingClientRect().left,
+            onePerRow: first.left === second.left && second.top >= first.bottom,
+            listStyle: getComputedStyle(list).listStyleType,
+          };
+        });
+        assert.ok(warnings.inset >= 28 && warnings.onePerRow && warnings.listStyle === 'disc', JSON.stringify(warnings));
         await query.fill('报错');
         await search.click();
         await page.getByRole('alert').getByText('暂时无法检索',{exact:true}).waitFor();
@@ -1197,6 +1226,22 @@ try {
     }
     if (name==='operations-knowledge' && !empty) {
       for (const [platform,page] of [['kbot',kbot],['ammolite',reference]]) {
+        const viewport = page.viewportSize();
+        for (const width of [2048, 1280, 420]) {
+          await page.setViewportSize({width,height:900});
+          const time = page.locator('.knowledge-table-card tbody td:nth-child(6)');
+          await time.getByText(/^更新于/).waitFor();
+          const layout = await time.evaluate(cell => {
+            const updated = cell.querySelector('small');
+            const scroll = cell.closest('.table-scroll');
+            return {time:cell.clientWidth,status:cell.previousElementSibling.clientWidth,
+              clipped:updated.scrollWidth>updated.clientWidth+1,
+              scrollable:getComputedStyle(scroll).overflowX==='auto' && scroll.scrollWidth>scroll.clientWidth};
+          });
+          assert.ok(layout.time > layout.status && !layout.clipped && (width !== 420 || layout.scrollable),
+            `${platform} ${width}px：${JSON.stringify(layout)}`);
+        }
+        await page.setViewportSize(viewport);
         await verifyOperationsKnowledgeUpload(page);
         const drawer = page.getByRole('dialog').filter({ has:page.getByRole('button',{name:'批准并开始 AI 识别'}) });
         for (const [width,height,autoUnavailable] of [[1440,900,false],[320,520,true]]) {
@@ -1245,6 +1290,8 @@ try {
         }
         await page.evaluate(() => { globalThis.fixtureAutoParseUnavailable = false; });
         await verifyOperationsKnowledgeTagging(page);
+        await verifyOperationsKnowledgeSource(page);
+        await verifyOperationsKnowledgeRetirement(page);
         await verifyOperationsKnowledgeBatchReview(page);
         assert.deepEqual(await page.evaluate(()=>fixtureFailures),[]);
       }

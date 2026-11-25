@@ -14,7 +14,31 @@ export async function verifyOperationsKnowledgeUpload(page) {
   assert.notEqual(await picker.getAttribute('multiple'),null);
   await picker.setInputFiles(manual);
   await picker.setInputFiles(appendix);
+  const removable = {name:`${'long-operations-manual-'.repeat(5)}.txt`,mimeType:'text/plain',buffer:Buffer.from('Remove this file')};
+  await picker.setInputFiles(removable);
+  const row = drawer.locator('.upload-file-row').last();
+  const remove = row.getByRole('button',{name:`移除 ${removable.name}`,exact:true});
+  for (const width of [1440, 760, 420, 320]) {
+    await page.setViewportSize({width,height:900});
+    await remove.waitFor({state:'visible'});
+    const layout = await row.evaluate(node => {
+      const bounds = selector => node.querySelector(selector).getBoundingClientRect();
+      const identity = bounds('.upload-file-identity');
+      const input = bounds('.upload-file-name input');
+      const button = bounds('.upload-file-remove');
+      const center = box => box.top + box.height / 2;
+      return {rightSide:button.left >= identity.right && node.getBoundingClientRect().right >= button.right,
+        aligned:Math.abs(center(identity)-center(button)) <= 1,
+        inputAligned:Math.abs(center(input)-center(button)) <= 1,
+        inputBelow:input.top >= button.bottom, buttonWidth:button.width,
+        horizontalOverflow:node.scrollWidth-node.clientWidth};
+    });
+    assert.ok(layout.rightSide && layout.aligned && layout.buttonWidth >= 48 && layout.horizontalOverflow <= 1
+      && (width > 760 ? layout.inputAligned : layout.inputBelow), `${page.url()} ${width}px ${JSON.stringify(layout)}`);
+  }
+  await remove.click();
   assert.equal(await drawer.locator('.upload-file-row').count(),2);
+  await page.setViewportSize({width:1440,height:1000});
   await drawer.getByLabel('资料名称',{exact:true}).first().fill('数据库运维资料');
   await page.evaluate(()=>{globalThis.fixtureRejectAppendix=true;});
   await drawer.getByRole('button',{name:'上传',exact:true}).click();

@@ -512,16 +512,15 @@ def test_approval_freezes_inputs_or_leaves_review_unchanged(failure):
     asyncio.run(run())
 
 
-def test_tagging_failure_and_retry_keep_frozen_spec_after_library_changes():
+@pytest.mark.parametrize("binding_changed", [False, True])
+def test_tagging_retry_uses_current_model_and_keeps_approved_inputs(binding_changed):
     async def run():
         f = lifecycle_fixture()
         f.detail["version"]["status"] = f.version.status = f.asset.status = "REVIEW_REQUIRED"
         f.index.index_status = "PENDING_APPROVAL"
         await f.service.approve_manual(**f.kwargs, expected_row_version=1, comment=None, parse_strategy="TEXT")
         frozen = deepcopy(f.version.tag_analysis_json["execution_spec"])
-        f.base.configuration_json = {"models":{"parser_llm": str(uuid7())}}
-        f.repository.list_tags.return_value = []
-        f.service._tagging_model_snapshot.return_value = {**f.model_snapshot, "digest": "changed"}
+        f.service._prompt_registry.resolve.side_effect = LookupError("测试：审批后的 Prompt 暂不可用")
         await f.service.analyze_tags(**f.kwargs)
         assert f.version.status == "TAGGING_FAILED"
         assert f.version.tag_analysis_json["execution_spec"] == frozen
@@ -536,7 +535,13 @@ def test_tagging_failure_and_retry_keep_frozen_spec_after_library_changes():
         f.service.get_version.side_effect = lambda **_: {
             **f.detail, "version": {**f.detail["version"], "status": f.version.status},
         }
-        f.service._tagging_model_snapshot.return_value = f.model_snapshot
+        current_model_id = uuid7() if binding_changed else f.model_id
+        f.base.configuration_json = {"models": {"parser_llm": str(current_model_id)}}
+        f.repository.list_tags.return_value = []
+        current = {**f.model_snapshot, "model_id": str(current_model_id), "digest": "current"}
+        f.service._tagging_model_snapshot.return_value = current
+        f.service._tagging_model_snapshot.reset_mock()
+        f.service._prompt_registry.resolve.side_effect = None
         f.service._prompt_registry.resolve.return_value.content = "frozen prompt"
         f.documents.excerpts.return_value = {"excerpts": [{
             "document_version_id": str(f.doc), "content": "恢复步骤", "locator": {"page": 1},
@@ -570,7 +575,10 @@ def test_tagging_failure_and_retry_keep_frozen_spec_after_library_changes():
             "knowledge_tag_classify", frozen_prompts={"knowledge_tag_classify": frozen["prompt"]},
         )
         generation = f.service._structured_model.generate_structured.await_args.kwargs
-        assert generation["model_snapshot"] == frozen["model"]
+        assert generation["model_snapshot"] == current
+        assert f.version.tag_analysis_json["execution_model"] == current
+        assert [call.args[0] for call in f.service._tagging_model_snapshot.await_args_list] == [current_model_id] * 2
+        assert generation["idempotency_key"].startswith(f"knowledge-tags:{f.version_id}:1:")
         assert generation["input_payload"]["vocabulary"] == frozen["vocabulary"]
         f.documents.assert_processed_documents.assert_awaited_once()
     asyncio.run(run())
@@ -589,6 +597,108 @@ def test_tagging_retry_does_not_queue_when_reset_fails():
         f.repository.add_review.assert_not_awaited()
         f.uow.commit.assert_not_awaited()
         f.service._structured_model.generate_structured.assert_not_awaited()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("change_during_call", [False, True])
+def test_tagging_never_falls_back_to_old_model_or_accepts_output_after_binding_change(change_during_call):
+    async def run():
+        f = lifecycle_fixture()
+        f.detail["version"]["status"] = f.version.status = "REVIEW_REQUIRED"
+        f.index.index_status = "PENDING_APPROVAL"
+        await f.service.approve_manual(**f.kwargs, expected_row_version=1, comment=None, parse_strategy="TEXT")
+        f.service._prompt_registry.resolve.return_value.content = "frozen prompt"
+        f.documents.excerpts.return_value = {"excerpts": [{"content": "恢复步骤"}]}
+        if change_during_call:
+            next_id = uuid7()
+
+            async def generate(**_):
+                f.base.configuration_json = {"models": {"parser_llm": str(next_id)}}
+                f.service._tagging_model_snapshot.return_value = {**f.model_snapshot, "model_id": str(next_id)}
+                return SimpleNamespace()
+
+            f.service._structured_model.generate_structured.side_effect = generate
+        else:
+            f.base.configuration_json = {"models": {}}
+        await f.service.analyze_tags(**f.kwargs)
+        assert f.version.status == "TAGGING_FAILED"
+        if change_during_call:
+            assert "运行期间发生变化" in f.version.tag_analysis_json["error_summary"]
+            f.service._structured_model.generate_structured.assert_awaited_once()
+        else:
+            assert f.version.tag_analysis_json["error_code"] == "AIOPS_KNOWLEDGE_TAG_MODEL_REQUIRED"
+            f.service._structured_model.generate_structured.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("status", ["RECEIVED", "PARSING", "PARSED"])
+def test_worker_rebinds_only_unclaimed_ocr_and_vlm_work(status):
+    async def run():
+        f = lifecycle_fixture()
+        f.version.status = "TAGGING"
+        bindings = {"ocr": str(uuid7()), "vlm": str(uuid7())}
+        f.base.configuration_json["parse_models"] = bindings
+        plan = {"parse_strategy": "VISUAL", "parse": "old-profile", "projection": "keep-embedding"}
+        execution = {"processing_plan": plan}
+        f.version.tag_analysis_json = {"execution_spec": execution}
+        profile = SimpleNamespace(profile_hash="current-profile")
+        f.documents.approved_parse_profile.return_value = profile
+        f.documents.inspect = AsyncMock(return_value={"processing_status": status})
+        f.documents.rebind_pending_parse = AsyncMock(return_value=True)
+
+        updated, _ = await f.service._refresh_pending_manual_parse(
+            domain_id=f.domain, knowledge_base_id=f.asset.knowledge_base_id,
+            asset_version_id=f.version_id, context=f.kwargs["context"], access=None,
+            execution=execution, tagging_revision=1, index_locator=(f.doc,),
+        )
+        if status != "RECEIVED":
+            assert updated == execution
+            f.documents.approved_parse_profile.assert_not_awaited()
+            f.documents.rebind_pending_parse.assert_not_awaited()
+            f.uow.commit.assert_not_awaited()
+            return
+        f.documents.approved_parse_profile.assert_awaited_once_with(f.kwargs["context"], bindings, "VISUAL")
+        f.documents.rebind_pending_parse.assert_awaited_once_with(f.uow, None, f.doc, profile)
+        expected = {**plan, "parse": "current-profile"}
+        assert updated["processing_plan"] == expected
+        assert f.version.tag_analysis_json["execution_spec"]["processing_plan"] == expected
+        assert f.repository.get_version_relations.return_value["sources"][0].source_locator_json["processing_plan"] == expected
+        f.uow.commit.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("change", ["replace", "remove", "clear", "first_bind"])
+def test_library_rejects_replacing_or_removing_existing_embedding(change):
+    async def run():
+        f = lifecycle_fixture()
+        f.base.row_version = 1
+        embedding_id, visual_id, ocr_id = map(str, (uuid7(), uuid7(), uuid7()))
+        f.base.configuration_json["index_models"] = {"embedding": embedding_id}
+        f.repository.lock_knowledge_base_names = AsyncMock(return_value=True)
+        f.repository.find_knowledge_base_name = AsyncMock(return_value=None)
+        f.service.get_knowledge_base = AsyncMock()
+        index_models = {
+            "replace": {"embedding": str(uuid7())}, "remove": {"embedding": None},
+            "clear": None, "first_bind": {"visual_embedding": visual_id},
+        }[change]
+        command = KnowledgeBaseWrite(display_name="当前库", expected_row_version=1,
+                                     index_models=index_models, parse_models={"ocr": ocr_id})
+        kwargs = dict(domain_id=f.domain, knowledge_base_id=f.asset.knowledge_base_id,
+                      context=f.kwargs["context"], command=command)
+        if change != "first_bind":
+            with pytest.raises(AIOpsApplicationError) as caught:
+                await f.service.update_knowledge_base(**kwargs)
+            assert caught.value.code == "AIOPS_KNOWLEDGE_EMBEDDING_IMMUTABLE"
+            assert f.base.configuration_json["index_models"] == {"embedding": embedding_id}
+            f.uow.commit.assert_not_awaited()
+            return
+        await f.service.update_knowledge_base(**kwargs)
+        assert f.base.configuration_json["index_models"] == {"embedding": embedding_id, "visual_embedding": visual_id}
+        assert f.base.configuration_json["parse_models"] == {"ocr": ocr_id}
+        f.uow.commit.assert_awaited_once()
+
     asyncio.run(run())
 
 

@@ -82,11 +82,12 @@
           ? "warn" : "";
     return `<span class="ops-badge ${tone}">${escape(label || text)}</span>`;
   }
-  function toast(message) {
+  function toast(message, host = document.body) {
     const node = document.createElement("div");
     node.className = "ops-toast";
     node.textContent = message;
-    document.body.append(node);
+    node.setAttribute("role", host === document.body ? "status" : "alert");
+    host.append(node);
     setTimeout(() => node.remove(), 5000);
   }
   function icon(name) {

@@ -34,6 +34,7 @@ body[data-page="agents"] .admin-drawer-header .icon-button:focus-visible { borde
 .agent-step-panel { flex:1; }
 body[data-page="agents"] .agent-wizard-footer { display:grid;gap:9px;padding-top:15px; }
 body[data-page="agents"] .form-error { color:var(--danger); }
+.agent-editor-panel > .ops-toast { pointer-events:none; max-width:min(420px, calc(100vw - 48px)); overflow-wrap:anywhere; }
 body[data-page="agents"] .agent-selection-summary>.agent-empty-selection { width:100%; }
 @media(max-width:760px) { .data-toolbar{align-items:stretch}.data-toolbar .search-field{min-width:0}.agent-catalog-entries .resource-list-empty{grid-column:1/-1}.form-grid-two{grid-template-columns:1fr} }
 @media(prefers-reduced-motion:reduce) { .agent-editor-panel,.agent-picker { animation:none; } }

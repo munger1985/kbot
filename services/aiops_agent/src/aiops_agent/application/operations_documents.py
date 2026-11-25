@@ -182,6 +182,11 @@ class OperationsDocuments:
         for index in indexes:
             await uow.knowledge_documents.retry_document(access, index.document_version_id, now=now)
 
+    async def rebind_pending_parse(self, uow, access, document_version_id, profile):
+        return await uow.knowledge_documents.retry_document(
+            access, document_version_id, now=self.ingestion.clock(), pending_profile=profile,
+        )
+
     async def inspect(self, access, version_id):
         async with self.uow_factory() as uow:
             return await uow.knowledge_documents.inspect(access, UUID(str(version_id)))

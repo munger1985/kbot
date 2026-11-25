@@ -8,7 +8,9 @@
 :is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(2) { width:32%; }
 :is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(3) { width:13%; }
 :is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(4) { width:15%; }
-:is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(5) { width:23%; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(5) { width:12%; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card th:nth-child(6) { width:21%; min-width:13rem; }
+:is([data-page="operations-knowledge"]) .knowledge-table-card td:nth-child(6) { white-space:nowrap; }
 :is([data-page="operations-knowledge"]) .knowledge-batch-items { margin:0; padding-inline-start:1.5em; overflow-wrap:anywhere; }
 :is([data-page="operations-knowledge"]) .knowledge-batch-status { margin:0; }
 :is([data-page="operations-knowledge"]) .knowledge-batch-status:empty { display:none; }
@@ -19,7 +21,13 @@
 :is([data-page="operations-knowledge"]) .knowledge-upload-form > .admin-drawer-footer { margin:0 -28px; }
 :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-mode-picker,:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-drop-zone,:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-ledger { grid-column:1/-1; margin-left:42px; }
 :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-drop-zone { min-height:145px; }
-:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-row { grid-template-columns:28px minmax(180px,1fr) minmax(250px,.9fr) auto; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-row { grid-template-columns:28px minmax(0,1fr) minmax(0,1.15fr) max-content; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-row--version { grid-template-columns:28px minmax(0,1fr) max-content; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-name { grid-template-columns:max-content minmax(0,1fr); align-items:center; gap:8px; min-width:0; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-name input { min-width:0; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-remove { grid-column:-2/-1; grid-row:1; min-inline-size:3.5rem; }
+:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-error { grid-column:2/-1; margin:0; color:var(--danger); overflow-wrap:anywhere; }
 :is([data-page="operations-knowledge"]) .upload-limit-notice { margin:0 0 0 42px; }
 :is([data-page="operations-knowledge"]) :is(.knowledge-detail-drawer,.knowledge-batch-drawer) { width:min(820px,100vw); min-width:0; max-width:min(820px,100vw); overflow-wrap:anywhere; }
 :is([data-page="operations-knowledge"]) :is(.knowledge-detail-drawer,.knowledge-batch-drawer) .admin-drawer-header > div:first-child { min-width:0; }
@@ -53,16 +61,21 @@
 :is([data-page="operations-knowledge"]) .knowledge-tag-option small { color:var(--muted); }
 :is([data-page="operations-knowledge"]) .knowledge-tag-option em { color:var(--brand); font-size:12px; font-style:normal; font-weight:700; }
 :is([data-page="operations-knowledge"]) .knowledge-source-list { display:grid; grid-column:1/-1; gap:8px; }
-:is([data-page="operations-knowledge"]) .knowledge-source-card { display:grid; grid-template-columns:28px minmax(0,1fr); align-items:center; gap:12px; padding:13px 15px; border:1px solid var(--line); border-radius:9px; background:var(--surface); }
-:is([data-page="operations-knowledge"]) .knowledge-source-card > div { display:grid; min-width:0; gap:4px; }
-:is([data-page="operations-knowledge"]) .knowledge-source-card strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-:is([data-page="operations-knowledge"]) .knowledge-source-card small { color:var(--muted); }
-:is([data-page="operations-knowledge"]) .knowledge-source-card code { overflow:hidden; color:var(--faint); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
-:is([data-page="operations-knowledge"]) .knowledge-source-actions { display:flex; flex-wrap:wrap; grid-column:1/-1; justify-content:flex-end; }
-:is([data-page="operations-knowledge"]) .knowledge-technical-list { display:grid; grid-template-columns:100px minmax(0,1fr); grid-column:1/-1; gap:10px 16px; margin:0; }
-:is([data-page="operations-knowledge"]) .knowledge-technical-list dt { color:var(--muted); }
-:is([data-page="operations-knowledge"]) .knowledge-technical-list dd { margin:0; overflow-wrap:anywhere; }
-:is([data-page="operations-knowledge"]) .knowledge-profile { grid-column:1/-1; max-height:360px; margin:0; padding:15px; overflow:auto; border:1px solid var(--line); border-radius:9px; color:var(--ink); background:var(--surface-subtle); white-space:pre-wrap; font:12px/1.7 var(--font-data); }
+:is([data-page="operations-knowledge"]) .knowledge-source-card, :is([data-page="operations-knowledge"]) .knowledge-index-list > li, :is([data-page="operations-knowledge"]) .knowledge-procedures > details { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; padding:13px 15px; border:1px solid var(--line); border-radius:9px; background:var(--surface); }
+:is([data-page="operations-knowledge"]) .knowledge-source-card strong, :is([data-page="operations-knowledge"]) .knowledge-index-list strong { overflow-wrap:anywhere; }
+:is([data-page="operations-knowledge"]) .knowledge-source-card small, :is([data-page="operations-knowledge"]) .knowledge-index-list small, :is([data-page="operations-knowledge"]) .knowledge-profile-fields dt { color:var(--muted); }
+:is([data-page="operations-knowledge"]) .knowledge-source-actions, :is([data-page="operations-knowledge"]) .knowledge-index-list li > div { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+:is([data-page="operations-knowledge"]) .knowledge-source-preview { min-width:0; padding-block-start:8px; border-block-start:1px solid var(--line); }
+:is([data-page="operations-knowledge"]) .knowledge-source-metadata { grid-column:1/-1; color:var(--muted); font-size:12px; }
+:is([data-page="operations-knowledge"]) .knowledge-source-metadata summary { cursor:pointer; }
+:is([data-page="operations-knowledge"]) .knowledge-source-preview img { display:block; max-width:100%; max-height:26rem; object-fit:contain; }
+:is([data-page="operations-knowledge"]) .knowledge-source-preview iframe { display:block; width:100%; height:24rem; border:0; }
+:is([data-page="operations-knowledge"]) .knowledge-source-preview pre, :is([data-page="operations-knowledge"]) .knowledge-procedures pre { max-height:24rem; padding:12px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:var(--surface-subtle); }
+:is([data-page="operations-knowledge"]) .knowledge-index-list, :is([data-page="operations-knowledge"]) .knowledge-profile-fields, :is([data-page="operations-knowledge"]) .knowledge-procedures { display:grid; grid-column:1/-1; gap:8px; margin:0; padding:0; }
+:is([data-page="operations-knowledge"]) .knowledge-index-list p { margin:0; }
+:is([data-page="operations-knowledge"]) .knowledge-profile-fields > div { display:grid; grid-template-columns:5rem minmax(0,1fr); gap:8px; }
+:is([data-page="operations-knowledge"]) .knowledge-profile-fields dd { margin:0; }
+:is([data-page="operations-knowledge"]) .knowledge-procedures summary { cursor:pointer; }
 :is([data-page="operations-knowledge"]) .knowledge-review-timeline { grid-column:1/-1; width:100%; margin:0; }
 :is([data-page="operations-knowledge"]) .knowledge-review-timeline li > div { display:grid; gap:3px; }
 :is([data-page="operations-knowledge"]) .knowledge-review-timeline small { color:var(--faint); }
@@ -73,7 +86,7 @@
   :is([data-page="operations-knowledge"]) .knowledge-upload-form > .admin-drawer-footer button { width:100%; }
   :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-mode-picker,:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-drop-zone,:is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-ledger,:is([data-page="operations-knowledge"]) .upload-limit-notice { margin-left:0; }
   :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-row { grid-template-columns:25px minmax(0,1fr) auto; }
-  :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-settings { grid-column:2/-1; }
+  :is([data-page="operations-knowledge"]) .knowledge-upload-form .upload-file-name { grid-column:2/-1; grid-row:2; }
   :is([data-page="operations-knowledge"]) .knowledge-detail-tabs { padding-right:18px; padding-left:18px; }
   :is([data-page="operations-knowledge"]) .knowledge-detail-body { padding:18px; }
   :is([data-page="operations-knowledge"]) .knowledge-detail-strategy { flex:0 0 100%; }
@@ -82,5 +95,4 @@
   :is([data-page="operations-knowledge"]) .knowledge-tag-group { grid-template-columns:1fr; }
   :is([data-page="operations-knowledge"]) .knowledge-summary-grid div,:is([data-page="operations-knowledge"]) .knowledge-summary-grid div:nth-child(3n),:is([data-page="operations-knowledge"]) .knowledge-summary-grid div:nth-last-child(-n+3) { border-right:0; border-bottom:1px solid var(--line); }
   :is([data-page="operations-knowledge"]) .knowledge-summary-grid div:last-child { border-bottom:0; }
-  :is([data-page="operations-knowledge"]) .knowledge-source-card { align-items:stretch; flex-direction:column; }
 }

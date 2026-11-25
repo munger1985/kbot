@@ -31,6 +31,7 @@
       select.add(new Option([item.display_name, item.provider, direction].filter(Boolean).join(" · "), item.model_id));
     }
     select.value = selected;
+    select.disabled = Boolean(editing?.index_models?.[name] && indexFields.some(([role]) => role === name));
   }
   function renderCapabilities(row) {
     const element = document.getElementById("knowledge-base-capabilities");

@@ -25,12 +25,12 @@
         <label class="control-field form-span"><span class="field-label">VLM 模型（可选）</span><select name="vlm"></select></label>
       </section>
       <section class="drawer-form-section">
-        <header><span>03</span><div><strong>索引与检索模型</strong><small>不配置文本 Embedding，新资料不支持文本语义检索，仍可按关键词检索。模型不影响解析选档，变更也不会改写旧索引。</small></div></header>
+        <header><span>03</span><div><strong>索引与检索模型</strong><small>不配置文本 Embedding，新资料不支持文本语义检索，仍可按关键词检索。已绑定的 Embedding 不可更换或移除。</small></div></header>
         <label class="control-field form-span"><span class="field-label">文本 Embedding（可选）</span><select name="embedding"></select></label>
         <label class="control-field form-span"><span class="field-label">视觉 Embedding（可选）</span><select name="visual_embedding"></select></label>
       </section>
       <section class="drawer-form-section">
-        <header><span>04</span><div><strong>运维资料治理</strong><small>只影响后续的资料标签识别，不改变解析与索引。</small></div></header>
+        <header><span>04</span><div><strong>运维资料治理</strong><small>后续标签识别（含重试）和资料检索的相关性校验使用当前绑定，不改写已有结果。</small></div></header>
         <label class="control-field form-span"><span class="field-label">标签识别模型（可选）</span><select name="tagging_model_id"></select></label>
         <p id="knowledge-base-tagging-hint" class="form-span" role="status"></p>
       </section>
@@ -45,6 +45,6 @@
       <footer class="admin-drawer-footer"><button id="cancel-knowledge-base" class="secondary-button" type="button" data-close>取消</button><button id="back-knowledge-base" class="secondary-button" type="button" hidden>上一步</button><button id="save-knowledge-base" class="primary-button" type="submit">下一步</button></footer>
     </form>
   </dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261124_knowledge_search"></script><script src="../shared/knowledge-parse-strategy-help.js"></script><script src="../shared/knowledge-search-capabilities-review.js?v=20261120_search_directions"></script><script src="./js/aiops-knowledge-bases.js?v=20261124_archive"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261124_knowledge_search"></script><script src="../shared/knowledge-parse-strategy-help.js"></script><script src="../shared/knowledge-search-capabilities-review.js?v=20261120_search_directions"></script><script src="./js/aiops-knowledge-bases.js?v=20261125_model_bindings"></script>
 </body>
 </html>

@@ -14,7 +14,14 @@
 :is([data-page="knowledge-search"]) .aiops-search-hit[aria-pressed="true"] { border-color:var(--accent); background:var(--surface-subtle); }
 :is([data-page="knowledge-search"]) .aiops-search-quote { margin:0 0 12px; padding:10px 12px; border-left:3px solid var(--line); background:var(--surface-subtle); overflow-wrap:anywhere; white-space:pre-wrap; }
 :is([data-page="knowledge-search"]) .aiops-search-quote small { display:block; margin-top:6px; }
-:is([data-page="knowledge-search"]) .aiops-search-warnings { padding-inline-start:32px; }
+:is([data-page="knowledge-search"]) .aiops-knowledge-search-page .aiops-search-warnings {
+  grid-template-columns:minmax(0, 1fr);
+  gap:4px;
+  padding-inline-start:calc(16px + 1.25em);
+  list-style:disc;
+  color:var(--ink);
+  overflow-wrap:anywhere;
+}
 @media (max-width:760px) {
   :is([data-page="knowledge-search"]) .aiops-search-split { grid-template-columns:minmax(0, 1fr); }
 }

@@ -53,7 +53,6 @@
     }
     renderRows();
     renderBoundaryResources();
-    if (currentStep === 6) renderReview();
   }
   function targetGaps(item) {
     const form = document.getElementById("agent-form");
@@ -62,21 +61,13 @@
     return [
       !item.target_enabled && "数据库资源尚未上线，请通过所属业务系统的上线或重新上线统一管理",
       !item.scope_enabled && "业务系统未上线，不能执行诊断或变更",
-      !item.monitoring_configured && "尚未绑定监控源，无法读取监控数据",
+      item.scope_enabled && !item.monitoring_configured && "监控配置未就绪，无法读取监控数据",
       readonly && !item.readonly_connection_enabled && "Agent 已允许只读，但 Target 未开放只读连接",
       (readonly || change) && !item.connection_configured && "Target 缺少数据库连接配置，不能执行数据库诊断或变更",
       readonly && item.readonly_connection_enabled && !item.diagnostic_credential_configured && "Target 缺少只读凭据",
       change && !item.controlled_change_enabled && "Agent 已允许受控变更，但 Target 未允许变更，因此该目标不能执行变更",
       change && item.controlled_change_enabled && !item.execution_credential_configured && "Target 缺少变更凭据，不能执行变更",
     ].filter(Boolean).join("；");
-  }
-  function targetIssues() {
-    if (!selectionSets.systems.size) return ["尚未选择业务系统"];
-    const state = boundaryStates.get(boundaryKey([...selectionSets.systems]));
-    if (!state || state.status === "loading") return ["Target 配置核验中"];
-    if (state.status === "error") return ["Target 配置状态未知，请重新核验"];
-    if (!state.items.length) return ["所选业务系统尚无数据库 Target"];
-    return state.items.flatMap(item => targetGaps(item) ? [item.display_name + "：" + targetGaps(item)] : []);
   }
   function renderBoundaryResources() {
     if (!document.getElementById("agent-dialog").open) return;
@@ -85,8 +76,11 @@
     const state = boundaryStates.get(boundaryKey(ids));
     const readonly = form.elements.readonly_database_enabled.checked;
     const change = form.elements.allow_agent_execution.checked;
-    document.getElementById("agent-boundary-resources").innerHTML = `<h4>关联资源配置与限制</h4><p>监控跟随资源；数据库账号和连接由数据库 Target 维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机",STORAGE:"存储",NETWORK_DEVICE:"网络设备"}[item.resource_type_key] || item.resource_type_key))}</strong><small>所属系统：${escape(values(item.business_system_ids).map(systemName).join("、"))}</small><small>监控：${item.monitoring_configured ? "已配置" : "未配置"} · 只读：${item.resource_type_key !== "DATABASE" ? "不适用" : item.readonly_configured ? "已配置" : "未配置"} · 变更：${item.resource_type_key !== "DATABASE" ? "不适用" : item.change_configured ? "已配置" : "未配置"}</small><small>${escape(targetGaps(item) || "所选边界的 Target 配置已就绪；实际执行仍需权限与审批校验")}</small><a href="business-system-workspace.html?view=readonly&id=${encodeURIComponent(item.business_system_ids[0])}" target="_blank" rel="noopener">查看业务系统资源 ↗</a></li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${!ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
-    document.getElementById("retry-boundary")?.addEventListener("click", () => { loadBoundary(ids, true); });
+    document.getElementById("agent-boundary-resources").innerHTML = `<h4>关联资源配置与限制</h4><p>监控跟随资源；数据库账号和连接由数据库 Target 维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机",STORAGE:"存储",NETWORK_DEVICE:"网络设备"}[item.resource_type_key] || item.resource_type_key))}</strong><small>所属系统：${escape(values(item.business_system_ids).map(systemName).join("、"))}</small><small>监控：${item.monitoring_configured ? "已配置" : "未就绪"} · 只读：${item.resource_type_key !== "DATABASE" ? "不适用" : item.readonly_configured ? "已配置" : "未配置"} · 变更：${item.resource_type_key !== "DATABASE" ? "不适用" : item.change_configured ? "已配置" : "未配置"}</small><small>${escape(targetGaps(item) || "所选边界的 Target 配置已就绪；实际执行仍需权限与审批校验")}</small><a href="business-system-workspace.html?view=readonly&id=${encodeURIComponent(item.business_system_ids[0])}" target="_blank" rel="noopener">查看业务系统资源 ↗</a></li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${loading || !ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
+    document.getElementById("retry-boundary")?.addEventListener("click", async () => {
+      await load();
+      if (document.getElementById("agent-dialog").open) await loadBoundary([...selectionSets.systems], true);
+    });
   }
 
   let agents = [];
@@ -115,11 +109,10 @@
   const systemName = (id) => systems.find((item) => item.business_system_id === id)?.display_name || (directoryReady.systems ? "业务系统已不可用" : `已授权系统（目录未就绪）：${id}`);
   const selected = (name) => [...document.querySelectorAll(`[name="${name}"]:checked`)].map((input) => input.value);
 
-  function showResult(message = "", tone = "") {
-    const result = document.getElementById("agent-result");
-    result.textContent = message;
-    result.dataset.tone = tone;
-    result.hidden = !message;
+  function showAgentError(message) {
+    const dialog = document.getElementById("agent-dialog");
+    dialog.querySelector(":scope > .ops-toast")?.remove();
+    shell.toast(message, dialog);
   }
 
   function modelLabel(model) {
@@ -313,6 +306,10 @@
       if (!form.elements.maximum_references.value || !form.elements.maximum_references.checkValidity()) return "最多引用须为 1 到 20 的整数。";
     }
     if (step === 3 && !selectionSets.systems.size) return "请至少选择一个业务系统。";
+    if (step === 3 && editing?.status === "ACTIVE") {
+      const offline = systems.filter(item => item.status !== "ENABLED" && selectionSets.systems.has(item.business_system_id));
+      if (offline.length) return `业务系统「${offline.map(item => item.display_name).join("、")}」尚未上线。请先上线并重新核验配置，或移除后再保存。`;
+    }
     if (step === 4 && form.elements.auto_alert_enabled.checked) {
       if (!["INFO", "WARNING", "HIGH", "CRITICAL"].includes(form.elements.auto_observe_min_severity.value)) return "请选择有效的最低告警级别。";
       const level = Number(form.elements.auto_observe_min_target_level.value);
@@ -324,7 +321,7 @@
   }
   function validateStep(step) {
     const message = stepError(step);
-    showResult(message, message ? "bad" : "");
+    if (message) showAgentError(message);
     return !message;
   }
   function toggleAutoAlert() {
@@ -344,11 +341,11 @@
       card(4, "自动触发", form.elements.auto_alert_enabled.checked ? "告警自动触发已开启" : "告警自动触发已关闭", `已保存条件：${severityLabels[form.elements.auto_observe_min_severity.value] || form.elements.auto_observe_min_severity.value} · Target L${form.elements.auto_observe_min_target_level.value} 及以上 · 冷却 ${form.elements.alert_cooldown_seconds.value} 秒；手工提问不受影响。`),
       card(5, "模型与指令", `规划：${modelName("planner_model_id")} · 回答：${modelName("composer_model_id")} · 诊断：${modelName("diagnosis_model_id")}`, `摘要：${form.elements.memory_model_id.value ? modelName("memory_model_id") : "复用回答组织模型"} · OCR：${modelName("ocr_model_id")} · VLM：${modelName("vlm_model_id")}；专业指令：${form.elements.instruction.value || "未填写"}`),
     ].join("");
-    const required = [1, 2, 3, 4, 5].flatMap(step => stepError(step) ? [{ step, message: stepError(step) }] : []);
-    document.getElementById("agent-review-required").innerHTML = '<h4>保存前必填检查</h4>' + (required.length ? "<ul>" + required.map(issue => `<li>${escape(issue.message)} <button type="button" class="row-action" data-review-step="${issue.step}">返回修改</button></li>`).join("") + "</ul>" : "<p>必填配置检查通过。</p>") + (missingRuntimeModels().length && editing?.status !== "ACTIVE" ? `<p>启用前还需配置：${escape(missingRuntimeModels().join("、"))}；当前可保存草稿。</p>` : "");
-    const issues = targetIssues();
-    document.getElementById("agent-review-targets").innerHTML = '<h4>Target 配置缺口</h4>' + (issues.length ? "<ul>" + issues.map(issue => `<li>${escape(issue)}</li>`).join("") + "</ul>" : "<p>所选边界的 Target 配置已就绪；不代表连接健康或动作可执行。</p>") + "<p>缺少 Target 配置仍可保存；不会自动补权限、凭据或授权。</p>";
-    document.querySelectorAll("[data-review-step]").forEach(button => { button.onclick = () => { showResult(); setStep(button.dataset.reviewStep); }; });
+    const missing = missingRuntimeModels();
+    const draftNote = document.getElementById("agent-review-draft-note");
+    draftNote.hidden = !missing.length || editing?.status === "ACTIVE";
+    draftNote.textContent = draftNote.hidden ? "" : `启用前还需配置：${missing.join("、")}；当前可保存草稿。`;
+    document.querySelectorAll("[data-review-step]").forEach(button => { button.onclick = () => setStep(button.dataset.reviewStep); });
   }
 
   function setStep(step) {
@@ -453,7 +450,6 @@
     toggleKnowledgePolicy();
     renderCapabilityGroups();
     setStep(1);
-    showResult();
     document.getElementById("agent-dialog").showModal();
     void loadBoundary([...selectionSets.systems], true);
   }
@@ -507,7 +503,6 @@
     toggleKnowledgePolicy();
     renderCapabilityGroups();
     setStep(1);
-    showResult();
     document.getElementById("agent-dialog").showModal();
     void loadBoundary([...selectionSets.systems], true);
   }
@@ -583,7 +578,7 @@
       shell.toast(editing ? "Agent 新版本已保存" : "Agent 已创建");
       await load();
     } catch (error) {
-      showResult(error.message, "bad");
+      showAgentError(error.message || "保存 Agent 失败");
     } finally {
       saving = false;
       setBusy();
@@ -699,6 +694,9 @@
     document.addEventListener("click", (event) => { if (!event.target.closest(".management-catalog-overflow")) closeMenus(); });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenus(); });
     document.getElementById("agent-form").onsubmit = save;
+    document.getElementById("agent-dialog").addEventListener("close", event => {
+      if (!event.currentTarget.open) event.currentTarget.querySelector(":scope > .ops-toast")?.remove();
+    });
     document.querySelectorAll("[data-agent-step-button]").forEach((button) => { button.onclick = () => setStep(button.dataset.agentStepButton); });
     document.getElementById("agent-previous-step").onclick = () => setStep(currentStep - 1);
     document.getElementById("agent-next-step").onclick = nextStep;

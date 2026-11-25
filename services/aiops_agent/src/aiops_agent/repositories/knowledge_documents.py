@@ -120,8 +120,8 @@ class OperationsDocumentRepository(KnowledgeIngestionRepository):
         await self._session.flush()
         return row
 
-    async def retry_document(self, access, version_id, *, now):
-        """只重试未发布失败任务；新解析代次保留旧批次并使旧租约永久失效。"""
+    async def retry_document(self, access, version_id, *, now, pending_profile=None):
+        """重试未发布任务，或为尚未领取的任务应用新方案；保留旧解析代次。"""
         repos = self._repos(access)
         version = await repos["knowledge_document_version"].get(version_id, lock=True)
         require(version is not None and version.status not in {"PUBLISHED", "WITHDRAWN", "CANCELLED"}
@@ -131,19 +131,33 @@ class OperationsDocumentRepository(KnowledgeIngestionRepository):
             jobs.entity.document_version_id == version_id).with_for_update())).all()
         require(len(rows) == 1, "文档任务身份不唯一")
         job = rows[0]
+        if pending_profile is not None and job.status != "RECEIVED":
+            return False
         if job.status == "PARSED":
             return
         require(job.status in {"FAILED", "RECEIVED"} or (job.lease_until is not None and job.lease_until <= now),
                 "运行中的有效任务不能被重试请求抢占")
-        if job.status == "RECEIVED":
+        if job.status == "RECEIVED" and pending_profile is None:
             return
         previous = await repos["knowledge_parse_run"].get(job.parse_run_id, lock=True)
+        profile_hash, profile_json, model_snapshot = previous.profile_hash, previous.profile_json, {}
+        if pending_profile is not None:
+            if previous.profile_hash == pending_profile.profile_hash:
+                return True
+            previous.status = "SUPERSEDED"
+            profile_hash, profile_json = pending_profile.profile_hash, encode(pending_profile)
+            model_snapshot = {
+                role: encode(binding) for role, binding in (
+                    ("ocr", pending_profile.ocr_model), ("vlm", pending_profile.vlm_model),
+                ) if binding is not None
+            }
         attempt, fence = int(job.attempt) + 1, int(job.fence) + 1
         run = await repos["knowledge_parse_run"].add(dict(document_version_id=version_id,
-            source_sha256=version.source_sha256, profile_hash=previous.profile_hash,
-            parser_revision="PENDING", model_snapshot_json={}, attempt=attempt, fence=fence,
-            status="RECEIVED", profile_json=previous.profile_json, checkpoint_json={}))
+            source_sha256=version.source_sha256, profile_hash=profile_hash,
+            parser_revision="PENDING", model_snapshot_json=model_snapshot, attempt=attempt, fence=fence,
+            status="RECEIVED", profile_json=profile_json, checkpoint_json={}))
         job.parse_run_id, job.attempt, job.fence = run.parse_run_id, attempt, fence
         job.status, job.lease_owner, job.lease_until, job.retry_at = "RECEIVED", None, now, now
         job.recovery_sequence, job.last_event_digest, job.compute_ref, job.error_code = 0, None, None, None
         version.status, version.allowed_view_hash, version.allowed_view_manifest_ref = "RECEIVED", None, None
+        return True

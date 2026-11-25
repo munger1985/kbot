@@ -618,21 +618,31 @@ class OperationsKnowledgeService:
             )
             if duplicate is not None:
                 raise self._name_conflict()
-            for role_group in ("parse_models", "index_models"):
-                if role_group in command.model_fields_set:
-                    selected_models = getattr(command, role_group)
-                    row.configuration_json = {**(row.configuration_json or {}),
-                        role_group: selected_models.model_dump(mode="json", exclude_none=True) if selected_models else {}}
+            config = dict(row.configuration_json or {})
+            if "index_models" in command.model_fields_set:
+                existing = dict(config.get("index_models") or {})
+                proposed = command.index_models.model_dump(mode="json", exclude_unset=True) if command.index_models else {
+                    "embedding": None, "visual_embedding": None,
+                }
+                if any(existing.get(role) and existing[role] != model_id for role, model_id in proposed.items()):
+                    raise AIOpsApplicationError(
+                        code="AIOPS_KNOWLEDGE_EMBEDDING_IMMUTABLE",
+                        message="已绑定的文本或视觉 Embedding 不能更换或移除；如需更换，请创建新知识库并重建索引",
+                        status_code=409,
+                    )
+                config["index_models"] = {role: model for role, model in {**existing, **proposed}.items() if model}
+            if "parse_models" in command.model_fields_set:
+                config["parse_models"] = (
+                    command.parse_models.model_dump(mode="json", exclude_none=True) if command.parse_models else {}
+                )
             if "tagging_model_id" in command.model_fields_set:
-                models = dict((row.configuration_json or {}).get("models") or {})
+                models = dict(config.get("models") or {})
                 if command.tagging_model_id is None:
                     models.pop("parser_llm", None)
                 else:
                     models["parser_llm"] = str(command.tagging_model_id)
-                row.configuration_json = {
-                    **(row.configuration_json or {}),
-                    "models": models,
-                }
+                config["models"] = models
+            row.configuration_json = config
             row.display_name = display_name
             row.description = command.description
             row.updated_by = self._actor(context)
@@ -917,10 +927,64 @@ class OperationsKnowledgeService:
             await uow.commit()
             return _tag_view(entity)
 
+    async def _manual_library_model_config(self, *, domain_id, knowledge_base_id):
+        async with self._uow_factory() as uow:
+            base = await uow.operations_knowledge.get_knowledge_base(
+                domain_id=domain_id, knowledge_base_id=knowledge_base_id,
+            )
+            if base is None or base.status != "ACTIVE":
+                raise self._state_conflict("所属运维知识库未启用")
+            return self._tagging_model_id(base), dict((base.configuration_json or {}).get("parse_models") or {})
+
+    async def _refresh_pending_manual_parse(
+        self, *, domain_id, knowledge_base_id, asset_version_id, context, access,
+        execution, tagging_revision, index_locator,
+    ):
+        """未领取的 OCR/VLM 任务使用库当前绑定；保留已领取和已完成的解析证据。"""
+        plan = execution["processing_plan"]
+        strategy = plan.get("parse_strategy")
+        if strategy not in {"AUTO", "VISUAL"}:
+            return execution, tagging_revision
+        # 运维资料每版对应一个原件，不能用一个新 Profile 覆盖不同进度的多文档。
+        if len(index_locator) != 1:
+            raise self._state_conflict("运维资料解析任务缺少唯一原件")
+        document_id = index_locator[0]
+        record = await self._documents.inspect(access, document_id)
+        if record["processing_status"] != "RECEIVED":
+            return execution, tagging_revision
+        _, bindings = await self._manual_library_model_config(domain_id=domain_id, knowledge_base_id=knowledge_base_id)
+        profile = await self._documents.approved_parse_profile(context, bindings, strategy)
+        if plan["parse"] == profile.profile_hash:
+            return execution, tagging_revision
+        async with self._uow_factory() as uow:
+            base = await uow.operations_knowledge.get_knowledge_base(
+                domain_id=domain_id, knowledge_base_id=knowledge_base_id, for_update=True,
+            )
+            version = await uow.operations_knowledge.get_version(
+                domain_id=domain_id, asset_version_id=asset_version_id, for_update=True,
+            )
+            if (base is None or base.status != "ACTIVE"
+                or ((base.configuration_json or {}).get("parse_models") or {}) != bindings
+                or version is None or version.status != "TAGGING" or int(version.row_version) != tagging_revision
+                or (version.tag_analysis_json or {}).get("execution_spec") != execution):
+                return None, tagging_revision
+            relations = await uow.operations_knowledge.get_version_relations(asset_version_id=asset_version_id)
+            sources = [item for item in relations["sources"] if item.source_kind == "UPLOAD_REQUEST"]
+            if len(sources) != 1 or tuple(item.document_version_id for item in relations["indexes"]) != index_locator:
+                raise self._state_conflict("运维资料解析任务身份已经变化")
+            if not await self._documents.rebind_pending_parse(uow, access, document_id, profile):
+                return None, tagging_revision
+            plan = {**plan, "parse": profile.profile_hash}
+            execution = {**execution, "processing_plan": plan}
+            sources[0].source_locator_json = {**(sources[0].source_locator_json or {}), "processing_plan": plan}
+            version.tag_analysis_json = {**version.tag_analysis_json, "execution_spec": execution}
+            await uow.commit()
+            return execution, int(version.row_version)
+
     async def analyze_tags(
         self, *, domain_id: int, asset_version_id: UUID, context: AuthContext,
     ) -> dict[str, Any]:
-        """按已批准的冻结规格生成受控标签，成功后进入资料发布前处理。"""
+        """使用知识库当前模型生成受控标签，保留审批内容和单次运行证据。"""
         async with self._uow_factory() as uow:
             version = await uow.operations_knowledge.get_version(
                 domain_id=domain_id, asset_version_id=asset_version_id
@@ -930,6 +994,7 @@ class OperationsKnowledgeService:
             asset = await uow.operations_knowledge.get_asset(domain_id=domain_id, asset_id=version.asset_id)
             relations = await uow.operations_knowledge.get_version_relations(asset_version_id=asset_version_id)
             asset_kind = str(asset.asset_kind)
+            knowledge_base_id = asset.knowledge_base_id
             version_status = str(version.status)
             tagging_revision = int(version.row_version)
             index_locator = tuple(row.document_version_id for row in relations["indexes"])
@@ -944,7 +1009,16 @@ class OperationsKnowledgeService:
                 message="在途标签任务缺少有效审批或冻结执行规格，需先核对存量任务",
                 status_code=409,
             )
-        model_snapshot = execution["model"]
+        async def current_tagging_model():
+            model_id, _ = await self._manual_library_model_config(domain_id=domain_id, knowledge_base_id=knowledge_base_id)
+            if not model_id:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_TAG_MODEL_REQUIRED",
+                    message="请先为所属知识库配置标签识别模型，再重试标签识别", status_code=409,
+                )
+            return await self._tagging_model_snapshot(UUID(model_id), context=context)
+
+        model_snapshot = None
         vocabulary = execution["vocabulary"]
         plan = execution["processing_plan"]
         try:
@@ -953,13 +1027,18 @@ class OperationsKnowledgeService:
             if sorted(str(uid) for uid in index_locator) != execution["document_version_ids"]:
                 raise ValueError("已登记的标签任务文档集合发生变化")
             self._documents.assert_processing_plan(plan)
-            model_id = UUID(model_snapshot["model_id"])
-            if await self._tagging_model_snapshot(model_id, context=context) != model_snapshot:
-                raise ValueError("已冻结标签模型的目录版本发生变化")
+            access = self._documents.access(context)
+            execution, tagging_revision = await self._refresh_pending_manual_parse(
+                domain_id=domain_id, knowledge_base_id=knowledge_base_id, asset_version_id=asset_version_id,
+                context=context, access=access, execution=execution,
+                tagging_revision=tagging_revision, index_locator=index_locator,
+            )
+            if execution is None:
+                return await self.get_version(domain_id=domain_id, asset_version_id=asset_version_id)
+            plan = execution["processing_plan"]
             prompt = await self._prompt_registry.resolve(
                 "knowledge_tag_classify", frozen_prompts={"knowledge_tag_classify": execution["prompt"]},
             )
-            access = self._documents.access(context)
             processed_documents = {}
             for document_version_id in index_locator:
                 processed = await self._documents.process(access, document_version_id, expected_plan=plan)
@@ -970,6 +1049,7 @@ class OperationsKnowledgeService:
             excerpts = list(projection.get("excerpts") or [])
             if not excerpts:
                 raise ValueError("规范解析结果中没有可用正文")
+            model_snapshot = await current_tagging_model()
             result = await self._structured_model.generate_structured(
                 purpose="operations_knowledge.tag_classify",
                 output_model=KnowledgeTagAnalysisOutput,
@@ -977,10 +1057,10 @@ class OperationsKnowledgeService:
                 prompt_ref={**prompt.ref(), "content": prompt.content},
                 input_payload={"vocabulary": vocabulary, "documents": excerpts},
                 deadline=None,
-                idempotency_key=f"knowledge-tags:{asset_version_id}",
+                idempotency_key=f"knowledge-tags:{asset_version_id}:{tagging_revision}:{fingerprint(model_snapshot)}",
             )
-            if await self._tagging_model_snapshot(model_id, context=context) != model_snapshot:
-                raise ValueError("标签模型在执行期间发生变化，不能接纳此次输出")
+            if await current_tagging_model() != model_snapshot:
+                raise ValueError("知识库的标签模型在运行期间发生变化，请重试标签识别")
             output = KnowledgeTagAnalysisOutput.model_validate(result.output)
             allowed = {item["tag_id"]: item for item in vocabulary}
             source_by_id = {}
@@ -1018,6 +1098,7 @@ class OperationsKnowledgeService:
             analysis = {
                 "schema_version": "OPS_KNOWLEDGE_TAG_ANALYSIS.v1",
                 "status": "READY", "approval": approval, "execution_spec": execution,
+                "execution_model": model_snapshot,
                 "suggestions": suggestions,
                 "warnings": list(projection.get("warnings") or []),
                 "vocabulary": vocabulary,
@@ -1038,6 +1119,7 @@ class OperationsKnowledgeService:
                 domain_id=domain_id, asset_version_id=asset_version_id,
                 expected_revision=tagging_revision,
                 code=getattr(exc, "code", "TAG_ANALYSIS_FAILED"), message=str(exc),
+                execution_model=model_snapshot,
             )
         async with self._uow_factory() as uow:
             locked = await uow.operations_knowledge.get_version(
@@ -1075,6 +1157,7 @@ class OperationsKnowledgeService:
 
     async def _mark_tagging_failed(
         self, *, domain_id: int, asset_version_id: UUID, expected_revision: int, code: str, message: str,
+        execution_model: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         async with self._uow_factory() as uow:
             version = await uow.operations_knowledge.get_version(
@@ -1092,6 +1175,7 @@ class OperationsKnowledgeService:
                     "schema_version": "OPS_KNOWLEDGE_TAG_ANALYSIS.v1", "status": "FAILED",
                     "approval": previous_analysis.get("approval"),
                     "execution_spec": previous_analysis.get("execution_spec"),
+                    "execution_model": execution_model,
                     "error_code": str(code), "error_summary": str(message)[:2000], "suggestions": [],
                 }
                 if asset.current_version_id is None:

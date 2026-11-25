@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Agent 管理 · AIOps</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-  <link rel="stylesheet" href="./css/aiops-agents.css?v=20261110_release1">
+  <link rel="stylesheet" href="./css/aiops-agents.css?v=20261125_save_toast">
 <link rel="stylesheet" href="./css/ammolite-shared.css?v=20261110_release1"><link rel="stylesheet" href="./css/reference-agents.css?v=20261110_release1"><link rel="stylesheet" href="./css/alignment.css?v=20261110_release1"></head>
 <body data-page="agents">
   <main class="ops-main aiops-agents-page">
@@ -30,7 +30,6 @@
         <p><strong>六步配置</strong>能力、权限和触发方式各有独立入口，保存前统一核对。</p>
       </nav>
       <form id="agent-form" class="agent-form" novalidate>
-        <p id="agent-result" class="form-error agent-form-error" role="alert" hidden></p>
         <section id="agent-catalog-errors" class="agent-catalog-errors" role="alert" aria-label="目录加载状态" hidden><p id="agent-catalog-error-message" class="form-error"></p><button id="retry-agent-catalog" class="secondary-button" type="button">重试目录</button></section>
         <section class="agent-step-panel" data-agent-step="1"><header><p class="eyebrow">STEP 01</p><h3>基本信息</h3><span>说明这个 Agent 面向谁、负责什么。</span></header><div class="drawer-form-section"><div class="form-grid-two">
           <label class="control-field"><span class="field-label">Agent 名称</span><input name="display_name" maxlength="256" required placeholder="例如：Oracle 生产诊断 Agent"></label>
@@ -86,7 +85,7 @@
         <section class="agent-step-panel" data-agent-step="5" hidden><header><p class="eyebrow">STEP 05</p><h3>模型与指令</h3><span>运行中的 Agent 必须配置规划和回答组织模型；启用智能诊断时还必须配置诊断模型。</span></header><div class="drawer-form-section"><h4>核心模型</h4><div class="form-grid-two">
           <label class="control-field"><span class="field-label">规划模型（运行必选）</span><select id="agent-planner-model" name="planner_model_id"></select></label><label class="control-field"><span class="field-label">回答组织模型（运行必选）</span><select id="agent-composer-model" name="composer_model_id"></select></label><label class="control-field"><span id="agent-diagnosis-label" class="field-label">诊断模型（智能诊断必选）</span><select id="agent-model" name="diagnosis_model_id"></select></label></div><h4>可选模型</h4><div class="form-grid-two"><label class="control-field"><span class="field-label">会话摘要模型（可选）</span><select id="agent-memory-model" name="memory_model_id"></select></label><label class="control-field"><span class="field-label">OCR 模型（可选）</span><select id="agent-ocr-model" name="ocr_model_id"></select></label><label class="control-field"><span class="field-label">VLM 模型（可选）</span><select id="agent-vlm-model" name="vlm_model_id"></select></label></div><h4>专业指令</h4><p class="field-help">补充关注重点和输出要求，不能覆盖 Target 权限、动作授权或审批边界。</p><div class="form-grid-two"><label class="control-field form-span"><span class="field-label">专业指令（可选）</span><textarea name="instruction" maxlength="32000" rows="5" placeholder="补充关注重点或输出要求"></textarea></label>
         </div></div></section>
-        <section class="agent-step-panel" data-agent-step="6" hidden><header><p class="eyebrow">STEP 06</p><h3>确认配置</h3><span>按前五页核对配置；如需调整，请返回对应页面。</span></header><div id="agent-review" class="agent-review-grid"></div><section id="agent-review-required" class="agent-review-issues" aria-label="配置必填检查"></section><section id="agent-review-targets" class="agent-review-issues" aria-label="Target 配置缺口"></section></section>
+        <section class="agent-step-panel" data-agent-step="6" hidden><header><p class="eyebrow">STEP 06</p><h3>确认配置</h3><span>按前五页核对配置；如需调整，请返回对应页面。</span></header><div id="agent-review" class="agent-review-grid"></div><p id="agent-review-draft-note" class="agent-inline-note" hidden></p></section>
         <footer class="admin-drawer-footer agent-wizard-footer"><button class="secondary-button" data-close-dialog type="button">取消</button><span></span><button id="agent-previous-step" class="secondary-button" type="button" hidden>上一步</button><button id="agent-next-step" class="primary-button" type="button">下一步</button><button id="save-agent" class="primary-button" type="submit" hidden>创建 Agent</button></footer>
       </form>
     </div>
@@ -95,7 +94,7 @@
 
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
-  <script src="./js/aiops-shell.js?v=20261124_knowledge_search"></script>
-  <script src="./js/aiops-agents.js?v=20261111_catalog_isolation"></script>
+  <script src="./js/aiops-shell.js?v=20261125_save_toast"></script>
+  <script src="./js/aiops-agents.js?v=20261125_save_toast"></script>
 </body>
 </html>

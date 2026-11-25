@@ -305,13 +305,13 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261124_knowledge_search"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name not in {"login.html", "notification-open.html"}]
         for path in pages:
+            version = "20261125_save_toast" if path.stem == "agents" else "20261124_knowledge_search"
             parser = _Parser()
             parser.feed(path.read_text(encoding="utf-8"))
             shell_assets = [asset for asset in parser.assets if "aiops-shell.js" in asset]
-            self.assertEqual([expected], shell_assets, path.name)
+            self.assertEqual([f"./js/aiops-shell.js?v={version}"], shell_assets, path.name)
 
     def test_pages_share_current_navigation_styles(self):
         expected = "./css/aiops.css?v=20261020_3"
@@ -1059,7 +1059,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("Array.isArray(detail)", auth)
         self.assertIn('button.textContent = wasEditing ? "保存中…" : "创建中…"', agent)
         self.assertIn("shell.toast(error.message)", agent)
-        self.assertIn('showResult(error.message, "bad")', agent)
+        self.assertIn('showAgentError(error.message || "保存 Agent 失败")', agent)
+        self.assertIn("shell.toast(message, dialog)", agent)
         self.assertNotIn("controlled_action_execution:", agent)
         self.assertIn("新增授权需在资源治理中完成", agent)
         pages = (AIOPS_ROOT / "js" / "aiops-api-clients.js").read_text(
