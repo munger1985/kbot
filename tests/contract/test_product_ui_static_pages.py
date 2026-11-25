@@ -18,10 +18,12 @@ APP_CONFIGS = {
             "knowledge.html": {"knowledge-form", "knowledge-agent", "knowledge-chat-stream"},
             "x-search.html": {"x-search-form", "x-search-agent", "x-search-result", "x-search-sources"},
             "domains.html": {"domain-dialog", "domain-rows", "domain-form"},
-            "knowledge-cores.html": {"kc-dialog", "kc-rows", "kc-form"},
-            "data-models.html": {"data-source-dialog", "data-source-list", "data-model-dialog"},
+            "knowledge-cores.html": {"knowledge-owned-workspace"},
+            "data-sources.html": {"data-source-list", "data-source-dialog"},
+            "data-models.html": {"data-model-rows", "data-model-dialog"},
             "agents.html": {"agent-dialog", "agent-form", "agent-x-search-llm"},
         },
+        "page_scripts": {"knowledge-cores.html": {"./js/knowledge-library-workspace.js"}},
     },
     "media_studio": {
         "root": ROOT / "ui" / "media_studio",
@@ -73,17 +75,18 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         for app_name, config in APP_CONFIGS.items():
             root = config["root"]
             for page_name, expected_ids in config["pages"].items():
-                page = root / page_name
-                parser = _parse(page)
-                self.assertTrue(expected_ids.issubset(parser.ids), f"{app_name}/{page_name}")
-                for reference in [*parser.scripts, *parser.links]:
-                    if reference.startswith("data:"):
-                        continue
-                    asset_path = reference.partition("?")[0]
-                    self.assertTrue(
-                        (page.parent / asset_path).resolve().is_file(),
-                        f"{app_name}/{page_name} 缺少资源 {reference}",
-                    )
+                with self.subTest(app=app_name, page=page_name):
+                    page = root / page_name
+                    parser = _parse(page)
+                    self.assertEqual(set(), expected_ids - parser.ids, "缺少页面挂载点或控件")
+                    required_scripts = config.get("page_scripts", {}).get(page_name, set())
+                    scripts = {reference.partition("?")[0] for reference in parser.scripts}
+                    self.assertEqual(set(), required_scripts - scripts, "缺少入口脚本")
+                    for reference in [*parser.scripts, *parser.links]:
+                        if reference.startswith("data:"):
+                            continue
+                        asset_path = reference.partition("?")[0]
+                        self.assertTrue((page.parent / asset_path).resolve().is_file(), f"缺少资源 {reference}")
 
     def test_all_javascript_has_valid_syntax(self):
         for config in APP_CONFIGS.values():
