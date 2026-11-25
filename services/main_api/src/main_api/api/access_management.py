@@ -1,11 +1,9 @@
-"""平台治理与 App 内部成员、角色管理公开接口。"""
+"""平台账号治理与 App 角色管理公开接口。"""
 
-from typing import Literal, cast
-from uuid import UUID
-from main_api.application.notification_delivery import ExternalDeliveryError
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from main_api.application import (
     AccessControlService,
@@ -14,8 +12,9 @@ from main_api.application import (
     AccessManagementService,
     authorize_app_request,
 )
+from main_api.application.notification_delivery import ExternalDeliveryError
 from platform_core.authorization import resolve_business_app_id
-from platform_core.contracts import PUBLIC_API_V1
+from platform_core.contracts import IdentityEntryKind, PUBLIC_API_V1
 from platform_core.security import get_auth_context
 
 
@@ -34,6 +33,8 @@ class _Payload(BaseModel):
 
 
 def _validate_password(value: str) -> str:
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("密码不能超过 72 字节")
     if not (
         any(char.islower() for char in value)
         and any(char.isupper() for char in value)
@@ -45,8 +46,7 @@ def _validate_password(value: str) -> str:
 
 
 class PlatformUserCreatePayload(_Payload):
-    feishu_open_id: str | None = Field(default=None, pattern=r"^ou_.{1,253}$", max_length=256)
-    user_id: str = Field(min_length=1, max_length=256)
+    user_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
     display_name: str | None = Field(default=None, max_length=256)
     password: str = Field(min_length=12, max_length=256)
     status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
@@ -56,11 +56,15 @@ class PlatformUserCreatePayload(_Payload):
 
     _password = field_validator("password")(_validate_password)
 
+    @field_validator("user_id")
+    @classmethod
+    def validate_user_id(cls, value: str) -> str:
+        if value in {".", ".."} or any(char in "/\\" or ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("账号不能包含路径分隔符或控制字符")
+        return value
+
 
 class UserUpdatePayload(_Payload):
-    expected_binding_id: UUID | None = None
-    expected_binding_version: int | None = Field(default=None, ge=1)
-    feishu_open_id: str | None = Field(default=None, pattern=r"^ou_.{1,253}$", max_length=256)
     display_name: str | None = Field(default=None, max_length=256)
     status: Literal["ACTIVE", "DISABLED"] | None = None
     max_security_level: int | None = Field(default=None, ge=0, le=3)
@@ -86,18 +90,6 @@ class RoleBindingPayload(_Payload):
         return tuple(dict.fromkeys(value))
 
 
-class AppUserCreatePayload(_Payload):
-    feishu_open_id: str | None = Field(default=None, pattern=r"^ou_.{1,253}$", max_length=256)
-    user_id: str = Field(min_length=1, max_length=256)
-    display_name: str | None = Field(default=None, max_length=256)
-    password: str = Field(min_length=12, max_length=256)
-    must_change_password: bool = True
-    max_security_level: int = Field(default=1, ge=0, le=3)
-    role_bindings: tuple[RoleBindingPayload, ...] = Field(min_length=1, max_length=50)
-
-    _password = field_validator("password")(_validate_password)
-
-
 class InitialAppAdminPayload(_Payload):
     user_id: str = Field(min_length=1, max_length=256)
     display_name: str | None = Field(default=None, max_length=256)
@@ -110,6 +102,35 @@ class InitialAppAdminPayload(_Payload):
 
 class PlatformAppGrantPayload(_Payload):
     role_bindings: tuple[RoleBindingPayload, ...] = Field(min_length=1, max_length=50)
+
+
+class AppGrantRoleOption(_Payload):
+    role_code: str
+    display_name: str
+    scope_policy: Literal["SELECTABLE", "ALL_APP_DOMAINS"]
+    status: Literal["ACTIVE", "DISABLED"]
+    manageable: bool
+
+
+class AppGrantDomainOption(_Payload):
+    domain_id: str
+    name: str
+    active: bool
+
+
+class AppGrantOption(_Payload):
+    app_id: str
+    display_name: str
+    status: Literal["ACTIVE", "DISABLED"]
+    member_assignable: bool
+    row_version: int
+    manageable: bool
+    roles: list[AppGrantRoleOption]
+    domains: list[AppGrantDomainOption]
+
+
+class AppGrantOptionsResponse(_Payload):
+    items: list[AppGrantOption]
 
 
 class PlatformUserRolesPayload(_Payload):
@@ -180,6 +201,9 @@ def _actor(request: Request) -> str:
 
 
 async def _require_platform(request: Request, permission_code: str) -> str:
+    context = get_auth_context(request)
+    if context.entry_kind != IdentityEntryKind.PLATFORM:
+        raise HTTPException(403, {"code": "PLATFORM_SESSION_REQUIRED", "message": "请使用平台会话"})
     actor_id = _actor(request)
     try:
         await _access(request).require_platform(user_id=actor_id, permission_code=permission_code)
@@ -216,7 +240,7 @@ async def list_platform_users(
 ):
     await _require_platform(request, "platform:user_manage")
     return await _call(lambda: _management(request).list_users(
-        offset=offset, limit=limit, search=search, status=user_status, account_origin="PLATFORM"
+        offset=offset, limit=limit, search=search, status=user_status
     ))
 
 
@@ -232,17 +256,14 @@ async def create_platform_user(payload: PlatformUserCreatePayload, request: Requ
         max_security_level=payload.max_security_level,
         platform_role_codes=payload.platform_role_codes, actor_id=actor_id,
         actor_security_level=actor_security_level,
-        actor_permissions=actor_permissions, feishu_open_id=payload.feishu_open_id,
+        actor_permissions=actor_permissions,
     ))
 
 
 @router.get(f"{PUBLIC_API_V1}/platform/users/{{user_id}}")
 async def get_platform_user(user_id: str, request: Request):
     await _require_platform(request, "platform:user_manage")
-    result = await _call(lambda: _management(request).get_user(user_id=user_id))
-    if result["account_origin"] != "PLATFORM":
-        raise HTTPException(404, {"code": "PLATFORM_USER_NOT_FOUND"})
-    return result
+    return await _call(lambda: _management(request).get_user(user_id=user_id))
 
 
 @router.patch(f"{PUBLIC_API_V1}/platform/users/{{user_id}}")
@@ -252,10 +273,7 @@ async def update_platform_user(user_id: str, payload: UserUpdatePayload, request
     return await _call(lambda: _management(request).update_user(
         user_id=user_id, display_name=payload.display_name,
         display_name_provided="display_name" in payload.model_fields_set,
-        feishu_open_id=payload.feishu_open_id, feishu_binding_provided="feishu_open_id" in payload.model_fields_set,
-        expected_binding_id=payload.expected_binding_id, expected_binding_version=payload.expected_binding_version,
         status=payload.status, max_security_level=payload.max_security_level,
-        expected_origin="PLATFORM",
         actor_security_level=actor_security_level,
         actor_id=actor_id,
     ))
@@ -274,7 +292,7 @@ async def reset_platform_user_password(user_id: str, payload: PasswordResetPaylo
 async def delete_platform_user(user_id: str, request: Request):
     actor_id = await _require_platform(request, "platform:user_manage")
     return await _call(lambda: _management(request).delete_user(
-        user_id=user_id, expected_origin="PLATFORM", actor_id=actor_id
+        user_id=user_id, actor_id=actor_id
     ))
 
 
@@ -387,109 +405,20 @@ async def set_platform_app_grant(user_id: str, app_id: str, payload: PlatformApp
     ))
 
 
+@router.get(f"{PUBLIC_API_V1}/platform/app-grant-options", response_model=AppGrantOptionsResponse)
+async def list_platform_app_grant_options(request: Request):
+    actor_id = await _require_platform(request, "platform:user_manage")
+    snapshot = await _access(request).platform_snapshot(user_id=actor_id)
+    return {"items": await _call(lambda: _management(request).list_app_grant_options(actor_permissions=snapshot.permissions))}
+
+
 @router.delete(f"{PUBLIC_API_V1}/platform/users/{{user_id}}/app-grants/{{app_id}}")
 async def revoke_platform_app_grant(user_id: str, app_id: str, request: Request):
     app_id = _canonical_app_id(app_id)
-    await _require_platform(request, "platform:app_grant_manage")
-    return await _call(lambda: _management(request).revoke_platform_app_grant(user_id=user_id, app_id=app_id))
-
-
-@router.get(f"{PUBLIC_API_V1}/apps/{{app_id}}/members")
-async def list_app_members(app_id: str, request: Request):
-    app_id = _canonical_app_id(app_id)
-    await _require_app(request, app_id=app_id, permission_code=f"{app_id}:member_manage")
-    return await _call(lambda: _management(request).list_app_users(app_id=app_id))
-
-
-@router.post(f"{PUBLIC_API_V1}/apps/{{app_id}}/members", status_code=status.HTTP_201_CREATED)
-async def create_app_member(app_id: str, payload: AppUserCreatePayload, request: Request):
-    app_id = _canonical_app_id(app_id)
-    actor_id, _, snapshot = await _require_app(request, app_id=app_id, permission_code=f"{app_id}:member_manage")
-    actor_security_level = await _access(request).user_max_security_level(user_id=actor_id)
-    return await _call(lambda: _management(request).create_app_user(
-        app_id=app_id, user_id=payload.user_id.strip(), display_name=payload.display_name,
-        password=payload.password, must_change_password=payload.must_change_password,
-        max_security_level=payload.max_security_level,
-        role_bindings=_bindings(payload.role_bindings), actor_id=actor_id,
-        actor_security_level=actor_security_level,
-        actor_permissions=snapshot.permissions, feishu_open_id=payload.feishu_open_id,
-    ))
-
-
-@router.get(f"{PUBLIC_API_V1}/apps/{{app_id}}/members/assignable-roles")
-async def member_assignable_roles(app_id: str, request: Request):
-    app_id = _canonical_app_id(app_id)
-    _, _, snapshot = await _require_app(request, app_id=app_id, permission_code=f"{app_id}:member_manage")
-    rows = await _call(lambda: _management(request).list_roles(app_id=app_id))
-    # 新建页只授予当前空间；固定全空间角色仍由既有完整授权流程处理。
-    return {"items": [row for row in rows if row["status"] == "ACTIVE"
-        and row["scope_policy"] == "SELECTABLE"
-        and set(row["permissions"]) <= snapshot.permissions]}
-
-
-@router.get(f"{PUBLIC_API_V1}/apps/{{app_id}}/members/{{user_id}}")
-async def get_app_member(app_id: str, user_id: str, request: Request):
-    app_id = _canonical_app_id(app_id)
-    await _require_app(request, app_id=app_id, permission_code=f"{app_id}:member_manage")
-    result = await _call(lambda: _management(request).get_user(user_id=user_id))
-    if result["account_origin"] != "APP" or result["owner_app_id"] != app_id:
-        raise HTTPException(404, {"code": "APP_USER_NOT_FOUND"})
-    return result
-
-
-@router.patch(f"{PUBLIC_API_V1}/apps/{{app_id}}/members/{{user_id}}")
-async def update_app_member(app_id: str, user_id: str, payload: UserUpdatePayload, request: Request):
-    app_id = _canonical_app_id(app_id)
-    actor_id, _, _ = await _require_app(request, app_id=app_id, permission_code=f"{app_id}:member_manage")
-    actor_security_level = await _access(request).user_max_security_level(user_id=actor_id)
-    return await _call(lambda: _management(request).update_user(
-        user_id=user_id, display_name=payload.display_name,
-        display_name_provided="display_name" in payload.model_fields_set,
-        feishu_open_id=payload.feishu_open_id, feishu_binding_provided="feishu_open_id" in payload.model_fields_set,
-        expected_binding_id=payload.expected_binding_id, expected_binding_version=payload.expected_binding_version,
-        status=payload.status, max_security_level=payload.max_security_level,
-        expected_origin="APP", expected_app_id=app_id,
-        actor_security_level=actor_security_level,
-        actor_id=actor_id,
-    ))
-
-
-@router.post(f"{PUBLIC_API_V1}/apps/{{app_id}}/members/{{user_id}}/password")
-async def reset_app_member_password(app_id: str, user_id: str, payload: PasswordResetPayload, request: Request):
-    app_id = _canonical_app_id(app_id)
-    actor_id, _, _ = await _require_app(
-        request, app_id=app_id, permission_code=f"{app_id}:member_manage"
-    )
-    return await _call(lambda: _management(request).reset_app_user_password(
-        app_id=app_id, user_id=user_id, password=payload.password,
-        must_change_password=payload.must_change_password, actor_id=actor_id,
-    ))
-
-
-@router.put(f"{PUBLIC_API_V1}/apps/{{app_id}}/members/{{user_id}}/role-bindings")
-async def set_app_member_role_bindings(
-    app_id: str, user_id: str, payload: PlatformAppGrantPayload, request: Request
-):
-    app_id = _canonical_app_id(app_id)
-    actor_id, _, snapshot = await _require_app(
-        request, app_id=app_id, permission_code=f"{app_id}:member_manage"
-    )
-    return await _call(lambda: _management(request).set_app_user_role_bindings(
-        app_id=app_id, user_id=user_id,
-        role_bindings=_bindings(payload.role_bindings), actor_id=actor_id,
-        actor_permissions=snapshot.permissions,
-    ))
-
-
-@router.delete(f"{PUBLIC_API_V1}/apps/{{app_id}}/members/{{user_id}}")
-async def delete_app_member(app_id: str, user_id: str, request: Request):
-    app_id = _canonical_app_id(app_id)
-    actor_id, _, _ = await _require_app(
-        request, app_id=app_id, permission_code=f"{app_id}:member_manage"
-    )
-    return await _call(lambda: _management(request).delete_user(
-        user_id=user_id, expected_origin="APP", expected_app_id=app_id,
-        actor_id=actor_id,
+    actor_id = await _require_platform(request, "platform:app_grant_manage")
+    snapshot = await _access(request).platform_snapshot(user_id=actor_id)
+    return await _call(lambda: _management(request).revoke_platform_app_grant(
+        user_id=user_id, app_id=app_id, actor_id=actor_id, actor_platform_permissions=snapshot.permissions,
     ))
 
 

@@ -203,23 +203,27 @@ class ExternalNotificationService:
             await uow.commit()
 
     async def challenge_mine(self, *, scope, actor_id, object_id):
-        async with self._uow_factory() as uow:
-            row = await uow.external_delivery.get("binding", scope=scope, object_id=object_id)
-        if row is None or row["actor_id"] != actor_id:
-            raise ExternalDeliveryError("NOTIFICATION_BINDING_NOT_FOUND", 404)
-        return await self.challenge(scope=scope, actor_id=actor_id, object_id=object_id)
+        return await self.challenge(scope=scope, actor_id=actor_id, object_id=object_id, own_binding=True)
 
-    async def challenge(self, *, scope, actor_id, object_id):
+    async def challenge(self, *, scope, actor_id, object_id, own_binding=False):
         code, salt, now = f"{secrets.randbelow(1000000):06}", secrets.token_hex(16), now_utc()
         digest = hashlib.scrypt(code.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1).hex()
         reference = await self.vault.write(scope=scope, object_id=uuid4(), values={"verification_code": code})
         try:
             async with self._uow_factory() as uow:
                 repo = uow.external_delivery
+                if own_binding:
+                    # 与换绑、解绑使用同一个用户行锁，按账号串行更新验证状态。
+                    user = await uow.access.get_user_for_update(actor_id)
+                    if user is None or user.status != "ACTIVE":
+                        raise ExternalDeliveryError("NOTIFICATION_ACTOR_UNAVAILABLE", 403)
                 binding = await repo.get("binding", scope=scope, object_id=object_id, lock=True)
                 if binding is None or binding["target_type"] != "open_id" or binding["status"] == "DISABLED":
                     raise ExternalDeliveryError("NOTIFICATION_BINDING_NOT_FOUND", 404)
-                if binding["challenge_sent_at"] and now < binding["challenge_sent_at"] + timedelta(seconds=self.config.verification_cooldown_seconds):
+                if own_binding and (binding["actor_id"] != actor_id or binding["status"] != "UNVERIFIED"):
+                    raise ExternalDeliveryError("NOTIFICATION_BINDING_NOT_FOUND", 404)
+                sent_at = await repo.latest_actor_challenge(scope=scope, actor_id=actor_id) if own_binding else binding["challenge_sent_at"]
+                if sent_at and now < sent_at + timedelta(seconds=self.config.verification_cooldown_seconds):
                     raise ExternalDeliveryError("NOTIFICATION_VERIFICATION_RATE_LIMIT", 429)
                 connection = await repo.get("connection", scope=scope, object_id=binding["connection_id"])
                 if connection is None or not connection["enabled"]:
@@ -343,6 +347,21 @@ class ExternalNotificationService:
         async with self._uow_factory() as uow:
             return {"items": [public_record("binding", row) for row in
                 await uow.external_delivery.my_bindings(scope=scope, actor_id=actor_id)]}
+
+    async def update_my_feishu_binding(self, *, scope, actor_id, body):
+        from main_api.application.notification_user_binding import set_personal_binding
+
+        async with self._uow_factory() as uow:
+            user = await uow.access.get_user_for_update(actor_id)
+            if user is None or user.status != "ACTIVE":
+                raise ExternalDeliveryError("NOTIFICATION_ACTOR_UNAVAILABLE", 403)
+            binding = await set_personal_binding(
+                uow.external_delivery, scope=scope, user_id=actor_id, actor_id=actor_id,
+                open_id=body.feishu_open_id, expected_binding_id=body.expected_binding_id,
+                expected_version=body.expected_row_version,
+            )
+            await uow.commit()
+            return {"binding": binding}
 
     async def queue_test(self, *, scope, actor_id, object_id, binding_id):
         now = now_utc()

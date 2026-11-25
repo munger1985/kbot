@@ -189,9 +189,9 @@ test("通知治理入口仅对 AIOps 应用管理员开放，个人通知设置�
   const admin = setup("chat", ["aiops:use"], undefined, ["app_admin"]);
   assert.match(admin.markup, /href="\.\/notification-channels\.html"/);
   assert.match(admin.markup, /href="\.\/notification-delivery\.html"/);
+  assert.doesNotMatch(admin.markup, /href="\.\/users\.html"/);
   assert.doesNotMatch(setup("chat", [], undefined, ["app_admin"]).markup, /href="\.\/notification-delivery\.html"/);
-  const manager = setup("users", ["aiops:member_manage"]);
-  assert.match(manager.markup, /href="\.\/users\.html" aria-current="page"/);
+  const manager = setup("chat", ["aiops:member_manage"]);
+  assert.doesNotMatch(manager.markup, /href="\.\/users\.html"/);
   assert.doesNotMatch(manager.markup, /href="\.\/notification-delivery\.html"/);
-  assert.deepEqual(manager.openKeys(), ["configuration-governance"]);
 });

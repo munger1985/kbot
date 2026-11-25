@@ -15,7 +15,7 @@
     "inspection-plan-detail": "aiops:plan_manage",
     "report-templates": "aiops:plan_manage",
     runs: "aiops:use",
-    "notification-delivery": "aiops:use", "notification-channels": "aiops:use", "notification-settings": "aiops:use", users: "aiops:member_manage", "user-detail": "aiops:member_manage",
+    "notification-delivery": "aiops:use", "notification-channels": "aiops:use", "notification-settings": "aiops:use",
     "api-clients": "aiops:api_key_manage",
   };
   const notificationAdminPages = new Set(["notification-channels", "notification-delivery"]);
@@ -33,7 +33,7 @@
       ["knowledge-search", "资料检索"], ["cases", "诊断案例库"], ["operations-knowledge", "运维资料库"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
-      ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"], ["notification-channels", "通知渠道"], ["notification-delivery", "通知投递"], ["users", "用户管理"],
+      ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"], ["notification-channels", "通知渠道"], ["notification-delivery", "通知投递"],
     ]],
   ];
   const navigationSections = [
@@ -122,7 +122,6 @@
       "inspection-detail": "inspections",
       "work-item-detail": "dashboard", "business-system-workspace": "business-systems",
       "report-detail": "reports",
-      "user-detail": "users",
     };
     const selectedPage = directoryAliases[current] || current;
     const currentNavigation = detailParents[current] || selectedPage;

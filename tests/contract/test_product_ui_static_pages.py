@@ -166,7 +166,12 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         models = _parse(page)
         self.assertTrue({"portal-login", "portal-password", "portal-domain-form", "system-entry"} <= home.ids)
         self.assertTrue({"model-rows", "model-dialog", "model-form"} <= models.ids)
-        for parsed, folder in [(home, ui), (models, page.parent)]:
+        users = _parse(page.with_name("users.html"))
+        self.assertTrue({"user-create-form", "user-search", "user-rows", "user-detail-drawer", "user-apps",
+                         "user-grant-form", "user-security-form", "user-password-form"} <= users.ids)
+        self.assertIn("portal-feishu-dialog", home.ids)
+        self.assertNotIn("user-feishu-form", users.ids)
+        for parsed, folder in [(home, ui), (models, page.parent), (users, page.parent)]:
             for url in parsed.scripts + parsed.links:
                 url = url.partition("?")[0]
                 asset = ROOT / url.lstrip("/") if url.startswith("/") else folder / url

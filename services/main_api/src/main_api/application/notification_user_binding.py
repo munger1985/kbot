@@ -1,4 +1,4 @@
-"""用户管理事务中的可选个人绑定；绑定不授予业务权限。"""
+"""个人飞书绑定与账号删除时的解绑；绑定不授予业务权限。"""
 
 from uuid import UUID, uuid4
 from datetime import datetime

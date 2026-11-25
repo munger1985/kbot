@@ -64,6 +64,7 @@ class SessionEntriesResponse(_Payload):
     account_origin: str
     apps: list[SessionAppEntry]
     system_management: bool = Field(description="当前平台会话具有全局 AI 模型管理权限。")
+    user_management: bool = Field(description="当前平台会话具有全局用户管理权限。")
 
 
 class ExchangeAppPayload(_Payload):

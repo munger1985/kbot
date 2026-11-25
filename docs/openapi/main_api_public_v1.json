@@ -1495,6 +1495,148 @@
         "title": "AppApiScopeView",
         "type": "object"
       },
+      "AppGrantDomainOption": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "domain_id": {
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain_id",
+          "name",
+          "active"
+        ],
+        "title": "AppGrantDomainOption",
+        "type": "object"
+      },
+      "AppGrantOption": {
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/AppGrantDomainOption"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "manageable": {
+            "title": "Manageable",
+            "type": "boolean"
+          },
+          "member_assignable": {
+            "title": "Member Assignable",
+            "type": "boolean"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/AppGrantRoleOption"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id",
+          "display_name",
+          "status",
+          "member_assignable",
+          "row_version",
+          "manageable",
+          "roles",
+          "domains"
+        ],
+        "title": "AppGrantOption",
+        "type": "object"
+      },
+      "AppGrantOptionsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AppGrantOption"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AppGrantOptionsResponse",
+        "type": "object"
+      },
+      "AppGrantRoleOption": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "manageable": {
+            "title": "Manageable",
+            "type": "boolean"
+          },
+          "role_code": {
+            "title": "Role Code",
+            "type": "string"
+          },
+          "scope_policy": {
+            "enum": [
+              "SELECTABLE",
+              "ALL_APP_DOMAINS"
+            ],
+            "title": "Scope Policy",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_code",
+          "display_name",
+          "scope_policy",
+          "status",
+          "manageable"
+        ],
+        "title": "AppGrantRoleOption",
+        "type": "object"
+      },
       "AppLoginPayload": {
         "additionalProperties": false,
         "properties": {
@@ -1547,76 +1689,6 @@
           "display_name"
         ],
         "title": "AppRoleUpdatePayload",
-        "type": "object"
-      },
-      "AppUserCreatePayload": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "feishu_open_id": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "pattern": "^ou_.{1,253}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Feishu Open Id"
-          },
-          "max_security_level": {
-            "default": 1,
-            "maximum": 3.0,
-            "minimum": 0.0,
-            "title": "Max Security Level",
-            "type": "integer"
-          },
-          "must_change_password": {
-            "default": true,
-            "title": "Must Change Password",
-            "type": "boolean"
-          },
-          "password": {
-            "maxLength": 256,
-            "minLength": 12,
-            "title": "Password",
-            "type": "string"
-          },
-          "role_bindings": {
-            "items": {
-              "$ref": "#/components/schemas/RoleBindingPayload"
-            },
-            "maxItems": 50,
-            "minItems": 1,
-            "title": "Role Bindings",
-            "type": "array"
-          },
-          "user_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "password",
-          "role_bindings"
-        ],
-        "title": "AppUserCreatePayload",
         "type": "object"
       },
       "ApplicationStatusPayload": {
@@ -19816,6 +19888,53 @@
         "title": "PendingInputView",
         "type": "object"
       },
+      "PersonalFeishuBindingUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_binding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Binding Id"
+          },
+          "expected_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Row Version"
+          },
+          "feishu_open_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "pattern": "^ou_.{1,253}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feishu Open Id"
+          }
+        },
+        "required": [
+          "feishu_open_id"
+        ],
+        "title": "PersonalFeishuBindingUpdate",
+        "type": "object"
+      },
       "PlanFilter": {
         "additionalProperties": false,
         "properties": {
@@ -20014,19 +20133,6 @@
               }
             ],
             "title": "Display Name"
-          },
-          "feishu_open_id": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "pattern": "^ou_.{1,253}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Feishu Open Id"
           },
           "max_security_level": {
             "default": 1,
@@ -24973,6 +25079,11 @@
           "user_id": {
             "title": "User Id",
             "type": "string"
+          },
+          "user_management": {
+            "description": "当前平台会话具有全局用户管理权限。",
+            "title": "User Management",
+            "type": "boolean"
           }
         },
         "required": [
@@ -24980,7 +25091,8 @@
           "display_name",
           "account_origin",
           "apps",
-          "system_management"
+          "system_management",
+          "user_management"
         ],
         "title": "SessionEntriesResponse",
         "type": "object"
@@ -29319,43 +29431,6 @@
               }
             ],
             "title": "Display Name"
-          },
-          "expected_binding_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Binding Id"
-          },
-          "expected_binding_version": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Binding Version"
-          },
-          "feishu_open_id": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "pattern": "^ou_.{1,253}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Feishu Open Id"
           },
           "max_security_level": {
             "anyOf": [
@@ -52123,405 +52198,6 @@
         ]
       }
     },
-    "/api/v1/apps/{app_id}/members": {
-      "get": {
-        "operationId": "list_app_members_api_v1_apps__app_id__members_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List App Members",
-        "tags": [
-          "Access Management"
-        ]
-      },
-      "post": {
-        "operationId": "create_app_member_api_v1_apps__app_id__members_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AppUserCreatePayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create App Member",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/apps/{app_id}/members/assignable-roles": {
-      "get": {
-        "operationId": "member_assignable_roles_api_v1_apps__app_id__members_assignable_roles_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Member Assignable Roles",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/apps/{app_id}/members/{user_id}": {
-      "delete": {
-        "operationId": "delete_app_member_api_v1_apps__app_id__members__user_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Delete App Member",
-        "tags": [
-          "Access Management"
-        ]
-      },
-      "get": {
-        "operationId": "get_app_member_api_v1_apps__app_id__members__user_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get App Member",
-        "tags": [
-          "Access Management"
-        ]
-      },
-      "patch": {
-        "operationId": "update_app_member_api_v1_apps__app_id__members__user_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserUpdatePayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update App Member",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/apps/{app_id}/members/{user_id}/password": {
-      "post": {
-        "operationId": "reset_app_member_password_api_v1_apps__app_id__members__user_id__password_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PasswordResetPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reset App Member Password",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/apps/{app_id}/members/{user_id}/role-bindings": {
-      "put": {
-        "operationId": "set_app_member_role_bindings_api_v1_apps__app_id__members__user_id__role_bindings_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlatformAppGrantPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Set App Member Role Bindings",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
     "/api/v1/apps/{app_id}/permissions": {
       "get": {
         "operationId": "list_app_permissions_api_v1_apps__app_id__permissions_get",
@@ -54807,6 +54483,46 @@
         ]
       }
     },
+    "/api/v1/notification-delivery/me/bindings/feishu": {
+      "put": {
+        "operationId": "update_my_feishu_binding_api_v1_notification_delivery_me_bindings_feishu_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalFeishuBindingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update My Feishu Binding",
+        "tags": [
+          "Notification Delivery"
+        ],
+        "x-sensitive-input": true
+      }
+    },
     "/api/v1/notification-delivery/me/bindings/{object_id}/challenge": {
       "post": {
         "operationId": "challenge_mine_api_v1_notification_delivery_me_bindings__object_id__challenge_post",
@@ -55506,6 +55222,27 @@
         "summary": "Update Notification",
         "tags": [
           "Notifications"
+        ]
+      }
+    },
+    "/api/v1/platform/app-grant-options": {
+      "get": {
+        "operationId": "list_platform_app_grant_options_api_v1_platform_app_grant_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppGrantOptionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Platform App Grant Options",
+        "tags": [
+          "Access Management"
         ]
       }
     },

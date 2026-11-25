@@ -63,6 +63,12 @@ class WorkspaceEntriesTest(IsolatedAsyncioTestCase):
         self.assertEqual(["knowledge_retrieval"], [app["app_id"] for app in result["apps"]])
         self.assertEqual([3], [domain["domain_id"] for domain in result["apps"][0]["domains"]])
         self.assertIs(result["system_management"], True)
+        self.assertIs(result["user_management"], False)
+
+        self.access.platform_permissions_for.return_value = {"platform:user_manage"}
+        result = await self.service.list_session_entries(claims=self.claims)
+        self.assertIs(result["user_management"], True)
+        self.assertIs(result["system_management"], False)
 
         self.access.platform_permissions_for.return_value = {"media_studio:model_binding_manage"}
         self.assertIs((await self.service.list_session_entries(claims=self.claims))["system_management"], False)
@@ -90,6 +96,7 @@ class WorkspaceEntriesTest(IsolatedAsyncioTestCase):
         result = await self.service.list_session_entries(claims=claims)
         self.assertEqual(["knowledge_retrieval"], [app["app_id"] for app in result["apps"]])
         self.assertIs(result["system_management"], False)
+        self.assertIs(result["user_management"], False)
         self.access.platform_permissions_for.assert_not_awaited()
         with self.assertRaisesRegex(UserAuthenticationError, "不能进入其他 App"):
             await self.service.exchange_app_session(claims=claims, app_id="media_studio", domain_id=3)
@@ -156,6 +163,13 @@ class WorkspaceHttpTest(TestCase):
         app.state.user_auth_service = UserAuthService(
             uow_factory=lambda: self.uow, codec=UserTokenCodec(secret="t" * 32, issuer="test", ttl_seconds=3600),
         )
+        self.notifications = SimpleNamespace(
+            authority=SimpleNamespace(actor_active=AsyncMock(return_value=True)),
+            my_bindings=AsyncMock(return_value={"items": []}),
+            update_my_feishu_binding=AsyncMock(return_value={"binding": None}),
+            challenge_mine=AsyncMock(return_value={}), confirm=AsyncMock(return_value={}),
+        )
+        app.state.external_notification_service = self.notifications
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
@@ -192,3 +206,24 @@ class WorkspaceHttpTest(TestCase):
             response = self.client.post("/api/v1/auth/login", json={"user_id": "example", "password": password})
             self.assertEqual(401, response.status_code, response.text)
             self.assertNotIn("access_token", response.json())
+
+    def test_workspace_personal_binding_is_independent_of_app_and_never_uses_payload_actor(self):
+        headers = {"Authorization": f"Bearer {self.login().json()['access_token']}"}
+        base = "/api/v1/notification-delivery"
+        binding_id = "00000000-0000-0000-0000-000000000001"
+        self.assertEqual(200, self.client.get(f"{base}/me/bindings", headers=headers).status_code)
+        self.assertEqual(422, self.client.put(f"{base}/me/bindings/feishu", headers=headers,
+            json={"feishu_open_id": "ou_example", "actor_id": "someone_else"}).status_code)
+        response = self.client.put(f"{base}/me/bindings/feishu", headers=headers,
+            json={"feishu_open_id": "ou_example"})
+        self.assertEqual(200, response.status_code, response.text)
+        self.notifications.update_my_feishu_binding.assert_awaited_once()
+        invocation = self.notifications.update_my_feishu_binding.await_args.kwargs
+        self.assertEqual("example", invocation["actor_id"])
+        self.assertIsNone(invocation["scope"].domain_id)
+        self.assertEqual(200, self.client.post(f"{base}/me/bindings/{binding_id}/challenge", headers=headers).status_code)
+        self.assertEqual(200, self.client.post(f"{base}/bindings/{binding_id}/confirm", headers=headers,
+            json={"code": "123456", "expected_row_version": 3}).status_code)
+        self.assertEqual(403, self.client.post(f"{base}/bindings/{binding_id}/challenge", headers=headers).status_code)
+        self.assertEqual(403, self.client.get(f"{base}/connections", headers=headers).status_code)
+        self.domain_validator.assert_not_awaited()

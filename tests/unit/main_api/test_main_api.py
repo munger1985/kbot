@@ -19,7 +19,7 @@ from main_api.application import (
 from main_api.config import get_main_api_settings
 from main_api.application.user_auth import UserAuthService, UserTokenCodec
 from platform_clients.knowledge_computation import KnowledgeComputationClientError
-from platform_core.contracts import AuthContext, PrincipalKind
+from platform_core.contracts import AuthContext, IdentityEntryKind, PrincipalKind
 from platform_core.security import (
     DOMAIN_ID_HEADER,
     TEST_AUTH_BYPASS_HEADER,
@@ -676,7 +676,7 @@ class _FakeAccessManagementService:
         self.created_values: dict[str, Any] | None = None
         self.membership: dict[str, Any] | None = None
 
-    async def create_app_user(self, **values):
+    async def create_platform_user(self, **values):
         self.created_user = values["user_id"]
         self.created_values = values
         return {
@@ -787,13 +787,15 @@ class MainApiTest(unittest.TestCase):
         async def authenticate(request):
             if not request.headers.get("Authorization"):
                 return None
+            platform = request.headers.get("Authorization") == "Bearer mock-platform-session"
             return AuthContext(
                 principal_kind=PrincipalKind.PORTAL,
                 client_id="user-session",
                 api_key_id="user-jwt",
                 request_id=request.headers.get("X-Request-ID", "request-test"),
                 trace_id="trace-test",
-                domain_id=request.headers.get(DOMAIN_ID_HEADER, "100"),
+                domain_id=None if platform else request.headers.get(DOMAIN_ID_HEADER, "100"),
+                entry_kind=IdentityEntryKind.PLATFORM if platform else IdentityEntryKind.BUSINESS,
                 asserted_user_id=request.headers.get(
                     USER_ID_HEADER, "portal-user-1"
                 ),
@@ -833,6 +835,9 @@ class MainApiTest(unittest.TestCase):
             USER_ID_HEADER: "portal-user-1",
             "X-Request-ID": "main-request-1",
         }
+
+    def _platform_headers(self) -> dict[str, str]:
+        return {"Authorization": "Bearer mock-platform-session", "X-Request-ID": "main-request-1"}
 
     def test_knowledge_library_documents_forward_context_and_bounded_pagination(self):
         self.library.files = AsyncMock(return_value={"items": [], "page": 2, "has_more": False})
@@ -1175,7 +1180,8 @@ class MainApiTest(unittest.TestCase):
         self.assertIn("/api/v1/auth/refresh", paths)
         self.assertIn("/api/v1/platform/users", paths)
         self.assertIn("/api/v1/platform/apps/{app_id}/initial-admin", paths)
-        self.assertIn("/api/v1/apps/{app_id}/members", paths)
+        self.assertIn("/api/v1/platform/app-grant-options", paths)
+        self.assertNotIn("/api/v1/apps/{app_id}/members", paths)
         self.assertNotIn("/api/v1/admin/users", paths)
         self.assertIn("/api/v1/development/logs/events", paths)
         self.assertIn("/api/v1/development/agent-runs", paths)
@@ -1419,7 +1425,7 @@ class MainApiTest(unittest.TestCase):
 
         self.app.state.access_management_service = _AccessManagementService()
         response = self.client.get(
-            "/api/v1/platform/users", headers=self._headers()
+            "/api/v1/platform/users", headers=self._platform_headers()
         )
 
         self.assertEqual(200, response.status_code, response.text)
@@ -1428,42 +1434,37 @@ class MainApiTest(unittest.TestCase):
             self.app.state.access_control_service.last_permission_code,
         )
 
-    def test_app_member_manager_can_create_and_authorize_user(self) -> None:
+    def test_user_creation_and_grants_are_platform_only(self) -> None:
         access = _ScopedAccessControlService(
             (
                 "knowledge_retrieval",
                 "knowledge_retrieval:use",
             ),
-            (
-                "knowledge_retrieval",
-                "knowledge_retrieval:member_manage",
-            )
+            ("knowledge_retrieval", "knowledge_retrieval:member_manage"),
         )
         management = _FakeAccessManagementService()
         self.app.state.access_control_service = access
         self.app.state.access_management_service = management
 
-        created = self.client.post(
-            "/api/v1/apps/knowledge-retrieval/members",
-            headers=self._headers(),
-            json={
-                "user_id": "NEW_USER",
-                "display_name": "新用户",
-                "password": "Example@Password2026!",
-                "role_bindings": [{
-                    "role_code": "app_user",
-                    "scope_mode": "SELECTED_DOMAINS",
-                    "domain_ids": [100]
-                }],
-            },
-        )
+        payload = {"user_id": "NEW_USER", "display_name": "新用户", "password": "Example@Password2026!"}
+        old_path = self.client.post("/api/v1/apps/aiops/members", headers=self._headers(), json=payload)
+        self.assertEqual(404, old_path.status_code, old_path.text)
+        denied = self.client.post("/api/v1/platform/users", headers=self._platform_headers(), json=payload)
+        self.assertEqual(403, denied.status_code, denied.text)
+        self.assertIsNone(management.created_user)
 
+        access.permissions |= {("platform", "platform:user_manage")}
+        wrong_session = self.client.post("/api/v1/platform/users", headers=self._headers(), json=payload)
+        self.assertEqual("PLATFORM_SESSION_REQUIRED", wrong_session.json()["code"])
+        created = self.client.post("/api/v1/platform/users", headers=self._platform_headers(), json=payload)
         self.assertEqual(201, created.status_code, created.text)
         self.assertEqual("NEW_USER", management.created_user)
-        self.assertEqual(
-            "knowledge_retrieval", management.created_values["app_id"]
+        self.assertNotIn("app_id", management.created_values)
+        grant = self.client.put(
+            "/api/v1/platform/users/NEW_USER/app-grants/aiops", headers=self._platform_headers(),
+            json={"role_bindings": [{"role_code": "app_user", "domain_ids": [100]}]},
         )
-        self.assertEqual(1, management.created_values["max_security_level"])
+        self.assertEqual(403, grant.status_code, grant.text)
 
     def test_app_role_delete_requires_if_match(self) -> None:
         class _AccessManagementService:

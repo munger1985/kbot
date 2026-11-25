@@ -1,6 +1,8 @@
 """用户可选绑定与渠道 owner 范围回归；只使用隔离 SQLite，不访问部署数据库。"""
 
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
@@ -10,9 +12,11 @@ from sqlalchemy import DateTime, JSON, MetaData, Numeric, Uuid
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from main_api.application.notification_user_binding import personal_binding, set_personal_binding
-from main_api.application.notification_delivery import ExternalDeliveryError
+from main_api.application.notification_delivery import ExternalDeliveryError, ExternalNotificationService
+from main_api.api.notification_delivery import PersonalFeishuBindingUpdate
 from main_api.repositories.notification_delivery import ExternalDeliveryRepository
 from platform_core.notifications.delivery import ConnectionCreate, DeliveryScope
+from platform_core.notifications.external_config import ExternalDeliveryConfig
 from platform_core.persistence.notification_delivery import define_external_tables
 
 
@@ -104,6 +108,37 @@ async def test_same_feishu_identity_cannot_belong_to_two_users(owner_database):
         with pytest.raises(ExternalDeliveryError, match="BINDING_CONFLICT"):
             await set_personal_binding(repo, scope=scope, user_id="second", actor_id="admin",
                 open_id="ou_shared", creating=True)
+
+
+@pytest.mark.asyncio
+async def test_personal_binding_changes_keep_owner_lock_and_cooldown_after_rebind(owner_database):
+    factory, tables, scope = owner_database
+    async with factory() as session:
+        repo = repo_for(session, tables)
+        await connection(repo, scope)
+        await session.commit()
+    access = SimpleNamespace(get_user_for_update=AsyncMock(return_value=SimpleNamespace(status="ACTIVE")))
+
+    @asynccontextmanager
+    async def factory_uow():
+        async with factory() as session:
+            yield SimpleNamespace(access=access, external_delivery=repo_for(session, tables), commit=session.commit)
+
+    vault = SimpleNamespace(write=AsyncMock(return_value="secret-reference"), delete=AsyncMock())
+    service = ExternalNotificationService(uow_factory=factory_uow, config=ExternalDeliveryConfig(),
+        vault=vault, sender=None, authority=None)
+    result = await service.update_my_feishu_binding(scope=scope, actor_id="self",
+        body=PersonalFeishuBindingUpdate(feishu_open_id="ou_first"))
+    binding = result["binding"]
+    assert binding["actor_id"] == "self" and binding["status"] == "UNVERIFIED"
+    access.get_user_for_update.assert_awaited_once_with("self")
+    with pytest.raises(ExternalDeliveryError, match="BINDING_NOT_FOUND"):
+        await service.challenge_mine(scope=scope, actor_id="other", object_id=UUID(binding["id"]))
+    sent = await service.challenge_mine(scope=scope, actor_id="self", object_id=UUID(binding["id"]))
+    updated = await service.update_my_feishu_binding(scope=scope, actor_id="self", body=PersonalFeishuBindingUpdate(
+        feishu_open_id="ou_second", expected_binding_id=binding["id"], expected_row_version=sent["row_version"]))
+    with pytest.raises(ExternalDeliveryError, match="VERIFICATION_RATE_LIMIT"):
+        await service.challenge_mine(scope=scope, actor_id="self", object_id=UUID(updated["binding"]["id"]))
 
 
 def test_wecom_is_not_an_enabled_provider():

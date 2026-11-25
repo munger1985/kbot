@@ -213,8 +213,23 @@ body:not([data-portal-view="workspace"]) .app-grid { display: none; }
 .empty-state { padding-block: 1rem; color: #4f6178; }
 .site-footer { padding-block: 1rem 1.5rem; border-top: 1px solid #dde5ef; color: #546883; font-size: .8rem; }
 
-.portal-account { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-left: auto; font-size: .9rem; }
+.portal-account { position: relative; margin-left: auto; min-width: 0; font-size: .9rem; }
 .portal-account[hidden] { display: none; }
+.portal-account summary {
+  display: flex; align-items: center; gap: .6rem; padding: .4rem .65rem;
+  border: 1px solid #dce4ef; border-radius: 8px; background: #fff; cursor: pointer; list-style: none;
+}
+.portal-account summary::-webkit-details-marker { display: none; }
+#portal-user { max-width: min(36vw, 18rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portal-account-popover {
+  position: absolute; z-index: 10; inset: calc(100% + 6px) 0 auto auto; width: max-content;
+  min-width: 10rem; padding: .3rem; border: 1px solid #dce4ef; border-radius: 10px;
+  background: #fff; box-shadow: 0 8px 24px #172f4420;
+}
+.portal-account .portal-account-popover button { display: block; width: 100%; text-align: start; border: 0; cursor: pointer; }
+.portal-account-popover button[hidden] { display: none; }
+.portal-account-popover button:hover { background: #edf2f6; }
+#portal-logout { color: #a4353d; }
 .portal-panel { margin-top: 1.65rem; }
 .portal-panel label, .portal-dialog label { display: grid; gap: .45rem; margin-bottom: 1rem; font-size: .91rem; font-weight: 600; }
 .portal-panel p { color: var(--muted); font-size: .88rem; line-height: 1.55; }

@@ -52,6 +52,11 @@ class AccessControlRepository:
     async def get_user(self, user_id: str) -> PlatformUserEntity | None:
         return await self._session.get(PlatformUserEntity, user_id)
 
+    async def get_user_for_update(self, user_id: str) -> PlatformUserEntity | None:
+        return await self._session.scalar(
+            select(PlatformUserEntity).where(PlatformUserEntity.user_id == user_id).with_for_update()
+        )
+
     async def add_user(self, row: PlatformUserEntity) -> None:
         self._session.add(row)
         await self._session.flush()
@@ -430,8 +435,12 @@ class AccessControlRepository:
         )
         return tuple(int(value) for value in rows)
 
-    async def list_member_roles(self, *, app_id: str, domain_id: int | None = None) -> list[AppMemberRoleEntity]:
+    async def list_member_roles(
+        self, *, app_id: str, domain_id: int | None = None, user_id: str | None = None,
+    ) -> list[AppMemberRoleEntity]:
         statement = select(AppMemberRoleEntity).where(AppMemberRoleEntity.app_id == app_id)
+        if user_id is not None:
+            statement = statement.where(AppMemberRoleEntity.user_id == user_id)
         if domain_id is not None:
             statement = statement.where(self._domain_scope_clause(app_id=app_id, domain_id_column=domain_id))
         rows = await self._session.scalars(statement.order_by(AppMemberRoleEntity.user_id, AppMemberRoleEntity.role_code))
@@ -455,8 +464,11 @@ class AccessControlRepository:
     ) -> tuple[list[PlatformUserEntity], int]:
         filters = []
         if search:
-            pattern = f"%{search.casefold()}%"
-            filters.append(or_(func.lower(PlatformUserEntity.user_id).like(pattern), func.lower(PlatformUserEntity.display_name).like(pattern)))
+            keyword = search.lower()
+            filters.append(or_(
+                func.lower(PlatformUserEntity.user_id).contains(keyword, autoescape=True),
+                func.lower(PlatformUserEntity.display_name).contains(keyword, autoescape=True),
+            ))
         if status:
             filters.append(PlatformUserEntity.status == status)
         if account_origin:
@@ -482,6 +494,20 @@ class AccessControlRepository:
             select(AppMemberEntity).where(AppMemberEntity.user_id == user_id).order_by(AppMemberEntity.app_id)
         )
         return list(rows)
+
+    async def list_user_app_assignments(self, user_ids: tuple[str, ...]) -> dict[str, list[str]]:
+        if not user_ids:
+            return {}
+        rows = await self._session.execute(
+            select(AppMemberEntity.user_id, PlatformApplicationEntity.display_name)
+            .join(PlatformApplicationEntity, PlatformApplicationEntity.app_id == AppMemberEntity.app_id)
+            .where(AppMemberEntity.user_id.in_(user_ids), AppMemberEntity.status == "ACTIVE")
+            .order_by(AppMemberEntity.app_id)
+        )
+        result: dict[str, list[str]] = {}
+        for user_id, display_name in rows:
+            result.setdefault(user_id, []).append(display_name)
+        return result
 
     async def delete_user(self, *, user: PlatformUserEntity) -> None:
         await self._session.execute(delete(AppMemberRoleScopeEntity).where(AppMemberRoleScopeEntity.user_id == user.user_id))

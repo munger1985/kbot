@@ -47,6 +47,8 @@ async function setup({ allowed, firstLogin = false, notification = null }) {
     sessionStorage.setItem("kbot.aiops.notification_entry.v1", id);
   }, notification);
   const calls = [];
+  let binding = null;
+  const bindingId = "00000000-0000-0000-0000-000000000001";
   let model = { ...catalogModel };
   const imageModel = { ...catalogModel, model_id: "image-model", display_name: "测试图像模型", category: 8 };
   const draftModel = { ...catalogModel, model_id: "draft-model", display_name: "测试草稿模型", status: "DRAFT" };
@@ -65,6 +67,26 @@ async function setup({ allowed, firstLogin = false, notification = null }) {
       return route.fulfill({ path: fileURLToPath(new URL(path.slice(1), root)) });
     }
     calls.push({ path, bearer: request.headers().authorization, body: request.postDataJSON() });
+    if (path === "/api/v1/notification-delivery/me/bindings") return route.fulfill({ json: { items: binding ? [binding] : [] } });
+    if (path === "/api/v1/notification-delivery/me/bindings/feishu") {
+      const { feishu_open_id, expected_binding_id, expected_row_version } = request.postDataJSON();
+      assert.equal(request.method(), "PUT");
+      assert.equal(expected_binding_id, binding?.id ?? null);
+      assert.equal(expected_row_version, binding?.row_version ?? null);
+      binding = feishu_open_id ? { id: bindingId, row_version: (binding?.row_version ?? 0) + 1,
+        target_type: "open_id", external_id: feishu_open_id, status: "UNVERIFIED" } : null;
+      return route.fulfill({ json: { binding } });
+    }
+    if (path.endsWith(`/me/bindings/${bindingId}/challenge`)) {
+      binding.row_version++;
+      return route.fulfill({ json: { row_version: binding.row_version } });
+    }
+    if (path.endsWith(`/bindings/${bindingId}/confirm`)) {
+      assert.deepEqual(request.postDataJSON(), { code: "123456", expected_row_version: binding.row_version });
+      binding.status = "VERIFIED";
+      binding.row_version++;
+      return route.fulfill({ json: { status: "VERIFIED" } });
+    }
     if (path === "/api/v1/auth/login") {
       assert.deepEqual(Object.keys(request.postDataJSON()).sort(), ["password", "user_id"]);
       return route.fulfill({ json: { ...rootSession, must_change_password: firstLogin } });
@@ -271,6 +293,28 @@ try {
   await expect(ordinary.page.locator("#system-status")).toContainText("没有管理");
   assert.ok(!ordinary.calls.some((call) => call.path.startsWith("/api/v1/platform/models")));
   await ordinary.page.goto(origin + "/ui/index.html");
+  const account = ordinary.page.locator("#portal-account summary");
+  await account.click();
+  await ordinary.page.getByRole("button", { name: "我的通知设置" }).click();
+  const settings = ordinary.page.getByRole("dialog", { name: "我的通知设置" });
+  await expect(settings.getByText("未绑定", { exact: true })).toBeVisible();
+  await settings.getByRole("textbox", { name: "飞书 open_id" }).fill("ou_fixture");
+  await settings.getByRole("button", { name: "保存绑定" }).click();
+  await expect(settings.getByText("待本人验证", { exact: true })).toBeVisible();
+  await settings.getByRole("button", { name: "发送验证码" }).click();
+  await expect(settings.getByText(/验证码已入队/)).toBeVisible();
+  await settings.getByRole("textbox", { name: "飞书验证码" }).fill("123456");
+  await settings.getByRole("button", { name: "确认是本人" }).click();
+  await expect(settings.getByText("已验证", { exact: true })).toBeVisible();
+  await settings.getByRole("textbox", { name: "飞书 open_id" }).fill("ou_replacement");
+  await settings.getByRole("button", { name: "保存绑定" }).click();
+  await expect(settings.getByText("待本人验证", { exact: true })).toBeVisible();
+  await settings.getByRole("button", { name: "解绑" }).click();
+  await ordinary.page.getByRole("alertdialog").getByRole("button", { name: "确认解绑" }).click();
+  await expect(settings.getByText("未绑定", { exact: true })).toBeVisible();
+  assert.ok(ordinary.calls.filter(({ path }) => path.startsWith("/api/v1/notification-delivery/")).every(({ bearer }) => bearer === "Bearer mock-workspace"));
+  await settings.getByRole("button", { name: "关闭", exact: true }).click();
+  await account.click();
   await ordinary.page.locator("#portal-logout").click();
   await expect(ordinary.page.locator("#portal-sign-in")).toBeVisible();
   assert.equal(await ordinary.page.evaluate(() => sessionStorage.length), 0);
@@ -288,7 +332,21 @@ try {
   }
   await admin.page.locator("#system-entry").click();
   await expect(admin.page.getByRole("heading", { name: "AI 模型管理" })).toBeVisible();
+  await admin.page.getByRole("button", { name: "平台管理菜单", exact: true }).click();
+  const modelNav = admin.page.getByRole("navigation", { name: "平台管理" });
+  await expect(modelNav.getByRole("link", { name: "AI 模型管理" })).toHaveAttribute("aria-current", "page");
+  await expect(modelNav.locator("a")).toHaveCount(1);
+  await admin.page.keyboard.press("Escape");
   await expect(admin.page.locator("#model-rows")).toContainText("测试模型");
+  const modelTable = admin.page.getByRole("table", { name: "模型配置列表" });
+  const modelRow = modelTable.getByRole("row").filter({ hasText: "测试模型" });
+  await expect(modelRow).toHaveCSS("display", "grid");
+  await expect(modelRow.getByText("Endpoint", { exact: true })).toBeVisible();
+  await expect(modelRow.getByRole("button", { name: "编辑" })).toBeVisible();
+  assert.ok(await modelTable.evaluate((table) => table.scrollWidth <= table.clientWidth));
+  await admin.page.setViewportSize({ width: 1440, height: 900 });
+  await expect(modelRow).toHaveCSS("display", "table-row");
+  assert.ok(await modelTable.evaluate((table) => table.scrollWidth <= table.clientWidth));
   assert.ok(admin.calls.some((call) => call.path.endsWith("/platform/models") && call.bearer === "Bearer mock-updated"));
   assert.ok(!admin.calls.some((call) => call.path.endsWith("/exchange")));
   await assertModelConnectionTest(admin);
@@ -299,7 +357,7 @@ try {
   await notified.page.locator('[data-app="aiops"]').click();
   await notified.page.waitForURL(`**/notification-open.html?entry=${notification}`);
   assert.deepEqual(notified.calls.find((call) => call.path.endsWith("/exchange")).body, { app_id: "aiops", domain_id: 5 });
-  console.log("工作台浏览器回归通过：SSO、权限卡片、模型编辑和连通性测试。");
+  console.log("工作台浏览器回归通过：SSO、权限卡片、个人飞书绑定与验证、模型表格和模型编辑。");
 } finally {
   await browser.close();
 }

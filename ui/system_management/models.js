@@ -1,5 +1,6 @@
 /* 模型配置管理：只经 Main API 操作，Secret 写入后不回显。 */
 import { parameterLabel, renderModelParameterFields } from "./model-parameter-fields.js?v=20261122_local_embedding_metadata";
+import { mountPlatformMenu } from "./platform-menu.js?v=20261125_platform_menu";
 
 (function () {
   "use strict";
@@ -8,7 +9,6 @@ import { parameterLabel, renderModelParameterFields } from "./model-parameter-fi
   const portal = "/ui/index.html";
   const escapeHtml = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-  const badge = (value, tone) => `<span class="media-badge ${escapeHtml(tone)}">${escapeHtml(value)}</span>`;
   const confirmAction = (options) => import("../shared/kbot-confirm.js").then((module) => module.confirmAction(options));
 
   function toast(message, kind = "info") {
@@ -55,11 +55,11 @@ import { parameterLabel, renderModelParameterFields } from "./model-parameter-fi
   function categoryLabel(value) { return categoryLabels.get(Number(value)) || `类别 ${value}`; }
   function statusBadge(status) {
     const labels = { ACTIVE: "已启用", DRAFT: "草稿", ARCHIVED: "已归档" };
-    const tone = status === "ACTIVE" ? "good" : status === "ARCHIVED" ? "bad" : "warn";
-    return badge(labels[status] || status, tone);
+    const tone = status === "ACTIVE" ? " is-success" : status === "DRAFT" ? " is-warning" : "";
+    return `<span class="platform-status${tone}">${escapeHtml(labels[status] || status)}</span>`;
   }
   function emptyRow(title, copy) {
-    return `<tr><td colspan="6"><div class="media-empty"><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div></div></td></tr>`;
+    return `<tr class="platform-table-empty" role="row"><td role="cell" colspan="6"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></td></tr>`;
   }
   function currentModel(modelId) {
     return models.find((row) => String(row.model_id) === String(modelId));
@@ -91,16 +91,16 @@ import { parameterLabel, renderModelParameterFields } from "./model-parameter-fi
   function actionButtons(row) {
     const buttons = [];
     if (row.status !== "ARCHIVED") {
-      buttons.push(`<button class="small" type="button" data-model-action="edit" data-model-id="${escapeHtml(row.model_id)}">编辑</button>`);
+      buttons.push(`<button class="platform-row-action" type="button" data-model-action="edit" data-model-id="${escapeHtml(row.model_id)}">编辑</button>`);
       const testing = testingModels.has(String(row.model_id));
       const testHint = row.status === "ACTIVE" ? "用已保存的配置测试连通性" : "请先启用模型，再测试连通性";
-      buttons.push(`<button class="small" type="button" data-model-action="test" data-model-id="${escapeHtml(row.model_id)}" title="${testHint}" ${testing || row.status !== "ACTIVE" ? "disabled" : ""}>${testing ? "测试中…" : "测试"}</button>`);
-      buttons.push(`<button class="small" type="button" data-model-action="references" data-model-id="${escapeHtml(row.model_id)}">引用</button>`);
-      buttons.push(`<button class="small" type="button" data-model-action="status" data-model-id="${escapeHtml(row.model_id)}">${row.status === "ACTIVE" ? "停用" : "启用"}</button>`);
-      buttons.push(`<button class="small danger" type="button" data-model-action="archive" data-model-id="${escapeHtml(row.model_id)}">归档</button>`);
+      buttons.push(`<button class="platform-row-action" type="button" data-model-action="test" data-model-id="${escapeHtml(row.model_id)}" title="${testHint}" ${testing || row.status !== "ACTIVE" ? "disabled" : ""}>${testing ? "测试中…" : "测试"}</button>`);
+      buttons.push(`<button class="platform-row-action" type="button" data-model-action="references" data-model-id="${escapeHtml(row.model_id)}">引用</button>`);
+      buttons.push(`<button class="platform-row-action" type="button" data-model-action="status" data-model-id="${escapeHtml(row.model_id)}">${row.status === "ACTIVE" ? "停用" : "启用"}</button>`);
+      buttons.push(`<button class="platform-row-action is-danger" type="button" data-model-action="archive" data-model-id="${escapeHtml(row.model_id)}">归档</button>`);
     } else {
-      buttons.push(`<button class="small" type="button" data-model-action="references" data-model-id="${escapeHtml(row.model_id)}">引用</button>`);
-      buttons.push(`<button class="small danger" type="button" data-model-action="delete" data-model-id="${escapeHtml(row.model_id)}">删除</button>`);
+      buttons.push(`<button class="platform-row-action" type="button" data-model-action="references" data-model-id="${escapeHtml(row.model_id)}">引用</button>`);
+      buttons.push(`<button class="platform-row-action is-danger" type="button" data-model-action="delete" data-model-id="${escapeHtml(row.model_id)}">删除</button>`);
     }
     return buttons.join("");
   }
@@ -113,14 +113,16 @@ import { parameterLabel, renderModelParameterFields } from "./model-parameter-fi
       target.innerHTML = emptyRow("没有匹配的模型配置", "调整筛选条件，或新增一个由 Provider 合同校验的模型配置。");
       return;
     }
-    target.innerHTML = rows.map((row) => `<tr>
-      <td><strong>${escapeHtml(row.display_name)}</strong>
-        <small class="model-secondary">厂商模型：${escapeHtml(row.provider_model_name)}</small></td>
-      <td>${escapeHtml(categoryLabel(row.category))}<small class="model-secondary">${escapeHtml(row.provider)}</small></td>
-      <td><code class="model-endpoint" title="${escapeHtml(endpointText(row))}">${escapeHtml(endpointText(row))}</code></td>
-      <td>${statusBadge(row.status)}</td>
-      <td>v${escapeHtml(row.row_version)}</td>
-      <td><div class="model-row-actions">${actionButtons(row)}</div></td>
+    const headings = target.closest("table").tHead.rows[0].cells;
+    const tableCell = (column, value) => `<td role="cell"><span class="platform-cell-label" aria-hidden="true">${escapeHtml(headings[column].textContent)}</span>${value}</td>`;
+    target.innerHTML = rows.map((row) => `<tr role="row">
+      <td role="cell"><strong class="platform-cell-title">${escapeHtml(row.display_name)}</strong>
+        <small class="platform-cell-meta">厂商模型：${escapeHtml(row.provider_model_name)}</small></td>
+      ${tableCell(1, `<div>${escapeHtml(categoryLabel(row.category))}<small class="platform-cell-meta">${escapeHtml(row.provider)}</small></div>`)}
+      ${tableCell(2, `<code class="platform-cell-meta is-technical">${escapeHtml(endpointText(row))}</code>`)}
+      ${tableCell(3, statusBadge(row.status))}
+      ${tableCell(4, `<span>v${escapeHtml(row.row_version)}</span>`)}
+      ${tableCell(5, `<div class="platform-action-group">${actionButtons(row)}</div>`)}
     </tr>`).join("");
     target.querySelectorAll("[data-model-action]").forEach((button) => {
       button.addEventListener("click", () => handleAction(button.dataset.modelAction, button.dataset.modelId));
@@ -550,9 +552,11 @@ import { parameterLabel, renderModelParameterFields } from "./model-parameter-fi
     try {
       const entries = await session.request("/auth/entries");
       if (entries.system_management !== true) {
-        element("system-status").textContent = "当前账号没有管理 AI 模型的权限。";
+        if (entries.user_management === true) location.replace("./users.html");
+        else element("system-status").textContent = "当前账号没有管理 AI 模型的权限。";
         return;
       }
+      mountPlatformMenu(entries, "system_management");
     } catch (error) {
       if (error.status === 401) location.replace(portal);
       else element("system-status").textContent = error.message || "无法读取系统管理权限，请刷新重试。";

@@ -38,6 +38,7 @@ from main_api.api import (
     ops_router,
 )
 from main_api.config import get_main_api_settings
+from main_api.api.notification_delivery_auth import accepts_workspace_notification_session
 from main_api.api.output_authority import OUTPUT_AUTHORITY_PATH, install_output_authority_boundary
 from main_api.api.system_models import router as system_models_router
 from main_api.application import (
@@ -229,9 +230,9 @@ def create_main_api_app(
             ("POST", "/api/v1/auth/password"),
             ("POST", "/api/v1/auth/refresh"),
             ("POST", "/api/v1/auth/knowledge-first-domain"),
-        }:
+        } and not accepts_workspace_notification_session(request.method, request.url.path):
             raise PortalApiKeyError(
-                "WORKSPACE_SCOPE_DENIED", "工作台会话仅用于发现入口或进入已授权的应用",
+                "WORKSPACE_SCOPE_DENIED", "当前接口不支持工作台会话",
             )
         if claims.must_change_password and request.url.path not in {
             "/api/v1/auth/me",

@@ -1,3 +1,5 @@
+import { mountFeishuSettings } from "./shared/kbot-feishu-settings.js?v=20261125_self_feishu";
+
 (() => {
   "use strict";
   const session = KBotPlatformSession;
@@ -14,6 +16,9 @@
   const firstDomainDialog = el("portal-first-domain-dialog");
   const firstDomainForm = el("portal-first-domain-form");
   const firstDomainError = el("portal-first-domain-error");
+  const account = el("portal-account"), feishuDialog = el("portal-feishu-dialog");
+  const accountSummary = account.querySelector("summary");
+  const feishu = mountFeishuSettings(el("portal-feishu-settings"), session.request);
   let entries = new Map();
   let selectedApp = null;
   let pending = false;
@@ -27,7 +32,9 @@
   function showScreen() {
     const user = session.load();
     document.body.dataset.portalView = user && !user.must_change_password ? "workspace" : "auth";
-    el("portal-account").hidden = !user;
+    account.hidden = !user;
+    el("portal-notification-settings").hidden = !user || Boolean(user.must_change_password);
+    if (!user) account.open = false;
     el("portal-user").textContent = user?.display_name || user?.user_id || "";
     el("portal-sign-in").hidden = Boolean(user);
     password.hidden = !user?.must_change_password;
@@ -63,7 +70,10 @@
         }
       }
       for (const card of cards) card.hidden = !entries.has(card.dataset.app);
-      el("system-entry").hidden = result.system_management !== true;
+      const system = el("system-entry");
+      system.hidden = result.user_management !== true && result.system_management !== true;
+      system.href = result.user_management === true
+        ? "/ui/system_management/users.html" : "/ui/system_management/models.html";
       el("empty-apps").hidden = !el("system-entry").hidden || cards.some((card) => !card.hidden);
       el("portal-notification").hidden = !entries.has("aiops") || !session.pendingNotification();
     } catch (error) {
@@ -165,6 +175,20 @@
       return session.createKnowledgeFirstDomain({ name: name.trim(), description: description.trim() || null });
     });
   });
+  el("portal-notification-settings").onclick = () => {
+    if (el("portal-notification-settings").hidden) return;
+    account.open = false;
+    feishuDialog.showModal();
+    void feishu.refresh();
+  };
+  el("portal-feishu-refresh").onclick = () => feishu.refresh();
+  el("portal-feishu-close").onclick = () => { if (!feishu.isBusy()) feishuDialog.close(); };
+  feishuDialog.addEventListener("cancel", (event) => { if (feishu.isBusy()) event.preventDefault(); });
+  feishuDialog.addEventListener("close", () => accountSummary.focus());
+  account.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && account.open) { account.open = false; accountSummary.focus(); }
+  });
+  document.addEventListener("pointerdown", (event) => { if (!account.contains(event.target)) account.open = false; });
   el("portal-logout").onclick = () => {
     session.clear();
     if (dialog.open) dialog.close();

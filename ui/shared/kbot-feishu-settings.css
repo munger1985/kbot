@@ -1,0 +1,13 @@
+.feishu-settings p { margin: 0 0 .85rem; }
+.feishu-settings form { display: grid; min-width: 0; gap: .6rem; padding: 1rem 0; border-top: 1px solid var(--line, var(--border)); }
+.feishu-settings [hidden] { display: none !important; }
+.feishu-settings label { display: grid; gap: .3rem; margin: 0; font-size: .9rem; font-weight: 600; }
+.feishu-settings input { width: 100%; padding: .5rem .65rem; border: 1px solid var(--line-strong, var(--border)); border-radius: 7px; color: var(--ink); background: var(--surface-raised, var(--surface)); font: inherit; }
+.feishu-settings small, .feishu-settings-help { color: var(--muted); font-size: .85rem; }
+.feishu-settings-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.feishu-settings-actions button { min-height: 36px; padding: .4rem .8rem; border: 1px solid var(--line-strong, var(--border)); border-radius: 7px; color: var(--ink); background: var(--surface-raised, var(--surface)); font: inherit; cursor: pointer; }
+.feishu-settings-actions button:hover:not(:disabled) { background: var(--accent-soft, var(--canvas)); }
+.feishu-settings-actions button:disabled { opacity: .6; cursor: not-allowed; }
+.feishu-settings-result { color: var(--ink); overflow-wrap: anywhere; }
+.feishu-settings-result.is-error { color: var(--danger, #a4353d); }
+.feishu-settings-result:empty { display: none; }

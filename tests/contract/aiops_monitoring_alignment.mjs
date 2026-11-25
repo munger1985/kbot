@@ -132,6 +132,16 @@ export async function verifyMonitoringNavigation(kbot, reference, compareRegions
   for (const width of [1440,1280,1181,1024,900,821,820,420,320]) {
     for (const page of pages) {
       await page.setViewportSize({width,height:1000});
+      const radios=await page.locator('.monitoring-instance-option > input[type="radio"]:visible').evaluateAll(inputs=>
+        inputs.map(input=>{
+          const {width,height}=input.getBoundingClientRect();
+          return {width,height,checked:input.checked};
+        }));
+      assert.deepEqual(new Set(radios.map(radio=>radio.checked)),new Set([true,false]),'应覆盖已选和未选实例');
+      for (const radio of radios) {
+        assert.ok(Math.abs(radio.width-radio.height)<0.5,
+          `${page===kbot?'KBot':'Ammolite'} ${width}px：实例单选框的宽高必须相同，实际为 ${radio.width}×${radio.height}`);
+      }
       const bounds=await page.evaluate(()=>{
         const rect=selector=>{const box=document.querySelector(selector).getBoundingClientRect();return {x:box.x,y:box.y,right:box.right,bottom:box.bottom,width:box.width,height:box.height};};
         const observation=document.querySelector('.monitoring-observation-card');

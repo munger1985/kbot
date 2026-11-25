@@ -550,8 +550,9 @@ class UserAuthService:
             app_ids.add(_KNOWLEDGE_APP)
             if origin == "APP":
                 app_ids.intersection_update({user.owner_app_id})
-            can_manage_models = origin == "PLATFORM" and MODEL_MANAGEMENT_PERMISSION in (
+            platform_permissions = (
                 await uow.access.platform_permissions_for(user_id=claims.user_id)
+                if origin == "PLATFORM" else set()
             )
             entries: list[dict[str, object]] = []
             for application in await uow.access.list_applications():
@@ -591,7 +592,8 @@ class UserAuthService:
             "display_name": display_name,
             "account_origin": origin,
             "apps": entries,
-            "system_management": can_manage_models,
+            "system_management": MODEL_MANAGEMENT_PERMISSION in platform_permissions,
+            "user_management": "platform:user_manage" in platform_permissions,
         }
 
     async def list_session_domains(self, *, claims: UserTokenClaims) -> dict[str, object]:

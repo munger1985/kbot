@@ -3,16 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>系统管理 · AI 模型管理</title>
+  <title>平台管理 · AI 模型管理</title>
   <link rel="stylesheet" href="../media_studio/css/media.css">
-  <link rel="stylesheet" href="./system-management.css?v=20261120_model_fields_2">
+  <link rel="stylesheet" href="./system-management.css?v=20261125_platform_menu">
+  <link rel="stylesheet" href="./platform-list.css?v=20261125_platform_tables">
 </head>
 <body class="system-management">
   <header class="media-topbar">
-    <div class="media-context"><a href="/ui/index.html">返回工作台</a><strong>系统管理</strong></div>
+    <div class="media-context"><a href="/ui/index.html">返回工作台</a><strong>平台管理</strong></div>
     <div class="media-session" id="system-user"></div>
   </header>
-  <p class="system-status" id="system-status" role="status">正在核对系统管理权限…</p>
+  <p class="system-status" id="system-status" role="status">正在核对平台管理权限…</p>
   <main class="media-main" id="system-content" hidden>
     <header class="media-page-head">
       <div>
@@ -33,8 +34,8 @@
     </section>
 
     <section class="media-grid">
-      <article class="media-panel span-12">
-        <div class="media-filter-bar">
+      <article class="platform-list span-12">
+        <div class="media-filter-bar platform-list-toolbar">
           <div class="media-field">
             <label for="model-keyword">搜索</label>
             <input id="model-keyword" type="search" placeholder="显示名称、模型 UUID、厂商模型或 API 地址">
@@ -61,10 +62,10 @@
             </select>
           </div>
         </div>
-        <div class="media-table-wrap">
-          <table class="media-table model-table">
-            <thead><tr><th>模型</th><th>类别 / Provider</th><th>Endpoint</th><th>状态</th><th>版本</th><th>操作</th></tr></thead>
-            <tbody id="model-rows"><tr><td colspan="6"><div class="media-empty"><div><strong>正在读取模型配置</strong><p>等待六类模型服务返回完整目录。</p></div></div></td></tr></tbody>
+        <div class="platform-table-wrap">
+          <table class="platform-table platform-table--models" role="table" aria-label="模型配置列表">
+            <thead role="rowgroup"><tr role="row"><th scope="col">模型</th><th scope="col">类别 / Provider</th><th scope="col">Endpoint</th><th scope="col">状态</th><th scope="col">版本</th><th scope="col">操作</th></tr></thead>
+            <tbody id="model-rows" role="rowgroup"><tr class="platform-table-empty" role="row"><td role="cell" colspan="6"><strong>正在读取模型配置</strong><p>等待六类模型服务返回完整目录。</p></td></tr></tbody>
           </table>
         </div>
       </article>
@@ -162,6 +163,6 @@
   <script src="../runtime-config.js"></script>
   <div id="system-toast" class="media-toast-region" aria-live="polite"></div>
   <script src="../shared/kbot-platform-session.js?v=20261120_sso"></script>
-  <script type="module" src="./models.js?v=20261122_local_embedding_metadata"></script>
+  <script type="module" src="./models.js?v=20261125_platform_tables"></script>
 </body>
 </html>

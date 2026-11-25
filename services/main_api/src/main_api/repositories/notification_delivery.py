@@ -136,6 +136,13 @@ class ExternalDeliveryRepository:
             *self.scoped(table, scope), table.c.actor_id == actor_id))).mappings().all()
         return [dict(row) for row in rows]
 
+    async def latest_actor_challenge(self, *, scope, actor_id):
+        # 解绑或换绑后仍保留验证码冷却期，不能通过创建新绑定绕过。
+        table = self.tables["binding"]
+        sent_at = (await self._session.execute(select(func.max(table.c.challenge_sent_at)).where(
+            *self.scoped(table, scope), table.c.actor_id == actor_id))).scalar_one()
+        return sent_at.replace(tzinfo=timezone.utc) if sent_at is not None and sent_at.tzinfo is None else sent_at
+
     async def health(self, *, scope):
         table = self.tables["job"]
         rows = (await self._session.execute(select(table.c.status, table.c.last_error_code, func.count().label("count"),

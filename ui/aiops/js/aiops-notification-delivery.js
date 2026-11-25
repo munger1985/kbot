@@ -2,7 +2,7 @@
   "use strict";
   KBotAIOpsShell.ready.then(async access => {
     const page = document.body.dataset.page;
-    if (!access || !["notification-channels", "notification-delivery", "notification-settings"].includes(page)) return;
+    if (!access || !["notification-channels", "notification-delivery"].includes(page)) return;
     const byId = id => document.getElementById(id);
     const status = byId("delivery-status");
     const request = (path, body, method = "POST") => KBotAIOpsAuth.request("/api/v1/notification-delivery" + path,
@@ -149,32 +149,11 @@
         });
       } catch (error) { byId("delivery-metrics").replaceChildren(node("p","投递运行概览暂不可用。")); }
     }
-    async function loadMine(current) {
-      const result = await request("/me/bindings");
-      if (current !== loadVersion) return;
-      const container = byId("delivery-mine"); container.replaceChildren();
-      const mine = result.items.filter(item => item.status !== "DISABLED");
-      if (!mine.length) container.append(node("p","尚未绑定飞书。站内通知正常，如需飞书通知请联系管理员维护身份。","delivery-empty"));
-      mine.forEach(item => {
-        const article = node("article"); article.append(node("p",item.external_id + " · " + (item.status === "VERIFIED" ? "已验证" : "待本人验证")));
-        if (item.status === "UNVERIFIED") {
-          const form = node("form",null,"delivery-form"), field = node("label","飞书验证码","control-field"), code = node("input");
-          code.inputMode = "numeric"; code.pattern = "[0-9]{6}"; code.maxLength = 6; code.required = true; code.autocomplete = "one-time-code";
-          field.append(code);
-          const actions = node("div",null,"toolbar-actions"), send = button("发送验证码",() => action(() => request("/me/bindings/" + item.id + "/challenge",{}),"验证码已入队，请在飞书中查看")), confirm = node("button","确认是本人","primary-button");
-          actions.append(send,confirm); form.append(field,actions);
-          form.onsubmit = event => { event.preventDefault(); void action(() => request("/bindings/" + item.id + "/confirm",{code:code.value,expected_row_version:item.row_version}),"飞书身份已验证"); };
-          article.append(form);
-        }
-        container.append(article);
-      });
-    }
     async function refresh() {
       const current = ++loadVersion; loading = true; controls();
       try {
         if (page === "notification-channels") await loadChannels(current);
-        else if (page === "notification-delivery") await loadJobs(current);
-        else await loadMine(current);
+        else await loadJobs(current);
       } catch (error) {
         if (current !== loadVersion) return;
         status.textContent = error.message || "读取失败，请刷新重试。";
@@ -242,7 +221,7 @@
         const add = (parent,name,value,text) => { const field = node("label",null,"delivery-choice"), input = node("input"); input.type = "checkbox"; input.name = name; input.value = value; field.append(input,node("span",text)); parent.append(field); };
         Object.entries(events).forEach(([key,value]) => add(eventOptions,"event_types",key,value[0]));
         personal().forEach(item => add(bindingOptions,"binding_ids",item.id,item.external_id + " · " + (item.status === "VERIFIED" ? "已验证" : "待本人验证")));
-        if (!personal().length) bindingOptions.append(node("p","暂无个人绑定，请先在用户管理中维护。","delivery-empty"));
+        if (!personal().length) bindingOptions.append(node("p","暂无个人绑定，请收件人在“我的通知设置”绑定自己的飞书身份。","delivery-empty"));
         KBotDrawer.open("delivery-rule-editor");
       };
       byId("delivery-policy").onsubmit = event => {

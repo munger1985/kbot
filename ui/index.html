@@ -4,20 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>KBot 4 · 应用入口</title>
-  <link rel="stylesheet" href="/ui/portal.css?v=20261120_sso">
+  <link rel="stylesheet" href="/ui/portal.css?v=20261125_self_feishu">
+  <link rel="stylesheet" href="/ui/shared/kbot-feishu-settings.css?v=20261125_self_feishu">
   <script defer src="/ui/runtime-config.js"></script>
   <script defer src="/ui/shared/kbot-platform-session.js?v=20261120_sso"></script>
-  <script defer src="/ui/portal.js?v=20261120_sso"></script>
+  <script type="module" src="/ui/portal.js?v=20261125_self_feishu"></script>
 </head>
 <body data-portal-view="checking">
   <header class="site-header">
     <div class="page-width brand">
       <span class="brand-mark" aria-hidden="true">K</span>
       <span>KBot <small>工作台</small></span>
-      <div id="portal-account" class="portal-account" hidden>
-        <span id="portal-user"></span>
-        <button id="portal-logout" type="button">退出登录</button>
-      </div>
+      <details id="portal-account" class="portal-account" hidden>
+        <summary><span id="portal-user"></span><span aria-hidden="true">⌄</span></summary>
+        <div class="portal-account-popover" aria-label="账户操作">
+          <button id="portal-notification-settings" type="button">我的通知设置</button>
+          <button id="portal-logout" type="button">退出登录</button>
+        </div>
+      </details>
     </div>
   </header>
   <main class="page-width">
@@ -81,12 +85,17 @@
         <span class="app-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></svg>
         </span>
-        <span class="app-name">系统管理</span>
-        <span class="app-description">统一维护 AI 模型配置、凭据和生命周期。</span>
-        <span class="app-link" aria-hidden="true">进入系统管理 <span>→</span></span>
+        <span class="app-name">平台管理</span>
+        <span class="app-description">统一管理用户、App 授权与 AI 模型配置。</span>
+        <span class="app-link" aria-hidden="true">进入平台管理 <span>→</span></span>
       </a>
     </nav>
     <p class="empty-state" id="empty-apps" hidden>当前账号没有可用的入口。</p>
+    <dialog id="portal-feishu-dialog" class="portal-dialog" aria-labelledby="portal-feishu-title">
+      <h2 id="portal-feishu-title">我的通知设置</h2>
+      <div id="portal-feishu-settings" class="feishu-settings"></div>
+      <div class="portal-dialog-actions"><button type="button" id="portal-feishu-refresh">刷新</button><button type="button" id="portal-feishu-close">关闭</button></div>
+    </dialog>
     <dialog id="portal-domain-dialog" class="portal-dialog" aria-labelledby="portal-domain-title">
       <form id="portal-domain-form">
         <h2 id="portal-domain-title">选择工作域</h2>

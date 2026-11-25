@@ -11,7 +11,11 @@ AIOps 和多媒体创作的正式页面。浏览器只调用 Main API 的 `/api/
 有多个工作域时先选择工作域，再免密换取该 App 的业务会话。原 App 登录地址
 会转到工作台；知识检索管理员仍可在有资格时创建首个工作域。
 
-具有 `platform:model_manage` 权限的平台用户可以从首页进入“系统管理 → AI 模型管理”。
+平台管理从工作台进入。具有 `platform:user_manage` 的账号可进入“用户管理”，在用户目录内打开
+详情抽屉查看资料、配置安全等级与授权；配置 App 角色和工作域还需 `platform:app_grant_manage`。
+账号启停、重置密码和删除在目录行内操作。个人飞书身份由本人从工作台或 AIOps 的账号菜单进入
+“我的通知设置”绑定并验证。
+具有 `platform:model_manage` 的账号可进入“AI 模型管理”。
 此处维护平台全局模型，不需要多媒体创作的 App 或 Domain 授权；多媒体创作继续维护
 本 App 的模型绑定。已有 Oracle 环境需要执行
 `database/oracle/operations/upgrade_platform_model_management.sql` 更新权限种子后再验收。

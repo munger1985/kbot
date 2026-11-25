@@ -14,7 +14,7 @@ from platform_core.contracts import AuthContext
 
 
 def request(*, kind="PORTAL", roles=("app_admin",), permissions=("aiops:use",),
-            app_id="aiops", token_roles=(), domain="12"):
+            app_id="aiops", token_roles=(), domain="12", user_session=True):
     context = AuthContext(principal_kind=kind, app_id=app_id, domain_id=domain,
         client_id="fixture", api_key_id="fixture", asserted_user_id="fixture-user",
         request_id="fixture", trace_id="fixture", roles=token_roles)
@@ -23,7 +23,8 @@ def request(*, kind="PORTAL", roles=("app_admin",), permissions=("aiops:use",),
     access = NS(snapshot=AsyncMock(return_value=snapshot), require_platform=AsyncMock(),
         platform_snapshot=AsyncMock())
     authority = NS(actor_active=AsyncMock(return_value=True))
-    return NS(state=NS(auth_context=context), app=NS(state=NS(
+    claims = NS(user_id="fixture-user", must_change_password=False) if user_session else None
+    return NS(state=NS(auth_context=context, user_token_claims=claims), app=NS(state=NS(
         access_control_service=access, external_notification_service=NS(authority=authority))))
 
 
@@ -98,6 +99,15 @@ async def test_personal_settings_only_require_active_user(active):
 async def test_unknown_permission_is_denied_instead_of_treated_as_personal_access():
     with pytest.raises(HTTPException):
         await external_context(request(), permission="unknown")
+
+
+@pytest.mark.asyncio
+async def test_personal_settings_do_not_accept_asserted_actor_without_user_session():
+    req = request(user_session=False)
+    with pytest.raises(HTTPException) as error:
+        await external_context(req, permission="self")
+    assert error.value.detail["code"] == "NOTIFICATION_USER_SESSION_REQUIRED"
+    req.app.state.external_notification_service.authority.actor_active.assert_not_awaited()
 
 
 @pytest.mark.parametrize("role", ["app_admin", "app_user", "app_manager", "platform_admin", None])

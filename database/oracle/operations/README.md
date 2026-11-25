@@ -176,3 +176,9 @@ conda run -n kbot4 python scripts/db/apply_oracle_schema.py --foundation-only
 ```
 
 第二步会精确收敛权限目录和系统内置角色映射；自定义角色保留，但其废弃权限映射会被清理。
+
+普通 App 自建账号收归平台管理时，使用 `upgrade_platform_user_management.sql`。在停止旧版
+用户管理写入后，由部署人员对 KBot Main API 业务 Schema 执行。脚本只调整账号来源和
+所属 App 的成员来源，不重建表，不修改密码、飞书绑定、角色或空间范围，也不授予平台管理权限。
+App 初始管理员不迁移；发现普通账号已有跨 App、平台角色或初始管理员绑定时会回滚退出，需先
+核对异常数据。已迁移普通用户如持有旧工作台会话，须重新登录。

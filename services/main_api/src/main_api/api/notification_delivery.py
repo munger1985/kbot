@@ -42,6 +42,13 @@ class VersionRequest(BaseModel):
     expected_row_version: int = Field(ge=1)
 
 
+class PersonalFeishuBindingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    feishu_open_id: str | None = Field(pattern=r"^ou_.{1,253}$", max_length=256)
+    expected_binding_id: UUID | None = None
+    expected_row_version: int | None = Field(default=None, ge=1)
+
+
 class TestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     binding_id: UUID
@@ -71,6 +78,11 @@ async def my_bindings(request: Request):
     return await _invoke(request, "my_bindings", permission="self")
 
 
+@router.put("/me/bindings/feishu", openapi_extra={"x-sensitive-input": True})
+async def update_my_feishu_binding(body: PersonalFeishuBindingUpdate, request: Request):
+    return await _invoke(request, "update_my_feishu_binding", permission="self", body=body)
+
+
 @router.post("/connections/{object_id}/test")
 async def queue_test(object_id: UUID, body: TestRequest, request: Request):
     return await _invoke(request, "queue_test", permission="channel",
@@ -85,6 +97,12 @@ async def _invoke(request, method, *, permission, **kwargs):
     except ExternalDeliveryError as exc:
         message = {"NOTIFICATION_PUBLIC_ORIGIN_REQUIRED": "启用业务消息规则前，请先配置门户访问地址。",
                    "NOTIFICATION_PUBLIC_ORIGIN_IN_USE": "仍有启用的业务消息规则，请先暂停规则再清空门户地址。",
+                   "NOTIFICATION_CONNECTION_NOT_CONFIGURED": "尚未配置飞书通知渠道，请联系渠道管理员。",
+                   "NOTIFICATION_CONNECTION_DISABLED": "飞书通知渠道未启用。",
+                   "NOTIFICATION_BINDING_CONFLICT": "无法登记该飞书身份，请核对后重试。",
+                   "NOTIFICATION_VERIFICATION_INVALID": "验证码不正确。",
+                   "NOTIFICATION_VERIFICATION_EXPIRED": "验证码不可用，请重新发送。",
+                   "NOTIFICATION_VERIFICATION_RATE_LIMIT": "验证码已发送，请稍后再试。",
                    "NOTIFICATION_VERSION_CONFLICT": "配置已被修改，请刷新后重试。"}.get(exc.code, "操作未完成，请核对当前状态")
         raise HTTPException(exc.status_code, {"code": exc.code, "message": message}) from exc
 

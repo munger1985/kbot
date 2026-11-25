@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>平台管理 · 用户管理</title>
+  <link rel="stylesheet" href="../media_studio/css/media.css">
+  <link rel="stylesheet" href="./system-management.css?v=20261125_platform_menu">
+  <link rel="stylesheet" href="./platform-list.css?v=20261125_user_actions">
+  <link rel="stylesheet" href="./users.css?v=20261125_user_grants">
+</head>
+<body class="system-management">
+  <header class="media-topbar">
+    <div class="media-context"><a href="/ui/index.html">返回工作台</a><strong>平台管理</strong></div>
+    <div id="system-user" class="media-session"></div>
+  </header>
+  <p id="system-status" class="system-status" role="status">正在核对平台管理权限…</p>
+  <main id="system-content" class="media-main" hidden>
+    <header class="media-page-head">
+      <div><h1>用户管理</h1><p>账号全平台只创建一次。通过 App 授权分配业务角色和空间范围。</p></div>
+      <button id="user-create" class="primary" type="button">新建用户</button>
+    </header>
+    <section class="platform-list" aria-labelledby="directory-title">
+      <header class="platform-list-heading"><div><h2 id="directory-title">用户目录</h2><p>停用账号会暂停该用户的全部 App 访问，已有授权会保留。</p></div><span id="user-count" class="platform-list-count"></span></header>
+      <form class="media-filter-bar platform-list-toolbar" role="search" id="user-search">
+        <label class="media-field">搜索用户<input name="search" type="search" maxlength="256" placeholder="名称或账号"></label>
+        <label class="media-field compact">账号状态<select name="status"><option value="">全部状态</option><option value="ACTIVE">已启用</option><option value="DISABLED">已停用</option></select></label>
+        <div class="media-actions"><button type="submit">查询</button><button type="button" id="user-refresh">刷新</button></div>
+      </form>
+      <div class="platform-table-wrap">
+        <table class="platform-table platform-table--users" role="table" aria-labelledby="directory-title">
+          <thead role="rowgroup"><tr role="row"><th scope="col">用户</th><th scope="col">已分配 App</th><th scope="col">账号状态</th><th scope="col">操作</th></tr></thead>
+          <tbody id="user-rows" role="rowgroup"><tr class="platform-table-empty" role="row"><td role="cell" colspan="4">正在读取用户…</td></tr></tbody>
+        </table>
+      </div>
+      <footer class="platform-list-footer" aria-label="用户目录分页">
+        <span id="user-page"></span>
+        <button id="user-prev" type="button" disabled>上一页</button>
+        <button id="user-next" type="button" disabled>下一页</button>
+      </footer>
+      <p id="user-result" class="user-message" role="status"></p>
+    </section>
+  </main>
+  <dialog class="media-dialog user-drawer" id="user-create-dialog" aria-labelledby="user-create-title">
+    <form id="user-create-form">
+      <header class="media-dialog-head"><div><h2 id="user-create-title">新建平台用户</h2><p>创建后可直接为该用户授予 App 角色。</p></div><button class="media-close" type="button" data-dialog-close aria-label="关闭">×</button></header>
+      <div class="media-dialog-body user-fields">
+        <label class="media-field">账号<input name="user_id" autocomplete="off" maxlength="256" required></label>
+        <label class="media-field">显示名称<input name="display_name" maxlength="256"></label>
+        <label class="media-field">初始密码<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="72" required><small>至少 12 个字符，包含大小写字母、数字和特殊字符，最多 72 字节。首次登录须修改。</small></label>
+        <fieldset class="user-spaces"><legend>初始授权</legend><label class="media-field">安全等级<select name="max_security_level"><option value="0">0</option><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select></label></fieldset>
+        <p data-dialog-error class="user-message" role="alert"></p>
+      </div>
+      <footer class="media-dialog-foot"><button type="button" data-dialog-close>取消</button><button class="primary" type="submit">创建并前往授权</button></footer>
+    </form>
+  </dialog>
+  <dialog class="media-dialog user-drawer user-detail-drawer" id="user-detail-drawer" aria-labelledby="user-detail-title">
+    <header class="media-dialog-head">
+      <div><p class="user-drawer-kicker" id="user-detail-title">用户详情与授权</p><h2 id="user-name"></h2><p id="user-id"></p></div>
+      <button class="media-close" type="button" data-dialog-close aria-label="关闭用户详情" autofocus>×</button>
+    </header>
+    <div class="media-dialog-body" id="user-detail-body">
+      <p id="user-detail-result" class="user-message user-result" role="status"></p>
+      <div id="user-detail" class="user-detail" hidden>
+        <section class="user-summary" aria-label="用户概览">
+          <div><small>账号状态</small><strong id="user-state"></strong></div>
+          <div><small>已分配 App</small><strong id="user-assigned"></strong></div>
+          <div><small>安全等级</small><strong id="user-security"></strong></div>
+        </section>
+        <p id="user-locked" class="media-notice" hidden></p>
+        <section id="user-profile" class="user-section" aria-labelledby="profile-title" hidden>
+          <header><h3 id="profile-title">账号资料</h3></header>
+          <form id="user-profile-form" class="user-inline-form">
+            <label class="media-field">显示名称<input name="display_name" maxlength="256"></label>
+            <button type="submit">保存资料</button>
+          </form>
+        </section>
+        <section class="user-section" aria-labelledby="user-access-title">
+          <header><h3 id="user-access-title">用户授权</h3></header>
+          <form id="user-security-form" class="user-inline-form" hidden>
+            <label class="media-field">安全等级<select name="max_security_level"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+            <button type="submit">保存安全等级</button>
+          </form>
+          <div class="user-access-apps">
+            <header><div><h4 id="user-app-access-title" tabindex="-1">App 授权</h4><p>每个 App 独立管理业务角色与空间范围。</p></div><button id="user-app-add" class="primary small" type="button" aria-haspopup="dialog" aria-controls="user-grant-dialog" hidden><span aria-hidden="true">＋</span> 授予 App 访问</button></header>
+            <div id="user-apps" class="user-apps"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <footer class="media-dialog-foot"><button id="user-detail-refresh" type="button">刷新</button><button type="button" data-dialog-close>关闭</button></footer>
+  </dialog>
+  <dialog class="media-dialog user-drawer" id="user-grant-dialog" aria-labelledby="user-grant-title">
+    <form id="user-grant-form">
+      <header class="media-dialog-head"><div><p class="user-drawer-kicker" id="user-grant-context"></p><h2 id="user-grant-title">授予 App 访问</h2><p id="user-grant-target"></p></div><button class="media-close" type="button" data-dialog-close aria-label="关闭授权编辑">×</button></header>
+      <div class="media-dialog-body user-fields">
+        <div class="user-section user-grant-panel">
+          <div class="media-field" id="user-grant-app-field"><label for="user-grant-app">App</label><select id="user-grant-app" name="app_id" required></select></div>
+          <div class="media-field"><label for="user-grant-role">业务角色</label><select id="user-grant-role" name="role_code" aria-describedby="user-grant-role-help" required></select><small id="user-grant-role-help"></small></div>
+          <div id="user-grant-scope" class="user-grant-scope" hidden></div>
+        </div>
+        <p data-dialog-error class="user-message" role="alert"></p>
+      </div>
+      <footer class="media-dialog-foot"><button type="button" data-dialog-close>取消</button><button type="submit" class="primary" id="user-grant-save">确认授权</button></footer>
+    </form>
+  </dialog>
+  <dialog class="media-dialog" id="user-password-dialog" aria-labelledby="user-password-title">
+    <form id="user-password-form">
+      <header class="media-dialog-head"><div><h2 id="user-password-title">重置密码</h2><p id="user-password-target"></p></div><button class="media-close" type="button" data-dialog-close aria-label="关闭">×</button></header>
+      <div class="media-dialog-body user-fields">
+        <p id="user-password-help">重置后原有会话失效，用户下次登录必须修改密码。</p>
+        <div class="media-field" id="user-current-password-field" hidden><label for="user-current-password">当前密码</label><input id="user-current-password" name="current_password" type="password" autocomplete="current-password" maxlength="256" required disabled></div>
+        <div class="media-field"><label id="user-password-label" for="user-password-value">临时密码</label><input id="user-password-value" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="72" required aria-describedby="user-password-policy"><small id="user-password-policy">至少 12 个字符，包含大小写字母、数字和特殊字符，最多 72 字节。</small></div>
+        <p data-dialog-error class="user-message" role="alert"></p>
+      </div>
+      <footer class="media-dialog-foot"><button type="button" data-dialog-close>取消</button><button id="user-password-save" type="submit" class="primary">确认重置</button></footer>
+    </form>
+  </dialog>
+  <script src="../runtime-config.js"></script>
+  <script src="../shared/kbot-platform-session.js?v=20261120_sso"></script>
+  <script type="module" src="./users.js?v=20261125_protected_password"></script>
+</body>
+</html>

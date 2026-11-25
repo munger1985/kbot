@@ -38,7 +38,7 @@ function installFixture({mode, items}) {
       throw new Error('禁止非预期写入');
     }
     if(pathname.endsWith('/access'))return {app_id:'aiops', user_id:'fixture', domain_id:12, domain_name:'隔离空间', roles:['app_admin'], permissions:['aiops:use', 'aiops:member_manage']};
-    if(pathname.endsWith('/assignable-roles') || pathname==='/api/v1/apps/aiops/members')return {items:[]};
+    if(pathname==='/api/v1/notification-delivery/capabilities')return {capabilities:[]};
     if(pathname==='/api/v1/notifications/summary')return {unread:mode==='empty'?0:mode==='many'?120:2};
     if(pathname==='/api/v1/notifications') {
       if(mode==='failure')throw new Error('隔离通知读取失败');
@@ -69,7 +69,7 @@ try {
     const page=await context.newPage(), errors=[];
     page.on('pageerror', error=>errors.push(error.message));
     try {
-      await page.goto(`http://127.0.0.1:${server.address().port}/ui/aiops/users.html`);
+      await page.goto(`http://127.0.0.1:${server.address().port}/ui/aiops/notification-channels.html`);
       await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;}, theme);
       const toggle=page.getByRole('button', {name:'打开通知中心', exact:true});
       await toggle.waitFor();
