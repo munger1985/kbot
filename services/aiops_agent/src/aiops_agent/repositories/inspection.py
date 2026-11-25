@@ -807,7 +807,7 @@ class InspectionRepository(AIOpsRepository):
         statement = select(ReportEntity).where(
             ReportEntity.ops_run_id == ops_run_id,
             ReportEntity.report_key == report_key,
-            ReportEntity.is_current.is_(True),
+            ReportEntity.is_current == 1,
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
@@ -857,7 +857,7 @@ class InspectionRepository(AIOpsRepository):
             .where(
                 ReportEntity.ops_run_id == ops_run_id,
                 ReportEntity.report_key.startswith("inspection.", autoescape=True),
-                ReportEntity.is_current.is_(True),
+                ReportEntity.is_current == 1,
             )
             .order_by(ReportEntity.report_version.desc())
         )

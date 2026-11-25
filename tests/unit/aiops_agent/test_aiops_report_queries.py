@@ -8,6 +8,8 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from sqlalchemy.dialects import oracle
+
 from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.repositories.inspection import InspectionRepository
@@ -35,6 +37,22 @@ def _context(uow):
 
 
 class ReportQueryTest(unittest.TestCase):
+    def test_current_effect_report_uses_oracle_numeric_flag(self) -> None:
+        run_id = uuid7()
+        report_key = "comparison.business.example"
+        report = SimpleNamespace(report_id=uuid7())
+        session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(
+            scalar_one_or_none=lambda: report,
+        )))
+        repository = InspectionRepository(session)
+        result = asyncio.run(repository.get_current_effect_report(ops_run_id=run_id, report_key=report_key))
+        query = session.execute.await_args.args[0].compile(dialect=oracle.dialect())
+        self.assertIs(report, result)
+        self.assertIn(run_id, query.params.values())
+        self.assertIn(report_key, query.params.values())
+        self.assertIn("is_current = :is_current_1", str(query))
+        self.assertEqual(query.params["is_current_1"], 1)
+
     def test_current_report_page_uses_scoped_keyset_cursor(self) -> None:
         now = datetime(2026, 7, 24, tzinfo=UTC)
 
@@ -254,9 +272,11 @@ class InspectionFireQueryTest(unittest.TestCase):
         result = asyncio.run(repository.get_current_inspection_report_for_run(ops_run_id=run_id))
         statement = session.execute.await_args.args[0]
         self.assertIs(report, result)
-        self.assertIn(run_id, statement.compile().params.values())
-        self.assertIn("inspection.", statement.compile().params.values())
-        self.assertIn("is_current", str(statement.whereclause))
+        query = statement.compile(dialect=oracle.dialect())
+        self.assertIn(run_id, query.params.values())
+        self.assertIn("inspection.", query.params.values())
+        self.assertIn("is_current = :is_current_1", str(query))
+        self.assertEqual(query.params["is_current_1"], 1)
 
     def test_fire_detail_returns_plan_name_and_linked_run_summaries(self) -> None:
         fire_id = uuid7()
