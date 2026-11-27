@@ -26,6 +26,8 @@ from aiops_agent.contracts.knowledge import (
     KnowledgeSearchRequest,
     ManualUploadMetadata,
 )
+from aiops_agent.persistence import AIOpsUnitOfWork
+from platform_core.contracts.aiops.knowledge_base import KnowledgeBaseView
 from aiops_agent.repositories.knowledge import OperationsKnowledgeRepository
 from platform_core.identity import uuid7
 
@@ -665,6 +667,61 @@ def test_worker_rebinds_only_unclaimed_ocr_and_vlm_work(status):
         assert f.version.tag_analysis_json["execution_spec"]["processing_plan"] == expected
         assert f.repository.get_version_relations.return_value["sources"][0].source_locator_json["processing_plan"] == expected
         f.uow.commit.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("vocabulary_ready", [True, False, None], ids=["configured", "empty", "read_error"])
+def test_library_create_prepares_response_before_commit(vocabulary_ready):
+    async def run():
+        domain_id = 42
+        now = datetime.now(UTC)
+        transaction = SimpleNamespace(commit=AsyncMock())
+        vocabulary_result = RuntimeError("标签词表读取失败") if vocabulary_ready is None else (
+            uuid7() if vocabulary_ready else None
+        )
+        session = SimpleNamespace(
+            begin=AsyncMock(return_value=transaction), add=MagicMock(),
+            execute=AsyncMock(return_value=SimpleNamespace(scalars=lambda: [])),
+            scalar=AsyncMock(side_effect=[domain_id, vocabulary_result]),
+            rollback=AsyncMock(), close=AsyncMock(),
+        )
+
+        async def flush():
+            entity = session.add.call_args.args[0]
+            entity.created_at, entity.updated_at, entity.row_version = now, now, 1
+
+        session.flush = flush
+
+        def uow_factory():
+            return AIOpsUnitOfWork(lambda: session)
+
+        documents = SimpleNamespace(
+            retrieval=SimpleNamespace(authorization=SimpleNamespace()),
+            capability_view=lambda *_args, **_kwargs: {
+                "native_parse": "PENDING_VERIFICATION", "ocr": "NOT_ENABLED",
+                "visual_enrichment": "NOT_ENABLED", "lexical": "PENDING_VERIFICATION",
+                "semantic_directions": [],
+            },
+        )
+        service = OperationsKnowledgeService(uow_factory=uow_factory, documents=documents)
+        kwargs = dict(domain_id=domain_id, command=KnowledgeBaseWrite(display_name="运维知识库"),
+                      context=SimpleNamespace(asserted_user_id="fixture-user"))
+
+        if vocabulary_ready is None:
+            with pytest.raises(RuntimeError, match="标签词表读取失败"):
+                await service.create_knowledge_base(**kwargs)
+            transaction.commit.assert_not_awaited()
+            session.rollback.assert_awaited_once()
+        else:
+            view = KnowledgeBaseView.model_validate(await service.create_knowledge_base(**kwargs))
+            assert view.knowledge_base_id == session.add.call_args.args[0].knowledge_base_id
+            assert view.row_version == 1
+            assert view.index.state == "EMPTY"
+            assert view.tagging.vocabulary_ready is vocabulary_ready
+            transaction.commit.assert_awaited_once()
+            session.rollback.assert_not_awaited()
+        session.close.assert_awaited_once()
 
     asyncio.run(run())
 

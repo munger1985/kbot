@@ -547,8 +547,10 @@ class OperationsKnowledgeService:
                 description=command.description, configuration_json=configuration, status="ACTIVE",
                 created_by=self._actor(context), updated_by=self._actor(context))
             await uow.operations_knowledge.add_knowledge_base(entity)
+            # 仓储已刷新新增记录；在提交关闭事务前读取词表并组装响应。
+            view = await self._base_view(uow.operations_knowledge, entity, new=True)
             await uow.commit()
-            return await self._base_view(uow.operations_knowledge, entity, new=True)
+            return view
 
     async def list_knowledge_bases(
         self, *, domain_id: int, include_archived: bool = False,
