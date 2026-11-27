@@ -69,6 +69,22 @@
       change && item.controlled_change_enabled && !item.execution_credential_configured && "Target 缺少变更凭据，不能执行变更",
     ].filter(Boolean).join("；");
   }
+  function boundaryResourceAction(item) {
+    const systemId = values(item.business_system_ids)[0];
+    return systemId ? `<button type="button" class="boundary-resource-link" data-boundary-system="${escape(systemId)}">查看业务系统资源 ↗</button>` : "";
+  }
+  function openBoundaryResource(systemId) {
+    const url = new URL("./business-system-workspace.html", location.href);
+    url.search = new URLSearchParams({ view: "readonly", id: systemId });
+    // 先让同源空白页继承当前标签页的会话，再断开 opener 并进入工作区。
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) {
+      showAgentError("浏览器阻止了新标签页，请允许弹出式窗口后重试。");
+      return;
+    }
+    tab.opener = null;
+    tab.location.replace(url.href);
+  }
   function renderBoundaryResources() {
     if (!document.getElementById("agent-dialog").open) return;
     const ids = [...selectionSets.systems];
@@ -76,7 +92,11 @@
     const state = boundaryStates.get(boundaryKey(ids));
     const readonly = form.elements.readonly_database_enabled.checked;
     const change = form.elements.allow_agent_execution.checked;
-    document.getElementById("agent-boundary-resources").innerHTML = `<h4>关联资源配置与限制</h4><p>监控跟随资源；数据库账号和连接由数据库 Target 维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机",STORAGE:"存储",NETWORK_DEVICE:"网络设备"}[item.resource_type_key] || item.resource_type_key))}</strong><small>所属系统：${escape(values(item.business_system_ids).map(systemName).join("、"))}</small><small>监控：${item.monitoring_configured ? "已配置" : "未就绪"} · 只读：${item.resource_type_key !== "DATABASE" ? "不适用" : item.readonly_configured ? "已配置" : "未配置"} · 变更：${item.resource_type_key !== "DATABASE" ? "不适用" : item.change_configured ? "已配置" : "未配置"}</small><small>${escape(targetGaps(item) || "所选边界的 Target 配置已就绪；实际执行仍需权限与审批校验")}</small><a href="business-system-workspace.html?view=readonly&id=${encodeURIComponent(item.business_system_ids[0])}" target="_blank" rel="noopener">查看业务系统资源 ↗</a></li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${loading || !ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
+    const panel = document.getElementById("agent-boundary-resources");
+    panel.innerHTML = `<h4>关联资源配置与限制</h4><p>监控跟随资源；数据库账号和连接由数据库 Target 维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type || ({PHYSICAL_SERVER:"物理服务器",VIRTUAL_MACHINE:"虚拟机",STORAGE:"存储",NETWORK_DEVICE:"网络设备"}[item.resource_type_key] || item.resource_type_key))}</strong><small>所属系统：${escape(values(item.business_system_ids).map(systemName).join("、"))}</small><small>监控：${item.monitoring_configured ? "已配置" : "未就绪"} · 只读：${item.resource_type_key !== "DATABASE" ? "不适用" : item.readonly_configured ? "已配置" : "未配置"} · 变更：${item.resource_type_key !== "DATABASE" ? "不适用" : item.change_configured ? "已配置" : "未配置"}</small><small>${escape(targetGaps(item) || "所选边界的 Target 配置已就绪；实际执行仍需权限与审批校验")}</small>${boundaryResourceAction(item)}</li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${loading || !ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
+    panel.querySelectorAll("[data-boundary-system]").forEach(button => {
+      button.onclick = () => openBoundaryResource(button.dataset.boundarySystem);
+    });
     document.getElementById("retry-boundary")?.addEventListener("click", async () => {
       await load();
       if (document.getElementById("agent-dialog").open) await loadBoundary([...selectionSets.systems], true);
